@@ -123,6 +123,9 @@ pub enum Event {
 
 /// Everything the relay does to the rest of the shell.
 pub trait Env {
+    /// The owner's/caller's installed release is still admitted now. Separate
+    /// from user consent: withdrawal must not be bypassed by developer mode.
+    fn admitted(&self, _app: &str) -> Result<(), String> { Ok(()) }
     /// The person allowed `app`'s agent (or developer mode did).
     fn consent(&self, app: &str) -> bool;
     /// Developer mode covers `app` (every grant).
@@ -233,6 +236,10 @@ pub struct Catalog {
     generic: BTreeMap<String, Vec<String>>,
     /// Each calling agent's budget (the defaults unless set).
     budgets: BTreeMap<String, Budget>,
+    /// The tools each native app's own agent may call
+    /// (`native-apps.json` `agent.own_tools`); an app not here may call
+    /// every one of its tools.
+    own: BTreeMap<String, BTreeSet<String>>,
 }
 
 impl Catalog {
@@ -252,6 +259,7 @@ impl Catalog {
         let tools: Vec<Value> = serde_json::from_str(app.tools_json).unwrap_or_default();
         if !tools.is_empty() {
             self.declare(app.id, tools);
+            self.own.insert(app.id.to_string(), app.own_tools.iter().map(|t| t.to_string()).collect());
         }
         for (owner, tool) in app.grants {
             self.grant(app.id, owner, tool);
@@ -270,9 +278,18 @@ impl Catalog {
         self.budgets.get(app).copied().unwrap_or_default()
     }
 
-    /// An app's `tools.json` (replaces what it declared before).
+    /// Whether `app`'s own agent may call its `tool` (its entry's
+    /// `agent.own_tools`; every tool of an app that does not narrow them).
+    pub fn own_allows(&self, app: &str, tool: &str) -> bool {
+        self.own.get(app).map_or(true, |own| own.contains(tool))
+    }
+
+    /// An app's `tools.json` (replaces what it declared before, and any
+    /// narrowing of its own agent's tools with it: [`Catalog::load_native`]
+    /// narrows again after it declares).
     pub fn declare(&mut self, app: &str, entries: Vec<Value>) {
         self.tools.insert(app.to_string(), entries);
+        self.own.remove(app);
     }
 
     /// A grant of `owner`'s shareable `tool` to `caller`'s agent.
@@ -352,7 +369,14 @@ impl Catalog {
     /// What `app`'s peer registers: its own tools, and the shareable tools of
     /// other apps granted to it; each names its owning app (`app`).
     pub fn declarations(&self, app: &str, dev_all: bool) -> Vec<Value> {
-        let mut out: Vec<Value> = self.tools.get(app).into_iter().flatten().filter_map(|e| host_tools::declaration(e, Some(app))).collect();
+        let mut out: Vec<Value> = self
+            .tools
+            .get(app)
+            .into_iter()
+            .flatten()
+            .filter(|e| self.own_allows(app, e["name"].as_str().unwrap_or("")))
+            .filter_map(|e| host_tools::declaration(e, Some(app)))
+            .collect();
         for (owner, entries) in &self.tools {
             if owner == app {
                 continue;
@@ -658,7 +682,10 @@ impl Relay {
                 call.caller_kind == CallerKind::AppPeer && calling == owner && (tool != DEV_RUN || env.grants_all(&calling)),
             ),
             CallerKind::System => (Caller::SystemAgent, env.system_tools().contains(&tool) || env.grants_all(SYSTEM)),
-            CallerKind::AppPeer if calling == owner => (Caller::OwnAgent { client: call.client.clone() }, self.catalog.entry(&owner, &tool).is_some() || env.grants_all(&owner)),
+            CallerKind::AppPeer if calling == owner => (
+                Caller::OwnAgent { client: call.client.clone() },
+                self.catalog.entry(&owner, &tool).is_some() && self.catalog.own_allows(&owner, &tool) || env.grants_all(&owner),
+            ),
             CallerKind::AppPeer => {
                 let dev = env.grants_all(&calling);
                 (Caller::AppAgent { app: calling.clone() }, self.catalog.may_call(&calling, &owner, &tool, dev) || (dev && self.catalog.entry(&owner, &tool).is_none()))
@@ -691,6 +718,9 @@ impl Relay {
         if !granted {
             env.log(format!("host tools: {} refused {tool} for {} (not granted)", owner, caller.as_audit()));
             return refuse(&reply, "not_granted", format!("{tool} is not granted to {}", crate::approvals::sheet::caller_label(&owner, &caller)));
+        }
+        if let Err(why) = Self::check_admission(&call, env) {
+            return refuse(&reply, "app_unavailable", why);
         }
         if call.caller_kind == CallerKind::AppPeer {
             if !env.consent(&calling) {
@@ -734,7 +764,12 @@ impl Relay {
         // a peer link for its conversation (#142): the link serves the tools
         // of an app that has nothing else, a process app or a module that
         // serves its tools over the link.
-        if env.has_link(&owner) && !self.executors.contains_key(&owner) {
+        // A tool the host confirms (`confirm: host`: the Terminal's `run`)
+        // stays off the link when the app also serves it on the AI bus:
+        // the host's sheet decides it there, and a link has no
+        // confirmation of its own.
+        let host_confirms = entry.as_ref().and_then(|e| e.get("confirm")).and_then(Value::as_str) == Some("host");
+        if env.has_link(&owner) && !self.executors.contains_key(&owner) && !(host_confirms && serves_on_bus(&owner)) {
             let kernel_call = KernelToolCall {
                 call_id: call.call_id.clone(),
                 name: tool.clone(),
@@ -807,6 +842,12 @@ impl Relay {
         if !reply.is_open() {
             return;
         }
+        // A catalog refresh can withdraw either side while a human approval
+        // is pending. An earlier admission or approval is not a running lease.
+        if let Err(why) = Self::check_admission(&call, env) {
+            reply.finish(ToolOutcome::error("app_unavailable", why));
+            return;
+        }
         let call_id = call.call_id.clone();
         match target {
             Target::Executor(owner) => {
@@ -826,6 +867,15 @@ impl Relay {
                 env.bus_call(&bus_id, &app, &short, args);
             }
         }
+    }
+
+    fn check_admission(call: &HostToolCall, env: &dyn Env) -> Result<(), String> {
+        env.admitted(&call.app)?;
+        if call.caller_kind == CallerKind::AppPeer {
+            let caller = app_of_peer(&call.calling_app);
+            if caller != call.app { env.admitted(caller)?; }
+        }
+        Ok(())
     }
 
     fn cancel(&mut self, call_id: &str, reason: &str, env: &mut dyn Env) {

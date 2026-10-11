@@ -10,8 +10,9 @@ The OctoSense phone shell: a Makepad app that is the device's Home screen.
 Home pages with live tiles and app pairs, a gesture layer, the shade
 (notifications left, controls right), Recents, a live island for ongoing
 activities, and hosted apps drawn in-process inside its tiles: App Hub and
-the apps it runs, the system apps, Reference and Sheets, and the octos agent
-kernel as a service. (AppCard is not shipped for now; it links only with
+the apps it runs, the system apps, Reference and Sheets, the Makepad apps
+Calculator, Clock, Notes, Reminders and Weather (each with its own agent),
+and the octos agent kernel as a service. (AppCard is not shipped for now; it links only with
 `--features app-appcard`.)
 
 Home is one of the three products in this repository (the
@@ -42,7 +43,7 @@ run cargo from this directory: `phone/.cargo/config.toml` selects the
 phone's system apps.
 
 **On a desktop**, the phone shell in a phone-sized window with App Hub, the
-seven system apps and the built-in Settings (only macOS is built in CI):
+eight system apps and the built-in Settings (only macOS is built in CI):
 
 ```sh
 cargo run --release -p octosense-home --features mobile-only
@@ -104,6 +105,13 @@ APK and device validation remain separate: [App Studio milestone 1](../docs/adr/
 is in progress; the full phone authoring loop is not yet available.
 The [studio device probe](../tools/studio-device-probe.py) checks denial, light/dark PNG output and background cancellation in that separate package. It needs a `--dev-mode` APK built with `MAKEPAD_FORCE_DEBUGGABLE=1` so `run-as` can provision test fixtures. The probe restores developer settings and returns to Home; it neither installs APKs nor tests model image delivery. Resolve startup permission prompts before running the probe; rendering does not need location access, which can remain denied. Device execution remains **unverified** until its evidence is recorded.
 
+The manifest's `dev.makepad.android.APPLICATION_EXTENSION` metadata keeps
+the Java integration class fixed when the application ID changes. Rebuild the
+pinned packager after preparing runtime patches: an older loader may ignore
+this setting and silently omit Android Back handling and other platform
+integration in a custom package. After installing a test build, open News or
+Photos and verify that an edge Back swipe returns to OctoSense Home.
+
 **OpenHarmony:** `python3 rom/scripts/build-home-ohos.py --deveco-home ...
 --packager ... --signing-config ...` builds a normal OpenHarmony app with an
 existing DevEco signing profile
@@ -111,6 +119,38 @@ existing DevEco signing profile
 **iOS simulator:** from `phone/`,
 `../.sources/makepad/target/release/cargo-makepad makepad apple ios --org=dev.makepad --app=octosense run-sim -p octosense-home --features mobile-only`.
 Neither is built in CI.
+
+## Application icons
+
+Home uses the same green eight-petal OctoSense mark as the desktop package:
+
+| Platform | Packaged artwork |
+| --- | --- |
+| Android | Five legacy launcher densities, adaptive foreground/background layers, and Android 13 monochrome artwork for themed icons; the normal manifest names these resources |
+| iOS/iPadOS | `packaging/ios/icons/Assets.xcassets`, with correctly sized iPhone, iPad and App Store PNGs; opaque squares let iOS apply the corner mask |
+| OpenHarmony | `ohos/icons/`, copied by `rom/scripts/build-home-ohos.py` over the pinned template's application, layered launcher and launch-window icons |
+| Desktop preview | `resources/icon_*.png`, `icon.ico` and `icon.icns`, plus the workspace's Cargo icon environment |
+
+The Android foreground fits the platform's
+[adaptive-icon safe area](https://developer.android.com/develop/ui/compose/system/icon_design_adaptive).
+The iOS catalog supplies the
+[Apple app-icon slots](https://developer.apple.com/library/archive/documentation/Xcode/Reference/xcode_ref-Asset_Catalog_Format/AppIconType.html)
+directly, avoiding Makepad's fallback that reuses one image at every size.
+Normal builds consume committed assets. Regeneration and checks are documented
+in [Application icons](../desktop/README.md#application-icons).
+
+Android resources and iOS catalogs compile with the local platform tools;
+OpenHarmony template replacement has a packaging regression test. Home was
+freshly installed as `OctoSense Icons` (`dev.makepad.octosense.icontest`) on a
+Pixel 7 Pro running Android 17: App info displays the branded adaptive icon
+and the Home screen renders after launch. The original installation and
+default Pixel Launcher were preserved. Android themed-icon mode, installed
+iOS/OpenHarmony appearance and a complete OpenHarmony HAP build remain
+**unverified**.
+
+`OctoSense Icons` was a command-line label override for that separate test
+installation. Normal Android/iOS/desktop builds remain named **OctoSense**;
+OpenHarmony retains its existing **OctoSense Home** name.
 
 ## The Home role
 
@@ -120,7 +160,19 @@ The activity offers the `HOME` intent filter and is `singleInstance`. On a devic
 adb shell cmd package set-home-activity dev.makepad.octosense/.MakepadApp
 ```
 
-or pick OctoSense in Android's Home chooser. A Home press or gesture then reaches the running shell as `Event::HomeIntent` and shows the home page. What the Home role does **not** change: the system keeps its bottom gesture zone, its Recents (swipe-up-and-hold) and its status-bar shade. **3-button navigation** removes the gesture-zone race and is the recommended mode:
+or pick OctoSense in Android's Home chooser. A Home press or gesture then reaches the running shell as `Event::HomeIntent` and shows the home page.
+
+After installing or choosing Home, enter it through Android's Home button or
+gesture before testing side swipes. Starting the activity explicitly with
+`am start` can put even the selected launcher in a standard activity task.
+Android then limits side-gesture exclusions to 200 dp, so only a short strip
+near the bottom pages correctly. The actual Home task reserves both side edges
+throughout the page body; apps, expanded cards, the keyboard and overlays
+release them for Back. This was verified on OnePlus 6 / Android 15.
+
+The system still owns its bottom gesture zone, Recents (swipe-up-and-hold)
+and status-bar shade. Three-button navigation is an alternative for those
+system gestures; it is not required for Home's side paging:
 
 ```sh
 adb shell cmd overlay enable-exclusive --category com.android.internal.systemui.navbar.threebutton
@@ -128,7 +180,42 @@ adb shell cmd overlay enable-exclusive --category com.android.internal.systemui.
 
 (`…navbar.gestural` restores gestures.) The privileged route — owning the gesture zone and Recents — is sized in [docs/android/launcher-plan.md](docs/android/launcher-plan.md) and not started.
 
+## One Glance feed for all apps
+
+Swipe right from the first Home page to see the shared Glance feed. Mail,
+Calendar, News and other apps with the Glance capability publish into the same
+host store. A card keeps its publishing app, account and item identity; tapping
+its summary opens that card's workspace. Card/Chat uses that app's agent, while
+Mail's Email/Chat workspace uses its saved reply draft. Returning closes the
+workspace back to the shared feed. Mail does not need a separate Glance app.
+
+The feed scrolls all retained cards, ordered by priority and recency. Only
+visible summaries are painted; off-screen cards do not run their generated UI.
+There is no four-card publisher quota or six-card phone cutoff. Retained
+payload budgets and expiry bound storage independently of the scroll viewport.
+Under payload pressure, older cards can retire; saved Mail drafts remain in
+the Mail service.
+
+A bound Mail reply leaves Glance after its saved send receipt confirms SMTP
+acceptance. Its draft and receipt remain stored; the current success view stays
+open until Back. Opening, editing, cancelling or an uncertain/failed send does
+not complete a card. Restart and notification restore cannot resurrect the
+accepted reply. New incoming messages still pass through the importance filter
+and can publish their own cards; conversation-wide card/chat merging is not
+implemented. Other apps retain their existing completion rules. See
+[completion validation](../docs/testing/mail-completion-2026-10-05.md).
+
+Separate Android test packages are separate copies of the shell, each with
+private accounts and cards. They do not contribute cards to the normal Home.
+Launcher acceptance must start from Android's actual Home role, swipe into
+Glance and open cards from multiple publishers; opening a test package directly
+does not establish that integration.
+
 ## Gestures
+
+Home paging carries finger velocity into its settling spring. Search and Glance lists progressively resist pulling beyond an edge and rebound after release. A cancelled Home search pull retracts; a committed pull finishes opening before the keyboard takes focus. Reduced motion skips decorative settling while keeping direct dragging and in-bounds inertia. The shared Rust motion model has been exercised on a OnePlus 6 in a separate `dev.makepad.octosense.fluidtest` build; this is gesture validation, not a claim of hitch-free presentation on every device. Navigation prepares the search editor, a bounded set of result glyphs and the first Glance summaries across quiet Home frames; touching the screen suspends preparation. Offscreen launcher cells are culled before their icons or labels are resolved, including the neighboring page briefly exposed by spring overshoot.
+
+Search and Glance group non-overlapping drawing to reduce GPU submissions. Once a search sheet is still, Home can retain its image for the closing fade while Android hides the keyboard; typing, selection and scrolling remain live. Query, catalog, geometry, appearance and editing changes retire the old image. A fast dismissal without a current capture uses normal drawing.
 
 | Where | Gesture | Does |
 |---|---|---|
@@ -136,11 +223,11 @@ adb shell cmd overlay enable-exclusive --category com.android.internal.systemui.
 | Home page, right quarter | pull down | the shade's Controls (Wi-Fi, brightness, …) |
 | Home page, left quarter | pull down | the shade's Notifications |
 | Top edge, left / right | pull down | Notifications / Controls (as well) |
-| Home page | swipe sideways | pages: Glance ⇠ apps ⇢ App Library |
+| Home page, including both side edges on Android | swipe sideways | pages: Glance ⇠ apps ⇢ App Library |
 | App Library | drag | scrolls the grid; past either end it stretches and springs back (Back or Home closes it) |
 | App Library or Search | swipe right across the content | returns to the Home page you left and dismisses the keyboard |
 | Bottom band (above the system's) | swipe up / hold / sideways | Home / Recents / quick switch |
-| Side edges | swipe in | Back |
+| Side edges inside an app or opened card | swipe in | Back; on Android Home, the side edges belong to paging |
 | App icon | long press | Add to / remove from Home, dock, App info, Uninstall |
 | Home-page icon | long press, then drag | Reorder the page (drop between icons), dock it (drop on the dock), make a folder (drop on another icon) or add to one (drop on a folder tile) |
 | App pair tile | long press | Change either app, or remove the pair |
@@ -148,9 +235,19 @@ adb shell cmd overlay enable-exclusive --category com.android.internal.systemui.
 | App tile | long press | Remove the tile (the home menu's "Show hidden tiles" brings them back) |
 | Empty home | long press | Widgets, Light/Dark appearance, Grid: 4 or 5 columns, Pull-downs (launcher shade or system-wide panel), System setup, Show hidden tiles |
 
+Android hosted apps reserve a 48-point bottom row for Home and Recents, outside the app's drawing and input viewport. The row disappears while the keyboard is shown, returning that space to the editor; Android's system Back remains available. Home and OpenHarmony retain their existing floating controls. Startup and resume no longer request location permission for the legacy GPS cache: it updates only when permission was already granted. Maps requests location only after **Your location** is tapped. That action requires the app's location grant and opens Android's normal permission flow; cached GPS reads and startup never request it. Until a real fix arrives, Maps keeps the previous named origin and explains how to choose another. Retained theme changes also keep existing labels wrapped, including message bodies filled after the view opens; an app’s explicit single-line flow remains respected. These follow-up changes require renewed device acceptance.
+
+On Android the top edge is the system's: it opens the system-wide OctoSense panel when that is on (the OctoSense ROM; Home's side pulls then open search), and Android's own panel otherwise. OpenHarmony has no shade.
+
 A pull commits from 40 % of the way (≈135 px on a 1080-wide phone); navigation swipes need the full distance or a flick. While a pull is in flight the page dims and a search field rises from the bottom with the finger; a committed gesture gives a short haptic tick. Until each hidden gesture has been used once, the home page shows a one-line hint for it (`crates/shell/src/mobile_hints.rs`; Android remembers what was seen). A second Home press on a settled home page returns to the primary page.
 
 Search opens only by pulling down on Home; the App Library has no search bar. As in iOS, the search field sits at the bottom above the keyboard, the list stays empty until you type, and every keystroke narrows it: an app matches when its name, or a word in it (a capital inside a word counts, so "tube" finds YouTube), starts with what you typed, ignoring case and accents. Names that start with it come first, and Return opens the best match. In the App Library, a letter column on the right jumps the grid, and with usage access a "Suggested" row of recently used apps sits on top. Icons carry a dot while their app has a notification in the shade. Recents lists the hosted apps as cards and, with usage access granted in Android's Settings (the card in Recents opens it), a row of the Android apps used lately. Every tappable region is an accessibility node with a spoken label, so TalkBack and UI automation can read and activate the shell (verified with TalkBack installed and with a UiAutomation probe: accessibility focus lands on a node and its click action opens the app, the shade or the drawer; note that `adb shell input` taps bypass TalkBack's touch exploration, so a real screen-reader touch cannot be scripted). Labels follow Android's text size setting. The shell follows Android's dark theme and draws under transparent system bars; the shade's Dark mode tile overrides the appearance until the system setting next changes. The bridge's failure reasons reach the person as plain sentences (`result_copy` in `crates/shell/src/android_integration.rs`), never as reason codes.
+
+Glance keeps compact publication summaries. A tap promotes the selected card into a resident, full-screen workspace above the feed, using the summary only as the animation origin. Other cards are covered and cannot receive input; the feed never reserves a larger item. **Email / Chat** share one row. Email gives most of its space to the editable message. **Original**, **Details** and **Review** share one compact action row; Details expands recipient and subject editing, and Review opens the exact-message approval surface. The original message and its headers scroll together. Text selection uses a muted blue-gray highlight without darkening the editor. When a landscape keyboard leaves very little height, body editing temporarily hides the title, tabs and action row; dismissing the keyboard restores them. Chat has a virtualized transcript and a composer above the keyboard. A confirmed model edit offers **View updated email** and reads the same authoritative draft. Back first dismisses the keyboard, then review, then the workspace. Returning to Glance keeps draft, unsent chat, pane and widget scroll state in the same process. Three inactive clean workspaces are cached; unsent human input is excluded from clean-cache eviction. Account invalidation or publication withdrawal retires the corresponding workspace. Drafts remain durable; unsent chat input is not promised across process death. No activity, app, agent or model generation is launched by the presentation transition. See [the Mail workflow](../docs/mail-composable-cards.md) for device evidence and the withdrawn UX score.
+
+All publishers use that same workspace, including Calendar, News, Photos, YouTube and prototype Finance cards. An app with a declared agent gets a native **Card / Chat** row even when its published L0 or Splash UI does not embed `sys.chat`. The host binds that fallback conversation to the publisher, account and card, and attaches the publication data plus current L0 state as bounded, untrusted context. An existing explicit conversation keeps its declared thread. Chat does not invent tools or authorize external actions; an app without an agent has no Chat tab. Calendar is included in Home's system-app catalog; Finance is not a shipping system app.
+
+Local L0 changes and interacted Splash isolates are also protected from clean-cache eviction. A data-only L0 republish keeps local state; a changed layout is deferred when the workspace contains local changes or unfinished chat. The feed can show the newer summary while that resident workspace keeps its interaction snapshot. Withdrawal, expiry or account invalidation retires it. This is in-process retention, not a generic durable app-state service. Mail's saved draft, editing tools and physical send approval remain Mail-specific; an installed Gmail app gets its own through the `gmail` service ([OAuth guide](../crates/oauth-service/README.md)).
 
 ## Built-in Settings
 
@@ -177,6 +274,8 @@ mounts the artwork Home owns (Photos' sample library,
 isolate under its manifest's policy, in the standalone Home and in the ROM
 alike. Each keeps its short launcher id (`news` for `os.news`), so icons,
 tiles and the dock are unchanged.
+
+On Android, an enabled Mail agent also uses quiet, network-constrained background jobs approximately every 15 minutes; Android may delay them. It can collect and assess mail without opening Home. Only a model-approved `notify: true` card posts a native notification, whose tap reopens the original account-bound card. The importance policy is provisioned by the system agent; ordinary mail is skipped. Force-stop pauses jobs until the app is opened again. See [Mail events](../docs/mail-agent-events.md) and [ADR 0008](../docs/adr/0008-quiet-android-mail-jobs.md).
 
 Mail reads and sends through the `mail` host service
 ([`apps/mail/host-service`](../apps/mail/host-service)): the person signs in on the host's own sheet, the
@@ -213,6 +312,14 @@ stops when the last one leaves and on Home's shutdown. To build without it
 
 **Talk to Octos** (off by default): **AI providers → Talk to Octos** turns on a loopback server so a web client or a terminal UI can talk to this device's assistant. While it is on, the kernel runs as `octos serve --host-managed` instead of `--stdio` and native apps keep working over its WebSocket; external clients get a separate token that opens the UI Protocol socket and nothing else. A web client pairs with a one-time code or the QR of its link; a terminal client of this user reads the private connection file. The server stays up when native apps close, until it is turned off or the shell exits. See [ADR 0003](../docs/adr/0003-shared-octos-client-access.md) and the [kernel guide](../crates/kernel/README.md).
 
+### Apps' WebAssembly functions
+
+Home's default build runs the `wasm` host service on Android: apps' own
+WebAssembly functions (ADR 0011, [WebAssembly in OctoSense](../docs/wasm.md)),
+feature `wasm-functions`, compiled by Cranelift. iOS and OpenHarmony builds
+leave the runtime out, so a call there answers
+`no service answers "wasm" on this device`.
+
 ### AI providers
 
 AI providers (`os.ai-providers`) edits the octos kernel's LLM providers
@@ -248,7 +355,7 @@ See the crate's
 [README](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/main/crates/app-hub-app/README.md)
 (read the revision selected by the root `Cargo.toml`) and the [native design evidence](docs/design/app-hub/README.md).
 App authors start with
-[OctoScript-App-Design-Flow](https://github.com/OctoSense-org/OctoScript-App-Design-Flow).
+[OctoSense App Flow](https://github.com/OctoSense-org/OctoSense-App-Flow) (formerly Design Flow).
 
 ## Run on a desktop
 

@@ -1,0 +1,34 @@
+diff --git a/widgets/src/splash_storage.rs b/widgets/src/splash_storage.rs
+index 56bca0918..8c3f2f95b 100644
+--- a/widgets/src/splash_storage.rs
++++ b/widgets/src/splash_storage.rs
+@@ -36,6 +36,11 @@
+ 
+ /// Largest single file the jail accepts (write or append result).
+ pub const MAX_FILE_BYTES: u64 = 1024 * 1024;
++/// Largest file a native host may stage into a jail
++/// ([`StorageSnapshot::prepare_import`]): a document the person chose, a
++/// recording. Staged bytes never pass through the script heap, so the
++/// per-file write limit does not apply; the jail's byte quota still does.
++pub const MAX_IMPORT_BYTES: u64 = 64 * 1024 * 1024;
+ /// Largest total jail size.
+ pub const MAX_TOTAL_BYTES: u64 = 16 * 1024 * 1024;
+ /// Most entries (files + dirs) a jail may hold.
+@@ -157,7 +162,7 @@ pub fn read_bytes(&self, path: &str) -> Result<Vec<u8>, String> {
+     /// cannot read the temporary through fs, and Drop removes abandoned work.
+     pub fn prepare_import(&self, path:&str, bytes:&[u8])->Result<PreparedStorageImport,String>{
+         use std::io::Write;
+-        if bytes.len() as u64>MAX_FILE_BYTES{return Err("file too large".into());}
++        if bytes.len() as u64>MAX_IMPORT_BYTES{return Err("file too large".into());}
+         let target=resolve_jailed(&self.root,path)?;
+         if target==self.root{return Err("cannot write the storage root".into());}
+         verify_no_symlinks(&self.root,&target)?;
+@@ -202,7 +207,7 @@ pub fn commit_import(&self, staged:PreparedStorageImport)->Result<(),String>{
+         if self.root!=staged.scope.root||self.quota!=staged.scope.quota{return Err("app storage scope changed".into());}
+         let real=self.target(&staged.path)?;
+         if std::fs::symlink_metadata(&real).is_ok(){return Err("destination already exists".into());}
+-        if staged.bytes>MAX_FILE_BYTES{return Err("file too large".into());}
++        if staged.bytes>MAX_IMPORT_BYTES{return Err("file too large".into());}
+         let(total,entries)=jail_usage(&self.root);
+         if total.saturating_add(staged.bytes)>self.quota{return Err("app storage is full".into());}
+         if entries.saturating_add(missing_entries(&self.root,&real))>MAX_ENTRIES{return Err("too many files".into());}

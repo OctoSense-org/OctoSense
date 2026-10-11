@@ -1,4 +1,12 @@
 plugins { id 'com.android.application' }
+def requestedVersionCode = providers.gradleProperty('octosenseVersionCode').getOrElse('1')
+def requestedVersionName = providers.gradleProperty('octosenseVersionName').getOrElse('1.0.0')
+if (!(requestedVersionCode ==~ /[0-9]+/) || requestedVersionCode.toBigInteger() <= 0 || requestedVersionCode.toBigInteger() >= 2100000000) {
+    throw new GradleException('octosenseVersionCode must be a positive Android version code below 2100000000.')
+}
+if (!(requestedVersionName ==~ /[A-Za-z0-9][A-Za-z0-9.+_-]{0,63}/)) {
+    throw new GradleException('octosenseVersionName must be a plain release version (1-64 characters).')
+}
 def managedKeystore = System.getenv('OCTOSENSE_KEYSTORE')
 def signingValue = { String name ->
     def value = System.getenv(name)
@@ -13,8 +21,8 @@ android {
         applicationId 'dev.makepad.octosense.bridge'
         minSdk 26
         targetSdk 35
-        versionCode 1
-        versionName '1.0.0'
+        versionCode requestedVersionCode.toInteger()
+        versionName requestedVersionName
     }
     signingConfigs {
         octosense {

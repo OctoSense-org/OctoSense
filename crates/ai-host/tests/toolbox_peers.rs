@@ -220,8 +220,8 @@ fn case(template: &str, name: &str) -> FixtureCase {
     serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap()
 }
 
-fn manifest(capabilities: &[&str], scope: Option<Value>) -> Value {
-    let mut m = json!({"id": APP, "capabilities": capabilities});
+fn manifest(tools: &[&str], scope: Option<Value>) -> Value {
+    let mut m = json!({"id": APP, "capabilities": [], "agent": {"tools": tools}});
     if let Some(scope) = scope {
         m["research"] = scope;
     }
@@ -252,34 +252,37 @@ fn news(root: &Path, data: FixtureData, grant: ToolboxGrant) -> (Broker, Arc<Mut
 // ---- registration ---------------------------------------------------------------
 
 #[test]
-fn a_peer_is_offered_exactly_its_declared_and_granted_toolbox_tools() {
+fn a_peer_is_offered_exactly_its_requested_shared_tool_names() {
     let root = temp("register");
     let data = case("news-digest", "city-infrastructure").fixture;
     let names = |grant: ToolboxGrant| -> Vec<String> { registered_names(&news(&root, data.clone(), grant).1) };
     let crawl_scope = Some(json!({"max_depth": 2, "max_pages": 5}));
-    // research: the templates and the single research tools.
-    assert_eq!(names(ToolboxGrant::for_manifest(APP, &manifest(&["storage", "research"], None))), [RUN, FORK, SEARCH, WEB_READ]);
-    // research and crawl, with crawl limits.
-    assert_eq!(
-        names(ToolboxGrant::for_manifest(APP, &manifest(&["research", "crawl"], crawl_scope.clone()))),
-        [RUN, FORK, SEARCH, WEB_READ, DEEP_CRAWL]
-    );
-    // crawl alone: only the crawl.
-    assert_eq!(names(ToolboxGrant::for_manifest(APP, &manifest(&["crawl"], crawl_scope.clone()))), [DEEP_CRAWL]);
-    // crawl without limits in the scope: no crawling.
-    assert!(names(ToolboxGrant::for_manifest(APP, &manifest(&["research", "crawl"], None))).iter().all(|n| n != DEEP_CRAWL));
-    // No grant: the empty set is still registered.
-    assert!(names(ToolboxGrant::for_manifest(APP, &manifest(&["storage", "net"], None))).is_empty());
-    // Declared but not granted, or granted but not declared: nothing.
+    let requested = [RUN, FORK, SEARCH, WEB_READ, DEEP_CRAWL];
+    // Omitted, empty, and partial family disclosures have identical behavior.
+    for capabilities in [None, Some(json!([])), Some(json!(["research"])), Some(json!(["research", "crawl"]))] {
+        let mut m = manifest(&requested, crawl_scope.clone());
+        if let Some(capabilities) = capabilities { m["capabilities"] = capabilities; }
+        else { m.as_object_mut().unwrap().remove("capabilities"); }
+        assert_eq!(names(ToolboxGrant::for_manifest(APP, &m)), requested);
+    }
+    // Selecting search never grants a write, workflow run, reader, or crawler.
+    assert_eq!(names(ToolboxGrant::for_manifest(APP, &manifest(&[SEARCH], crawl_scope.clone()))), [SEARCH]);
+    assert_eq!(names(ToolboxGrant::for_manifest(APP, &manifest(&[DEEP_CRAWL], crawl_scope.clone()))), [DEEP_CRAWL]);
+    // Scope limits remain mandatory even for an explicitly requested crawl.
+    assert!(names(ToolboxGrant::for_manifest(APP, &manifest(&[DEEP_CRAWL], None))).is_empty());
+    // A disclosure alone, unknown tools, or a plain app grants no shared tool.
+    let mut no_requests = manifest(&[], crawl_scope.clone());
+    no_requests["capabilities"] = json!(["research", "crawl"]);
+    assert!(names(ToolboxGrant::for_manifest(APP, &no_requests)).is_empty());
+    no_requests["agent"] = Value::Null;
+    assert!(names(ToolboxGrant::for_manifest(APP, &no_requests)).is_empty());
+    assert!(names(ToolboxGrant::for_manifest(APP, &manifest(&["toolbox.unknown", "mail.send"], None))).is_empty());
+    // The native host's explicit reviewed family offer is unchanged.
     assert!(names(ToolboxGrant::new(APP, ["research", "crawl"], ["storage"], crawl_scope.as_ref())).is_empty());
-    assert!(names(ToolboxGrant::new(APP, ["storage"], ["research", "crawl"], crawl_scope.as_ref())).is_empty());
-    // Declared and granted in part: only the intersection.
     assert_eq!(names(ToolboxGrant::new(APP, ["research", "crawl"], ["crawl"], crawl_scope.as_ref())), [DEEP_CRAWL]);
-    // A native module: what it declares (reviewed with the shell).
     assert_eq!(ToolboxGrant::for_module("rinx", &["octos.turn.start"]).tools(), BTreeSet::new());
     assert_eq!(ToolboxGrant::for_module("reference", &["research"]).tools(), BTreeSet::from([RUN, FORK, SEARCH, WEB_READ]));
-    // Each registered tool names its owning app and is what the kernel takes.
-    let full = ToolboxGrant::for_manifest(APP, &manifest(&["research", "crawl"], crawl_scope));
+    let full = ToolboxGrant::for_manifest(APP, &manifest(&requested, crawl_scope));
     for d in registered(&news(&root, data, full).1) {
         assert_eq!(d["app"], OWNER, "{d}");
         assert_eq!(d["risk"], if d["name"] == FORK { "act" } else { "read" }, "{d}");
@@ -293,7 +296,7 @@ fn no_toolbox_tool_is_offered_or_run_before_consent() {
     let root = temp("consent");
     let case = case("news-digest", "city-infrastructure");
     let executor = fixture_executor(&root, case.fixture.clone());
-    executor.set_grant(APP, ToolboxGrant::for_manifest(APP, &manifest(&["research"], None)));
+    executor.set_grant(APP, ToolboxGrant::for_manifest(APP, &manifest(&[RUN, FORK, SEARCH, WEB_READ], None)));
     let host = relay(executor);
     host.consent.store(false, Ordering::SeqCst);
     let (broker, script) = bound(host.clone());
@@ -312,18 +315,37 @@ fn no_toolbox_tool_is_offered_or_run_before_consent() {
 }
 
 #[test]
-fn until_app_hub_verifies_the_grant_only_system_apps_get_what_their_manifest_declares() {
-    let store = json!({"id": "com.example.news", "capabilities": ["research", "crawl"], "research": {"max_depth": 1, "max_pages": 3}});
+fn admitted_store_agents_use_the_same_toolbox_policy_as_system_agents() {
+    let store = json!({"id": "com.example.news", "capabilities": [], "agent": {"tools": [RUN, FORK, SEARCH, WEB_READ, DEEP_CRAWL]}, "research": {"max_depth": 1, "max_pages": 3}});
     let grant = ToolboxGrant::for_manifest("com.example.news", &store);
-    assert!(grant.is_empty());
-    assert!(grant.notes[0].contains("only system apps"), "{:?}", grant.notes);
+    assert_eq!(grant.grants, BTreeSet::from(["research".to_owned(), "crawl".to_owned()]));
+    assert_eq!(grant.tools(), BTreeSet::from([RUN, FORK, SEARCH, WEB_READ, DEEP_CRAWL]));
+    assert!(grant.notes.is_empty());
     // A manifest for another app, or a scope octos refuses, grants nothing.
-    assert!(ToolboxGrant::for_manifest("os.mail", &manifest(&["research"], None)).is_empty());
-    let bad = ToolboxGrant::for_manifest(APP, &manifest(&["research"], Some(json!({"languages": ["en"]}))));
+    assert!(ToolboxGrant::for_manifest("os.mail", &manifest(&[RUN, FORK, SEARCH, WEB_READ], None)).is_empty());
+    let bad = ToolboxGrant::for_manifest(APP, &manifest(&[RUN, FORK, SEARCH, WEB_READ], Some(json!({"languages": ["en"]}))));
     assert!(bad.is_empty() && bad.notes[0].contains("old toolbox shape"), "{:?}", bad.notes);
-    let good = ToolboxGrant::for_manifest(APP, &manifest(&["research"], Some(json!({"langs": ["en"], "max_age_days": 2}))));
+    let good = ToolboxGrant::for_manifest(APP, &manifest(&[RUN, FORK, SEARCH, WEB_READ], Some(json!({"langs": ["en"], "max_age_days": 2}))));
     assert_eq!(good.grants, BTreeSet::from(["research".to_owned()]));
     assert_eq!(good.scope.langs, ["en"]);
+}
+
+#[test]
+fn a_search_request_never_grants_other_research_tools_to_a_forged_call() {
+    let root = temp("exact-tools");
+    let executor = fixture_executor(&root, case("news-digest", "city-infrastructure").fixture);
+    executor.set_grant(APP, ToolboxGrant::for_manifest(APP, &manifest(&[SEARCH], Some(json!({"max_depth": 2, "max_pages": 5})))));
+    assert_eq!(executor.tools(APP), BTreeSet::from([SEARCH]));
+    for name in [RUN, FORK, WEB_READ, DEEP_CRAWL] {
+        let sent = Arc::new(Mutex::new(Vec::<Value>::new()));
+        let answer = sent.clone();
+        let mut forged = HostToolCall::parse(&json!({"peer": "news-1", "session_id": "s", "turn_id": "t", "call_id": "forged", "name": name, "app": OWNER, "caller": {"kind": "app_peer"}, "args": {}})).unwrap();
+        forged.calling_app = APP.into();
+        executor.execute(forged, ToolReply::new("forged", move |value| answer.lock().unwrap().push(value)));
+        assert_eq!(sent.lock().unwrap()[0]["error"]["kind"], "not_granted", "{name}");
+    }
+    assert!(!root.join(".host/toolbox/os.news").exists(), "refusals never start a worker or create results");
+    let _ = std::fs::remove_dir_all(root);
 }
 
 // ---- calls ----------------------------------------------------------------------
@@ -332,7 +354,7 @@ fn until_app_hub_verifies_the_grant_only_system_apps_get_what_their_manifest_dec
 fn a_workflow_run_is_executed_by_the_toolbox_and_its_result_lands_in_the_host_folder() {
     let root = temp("run");
     let case = case("news-digest", "city-infrastructure");
-    let (_broker, script, _) = news(&root, case.fixture.clone(), ToolboxGrant::for_manifest(APP, &manifest(&["research"], None)));
+    let (_broker, script, _) = news(&root, case.fixture.clone(), ToolboxGrant::for_manifest(APP, &manifest(&[RUN, FORK, SEARCH, WEB_READ], None)));
     let id = call(&script, RUN, json!({"id": "news-digest", "params": case.params, "run_id": "glance"}));
     let result = wait(&script, &id);
     assert_eq!(result["ok"], true, "{result}");
@@ -373,7 +395,7 @@ fn a_workflow_run_is_executed_by_the_toolbox_and_its_result_lands_in_the_host_fo
 fn calls_outside_the_scope_are_refused() {
     let root = temp("scope");
     let case = case("news-digest", "city-infrastructure");
-    let grant = ToolboxGrant::for_manifest(APP, &manifest(&["research"], Some(json!({"langs": ["en"], "domains_deny": ["example.invalid"]}))));
+    let grant = ToolboxGrant::for_manifest(APP, &manifest(&[RUN, FORK, SEARCH, WEB_READ], Some(json!({"langs": ["en"], "domains_deny": ["example.invalid"]}))));
     let (_broker, script, _) = news(&root, case.fixture.clone(), grant);
     let id = call(&script, SEARCH, json!({"query": "infrastructure", "lang": "fr"}));
     let refused = wait(&script, &id);
@@ -396,7 +418,7 @@ fn calls_outside_the_scope_are_refused() {
 fn an_app_without_crawl_cannot_crawl_even_with_a_forged_call() {
     let root = temp("crawl");
     let data = case("news-digest", "city-infrastructure").fixture;
-    let grant = ToolboxGrant::for_manifest(APP, &manifest(&["research"], Some(json!({"max_depth": 2, "max_pages": 5}))));
+    let grant = ToolboxGrant::for_manifest(APP, &manifest(&[RUN, FORK, SEARCH, WEB_READ], Some(json!({"max_depth": 2, "max_pages": 5}))));
     let executor = fixture_executor(&root, data);
     executor.set_grant(APP, grant);
     let (_broker, script) = bound(relay(executor.clone()));
@@ -423,7 +445,7 @@ fn a_cancelled_run_is_stopped_and_never_answered() {
     for search in &mut data.searches {
         search.delay_ms = 5_000;
     }
-    let (_broker, script, host) = news(&root, data, ToolboxGrant::for_manifest(APP, &manifest(&["research"], None)));
+    let (_broker, script, host) = news(&root, data, ToolboxGrant::for_manifest(APP, &manifest(&[RUN, FORK, SEARCH, WEB_READ], None)));
     let id = call(&script, RUN, json!({"id": "news-digest", "params": case.params, "run_id": "cancelled"}));
     std::thread::sleep(Duration::from_millis(200));
     assert_eq!(host.executor.running(), 1);
@@ -475,7 +497,7 @@ fn template_model_calls_use_the_model_service_and_the_apps_daily_budget() {
     let provider = Arc::new(FakeProvider::default());
     let host = model_host(provider.clone());
     let client = ModelHostClient::new(host.clone(), &root);
-    let grant = ToolboxGrant::for_manifest(APP, &manifest(&["research"], None));
+    let grant = ToolboxGrant::for_manifest(APP, &manifest(&[RUN, FORK, SEARCH, WEB_READ], None));
     let app = grant.app_context(APP, &root).unwrap();
     let ctx = CallContext {
         app: Arc::new(app),

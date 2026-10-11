@@ -1,0 +1,1379 @@
+{
+  "card_id": "mail-f8faa121399a4db82b4ccd81e1d533dbd3272c6b",
+  "model": "MiniMax (parent verified active provider)",
+  "original_inputs": {
+    "artifact": "cards/mail-f8faa121399a4db82b4ccd81e1d533dbd3272c6b.json",
+    "artifact_sha256": "f86e0347157c7b4e756b760cd9ffbd47436e1ce471ab1badf98cffa5cd4aa740",
+    "card_id": "mail-f8faa121399a4db82b4ccd81e1d533dbd3272c6b",
+    "source_sha256": "0707e480cc7f9774075898f1cd34980f85d57b4be9eda85f80045ddf1e222ef1",
+    "data_semantically_exact": true
+  },
+  "result": "Local interactions pass; visual button overflow fails",
+  "runs": {
+    "cap400": {
+      "native_clicks_passed": true,
+      "events": [
+        [
+          {
+            "applied": true,
+            "changed": [
+              "mode"
+            ],
+            "event": "show_code",
+            "key": "root/Col#0/when#0/w:Row#0/Chip#0",
+            "origin": "Authored",
+            "stale": [],
+            "writes": []
+          }
+        ],
+        [
+          {
+            "applied": true,
+            "changed": [
+              "mode"
+            ],
+            "event": "back",
+            "key": "root/Col#0/when#1/w:Chip#0",
+            "origin": "Authored",
+            "stale": [],
+            "writes": []
+          }
+        ],
+        [
+          {
+            "applied": true,
+            "changed": [
+              "mode"
+            ],
+            "event": "show_details",
+            "key": "root/Col#0/when#0/w:Row#0/Chip#1",
+            "origin": "Authored",
+            "stale": [],
+            "writes": []
+          }
+        ],
+        [
+          {
+            "applied": true,
+            "changed": [
+              "mode"
+            ],
+            "event": "back",
+            "key": "root/Col#0/when#2/w:Chip#0",
+            "origin": "Authored",
+            "stale": [],
+            "writes": []
+          }
+        ]
+      ],
+      "frames": {
+        "00-before": {
+          "labels": [
+            {
+              "text": "",
+              "rect": [
+                20,
+                36,
+                19,
+                19
+              ]
+            },
+            {
+              "text": "Mail",
+              "rect": [
+                47,
+                40,
+                216,
+                11
+              ]
+            },
+            {
+              "text": "Oct 4, 2026",
+              "rect": [
+                270,
+                40,
+                54,
+                11
+              ]
+            },
+            {
+              "text": "Simulation",
+              "rect": [
+                20,
+                63,
+                51,
+                11
+              ]
+            },
+            {
+              "text": "Ready for pickup",
+              "rect": [
+                77,
+                63,
+                79,
+                11
+              ]
+            },
+            {
+              "text": "Desk lamp ready for pickup",
+              "rect": [
+                20,
+                83,
+                304,
+                26
+              ]
+            },
+            {
+              "text": "Desk lamp is waiting at the pickup desk",
+              "rect": [
+                20,
+                117,
+                304,
+                17
+              ]
+            },
+            {
+              "text": "",
+              "rect": [
+                20,
+                142,
+                14,
+                13
+              ]
+            },
+            {
+              "text": "AI",
+              "rect": [
+                38,
+                142,
+                11,
+                13
+              ]
+            },
+            {
+              "text": "Bring code 4821 and photo ID to the pickup desk by Mon, Oct 5, 9:00 PM PDT.",
+              "rect": [
+                20,
+                158,
+                304,
+                28
+              ]
+            },
+            {
+              "text": "Show pickup code",
+              "rect": [
+                44,
+                203,
+                162,
+                21
+              ]
+            },
+            {
+              "text": "Pickup details",
+              "rect": [
+                262,
+                203,
+                62,
+                21
+              ]
+            }
+          ],
+          "last_text_bottom": 224,
+          "tap_targets": [
+            [
+              20,
+              194,
+              210,
+              39
+            ],
+            [
+              238,
+              194,
+              86,
+              39
+            ]
+          ]
+        },
+        "01-after": {
+          "labels": [
+            {
+              "text": "",
+              "rect": [
+                20,
+                36,
+                19,
+                19
+              ]
+            },
+            {
+              "text": "Mail",
+              "rect": [
+                47,
+                40,
+                216,
+                11
+              ]
+            },
+            {
+              "text": "Oct 4, 2026",
+              "rect": [
+                270,
+                40,
+                54,
+                11
+              ]
+            },
+            {
+              "text": "Simulation",
+              "rect": [
+                20,
+                63,
+                51,
+                11
+              ]
+            },
+            {
+              "text": "Ready for pickup",
+              "rect": [
+                77,
+                63,
+                79,
+                11
+              ]
+            },
+            {
+              "text": "Pickup code",
+              "rect": [
+                20,
+                83,
+                304,
+                11
+              ]
+            },
+            {
+              "text": "4821",
+              "rect": [
+                20,
+                102,
+                304,
+                26
+              ]
+            },
+            {
+              "text": "",
+              "rect": [
+                20,
+                136,
+                14,
+                13
+              ]
+            },
+            {
+              "text": "AI",
+              "rect": [
+                38,
+                136,
+                11,
+                13
+              ]
+            },
+            {
+              "text": "Bring code 4821 and photo ID to the pickup desk by Mon, Oct 5, 9:00 PM PDT.",
+              "rect": [
+                20,
+                152,
+                304,
+                28
+              ]
+            },
+            {
+              "text": "Back",
+              "rect": [
+                30,
+                193,
+                29,
+                14
+              ]
+            }
+          ],
+          "last_text_bottom": 207,
+          "tap_targets": [
+            [
+              20,
+              188,
+              49,
+              24
+            ]
+          ]
+        },
+        "02-after": {
+          "labels": [
+            {
+              "text": "",
+              "rect": [
+                20,
+                36,
+                19,
+                19
+              ]
+            },
+            {
+              "text": "Mail",
+              "rect": [
+                47,
+                40,
+                216,
+                11
+              ]
+            },
+            {
+              "text": "Oct 4, 2026",
+              "rect": [
+                270,
+                40,
+                54,
+                11
+              ]
+            },
+            {
+              "text": "Simulation",
+              "rect": [
+                20,
+                63,
+                51,
+                11
+              ]
+            },
+            {
+              "text": "Ready for pickup",
+              "rect": [
+                77,
+                63,
+                79,
+                11
+              ]
+            },
+            {
+              "text": "Desk lamp ready for pickup",
+              "rect": [
+                20,
+                83,
+                304,
+                26
+              ]
+            },
+            {
+              "text": "Desk lamp is waiting at the pickup desk",
+              "rect": [
+                20,
+                117,
+                304,
+                17
+              ]
+            },
+            {
+              "text": "",
+              "rect": [
+                20,
+                142,
+                14,
+                13
+              ]
+            },
+            {
+              "text": "AI",
+              "rect": [
+                38,
+                142,
+                11,
+                13
+              ]
+            },
+            {
+              "text": "Bring code 4821 and photo ID to the pickup desk by Mon, Oct 5, 9:00 PM PDT.",
+              "rect": [
+                20,
+                158,
+                304,
+                28
+              ]
+            },
+            {
+              "text": "Show pickup code",
+              "rect": [
+                44,
+                203,
+                162,
+                21
+              ]
+            },
+            {
+              "text": "Pickup details",
+              "rect": [
+                262,
+                203,
+                62,
+                21
+              ]
+            }
+          ],
+          "last_text_bottom": 224,
+          "tap_targets": [
+            [
+              20,
+              194,
+              210,
+              39
+            ],
+            [
+              238,
+              194,
+              86,
+              39
+            ]
+          ]
+        },
+        "03-after": {
+          "labels": [
+            {
+              "text": "",
+              "rect": [
+                20,
+                36,
+                19,
+                19
+              ]
+            },
+            {
+              "text": "Mail",
+              "rect": [
+                47,
+                40,
+                216,
+                11
+              ]
+            },
+            {
+              "text": "Oct 4, 2026",
+              "rect": [
+                270,
+                40,
+                54,
+                11
+              ]
+            },
+            {
+              "text": "Simulation",
+              "rect": [
+                20,
+                63,
+                51,
+                11
+              ]
+            },
+            {
+              "text": "Ready for pickup",
+              "rect": [
+                77,
+                63,
+                79,
+                11
+              ]
+            },
+            {
+              "text": "Example Pickup Desk, 100 Demo Street, Demo City",
+              "rect": [
+                20,
+                83,
+                304,
+                63
+              ]
+            },
+            {
+              "text": "Location",
+              "rect": [
+                20,
+                154,
+                304,
+                11
+              ]
+            },
+            {
+              "text": "Pickup hours",
+              "rect": [
+                20,
+                173,
+                304,
+                11
+              ]
+            },
+            {
+              "text": "9:00 AM - 9:00 PM PDT",
+              "rect": [
+                20,
+                193,
+                304,
+                17
+              ]
+            },
+            {
+              "text": "Collect by",
+              "rect": [
+                20,
+                218,
+                304,
+                11
+              ]
+            },
+            {
+              "text": "Mon, Oct 5, 2026, 9:00 PM PDT",
+              "rect": [
+                20,
+                237,
+                304,
+                17
+              ]
+            },
+            {
+              "text": "Back",
+              "rect": [
+                30,
+                268,
+                29,
+                14
+              ]
+            }
+          ],
+          "last_text_bottom": 282,
+          "tap_targets": [
+            [
+              20,
+              263,
+              49,
+              24
+            ]
+          ]
+        },
+        "04-after": {
+          "labels": [
+            {
+              "text": "",
+              "rect": [
+                20,
+                36,
+                19,
+                19
+              ]
+            },
+            {
+              "text": "Mail",
+              "rect": [
+                47,
+                40,
+                216,
+                11
+              ]
+            },
+            {
+              "text": "Oct 4, 2026",
+              "rect": [
+                270,
+                40,
+                54,
+                11
+              ]
+            },
+            {
+              "text": "Simulation",
+              "rect": [
+                20,
+                63,
+                51,
+                11
+              ]
+            },
+            {
+              "text": "Ready for pickup",
+              "rect": [
+                77,
+                63,
+                79,
+                11
+              ]
+            },
+            {
+              "text": "Desk lamp ready for pickup",
+              "rect": [
+                20,
+                83,
+                304,
+                26
+              ]
+            },
+            {
+              "text": "Desk lamp is waiting at the pickup desk",
+              "rect": [
+                20,
+                117,
+                304,
+                17
+              ]
+            },
+            {
+              "text": "",
+              "rect": [
+                20,
+                142,
+                14,
+                13
+              ]
+            },
+            {
+              "text": "AI",
+              "rect": [
+                38,
+                142,
+                11,
+                13
+              ]
+            },
+            {
+              "text": "Bring code 4821 and photo ID to the pickup desk by Mon, Oct 5, 9:00 PM PDT.",
+              "rect": [
+                20,
+                158,
+                304,
+                28
+              ]
+            },
+            {
+              "text": "Show pickup code",
+              "rect": [
+                44,
+                203,
+                162,
+                21
+              ]
+            },
+            {
+              "text": "Pickup details",
+              "rect": [
+                262,
+                203,
+                62,
+                21
+              ]
+            }
+          ],
+          "last_text_bottom": 224,
+          "tap_targets": [
+            [
+              20,
+              194,
+              210,
+              39
+            ],
+            [
+              238,
+              194,
+              86,
+              39
+            ]
+          ]
+        }
+      }
+    },
+    "cap440": {
+      "native_clicks_passed": true,
+      "events": [
+        [
+          {
+            "applied": true,
+            "changed": [
+              "mode"
+            ],
+            "event": "show_code",
+            "key": "root/Col#0/when#0/w:Row#0/Chip#0",
+            "origin": "Authored",
+            "stale": [],
+            "writes": []
+          }
+        ],
+        [
+          {
+            "applied": true,
+            "changed": [
+              "mode"
+            ],
+            "event": "back",
+            "key": "root/Col#0/when#1/w:Chip#0",
+            "origin": "Authored",
+            "stale": [],
+            "writes": []
+          }
+        ],
+        [
+          {
+            "applied": true,
+            "changed": [
+              "mode"
+            ],
+            "event": "show_details",
+            "key": "root/Col#0/when#0/w:Row#0/Chip#1",
+            "origin": "Authored",
+            "stale": [],
+            "writes": []
+          }
+        ],
+        [
+          {
+            "applied": true,
+            "changed": [
+              "mode"
+            ],
+            "event": "back",
+            "key": "root/Col#0/when#2/w:Chip#0",
+            "origin": "Authored",
+            "stale": [],
+            "writes": []
+          }
+        ]
+      ],
+      "frames": {
+        "00-before": {
+          "labels": [
+            {
+              "text": "",
+              "rect": [
+                20,
+                36,
+                19,
+                19
+              ]
+            },
+            {
+              "text": "Mail",
+              "rect": [
+                47,
+                40,
+                216,
+                11
+              ]
+            },
+            {
+              "text": "Oct 4, 2026",
+              "rect": [
+                270,
+                40,
+                54,
+                11
+              ]
+            },
+            {
+              "text": "Simulation",
+              "rect": [
+                20,
+                63,
+                51,
+                11
+              ]
+            },
+            {
+              "text": "Ready for pickup",
+              "rect": [
+                77,
+                63,
+                79,
+                11
+              ]
+            },
+            {
+              "text": "Desk lamp ready for pickup",
+              "rect": [
+                20,
+                83,
+                304,
+                26
+              ]
+            },
+            {
+              "text": "Desk lamp is waiting at the pickup desk",
+              "rect": [
+                20,
+                117,
+                304,
+                17
+              ]
+            },
+            {
+              "text": "",
+              "rect": [
+                20,
+                142,
+                14,
+                13
+              ]
+            },
+            {
+              "text": "AI",
+              "rect": [
+                38,
+                142,
+                11,
+                13
+              ]
+            },
+            {
+              "text": "Bring code 4821 and photo ID to the pickup desk by Mon, Oct 5, 9:00 PM PDT.",
+              "rect": [
+                20,
+                158,
+                304,
+                28
+              ]
+            },
+            {
+              "text": "Show pickup code",
+              "rect": [
+                44,
+                203,
+                162,
+                21
+              ]
+            },
+            {
+              "text": "Pickup details",
+              "rect": [
+                262,
+                203,
+                62,
+                21
+              ]
+            }
+          ],
+          "last_text_bottom": 224,
+          "tap_targets": [
+            [
+              20,
+              194,
+              210,
+              39
+            ],
+            [
+              238,
+              194,
+              86,
+              39
+            ]
+          ]
+        },
+        "01-after": {
+          "labels": [
+            {
+              "text": "",
+              "rect": [
+                20,
+                36,
+                19,
+                19
+              ]
+            },
+            {
+              "text": "Mail",
+              "rect": [
+                47,
+                40,
+                216,
+                11
+              ]
+            },
+            {
+              "text": "Oct 4, 2026",
+              "rect": [
+                270,
+                40,
+                54,
+                11
+              ]
+            },
+            {
+              "text": "Simulation",
+              "rect": [
+                20,
+                63,
+                51,
+                11
+              ]
+            },
+            {
+              "text": "Ready for pickup",
+              "rect": [
+                77,
+                63,
+                79,
+                11
+              ]
+            },
+            {
+              "text": "Pickup code",
+              "rect": [
+                20,
+                83,
+                304,
+                11
+              ]
+            },
+            {
+              "text": "4821",
+              "rect": [
+                20,
+                102,
+                304,
+                26
+              ]
+            },
+            {
+              "text": "",
+              "rect": [
+                20,
+                136,
+                14,
+                13
+              ]
+            },
+            {
+              "text": "AI",
+              "rect": [
+                38,
+                136,
+                11,
+                13
+              ]
+            },
+            {
+              "text": "Bring code 4821 and photo ID to the pickup desk by Mon, Oct 5, 9:00 PM PDT.",
+              "rect": [
+                20,
+                152,
+                304,
+                28
+              ]
+            },
+            {
+              "text": "Back",
+              "rect": [
+                30,
+                193,
+                29,
+                14
+              ]
+            }
+          ],
+          "last_text_bottom": 207,
+          "tap_targets": [
+            [
+              20,
+              188,
+              49,
+              24
+            ]
+          ]
+        },
+        "02-after": {
+          "labels": [
+            {
+              "text": "",
+              "rect": [
+                20,
+                36,
+                19,
+                19
+              ]
+            },
+            {
+              "text": "Mail",
+              "rect": [
+                47,
+                40,
+                216,
+                11
+              ]
+            },
+            {
+              "text": "Oct 4, 2026",
+              "rect": [
+                270,
+                40,
+                54,
+                11
+              ]
+            },
+            {
+              "text": "Simulation",
+              "rect": [
+                20,
+                63,
+                51,
+                11
+              ]
+            },
+            {
+              "text": "Ready for pickup",
+              "rect": [
+                77,
+                63,
+                79,
+                11
+              ]
+            },
+            {
+              "text": "Desk lamp ready for pickup",
+              "rect": [
+                20,
+                83,
+                304,
+                26
+              ]
+            },
+            {
+              "text": "Desk lamp is waiting at the pickup desk",
+              "rect": [
+                20,
+                117,
+                304,
+                17
+              ]
+            },
+            {
+              "text": "",
+              "rect": [
+                20,
+                142,
+                14,
+                13
+              ]
+            },
+            {
+              "text": "AI",
+              "rect": [
+                38,
+                142,
+                11,
+                13
+              ]
+            },
+            {
+              "text": "Bring code 4821 and photo ID to the pickup desk by Mon, Oct 5, 9:00 PM PDT.",
+              "rect": [
+                20,
+                158,
+                304,
+                28
+              ]
+            },
+            {
+              "text": "Show pickup code",
+              "rect": [
+                44,
+                203,
+                162,
+                21
+              ]
+            },
+            {
+              "text": "Pickup details",
+              "rect": [
+                262,
+                203,
+                62,
+                21
+              ]
+            }
+          ],
+          "last_text_bottom": 224,
+          "tap_targets": [
+            [
+              20,
+              194,
+              210,
+              39
+            ],
+            [
+              238,
+              194,
+              86,
+              39
+            ]
+          ]
+        },
+        "03-after": {
+          "labels": [
+            {
+              "text": "",
+              "rect": [
+                20,
+                36,
+                19,
+                19
+              ]
+            },
+            {
+              "text": "Mail",
+              "rect": [
+                47,
+                40,
+                216,
+                11
+              ]
+            },
+            {
+              "text": "Oct 4, 2026",
+              "rect": [
+                270,
+                40,
+                54,
+                11
+              ]
+            },
+            {
+              "text": "Simulation",
+              "rect": [
+                20,
+                63,
+                51,
+                11
+              ]
+            },
+            {
+              "text": "Ready for pickup",
+              "rect": [
+                77,
+                63,
+                79,
+                11
+              ]
+            },
+            {
+              "text": "Example Pickup Desk, 100 Demo Street, Demo City",
+              "rect": [
+                20,
+                83,
+                304,
+                63
+              ]
+            },
+            {
+              "text": "Location",
+              "rect": [
+                20,
+                154,
+                304,
+                11
+              ]
+            },
+            {
+              "text": "Pickup hours",
+              "rect": [
+                20,
+                173,
+                304,
+                11
+              ]
+            },
+            {
+              "text": "9:00 AM - 9:00 PM PDT",
+              "rect": [
+                20,
+                193,
+                304,
+                17
+              ]
+            },
+            {
+              "text": "Collect by",
+              "rect": [
+                20,
+                218,
+                304,
+                11
+              ]
+            },
+            {
+              "text": "Mon, Oct 5, 2026, 9:00 PM PDT",
+              "rect": [
+                20,
+                237,
+                304,
+                17
+              ]
+            },
+            {
+              "text": "Back",
+              "rect": [
+                30,
+                268,
+                29,
+                14
+              ]
+            }
+          ],
+          "last_text_bottom": 282,
+          "tap_targets": [
+            [
+              20,
+              263,
+              49,
+              24
+            ]
+          ]
+        },
+        "04-after": {
+          "labels": [
+            {
+              "text": "",
+              "rect": [
+                20,
+                36,
+                19,
+                19
+              ]
+            },
+            {
+              "text": "Mail",
+              "rect": [
+                47,
+                40,
+                216,
+                11
+              ]
+            },
+            {
+              "text": "Oct 4, 2026",
+              "rect": [
+                270,
+                40,
+                54,
+                11
+              ]
+            },
+            {
+              "text": "Simulation",
+              "rect": [
+                20,
+                63,
+                51,
+                11
+              ]
+            },
+            {
+              "text": "Ready for pickup",
+              "rect": [
+                77,
+                63,
+                79,
+                11
+              ]
+            },
+            {
+              "text": "Desk lamp ready for pickup",
+              "rect": [
+                20,
+                83,
+                304,
+                26
+              ]
+            },
+            {
+              "text": "Desk lamp is waiting at the pickup desk",
+              "rect": [
+                20,
+                117,
+                304,
+                17
+              ]
+            },
+            {
+              "text": "",
+              "rect": [
+                20,
+                142,
+                14,
+                13
+              ]
+            },
+            {
+              "text": "AI",
+              "rect": [
+                38,
+                142,
+                11,
+                13
+              ]
+            },
+            {
+              "text": "Bring code 4821 and photo ID to the pickup desk by Mon, Oct 5, 9:00 PM PDT.",
+              "rect": [
+                20,
+                158,
+                304,
+                28
+              ]
+            },
+            {
+              "text": "Show pickup code",
+              "rect": [
+                44,
+                203,
+                162,
+                21
+              ]
+            },
+            {
+              "text": "Pickup details",
+              "rect": [
+                262,
+                203,
+                62,
+                21
+              ]
+            }
+          ],
+          "last_text_bottom": 224,
+          "tap_targets": [
+            [
+              20,
+              194,
+              210,
+              39
+            ],
+            [
+              238,
+              194,
+              86,
+              39
+            ]
+          ]
+        }
+      }
+    }
+  },
+  "visual_review": {
+    "native_viewed": [
+      "cap400/00-before.png",
+      "cap400/01-after.png",
+      "cap400/03-after.png"
+    ],
+    "phone_viewed": [
+      "phone-full-brief.png",
+      "phone-full-details.png",
+      "phone-glance.png"
+    ],
+    "confirmed_defect": "Pickup details primary chip is horizontally clipped in native and physical full-sheet/Glance screenshots. Native available content width304; first chip210 plus gap8 leaves86 for second chip; its visible label width62 shows incomplete text. Raising height does not fix width.",
+    "secondary_feedback": [
+      "Shorten labels or stack chips so both fully fit; preserve working state transitions.",
+      "Address as TextTitle wraps large across three phone lines. A normal body text role would reduce detail height without losing address.",
+      "Native Back hit target49x24 logical points; it works but is small."
+    ],
+    "no_claim": "No external Mail, tracking/browser or persistent completion effect. Model source requests only local mode transitions; durable writes empty. Native fonts/theme differ from physical phone, and physical screenshots govern actual phone appearance."
+  }
+}

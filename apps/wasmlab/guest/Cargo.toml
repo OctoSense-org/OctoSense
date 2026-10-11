@@ -1,0 +1,12 @@
+# Wasm Lab's functions, built for wasm32-unknown-unknown (./build.sh), and the
+# guest SDK they use. Its own workspace: the root workspace builds natively.
+[workspace]
+resolver = "2"
+members = ["octosense-guest", "functions"]
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

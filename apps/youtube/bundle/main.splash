@@ -1,3 +1,40 @@
+// BEGIN shared app interface
+// Shared system-app interface. Run tools/sync-app-interface.py after editing.
+// Bundles carry this prelude so they work in the contained standalone host too.
+// Resolve the current theme after a host restyle, not a retained prelude alias.
+let theme = mod.theme
+let ui_ink = theme.color_text
+let ui_page = theme.color_bg_app
+let ui_light = dot(ui_ink, #x36b61200) < 0.5
+let ui_surface = if ui_light { #xffffff } else { mix(ui_page, ui_ink, 0.06) }
+let ui_field = mix(ui_page, ui_ink, 0.075)
+let ui_hover = mix(ui_page, ui_ink, 0.12)
+let ui_border = mix(ui_page, ui_ink, 0.22)
+let ui_muted = mix(ui_ink, ui_page, 0.24)
+let ui_link = mix(ui_ink, #x356bce, 0.25)
+let ui_primary = #x285cd6
+let ui_success = mix(ui_ink, #x28a55b, 0.20)
+let ui_danger = mix(ui_ink, #xe13b53, 0.20)
+let UiButton = ButtonFlat{height: 44 margin: 0 padding: Inset{left: 14 right: 14}
+    draw_bg +: {border_radius: 12.0 border_size: 0.0 color: #x00000000 color_hover: ui_hover color_down: ui_field color_focus: ui_hover}
+    draw_text +: {color: ui_link color_hover: ui_link color_down: ui_link color_focus: ui_link text_style: theme.font_bold{font_size: 14}}
+}
+let UiPrimary = UiButton{
+    draw_bg +: {color: ui_primary color_hover: #x3468df color_down: #x204cb8 color_focus: #x204cb8}
+    draw_text +: {color: #xffffff color_hover: #xffffff color_down: #xffffff color_focus: #xffffff}
+}
+let UiPill = UiButton{draw_bg +: {color: ui_surface border_radius: 22.0} draw_text +: {color: ui_ink color_hover: ui_ink color_down: ui_ink color_focus: ui_ink}}
+let UiField = TextInput{width: Fill height: 48 margin: 0 padding: Inset{left: 14 right: 14 top: 12 bottom: 12}
+    draw_bg +: {color: ui_field color_hover: ui_field color_focus: ui_field color_empty: ui_field
+        border_color: ui_border border_color_hover: ui_link border_color_focus: ui_link border_color_empty: ui_border border_radius: 12.0}
+    draw_text +: {color: ui_ink color_hover: ui_ink color_focus: ui_ink color_empty: ui_muted color_empty_hover: ui_muted color_empty_focus: ui_muted text_style: theme.font_regular{font_size: 15}}
+    draw_selection.color: #x557dcc55
+}
+let UiCard = RoundedView{width: Fill height: Fit flow: Down spacing: 12 padding: 20
+    show_bg: true draw_bg +: {color: ui_surface border_radius: 16.0}}
+let UiCaption = Label{padding: 0 flow: Flow.Right{wrap: true} width: Fill draw_text +: {color: ui_muted text_style: theme.font_regular{font_size: 13 line_spacing: 1.4}}}
+let UiTitle = Label{padding: 0 flow: Flow.Right{wrap: true} width: Fill draw_text +: {color: ui_ink text_style: theme.font_bold{font_size: 28 line_spacing: 1.2}}}
+// END shared app interface
 // YouTube: search YouTube, list what exists right now, play a tap in the
 // system web view. Results come from the runtime's keyless `sys.video`
 // helper, which reads YouTube's own results page (public Piped/Invidious
@@ -69,6 +106,7 @@ fn search_for(text){
     let t = ("" + text).trim()
     if t == "" { return }
     q = t
+    ui.search.set_text(q)
     loaded_q = ""
     failed = false
     hits = []
@@ -145,6 +183,7 @@ fn clear_history(){
 
 fn boot(){
     load_state()
+    ui.search.set_text(q)
     ui.tabs.render()
     sync_status()
     ui.list.render()
@@ -153,58 +192,49 @@ fn boot(){
 start_timeout(0.05, || boot())
 start_interval(0.5, || read_hits())
 
-let ground = #x0f0f0f
-let ink = #xf1f1f1
-let secondary = #xaaaaaa
-let raised = #x272727
+let ground = ui_page
+let ink = ui_ink
+let secondary = ui_muted
+let raised = ui_surface
 let red = #xff0033
 
-let Chip = ButtonFlat{height: 32 padding: Inset{left: 12 right: 12}
-    draw_bg +: {border_radius: 8.0 color: raised color_hover: #x3f3f3f color_down: #x505050 border_size: 0.0}
-    draw_text +: {color: ink color_hover: ink color_down: ink text_style +: {font_size: 13}}
-}
+let Chip = UiPill{}
 let ChipOn = Chip{
     draw_bg +: {color: ink color_hover: ink color_down: #xd9d9d9}
     draw_text +: {color: ground color_hover: ground color_down: ground}
 }
-let BarButton = ButtonFlat{height: 40 padding: Inset{left: 10 right: 10}
-    draw_bg +: {color: #x00000000 color_hover: #xffffff14 color_down: #xffffff24 border_size: 0.0}
-    draw_text +: {color: ink color_hover: ink color_down: ink text_style +: {font_size: 15}}
-}
+let BarButton = UiButton{}
 let VideoRow = GestureView{width: Fill height: Fit flow: Right spacing: 12 padding: Inset{left: 12 right: 12 top: 6 bottom: 6}
-    frame := View{width: 168 height: 94 flow: Overlay align: Align{x: 1.0 y: 1.0}
-        thumb := Image{width: 168 height: 94 fit: ImageFit.CropToFill}
+    frame := View{width: 132 height: 88 flow: Overlay align: Align{x: 1.0 y: 1.0}
+        thumb := Image{width: 132 height: 88 fit: ImageFit.CropToFill}
         corner := View{width: Fit height: Fit padding: Inset{right: 4 bottom: 4}
             badge := RoundedView{width: Fit height: Fit padding: Inset{left: 4 right: 4 top: 1 bottom: 1}
                 new_batch: true show_bg: true draw_bg.color: #x000000cc draw_bg.border_radius: 4.0
-                length := Label{text: "" draw_text.color: #xffffff draw_text.text_style: theme.font_bold{font_size: 11}}
+                length := Label{text: "" draw_text.color: #xffffff draw_text.text_style: theme.font_bold{font_size: 13}}
             }
         }
     }
     text := View{width: Fill height: Fit flow: Down spacing: 4
         title := Label{width: Fill text: "" max_lines: 2 draw_text.color: ink draw_text.text_style: theme.font_bold{font_size: 14}}
-        meta := Label{width: Fill text: "" max_lines: 2 draw_text.color: secondary draw_text.text_style.font_size: 12}
+        meta := Label{width: Fill text: "" max_lines: 2 draw_text.color: secondary draw_text.text_style.font_size: 13}
     }
 }
 
-SolidView{width: Fill height: Fill flow: Overlay show_bg: true draw_bg.color: ground
-    main := SolidView{width: Fill height: Fill flow: Down new_batch: true show_bg: true draw_bg.color: ground
+SolidView{width: Fill height: Fill flow: Overlay align: Align{x: 0.5} show_bg: true draw_bg.color: ground
+    main := SolidView{width: Fill max_width: 960 height: Fill flow: Down new_batch: true show_bg: true draw_bg.color: ground
         View{width: Fill height: Fit flow: Right align: Align{y: 0.5} spacing: 8 padding: Inset{left: 14 right: 12 top: 12 bottom: 8}
             RoundedView{width: 30 height: 21 align: Align{x: 0.5 y: 0.5} new_batch: true show_bg: true draw_bg.color: red draw_bg.border_radius: 6.0
-                Label{text: "▶" draw_text.color: #xffffff draw_text.text_style.font_size: 10}
+                Label{text: "▶" draw_text.color: #xffffff draw_text.text_style.font_size: 13}
             }
             Label{text: "YouTube" draw_text.color: ink draw_text.text_style: theme.font_bold{font_size: 19}}
         }
         View{width: Fill height: Fit padding: Inset{left: 12 right: 12 bottom: 8}
-            search := TextInput{width: Fill height: 40 empty_text: "Search YouTube"
+            search := UiField{width: Fill height: 48 empty_text: "Search YouTube"
                 on_return: |text| search_for(text)
-                draw_bg +: {color: #x222222 color_hover: #x222222 color_focus: #x222222 color_empty: #x222222
-                    border_color: #x303030 border_color_hover: #x303030 border_color_focus: #x3ea6ff border_color_empty: #x303030
-                    border_radius: 20.0}
-                draw_text +: {color: ink color_hover: ink color_focus: ink color_empty: secondary color_empty_hover: secondary}
+                draw_bg.border_radius: 20.0
             }
         }
-        tabs := ScrollXView{width: Fill height: 44 flow: Right spacing: 8 padding: Inset{left: 12 right: 12 top: 2 bottom: 10}
+        tabs := ScrollXView{width: Fill height: 60 flow: Right spacing: 8 padding: Inset{left: 12 right: 12 top: 2 bottom: 10}
             on_render: || {
                 if screen == "history" { ChipOn{text: "History" on_click: || show("history")} }
                 else { Chip{text: "History" on_click: || show("history")} }
@@ -214,7 +244,7 @@ SolidView{width: Fill height: Fill flow: Overlay show_bg: true draw_bg.color: gr
                 }
             }
         }
-        status := Label{width: Fill padding: Inset{left: 14 right: 14 bottom: 6} text: "" draw_text.color: secondary draw_text.text_style.font_size: 12}
+        status := Label{width: Fill padding: Inset{left: 14 right: 14 bottom: 6} text: "" draw_text.color: secondary draw_text.text_style.font_size: 13}
         list := ScrollYView{width: Fill height: Fill flow: Down spacing: 4 padding: Inset{bottom: 24}
             on_render: || {
                 if screen == "history" {
@@ -244,10 +274,10 @@ SolidView{width: Fill height: Fill flow: Overlay show_bg: true draw_bg.color: gr
             BarButton{text: "‹ Back" on_click: || close_player()}
             View{width: Fill height: Fit flow: Down spacing: 2
                 player_title := Label{width: Fill text: "" max_lines: 1 draw_text.color: ink draw_text.text_style: theme.font_bold{font_size: 14}}
-                player_meta := Label{width: Fill text: "" max_lines: 1 draw_text.color: secondary draw_text.text_style.font_size: 11}
+                player_meta := Label{width: Fill text: "" max_lines: 1 draw_text.color: secondary draw_text.text_style.font_size: 13}
             }
         }
-        player_fail := Label{width: Fill padding: Inset{left: 14 right: 14} text: "" draw_text.color: secondary draw_text.text_style.font_size: 12}
+        player_fail := Label{width: Fill padding: Inset{left: 14 right: 14} text: "" draw_text.color: secondary draw_text.text_style.font_size: 13}
         reader := WebReader{width: Fill height: Fill on_error: || ui.player_fail.set_text(ui.reader.error())}
     }
 }

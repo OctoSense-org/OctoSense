@@ -1,8 +1,50 @@
+// BEGIN shared app interface
+// Shared system-app interface. Run tools/sync-app-interface.py after editing.
+// Bundles carry this prelude so they work in the contained standalone host too.
+// Resolve the current theme after a host restyle, not a retained prelude alias.
+let theme = mod.theme
+let ui_ink = theme.color_text
+let ui_page = theme.color_bg_app
+let ui_light = dot(ui_ink, #x36b61200) < 0.5
+let ui_surface = if ui_light { #xffffff } else { mix(ui_page, ui_ink, 0.06) }
+let ui_field = mix(ui_page, ui_ink, 0.075)
+let ui_hover = mix(ui_page, ui_ink, 0.12)
+let ui_border = mix(ui_page, ui_ink, 0.22)
+let ui_muted = mix(ui_ink, ui_page, 0.24)
+let ui_link = mix(ui_ink, #x356bce, 0.25)
+let ui_primary = #x285cd6
+let ui_success = mix(ui_ink, #x28a55b, 0.20)
+let ui_danger = mix(ui_ink, #xe13b53, 0.20)
+let UiButton = ButtonFlat{height: 44 margin: 0 padding: Inset{left: 14 right: 14}
+    draw_bg +: {border_radius: 12.0 border_size: 0.0 color: #x00000000 color_hover: ui_hover color_down: ui_field color_focus: ui_hover}
+    draw_text +: {color: ui_link color_hover: ui_link color_down: ui_link color_focus: ui_link text_style: theme.font_bold{font_size: 14}}
+}
+let UiPrimary = UiButton{
+    draw_bg +: {color: ui_primary color_hover: #x3468df color_down: #x204cb8 color_focus: #x204cb8}
+    draw_text +: {color: #xffffff color_hover: #xffffff color_down: #xffffff color_focus: #xffffff}
+}
+let UiPill = UiButton{draw_bg +: {color: ui_surface border_radius: 22.0} draw_text +: {color: ui_ink color_hover: ui_ink color_down: ui_ink color_focus: ui_ink}}
+let UiField = TextInput{width: Fill height: 48 margin: 0 padding: Inset{left: 14 right: 14 top: 12 bottom: 12}
+    draw_bg +: {color: ui_field color_hover: ui_field color_focus: ui_field color_empty: ui_field
+        border_color: ui_border border_color_hover: ui_link border_color_focus: ui_link border_color_empty: ui_border border_radius: 12.0}
+    draw_text +: {color: ui_ink color_hover: ui_ink color_focus: ui_ink color_empty: ui_muted color_empty_hover: ui_muted color_empty_focus: ui_muted text_style: theme.font_regular{font_size: 15}}
+    draw_selection.color: #x557dcc55
+}
+let UiCard = RoundedView{width: Fill height: Fit flow: Down spacing: 12 padding: 20
+    show_bg: true draw_bg +: {color: ui_surface border_radius: 16.0}}
+let UiCaption = Label{padding: 0 flow: Flow.Right{wrap: true} width: Fill draw_text +: {color: ui_muted text_style: theme.font_regular{font_size: 13 line_spacing: 1.4}}}
+let UiTitle = Label{padding: 0 flow: Flow.Right{wrap: true} width: Fill draw_text +: {color: ui_ink text_style: theme.font_bold{font_size: 28 line_spacing: 1.2}}}
+// END shared app interface
 let account = nil          // {id, address}
 let messages = []
 let total = 0
 let open_id = ""
 let reading = nil
+let reply_message = ""
+let compose_id = ""
+let compose_revision = 0
+let compose_generation = 0
+let preparing_review = false
 let busy = false
 let folder = {id: "INBOX" name: "Inbox"}
 let folders = []
@@ -31,8 +73,9 @@ fn load_accounts(){
 }
 fn add_account(){
     ui.welcome_note.set_text("Sign in on the sheet OctoSense shows.")
+    status("Sign in on the sheet OctoSense shows.")
     host.request("mail.add_account", {}, fn(r){
-        if r.is_ok { load_accounts() } else { ui.welcome_note.set_text(r.error) }
+        if r.is_ok { load_accounts() } else { ui.welcome_note.set_text(r.error) status(r.error) }
     })
 }
 fn sync(){
@@ -85,6 +128,11 @@ fn open_message(m){
     })
 }
 fn compose(to, subject, body){
+    reply_message = ""
+    compose_id = ""
+    compose_revision = 0
+    compose_generation = compose_generation + 1
+    preparing_review = false
     ui.c_to.set_text(to)
     ui.c_subject.set_text(subject)
     ui.c_body.set_text(body)
@@ -96,11 +144,21 @@ fn reply(){
     let subject = reading.subject
     if subject.search("Re:") != 0 { subject = "Re: " + subject }
     compose(reading.address, subject, "\n\n> " + reading.body.replace("\n", "\n> "))
+    reply_message = open_id
 }
 fn send(){
-    ui.c_note.set_text("Sending…")
-    host.request("mail.send", {account: account.id to: ui.c_to.text() subject: ui.c_subject.text() body: ui.c_body.text()}, fn(r){
-        if r.is_ok { status("Sent"); pane("inbox"); ui.rows.render() } else { ui.c_note.set_text(r.error) }
+    if preparing_review { return }
+    preparing_review = true
+    let generation = compose_generation
+    ui.c_note.set_text("Preparing review…")
+    host.request("mail.review_send", {account: account.id compose_id: compose_id expected_revision: compose_revision to: ui.c_to.text() subject: ui.c_subject.text() body: ui.c_body.text() folder: folder.id message: reply_message}, fn(r){
+        if generation != compose_generation { return }
+        preparing_review = false
+        if r.is_ok {
+            compose_id = r.data.compose_id
+            compose_revision = r.data.revision
+            ui.c_note.set_text("Review opened. Nothing is sent until you approve in the host review.")
+        } else { ui.c_note.set_text(r.error) }
     })
 }
 fn remove_account(){
@@ -136,39 +194,31 @@ fn open_folder(f){
 
 start_timeout(0.05, || load_accounts())
 
-let ink = #x1c1c1e
-let secondary = #x8e8e93
-let accent = #x007aff
-let Bar = ButtonFlat{height: 36 padding: Inset{left: 10 right: 10}
-    draw_bg +: {color: #x00000000 color_hover: #x0000000a color_down: #x00000014 border_size: 0.0}
-    draw_text +: {color: accent color_hover: accent color_down: accent text_style +: {font_size: 15}}
-}
-let Field = TextInput{width: Fill height: 40
-    draw_bg +: {color: #xf2f2f7 color_hover: #xf2f2f7 color_focus: #xf2f2f7 color_empty: #xf2f2f7
-        border_color: #x00000000 border_color_hover: #x00000000 border_color_focus: #x00000000 border_color_empty: #x00000000 border_radius: 10.0}
-    draw_text +: {color: ink color_hover: ink color_focus: ink color_empty: secondary color_empty_hover: secondary}
-}
-let Row = GestureView{width: Fill height: Fit flow: Down padding: Inset{left: 16 right: 16 top: 10 bottom: 10} spacing: 2
+let ink = ui_ink
+let secondary = ui_muted
+let accent = ui_link
+let Bar = UiButton{}
+let Field = UiField{}
+let Row = GestureView{width: Fill height: Fit flow: Down padding: Inset{left: 16 right: 16 top: 18 bottom: 18} spacing: 6
     top := View{width: Fill height: Fit flow: Right
         sender := Label{width: Fill text: "" max_lines: 1 draw_text.color: ink draw_text.text_style: theme.font_bold{font_size: 15}}
-        time := Label{text: "" draw_text.color: secondary draw_text.text_style.font_size: 12}
+        time := Label{text: "" draw_text.color: secondary draw_text.text_style.font_size: 13}
     }
-    subject := Label{width: Fill text: "" max_lines: 1 draw_text.color: ink draw_text.text_style.font_size: 14}
+    subject := Label{width: Fill text: "" max_lines: 1 draw_text.color: ink draw_text.text_style.font_size: 16}
     preview := Label{width: Fill text: "" max_lines: 2 draw_text.color: secondary draw_text.text_style.font_size: 13}
 }
 let RowRead = Row{top +: {sender +: {draw_text.text_style: theme.font_regular{font_size: 15}}}}
 
-SolidView{width: Fill height: Fill flow: Overlay draw_bg.color: #xffffff
-    welcome := View{width: Fill height: Fill flow: Down align: Align{x: 0.5 y: 0.5} spacing: 12 padding: 32
+SolidView{width: Fill height: Fill flow: Overlay align: Align{x: 0.5} draw_bg.color: ui_page
+    welcome := View{width: Fill max_width: 840 height: Fill flow: Down align: Align{x: 0.5 y: 0.5} spacing: 12 padding: 32
+        AppIcon{width: 72 height: 72 name: "mail"}
         Label{text: "Mail" draw_text.color: ink draw_text.text_style: theme.font_bold{font_size: 32}}
-        Label{width: Fill align: Align{x: 0.5} text: "Add an account to read and send mail. OctoSense keeps your password; Mail never sees it."
+        Label{width: Fill align: Align{x: 0.5} text: "Your inbox, with room to focus. Connect an account to start reading and writing."
             draw_text.color: secondary draw_text.text_style.font_size: 13}
-        ButtonFlat{text: "Add account" height: 44 padding: Inset{left: 22 right: 22} on_click: || add_account()
-            draw_bg +: {border_radius: 22.0 color: #x007aff color_hover: #x0a84ff color_down: #x0062cc border_size: 0.0}
-            draw_text +: {color: #xffffff color_hover: #xffffff color_down: #xffffff text_style +: {font_size: 15}}}
-        welcome_note := Label{width: Fill align: Align{x: 0.5} text: "" draw_text.color: secondary draw_text.text_style.font_size: 12}
+        UiPrimary{text: "Add account" padding: Inset{left: 24 right: 24} on_click: || add_account()}
+        welcome_note := Label{width: Fill align: Align{x: 0.5} text: "" draw_text.color: secondary draw_text.text_style.font_size: 13}
     }
-    inbox := View{visible: false width: Fill height: Fill flow: Down
+    inbox := View{visible: false width: Fill max_width: 840 height: Fill flow: Down
         View{width: Fill height: Fit flow: Right align: Align{y: 0.5} padding: Inset{left: 8 right: 8 top: 8}
             Bar{text: "Folders" on_click: || show_folders()}
             Bar{text: "Refresh" on_click: || sync()}
@@ -177,10 +227,10 @@ SolidView{width: Fill height: Fill flow: Overlay draw_bg.color: #xffffff
         }
         View{width: Fill height: Fit flow: Down padding: Inset{left: 16 right: 16 bottom: 6} spacing: 2
             title := Label{text: "Inbox" draw_text.color: ink draw_text.text_style: theme.font_bold{font_size: 30}}
-            address := Label{text: "" draw_text.color: secondary draw_text.text_style.font_size: 12}
-            status := Label{text: "" draw_text.color: secondary draw_text.text_style.font_size: 12}
+            address := Label{text: "" draw_text.color: secondary draw_text.text_style.font_size: 13}
+            status := Label{text: "" draw_text.color: secondary draw_text.text_style.font_size: 13}
         }
-        rows := ScrollYView{width: Fill height: Fill flow: Down on_render: || {
+        rows := ScrollYView{width: Fill height: Fill flow: Down padding: Inset{left: 8 right: 8} on_render: || {
             if messages.len() == 0 {
                 View{width: Fill height: 160 align: Align{x: 0.5 y: 0.5}
                     Label{text: "No mail yet." draw_text.color: secondary draw_text.text_style.font_size: 13}}
@@ -194,13 +244,15 @@ SolidView{width: Fill height: Fill flow: Overlay draw_bg.color: #xffffff
                 Hr{}
             }
         }}
-        View{width: Fill height: Fit padding: Inset{left: 8 bottom: 8}
-            ButtonFlat{text: "Remove account" on_click: || remove_account()
+        View{width: Fill height: Fit flow: Right spacing: 12 padding: Inset{left: 8 right: 8 bottom: 8}
+            Bar{height: 44 text: "Reconnect account" on_click: || add_account()}
+            View{width: Fill height: 1}
+            UiButton{text: "Remove account" on_click: || remove_account()
                 draw_bg +: {color: #x00000000 color_hover: #x00000000 color_down: #x00000000 border_size: 0.0}
-                draw_text +: {color: #xff3b30 color_hover: #xff3b30 color_down: #xff3b30 text_style +: {font_size: 12}}}
+                draw_text +: {color: ui_danger color_hover: ui_danger color_down: ui_danger text_style +: {font_size: 13}}}
         }
     }
-    reader := SolidView{visible: false width: Fill height: Fill flow: Down new_batch: true draw_bg.color: #xffffff
+    reader := SolidView{visible: false width: Fill max_width: 840 height: Fill flow: Down new_batch: true draw_bg.color: ui_surface
         View{width: Fill height: Fit flow: Right align: Align{y: 0.5} padding: Inset{left: 8 right: 8 top: 8}
             Bar{text: "‹ Back" on_click: || back_to_inbox()}
             View{width: Fill height: 1}
@@ -209,9 +261,9 @@ SolidView{width: Fill height: Fill flow: Overlay draw_bg.color: #xffffff
         ScrollYView{width: Fill height: Fill flow: Down padding: 16 spacing: 6
             r_subject := Label{width: Fill text: "" draw_text.color: ink draw_text.text_style: theme.font_bold{font_size: 20}}
             r_sender := Label{width: Fill text: "" draw_text.color: secondary draw_text.text_style.font_size: 13}
-            r_time := Label{width: Fill text: "" draw_text.color: secondary draw_text.text_style.font_size: 12}
+            r_time := Label{width: Fill text: "" draw_text.color: secondary draw_text.text_style.font_size: 13}
             Hr{}
-            r_attachments := Label{visible: false width: Fill text: "" draw_text.color: secondary draw_text.text_style.font_size: 12}
+            r_attachments := Label{visible: false width: Fill text: "" draw_text.color: secondary draw_text.text_style.font_size: 13}
             r_body := Label{width: Fill text: "" draw_text.color: ink draw_text.text_style.font_size: 15}
             r_html := Html{visible: false width: Fill height: Fit padding: 0 font_color: ink font_size: 15
                 draw_text +: {color: ink}
@@ -219,14 +271,14 @@ SolidView{width: Fill height: Fill flow: Overlay draw_bg.color: #xffffff
                 text_style_italic +: {font_size: 15} text_style_bold_italic +: {font_size: 15} text_style_fixed +: {font_size: 14}}
         }
     }
-    folders := SolidView{visible: false width: Fill height: Fill flow: Down new_batch: true draw_bg.color: #xffffff
+    folders := SolidView{visible: false width: Fill max_width: 840 height: Fill flow: Down new_batch: true draw_bg.color: ui_surface
         View{width: Fill height: Fit flow: Right align: Align{y: 0.5} padding: Inset{left: 8 right: 8 top: 8}
             Bar{text: "‹ Back" on_click: || back_to_inbox()}
         }
         View{width: Fill height: Fit padding: Inset{left: 16 right: 16 bottom: 6}
             Label{text: "Folders" draw_text.color: ink draw_text.text_style: theme.font_bold{font_size: 30}}
         }
-        folder_rows := ScrollYView{width: Fill height: Fill flow: Down on_render: || {
+        folder_rows := ScrollYView{width: Fill height: Fill flow: Down padding: Inset{left: 8 right: 8} on_render: || {
             if folders.len() == 0 {
                 View{width: Fill height: 120 align: Align{x: 0.5 y: 0.5}
                     Label{text: "Looking for folders…" draw_text.color: secondary draw_text.text_style.font_size: 13}}
@@ -239,16 +291,15 @@ SolidView{width: Fill height: Fill flow: Overlay draw_bg.color: #xffffff
             }
         }}
     }
-    composer := SolidView{visible: false width: Fill height: Fill flow: Down new_batch: true draw_bg.color: #xffffff padding: Inset{left: 12 right: 12 top: 8} spacing: 8
+    composer := SolidView{visible: false width: Fill max_width: 840 height: Fill flow: Down new_batch: true draw_bg.color: ui_surface padding: Inset{left: 12 right: 12 top: 8} spacing: 8
         View{width: Fill height: Fit flow: Right align: Align{y: 0.5}
             Bar{text: "Cancel" on_click: || back_to_inbox()}
             View{width: Fill height: 1}
-            Bar{text: "Send" on_click: || send()}
+            Bar{text: "Review reply" on_click: || send()}
         }
         c_to := Field{empty_text: "To"}
         c_subject := Field{empty_text: "Subject"}
-        c_body := Field{height: 260 empty_text: "Message"}
-        c_note := Label{width: Fill text: "" draw_text.color: #xff3b30 draw_text.text_style.font_size: 12}
+        c_body := Field{is_multiline: true height: Fill empty_text: "Message"}
+        c_note := Label{width: Fill text: "" draw_text.color: ui_danger draw_text.text_style.font_size: 13}
     }
 }
-

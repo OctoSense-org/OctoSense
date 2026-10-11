@@ -13,5 +13,9 @@
     <string>Maps shows where you are on the map and gives directions from there.</string>
     <key>NSLocationWhenInUseUsageDescription</key>
     <string>Maps shows where you are on the map and gives directions from there.</string>
+    <key>NSCalendarsUsageDescription</key>
+    <string>OctoSense reads calendars you select and saves only the event changes you approve.</string>
+    <key>NSCalendarsFullAccessUsageDescription</key>
+    <string>Installed apps can read calendars you select. Each event change requires your review and approval.</string>
 </dict>
 </plist>

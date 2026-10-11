@@ -68,7 +68,7 @@ KERNEL_NAME = "octos-kernel"
 RECEIPT_NAME = "octos-kernel.json"
 # cargo-packager signs when these are set; the build never does (see above).
 SIGNING_ENV = ("APPLE_SIGNING_IDENTITY", "APPLE_CERTIFICATE", "APPLE_CERTIFICATE_PASSWORD", "APPLE_API_KEY",
-               "APPLE_API_ISSUER", "APPLE_API_KEY_PATH", "APPLE_ID", "APPLE_PASSWORD", "APPLE_TEAM_ID",
+               "APPLE_API_ISSUER", "APPLE_API_KEY_PATH", "APPLE_API_KEY_P8", "APPLE_ID", "APPLE_PASSWORD", "APPLE_TEAM_ID",
                "WINDOWS_CERTIFICATE", "WINDOWS_CERTIFICATE_PASSWORD", "WINDOWS_CERTIFICATE_THUMBPRINT")
 DEFAULT_FORMATS = {"macos": ["app", "dmg"], "windows": ["nsis"], "linux": ["deb", "appimage"]}
 # Where Makepad reads packaged resources from, per OS (see the table above).
@@ -191,6 +191,13 @@ def stage_resources(crates, dest):
 def kernel_tool():
     """tools/kernel-artifact.py: the one place that knows the pinned kernel."""
     spec = importlib.util.spec_from_file_location("kernel_artifact", ROOT / "tools/kernel-artifact.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def appimage_tool():
+    spec = importlib.util.spec_from_file_location("appimage_receipt", DESKTOP / "scripts/appimage_receipt.py")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
@@ -332,22 +339,35 @@ def main(argv=None):
     if os_name == "linux":
         depends = debian_depends([binaries_dir / PACKAGE, *([sidecar.with_name(f"{KERNEL_NAME}-{triple}")] if sidecar else [])])
         if depends:
-            config.setdefault("deb", {})["depends"] = depends
+            # GTK/WebKit are loaded dynamically and do not appear in shlibdeps.
+            # Preserve explicit runtime dependencies from release.json.
+            deb = config.setdefault("deb", {})
+            deb["depends"] = list(dict.fromkeys([*deb.get("depends", []), *depends]))
     # Relative paths in the config resolve from its directory, so the
     # generated copy sits beside release.json (git-ignored).
     generated = PACKAGING / ".release.generated.json"
     generated.write_text(json.dumps(config, indent=2) + "\n")
-    (out / "receipt.json").write_text(json.dumps({
+    receipt_path = out / "receipt.json"
+    receipt_path.unlink(missing_ok=True)  # A failed restage must not leave an old success receipt.
+    receipt = {
         "version": version, "target": triple, "formats": formats,
         "resources": [name for name, _ in crates], "kernel": kernel_receipt,
         "makepad_package_dir": added["MAKEPAD_PACKAGE_DIR"],
-    }, indent=2) + "\n")
+    }
     print(f"==> cargo packager --formats {','.join(formats)}", flush=True)
     try:
         subprocess.run(["cargo", "packager", "--release", "--config", str(generated), "--formats", ",".join(formats)],
                        cwd=PACKAGING, env=env, check=True)
     finally:
         generated.unlink(missing_ok=True)
+    if os_name == "linux" and kernel_receipt:
+        # linuxdeploy rewrites the AppImage sidecar's RUNPATH after resources
+        # are copied. Finalize only that format; the DEB retains staged bytes.
+        receipt["kernel_scope"] = "staged_before_packaging"
+        receipt["packages"] = appimage_tool().finalize_linux(
+            out / "dist", formats, kernel_receipt,
+            (out / "kernel" / KERNEL_NAME).read_bytes())
+    receipt_path.write_text(json.dumps(receipt, indent=2) + "\n")
     print(f"==> packages in {out / 'dist'}; receipt {out / 'receipt.json'}")
 
 

@@ -15,7 +15,7 @@
   Two deliberate differences from AppCard's: the label and package stay
   OctoSense's (`dev.makepad.octosense`, so both apps coexist), and the app is
   NOT `android:persistent` — OctoSense is an ordinary app, not a system
-  component. No `android:icon`: the build ships no launcher mipmaps yet.
+  component. Launcher resources under res/ include legacy and adaptive icons.
 -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
@@ -29,7 +29,13 @@
     <uses-permission android:name="android.permission.MODIFY_DAY_NIGHT_MODE" tools:ignore="ProtectedPermissions" />
     <uses-permission android:name="android.permission.HIDE_OVERLAY_WINDOWS" />
     <uses-permission android:name="android.permission.WRITE_SETTINGS" tools:ignore="ProtectedPermissions" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.READ_CALENDAR" />
+    <uses-permission android:name="android.permission.WRITE_CALENDAR" />
     <application
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher"
         android:label="{label}"
         android:theme="@style/MakepadAppTheme"
         android:allowBackup="false"
@@ -40,9 +46,18 @@
         android:largeHeap="true"
         android:usesCleartextTraffic="true"
         tools:targetApi="{target_sdk_version}">
+        <service android:name="dev.makepad.octosense.MailJobService"
+            android:permission="android.permission.BIND_JOB_SERVICE" android:exported="true" />
         <meta-data android:name="android.max_aspect" android:value="2.1" />
         <meta-data android:name="dev.makepad.android.APPLICATION_EXTENSION"
             android:value="dev.makepad.octosense.MakepadAppExtension" />
+        <activity android:name="dev.makepad.android.MakepadAuthActivity"
+            android:process=":makepad_auth" android:exported="false"
+            android:taskAffinity="{package_id}.makepad_auth"
+            android:excludeFromRecents="true"
+            android:theme="@android:style/Theme.Material.Light.NoActionBar"
+            android:configChanges="orientation|screenSize|keyboardHidden"
+            android:windowSoftInputMode="adjustResize" />
         <!-- CONFIG_ASSETS_PATHS (0x80000000) prevents Monet overlay changes
              from recreating the renderer and losing hosted app state. Numeric
              resource masks support Makepad's API 33 resource compiler, which predates

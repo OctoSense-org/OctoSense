@@ -83,8 +83,11 @@ consent, and connects requests to the same app-peer broker used by modules.
 Module `OctosPeer` channels enter this link through `module_connected` and
 `on_module_frame`. Tool outcomes and cancellations travel back through the link;
 when a process dies, its contexts close and pending calls fail while the durable
-peer remains. **No shipped process app currently requests an agent:** Terminal's
-manifest exposes tools but has an empty `agent.octos` list.
+peer remains. **Terminal is the only process app with an agent:** its
+`native-apps.json` entry grants all four `octos.*` services, and its own agent
+may call only its read tools, `terminal.read_screen` and
+`terminal.read_scrollback` (`own_tools`). Task, the other process app in
+`native-apps.json`, has no agent.
 
 ## 3. Run and follow a script bundle
 
@@ -106,7 +109,7 @@ MAKEPAD_APP_CONFIG='{"mail_demo":true}' cargo run --locked --release -p octosens
 ```
 
 The demo account uses password `demo`; sends stay in the demo. Develop new store
-apps in OctoScript-App-Design-Flow and use App Hub's admission/publishing flow.
+apps in OctoSense App Flow (formerly Design Flow) and use App Hub's admission/publishing flow.
 The [local-catalog recipe](../README.md#try-your-own-app-before-it-is-published)
 tests installation into the shell before publication.
 
@@ -116,7 +119,8 @@ tests installation into the shell before publication.
 `agent_apps` and `register_host_services`. App Hub's native `CARD_MODULE` hosts
 these interpreted programs. The optional AppCard assistant has its own module.
 
-Admission resolves manifest capability requests into policy. A script's
+Admission verifies the bundle and resolves its metadata and resource limits.
+Capability names disclose usage, not execution permission. A script's
 `host.request(...)` runs under that app's identity. App Hub's
 `crates/appstore/src/services.rs` defines `HostService`, `ServiceCall` and replies;
 the call supplies an app identity and host directory for the service to check.
@@ -162,20 +166,22 @@ The shipped declarations provide these operations:
 | Agent-enabled app | Tools and implementation |
 | --- | --- |
 | News | `news.list`, `news.read` and `news.notify`; News's host service handles them and hands notices to the shell. |
-| Mail | `mail.notify` only; Mail's service calls the shell's `on_notify` hook. UI operations such as `mail.list`, `mail.message` and `mail.send` have no corresponding agent declarations. |
-| Calendar | `calendar.events`, `add_event`, `remove_event`, `notify`, `agenda`; its Rust service owns events and event/agenda card templates. |
+| Mail | accounts/folders/sync/list/peek are bound to the broker account; peek never marks mail read. notify/publish_card publish through the shell; skip_event records an explicit no-action decision. Sending and credentials remain unavailable to the agent. |
+| Calendar | `calendar.events`, `add_event`, `update_event`, `remove_event`, `notify`, `agenda`; its Rust service owns events and event/agenda card templates. |
 | Photos, Maps, YouTube, Camera | `<namespace>.notify` only; the shell's `NoticeService` handles each application's namespace. Camera is packaged by Home. |
 
 AI providers configures the host and currently declares no app agent. Calendar's
-script window explains how to ask its agent; its events are available through
-the tools above while App Hub has no script `calendar` capability.
+contained month/day view and editor disclose `calendar` use; the service
+checks their admitted app identity and data scope. Its
+UI and the agent tools above share one local event store. A saved event's Glance
+card opens that exact record in Calendar, and editing it refreshes its card.
 
 Follow [`glance_notice.rs`](../../crates/shell/src/glance_notice.rs) and
 [`resources/glance/notice.card`](../../crates/shell/resources/glance/notice.card)
 for the shared notice. Mail and News keep their own services and install notice
 callbacks; `serve_system_apps` adds a `NoticeService` only for namespaces without
 a service. `publish_args` fills app name/icon, time, title and body, then
-`glance::publish_for` checks the app's `glance` grant. The notice opens its app and
+`glance::publish_for` checks current publisher admission and account identity. The notice opens its app and
 sets `notify: true`. Calendar keeps its own event and agenda card templates.
 
 The broader [`glance.publish`](../../crates/shell/src/glance.rs) API accepts either
@@ -184,6 +190,12 @@ Both render under the publishing app's policy. `notify: true` queues a toast;
 the host's `glance::dismiss` removes a card closed by the person. The fixed notice
 tools above accept text arguments; the script-card API serves richer app-owned
 surfaces. A person's action on such a surface uses the app's API permissions.
+
+On `main`, an agent's tool call that resolves to `glance.publish` may name a
+template from the app's admitted bundle with an `initial` object, or send valid
+L0 source, but never a `script` (`check_agent_publication` in
+[`script_apps.rs`](../../crates/shell/src/host_tools/script_apps.rs)).
+`desktop-v0.1.0-beta.2` still accepts an agent's `script` card.
 
 The tests beside these implementations show the contracts directly:
 `a_host_service_tool_runs_as_the_apps_own_request` in `script_apps.rs`,
@@ -195,7 +207,7 @@ Keep the data boundaries visible when adding a tool:
 
 | Boundary | Access path |
 | --- | --- |
-| Script storage | Runtime storage APIs under the app's capability and jail. |
+| Script storage | Runtime storage APIs in the app's bounded private jail, even when `storage` is omitted. |
 | Agent workspace | The peer's app/account folder through granted file tools and shell policy. |
 | Host-service database | Explicit Rust methods/tools for Calendar events, Mail cache or News data. Credentials stay with host sheets and vaults. |
 
@@ -214,9 +226,12 @@ Shift+F8 or the menu. F8 opens the system agent. `agents.list` reports app agent
 `agents.ask` waits for first-use consent and peer preparation, then returns the
 peer slug. The system agent sends the task with `peer_send_input` and gathers its
 answer with `peer_gather`. A card declaring `sys.chat` can address its own app
-agent. Shipped notice and Calendar templates have no chat, so use “Ask <app>”
-for those agents; the Mail demo card answers with canned text.
-Phone touch navigation has no Ask-app panel-opening control yet.
+agent. In a card workspace, an agent-enabled publisher without an embedded
+conversation gets native Card / Chat tabs and a host-bound conversation. Its
+publication and local L0 state are context, not tool grants; Enable assistant
+opens first-use consent. This also covers shipped notice and Calendar cards on
+the phone. The explicit Mail demo conversation still answers with canned text.
+Phone touch navigation has no separate Ask-app panel-opening control yet.
 
 Follow [`app_chat/`](../../crates/shell/src/app_chat/mod.rs),
 [`system_chat/`](../../crates/shell/src/system_chat/mod.rs),

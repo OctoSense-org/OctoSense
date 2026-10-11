@@ -33,7 +33,7 @@ class TheRepository(unittest.TestCase):
         apps = native_apps.load(ROOT)
         self.assertEqual([app["id"] for app in apps], ["rinx", "reference", "sheets", "terminal", "appcard", "apphub",
                                                        "calculator", "clock", "notes", "reminders", "weather",
-                                                       "task"])
+                                                       "octoscode", "task"])
         hosting = {app["id"]: app["hosting"] for app in apps}
         # Terminal is the only app that runs both linked and as a process
         # (ADR 0004 §2); Task has no module and runs only as one.
@@ -214,6 +214,35 @@ class Validation(Fixture):
         rinx["grants"] = [{"app": "nowhere", "tool": "nowhere.x"}]
         self.assertRefused(r"no native app nowhere")
 
+    def test_an_apps_own_agent_may_be_narrowed_to_some_of_its_tools(self):
+        """`agent.own_tools`: the tools an app's own agent may call, by
+        name, each one of its own; without it, every one of them."""
+        apps = native_apps.validate(self.data)
+        rust = native_apps.render_rust(apps)
+        self.assertIn('own_tools: &["terminal.read_screen", "terminal.read_scrollback"],', rust, "the Terminal's agent reads only")
+        self.assertIn('own_tools: &["calculator.eval"],', rust, "an entry that does not narrow keeps every tool")
+        terminal = self.app("terminal")["agent"]
+        terminal["own_tools"] = ["terminal.nope"]
+        self.assertRefused(r"agent\.own_tools: terminal\.nope is not one of terminal's agent\.tools")
+        terminal["own_tools"] = ["terminal.read_screen", "terminal.read_screen"]
+        self.assertRefused(r"agent\.own_tools names a tool twice")
+        terminal["own_tools"] = "terminal.read_screen"
+        self.assertRefused(r"agent\.own_tools must be a list of its own tool names")
+
+    def test_only_an_entry_that_names_the_coding_scope_gets_a_kernel_port(self):
+        """`kernel`: an app that is itself an octos client gets the coding
+        scope only when its entry says so (OctosCode's does); any other value
+        is refused."""
+        apps = native_apps.validate(self.data)
+        self.assertEqual([a["id"] for a in apps if "kernel" in a], ["octoscode"], "OctosCode alone asks for a port")
+        rust = native_apps.render_rust(apps)
+        self.assertEqual(rust.count("kernel: KernelPort::Coding,"), 1)
+        self.assertEqual(rust.count("kernel: KernelPort::None,"), len(apps) - 1, "every other entry has none")
+        self.app("calculator")["kernel"] = "coding"
+        self.assertEqual(native_apps.render_rust(native_apps.validate(self.data)).count("kernel: KernelPort::Coding,"), 2)
+        self.app("calculator")["kernel"] = "host"
+        self.assertRefused(r"calculator: kernel must be one of coding")
+
     def test_the_system_agent_gets_only_an_apps_own_shareable_read_tools(self):
         """`agent.system_tools`: what the system agent may call of an app's
         own tools is named per app, and only its shareable read tools
@@ -243,7 +272,8 @@ class Validation(Fixture):
         self.assertIn('tools_json: r##"[{"name":"terminal.run",', rust)
         agents = native_apps.render_agents(apps)
         self.assertIn('("rinx", &["octos.session.open", "octos.session.history", "octos.turn.start", "octos.turn.interrupt"]),', agents)
-        self.assertNotIn('"terminal"', agents, "an app granted no octos.* services has no line")
+        self.assertNotIn('"reference"', agents, "an app granted no octos.* services has no line")
+        self.assertIn('("terminal", &["octos.session.open",', agents, "the Terminal's own agent (read tools only, agent.own_tools)")
 
     def test_the_shipped_agent_blocks(self):
         rinx = self.app("rinx")["agent"]
@@ -279,7 +309,8 @@ class Generation(Fixture):
     def test_a_new_app_reaches_every_place(self):
         extra = copy.deepcopy(self.app("sheets"))
         extra.update({"id": "image", "crate": "makepad-image", "module": "makepad_image::IMAGE_MODULE", "bin": "image",
-                      "shells": {"desktop": "default", "phone": "off"}, "native_mobile": "feature"})
+                      "shells": {"desktop": "default", "phone": "off"}, "native_mobile": "feature",
+                      "agent": {"octos": [], "tools": None}})
         extra["source"]["local"] = ".sources/makepad/apps/image"
         self.data["apps"].append(extra)
         self.save()

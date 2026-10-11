@@ -1,0 +1,24 @@
+# octosense-engine-area: where a craft engine works (ADR 0013).
+#
+# Every engine host service (sheet, photo, word, deck, cad, light, sound,
+# design, film, effect, vector, pdf) takes its area from the shell's
+# resolver: the caller's own folder, whether a write may replace a file
+# there, and how many bytes it may still add. Without a resolver (tests,
+# App Hub's card-host) a call works in the legacy private folder
+# `<host dir>/<family>`. The write rules (never replace for agents, the
+# quota, never through a link) live here once, for all twelve.
+[package]
+name = "octosense-engine-area"
+version.workspace = true
+edition.workspace = true
+license = "Apache-2.0"
+publish = false
+
+[dependencies]
+# The same App Hub rev as every host service: the resolver reads the call.
+octosense-appstore = { workspace = true }
+# A service's answer, shown relative to the area (`Area::relative_json`).
+serde_json = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"

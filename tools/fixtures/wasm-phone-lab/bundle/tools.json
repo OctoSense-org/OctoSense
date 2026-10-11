@@ -1,0 +1,39 @@
+{
+  "schema": 1,
+  "tools": [
+    {
+      "name": "wasmprobe.inspect",
+      "description": "Run synthetic Wasm isolation and containment checks.",
+      "implemented_by": "app",
+      "risk": "read",
+      "background": false,
+      "shareable": false,
+      "private_data": true,
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "required": [
+          "account",
+          "results",
+          "functions"
+        ],
+        "properties": {
+          "account": {
+            "type": "string"
+          },
+          "results": {
+            "type": "object"
+          },
+          "functions": {
+            "type": "object"
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  ]
+}

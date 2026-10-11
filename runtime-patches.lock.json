@@ -1,34 +1,195 @@
 {
   "schema_version": 1,
   "makepad": {
-    "base_revision": "c155f61d0e1600d2ec474209374444a38a09a470",
+    "base_revision": "d653bc4493619ab979ccff165cf48c0c63b77d19",
     "patch": "tools/runtime-patches/makepad-settings.patch",
-    "sha256": "b17352ebf59e50ab3db6ff1cb825c4e006bcdff47d83522e372b8fe585e57570",
-    "tree": "3eadf628ee75eb4c9b672446bf14c7b95d9f0f5b",
+    "sha256": "3a79cddddc89dc4d064a9f0bdd17dc8111dcab9c796a334d95f61ecb9d5011aa",
+    "tree": "3f4fd959f1ee43445bc7ef13cf72465bb1951829",
     "product_fixes": [
       "Settings integration: Android IME synchronization, accessibility and reduced motion, GLES program-cache validation, obscured-gesture cancellation and scroll-position observation.",
       "Contained-app isolation and secret-input restrictions come from the pinned upstream runtime; the Settings overlay preserves those gates.",
       "System Back callback owners suppress compatibility Back keys to avoid duplicate navigation on Android 13+.",
       "A cancelled search's keyboard hides once: an editor session going inactive retires its input connection without restarting input, which brought the keyboard back empty while it was hiding (Android 11).",
       "Windows remote grabs send raw RGBA pixels to the bounded PNG worker before presenting, keeping full-size encoding off the UI thread and scaling before encoding.",
-      "Windows frame completion: backport Makepad work c508ab0c8 GPU completion polls around native and hosted repaint so upload buffers can retire."
+      "Windows frame completion: backport Makepad work c508ab0c8 GPU completion polls around native and hosted repaint so upload buffers can retire.",
+      "Android application extensions honor the manifest's explicit class name, keeping Back and platform integration active under custom test package ids.",
+      "Android physical touchscreen input has scoped host approval provenance; default and nested synthetic input are untrusted. Compromised OS/root impersonation is outside this app-level boundary; the subsequent desktop patch adds macOS pointer provenance.",
+      "macOS AppKit pointer metadata enables native approval for HID events without a posting process. Synthetic and remote dispatch remain untrusted, including nested callbacks; Windows/Linux physical approval is unsupported.",
+      "Android multiline Enter key events finish the active composition before inserting a newline, retaining the last word; ordinary IME composition commits keep replacement semantics.",
+      "Host-owned backend authentication reuses native WebViews with isolated sessions, exact callback interception, same-origin navigation and no page tool bridge; Android uses an ephemeral private process and profile.",
+      "Android Camera waits for one permission answer and refreshes an empty camera list after grant. Video pause/resume preserves an unprepared player so first-use authorization cannot prevent its initial source assignment.",
+      "Android startup and resume never request location for the legacy GPS cache; it uses existing grants only. Explicit location actions retain the normal permission flow.",
+      "Android Maps requests its first location grant only from Your location through the app location capability and the existing foreground GPS listener/permission callback; GPS reads stay passive.",
+      "Label keeps its native wrapping default across retained theme reapplication; named labels populated after mounting stay wrapped, while explicit app no-wrap flows remain unchanged.",
+      "Android native Camera checks each startup stage, cleans partially initialized resources, reports missing first frames after a bounded wait, and retries only after an explicit user action; unrelated video events cannot change its status.",
+      "Host API v1 apps opt into host-owned device consent before source evaluation. Cached host grants gate camera, microphone and location paths; camera revocation stops an active preview and cached GPS reads fail closed. Older bundles keep their existing capability behavior.",
+      "Opted-in camera and microphone check OS grants before prompting; background/agent requests retain nonprompt authority through callbacks and cannot use desktop timeout approval. Passive location reads remain available; legacy GPS requests require foreground prompt authority.",
+      "Host request JSON and pre-drain queues are bounded before native allocation; delayed host callbacks retain their nonprompting origin after an agent tool completes or is cancelled.",
+      "Agent/background prompt denial follows detached timers, tasks, paused continuations, widget callbacks and HTTP/WebSocket callbacks, including native device helpers. A fresh foreground entry retains its own authority; scoped denial restores on exit or unwind.",
+      "Ordinary WebReader embeds sandboxed WebKitGTK in X11/XWayland and private WebView2 controllers on Windows, with bounded UI integration, URL policy, no app bridge and explicit engine errors. Native Wayland and Linux/Windows production embedded authentication remain unsupported.",
+      "Native host-response envelope keys are interned when created, so contained apps can forward raw success, error and capability-refusal replies as bounded JSON without first naming each field in script source.",
+      "WebReader refuses unsupported Linux/Windows platforms before queuing native browser operations instead of reporting success for an invisible view; this does not add embedded browser support.",
+      "A Splash isolate entry keeps its 64 ms wall-clock budget unless MAKEPAD_SPLASH_BUDGET_MS sets another (makepad#109). Only the shell test step sets it: ~1,000 tests in one process wait on shared locks and page faults, which a wall-clock budget counts against the script.",
+      "Contained foreground document import/export and binary jail writes; bounded no-prompt fresh location with independent native/sample ownership and Android approximate permission; gated HTTP(S) external links; explicit unsupported capture errors.",
+      "Typed numeric arrays retain integer literal values. Reentrant native-to-script callbacks preserve yielded widget continuations on bounded reusable threads, retain nonprompting authority, and share instruction fuel with their caller.",
+      "Foreground image selection reuses native file transfer. Android text sharing reports bounded correlated chooser handoff, preserves Unicode through UTF-16 JNI, and makes no recipient or delivery claim.",
+      "Native audio sessions share microphone ownership with VoiceWave and native camera-video recording, retaining leases through native capture completion; foreground/storage snapshots support bounded asynchronous read/staging and atomic no-overwrite UI commit.",
+      "Apple audio input/output startup is bound to an individual pending open. Cancelled or superseded asynchronous completions release their resources without starting hardware, taking over a replacement session, or reporting a stale device failure.",
+      "Video exposes its existing native playback controls and state to Splash; finite seek, volume and playback-rate inputs are bounded, and source policy still applies.",
+      "Contained Video camera sources require CameraPreview app and OS permission flow. Native video players have bounded weak lifetime ownership, retire on widget/isolate close, and preserve manual pause across activity pause/resume.",
+      "CameraPreview cleanup keeps weak parent and child lifetimes, retires its watchdog when removed, and revokes a retained parent on isolate release so late events cannot reopen capture. Video lifecycle tests use the actual native-player retirement selector without private platform fields.",
+      "Prepared Video playback enters playing state, restores desired mute on each native player, and cancels a deferred Android texture-start on Stop; late prepared events cannot undo Stop.",
+      "Windows camera still capture takes one bounded next frame, validates MJPEG or encodes NV12/YUY2 on a dedicated worker, refuses overwrite, cancels on close and deadline, and reports unsupported video/library operations explicitly.",
+      "Retiring a CameraPreview explicitly stops its pending or active recording before video cleanup, including when another preview keeps the shared OpenHarmony camera session alive; terminal completion retires recording ownership.",
+      "Video controls report accepted transitions, pending cancellation retires native IDs before retry, decoder errors release ownership without losing the error, and rejected sources return observable errors.",
+      "CameraPreview correlates native events before the child retires its player generation; cancelling preparation permits an explicit retry without waiting for a stale release callback.",
+      "Video numeric controls accept both integer and floating Splash arguments while refusing nonnumeric, nonfinite and out-of-range values; native acceptance exposed the integer-seek regression.",
+      "Android Video seeks to the closest frame on API26+ instead of the previous keyframe; older backends retain a bounded legacy fallback.",
+      "A native host may stage up to 64 MiB into an app's jail (MAX_IMPORT_BYTES; prepare_import and commit_import), so files.import can take documents above the 1 MiB script write limit. Staged bytes never enter the script heap; the jail's byte quota and entry cap still apply, and script writes, photo picks and exports keep 1 MiB.",
+      "An OS resume restarts only the Video playback its pause stopped, including a start it cancelled; a player paused by the person, or paused or stopped by its app during the pause, stays paused (#406).",
+      "Camera capture and recording use explicit per-call boolean audio/library options, defaulting to silent app-local output. Permission availability never opts into recording audio or exporting captures; async microphone checks retain capture intent and background provenance. Unsupported library export fails before capture.",
+      "A hidden Android native composer remembers animated IME insets without requesting a root layout every frame; showing it applies the latest inset before its first visible frame."
     ],
     "stacked": [
       {
         "patch": "tools/runtime-patches/makepad-system-back.patch",
-        "sha256": "3268cb486bbd05db7bb6920c26007e437017b6234a4d9f045a99a7d1954b7427"
+        "sha256": "c5965f3ca8d9ebea874ae533146e9168fe36c82dbc80cff0554170602e96091e"
       },
       {
         "patch": "tools/runtime-patches/makepad-ime-inactive-no-restart.patch",
-        "sha256": "8ae6a6aceb93a013234c724ffdc6efc614cc8b9dddd7cae6ed8b1c569b94fdf1"
+        "sha256": "2c4b21d7adbb2f58f5e156cf39c6bbf51948e280fed1505245f935fd4e10514e"
       },
       {
         "patch": "tools/runtime-patches/makepad-windows-remote-capture.patch",
-        "sha256": "2c0fabb6f5c0733d9d3356cde4cc7c8d40aabebf9a4752740c94f332b7e1317a"
+        "sha256": "30e7c7994aeb80b0608242341bed84226f40dfba36030c271f9b1ff50c2eb8f8"
       },
       {
         "patch": "tools/runtime-patches/makepad-windows-frame-completion.patch",
-        "sha256": "8d58e16bc12aae5f4313fdc5c9d3f6944b96ee20e609fe5ff069fe2403954595"
+        "sha256": "0e29a789d106a689b5ed394c681de53dec49f6b938e21acceafbb5358fbe2bf9"
+      },
+      {
+        "patch": "tools/runtime-patches/makepad-application-extension.patch",
+        "sha256": "0668f176fb7b115b17550e6b2dd76109f4cc3906b4815a5d3687ff9d838d91c7"
+      },
+      {
+        "patch": "tools/runtime-patches/makepad-trusted-user-input.patch",
+        "sha256": "405558a2a2cf136e6e2cf49f312f5652cb5f2a34c418e49cf2e50e4599014bcd"
+      },
+      {
+        "patch": "tools/runtime-patches/makepad-desktop-trusted-input.patch",
+        "sha256": "90b188d3b161bfa54bd349f8ae7db4b7dc112052d997238d11bd4234b1b41cdd"
+      },
+      {
+        "patch": "tools/runtime-patches/makepad-android-enter-composition.patch",
+        "sha256": "36e7a22c999cf4a85e9d85f7a2b94bdfe9e6f375b703274735ca3816953e3280"
+      },
+      {
+        "patch": "tools/runtime-patches/makepad-auth-webview.patch",
+        "sha256": "71e1cc7745b6fa7927b470a0326ac4e3739c8182c1e95ffe67991f59710fa606"
+      },
+      {
+        "patch": "tools/runtime-patches/makepad-camera-permission-wait.patch",
+        "sha256": "96c30eca01ce5ed6d2eb56f9503eebd4e2404ac29027f20597ec18116ef1f4bd"
+      },
+      {
+        "patch": "tools/runtime-patches/makepad-location-explicit-consent.patch",
+        "sha256": "cf1c948a0c9dd97e7b063a46758ff9d5106ca48fe32b7419dfc7406bc2b80976"
+      },
+      {
+        "patch": "tools/runtime-patches/makepad-location-request.patch",
+        "sha256": "aa85f0dae99db54e3201e3b752aef121253248981cfe5046b3daa1c0456aa503"
+      },
+      {
+        "patch": "tools/runtime-patches/makepad-label-restyle-wrap.patch",
+        "sha256": "35ea02662b7b998737ffe1f1d98600f05b80acc5dd7c7d4bd2db828b1e5bc603"
+      },
+      {
+        "patch": "tools/runtime-patches/makepad-camera-checked-start.patch",
+        "sha256": "614613dc9780faab0231c946d1a50c5db07f9370a06c07d5016bef7b1e6cfb84"
+      },
+      {
+        "patch": "tools/runtime-patches/makepad-device-consent.patch",
+        "sha256": "edb8fe27f19f6ec36afb10fff4f2fe234ee223b5fce6827b01ce0d68ce209349"
+      },
+      {
+        "patch": "tools/runtime-patches/makepad-web-reader-availability.patch",
+        "sha256": "96d02f21e37a6d7dbd06cdb7870273787d8d45bfa378a4e53ccb734254047d64"
+      },
+      {
+        "patch": "tools/runtime-patches/makepad-host-json-boundary.patch",
+        "sha256": "d5b562950b1908df52df9460046f502dc99db2e63eb95f1a5ca1ab13725008df"
+      },
+      {
+        "patch": "tools/runtime-patches/makepad-async-prompt-provenance.patch",
+        "sha256": "dbf816dca437906391f00e11e0344d08228654ff41af43d11e4272602749f9df"
+      },
+      {
+        "patch": "tools/runtime-patches/makepad-desktop-webview.patch",
+        "sha256": "613b6d042fbb09e6b33736292650180011f5576a13aaa6fc72531b615dc58500"
+      },
+      {
+        "patch": "tools/runtime-patches/makepad-host-response-json.patch",
+        "sha256": "cf9baf53a11c35e9fa2d6bc84fcce20b3cce901cb0a31411ffd6f26373d147fd"
+      },
+      {
+        "patch": "tools/runtime-patches/makepad-splash-budget.patch",
+        "sha256": "c40e263f1869b157bf5a31132025a85091b6f34cd4b207998dbfbaa87434aa47"
+      },
+      {
+        "patch": "tools/runtime-patches/makepad-host-os-batch1.patch",
+        "sha256": "40cff18e59a7abad2808e6751a909f1313517ee148e650cd56d9ba377f3941f9"
+      },
+      {
+        "patch": "tools/runtime-patches/makepad-host-api-runtime-fixes.patch",
+        "sha256": "48dfff13b94532fed3864c6b1fa540748d6048eb9185153acfb5d3fe4d8a076e"
+      },
+      {
+        "patch": "tools/runtime-patches/makepad-photo-text-sharing.patch",
+        "sha256": "dc832e970adf7509fcab296101c8841a37f27d7a8f7e64aac58abfddd8f78472"
+      },
+      {
+        "patch": "tools/runtime-patches/makepad-native-audio-session-ownership.patch",
+        "sha256": "4ee0d436e0e5bc25b9bc063edb4c4e88f8b7803c28efe0690bdf4d57173cad39"
+      },
+      {
+        "patch": "tools/runtime-patches/makepad-apple-audio-open-generation.patch",
+        "sha256": "ad052e78a6982fc4cbd1688a1d8178ba7a8deb211fe35b096cd998fbf28c756a"
+      },
+      {
+        "patch": "tools/runtime-patches/makepad-video-controls-lifecycle.patch",
+        "sha256": "83ec1f0b8596afff7996814bbc31f939331c950b4cfc1a93dbcba89d7c839d37"
+      },
+      {
+        "patch": "tools/runtime-patches/makepad-windows-still-capture.patch",
+        "sha256": "f2056252f5859f550549290fcab38f331b6276d123e7702cfb8fdf38da57594b"
+      },
+      {
+        "patch": "tools/runtime-patches/makepad-camera-video-generation-routing.patch",
+        "sha256": "20199283857f477e150c7b35951c31f129852d0f21c904c375968847f91b47e9"
+      },
+      {
+        "patch": "tools/runtime-patches/makepad-video-numeric-arguments.patch",
+        "sha256": "3d853bae0414084e6a22ca8e658231a598c3851f6a84bfd721d2da47fa129d03"
+      },
+      {
+        "patch": "tools/runtime-patches/makepad-android-video-seek.patch",
+        "sha256": "e52e281cd375d25105dbaa285354c970148ab07442400c3cda6a712c460b01e9"
+      },
+      {
+        "patch": "tools/runtime-patches/makepad-large-document-import.patch",
+        "sha256": "d8c3c516d7f6feff3f36162a745bd5f939bb971d13c8c10942a9e5731728f3df"
+      },
+      {
+        "patch": "tools/runtime-patches/makepad-video-resume-keeps-pause.patch",
+        "sha256": "a9350a3e24d7d3a6a76bfd444860452f769bc834cd796d1a92c8e24c0be1c802"
+      },
+      {
+        "patch": "tools/runtime-patches/makepad-camera-capture-intent.patch",
+        "sha256": "d056b76d2eb6b55aa9c96447a49fc90d32a9a235b6bc9a1ff125902a73c28208"
+      },
+      {
+        "patch": "tools/runtime-patches/makepad-hidden-composer-insets.patch",
+        "sha256": "75935d129cfe4adf09555d3a94b0a7ad387f2ea97cf357f9d60c728d87239037"
       }
     ]
   }

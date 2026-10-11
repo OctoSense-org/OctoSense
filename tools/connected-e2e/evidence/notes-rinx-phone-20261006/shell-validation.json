@@ -1,0 +1,54 @@
+{
+  "base_commit": "c585c5978a0c5d67f8cf5565063d6cf7c5573469",
+  "sources": {
+    "crates/shell/src/mobile.rs": "12e9614d18d3f0ec3de9737480dee5b05d638f26b40e539a7a35ff076cc10067",
+    "crates/shell/src/mobile_navigation.rs": "14e759c945210ead41e348a485d2a4283dedfb1811c1a5bf7942ea4a4b7df9d8",
+    "crates/shell/src/mobile_surface.rs": "f8754872c50be3387e3dfa8d2dcfa791c9d346946350b17dac2d14873ff84d6e",
+    "crates/shell/src/mobile_app.rs": "f89e94e17eae8f94ac61c23c0002a7a2a78dd6073aefb195102b9fdd62e62e7f",
+    "crates/markdown-editor/src/lib.rs": "4ed1f604a1c273a183629bba29bef195ebd6b7b638b9fc06c707680cda64480c",
+    "crates/markdown-editor/src/table_picker.rs": "86e831bfdbac5303463ce8d7e9ef4a7ca0fd0bd13e601f8943e67b99bda537b2",
+    "Cargo.lock": "032ae9064ab4d020f29af868c4d4678ad2d22f68928f25aa7f05d2cf6b758f88"
+  },
+  "commands": [
+    "MAKEPAD_HIDE_WINDOWS=1 cargo test --locked --features mobile-apps -p octosense-shell (from phone/)",
+    "bash tools/check-shell-graph.sh -p octosense",
+    "bash tools/check-shell-graph.sh -p octosense-home"
+  ],
+  "status": "passed",
+  "shell_suite": {
+    "passed": 956,
+    "failed": 0,
+    "ignored": 0,
+    "test_seconds": 6.53,
+    "exit_code": 0
+  },
+  "graphs": {
+    "desktop": {
+      "exit_code": 0,
+      "checks": [
+        "ok: features='' target='host' (kernel: octosense-kernel)",
+        "ok: features='' target='aarch64-linux-android' (kernel: octosense-kernel)",
+        "ok: features='mobile-apps' target='host' (kernel: octosense-kernel)",
+        "ok: features='mobile-apps' target='aarch64-linux-android' (kernel: octosense-kernel)",
+        "ok: one octos (056173e85b150e387805fc307fe231064ac1ed35)"
+      ]
+    },
+    "home": {
+      "exit_code": 0,
+      "checks": [
+        "ok: features='' target='host' (kernel: octosense-kernel)",
+        "ok: features='' target='aarch64-linux-android' (kernel: octosense-kernel)",
+        "ok: features='mobile-apps' target='host' (kernel: octosense-kernel)",
+        "ok: features='mobile-apps' target='aarch64-linux-android' (kernel: octosense-kernel)",
+        "ok: one octos (056173e85b150e387805fc307fe231064ac1ed35)"
+      ]
+    }
+  },
+  "touch_review": [
+    "IME hides drawing and all direct/cached floating hits",
+    "Cancelled held action cannot fire after IME dismissal",
+    "Normal IME transition retains shell-owned finger until release",
+    "Pause/focus loss clears retained touch even after IME cancelled Navigation.held",
+    "Android system Back/Home dispatch remains unchanged"
+  ]
+}

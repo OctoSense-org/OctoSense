@@ -1,8 +1,8 @@
 diff --git a/tools/cargo_makepad/src/android/java/dev/makepad/android/MakepadActivity.java b/tools/cargo_makepad/src/android/java/dev/makepad/android/MakepadActivity.java
-index 274d922..ede68f2 100644
+index ab74f7ad9..870a02a13 100644
 --- a/tools/cargo_makepad/src/android/java/dev/makepad/android/MakepadActivity.java
 +++ b/tools/cargo_makepad/src/android/java/dev/makepad/android/MakepadActivity.java
-@@ -1180,6 +1180,8 @@ public class MakepadActivity
+@@ -1230,6 +1230,8 @@ public class MakepadActivity
          void onDestroy();
          default boolean onActivityResult(int requestCode, int resultCode, Intent data) { return false; }
          default boolean onBackPressed() { return false; }
@@ -11,7 +11,7 @@ index 274d922..ede68f2 100644
          /** Runs before native views or the renderer receive a touch. */
          default boolean filterTouchEvent(MotionEvent event) { return true; }
      }
-@@ -1811,6 +1813,12 @@ public class MakepadActivity
+@@ -1863,6 +1865,12 @@ public class MakepadActivity
      // key (BACK included) and forwards it to Rust, so onBackPressed never runs.
      @Override
      public boolean dispatchKeyEvent(KeyEvent event) {
@@ -24,7 +24,7 @@ index 274d922..ede68f2 100644
          if (mQrScanning && event.getKeyCode() == KeyEvent.KEYCODE_BACK) {
              if (event.getAction() == KeyEvent.ACTION_UP) closeQrScanner("cancelled");
              return true;
-@@ -1821,6 +1829,7 @@ public class MakepadActivity
+@@ -1873,6 +1881,7 @@ public class MakepadActivity
      @Override
      @SuppressWarnings("deprecation")
      public void onBackPressed() {

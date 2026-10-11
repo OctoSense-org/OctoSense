@@ -229,6 +229,42 @@ The policy is written only into OctoSense's own core dir, and only over a
 policy OctoSense wrote (`"owner": "octosense"`): a foreign policy, or the
 person's own `$HOME/octos-home/.octos`, is refused with a warning.
 
+## The system agent's skills
+
+[ADR 0013](../../docs/adr/0013-craft-engines-as-pinned-services.md): the
+system agent learns each craft engine linked into the build from an octos
+skill, so it reads an engine's instructions when a request needs them
+instead of carrying every engine method as a tool schema on every turn. The
+shell registers the skills once at startup (`skills::set_managed`, from
+`crates/shell/src/system_chat/skills.rs`); before every kernel start,
+`launch::prepare` syncs them (`skills::sync`) into the skills dir octos reads
+for the `_main` profile:
+
+- **Where.** `<core_dir>/profiles/_main/data/skills/<name>/`: the profile's
+  data dir, or `<data_dir>/skills` when `_main.json` names an absolute
+  `data_dir`, as octos's `ProfileStore::resolve_data_dir` does. When the
+  profile runtime bootstraps, octos lists each skill's name, description and
+  `SKILL.md` location in the profile's system prompt (`## Available
+  Skills`), so every session of `_main`, app agents' included, sees the
+  summary from that start on. The dir is also a read zone of every
+  session's file tools, which is why it has to exist before the start.
+- **Managed, never the person's.** Each managed skill holds
+  `.octosense-managed`. A sync writes a missing or changed skill (built
+  beside it and swapped in by rename), removes a managed skill that is no
+  longer registered, and never writes, moves or removes a skill without the
+  marker, even one with a registered name (that skill is then reported as
+  not installed). Nothing happens before the shell registers a set, and
+  nothing is written into the person's own `$HOME/octos-home/.octos`.
+- **Fails open.** A skill is guidance, not a boundary: one that cannot be
+  installed is logged (`octos-core: managed skills in <dir>: ...`) and the
+  kernel starts anyway. Only the tool policy fails closed.
+- **Checked.** `skills::validate` refuses a skill octos would misread: a
+  name outside `[a-z0-9-]`, a file path outside the skill's folder, a
+  `SKILL.md` whose frontmatter names another skill, a description that is
+  missing, over 200 bytes, quoted, or holds `#` (octos cuts there) or `<`,
+  `>`, `&` (its summary is unescaped XML), and `always: true` (which would
+  load the whole body into every turn).
+
 ## Testing
 
 From the repository root:

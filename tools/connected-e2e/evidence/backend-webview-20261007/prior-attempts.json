@@ -1,0 +1,28 @@
+[
+  {
+    "attempt": "01",
+    "result": "PASS",
+    "functional_checks": 7,
+    "binary_sha256": "6e2158ca35ad7a071bcef45e1bd909c417bdf0d86004d65add85844f41e08110",
+    "acceptance_status": "Historical pre-final native engine run; later lifecycle/native changes required a rebuilt final acceptance. Not release evidence.",
+    "cleaned_up": true
+  },
+  {
+    "attempt": "02",
+    "result": "PASS",
+    "functional_checks": 8,
+    "binary_sha256": "baca9041250d013a6fc5ffc0a009d1b0d946b8881044b911567a0aa0df9dbea3",
+    "acceptance_status": "Historical pre-final native engine run; later lifecycle/native changes required a rebuilt final acceptance. Not release evidence.",
+    "cleaned_up": true
+  },
+  {
+    "attempt": "03",
+    "result": "PASS",
+    "functional_checks": 8,
+    "binary_sha256": "c4e96f3c7850c15e79e5352ae4c35cc89cd761871e3144e6aa1f8ffc3aa0c435",
+    "makepad_expected_tree": "d1f6a4e302e1726b573e40bc90132b04e0e3b2c4",
+    "acceptance_status": "Historical 8+7 acceptance before final Glance lifecycle and Android inset refresh; final rebuilt evidence is in parent directory.",
+    "receipt": "historical/before-glance-refresh/receipt.json",
+    "cleaned_up": true
+  }
+]

@@ -1,0 +1,55 @@
+diff --git a/widgets/src/web_reader.rs b/widgets/src/web_reader.rs
+index d1e2a1b04..44240521e 100644
+--- a/widgets/src/web_reader.rs
++++ b/widgets/src/web_reader.rs
+@@ -1,5 +1,7 @@
+ //! A web page inside a script app: the platform's own web view (WKWebView,
+ //! Android's WebView) glued to this widget's rect, driven from script.
++//! Linux/Windows have no SystemBrowser adapter: open returns false with an
++//! explicit error rather than claiming success for an invisible browser.
+ //!
+ //! ```text
+ //! reader := WebReader{width: Fill height: Fill on_error: || show(ui.reader.error())}
+@@ -168,6 +170,14 @@ fn report(&mut self, cx: &mut Cx, why: String) {
+ 
+     /// Open `url`, when this app may. Returns whether it opened.
+     pub fn open(&mut self, cx: &mut Cx, url: &str) -> bool {
++        self.open_on_platform(cx, url, std::env::consts::OS)
++    }
++
++    fn open_on_platform(&mut self, cx: &mut Cx, url: &str, platform: &str) -> bool {
++        if !matches!(platform, "macos" | "ios" | "android") {
++            self.report(cx, "Embedded web pages are unavailable on this platform; this host has no native WebReader adapter".into());
++            return false;
++        }
+         if self.auth_mode { self.close(cx); self.auth_mode = false; self.auth_id = None; }
+         let heap = self.heap_key();
+         if !crate::splash_policy::page_allowed(heap, url) {
+@@ -442,3 +452,27 @@ fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawSte
+         step
+     }
+ }
++
++
++#[cfg(test)]
++mod availability_tests {
++    use super::*;
++
++    #[test]
++    fn unsupported_platform_never_starts_browser_lifecycle() {
++        let mut cx = Cx::new(Box::new(|_, _| {}));
++        let mut reader = cx.with_vm(|vm| {
++            crate::script_mod(vm);
++            let value = vm.eval(script! { use mod.widgets.* WebReader {} });
++            WebReader::script_from_value(vm, value)
++        });
++        for platform in ["linux", "windows", "freebsd", "unknown"] {
++            assert!(!reader.open_on_platform(&mut cx, "https://example.test/", platform));
++            assert!(!reader.open);
++            assert!(!reader.spawned);
++            assert!(reader.last_error.contains("unavailable"));
++            assert!(reader.timer.is_none());
++            assert!(reader.url.is_none());
++        }
++    }
++}

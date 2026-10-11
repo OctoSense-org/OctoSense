@@ -10,6 +10,7 @@
     "storage",
     "net",
     "location",
+    "web",
     "glance"
   ],
   "network": {
@@ -19,7 +20,8 @@
       "overpass-api.de",
       "overpass.kumi.systems",
       "maps.mail.ru",
-      "overpass.openstreetmap.fr"
+      "overpass.openstreetmap.fr",
+      "makepad.nl"
     ]
   },
   "agent": {

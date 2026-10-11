@@ -1,0 +1,1079 @@
+diff --git a/widgets/src/camera_preview.rs b/widgets/src/camera_preview.rs
+index 21e6b1eae..9eff00099 100644
+--- a/widgets/src/camera_preview.rs
++++ b/widgets/src/camera_preview.rs
+@@ -42,7 +42,7 @@
+     VideoFormatId, VideoInputId, VideoInputsEvent, VideoPixelFormat,
+ };
+ use crate::gesture_view::PinchTracker;
+-use std::collections::HashMap;
++use std::{cell::Cell, collections::HashMap, rc::{Rc, Weak}};
+ 
+ script_mod! {
+     use mod.prelude.widgets_internal.*
+@@ -63,24 +63,60 @@
+ /// capture backend asks for access itself.
+ const PERMISSION_GRACE_SECONDS: f64 = 2.0;
+ 
++const MAX_CAMERA_OWNERS: usize = 64;
++const MAX_CAMERAS_PER_HEAP: usize = 16;
++struct OpenCamera {
++    heap: usize,
++    owner: Weak<Cell<bool>>,
++    video: WidgetWeakRef,
++    timer: Option<Timer>,
++    recording_input: Option<VideoInputId>,
++}
+ thread_local! {
+-    /// heap key -> the preview videos that heap's cameras opened.
+-    static OPEN: std::cell::RefCell<HashMap<usize, Vec<VideoRef>>> = Default::default();
++    // Neither the preview parent nor its video child is retained by cleanup.
++    static OPEN: std::cell::RefCell<HashMap<WidgetUid, OpenCamera>> = Default::default();
++}
++fn take_retired_cameras(heap: Option<usize>) -> Vec<OpenCamera> {
++    OPEN.with(|opened| {
++        let mut opened = opened.borrow_mut();
++        let ids: Vec<_> = opened.iter().filter_map(|(id, camera)| {
++            (camera.owner.strong_count() == 0 || heap == Some(camera.heap)).then_some(*id)
++        }).collect();
++        ids.into_iter().filter_map(|id| opened.remove(&id)).map(|camera| {
++            if let Some(owner) = camera.owner.upgrade() { owner.set(false); }
++            camera
++        }).collect()
++    })
++}
++fn cleanup_cameras(cx: &mut Cx, heap: Option<usize>) {
++    for camera in take_retired_cameras(heap) {
++        // Another preview can keep the shared native camera session alive.
++        // Stop this owner's recording before releasing only its video player.
++        if let Some(input) = camera.recording_input {
++            cx.camera_capture(input, CameraCaptureRequest::StopVideo);
++        }
++        if let Some(timer) = camera.timer { cx.stop_timer(timer); }
++        if let Some(video) = camera.video.upgrade() {
++            video.as_video().stop_and_cleanup_resources(cx);
++        }
++        // If the child also died, Video's weak registry releases its player.
++    }
+ }
+-
+ /// Stop every camera an isolate opened. Called from the isolate GC, and by a
+ /// host when the app it runs closes, which can be long before the GC.
+ pub fn release_cameras(cx: &mut Cx, heap_key: usize) {
+-    let videos = OPEN.with(|o| o.borrow_mut().remove(&heap_key)).unwrap_or_default();
+-    for video in videos {
+-        video.stop_and_cleanup_resources(cx);
+-    }
++    cleanup_cameras(cx, Some(heap_key));
++}
++/// A removed parent must not keep capturing through a retained child reference.
++pub(crate) fn drain_dropped_cameras(cx: &mut Cx) {
++    cleanup_cameras(cx, None);
+ }
+ 
+ /// Everything a closing app holds that the person can see: its cameras and
+ /// its web views. A host calls this when it closes an app.
+ pub fn release_isolate_devices(cx: &mut Cx, heap_key: usize) {
+     release_cameras(cx, heap_key);
++    crate::video::release_isolate_videos(cx, heap_key);
+     crate::web_reader::gc_web_readers(cx, &[heap_key]);
+ }
+ 
+@@ -199,7 +235,7 @@ pub struct CameraPreview {
+     #[rust]
+     drawn: bool,
+     #[rust]
+-    registered: bool,
++    lifetime: Option<Rc<Cell<bool>>>,
+     #[rust]
+     recording: Option<String>,
+     #[rust]
+@@ -212,7 +248,42 @@ pub struct CameraPreview {
+     zoom: f32,
+ }
+ 
++impl Drop for CameraPreview {
++    fn drop(&mut self) {
++        if self.lifetime.take().is_some() {
++            crate::makepad_platform::SignalToUI::set_ui_signal();
++        }
++    }
++}
++
+ impl CameraPreview {
++    fn register_lifetime(&mut self, cx: &Cx) -> bool {
++        let heap = self.heap_key();
++        let id = self.widget_uid();
++        let video = self.video(cx).downgrade();
++        if self.lifetime.as_ref().is_some_and(|owner| !owner.get()) {
++            self.lifetime = None;
++            self.timer = None; // The retiring registry already stopped it.
++        }
++        let owner = self.lifetime.get_or_insert_with(|| Rc::new(Cell::new(true)));
++        OPEN.with(|opened| {
++            let mut opened = opened.borrow_mut();
++            if !opened.contains_key(&id) && (opened.len() >= MAX_CAMERA_OWNERS
++                || opened.values().filter(|camera| camera.heap == heap).count() >= MAX_CAMERAS_PER_HEAP) {
++                return false;
++            }
++            opened.insert(id, OpenCamera { heap, owner: Rc::downgrade(owner), video, timer: self.timer,
++                recording_input: self.recording.as_ref().and(self.input) });
++            true
++        })
++    }
++    fn set_recording_input(&self, input: Option<VideoInputId>) {
++        OPEN.with(|opened| {
++            if let Some(camera) = opened.borrow_mut().get_mut(&self.widget_uid()) {
++                camera.recording_input = input;
++            }
++        });
++    }
+     fn heap_key(&self) -> usize {
+         self.view.source.heap_key()
+     }
+@@ -238,6 +309,11 @@ fn start(&mut self, cx: &mut Cx) -> bool {
+             self.fail(cx, "this app was not granted the camera".into());
+             return false;
+         }
++        if !self.register_lifetime(cx) {
++            self.lifetime = None;
++            self.fail(cx, "too many camera previews".into());
++            return false;
++        }
+         self.wanted = true;
+         self.last_error.clear();
+         if self.permission.is_some_and(|p| p != PermissionStatus::Granted) && !self.permission_pending {
+@@ -271,6 +347,7 @@ fn start(&mut self, cx: &mut Cx) -> bool {
+         if self.timer.is_none() {
+             self.timer = Some(cx.start_interval(WATCHDOG_SECONDS));
+         }
++        self.register_lifetime(cx); // Track the watchdog even before OS approval.
+         self.drawn = true;
+         self.drive(cx);
+         true
+@@ -284,6 +361,8 @@ fn stop(&mut self, cx: &mut Cx) {
+         if let Some(timer) = self.timer.take() {
+             cx.stop_timer(timer);
+         }
++        OPEN.with(|opened| { opened.borrow_mut().remove(&self.widget_uid()); });
++        self.lifetime = None;
+     }
+ 
+     /// Close the camera, keeping whether the app wants it: the watchdog
+@@ -292,6 +371,7 @@ fn halt(&mut self, cx: &mut Cx) {
+         self.audio_permission_request = None;
+         if matches!(self.state, State::Starting | State::Running) {
+             if self.recording.take().is_some() {
++                self.set_recording_input(None);
+                 if let Some(input) = self.input {
+                     cx.camera_capture(input, CameraCaptureRequest::StopVideo);
+                 }
+@@ -303,6 +383,10 @@ fn halt(&mut self, cx: &mut Cx) {
+ 
+     /// One step towards what the app wants, driven by the platform's events.
+     fn drive(&mut self, cx: &mut Cx) {
++        if self.lifetime.as_ref().is_some_and(|owner| !owner.get()) {
++            self.stop(cx);
++            return;
++        }
+         if !self.granted("camera.preview") {
+             self.stop(cx);
+             return;
+@@ -337,12 +421,8 @@ fn drive(&mut self, cx: &mut Cx) {
+                 let Some((format_id, _, _)) = choice.format_for(self.aspect) else { return };
+                 let video = self.video(cx);
+                 video.set_camera_preview_mode(cx, VideoCameraPreviewMode::Texture);
+-                video.set_source_camera(cx, choice.input_id, format_id);
++                video.set_source_from_camera_preview(cx, choice.input_id, format_id);
+                 video.begin_playback(cx);
+-                if !self.registered {
+-                    self.registered = true;
+-                    OPEN.with(|o| o.borrow_mut().entry(self.heap_key()).or_default().push(video.clone()));
+-                }
+                 self.state = State::Starting;
+                 self.input = Some(choice.input_id);
+                 self.open_front = choice.front;
+@@ -421,6 +501,7 @@ fn begin_recording(&mut self, cx: &mut Cx, audio: bool) -> bool {
+         };
+         self.recording_audio = audio;
+         self.recording = Some(relative);
++        self.set_recording_input(Some(input));
+         let library = self.granted("library.write");
+         cx.camera_capture(input, CameraCaptureRequest::StartVideo { path: real, audio, library });
+         true
+@@ -443,6 +524,7 @@ fn on_capture(&mut self, cx: &mut Cx, result: &CameraCaptureResult) {
+         match result {
+             CameraCaptureResult::Photo { .. } => self.notify_capture(cx),
+             CameraCaptureResult::VideoStopped { .. } => {
++                self.set_recording_input(None);
+                 if let Some(relative) = self.recording.take() {
+                     self.last = relative;
+                 }
+@@ -450,6 +532,7 @@ fn on_capture(&mut self, cx: &mut Cx, result: &CameraCaptureResult) {
+             }
+             CameraCaptureResult::Failed { what, error } => {
+                 if what == "video" {
++                    self.set_recording_input(None);
+                     self.recording = None;
+                 }
+                 self.fail(cx, format!("{what} failed: {error}"));
+@@ -589,6 +672,9 @@ fn script_call(&mut self, vm: &mut ScriptVm, method: LiveId, args: ScriptValue)
+     }
+ 
+     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
++        if self.lifetime.as_ref().is_some_and(|owner| !owner.get()) {
++            self.stop(cx);
++        }
+         // Revocation applies to an already running camera, not just its next
+         // start. Stopping also ends video recording before native cleanup.
+         if !self.granted("camera.preview") || (self.recording.is_some() && self.recording_audio && !self.granted("microphone.record")) {
+@@ -877,4 +963,46 @@ fn flash_names_map_and_unknown_ones_are_ignored() {
+         assert_eq!(flash_mode("torch"), Some(CameraFlashMode::Torch));
+         assert_eq!(flash_mode("strobe"), None);
+     }
++    #[test]
++    fn removed_parent_retires_camera_even_when_video_child_is_retained() {
++        let owner = Rc::new(Cell::new(true));
++        let video = WidgetRef::empty();
++        let weak_video = video.downgrade();
++        let uid = WidgetUid(0xCAFE);
++        OPEN.with(|opened| {
++            opened.borrow_mut().insert(uid, OpenCamera {
++                heap: 0xCAFE, owner: Rc::downgrade(&owner), video: weak_video,
++                timer: Some(Timer(42)), recording_input: Some(VideoInputId(LiveId(7))),
++            });
++        });
++        let other_owner = Rc::new(Cell::new(true));
++        OPEN.with(|opened| {
++            opened.borrow_mut().insert(WidgetUid(0xBEEF), OpenCamera {
++                heap: 0xBEEF, owner: Rc::downgrade(&other_owner), video: WidgetWeakRef::default(),
++                timer: None, recording_input: None,
++            });
++        });
++        assert!(take_retired_cameras(None).is_empty());
++        drop(owner);
++        let retired = take_retired_cameras(None);
++        assert_eq!(retired.len(), 1);
++        assert_eq!(retired[0].recording_input, Some(VideoInputId(LiveId(7))),
++            "the recorder is retired even while another camera preview remains alive");
++        assert!(OPEN.with(|opened| opened.borrow().contains_key(&WidgetUid(0xBEEF))));
++        assert!(retired[0].video.upgrade().is_some(), "a child reference cannot retain parent authorization");
++        assert_eq!(retired[0].timer.map(|timer| timer.0), Some(42), "the watchdog is retired with its parent");
++        assert!(take_retired_cameras(None).is_empty());
++        drop(video);
++        assert!(retired[0].video.upgrade().is_none(), "cleanup itself never retains the video child");
++        let live_owner = Rc::new(Cell::new(true));
++        OPEN.with(|opened| {
++            opened.borrow_mut().insert(uid, OpenCamera {
++                heap: 0xCAFE, owner: Rc::downgrade(&live_owner), video: WidgetWeakRef::default(), timer: None, recording_input: None,
++            });
++        });
++        assert_eq!(take_retired_cameras(Some(0xCAFE)).len(), 1);
++        assert!(!live_owner.get(), "isolate release revokes a still-retained parent's ability to reopen");
++        assert_eq!(take_retired_cameras(Some(0xBEEF)).len(), 1);
++    }
++
+ }
+diff --git a/widgets/src/video.rs b/widgets/src/video.rs
+index 197599cf4..b11c4151d 100644
+--- a/widgets/src/video.rs
++++ b/widgets/src/video.rs
+@@ -10,8 +10,61 @@
+         VideoFrameSessionId,
+     },
+     widget::*,
++    widget_async::ScriptAsyncResult,
+ };
+-use std::rc::Rc;
++use std::{cell::RefCell, collections::HashMap, rc::{Rc, Weak}};
++
++const MAX_OPEN_VIDEO_PLAYERS: usize = 64;
++const MAX_VIDEO_PLAYERS_PER_HEAP: usize = 16;
++struct VideoLifetime { heap: usize, owner: Weak<()> }
++thread_local! {
++    // Weak owners cannot keep a discarded widget alive. Only actual native
++    // players enter this bounded registry, not every Video prototype.
++    static VIDEO_PLAYERS: RefCell<HashMap<LiveId, VideoLifetime>> = RefCell::new(HashMap::new());
++}
++fn register_video_lifetime(heap: usize, id: LiveId, owner: &Rc<()>) -> bool {
++    VIDEO_PLAYERS.with(|players| {
++        let mut players = players.borrow_mut();
++        if let Some(existing) = players.get(&id) {
++            return existing.heap == heap && existing.owner.ptr_eq(&Rc::downgrade(owner));
++        }
++        if players.len() >= MAX_OPEN_VIDEO_PLAYERS
++            || players.values().filter(|player| player.heap == heap).count() >= MAX_VIDEO_PLAYERS_PER_HEAP {
++            return false;
++        }
++        players.insert(id, VideoLifetime { heap, owner: Rc::downgrade(owner) });
++        true
++    })
++}
++fn forget_video_lifetime(id: LiveId) {
++    VIDEO_PLAYERS.with(|players| { players.borrow_mut().remove(&id); });
++}
++fn take_retired_video_players(heap: Option<usize>) -> Vec<LiveId> {
++    VIDEO_PLAYERS.with(|players| {
++        let mut players = players.borrow_mut();
++        let ids: Vec<_> = players.iter().filter_map(|(id, player)| {
++            (player.owner.strong_count() == 0 || heap == Some(player.heap)).then_some(*id)
++        }).collect();
++        for id in &ids { players.remove(id); }
++        ids
++    })
++}
++fn release_video_players(cx: &mut Cx, heap: Option<usize>) {
++    for id in take_retired_video_players(heap) {
++        cx.cancel_pending_camera_playback(id);
++        cx.detach_camera_native_preview(id);
++        cx.cleanup_video_playback_resources(id);
++    }
++}
++/// Called by isolate close/GC, including plain file/network videos.
++pub(crate) fn release_isolate_videos(cx: &mut Cx, heap: usize) {
++    release_video_players(cx, Some(heap));
++}
++/// Drop has no Cx. The next UI signal/async pump retires its native player.
++pub(crate) fn drain_dropped_videos(cx: &mut Cx) {
++    release_video_players(cx, None);
++}
++
+ script_mod! {
+     use mod.prelude.widgets_internal.*
+ 
+@@ -481,6 +534,10 @@ pub struct Video {
+     source: VideoDataSource,
+     #[rust]
+     in_memory_source: Option<Rc<Vec<u8>>>,
++    // Only CameraPreview's native permission state machine can populate this.
++    // A script-authored Camera enum is never sufficient OS authorization.
++    #[rust]
++    camera_preview_source: Option<(VideoInputId, VideoFormatId)>,
+     #[rust]
+     session_source_id: Option<VideoFrameSessionId>,
+     #[rust]
+@@ -532,6 +589,10 @@ pub struct Video {
+     #[rust]
+     playback_state: PlaybackState,
+     #[rust]
++    native_lifetime: Option<Rc<()>>,
++    #[rust]
++    resume_on_activity: bool,
++    #[rust]
+     should_prepare_playback: bool,
+     #[rust]
+     audio_state: AudioState,
+@@ -798,6 +859,22 @@ pub fn set_source_camera(
+         }
+     }
+ 
++    /// CameraPreview calls this only after its correlated app and OS grants.
++    /// This is deliberately not a script method or a live property.
++    pub(crate) fn set_source_from_camera_preview(
++        &self,
++        cx: &mut Cx,
++        input_id: VideoInputId,
++        format_id: VideoFormatId,
++    ) {
++        self.set_source_camera(cx, input_id, format_id);
++        if let Some(mut inner) = self.borrow_mut() {
++            if inner.playback_state == PlaybackState::Unprepared {
++                inner.camera_preview_source = Some((input_id, format_id));
++            }
++        }
++    }
++
+     /// Sets an in-memory source for the video data.
+     ///
+     /// This bypasses filesystem and network paths and is useful for embedded media assets.
+@@ -957,6 +1034,101 @@ pub enum VideoAction {
+ }
+ 
+ impl Widget for Video {
++    fn script_call(
++        &mut self,
++        vm: &mut ScriptVm,
++        method: LiveId,
++        args: ScriptValue,
++    ) -> ScriptAsyncResult {
++        // These controls use the same player and source checks as the built-in
++        // controls. They never create another player or bypass source policy.
++        if method == live_id!(state) {
++            let state = match self.playback_state {
++                PlaybackState::Unprepared => "unprepared",
++                PlaybackState::Preparing => "preparing",
++                PlaybackState::Prepared => "prepared",
++                PlaybackState::Playing => "playing",
++                PlaybackState::Paused => "paused",
++                PlaybackState::Completed => "completed",
++                PlaybackState::CleaningUp => "cleaning-up",
++            };
++            return ScriptAsyncResult::Return(vm.bx.heap.new_string_from_str(state));
++        }
++        if method == live_id!(error) {
++            return ScriptAsyncResult::Return(
++                vm.bx
++                    .heap
++                    .new_string_from_str(self.last_error.as_deref().unwrap_or("")),
++            );
++        }
++        if method == live_id!(current_position_ms) {
++            return ScriptAsyncResult::Return(ScriptValue::from_f64(
++                self.current_position_ms as f64,
++            ));
++        }
++        if method == live_id!(total_duration_ms) {
++            return ScriptAsyncResult::Return(ScriptValue::from_f64(self.total_duration as f64));
++        }
++        if method == live_id!(is_muted) {
++            return ScriptAsyncResult::Return((self.audio_state == AudioState::Muted).into());
++        }
++        if method == live_id!(seek_to)
++            || method == live_id!(set_volume)
++            || method == live_id!(set_playback_rate)
++        {
++            let number = args.as_object().and_then(|args| {
++                let trap = vm.bx.threads.cur().trap.pass();
++                vm.bx.heap.vec_value(args, 0, trap).as_f64()
++            });
++            let Some(number) = number.filter(|v| v.is_finite()) else {
++                return ScriptAsyncResult::Return(FALSE);
++            };
++            if !matches!(
++                self.playback_state,
++                PlaybackState::Prepared
++                    | PlaybackState::Playing
++                    | PlaybackState::Paused
++                    | PlaybackState::Completed
++            ) {
++                return ScriptAsyncResult::Return(FALSE);
++            }
++            if method == live_id!(seek_to) {
++                if number < 0.0 || number > u64::MAX as f64 {
++                    return ScriptAsyncResult::Return(FALSE);
++                }
++                let position = if self.total_duration > 0 {
++                    number.min(self.total_duration as f64)
++                } else {
++                    number
++                };
++                vm.with_cx_mut(|cx| cx.seek_video_playback(self.id, position as u64));
++                self.current_position_ms = position as u128;
++                self.seek_cooldown = 5;
++            } else if method == live_id!(set_volume) {
++                let volume = number.clamp(0.0, 1.0);
++                vm.with_cx_mut(|cx| cx.set_video_volume(self.id, volume));
++                self.mute = volume == 0.0;
++                self.audio_state = if self.mute {
++                    AudioState::Muted
++                } else {
++                    AudioState::Playing
++                };
++            } else {
++                if !(0.25..=4.0).contains(&number) {
++                    return ScriptAsyncResult::Return(FALSE);
++                }
++                vm.with_cx_mut(|cx| cx.set_video_playback_rate(self.id, number));
++            }
++            vm.with_cx_mut(|cx| self.redraw(cx));
++            return ScriptAsyncResult::Return(TRUE);
++        }
++        let accepted = vm.with_cx_mut(|cx| self.script_control(cx, method));
++        match accepted {
++            Some(accepted) => ScriptAsyncResult::Return(accepted.into()),
++            None => ScriptAsyncResult::MethodNotFound,
++        }
++    }
++
+     fn draw_walk(&mut self, cx: &mut Cx2d, _scope: &mut Scope, walk: Walk) -> DrawStep {
+         if let Some(texture) = &self.thumbnail_texture {
+             self.draw_bg.draw_vars.set_texture(1, texture);
+@@ -1023,7 +1195,7 @@ fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+                 }
+             }
+             Event::VideoPlaybackPrepared(event) => {
+-                if event.video_id == self.id {
++                if event.video_id == self.id && self.playback_state == PlaybackState::Preparing {
+                     self.handle_playback_prepared(cx, event);
+                     cx.widget_action(uid, VideoAction::PlaybackPrepared);
+                 }
+@@ -1158,6 +1330,9 @@ fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+             }
+             Event::VideoPlaybackResourcesReleased(event) => {
+                 if event.video_id == self.id {
++                    forget_video_lifetime(self.id);
++                    self.native_lifetime = None;
++                    self.resume_on_activity = false;
+                     self.playback_state = PlaybackState::Unprepared;
+                     self.video_tracks.clear();
+                     self.audio_tracks.clear();
+@@ -1187,6 +1362,9 @@ fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+ 
+ impl Drop for Video {
+     fn drop(&mut self) {
++        if self.native_lifetime.take().is_some() {
++            crate::makepad_platform::SignalToUI::set_ui_signal();
++        }
+         self.clear_session_source_registration();
+     }
+ }
+@@ -1259,6 +1437,7 @@ fn sync_native_camera_preview(&mut self, cx: &mut Cx) {
+     }
+ 
+     fn clear_session_source_registration(&mut self) {
++        self.camera_preview_source = None;
+         if let Some(session_id) = self.session_source_id.take() {
+             let _ = unregister_video_frame_session(session_id);
+         }
+@@ -1352,12 +1531,20 @@ fn maybe_prepare_playback(&mut self, cx: &mut Cx) {
+                 match self.session_source_id.take() {
+                     Some(session_id) => VideoSource::Session(session_id),
+                     None => {
+-                        error!("Attempted to prepare playback: session source already consumed");
++                        self.last_error = Some("Video session source already consumed".into());
++                        self.should_prepare_playback = false;
+                         return;
+                     }
+                 }
+             } else if let Some(data) = self.in_memory_source.clone() {
+                 VideoSource::InMemory(data)
++            } else if let Some((input_id, format_id)) = self.camera_preview_source {
++                if crate::splash_policy::service_allowed(self.source_ref.heap_key(), "camera.preview").is_err() {
++                    self.last_error = Some("Camera preview permission was revoked".into());
++                    self.should_prepare_playback = false;
++                    return;
++                }
++                VideoSource::Camera(input_id, format_id)
+             } else {
+                 match &self.source {
+                     VideoDataSource::Dependency { res } => {
+@@ -1366,12 +1553,14 @@ fn maybe_prepare_playback(&mut self, cx: &mut Cx) {
+                             match cx.get_resource(handle_ref.heap_key(), handle) {
+                                 Some(data) => VideoSource::InMemory(data),
+                                 None => {
+-                                    error!("Attempted to prepare playback: resource not found");
++                                    self.last_error = Some("Video resource not found".into());
++                                    self.should_prepare_playback = false;
+                                     return;
+                                 }
+                             }
+                         } else {
+-                            error!("Attempted to prepare playback: no resource handle provided");
++                            self.last_error = Some("No video resource handle provided".into());
++                            self.should_prepare_playback = false;
+                             return;
+                         }
+                     }
+@@ -1382,7 +1571,7 @@ fn maybe_prepare_playback(&mut self, cx: &mut Cx) {
+                     VideoDataSource::Network { url } => {
+                         let heap_key = self.source_ref.heap_key();
+                         if !crate::splash_policy::url_allowed(heap_key, url) {
+-                            error!("Video source refused by the host's allowlist: {url}");
++                            self.last_error = Some("Video source refused by the host allowlist".into());
+                             self.should_prepare_playback = false;
+                             return;
+                         }
+@@ -1391,7 +1580,7 @@ fn maybe_prepare_playback(&mut self, cx: &mut Cx) {
+                     VideoDataSource::Filesystem { path } => {
+                         let heap_key = self.source_ref.heap_key();
+                         let Some(path) = crate::splash_policy::local_path_for_heap(heap_key, path) else {
+-                            error!("Video source refused: {path} is outside this app's storage");
++                            self.last_error = Some("Video source is outside app storage".into());
+                             self.should_prepare_playback = false;
+                             return;
+                         };
+@@ -1400,7 +1589,14 @@ fn maybe_prepare_playback(&mut self, cx: &mut Cx) {
+                     VideoDataSource::Camera {
+                         input_id,
+                         format_id,
+-                    } => VideoSource::Camera(VideoInputId(*input_id), VideoFormatId(*format_id)),
++                    } => {
++                        if crate::splash_policy::is_enforced(self.source_ref.heap_key()) {
++                            self.last_error = Some("Use CameraPreview for app and OS camera permission checks".into());
++                            self.should_prepare_playback = false;
++                            return;
++                        }
++                        VideoSource::Camera(VideoInputId(*input_id), VideoFormatId(*format_id))
++                    },
+                 }
+             };
+ 
+@@ -1413,6 +1609,17 @@ fn maybe_prepare_playback(&mut self, cx: &mut Cx) {
+                 makepad_platform::event::video_playback::CameraPreviewMode::Texture
+             };
+ 
++            let owner = self.native_lifetime.get_or_insert_with(|| Rc::new(()));
++            if !register_video_lifetime(self.source_ref.heap_key(), self.id, owner) {
++                if let VideoSource::Session(session_id) = source {
++                    let _ = unregister_video_frame_session(session_id);
++                    self.has_session_source = false;
++                }
++                self.native_lifetime = None;
++                self.last_error = Some("Too many open video players".into());
++                self.should_prepare_playback = false;
++                return;
++            }
+             cx.prepare_video_playback(
+                 self.id,
+                 source,
+@@ -1444,8 +1651,13 @@ fn handle_playback_prepared(&mut self, cx: &mut Cx, event: &VideoPlaybackPrepare
+             &[self.video_width as f32, self.video_height as f32],
+         );
+ 
+-        if self.mute && self.audio_state != AudioState::Muted {
++        // Every prepare creates a fresh native player, including after Stop.
++        // Reapply its desired mute state even if the old player was muted.
++        if self.mute {
+             cx.mute_video_playback(self.id);
++            self.audio_state = AudioState::Muted;
++        } else {
++            self.audio_state = AudioState::Playing;
+         }
+ 
+         if self.autoplay {
+@@ -1613,8 +1825,17 @@ fn handle_key_seek(&mut self, cx: &mut Cx, ke: &KeyEvent) {
+ 
+     fn handle_activity_events(&mut self, cx: &mut Cx, event: &Event) {
+         match event {
+-            Event::Pause => self.pause_playback(cx),
+-            Event::Resume => self.resume_playback(cx),
++            Event::Pause => {
++                let was_playing = self.resume_on_activity || self.playback_state == PlaybackState::Playing;
++                self.pause_playback(cx);
++                self.resume_on_activity = was_playing;
++            }
++            Event::Resume => {
++                if self.resume_on_activity {
++                    self.resume_on_activity = false;
++                    self.resume_playback(cx);
++                }
++            }
+             _ => (),
+         }
+     }
+@@ -1626,21 +1847,110 @@ fn handle_errors(&mut self, cx: &mut Cx, event: &Event) {
+                     "Error decoding video with id {} : {}",
+                     self.id.0, event.error
+                 );
+-                // Recover from a failed prepare/playback attempt so callers can retry.
+-                self.playback_state = PlaybackState::Unprepared;
+-                self.should_prepare_playback = false;
++                self.retire_failed_or_pending_playback(cx);
+                 self.last_error = Some(event.error.clone());
+-                if self.native_preview_attached {
+-                    cx.detach_camera_native_preview(self.id);
+-                    self.native_preview_attached = false;
+-                }
+                 self.redraw(cx);
+             }
+         }
+     }
+ 
++    // True acknowledges a command accepted in this state, not native completion.
++    // Preparing is asynchronous: Play may latch intent, while Pause/Stop must
++    // cancel it before a late native Prepared event can start the old player.
++    fn script_control(&mut self, cx: &mut Cx, method: LiveId) -> Option<bool> {
++        let accepted = if method == live_id!(prepare_playback) {
++            if self.playback_state != PlaybackState::Unprepared || self.should_prepare_playback {
++                false
++            } else {
++                self.prepare_playback(cx);
++                self.playback_state == PlaybackState::Preparing || self.should_prepare_playback
++            }
++        } else if method == live_id!(begin_playback) {
++            match self.playback_state {
++                PlaybackState::Unprepared => {
++                    if self.should_prepare_playback && self.autoplay {
++                        false
++                    } else {
++                        self.begin_playback(cx);
++                        self.playback_state == PlaybackState::Preparing || self.should_prepare_playback
++                    }
++                }
++                PlaybackState::Preparing => {
++                    let changed = !self.autoplay;
++                    self.autoplay = true;
++                    changed
++                }
++                PlaybackState::Prepared => { self.begin_playback(cx); true }
++                PlaybackState::Paused => { self.resume_playback(cx); true }
++                _ => false,
++            }
++        } else if method == live_id!(pause_playback) {
++            if self.playback_state == PlaybackState::Playing {
++                self.pause_playback(cx);
++                true
++            } else if self.autoplay && (self.playback_state == PlaybackState::Preparing
++                || self.should_prepare_playback) {
++                self.stop_and_cleanup_resources(cx);
++                true
++            } else {
++                false
++            }
++        } else if method == live_id!(resume_playback) {
++            if self.playback_state == PlaybackState::Paused {
++                self.resume_playback(cx);
++                true
++            } else {
++                false
++            }
++        } else if method == live_id!(stop_and_cleanup_resources) {
++            let active = self.playback_state != PlaybackState::CleaningUp
++                && (self.playback_state != PlaybackState::Unprepared
++                    || self.should_prepare_playback || self.native_lifetime.is_some());
++            if active { self.stop_and_cleanup_resources(cx); }
++            active
++        } else if method == live_id!(mute_playback) {
++            let changed = !self.mute;
++            if changed { self.mute = true; self.mute_playback(cx); }
++            changed
++        } else if method == live_id!(unmute_playback) {
++            let changed = self.mute;
++            if changed { self.mute = false; self.unmute_playback(cx); }
++            changed
++        } else {
++            return None;
++        };
++        if accepted { self.redraw(cx); }
++        Some(accepted)
++    }
++
++    // Some backends fail before inserting a native player, and therefore never
++    // emit ResourcesReleased. Queue cleanup regardless, then use a fresh native
++    // identity: late callbacks from the old attempt cannot mutate a retry.
++    fn retire_failed_or_pending_playback(&mut self, cx: &mut Cx) {
++        let retired = self.id;
++        cx.cancel_pending_camera_playback(retired);
++        cx.cleanup_video_playback_resources(retired);
++        if self.native_preview_attached {
++            cx.detach_camera_native_preview(retired);
++            self.native_preview_attached = false;
++        }
++        forget_video_lifetime(retired);
++        self.native_lifetime = None;
++        self.id = LiveId::unique();
++        self.playback_state = PlaybackState::Unprepared;
++        self.should_prepare_playback = false;
++        self.autoplay = false;
++        self.resume_on_activity = false;
++        self.current_position_ms = 0;
++        self.total_duration = 0;
++        self.seek_cooldown = 0;
++        self.video_tracks.clear();
++        self.audio_tracks.clear();
++    }
++
+     fn prepare_playback(&mut self, cx: &mut Cx) {
+         if self.playback_state == PlaybackState::Unprepared {
++            self.last_error = None;
+             self.should_prepare_playback = true;
+             self.maybe_prepare_playback(cx);
+         }
+@@ -1648,11 +1958,14 @@ fn prepare_playback(&mut self, cx: &mut Cx) {
+ 
+     fn begin_playback(&mut self, cx: &mut Cx) {
+         if self.playback_state == PlaybackState::Unprepared {
++            self.last_error = None;
+             self.should_prepare_playback = true;
+             self.autoplay = true;
+             self.maybe_prepare_playback(cx);
+         } else if self.playback_state == PlaybackState::Prepared {
++            self.autoplay = true;
+             cx.begin_video_playback(self.id);
++            self.playback_state = PlaybackState::Playing;
+         }
+     }
+ 
+@@ -1670,6 +1983,13 @@ fn handle_secondary_click(
+     }
+ 
+     fn pause_playback(&mut self, cx: &mut Cx) {
++        // A user/script pause supersedes any pending activity resume.
++        self.resume_on_activity = false;
++        if self.autoplay && (self.playback_state == PlaybackState::Preparing
++            || self.should_prepare_playback) {
++            self.stop_and_cleanup_resources(cx);
++            return;
++        }
+         // A permission dialog can pause the app before a camera has a source.
+         // Turning Unprepared into Paused makes Resume invent a Playing state,
+         // so the later source assignment and first prepare are both ignored.
+@@ -1680,6 +2000,7 @@ fn pause_playback(&mut self, cx: &mut Cx) {
+     }
+ 
+     fn resume_playback(&mut self, cx: &mut Cx) {
++        self.resume_on_activity = false;
+         if self.playback_state == PlaybackState::Paused {
+             cx.resume_video_playback(self.id);
+             self.playback_state = PlaybackState::Playing;
+@@ -1708,6 +2029,19 @@ fn unmute_playback(&mut self, cx: &mut Cx) {
+     }
+ 
+     fn stop_and_cleanup_resources(&mut self, cx: &mut Cx) {
++        // A checked preview source cannot be replayed after its owner closes.
++        self.camera_preview_source = None;
++        self.resume_on_activity = false;
++        if self.playback_state == PlaybackState::Preparing {
++            self.retire_failed_or_pending_playback(cx);
++            return;
++        }
++        // A texture handle may still be pending on Android. Cancelling before
++        // preparation must not leave a deferred auto-start behind.
++        self.autoplay = false;
++        self.should_prepare_playback = false;
++        forget_video_lifetime(self.id);
++        self.native_lifetime = None;
+         if self.playback_state != PlaybackState::Unprepared
+             && self.playback_state != PlaybackState::CleaningUp
+         {
+@@ -1718,8 +2052,6 @@ fn stop_and_cleanup_resources(&mut self, cx: &mut Cx) {
+             }
+ 
+             self.playback_state = PlaybackState::CleaningUp;
+-            self.autoplay = false;
+-            self.should_prepare_playback = false;
+         }
+     }
+ 
+@@ -2216,3 +2548,228 @@ pub enum VideoDataSource {
+     #[live {input_id: LiveId::empty(), format_id: LiveId::empty()}]
+     Camera { input_id: LiveId, format_id: LiveId },
+ }
++
++#[cfg(test)]
++mod contained_camera_source_tests {
++    use super::*;
++
++    #[test]
++    fn direct_camera_source_requires_camera_preview_even_with_manifest_grant() {
++        let mut cx = Cx::new(Box::new(|_, _| {}));
++        let widget = cx.with_vm(|vm| {
++            crate::script_mod(vm);
++            let value = crate::script_eval!(vm, {use mod.widgets.* Video{autoplay: false}});
++            WidgetRef::script_from_value(vm, value)
++        });
++        let mut video = widget.borrow_mut::<Video>().unwrap();
++        let heap = video.source_ref.heap_key();
++        for grants in [vec![], vec!["camera".to_string()]] {
++            crate::splash_policy::set_policy_for_heap(heap, grants, vec![], None);
++            video.set_source(VideoDataSource::Camera { input_id: LiveId(1), format_id: LiveId(2) });
++            video.begin_playback(&mut cx);
++            assert_eq!(video.playback_state, PlaybackState::Unprepared);
++            assert!(video.last_error.as_deref().unwrap().contains("CameraPreview"));
++            assert!(!VIDEO_PLAYERS.with(|players| players.borrow().contains_key(&video.id)),
++                "a refused source never registers a native player");
++        }
++        crate::splash_policy::gc_policies(&[heap]);
++    }
++
++    #[test]
++    fn checked_preview_source_cannot_survive_revocation_or_cleanup() {
++        let mut cx = Cx::new(Box::new(|_, _| {}));
++        let widget = cx.with_vm(|vm| {
++            crate::script_mod(vm);
++            let value = crate::script_eval!(vm, {use mod.widgets.* Video{autoplay: false}});
++            WidgetRef::script_from_value(vm, value)
++        });
++        let reference = VideoRef(widget.clone());
++        reference.set_source_from_camera_preview(&mut cx, VideoInputId(LiveId(1)), VideoFormatId(LiveId(2)));
++        let mut video = widget.borrow_mut::<Video>().unwrap();
++        let heap = video.source_ref.heap_key();
++        crate::splash_policy::set_policy_for_heap(heap, vec![], vec![], None);
++        video.begin_playback(&mut cx);
++        assert_eq!(video.playback_state, PlaybackState::Unprepared);
++        assert!(video.last_error.as_deref().unwrap().contains("revoked"));
++        assert!(!VIDEO_PLAYERS.with(|players| players.borrow().contains_key(&video.id)));
++        video.stop_and_cleanup_resources(&mut cx);
++        assert!(video.camera_preview_source.is_none());
++        crate::splash_policy::gc_policies(&[heap]);
++    }
++    #[test]
++    fn dropped_players_and_isolate_close_queue_native_cleanup_once() {
++        let mut cx = Cx::new(Box::new(|_, _| {}));
++        let dropped_id = LiveId::unique();
++        let closed_id = LiveId::unique();
++        let other_id = LiveId::unique();
++        let dropped = Rc::new(());
++        let closed = Rc::new(());
++        let other = Rc::new(());
++        assert!(register_video_lifetime(101, dropped_id, &dropped));
++        assert!(register_video_lifetime(101, closed_id, &closed));
++        assert!(register_video_lifetime(102, other_id, &other));
++        drop(dropped);
++        let mut cleaned = take_retired_video_players(None);
++        cleaned.extend(take_retired_video_players(Some(101)));
++        assert!(take_retired_video_players(None).is_empty());
++        assert_eq!(cleaned, vec![dropped_id, closed_id]);
++        assert!(!cleaned.contains(&other_id));
++        drop(other);
++        drain_dropped_videos(&mut cx);
++    }
++
++    #[test]
++    fn activity_resume_preserves_manual_pause_and_does_not_repeat() {
++        let mut cx = Cx::new(Box::new(|_, _| {}));
++        let widget = cx.with_vm(|vm| {
++            crate::script_mod(vm);
++            let value = crate::script_eval!(vm, {use mod.widgets.* Video{autoplay: false}});
++            WidgetRef::script_from_value(vm, value)
++        });
++        let mut video = widget.borrow_mut::<Video>().unwrap();
++        video.playback_state = PlaybackState::Paused;
++        video.handle_activity_events(&mut cx, &Event::Pause);
++        video.handle_activity_events(&mut cx, &Event::Resume);
++        assert_eq!(video.playback_state, PlaybackState::Paused);
++        video.playback_state = PlaybackState::Playing;
++        video.handle_activity_events(&mut cx, &Event::Pause);
++        video.handle_activity_events(&mut cx, &Event::Pause);
++        video.handle_activity_events(&mut cx, &Event::Resume);
++        assert_eq!(video.playback_state, PlaybackState::Playing);
++        video.handle_activity_events(&mut cx, &Event::Pause);
++        video.pause_playback(&mut cx);
++        video.handle_activity_events(&mut cx, &Event::Resume);
++        assert_eq!(video.playback_state, PlaybackState::Paused);
++    }
++
++    #[test]
++    fn explicit_prepared_play_can_pause_and_reapplies_mute_on_restart() {
++        let mut cx = Cx::new(Box::new(|_, _| {}));
++        let widget = cx.with_vm(|vm| {
++            crate::script_mod(vm);
++            let value = crate::script_eval!(vm, {use mod.widgets.* Video{autoplay: false mute: true}});
++            WidgetRef::script_from_value(vm, value)
++        });
++        let mut video = widget.borrow_mut::<Video>().unwrap();
++        let prepared = VideoPlaybackPreparedEvent {
++            video_id: video.id, video_width: 320, video_height: 180,
++            duration: 5000, is_seekable: true,
++            video_tracks: vec![], audio_tracks: vec![],
++        };
++        for _ in 0..2 {
++            video.handle_playback_prepared(&mut cx, &prepared);
++            assert_eq!(video.audio_state, AudioState::Muted);
++            assert_eq!(video.playback_state, PlaybackState::Prepared);
++            video.begin_playback(&mut cx);
++            assert_eq!(video.playback_state, PlaybackState::Playing);
++            video.pause_playback(&mut cx);
++            assert_eq!(video.playback_state, PlaybackState::Paused);
++            video.stop_and_cleanup_resources(&mut cx);
++        }
++    }
++
++    #[test]
++    fn stop_before_texture_ready_cancels_deferred_start_and_late_prepare() {
++        let mut cx = Cx::new(Box::new(|_, _| {}));
++        let widget = cx.with_vm(|vm| {
++            crate::script_mod(vm);
++            let value = crate::script_eval!(vm, {use mod.widgets.* Video{autoplay: false}});
++            WidgetRef::script_from_value(vm, value)
++        });
++        let mut video = widget.borrow_mut::<Video>().unwrap();
++        video.autoplay = true;
++        video.should_prepare_playback = true;
++        video.stop_and_cleanup_resources(&mut cx);
++        assert!(!video.autoplay && !video.should_prepare_playback);
++        let event = Event::VideoPlaybackPrepared(VideoPlaybackPreparedEvent {
++            video_id: video.id, video_width: 320, video_height: 180,
++            duration: 5000, is_seekable: true,
++            video_tracks: vec![], audio_tracks: vec![],
++        });
++        video.handle_event(&mut cx, &event, &mut Scope::empty());
++        assert_eq!(video.playback_state, PlaybackState::Unprepared);
++    }
++
++    #[test]
++    fn script_controls_refuse_noops_and_failed_sources() {
++        let mut cx = Cx::new(Box::new(|_, _| {}));
++        let widget = cx.with_vm(|vm| {
++            crate::script_mod(vm);
++            let value = crate::script_eval!(vm, {use mod.widgets.* Video{autoplay: false}});
++            WidgetRef::script_from_value(vm, value)
++        });
++        let mut video = widget.borrow_mut::<Video>().unwrap();
++        for method in [live_id!(pause_playback), live_id!(resume_playback),
++            live_id!(stop_and_cleanup_resources)] {
++            assert_eq!(video.script_control(&mut cx, method), Some(false));
++        }
++        video.source = VideoDataSource::Dependency { res: None };
++        assert_eq!(video.script_control(&mut cx, live_id!(prepare_playback)), Some(false));
++        assert_eq!(video.playback_state, PlaybackState::Unprepared);
++        assert!(!video.should_prepare_playback);
++        assert_eq!(video.last_error.as_deref(), Some("No video resource handle provided"));
++        assert_eq!(video.script_control(&mut cx, live_id!(unknown_control)), None);
++    }
++
++    #[test]
++    fn play_then_pause_during_prepare_cannot_restart_from_late_callbacks() {
++        let mut cx = Cx::new(Box::new(|_, _| {}));
++        let widget = cx.with_vm(|vm| {
++            crate::script_mod(vm);
++            let value = crate::script_eval!(vm, {use mod.widgets.* Video{autoplay: false}});
++            WidgetRef::script_from_value(vm, value)
++        });
++        let mut video = widget.borrow_mut::<Video>().unwrap();
++        let old_id = video.id;
++        let owner = Rc::new(());
++        assert!(register_video_lifetime(video.source_ref.heap_key(), old_id, &owner));
++        video.native_lifetime = Some(owner);
++        video.playback_state = PlaybackState::Preparing;
++        assert_eq!(video.script_control(&mut cx, live_id!(begin_playback)), Some(true));
++        assert_eq!(video.script_control(&mut cx, live_id!(begin_playback)), Some(false));
++        assert_eq!(video.script_control(&mut cx, live_id!(pause_playback)), Some(true));
++        assert_ne!(video.id, old_id);
++        assert_eq!(video.playback_state, PlaybackState::Unprepared);
++        assert!(!video.autoplay && !video.should_prepare_playback);
++        assert!(video.native_lifetime.is_none());
++        assert!(!VIDEO_PLAYERS.with(|players| players.borrow().contains_key(&old_id)));
++        video.handle_event(&mut cx, &Event::VideoPlaybackPrepared(VideoPlaybackPreparedEvent {
++            video_id: old_id, video_width: 320, video_height: 180,
++            duration: 5000, is_seekable: true, video_tracks: vec![], audio_tracks: vec![],
++        }), &mut Scope::empty());
++        assert_eq!(video.playback_state, PlaybackState::Unprepared);
++        // A retry need not wait for a Release that some failed backends never send.
++        video.playback_state = PlaybackState::Preparing;
++        video.handle_event(&mut cx, &Event::VideoPlaybackResourcesReleased(
++            VideoPlaybackResourcesReleasedEvent { video_id: old_id }), &mut Scope::empty());
++        assert_eq!(video.playback_state, PlaybackState::Preparing);
++    }
++
++    #[test]
++    fn decoder_error_retires_native_owner_before_retry_and_keeps_error() {
++        let mut cx = Cx::new(Box::new(|_, _| {}));
++        let widget = cx.with_vm(|vm| {
++            crate::script_mod(vm);
++            let value = crate::script_eval!(vm, {use mod.widgets.* Video{autoplay: false}});
++            WidgetRef::script_from_value(vm, value)
++        });
++        let mut video = widget.borrow_mut::<Video>().unwrap();
++        let old_id = video.id;
++        let owner = Rc::new(());
++        assert!(register_video_lifetime(video.source_ref.heap_key(), old_id, &owner));
++        video.native_lifetime = Some(owner);
++        video.playback_state = PlaybackState::Preparing;
++        video.autoplay = true;
++        video.handle_errors(&mut cx, &Event::VideoDecodingError(VideoDecodingErrorEvent {
++            video_id: old_id, error: "synthetic decoder failure".into(),
++        }));
++        assert_ne!(video.id, old_id);
++        assert_eq!(video.playback_state, PlaybackState::Unprepared);
++        assert!(video.native_lifetime.is_none());
++        assert!(!VIDEO_PLAYERS.with(|players| players.borrow().contains_key(&old_id)));
++        assert_eq!(video.last_error.as_deref(), Some("synthetic decoder failure"));
++        assert_eq!(video.script_control(&mut cx, live_id!(stop_and_cleanup_resources)), Some(false));
++        assert!(!video.autoplay);
++    }
++
++}
+diff --git a/widgets/src/widget_async.rs b/widgets/src/widget_async.rs
+index 110176edb..dab21e678 100644
+--- a/widgets/src/widget_async.rs
++++ b/widgets/src/widget_async.rs
+@@ -1479,6 +1479,8 @@ fn on_widget_script_thread_completed(
+ }
+ 
+ fn pump_widget_async(cx: &mut Cx) -> bool {
++    crate::camera_preview::drain_dropped_cameras(cx);
++    crate::video::drain_dropped_videos(cx);
+     let mut progressed = false;
+ 
+     loop {

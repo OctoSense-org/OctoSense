@@ -140,5 +140,5 @@ Part of the OctoSense-System-Apps repository until 2026-09-27, then imported
 into OctoSense with its history. It moved into System-Apps from
 OctoSense-org/OctoSense-AppCard
 at commit `d0a836b8`, which had split it from
-[OctoSense-org/OctoScript-App-Design-Flow](https://github.com/OctoSense-org/OctoScript-App-Design-Flow)
-(`app/` at commit `cbbda4da`). The full history of these files is there.
+[OctoSense App Flow](https://github.com/OctoSense-org/OctoSense-App-Flow)
+(formerly Design Flow; `app/` at commit `cbbda4da`). The full history of these files is there.

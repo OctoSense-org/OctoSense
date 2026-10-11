@@ -62,12 +62,12 @@ pub fn register_native_specs(storage: &Storage) {
 }
 
 /// A script app's `manifest.json` under App Hub's data root: an installed
-/// app's `<root>/<id>/bundle/`, or the newest unpacked build of a system app
+/// app's bundle ([`crate::apps::installed_bundle`]), or the newest unpacked build of a system app
 /// (`<root>/.system/<id>/<build>/`). `None` before either exists (a system
 /// app the Card runner has not unpacked yet).
 pub fn script_manifest(root: &Path, manifest_id: &str) -> Option<Value> {
     super::validate_app_id(manifest_id).ok()?;
-    let installed = root.join(manifest_id).join("bundle").join("manifest.json");
+    let installed = crate::apps::installed_bundle(root, manifest_id).join("manifest.json");
     let path = if installed.is_file() {
         installed
     } else {
@@ -142,6 +142,17 @@ pub enum Change {
 /// (`storage.accounts: false`) acts for the device, which never signs out.
 pub fn account_changed(storage: &Arc<Storage>, service_app: &str, previous: Option<&str>, current: Option<&str>) -> Change {
     let app = app_of(service_app);
+    #[cfg(any(feature = "app-hub", native_mobile))]
+    if app == "os.mail" && previous != current {
+        // Retire old capabilities before changing suspension/folder state.
+        // This takes the same short lock as the service's SMTP claim, never
+        // the network wait. A worker holding a removed Review cannot send.
+        let host_dir = storage.layout().apps_root().join(".host");
+        match previous {
+            Some(account) => octosense_mail_service::drafts::invalidate_reviews(&host_dir, account),
+            None => octosense_mail_service::drafts::invalidate_all_reviews(&host_dir),
+        }
+    }
     if !storage.spec(app).accounts {
         return Change::None;
     }
@@ -215,6 +226,11 @@ pub fn contained_account_in(storage: &Storage, app: &str) -> Option<String> {
     }
     #[cfg(any(feature = "app-hub", native_mobile))]
     {
+        if let Some(connection) = octosense_oauth_service::host::active_connection(
+            &storage.layout().apps_root().join(".host"), app,
+        ) {
+            return Some(connection.handle);
+        }
         octosense_mail_service::active_account(&storage.layout().apps_root().join(".host"), app)
     }
     #[cfg(not(any(feature = "app-hub", native_mobile)))]
@@ -239,6 +255,9 @@ fn mail_account_storage(storage: &Arc<Storage>, event: &octosense_mail_service::
     match event {
         AccountEvent::Added { app_id, account } => account_changed(storage, app_id, None, Some(account)),
         AccountEvent::Removed { app_id, account } => {
+            if app_of(app_id) == "os.mail" {
+                octosense_mail_service::drafts::invalidate_reviews(&storage.layout().apps_root().join(".host"), account);
+            }
             if !storage.spec(app_id).accounts {
                 return Change::None;
             }
@@ -266,6 +285,14 @@ pub fn app_uninstalled(storage: &Arc<Storage>, root: &Path, manifest_id: &str) -
     }
     if let Err(e) = storage.uninstall(manifest_id) {
         makepad_widgets::log!("app storage: {manifest_id}: uninstall left something behind: {e}");
+    }
+    #[cfg(any(feature = "app-hub", native_mobile))]
+    if let Err(error)=octosense_oauth_service::host::forget_app(&root.join(".host"),manifest_id) {
+        makepad_widgets::log!("app storage: OAuth uninstall could not finish: {error}");
+    }
+    #[cfg(any(feature = "app-hub", native_mobile))]
+    if let Err(error)=crate::mail_background::forget_app(manifest_id) {
+        makepad_widgets::log!("app storage: Glance uninstall could not finish: {error}");
     }
     erase_agents(storage, manifest_id, None);
     true
@@ -371,11 +398,53 @@ pub fn install(storage: &'static Arc<Storage>) {
     })));
     #[cfg(any(feature = "app-hub", native_mobile))]
     {
+        octosense_mail_service::drafts::on_claim(Some(Arc::new(move |host_dir, app, account| {
+            mail_claim_allowed(storage, host_dir, app, account)
+        })));
         octosense_mail_service::on_account_event(Some(Arc::new(move |event| {
             mail_account(storage, &event);
         })));
+        octosense_oauth_service::host::on_account_changed(Arc::new(move |app, previous, current| {
+            // Revoke old VM calls immediately, including system/cross-app
+            // callers, before a queued callback can publish an old result.
+            octosense_appstore::script_tools::set_account(app, current.unwrap_or("device"));
+            if !storage.has_spec(app) {record_manifest_spec(storage, storage.layout().apps_root(), app);}
+            account_changed(storage, app, previous, current);
+            crate::ai_host::contained::account_changed(app);
+        }));
         mail_secrets_at_startup(storage);
     }
+}
+
+/// Last check inside the Mail service's atomic send claim. It deliberately
+/// rechecks local admission and account metadata: no broker locks,
+/// draft calls, UI callbacks or networking. Account metadata writers hold the claim lock too.
+#[cfg(any(feature = "app-hub", native_mobile))]
+fn mail_claim_allowed(storage: &Storage, host_dir: &Path, app: &str, account: &str) -> Result<(), String> {
+    if host_dir != storage.layout().apps_root().join(".host") {
+        return Err("The review does not belong to this Mail host".into());
+    }
+    if app != "os.mail" {
+        crate::host_tools::admission::check(app)?;
+        crate::host_tools::script_apps::admitted_host(app, host_dir)?;
+    }
+    mail_account_claim_allowed(storage, host_dir, app, account)
+}
+
+#[cfg(any(feature = "app-hub", native_mobile))]
+fn mail_account_claim_allowed(
+    storage: &Storage,
+    host_dir: &Path,
+    app: &str,
+    account: &str,
+) -> Result<(), String> {
+    if storage.is_signed_out(app, Some(account)) {
+        return Err("The Mail account is signed out; review is no longer valid".into());
+    }
+    if octosense_mail_service::active_account(host_dir, app).as_deref() != Some(account) {
+        return Err("The selected Mail account changed; review again under the original account".into());
+    }
+    Ok(())
 }
 
 /// Mail's passwords in the host's secrets (ADR 0004 §11), not under

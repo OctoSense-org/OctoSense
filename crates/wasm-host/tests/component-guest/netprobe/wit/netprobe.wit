@@ -1,0 +1,6 @@
+package octosense:netprobe-spike;
+
+world netprobe {
+  /// Opens a TCP connection: imports wasi:sockets, so the host refuses it.
+  export connect: func(addr: string) -> result<_, string>;
+}

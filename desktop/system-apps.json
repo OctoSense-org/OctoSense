@@ -1,6 +1,6 @@
 {
   "schema": 1,
   "source": "../apps",
-  "apps": ["news", "photos", "maps", "mail", "calendar", "ai-providers", "youtube"],
+  "apps": ["news", "photos", "maps", "mail", "calendar", "ai-providers", "youtube", "quickdeck", "pdftools", "writer"],
   "assets": {}
 }

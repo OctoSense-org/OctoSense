@@ -1,0 +1,77 @@
+name: Embedded browser
+
+on:
+  pull_request:
+    paths:
+      - 'crates/browser-smoke/**'
+      - 'tools/browser-smoke.py'
+      - 'tools/browser_smoke_x11.py'
+      - 'tools/runtime-patches/**'
+      - 'runtime-patches.lock.json'
+      - 'native-runtime.lock.json'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.github/workflows/embedded-browser.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'crates/browser-smoke/**'
+      - 'tools/browser-smoke.py'
+      - 'tools/browser_smoke_x11.py'
+      - 'tools/runtime-patches/**'
+      - 'runtime-patches.lock.json'
+      - 'native-runtime.lock.json'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.github/workflows/embedded-browser.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: embedded-browser-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    runs-on: windows-2022
+    timeout-minutes: 40
+    env:
+      PYTHONUTF8: '1'
+    steps:
+      - name: Preserve runtime patch bytes
+        run: git config --global core.autocrlf false
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Prepare the exact native runtime
+        run: python tools/setup.py
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: embedded-browser-windows
+          cache-on-failure: true
+      - name: Build the native acceptance host
+        run: cargo build --locked --release -p octosense-browser-smoke
+      - name: Navigation and callback policy tests
+        run: cargo test --locked --release -p octosense-browser-smoke
+      - name: Real embedded WebView2 acceptance
+        # The runner must already provide WebView2. No installer, fake engine
+        # or external-browser fallback converts a missing runtime into a pass.
+        run: python tools/browser-smoke.py --binary target/release/octosense-browser-smoke.exe --out "$env:RUNNER_TEMP/browser-smoke" --require-snapshot --software-graphics
+      - name: Native fixture diagnostics on failure
+        if: failure()
+        run: |
+          $log = Join-Path $env:RUNNER_TEMP 'browser-smoke/native.log'
+          if (Test-Path $log) { Get-Content $log -Tail 100 }
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: embedded-browser-windows
+          if-no-files-found: ignore
+          path: |
+            ${{ runner.temp }}/browser-smoke/receipt.json
+            ${{ runner.temp }}/browser-smoke/inspect-*.json
+            ${{ runner.temp }}/browser-smoke/snapshot-*.png

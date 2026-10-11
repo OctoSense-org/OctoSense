@@ -1,1 +1,1 @@
-"""Shared native-runtime lock helpers (moved from the design-flow repo lab/core)."""
+"""Shared native-runtime lock helpers (moved from lab/core in OctoSense App Flow, formerly Design Flow)."""

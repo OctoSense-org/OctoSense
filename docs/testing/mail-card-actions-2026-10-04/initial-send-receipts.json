@@ -1,0 +1,17 @@
+{
+  "scope": "Synthetic fixture delivery receipts; recipient and transport message identifiers omitted. Subjects identify the provider trial; body bytes are identical.",
+  "receipts": [
+    {
+      "http_status": 200,
+      "provider_requested": "minimax",
+      "body_sha256": "0a865b1340bb2cede2a17c8c74f5b7007511b5140194c3cbb947d81a46929a16",
+      "sent_at": "2026-10-04T03:04:24.090167+00:00"
+    },
+    {
+      "http_status": 200,
+      "provider_requested": "deepseek",
+      "body_sha256": "0a865b1340bb2cede2a17c8c74f5b7007511b5140194c3cbb947d81a46929a16",
+      "sent_at": "2026-10-04T03:07:51.065976+00:00"
+    }
+  ]
+}

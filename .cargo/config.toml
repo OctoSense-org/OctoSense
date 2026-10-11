@@ -4,6 +4,17 @@
 MAKEPAD_BUNDLE_NAME = { value = "OctoSense", force = true }
 MAKEPAD_BUNDLE_IDENTIFIER = { value = "dev.makepad.octosense", force = true }
 
+# Plain cargo run/build does not use cargo-makepad's per-crate discovery.
+# Paths are relative to this workspace, including when Cargo runs in phone/.
+# Explicit build environment overrides (including release packaging) still win.
+MAKEPAD_APP_ICON_32 = { value = "desktop/resources/icon_32.png", relative = true }
+MAKEPAD_APP_ICON_64 = { value = "desktop/resources/icon_64.png", relative = true }
+MAKEPAD_APP_ICON_128 = { value = "desktop/resources/icon_128.png", relative = true }
+MAKEPAD_APP_ICON_256 = { value = "desktop/resources/icon_256.png", relative = true }
+MAKEPAD_APP_ICON_512 = { value = "desktop/resources/icon_512.png", relative = true }
+MAKEPAD_APP_ICON_1024 = { value = "desktop/resources/icon_1024.png", relative = true }
+MAKEPAD_APP_ICON_ICO = { value = "desktop/resources/icon.ico", relative = true }
+
 # AppCard embeds assets from the pinned framework checkouts (tools/setup.py).
 OCTOSENSE_WORKSPACE = { value = ".sources", relative = true }
 
@@ -16,6 +27,10 @@ OCTOSENSE_SYSTEM_APPS = { value = "desktop/system-apps.json", relative = true }
 # The locked aws-lc-sys supports its CC builder on Android arm64. Use the
 # installed NDK Clang directly; no additional CMake installation is needed.
 AWS_LC_SYS_CMAKE_BUILDER_aarch64_linux_android = "0"
+# The Android packager also forces its global CMake setting into host-side
+# bundle validation dependencies. On Apple arm64, use the supported CC builder
+# there too. This changes only the build driver, not crypto or assembly features.
+AWS_LC_SYS_CMAKE_BUILDER_aarch64_apple_darwin = "0"
 
 # iOS gives the main thread a 1 MB stack, and the shell's widget tree is
 # built on it through nested script_apply/script_new calls that overflowed

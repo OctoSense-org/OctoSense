@@ -10,7 +10,7 @@
 //! Gesture contract (mobile_gestures.rs): a committed `HomeUp` leaves the
 //! split like leaving an app; the divider's band is an exclusion zone, so
 //! no shell gesture starts on it.
-use crate::{hub::ClientId, mobile::{self, PhoneHit, PhoneScreen, PhoneState}, mobile_gestures::{GestureKind, ShellGesture}, mobile_tiles::{TileKind, TileSlot, TILE_RADIUS}};
+use crate::{hub::ClientId, mobile::{self, PhoneHit, PhoneScreen, PhoneState}, mobile_gestures::{GestureKind, ShellGesture}, mobile_tiles::{TileKind, TileSlot, CARD_TITLE_PX, TILE_RADIUS}};
 use makepad_widgets::*;
 
 /// The groups every phone starts with, from the linked apps. A member that
@@ -376,7 +376,7 @@ impl PhoneSurface {
         let text_x = mx + mosaic + 18.0;
         let text_w = (r.pos.x + r.size.x - text_x - 10.0).max(10.0);
         let mid = r.pos.y + r.size.y * 0.5;
-        self.d.label_elided(cx, rect(text_x, mid - 22.0, text_w, 24.0), true, 15.0, alpha(ink, opacity), HAlign::Left, name);
+        self.d.label_elided(cx, rect(text_x, mid - 22.0, text_w, 24.0), true, CARD_TITLE_PX, alpha(ink, opacity), HAlign::Left, name);
         let sub = if group.pair && members.len() == 2 { "App pair".to_string() } else { format!("{} app{}", members.len(), if members.len() == 1 { "" } else { "s" }) };
         self.d.label_elided(cx, rect(text_x, mid + 2.0, text_w, 20.0), false, 12.0, alpha(ink, 0.6 * opacity), HAlign::Left, &sub);
         self.hits.push((r, PhoneHit::Group(name.to_string())));
@@ -388,7 +388,7 @@ impl PhoneSurface {
         let phone = &state.phone;
         let ink = self.theme_ink(if state.style.dark { rgb(238, 238, 242) } else { rgb(30, 30, 34) });
         if let Some(split) = phone.groups.split.filter(|_| phone.screen == PhoneScreen::App && phone.openness > 0.5 && phone.overview < 0.01) {
-            let app = mobile::app_rect(screen);
+            let app = phone.app_content_rect(screen);
             let band = split.divider(app);
             let vertical = Split::vertical(app);
             let pill = if vertical { rect(band.pos.x + band.size.x * 0.5 - 28.0, band.pos.y + band.size.y * 0.5 - 2.5, 56.0, 5.0) }
@@ -400,7 +400,7 @@ impl PhoneSurface {
         if phone.screen == PhoneScreen::Recents && phone.overview > 0.5 {
             let accent = self.theme_accent(if state.style.target == DesktopStyle::Ios { rgb(0, 122, 255) } else { rgb(103, 80, 164) });
             for (index, client) in phone.order.iter().enumerate() {
-                let card = mobile::card_rect(screen, index as f64, phone.page);
+                let card = phone.card_rect(screen, index as f64, phone.page);
                 if card.pos.x + card.size.x < screen.pos.x || card.pos.x > screen.pos.x + screen.size.x { continue; }
                 let picked = phone.groups.pick == Some(*client);
                 let r = rect(card.pos.x + card.size.x - 84.0, card.pos.y - 38.0, 84.0, 30.0);

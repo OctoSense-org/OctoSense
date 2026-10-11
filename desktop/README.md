@@ -2,13 +2,17 @@
 
 English | [简体中文](README.zh-CN.md)
 
+**Prerelease download:** [desktop 0.1.0-rc.4](https://github.com/OctoSense-org/OctoSense/releases/tag/desktop-v0.1.0-rc.4) includes app-contract 1.11.0, shared Wasm components and declaration-only public API capabilities. Choose the package for your operating system and architecture; check its release notes and checksums. Platform limits remain in [Host OS API status](../docs/host-os-api-status.md); embedded pages need the [platform browser prerequisites](../docs/desktop-embedded-browser.md#runtime-requirements).
+
+**Provider sign-in:** GitHub and Google login still need [distributor-supplied registrations](../crates/oauth-service/README.md#configure-a-release-maintainers). The release workflow does not configure them; installing a connected app from App Hub does not add them.
+
 **New to the code?** Read the [desktop, Home, ROM and system-app walkthrough](docs/code-walkthrough.md), then the [agent and Tokio walkthrough](../docs/architecture-walkthrough.md). The first follows launch, native hosting, script bundles, app data and Android platform boundaries.
 
 > **Where this fits.** The desktop is one shell process with the octos kernel as its child (the packaged `octos-kernel`, or `OCTOS_APP_CORE_BIN`). App Hub, the Card runner with the script apps, and Rinx run in process; the Terminal runs as its own process, in an OS sandbox on macOS and Linux (not yet on Windows), attached over the shell's hub. On macOS that sandbox keeps `~/.cargo`, `~/.rustup` and the OctoSense checkout read-only, so run `cargo install`, `rustup update` and builds of OctoSense itself in another terminal. Diagrams of the processes, an app agent's two lanes and a tool call with its approval: [How it fits together](../README.md#how-it-fits-together); the details: [docs/architecture.md](../docs/architecture.md) and [ADR 0004](../docs/adr/0004-native-apps-hosting-and-peers.md).
 
 The desktop shell of [OctoSense](https://github.com/OctoSense-org), the agent shell on top of your operating system, and the desktop packaging of the OctoSense repository (formerly the OctoSense-Desktop repository). It is one Makepad window that is the desktop: a launcher, a dock and tiles, hosting system apps and App Hub store apps as contained script programs, trusted native modules in-process, and Makepad developer programs as child processes. It gets its apps the same way the phone shell, [Home](../phone/README.md), does. Setup, the repository layout and CI are in the [root README](../README.md).
 
-**Building an OctoSense app?** You do not need this repository to build, check or publish one: start at the [OctoSense-org profile](https://github.com/OctoSense-org)'s reading list (OctoScript-App-Design-Flow's `AGENTS.md`, then `docs/QUICKSTART.md`). Build this shell only if you want to see your app in the desktop shell before it is published ([Try your own app](#try-your-own-app-before-it-is-published)).
+**Building an OctoSense app?** You do not need this repository to build, check or publish one. Start at the [OctoSense-org profile](https://github.com/OctoSense-org)'s reading list: the `AGENTS.md` of OctoSense App Flow (formerly Design Flow), then its `docs/QUICKSTART.md`. Build this shell only if you want to see your app in the desktop shell before it is published ([Try your own app](#try-your-own-app-before-it-is-published)).
 
 ## Where it sits
 
@@ -18,7 +22,7 @@ The desktop shell of [OctoSense](https://github.com/OctoSense-org), the agent sh
 | [`../apps/`](../apps/README.md) | News, Photos, Maps, Mail, Calendar, AI providers and YouTube bundles (Camera is phone-only), the Mail, Calendar and `llm` host services, the AppCard assistant (`octos-app`, opt-in, not shipped by default), and Reference. |
 | [`../crates/`](../crates/) | The shell itself (`crates/shell`, package `octosense-shell`, which this package wraps), its AI services (`crates/ai-host`), the octos kernel service (`crates/kernel`, package `octosense-kernel`) and the app-agent broker (`crates/app-peers`). |
 | [OctoSense-App-Hub](https://github.com/OctoSense-org/OctoSense-App-Hub) | The signed catalog, the store and the Card runner. Linked as the Git crate `octosense-app-hub-app`. |
-| [OctoScript-App-Design-Flow](https://github.com/OctoSense-org/OctoScript-App-Design-Flow) | Where apps are designed, built and published to the App Hub. |
+| [OctoSense-App-Flow](https://github.com/OctoSense-org/OctoSense-App-Flow) | Where apps are designed, built and published to the App Hub. |
 | [OctoScript-Makepad](https://github.com/OctoSense-org/OctoScript-Makepad) | The runtime release that pins Makepad and OctoScript. Checked out in `.sources/`. |
 | [makepad (OctoSense fork)](https://github.com/OctoSense-org/makepad) | The framework. Checked out in `.sources/makepad`. |
 | [octos](https://github.com/octos-org/octos) | The agent kernel, a shell service (`octos-core`, on by default): AI providers configures it, AppCard, Rinx and other consumers connect to it. One revision, pinned in the root `Cargo.toml`; the kernel itself is a separate binary (desktop: the packaged `octos-kernel` beside the shell, see [Build and run](#build-and-run), or `OCTOS_APP_CORE_BIN`; Android: bundled `liboctos.so`). |
@@ -76,8 +80,8 @@ Developer programs from `config/apps.json` build on first launch (progress shows
 
 | Platform | Status |
 | --- | --- |
-| macOS | Supported and validated (source builds, process hosting, App Hub, system apps). |
-| Windows, Linux | Code paths are retained from upstream but not validated here. |
+| macOS | Source and packaged-app builds, process hosting, App Hub and system apps have native validation. RC1 public sample install/update/restart checks are recorded in its release evidence. |
+| Windows, Linux | CI package builds and payload privacy scans pass. [Embedded-browser checks](../docs/desktop-embedded-browser.md) and [synthetic backend/browser/vault checks](../tools/connected-e2e/README.md#native-backend-browser-acceptance-2026-10-08) passed at their recorded source revisions. Windows/Linux installer GUI acceptance remains unverified. |
 | Android | `cargo makepad android run -p octosense --release`; see [Phones](#phones). |
 | iOS | Startup policy is tested, but a full build currently fails in the pinned Makepad Metal backend ([validation](docs/validation.md)). |
 
@@ -89,15 +93,16 @@ The native apps' features (`app-hub`, `app-rinx`, `app-reference`, `app-sheets`,
 
 | Feature | Default | Effect |
 | --- | --- | --- |
-| `app-hub` | on | Links `octosense-app-hub-app` (store `apphub`, Card runner `card`, system apps) and the Mail, News, Calendar and AI providers host services. Without it the build has no App Hub and no system apps. |
+| `app-hub` | on | Links `octosense-app-hub-app` (store `apphub`, Card runner `card`, system apps); the Mail, News, Calendar and AI providers host services; the connected-account services (`auth`, `github`, `gmail`, `gcalendar`); and the Markdown editor GitHub Notes uses (`octosense-markdown-editor`). Without it the build has no App Hub and no system apps. |
 | `octos-core` | on | The octos kernel service (`octosense-kernel`, from `../crates/kernel`) and the app-agent broker (`octosense-app-peers`): the one kernel AppCard, Rinx and other consumers share, configured by AI providers. Always on for Android and iOS. Leave it out with `--no-default-features --features app-hub` (and whatever else you want). |
+| `wasm-functions` | on | The `wasm` host service: apps' own WebAssembly functions ([ADR 0011](../docs/adr/0011-apps-own-functions-in-webassembly.md), [WebAssembly in OctoSense](../docs/wasm.md)), run by `../crates/wasm-host` (Wasmtime, compiled by Cranelift). Current source includes it on macOS, Windows and Linux, and in Android and OpenHarmony Home builds (Pulley on OpenHarmony). OpenHarmony device execution remains unverified; platform acceptance is separate from compilation. `wasm-lab` is its former name. |
 | `app-rinx` | on | Links [Rinx](https://github.com/hagency-org/Rinx), the Matrix client, as a module; implies `octos-core` (its assistant is the shell's). |
 | `app-reference` | off | Links Reference (`../apps/reference`) as a module. |
 | `app-sheets` | off | Links Makepad's Sheets as a module. |
-| `app-terminal` | on | Links Makepad's Terminal as a system app: a login shell in a tile. On macOS and Windows it runs as its own process (`terminal`, built from the pinned Makepad checkout with `cargo run`, else the binary beside `octosense`), so a crash in it leaves the shell running; on Linux only with a Vulkan build in a Wayland session. Where it cannot start a process (no checkout and no binary: release packages do not ship it yet, [#94](https://github.com/OctoSense-org/OctoSense/pull/94)) it opens in-process, as it does on phones; a `terminal: Module` or `terminal: Process` line in `wm/apps.splash` under the state directory overrides that. In either hosting the assistant gets the same tools (ADR 0004 §10): it reads (`read_screen`, `read_scrollback`) and may type a command (`run`), and every command waits for the person's live confirmation on the assistant's confirm card (`confirm: host`, `auto_approvable: false` in `native-apps.json`); a command too long for the card to show in full is refused. In-process on macOS, the shell's PTY helper is `octosense` itself. |
+| `app-terminal` | on | Links Makepad's Terminal as a system app: a login shell in a tile. On macOS and Windows it runs as its own process (`terminal`, which the shell builds from the OctoSense checkout with `cargo build` and starts itself, else the binary beside `octosense`), so a crash in it leaves the shell running; on Linux only with a Vulkan build in a Wayland session. Where it cannot start a process (no checkout and no binary: release packages ship only `octosense` and the kernel) it opens in-process; a `terminal: Module` or `terminal: Process` line in `wm/apps.splash` under the state directory overrides that. The AI pane can read it in either hosting (`read_screen`, `read_scrollback`), but it can type a command (`run`) only when the Terminal runs as its own process; in-process, the Terminal offers its read tools only (ADR 0004 §10). Outside developer mode, each command waits for the person's approval on a host sheet (`confirm: host`, `auto_approvable: false` in `native-apps.json`), and a command over 4 KiB is refused. In-process on macOS, the shell's PTY helper is `octosense` itself. |
 | `app-appcard` | off | Links the AppCard assistant module (`../apps/appcard/module`); implies `octos-core`. Opt-in on every target, phones included; not shipped for now. |
 | `app-aichat` | off | Links Makepad's AI chat as a module, without its model engine. |
-| `mobile-apps` | off | `app-rinx` + `app-reference` + `app-sheets` + `app-hub` + `octos-core`: the set phone builds link, for testing on desktop. Not AppCard. |
+| `mobile-apps` | off | `app-rinx` + `app-reference` + `app-sheets` + `app-hub` + `octos-core` + `wasm-functions`: the set phone builds link, for testing on desktop. Not AppCard. |
 
 A linked native app is hosted as its `hosting` in `native-apps.json` says for the platform: App Hub, Rinx, AppCard, Reference and Sheets in-process everywhere, the Terminal as a process on macOS and Windows (and on Linux with a Vulkan build in a Wayland session), and Task, which has no module, only as a process, and not at all where there are no processes. `--module <id>` (or a `<id>: Module` line in `wm/apps.splash` under the state directory) opens one in-process instead:
 
@@ -125,7 +130,41 @@ App Hub's modules have no process form and always open in-process.
 | `OCTOS_APP_CORE_BIN`, `OCTOS_APP_CORE_DIR` | The octos kernel binary the shell's kernel service runs, unchecked (unset: the packaged `octos-kernel`, see [Build and run](#build-and-run)) and its core dir (default `~/octos-home/.octos`; the AI providers profile is `<dir>/profiles/_main.json`). |
 | `OCTOSENSE_GLANCE_DEMO=1` | Publish a sample L0 News digest card (as `os.news`) to the glance screen at startup: F9 on a desktop style, the glance page on a phone style. A test path for the `glance` service. |
 | `OCTOSENSE_GLANCE_DEMO=mail` | Publish two fake Mail action cards (L0, as `os.mail`, with a toast each) at startup: clicking a toast opens that card in the card window, where Reply, Send (demo), Ask and Track work on fake data. They work the same in the glance panel, which opens with them, and on a phone style's glance page. No mail is read and no model is called. `scripts/mail_card_remote.sh` drives it hidden. |
+| `OCTOSENSE_REDUCE_MOTION=1` | Keep the glance panel and its toasts still instead of sliding them in and out ([The glance panel](#the-glance-panel)). |
 | `MAKEPAD_REMOTE`, `MAKEPAD_HIDE_WINDOWS` | Remote-control bridge; hidden windows (see [Demos](#demos)). |
+
+Since desktop 0.1.0-rc.1, apps can show web pages on Linux under X11 or XWayland and on Windows. The shell embeds the system's WebKitGTK or WebView2 engine; when the engine is missing, or the session is native Wayland, `WebReader` reports an error. [Desktop embedded browser](../docs/desktop-embedded-browser.md) lists what each platform needs.
+
+## Application icons
+
+Both `octosense` and `octosense-home` use OctoSense's green eight-petal mark.
+The workspace's Cargo environment embeds the desktop icons for normal
+`cargo run`/`cargo build`. Each package also supplies the PNG sizes, ICO and
+ICNS files that the pinned `cargo-makepad desktop` commands discover for
+macOS bundles, Windows executable resources and Linux desktop entries.
+Release packages continue to use `packaging/icons/`.
+
+Android builds of either package include legacy density icons, adaptive
+icons and Android 13 themed icons. Both packages supply opaque, correctly
+sized iPhone/iPad asset catalogs; Home's OpenHarmony wrapper replaces the
+framework's application, layered launcher and launch-window artwork too.
+These assets do not change which app targets currently build successfully.
+
+The source geometry and colours live in `packaging/make_icons.py` and
+`packaging/icons/icon.svg`. Generated files are committed; building the app
+needs no image renderer. From the repository root:
+
+```sh
+python3 desktop/packaging/make_icons.py
+python3 desktop/packaging/make_icons.py --check
+python3 -m unittest discover -s tools -p test_app_icons.py
+```
+
+Android resource compilation, iOS asset compilation and macOS ICNS decoding
+were checked locally. A fresh Home installation on Pixel 7 Pro / Android 17
+shows the branded icon in App info and launches successfully. Other installed
+platforms, Android themed-icon mode and Windows/Linux desktop integration
+remain **unverified** for this icon change.
 
 ## Release builds
 
@@ -150,10 +189,15 @@ What a package contains and how it is found at run time:
 - **No checkout.** A packaged build never looks for an OctoSense checkout: not the one it was built in, not its working directory, not its executable's ancestors (`crates/shell/src/octosense/paths.rs`, `packaged()`). Starting the installed app inside someone else's checkout therefore cannot make it build and run that code. It has no developer-program catalog (those rows build from source); `--apps <file>` with `executable` rows still works.
 - **System apps** (News, Photos, Maps, Camera, Mail, AI providers) are already in the binary: App Hub packs the bundles `system-apps.json` selects at build time. Nothing else is read from `apps/` or `desktop/config/`.
 - **The octos kernel.** The script builds octos at the revision `Cargo.lock` pins with `tools/kernel-artifact.py --host`'s steps and stages it with its `stage` (which checks the binary's `--version`). It ships as `octos-kernel` beside the executable (`Contents/MacOS/` in the app), with its receipt `octos-kernel.json` among the resources; the kernel service runs it only when the receipt names the pinned revision and the binary's SHA-256 ([Build and run](#build-and-run)). `--no-kernel` ships none, and the app then runs without an assistant. `target/octosense-package/receipt.json` records the version, resource crates and the kernel's receipt.
+- **Linux kernel receipts are per format.** `linuxdeploy` adds a RUNPATH to the AppImage kernel after staging. Packaging verifies that transformation, updates the AppImage's embedded receipt, rebuilds its SquashFS without running the image, and re-extracts it to verify the permitted changes. Apart from the host-library exclusions below, every other file, link and its metadata must survive. This requires `squashfs-tools`; unsupported signatures, ownership or xattrs stop packaging. The external `receipt.json` keeps `kernel` as the staged/raw receipt (`kernel_scope: staged_before_packaging`) and records final file/kernel hashes separately in `packages`. The DEB's original kernel hash stays unchanged. Publication still requires a full privacy scan of the finalized artifacts.
+- **Use the host's graphics stack.** AppImage packaging excludes Wayland client, cursor, EGL and server libraries. An older bundled Wayland library can override the host Mesa driver's dependency through `LD_LIBRARY_PATH`, preventing even X11 startup. The finalizer also removes those exact library families from `usr/lib` in already packaged images and records their hashes or link targets; all other payload bytes stay unchanged. The host must supply the matching Wayland/Mesa libraries. The DEB is unchanged.
 - **Private-path-free.** Paths in the binaries are remapped (`--remap-path-prefix` for the home directory, `CARGO_HOME` and the checkout) and debug info stripped (symbol names stay, for readable backtraces). Crates also embed their source directories as plain strings, which remapping does not reach, so build from a directory outside any user's home, with `CARGO_HOME` outside it too (the release workflow does). `tools/release-scan.py` fails on `/Users/…`, `C:\Users\…` and homes other than a CI runner's (`/home/runner`, `C:\Users\runneradmin`), `*.local` hosts, private IPv4 addresses, the scanning account's and host's names and any `RELEASE_SCAN_EXTRA` pattern, inside the `.app`, `.dmg`, `.deb`, `.AppImage`, `.zip` and NSIS installers.
+- **Package inspection does not run the AppImage.** The scanner reads its type-2 ELF boundary and extracts its filesystem with the host's `unsquashfs` (`squashfs-tools`, installed by the Linux build and release jobs). Missing tools, malformed headers and extraction failures stop publication. The GitHub publication token is scoped to the tag-verification and upload steps; it is absent during artifact inspection. Packaging also removes the inline `APPLE_API_KEY_P8` signing credential from build subprocesses.
 - **Identity.** Product name **OctoSense**, identifier `org.octosense.desktop` (`desktop/packaging/release.json`), icon from `desktop/packaging/icons/` (`make_icons.py` renders it). Android keeps `dev.makepad.octosense`.
 
 ### Cutting a desktop release
+
+Connected-app sign-in needs a separate distributor setup: the current release workflow supplies no Google or GitHub client registration. A package built without one will show that provider as unavailable. Supply the [compile-time registrations](../crates/oauth-service/README.md#configure-a-release-maintainers) when building, or provision `<apps root>/.host/oauth/clients.json` privately on an operator-managed installation. Signing the executable does not configure OAuth. Do not ask ordinary app users to create provider developer projects; do not advertise public Google sign-in until its verification/audience requirements are met.
 
 `.github/workflows/release-desktop.yml` (not part of `tools/ci-local.sh`):
 
@@ -167,7 +211,7 @@ Pull requests that change the packaging run the `package` jobs only: no secrets,
 
 ### Signing
 
-Without the secrets the signing jobs pass the packages through **unsigned**, with a warning: macOS Gatekeeper then asks to confirm the first open (right-click → Open), and Windows SmartScreen warns. To sign, create a GitHub environment named `release` (**Settings → Environments**), limit it to `main` and `desktop-v*` tags (and add required reviewers if wanted), and add these as its environment secrets, not repository secrets:
+Without the secrets the signing jobs pass the packages through **unsigned**, with a warning. macOS Gatekeeper can block the first launch; after checking the download and its checksum, use the app-specific **System Settings → Privacy & Security → Open Anyway** control described by [Apple](https://support.apple.com/102445) if you choose to run it. Windows SmartScreen warns. To sign, create a GitHub environment named `release` (**Settings → Environments**), limit it to `main` and `desktop-v*` tags (and add required reviewers if wanted), and add these as its environment secrets, not repository secrets:
 
 | Secret | For |
 | --- | --- |
@@ -185,7 +229,7 @@ The launcher lists four kinds of app together:
 
 | Kind | Comes from | Runs as | Launcher id |
 | --- | --- | --- | --- |
-| **System apps**: News, Photos, Maps, Mail, Calendar (desktop only), AI providers, YouTube (Camera ships on the phone only) | `../apps/<name>/bundle`, selected by `system-apps.json`, packed into the build | Contained Splash programs in App Hub's Card runner, each in its own isolate under the capabilities its manifest asks for | `<name>` (manifest id `os.<name>`) |
+| **System apps**: News, Photos, Maps, Mail, Calendar (desktop only), AI providers, YouTube, Quick Deck, PDF Tools and Writer (all three desktop only: their `deck`, `pdf` and `word` engines are behind `craft-engines`; Camera ships on the phone only) | `../apps/<name>/bundle`, selected by `system-apps.json`, packed into the build | Contained Splash programs in App Hub's Card runner, each with verified app identity, an isolated store and the host consent boundary | `<name>` (manifest id `os.<name>`) |
 | **Store apps** | The signed App Hub catalog, installed from the store (`apphub`) | The same Card runner. Every open is checked against the catalog; an update closes old instances. | `hub:<manifest-id>` |
 | **Native modules** | Rust crates linked into this binary | In-process `AppModule`s. Trusted code only: App Hub, AppCard, Rinx, Reference and the `app-*` features. | module id |
 | **Developer programs** | `config/apps.json` | Separate processes in tiles, over Makepad's `--stdin-loop` hosting protocol, built on first launch | catalog `id` |
@@ -194,11 +238,11 @@ Precedence: a linked native module beats a system app of the same id, and a syst
 
 ### Containment and permissions
 
-A contained app is a bundle: `manifest.json` (id, version, capabilities) plus `main.splash`. The Card runner grants only the capabilities the manifest lists (Mail asks for `storage` and `mail`). The pinned Makepad ([makepad#30](https://github.com/OctoSense-org/makepad/pull/30)) enforces this at every exit of an isolate: network and web sockets answer to the app's host list, raw sockets and servers are refused, files stay in the app's storage jail, and password or one-time-code fields are inert inside a policed isolate.
+A contained app is a bundle: `manifest.json` (id, version, capabilities) plus `main.splash`. Capability families and `network.hosts` describe use; they do not grant or deny public APIs. The Card runner binds the admitted app identity before evaluating its source. Files stay in the app/account storage jail and quota, device calls require consent and OS permission, and private writes require trusted host review. Password and one-time-code fields remain inert inside a contained app. Required host ABI versions still gate compatibility. See [capabilities and execution boundaries](../docs/capabilities.md).
 
 ### Host services and host-owned sheets
 
-Secrets are the host's. An app that needs an account calls a **host service** through `host.request`; the service runs in the shell with the credentials, and the app never gets a socket or a password.
+Secrets are the host's. An app that needs an account calls a **host service** through `host.request`; the service runs in the shell with the credentials, and the app never receives the account password.
 
 Mail is the worked example (`octosense-mail-service`, from [`../apps/mail/host-service`](../apps/mail/host-service)):
 
@@ -216,19 +260,28 @@ New app features that need a password, PIN or token belong in a host service and
 
 ### Store apps (App Hub)
 
-App Hub is on by default. Open **App Hub** from the launcher to browse the signed catalog and install apps; installed apps appear in the launcher without a restart. The catalog origin defaults to the App Hub repository and can be pointed elsewhere with `OCTOSENSE_HUB`. To build and publish an app, start from [OctoScript-App-Design-Flow](https://github.com/OctoSense-org/OctoScript-App-Design-Flow).
+App Hub is on by default. Open **App Hub** from the launcher to browse the signed catalog and install apps; installed apps appear in the launcher without a restart. The catalog origin defaults to the App Hub repository and can be pointed elsewhere with `OCTOSENSE_HUB`. To build and publish an app, start from [App Flow](https://github.com/OctoSense-org/OctoSense-App-Flow).
 
 #### Try your own app before it is published
 
-Publish the bundle into a local catalog with a throwaway anchor (OctoScript-App-Design-Flow's [PUBLISHING §4](https://github.com/OctoSense-org/OctoScript-App-Design-Flow/blob/main/docs/PUBLISHING.md#4-rehearse-the-store-path-locally) gives the `hub keygen`/`certify`/`publish` commands), then point this shell at it:
+App Hub accepts only GitHub-attested releases, so you need no publisher key: the app's GitHub repository is its publisher identity ([App Hub ADR 0002](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/main/docs/adr/0002-github-attested-publisher-identity.md)). For public distribution, use the GitHub release workflow in App Hub's [submission guide](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/main/docs/SUBMITTING.md#5-produce-the-final-bytes): install it with App Flow's `tools/octo publish-github <app-directory>`, commit it to the app's public repository together with the tested app, then push a new `v<manifest.version>` tag. Add the release evidence to an [App Hub submission issue](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/new?template=submit-app.yml), opening one if needed. A tag or Release alone is not Hub approval.
+
+The following is an **optional local rehearsal**. It uses a legacy-format test catalog that you sign with throwaway catalog keys (`hub keygen`, `certify`, `publish`), and it publishes nothing to App Hub. It needs no publisher key: use the release pack that your release workflow built, and never restamp a GitHub-attested release. App Flow's [PUBLISHING §4](https://github.com/OctoSense-org/OctoSense-App-Flow/blob/main/docs/PUBLISHING.md#4-rehearse-the-store-path-locally) has the steps. Installing a GitHub-attested release from such a catalog is **unverified**.
+
+After preparing the mirror, replace the two quoted values below. Always use a fresh profile: a library that already cached the v2 catalog refuses a legacy downgrade. **This revised launch recipe is source-reviewed, not yet run against the newly compatible shell binary.**
 
 ```sh
-OCTOSENSE_HUB=<mirror dir> OCTOSENSE_HUB_ANCHOR=<anchor hex> \
-  OCTOSENSE_HOME=/tmp/octosense-test OCTOSENSE_APP_DATA=/tmp/octosense-test-apps \
+REHEARSAL_MIRROR='/absolute/path/to/your/test-mirror'
+REHEARSAL_ANCHOR='replace-with-test-anchor-public-hex'
+REHEARSAL_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/octosense-hub-rehearsal.XXXXXX")"
+OCTOSENSE_HUB_CATALOG=legacy \
+  OCTOSENSE_HUB="$REHEARSAL_MIRROR" OCTOSENSE_HUB_ANCHOR="$REHEARSAL_ANCHOR" \
+  OCTOSENSE_HOME="$REHEARSAL_ROOT/shell" OCTOSENSE_APP_DATA="$REHEARSAL_ROOT/apps" \
+  OCTOS_APP_CORE_DIR="$REHEARSAL_ROOT/core" \
   cargo run --release -p octosense
 ```
 
-Open **App Hub**, choose the app, **Get**, scroll to **Install**, then **Open**: it runs in the Card runner under its manifest, as a store app would. Verified on macOS on 2026-09-26 with a new script app (in the OctoSense-Desktop repository, before the merge). The two `OCTOSENSE_*` state variables keep the test out of `~/.octosense`.
+Open **App Hub**, choose the app, **Get**, scroll to **Install**, then **Open**: it runs in the Card runner under its manifest. The earlier legacy-catalog UI flow was verified on macOS on 2026-09-26 with a new script app, before the repository merge; that historical result does not verify the new GitHub publisher path. The separate shell/app directories keep this rehearsal out of your normal profile, and the explicit kernel directory prevents copying personal provider settings into it. This local catalog does not submit or publish an app to the official Hub.
 
 ### Choosing and overriding system apps
 
@@ -250,7 +303,7 @@ Open **App Hub**, choose the app, **Get**, scroll to **Install**, then **Open**:
 
 ### Developer programs and the catalog
 
-`config/apps.json` lists Reference and the Makepad apps OctoSense picked (Browser, Files, Task, Terminal, Sheets, Clock, Weather, Finance, Notes, Reminders, Calculator, Route, and the Image and PDF viewers). Calculator, Clock, Notes, Reminders and Weather are native apps ([`../native-apps.json`](../native-apps.json)): linked by default and opened in-process, with their read tools offered to the system agent while they are open. Task is a native app that runs only as its own process (`"module": null`), sandboxed. Terminal is also linked (`app-terminal`, on by default); its `config/apps.json` row is the process form it opens in on macOS and Windows, and the linked module is the in-process form. The `aichat` row is the assistant pane's own process (F10), which the pane starts; no list shows it. A launcher row whose id is listed in `wm/launcher.hides` under the state directory is hidden.
+`config/apps.json` lists Reference and the Makepad apps OctoSense picked (Browser, Files, Task, Terminal, Sheets, Clock, Weather, Finance, Notes, Reminders, Calculator, Route, and the Image and PDF viewers). Calculator, Clock, Notes, Reminders and Weather are native apps ([`../native-apps.json`](../native-apps.json)): linked by default and opened in-process, on the desktop and on the phone, with their read tools offered to the system agent while they are open. Task is a native app that runs only as its own process (`"module": null`), sandboxed. Terminal is also linked (`app-terminal`, on by default); its `config/apps.json` row is the process form it opens in on macOS and Windows, and the linked module is the in-process form. The `aichat` row is the assistant pane's own process (F10), which the pane starts; no list shows it. A launcher row whose id is listed in `wm/launcher.hides` under the state directory is hidden.
 
 Catalog lookup: `--apps <file>` if given, else `~/.octosense/apps.json` if it exists, else `config/apps.json`. A catalog is a JSON array; each entry picks one launch target:
 
@@ -289,6 +342,20 @@ cargo run --release -p octosense --features app-appcard -- --module appcard
 ```
 
 It starts no kernel of its own: it connects to the shell's. On desktop that is the packaged `octos-kernel` or `OCTOS_APP_CORE_BIN` (and optionally `OCTOS_APP_CORE_DIR`); without a kernel it shows its login / WebSocket screen. Every octos crate comes from octos-org/octos at the one revision the root `Cargo.toml` pins.
+
+## The glance panel
+
+Apps and their agents publish glance cards with `glance.publish` ([how cards work](../README.md#cards-and-questions)). On the desktop they appear here:
+
+| Surface | What happens |
+| --- | --- |
+| Panel | A new card opens the glance panel unless a card window is already open. The bar’s bell or F9 also opens the panel. A press on a card outside its own controls opens it in the card window. The hovered card shows its open and dismiss actions, and a card that just came wears an accent mark for a few seconds. A card that does not fit whole peeks in at the end of the list. A card taller than its tile scrolls inside it with the wheel; a card with an in-card chat stays at its newest rows, so its field and the latest exchange stay in view. Opened with F9 (or a press in it), the panel has the keyboard: the arrows move a focus ring from card to card, Return opens the card, Delete dismisses it and Esc closes the panel. |
+| Notifications | A card published with `notify` also posts a toast with the app’s icon and name, the card’s title and its `summary` (else the card’s own). Selecting the toast opens the card in its own window. At most three toasts show at once; a “+N more” chip under them shows the rest. While the panel is open, toasts stack to its left. |
+| Dismissal | The hovered card shows a dismiss button: `glance::dismiss` removes the card as if the app had withdrawn it. Clear all dismisses every card. A dismissal can be undone from the toast that reports it, or with ⌘Z while the panel has the keyboard. The panel has a separate close button. |
+
+On a phone, `notify` posts a shade notification instead, and selecting it opens the glance page.
+
+A card that names no theme takes the shell’s light or dark palette. Toasts and the panel slide in; `OCTOSENSE_REDUCE_MOTION=1` keeps them still. The code: [`glance_panel.rs`](../crates/shell/src/glance_panel.rs), [`glance_sheet.rs`](../crates/shell/src/glance_sheet.rs) and [`notifications.rs`](../crates/shell/src/shell/notifications.rs).
 
 ## Demos
 
@@ -350,7 +417,7 @@ Phone builds of this package always link Reference and Sheets and the octos kern
 ## Desktop styles and settings
 
 - Eight desktop styles. Desktop builds start in **OctoSense**, with Liquid Glass frames and a **Light / Dark** switch in the top bar; the others are Omarchy, macOS, Windows, Windows 2000, NeXTSTEP, iOS and Android. Theme sources are in `../crates/shell/resources/themes/`, wallpaper provenance in [crates/shell/resources/wallpapers/README.md](../crates/shell/resources/wallpapers/README.md).
-- Keys: **⌘Space** menu, **⌘W** close tile, **⌘F** tile fullscreen, **⌘1…0** workspaces, **⌘Shift1…0** move tile. **Learn → Keybindings** lists them; see [KEYBINDINGS.md](KEYBINDINGS.md).
+- Keys: **⌘Space** menu, **⌘W** close tile, **⌘F** tile fullscreen, **⌘1…0** workspaces, **⌘Shift1…0** move tile. On macOS, **⌘A** selects all in the focused app; **Ctrl+Alt+A** remains the window manager's alternate-layer prefix. **Learn → Keybindings** lists them; see [KEYBINDINGS.md](KEYBINDINGS.md).
 - State lives in `~/.octosense` (`OCTOSENSE_HOME`); hosted apps get it as `MAKEPAD_HOME`.
 - Local models for the AI pane (**F10**): [docs/local-ai.md](docs/local-ai.md). The desktop works without a model.
 
@@ -398,12 +465,14 @@ Results for each change are recorded in [docs/validation.md](docs/validation.md)
 
 ## Known gaps
 
-- Only macOS is validated. Windows and Linux are untested; the iOS build fails in the pinned Metal backend.
-- Source builds (`cargo run`) read fonts and resources from the `.sources/makepad` checkout, so keep it in place; [release builds](#release-builds) carry their own. Release packages are unsigned until the `release` environment has the signing secrets, and the Windows and Linux packages are built in CI but not run by us.
+- Windows/Linux package builds and focused native tests do not establish installer GUI acceptance or a complete desktop UX soak. The iOS build still fails in the pinned Metal backend.
+- Ordinary embedded pages need GTK 3 and WebKitGTK 4.1 (or compatible 4.0) on Linux X11/XWayland, or a supported WebView2 Runtime on Windows. Neither engine is bundled; see [runtime requirements](../docs/desktop-embedded-browser.md#runtime-requirements). Native Wayland embedding and Windows/Linux embedded backend authentication remain unsupported; backend login there uses the external browser.
+- Protected connected-account writes still fail closed on Windows/Linux because trusted native approval is unavailable. The packages do not include Google/GitHub OAuth client registrations; an operator must configure the host before users can sign in ([account service](../crates/oauth-service/README.md#current-delivery-boundary)).
+- Source builds (`cargo run`) read fonts and resources from the `.sources/makepad` checkout, so keep it in place; [release builds](#release-builds) carry their own. RC1 packages have no Apple Developer ID signature/notarization or Windows publisher signature; the release notes distinguish local macOS builds from tagged CI packages.
 - Photos on desktop has thumbnails only unless you mount a photo directory.
 - The hosted AppCard assistant does not yet wire notifications, share or the WebView overlay.
 - Mobile Sheets needs grid-label and toolbar fixes ([BACKLOG.md](BACKLOG.md)).
-- No `makepad_test` UI suite; CI compiles but does not test.
+- Native host-API and embedded-browser fixtures provide focused CI checks; they are not a complete `makepad_test` suite or UI soak of every app.
 
 ## Contributing
 

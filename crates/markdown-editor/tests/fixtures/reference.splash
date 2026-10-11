@@ -1,0 +1,2 @@
+start_timeout(0.1, || {ui.editor.load("# A quieter morning\n\nStart with **one small idea** and let it grow.\n\n## Today’s notes\n\n- Make time for a walk\n- Read something new\n- Share a useful thought\n\n> Good writing begins with attention.\n\n| Time | Plan |\n| --- | --- |\n| Morning | Write |\n| Afternoon | Review |\n") ui.editor.set_destination("A quieter morning") ui.editor.set_status("Saved")})
+View {width: Fill height: Fill editor := MarkdownEditor {width: Fill height: Fill on_change: |text| fs.write("draft.md",text)}}

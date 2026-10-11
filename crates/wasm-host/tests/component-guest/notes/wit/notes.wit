@@ -1,0 +1,43 @@
+package octosense:notes-spike;
+
+world notes {
+  record stats {
+    words: u32,
+    lines: u32,
+    headings: list<string>,
+  }
+
+  /// Markdown to HTML, with the pulldown-cmark crate.
+  export to-html: func(markdown: string) -> string;
+  /// Counts and headings: a record result.
+  export analyze: func(markdown: string) -> stats;
+  /// Writes HTML into the app's storage (WASI filesystem).
+  export save-html: func(markdown: string, path: string) -> result<u64, string>;
+  export read-file: func(path: string) -> result<string, string>;
+  /// WASI clocks and randomness.
+  export now-ms: func() -> u64;
+  export random-u64: func() -> u64;
+  /// State that lives across calls on one instance.
+  export count: func() -> u32;
+  /// Never returns: the deadline ends it.
+  export spin: func();
+  /// Allocates `megabytes`: the memory cap ends it.
+  export grow: func(megabytes: u32) -> u32;
+  /// Bytes in, bytes out.
+  export echo-bytes: func(data: list<u8>) -> list<u8>;
+
+  /// Appends to a file (append-via-stream); its new length.
+  export append-text: func(path: string, text: string) -> result<u64, string>;
+  /// Sets a file's length (set-size).
+  export set-len: func(path: string, len: u64) -> result<_, string>;
+  /// Deletes a file (unlink-file-at).
+  export delete-file: func(path: string) -> result<_, string>;
+
+  enum entry-kind { regular-file, directory, other }
+  record file-info {
+    byte-count: u64,
+    kind: entry-kind,
+  }
+  /// Hyphenated names, which scripts read in snake_case.
+  export file-info: func(path: string) -> result<file-info, string>;
+}

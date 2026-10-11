@@ -104,13 +104,15 @@ pub fn account_hash(account: &str) -> String {
 }
 
 /// An app id usable as one path component: `[A-Za-z0-9._-]{1,128}`,
-/// starting with a letter or digit (App Hub keeps `.host`, `.system` and
-/// `catalog.json` beside the jails), no `..`.
+/// starting with a letter or digit, no `..`. Host catalog cache/lock names
+/// are reserved too, including on case-insensitive filesystems.
 pub fn validate_app_id(id: &str) -> Result<(), String> {
     let ok_len = !id.is_empty() && id.len() <= 128;
     let ok_chars = id.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-'));
     let ok_first = id.bytes().next().is_some_and(|b| b.is_ascii_alphanumeric());
-    if ok_len && ok_chars && ok_first && !id.contains("..") && id != "catalog.json" {
+    let host_file = ["catalog.json", "catalog.lock", "catalog-v2.json", "catalog-v2.lock"]
+        .iter().any(|name| id.eq_ignore_ascii_case(name));
+    if ok_len && ok_chars && ok_first && !id.contains("..") && !host_file {
         Ok(())
     } else {
         Err(format!("invalid app id {id:?}"))
@@ -771,13 +773,10 @@ pub fn host() -> Option<&'static Arc<Storage>> {
 }
 
 /// Offer `module`'s storage to the instance `scope` for its `create`, when
-/// it declares the `storage` capability and the host storage is set up.
+/// the host storage is set up. Declarations do not control access to its jail.
 /// Returns whether an offer was made; the caller withdraws it afterwards.
-pub fn offer(module_id: &str, capabilities: &[&str], scope: &str) -> bool {
+pub fn offer(module_id: &str, _capabilities: &[&str], scope: &str) -> bool {
     let Some(host) = host() else { return false };
-    if !capabilities.contains(&"storage") {
-        return false;
-    }
     match host.open(module_id) {
         Ok(storage) => {
             crate::ai_host::app_peers::storage::offer(module_id, scope, storage);

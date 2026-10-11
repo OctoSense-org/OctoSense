@@ -16,7 +16,7 @@
 | 原生应用 | 实现 Makepad `AppModule` 的 Rust 模块，或通过窗口管理协议托管的可执行程序。 |
 | 隔离脚本应用 | App Hub 的 Card runner 校验 `manifest.json`，在受限 Makepad Script/Splash VM 中运行 `main.splash`。 |
 | 宿主服务 | Rust 按明确的应用身份执行操作并返回数据。 |
-| 应用 Agent | 按应用/账号限定的 octos peer，拥有会话、工作目录及获授予的工具。 |
+| 应用 Agent | 按应用/账户限定的 octos peer，拥有会话、工作目录及获授予的工具。 |
 | 系统 Agent | Shell 的助手会话，拥有发现、委派和选定系统操作的工具。 |
 | ROM 特权 agent | Android 的 Java/Binder 平台服务 `AgentPlatformService`。 |
 
@@ -70,8 +70,10 @@ Wayland 会话中通常走这条路径；模块回退和覆盖配置见[桌面 R
 Shell 将帧归属到它启动的应用，检查 `agent.octos` 授权和用户同意，再把请求接到模块也使用的
 app-peer broker。模块的 `OctosPeer` 通道则通过 `module_connected` 和
 `on_module_frame` 接入同一路径。工具结果和取消沿该链路返回；进程死亡时，关闭它的上下文，
-让等待中的调用失败，同时保留持久 peer。**当前发布的进程应用没有申请 Agent**：
-Terminal 清单虽然暴露工具，但 `agent.octos` 列表为空。
+让等待中的调用失败，同时保留持久 peer。**Terminal 是唯一带 Agent 的进程应用**：它的
+`native-apps.json` 条目为 Agent 授予了全部四个 `octos.*` 服务；它自己的 Agent 只能调用两个只读工具
+`terminal.read_screen` 和 `terminal.read_scrollback`（`own_tools`）。`native-apps.json`
+中的另一个进程应用 Task 没有 Agent。
 
 ## 3. 运行并追踪脚本 bundle
 
@@ -83,16 +85,14 @@ Terminal 清单虽然暴露工具，但 `agent.octos` 列表为空。
 cargo run --locked --release -p octosense-card-host --bin card-host -- --bundle /path/to/OctoSense/apps/news/bundle --system
 ```
 
-`--system` 接纳内置 `os.*` bundle。Shell 的宿主服务和 Agent UI 需要完整 Shell。
+`--system` 准入内置 `os.*` bundle。Shell 的宿主服务和 Agent UI 需要完整 Shell。
 例如，在 OctoSense 根目录运行 Mail 的演示服务：
 
 ```sh
 MAKEPAD_APP_CONFIG='{"mail_demo":true}' cargo run --locked --release -p octosense
 ```
 
-演示账号密码为 `demo`，发送留在演示环境。新商店应用在 OctoScript-App-Design-Flow 中开发，
-使用 App Hub 的准入/发布流程。[本地目录配方](../README.zh-CN.md#发布前试用自己的应用)
-用于发布前验证安装到 Shell 的路径。
+演示账户密码为 `demo`，发送留在演示环境。新商店应用在 OctoSense App Flow（原 Design Flow）中开发，使用 App Hub 的准入/发布流程。[本地签名目录配方](../README.zh-CN.md#发布前试用自己的应用)用于在发布前测试应用能否安装到 Shell。
 
 [`desktop/system-apps.json`](../system-apps.json) 和
 [`phone/system-apps.json`](../../phone/system-apps.json) 选择 `apps/` 中的 bundle。
@@ -100,7 +100,7 @@ MAKEPAD_APP_CONFIG='{"mail_demo":true}' cargo run --locked --release -p octosens
 `register_host_services`。App Hub 的原生 `CARD_MODULE` 托管这些解释执行程序；
 可选的 AppCard 助手使用自己的模块。
 
-准入将 manifest 的能力请求解析为策略。脚本的 `host.request(...)` 按应用身份执行。
+准入验证应用包，解析元数据与资源上限。能力名称披露用途，不是执行许可。脚本的 `host.request(...)` 按应用身份执行。
 App Hub 的 `crates/appstore/src/services.rs` 定义 `HostService`、`ServiceCall` 和回复机制；
 调用携带应用身份和宿主目录，供服务检查。只有明确声明的 Agent 工具，才会把相应操作提供给模型。
 
@@ -140,18 +140,19 @@ sequenceDiagram
 | 拥有 Agent 的应用 | 工具与实现 |
 | --- | --- |
 | News | `news.list`、`news.read`、`news.notify`；News 宿主服务处理调用，并将通知交给 Shell。 |
-| Mail | 只有 `mail.notify`；Mail 服务调用 Shell 的 `on_notify` 回调。`mail.list`、`mail.message`、`mail.send` 等 UI 操作没有对应的 Agent 声明。 |
-| Calendar | `calendar.events`、`add_event`、`remove_event`、`notify`、`agenda`；Rust 服务管理日程及事件/议程卡片模板。 |
+| Mail | accounts/folders/sync/list/peek 绑定 broker 账户；peek 不标记已读。notify/publish_card 经 Shell 发布，skip_event 记录无需操作的决策。发信和凭据仍不对 Agent 开放。 |
+| Calendar | `calendar.events`、`add_event`、`update_event`、`remove_event`、`notify`、`agenda`；Rust 服务管理日程及事件/议程卡片模板。 |
 | Photos、Maps、YouTube、Camera | 只有 `<namespace>.notify`；Shell 的 `NoticeService` 处理各应用的命名空间。Camera 由 Home 打包。 |
 
-AI providers 配置宿主，目前不声明应用 Agent。Calendar 的脚本窗口介绍如何询问其 Agent；
-日程通过上述工具访问，App Hub 还没有提供脚本 `calendar` 能力。
+AI providers 配置宿主，目前不声明应用 Agent。Calendar 的月历、按日列表和编辑器
+披露 `calendar` 用途，服务检查已准入应用身份与数据范围，并与上述 Agent 工具共享本地日程存储。Glance 中已保存日程
+的卡片可打开 Calendar 中同一条记录；编辑日程也会刷新它的卡片。
 
 共用通知的实现见 [`glance_notice.rs`](../../crates/shell/src/glance_notice.rs) 和
 [`resources/glance/notice.card`](../../crates/shell/resources/glance/notice.card)。
 Mail 和 News 保留自己的服务并安装通知回调；`serve_system_apps` 只为尚无服务的命名空间
 注册 `NoticeService`。`publish_args` 填入应用名称/图标、时间、标题和正文，
-再由 `glance::publish_for` 检查应用的 `glance` 授权。通知卡片可以打开所属应用，
+再由 `glance::publish_for` 检查发布者当前准入状态与账户身份。通知卡片可以打开所属应用，
 并设置 `notify: true`。Calendar 继续使用自己的事件和议程模板。
 
 更通用的 [`glance.publish`](../../crates/shell/src/glance.rs) API 接受 L0 `source`
@@ -159,6 +160,11 @@ Mail 和 News 保留自己的服务并安装通知回调；`serve_system_apps` �
 `notify: true` 排入一条 toast 通知；用户关闭卡片时，宿主的 `glance::dismiss` 删除它。
 上述固定通知工具接受文本参数，script-card API 则用于更丰富的应用界面。
 用户在这些界面上的操作使用应用自己的 API 权限。
+
+在 `main` 上，Agent 的工具调用若最终映射到 `glance.publish`，只能指定应用已准入应用包中的模板
+并提供 `initial` 对象，或提交合法的 L0 源码，不能提交 `script`（见
+[`script_apps.rs`](../../crates/shell/src/host_tools/script_apps.rs) 中的 `check_agent_publication`）。
+`desktop-v0.1.0-beta.2` 仍接受 Agent 发布的 `script` 卡片。
 
 实现旁的测试直接展示这些约定：`script_apps.rs` 中的
 `a_host_service_tool_runs_as_the_apps_own_request`、`glance_notice.rs` 中的
@@ -169,8 +175,8 @@ Mail 和 News 保留自己的服务并安装通知回调；`serve_system_apps` �
 
 | 边界 | 访问路径 |
 | --- | --- |
-| 脚本存储 | 在应用能力和隔离目录限制下使用运行时 storage API。 |
-| Agent 工作目录 | 通过获授权的文件工具和 Shell 策略访问 peer 的应用/账号目录。 |
+| 脚本存储 | 在有配额的应用私有隔离目录中使用运行时 storage API，即使遗漏 `storage` 声明也一样。 |
+| Agent 工作目录 | 通过获授权的文件工具和 Shell 策略访问 peer 的应用/账户目录。 |
 | 宿主服务数据库 | 经明确的 Rust 方法/工具访问 Calendar 日程、Mail 缓存和 News 数据。凭据保留在宿主确认面板和保险库中。 |
 
 跨应用调用由请求方在 `agent.tools` 中列出带点号的工具名，所有者必须声明可共享，
@@ -183,7 +189,7 @@ relay 也必须授权。准入还检查 `HostLimits.offered_tools`：默认提�
 桌面上聚焦拥有 Agent 的应用，从栏按钮、Shift+F8 或菜单打开 **Ask &lt;app&gt;**。
 F8 打开系统 Agent。`agents.list` 报告应用 Agent；`agents.ask` 等待首次同意和 peer
 准备完成，再返回 peer slug。系统 Agent 用 `peer_send_input` 发送任务，用 `peer_gather`
-获取答案。声明了 `sys.chat` 的卡片也可以访问其应用 Agent。随产品提供的通知与 Calendar 模板没有聊天，应通过 “Ask <app>” 访问其 Agent；Mail 演示卡片返回预设文本。手机触控导航尚无打开 Ask-app 面板的控件。
+获取答案。声明了 `sys.chat` 的卡片也可以访问其应用 Agent。工作区中的发布者如果声明了 agent 却没有内嵌会话，宿主会提供 Card / Chat 页签及绑定账户的会话；发布数据和当前 L0 状态只是上下文，不授予工具权限。Enable assistant 打开首次使用许可。这也适用于手机上的内置通知和 Calendar 卡片。显式 Mail 演示会话仍返回预设文本。手机触控导航尚无打开独立 Ask-app 面板的控件。
 
 继续阅读 [`app_chat/`](../../crates/shell/src/app_chat/mod.rs)、
 [`system_chat/`](../../crates/shell/src/system_chat/mod.rs)、

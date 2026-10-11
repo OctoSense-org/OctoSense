@@ -1,0 +1,530 @@
+diff --git a/widgets/src/camera_preview.rs b/widgets/src/camera_preview.rs
+index ce7ca3217..21e6b1eae 100644
+--- a/widgets/src/camera_preview.rs
++++ b/widgets/src/camera_preview.rs
+@@ -187,6 +187,14 @@ pub struct CameraPreview {
+     #[rust]
+     permission_pending: bool,
+     #[rust]
++    permission_request: Option<i32>,
++    #[rust]
++    permission_prompted: bool,
++    #[rust]
++    permission_may_prompt: bool,
++    #[rust]
++    audio_permission_request: Option<(i32, bool, bool)>,
++    #[rust]
+     timer: Option<Timer>,
+     #[rust]
+     drawn: bool,
+@@ -195,6 +203,8 @@ pub struct CameraPreview {
+     #[rust]
+     recording: Option<String>,
+     #[rust]
++    recording_audio: bool,
++    #[rust]
+     last: String,
+     #[rust]
+     last_error: String,
+@@ -235,12 +245,26 @@ fn start(&mut self, cx: &mut Cx) -> bool {
+         }
+         if self.permission.is_none() && !self.permission_pending {
+             self.permission_pending = true;
+-            self.asked_at = cx.seconds_since_app_start();
+-            cx.request_permission(Permission::Camera);
++            self.asked_at = if crate::splash_policy::device_consent_required(self.heap_key()) {
++                0. // Opted-in heaps never use the legacy permission timeout.
++            } else { cx.seconds_since_app_start() };
++            self.permission_may_prompt = crate::splash_policy::device_prompt_allowed(self.heap_key());
++            // First inspect the OS grant. A background isolate can use an
++            // already-granted camera, but only its foreground app may prompt.
++            self.permission_prompted = !crate::splash_policy::device_consent_required(self.heap_key());
++            self.permission_request = Some(if self.permission_prompted {
++                cx.request_permission(Permission::Camera)
++            } else {
++                cx.check_permission(Permission::Camera)
++            });
+         }
+-        if self.cameras.is_empty() {
++        if self.cameras.is_empty()
++            && (!crate::splash_policy::device_consent_required(self.heap_key())
++                || self.permission == Some(PermissionStatus::Granted)) {
+             // The platform publishes its list once; a preview mounted later
+             // asks again. The frame callback opens the capture session.
++            // Apple capture initialization itself requests OS access, so an
++            // opted-in heap must not enumerate before its check succeeds.
+             cx.video_input(0, |_frame| {});
+             cx.refresh_video_inputs();
+         }
+@@ -254,6 +278,8 @@ fn start(&mut self, cx: &mut Cx) -> bool {
+ 
+     fn stop(&mut self, cx: &mut Cx) {
+         self.wanted = false;
++        self.permission_request = None;
++        self.permission_pending = false;
+         self.halt(cx);
+         if let Some(timer) = self.timer.take() {
+             cx.stop_timer(timer);
+@@ -263,6 +289,7 @@ fn stop(&mut self, cx: &mut Cx) {
+     /// Close the camera, keeping whether the app wants it: the watchdog
+     /// reopens it when the preview draws again.
+     fn halt(&mut self, cx: &mut Cx) {
++        self.audio_permission_request = None;
+         if matches!(self.state, State::Starting | State::Running) {
+             if self.recording.take().is_some() {
+                 if let Some(input) = self.input {
+@@ -276,6 +303,10 @@ fn halt(&mut self, cx: &mut Cx) {
+ 
+     /// One step towards what the app wants, driven by the platform's events.
+     fn drive(&mut self, cx: &mut Cx) {
++        if !self.granted("camera.preview") {
++            self.stop(cx);
++            return;
++        }
+         let want_front = self.facing == "front";
+         match self.state {
+             State::Running if want_front != self.open_front || (self.aspect - self.open_aspect).abs() > 0.05 => {
+@@ -296,6 +327,7 @@ fn drive(&mut self, cx: &mut Cx) {
+                     // request, then the hidden-preview watchdog stops a player
+                     // that has not been prepared yet. Wait for the real answer.
+                     None if cfg!(target_os = "android")
++                        || crate::splash_policy::device_consent_required(self.heap_key())
+                         || cx.seconds_since_app_start() - self.asked_at < PERMISSION_GRACE_SECONDS => return,
+                     None => self.permission = Some(PermissionStatus::Granted),
+                 }
+@@ -343,6 +375,7 @@ fn capture_path(&self, cx: &Cx, kind: &str, ext: &str) -> Option<(String, String
+     }
+ 
+     fn capture(&mut self, cx: &mut Cx) -> bool {
++        if !self.granted("camera.preview") { self.stop(cx); return false; }
+         let (Some(input), State::Running) = (self.input, self.state) else {
+             self.fail(cx, "the camera is not running".into());
+             return false;
+@@ -358,21 +391,35 @@ fn capture(&mut self, cx: &mut Cx) -> bool {
+     }
+ 
+     fn record_start(&mut self, cx: &mut Cx) -> bool {
+-        let (Some(input), State::Running) = (self.input, self.state) else {
++        if !self.granted("camera.preview") { self.stop(cx); return false; }
++        let (Some(_), State::Running) = (self.input, self.state) else {
+             self.fail(cx, "the camera is not running".into());
+             return false;
+         };
+-        if self.recording.is_some() {
++        if self.recording.is_some() || self.audio_permission_request.is_some() {
++            return true;
++        }
++        let audio = self.granted("microphone.record");
++        if audio && crate::splash_policy::device_consent_required(self.heap_key()) {
++            self.audio_permission_request = Some((cx.check_permission(Permission::AudioInput), false,
++                crate::splash_policy::device_prompt_allowed(self.heap_key())));
+             return true;
+         }
++        if audio { cx.request_permission(Permission::AudioInput); }
++        self.begin_recording(cx, audio)
++    }
++
++    fn begin_recording(&mut self, cx: &mut Cx, audio: bool) -> bool {
++        if !self.granted("camera.preview") || (audio && !self.granted("microphone.record")) {
++            self.stop(cx);
++            return false;
++        }
++        let (Some(input), State::Running) = (self.input, self.state) else { return false; };
+         let Some((relative, real)) = self.capture_path(cx, "VID", "mp4") else {
+             self.fail(cx, "this app's storage is full or missing".into());
+             return false;
+         };
+-        let audio = self.granted("microphone.record");
+-        if audio {
+-            cx.request_permission(Permission::AudioInput);
+-        }
++        self.recording_audio = audio;
+         self.recording = Some(relative);
+         let library = self.granted("library.write");
+         cx.camera_capture(input, CameraCaptureRequest::StartVideo { path: real, audio, library });
+@@ -380,6 +427,7 @@ fn record_start(&mut self, cx: &mut Cx) -> bool {
+     }
+ 
+     fn record_stop(&mut self, cx: &mut Cx) {
++        self.audio_permission_request = None;
+         if let (Some(input), Some(_)) = (self.input, self.recording.as_ref()) {
+             cx.camera_capture(input, CameraCaptureRequest::StopVideo);
+         }
+@@ -541,6 +589,11 @@ fn script_call(&mut self, vm: &mut ScriptVm, method: LiveId, args: ScriptValue)
+     }
+ 
+     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
++        // Revocation applies to an already running camera, not just its next
++        // start. Stopping also ends video recording before native cleanup.
++        if !self.granted("camera.preview") || (self.recording.is_some() && self.recording_audio && !self.granted("microphone.record")) {
++            self.stop(cx);
++        }
+         self.view.handle_event(cx, event, scope);
+         if self.timer.is_some_and(|t| t.is_event(event).is_some()) {
+             if self.drawn {
+@@ -558,16 +611,44 @@ fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+             self.handle_gestures(cx, event);
+         }
+         match event {
+-            Event::PermissionResult(result) if result.permission == Permission::Camera => {
++            Event::PermissionResult(result) if result.permission == Permission::Camera
++                && (!crate::splash_policy::device_consent_required(self.heap_key())
++                    || self.permission_request == Some(result.request_id)) => {
++                if !self.permission_prompted && self.permission_may_prompt && self.wanted && self.granted("camera.preview")
++                    && crate::splash_policy::device_prompt_allowed(self.heap_key())
++                    && matches!(result.status, PermissionStatus::NotDetermined | PermissionStatus::DeniedCanRetry) {
++                    self.permission_prompted = true;
++                    self.permission_request = Some(cx.request_permission(Permission::Camera));
++                    return;
++                }
+                 self.permission_pending = false;
++                self.permission_request = None;
+                 self.permission = Some(result.status);
+                 if result.status == PermissionStatus::Granted && self.cameras.is_empty() {
+                     // Enumeration before the first permission grant can be
+                     // empty. Refresh it now that the device may be opened.
++                    if crate::splash_policy::device_consent_required(self.heap_key()) {
++                        cx.video_input(0, |_frame| {});
++                    }
+                     cx.refresh_video_inputs();
+                 }
+                 self.drive(cx);
+             }
++            Event::PermissionResult(result) if result.permission == Permission::AudioInput
++                && self.audio_permission_request.is_some_and(|(id, _, _)| id == result.request_id) => {
++                let (_, prompted, may_prompt) = self.audio_permission_request.take().unwrap();
++                if !self.granted("camera.preview") || !self.granted("microphone.record") || self.state != State::Running {
++                    return;
++                }
++                if result.status == PermissionStatus::Granted {
++                    self.begin_recording(cx, true);
++                } else if !prompted && may_prompt && crate::splash_policy::device_prompt_allowed(self.heap_key())
++                    && matches!(result.status, PermissionStatus::NotDetermined | PermissionStatus::DeniedCanRetry) {
++                    self.audio_permission_request = Some((cx.request_permission(Permission::AudioInput), true, may_prompt));
++                } else {
++                    self.fail(cx, format!("microphone permission {:?}; open the app to authorize recording", result.status));
++                }
++            }
+             Event::VideoInputs(VideoInputsEvent { descs }) => {
+                 let count = descs.len();
+                 self.cameras = descs
+@@ -660,6 +741,112 @@ fn failed_start_stops_retries_until_explicit_start_and_ignores_other_players() {
+         crate::splash_policy::gc_policies(&[heap]);
+     }
+ 
++    #[test]
++    fn background_device_consent_checks_os_grants_without_prompting_or_timeout_fallback() {
++        let mut cx = Cx::new(Box::new(|_, _| {}));
++        let widget = cx.with_vm(|vm| {
++            crate::script_mod(vm);
++            let value = crate::script_eval!(vm, {use mod.widgets.* CameraPreview{}});
++            WidgetRef::script_from_value(vm, value)
++        });
++        let mut preview = widget.borrow_mut::<CameraPreview>().unwrap();
++        let heap = preview.heap_key();
++        crate::splash_policy::set_policy_for_heap(heap, vec!["camera".into(), "microphone".into(), "location".into()], vec![], None);
++        crate::splash_policy::set_device_consent_for_heap(heap, true);
++        crate::splash_policy::set_device_permission_gate(|app, _| app == "org.example.background-camera");
++        crate::splash_host::set_tag_for_heap(heap, Some("org.example.background-camera".into()));
++        crate::splash_host::set_prompts_for_heap(heap, false);
++        assert!(crate::splash_policy::service_allowed(heap, "location.request").is_ok());
++        let location = cx.with_vm(|vm| {
++            crate::splash::register_agent_module(vm);
++            crate::script_eval!(vm, {mod.sys.request_location()})
++        });
++        assert_eq!(location.as_f64(), Some(-1.0), "the legacy GPS request also refuses a background OS prompt");
++        assert!(preview.start(&mut cx));
++        let camera_request = preview.permission_request.unwrap();
++        assert!(!preview.permission_prompted, "start only checks the existing OS grant");
++        preview.asked_at = -1000.;
++        preview.drive(&mut cx);
++        assert_eq!(preview.permission, None, "an opted-in camera cannot assume OS approval after a timeout");
++        let result = |permission, request_id, status| Event::PermissionResult(crate::makepad_platform::permission::PermissionResult {
++            permission, request_id, status,
++        });
++        preview.handle_event(&mut cx, &result(Permission::Camera, camera_request+1, PermissionStatus::Granted), &mut Scope::empty());
++        assert!(preview.permission_pending, "another widget's result cannot approve this check");
++        crate::splash_host::set_prompts_for_heap(heap, true);
++        preview.handle_event(&mut cx, &result(Permission::Camera, camera_request, PermissionStatus::NotDetermined), &mut Scope::empty());
++        assert!(!preview.wanted);
++        assert!(preview.permission_request.is_none(), "no native prompt follows the background check");
++        crate::splash_host::set_prompts_for_heap(heap, false);
++        assert!(preview.start(&mut cx));
++        let granted_request = preview.permission_request.unwrap();
++        // Until OS approval, the empty list must not initialize native capture
++        // (which would itself request permission on macOS). Supply deterministic
++        // choices only for the positive completion; no hardware is opened here.
++        assert!(preview.cameras.is_empty());
++        preview.cameras = vec![CameraChoice { input_id: VideoInputId(LiveId(1)), front: false,
++            formats: vec![format(640, 480, VideoPixelFormat::YUV420, 1)] }];
++        preview.handle_event(&mut cx, &result(Permission::Camera, granted_request, PermissionStatus::Granted), &mut Scope::empty());
++        assert_eq!(preview.permission, Some(PermissionStatus::Granted));
++        assert!(preview.wanted, "a background surface may use an existing OS grant");
++        preview.state = State::Running;
++        preview.input = Some(VideoInputId(LiveId(1)));
++        assert!(preview.record_start(&mut cx));
++        let audio_request = preview.audio_permission_request.unwrap().0;
++        assert!(!preview.audio_permission_request.unwrap().1, "recording only checks the existing microphone grant");
++        crate::splash_host::set_prompts_for_heap(heap, true);
++        preview.handle_event(&mut cx, &result(Permission::AudioInput, audio_request, PermissionStatus::NotDetermined), &mut Scope::empty());
++        assert!(preview.audio_permission_request.is_none(), "returning to foreground cannot upgrade a background recording request");
++        assert!(preview.recording.is_none());
++        assert!(preview.last_error.contains("microphone permission"));
++        assert!(preview.permission_request.is_none(), "no native prompt follows the background check");
++        crate::splash_host::set_prompts_for_heap(heap, false);
++        assert!(preview.record_start(&mut cx));
++        let cancelled = preview.audio_permission_request.unwrap().0;
++        preview.record_stop(&mut cx);
++        preview.handle_event(&mut cx, &result(Permission::AudioInput, cancelled, PermissionStatus::Granted), &mut Scope::empty());
++        assert!(preview.recording.is_none(), "late OS approval must not revive cancelled recording");
++        // A real foreground retry may ask the OS after observing no grant.
++        preview.state = State::Idle;
++        preview.permission = None;
++        crate::splash_host::set_prompts_for_heap(heap, true);
++        assert!(preview.start(&mut cx));
++        let foreground_request = preview.permission_request.unwrap();
++        preview.handle_event(&mut cx, &result(Permission::Camera, foreground_request, PermissionStatus::NotDetermined), &mut Scope::empty());
++        assert!(preview.permission_prompted);
++        assert_ne!(preview.permission_request, Some(foreground_request), "the foreground retry created the native prompt");
++        preview.stop(&mut cx);
++        crate::splash_policy::gc_policies(&[heap]);
++        crate::splash_host::gc_bridge(&[heap]);
++    }
++
++    #[test]
++    fn revocation_stops_an_existing_camera_and_cannot_restart_from_its_watchdog() {
++        let mut cx = Cx::new(Box::new(|_, _| {}));
++        let widget = cx.with_vm(|vm| {
++            crate::script_mod(vm);
++            let value = crate::script_eval!(vm, {use mod.widgets.* CameraPreview{}});
++            WidgetRef::script_from_value(vm, value)
++        });
++        let mut preview = widget.borrow_mut::<CameraPreview>().unwrap();
++        let heap = preview.heap_key();
++        crate::splash_policy::set_policy_for_heap(heap, vec!["camera".into()], vec![], None);
++        crate::splash_policy::set_device_consent_for_heap(heap, true);
++        // An already running camera loses its host grant. No host-assigned
++        // identity means the device gate fails closed, regardless of OS grant.
++        preview.state = State::Running;
++        preview.wanted = true;
++        preview.permission = Some(PermissionStatus::Granted);
++        preview.handle_event(&mut cx, &Event::Signal, &mut Scope::empty());
++        assert_eq!(preview.state, State::Stopping);
++        assert!(!preview.wanted);
++        preview.state = State::Idle;
++        preview.drive(&mut cx);
++        assert_eq!(preview.state, State::Idle);
++        assert!(!preview.capture(&mut cx));
++        crate::splash_policy::gc_policies(&[heap]);
++    }
++
+     #[test]
+     fn the_preview_profile_matches_the_viewfinder_then_takes_the_most_pixels() {
+         let choice = CameraChoice {
+diff --git a/widgets/src/splash.rs b/widgets/src/splash.rs
+index 56d06f846..5165a076d 100644
+--- a/widgets/src/splash.rs
++++ b/widgets/src/splash.rs
+@@ -68,6 +68,9 @@ pub struct Splash {
+     /// widget tiles). Rides on every host.request as `may_prompt`.
+     #[rust(true)]
+     host_prompts: bool,
++    /// Host API v1 device consent; never exposed as a script field.
++    #[rust]
++    device_consent: bool,
+     /// Whole-jail byte cap when the host has granted this app extra room.
+     /// None leaves the storage default.
+     #[rust]
+@@ -229,6 +232,7 @@ fn eval_styled_body_with_apply(&mut self, cx: &mut Cx, preserve: bool, apply: &A
+         crate::splash_host::set_prompts_for_heap(heap_key, self.host_prompts);
+         crate::splash_storage::set_quota_for_heap(heap_key, self.storage_quota);
+         self.apply_policy(cx, heap_key);
++        crate::splash_policy::set_device_consent_for_heap(heap_key, self.device_consent);
+         if !crate::splash_policy::may_run(heap_key) {
+             log!("splash: {} is stopped: its instruction budget is spent", self.source_label());
+             return;
+@@ -833,6 +837,16 @@ pub fn set_host_prompts(&mut self, cx: &mut Cx, may_prompt: bool) {
+         }
+     }
+ 
++    /// Require the host's per-app device consent before legacy camera/location
++    /// widgets or host methods act. Call before set_text, like set_policy.
++    pub fn set_device_consent(&mut self, cx: &mut Cx, required: bool) {
++        self.device_consent = required;
++        if self.vm_id != MAIN_SPLASH_VM_ID {
++            let heap_key = cx.with_script_vm_id(self.vm_id, |vm| vm.bx.heap.heap_key());
++            crate::splash_policy::set_device_consent_for_heap(heap_key, required);
++        }
++    }
++
+     /// Puts this isolate under an ENFORCED policy (ADR 0002): files stay in
+     /// its jail, and the runtime's own reads of the person's data and devices
+     /// need their grants. `hosts`, `instruction_budget` and the capabilities
+@@ -1007,6 +1021,11 @@ pub fn set_host_prompts(&self, cx: &mut Cx, may_prompt: bool) {
+         }
+     }
+ 
++    /// See [`Splash::set_device_consent`].
++    pub fn set_device_consent(&self, cx: &mut Cx, required: bool) {
++        if let Some(mut inner) = self.borrow_mut() { inner.set_device_consent(cx, required); }
++    }
++
+     /// See [`Splash::isolate_heap_key`].
+     pub fn isolate_heap_key(&self, cx: &mut Cx) -> Option<usize> {
+         if let Some(mut inner) = self.borrow_mut() {
+@@ -3764,7 +3783,8 @@ pub fn register_agent_module(vm: &mut ScriptVm) {
+         id_lut!(request_location),
+         script_args_def!(),
+         |vm, _args| {
+-            if crate::splash_policy::service_allowed(vm.bx.heap.heap_key(), "location.request").is_err() {
++            if crate::splash_policy::service_allowed(vm.bx.heap.heap_key(), "location.request").is_err()
++                || !crate::splash_policy::device_prompt_allowed(vm.bx.heap.heap_key()) {
+                 return ScriptValue::from_f64(-1.0);
+             }
+             #[cfg(target_os = "android")]
+diff --git a/widgets/src/splash_host.rs b/widgets/src/splash_host.rs
+index c77786d1a..52cab0d95 100644
+--- a/widgets/src/splash_host.rs
++++ b/widgets/src/splash_host.rs
+@@ -97,6 +97,11 @@ pub(crate) fn set_tag_for_heap(heap_key: usize, tag: Option<String>) {
+     });
+ }
+ 
++/// Host-assigned identity for runtime permission checks; never script supplied.
++pub(crate) fn app_tag_for_heap(heap_key: usize) -> Option<String> {
++    BRIDGE.with(|b| b.borrow().tags.get(&heap_key).cloned())
++}
++
+ /// Replaces the granted-capability list `host.capabilities()` reports.
+ pub(crate) fn set_caps_for_heap(heap_key: usize, caps: Vec<String>) {
+     BRIDGE.with(|b| {
+@@ -116,6 +121,10 @@ pub(crate) fn set_prompts_for_heap(heap_key: usize, may_prompt: bool) {
+     });
+ }
+ 
++pub(crate) fn prompts_allowed_for_heap(heap_key: usize) -> bool {
++    BRIDGE.with(|b| !b.borrow().no_prompt.contains(&heap_key))
++}
++
+ /// Drops all bridge state for reclaimed isolates (called from the isolate GC).
+ pub(crate) fn gc_bridge(dead_heaps: &[usize]) {
+     BRIDGE.with(|b| {
+diff --git a/widgets/src/splash_policy.rs b/widgets/src/splash_policy.rs
+index 56e21eee3..ea4e6396f 100644
+--- a/widgets/src/splash_policy.rs
++++ b/widgets/src/splash_policy.rs
+@@ -35,7 +35,8 @@
+ //! host.
+ use crate::makepad_draw::makepad_platform::makepad_script_std;
+ use std::cell::RefCell;
+-use std::collections::HashMap;
++use std::collections::{HashMap, HashSet};
++use std::sync::Mutex;
+ 
+ #[derive(Clone, Debug, Default)]
+ pub struct HeapPolicy {
+@@ -53,6 +54,45 @@ pub struct HeapPolicy {
+ 
+ thread_local! {
+     static POLICIES: RefCell<HashMap<usize, HeapPolicy>> = RefCell::new(HashMap::new());
++    static DEVICE_CONSENT: RefCell<HashSet<usize>> = RefCell::new(HashSet::new());
++}
++
++/// The embedding host's cached device consent lookup. No OS operations or UI
++/// belong here: widgets may ask every frame. Identity comes from the host bridge.
++static DEVICE_GATE: Mutex<Option<fn(&str, &str) -> bool>> = Mutex::new(None);
++
++pub fn set_device_permission_gate(gate: fn(&str, &str) -> bool) {
++    *DEVICE_GATE.lock().unwrap_or_else(|e| e.into_inner()) = Some(gate);
++}
++
++/// Opt a contained heap into host-managed device consent. The host sets this
++/// before evaluating app code; the script cannot change it. Default preserves
++/// older containers. Once opted in, a missing hook or identity fails closed.
++pub fn set_device_consent_for_heap(heap_key: usize, required: bool) {
++    DEVICE_CONSENT.with(|heaps| {
++        if required { heaps.borrow_mut().insert(heap_key); }
++        else { heaps.borrow_mut().remove(&heap_key); }
++    });
++}
++
++pub(crate) fn device_consent_required(heap_key: usize) -> bool {
++    DEVICE_CONSENT.with(|heaps| heaps.borrow().contains(&heap_key))
++}
++
++/// Legacy widgets may use an existing OS grant in a background card, but an
++/// opted-in app must never cause a native permission prompt from that surface.
++pub(crate) fn device_prompt_allowed(heap_key: usize) -> bool {
++    !device_consent_required(heap_key) || crate::splash_host::prompts_allowed_for_heap(heap_key)
++}
++
++fn device_allowed(heap_key: usize, service: &str) -> bool {
++    let family = service.split('.').next().unwrap_or(service);
++    if !matches!(family, "camera" | "microphone" | "location")
++        || service.starts_with(&format!("{family}.permission."))
++        || !DEVICE_CONSENT.with(|heaps| heaps.borrow().contains(&heap_key)) { return true; }
++    let Some(app) = crate::splash_host::app_tag_for_heap(heap_key) else { return false; };
++    let gate = *DEVICE_GATE.lock().unwrap_or_else(|e| e.into_inner());
++    gate.is_some_and(|gate| gate(&app, family))
+ }
+ 
+ /// Set (or replace) the policy for a heap. Enforcement starts here: a heap
+@@ -75,6 +115,7 @@ pub fn set_policy_for_heap(heap_key: usize, capabilities: Vec<String>, hosts: Ve
+ 
+ /// Drop policies for reclaimed isolates (from the isolate GC).
+ pub(crate) fn gc_policies(dead_heaps: &[usize]) {
++    DEVICE_CONSENT.with(|heaps| heaps.borrow_mut().retain(|heap| !dead_heaps.contains(heap)));
+     POLICIES.with(|p| {
+         let mut p = p.borrow_mut();
+         for heap in dead_heaps {
+@@ -98,7 +139,8 @@ pub fn service_allowed(heap_key: usize, service: &str) -> Result<(), String> {
+         let Some(policy) = p.get(&heap_key) else { return Ok(()) };
+         let family = service.split('.').next().unwrap_or(service);
+         if policy.capabilities.iter().any(|c| c == service || c == family) {
+-            Ok(())
++            if device_allowed(heap_key, service) { Ok(()) }
++            else { Err(format!("authorization_required: request {family}.permission.request from the foreground app")) }
+         } else {
+             Err(format!("this app was not granted {family:?}, which {service:?} needs"))
+         }
+@@ -386,6 +428,40 @@ fn a_policy_installs_no_gate() {
+         gc_policies(&[911]);
+     }
+ 
++    #[test]
++    fn device_consent_uses_host_identity_preserves_permission_ui_and_revokes_cached_gps() {
++        static ALLOW: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
++        fn gate(app: &str, family: &str) -> bool {
++            app == "org.example.device-test" && family == "location" && ALLOW.load(std::sync::atomic::Ordering::Relaxed)
++        }
++        let heap = 992031;
++        set_policy_for_heap(heap, vec!["location".into()], vec![], None);
++        assert!(service_allowed(heap, "location.get").is_ok(), "legacy app retains declared grant");
++        set_device_consent_for_heap(heap, true);
++        assert!(service_allowed(heap, "location.get").is_err(), "missing host gate fails closed");
++        assert!(service_allowed(heap, "location.permission.request").is_ok(), "request UI remains reachable");
++        set_device_permission_gate(gate);
++        ALLOW.store(true, std::sync::atomic::Ordering::Relaxed);
++        assert!(service_allowed(heap, "location.get").is_err(), "no host identity fails closed");
++        crate::splash_host::set_tag_for_heap(heap, Some("org.example.device-test".into()));
++        assert!(service_allowed(heap, "location.get").is_ok());
++        crate::splash_host::set_prompts_for_heap(heap, false);
++        assert!(!device_prompt_allowed(heap), "an agent may not request an OS permission");
++        assert!(service_allowed(heap, "location.get").is_ok(), "existing consent still permits passive reads");
++        crate::makepad_platform::gps::set_gps_fix(37.7, -122.4, 10.0);
++        assert!(gps_fix_for_heap(heap).is_some());
++        ALLOW.store(false, std::sync::atomic::Ordering::Relaxed);
++        assert!(gps_fix_for_heap(heap).is_none(), "revocation hides an already cached fix");
++        assert!(service_allowed(heap, "camera.permission.request").is_err(), "consent cannot expand the manifest ceiling");
++        gc_policies(&[heap]);
++        crate::splash_host::set_tag_for_heap(heap, None);
++        set_policy_for_heap(heap, vec!["location".into()], vec![], None);
++        assert!(service_allowed(heap, "location.get").is_ok(), "GC removed the device opt-in marker");
++        assert!(device_prompt_allowed(heap), "older apps retain their existing prompt behavior");
++        crate::splash_host::gc_bridge(&[heap]);
++        gc_policies(&[heap]);
++    }
++
+     #[test]
+     fn gc_forgets_a_heap_entirely() {
+         set_policy_for_heap(906, vec![], vec![], Some(1));

@@ -1,0 +1,44 @@
+[package]
+name = "octosense-wasm-host"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+publish = false
+
+[dependencies]
+wasmtime = { workspace = true }
+wasmtime-wasi = { workspace = true }
+wasmtime-wasi-http = { workspace = true }
+# The requests a component's `wasi:http` sends, checked against its hosts.
+http = "1"
+http-body-util = "0.1"
+# Wasmtime's default HTTPS client uses Rustls's process provider. Other shell
+# dependencies also link aws-lc; choose ring explicitly when no host chose one.
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+serde_json = { workspace = true }
+base64 = "0.22"
+# File writes a component makes (wasmtime-wasi's streams carry `Bytes`).
+bytes = "1"
+sha2 = "0.10"
+# Not used directly: Wasmtime reads a trap's registers through libc's
+# ucontext_t, and before 0.2.190 Android aarch64's lacked the kernel's
+# padding after the signal mask, so the faulting pc was misread, no trap was
+# recognised as wasm and every trap ended the app.
+libc = "0.2.190"
+
+# Pulley, Wasmtime's interpreter (ADR 0014 phase 3): how code runs on iOS,
+# where an app may not generate code, and on OpenHarmony, until its policy is
+# known. Elsewhere only for its tests (OCTOSENSE_WASM_PULLEY with this
+# feature); desktop and Android builds leave it out.
+[features]
+pulley = ["wasmtime/pulley"]
+
+[target.'cfg(any(target_os = "ios", target_env = "ohos"))'.dependencies]
+wasmtime = { workspace = true, features = ["pulley"] }
+
+[dev-dependencies]
+wat = "1"
+# Reproduce the full shell's unified TLS feature graph in runtime regressions.
+rustls = { version = "0.23", default-features = false, features = ["aws_lc_rs"] }
+# The sample functions natively, to check the module against them.
+wasmlab-functions = { path = "../../apps/wasmlab/guest/functions" }

@@ -1,0 +1,14 @@
+{
+  "revision": "65335769-152a-4e5d-8e5c-e33d454cd0a1",
+  "enabled": true,
+  "poll_interval_secs": 30,
+  "skills": [
+    "simulation-review",
+    "interactive-mail-card",
+    "dataset-binding-validation"
+  ],
+  "guidance_sha256": "db51ce8c54cf392ace7897fbab9b14aa8e47d65a51180a8413e06490682e9da2",
+  "fixture_codes_in_guidance": false,
+  "incoming_only": true,
+  "simulation_only": true
+}

@@ -83,7 +83,7 @@ impl App {
     fn full_viewport(&mut self) -> Vec2d {
         let screen = self.state_mut().phone.viewport;
         if screen.size.x < 1.0 { return dvec2(0.0, 0.0); }
-        app_rect(screen).size
+        self.state_mut().phone.app_content_rect(screen).size
     }
     /// Bind or launch a client per tile app, then send every tile client
     /// the face it should be showing. Cheap when nothing changed; called
@@ -362,7 +362,7 @@ impl App {
     pub(super) fn phone_animation_event(&mut self,cx:&mut Cx,event:&Event) {
         if let Some(frame)=self.phone_frame.is_event(event) {
             if self.state.as_ref().is_some_and(|s|s.style.target.mobile()) {
-                let dt=if self.phone_time==0.0 {1.0/60.0}else{(frame.time-self.phone_time).clamp(0.001,0.05)};
+                let dt=if self.phone_time==0.0 {1.0/60.0}else{(frame.time-self.phone_time).clamp(0.001,0.1)};
                 self.phone_time=frame.time;
                 let Some(state) = self.state.as_mut() else { return };
                 let phone = &mut state.phone;
@@ -401,6 +401,10 @@ impl App {
                 }
                 // The tiles follow the phone state every frame: a window
                 // takes its compact face only once its dismissal settled.
+                let focus = phone.search_focus_requested && phone.searching() && !phone.search_closing && phone.search_reveal >= 0.98;
+                if focus {
+                    if let Some(mut desk)=self.desk(cx).borrow_mut::<WmDesk>() {desk.focus_phone_search(cx,&mut self.state_mut().phone);}
+                }
                 self.sync_home_tiles(cx);
                 self.redraw_all(cx);
             }
@@ -491,8 +495,22 @@ impl App {
     }
     pub fn phone_action(&mut self,cx:&mut Cx,hit:PhoneHit) {
         match hit {
+            PhoneHit::AppNavigation(hit)=>{
+                use crate::mobile_navigation::NavigationHit;
+                let phone = &self.state_mut().phone;
+                if phone.app_dock(phone.viewport).is_none() { return; }
+                match hit {
+                    NavigationHit::Home=>self.phone_action(cx,PhoneHit::Home),
+                    NavigationHit::Recents=>self.phone_action(cx,PhoneHit::Recents),
+                    _=>{},
+                }
+                return;
+            }
             PhoneHit::Floating(hit)=>{
                 use crate::mobile_navigation::NavigationHit;
+                // A cached accessibility or pointer target must not reopen
+                // controls after the keyboard has taken the editing area.
+                if !self.state_mut().phone.floating_navigation_visible() { return; }
                 match hit {
                     NavigationHit::Bubble=>{let nav=&mut self.state_mut().phone.navigation;nav.open=!nav.open;}
                     NavigationHit::Dismiss=>self.state_mut().phone.navigation.cancel(),
@@ -518,6 +536,7 @@ impl App {
                 self.system_chat_changed(cx);
             }
             PhoneHit::GroupApp(_,app)=>{self.state_mut().phone.groups.close();self.phone_action(cx,PhoneHit::App(app));return;}
+            PhoneHit::ExpandGlance(key)=>{self.open_glance_card(cx,&key);return;}
             PhoneHit::Glance(app)=>{log!("[phone] glance card opens {}",app);self.phone_action(cx,PhoneHit::App(app));return;}
             PhoneHit::GroupClose=>self.state_mut().phone.groups.close(),
             PhoneHit::OpenBoth(name)=>{self.open_pair(cx,&name);}
@@ -571,15 +590,19 @@ impl App {
                 if let Some(mut desk)=self.desk(cx).borrow_mut::<WmDesk>() {desk.clear_phone_search(cx,&mut self.state_mut().phone);}
             }
             PhoneHit::CancelSearch=>{
-                if let Some(mut desk)=self.desk(cx).borrow_mut::<WmDesk>() {desk.dismiss_phone_search(cx,&mut self.state_mut().phone,true);}
-                self.phone_action(cx,PhoneHit::Home);
+                if let Some(mut desk)=self.desk(cx).borrow_mut::<WmDesk>() {desk.dismiss_phone_search(cx,&mut self.state_mut().phone,false);}
+                self.state_mut().phone.search_closing = true;
+                self.animate_phone(cx);
                 return;
             }
             PhoneHit::Shift=>{let p=&mut self.state_mut().phone;p.shift=!p.shift;}
             PhoneHit::Symbols=>{let p=&mut self.state_mut().phone;p.symbols=!p.symbols;}
             PhoneHit::Key(key)=>self.type_phone_key(cx,&key),
             PhoneHit::Back=>{
+                if self.close_glance_card(cx) { return; }
                 if self.state_mut().phone.keyboard_target>0.0 {self.dismiss_phone_keyboard(cx);}
+                // An open shade takes Back before the page under it.
+                else if self.state_mut().phone.shade.is_open() {self.state_mut().phone.shade.close();}
                 else {self.phone_back(cx);}
             }
             // The shade's Dark mode tile is the appearance the desk bar's
@@ -589,14 +612,11 @@ impl App {
                 self.toggle_phone_appearance(cx);
                 self.android_system_bars(cx);
             }
-            // A card's notification opens the glance page, where it is live.
-            PhoneHit::Shade(ShadeHit::Note(id)) if self.glance_shade_notes.contains(&id)=>{
-                self.glance_shade_notes.retain(|n|*n!=id);
-                let phone=&mut self.state_mut().phone;
-                phone.shade.dismiss(id);
-                phone.shade.close();
-                phone.navigate(PhoneScreen::Home);
-                phone.pages.jump(-1);
+            // Resolve the notification's stored key, never whichever card is
+            // newest. The full-card opener supplies a safe Glance fallback.
+            PhoneHit::Shade(ShadeHit::Note(id)) if self.glance_shade_notes.contains(id)=>{
+                let key = take_glance_notification(&mut self.glance_shade_notes, &mut self.state.as_mut().unwrap().phone.shade, id);
+                if let Some(key) = key { self.open_glance_card(cx, &key); }
             }
             PhoneHit::Shade(hit)=>{
                 if matches!(hit,ShadeHit::Toggle(_)) {self.android_haptic(cx,"tick");}
@@ -615,7 +635,14 @@ impl App {
     /// opened from while that still runs, else Home.
     fn phone_back(&mut self,cx:&mut Cx) {
         if self.state_mut().phone.screen != PhoneScreen::App {
-            self.state_mut().phone.navigate(PhoneScreen::Home);
+            let phone = &mut self.state_mut().phone;
+            // A system-owned edge swipe arrives as Back instead of touches.
+            // Glance already has screen=Home, so navigate(Home) alone leaves
+            // its pager on -1 and makes that swipe appear to do nothing.
+            if phone.screen == PhoneScreen::Home && phone.pages.on_glance() {
+                phone.pages.jump(0);
+            }
+            phone.navigate(PhoneScreen::Home);
             return;
         }
         let Some(client)=self.state_mut().phone.client else{return};
@@ -689,7 +716,7 @@ impl App {
     }
     pub(super) fn phone_search_event(&mut self,cx:&mut Cx,event:&Event)->bool {
         let Some(state)=self.state.as_ref() else{return false};
-        if crate::mobile_navigation::ENABLED {
+        if crate::mobile_navigation::ENABLED && state.phone.floating_navigation_visible() {
             let nav=&state.phone.navigation;
             let screen=state.phone.navigation_rect();
             let over=match event {
@@ -713,6 +740,14 @@ impl App {
             self.animate_phone(cx);
         }
         if let Some(app)=self.state_mut().phone.search_launch.take() {self.phone_action(cx,PhoneHit::App(app));}
+        // The field let a pull go: it lands on the list where the finger
+        // first touched, and this event carries on from there.
+        if let Some((start,time))=self.state_mut().phone.search_field_pull.take() {
+            if self.phone_pointer_at(cx,PhonePointerPhase::Down,start,time,true,0.0) && self.state_mut().phone.gesture.is_some() {
+                if let Event::TouchUpdate(e)=event {self.state_mut().phone.touch=e.touches.first().map(|t|t.uid);}
+            }
+            return false;
+        }
         handled
     }
     pub(super) fn phone_pointer(&mut self,cx:&mut Cx,event:&Event)->bool {
@@ -724,9 +759,7 @@ impl App {
             }
         }
         if crate::mobile_navigation::ENABLED && matches!(event,Event::Pause|Event::WindowLostFocus(_)) {
-            let phone=&mut self.state_mut().phone;
-            if phone.navigation.tracking() {phone.touch=None;}
-            phone.navigation.cancel();
+            self.state_mut().phone.cancel_navigation_input();
             self.animate_phone(cx);
         }
         if let Event::LongPress(press) = event {
@@ -866,7 +899,11 @@ impl App {
             // A rightward library swipe returns Home, including from search
             // results. Its vertical drags stay with the scrolling grid.
             body: matches!(phone.screen, PhoneScreen::Home | PhoneScreen::Drawer),
-            shade: !crate::mobile_navigation::ENABLED && !phone.android.system_panel,
+            glance: (phone.pages.on_glance() && !phone.shade.is_open())
+                .then(|| crate::mobile_pages::glance_column(phone.viewport, 0.0)),
+            // Home's own shade, unless the system-wide OctoSense panel owns
+            // the pull-downs (or nothing feeds it): `ShadeReach`.
+            shade: crate::mobile_shade::ShadeReach::of(phone.android.system_panel).shell_shade(),
         }
     }
     /// The recognizer's in-progress gesture moves what the shell draws
@@ -881,6 +918,10 @@ impl App {
                 // recorded scene for the whole return (desk/phone.rs).
                 phone.openness = if phone.client.is_some() { 1.0 } else { 0.0 };
                 phone.overview = if held { 1.0 } else { progress * 0.6 };
+            }
+            ShellGesture::HomeSearch { progress } if from == PhoneScreen::Home => {
+                phone.search_reveal = progress;
+                phone.search_reveal_velocity = 0.0;
             }
             ShellGesture::Back { progress, .. } if from == PhoneScreen::App => {
                 phone.openness = (1.0 - progress * 0.18).clamp(0.4, 1.0);
@@ -1015,7 +1056,8 @@ impl App {
             // pager step and no keyboard remaining over Home.
             GestureKind::Back if from == PhoneScreen::Drawer => {
                 self.dismiss_phone_keyboard(cx);
-                self.phone_action(cx, PhoneHit::Home);
+                let target = if self.state_mut().phone.searching() { PhoneHit::CancelSearch } else { PhoneHit::Home };
+                self.phone_action(cx, target);
             }
             // Hosted apps see Back first; Home follows only if they decline.
             GestureKind::Back => self.phone_action(cx, PhoneHit::Back),
@@ -1034,7 +1076,7 @@ impl App {
             };
             crate::mobile_perf::trace_phone_input(name, p);
         }
-        if crate::mobile_navigation::ENABLED && primary {
+        if crate::mobile_navigation::ENABLED && primary && self.state_mut().phone.floating_navigation_visible() {
             use crate::mobile_navigation::{Phase,NavigationHit};
             let phase=match phase {
                 PhonePointerPhase::Down=>Phase::Down,PhonePointerPhase::Move=>Phase::Move,
@@ -1066,6 +1108,11 @@ impl App {
         let ctx=self.gesture_context(cx);
         let Some(state)=self.state.as_mut() else {return false};
         let phone=&mut state.phone;
+        let hit=hit.filter(|hit| match hit {
+            PhoneHit::Floating(_)=>phone.floating_navigation_visible(),
+            PhoneHit::AppNavigation(_)=>phone.app_dock(phone.viewport).is_some(),
+            _=>true,
+        });
         let screen=phone.viewport;
         if phone.drag.is_some() {
             match phase {
@@ -1088,20 +1135,23 @@ impl App {
         match phase {
             PhonePointerPhase::Down=>{
                 if !primary {return phone.screen!=PhoneScreen::App;}
+                if phone.search_closing { phone.search_closing=false; phone.search_focus_requested=true; }
                 let old=phone.screen;
                 // The recognizer claims a finger in a band (or on the home
                 // page body); an excluded edge is left to the app.
                 self.phone_gestures.feed(FingerPhase::Down,p,time,&ctx,&phone.exclusions);
                 // The letter index and shade own their complete drag streams.
-                if hit==Some(PhoneHit::Scrub) || matches!(&hit,Some(PhoneHit::Shade(h)) if ShadeState::drags(h)) {self.phone_gestures.cancel();}
+                if hit==Some(PhoneHit::Scrub) || matches!(&hit,Some(PhoneHit::AppNavigation(_))) || matches!(&hit,Some(PhoneHit::Shade(h)) if ShadeState::drags(h)) {self.phone_gestures.cancel();}
                 let shell=self.phone_gestures.active();
                 if !shell && !screen.contains(p) && hit.is_none() {return false;}
+                if old == PhoneScreen::Home { phone.pages.touch(); }
                 phone.search_touch(p.y,time);
+                phone.pages.glance_touch(p.y, time);
                 if hit==Some(PhoneHit::Scrub) {
                     if let Some(scroll)=scrub_at {phone.search_scroll=scroll;}
                 }
                 if shell || hit.is_some() || old!=PhoneScreen::App {
-                    phone.gesture=Some(PhoneGesture{start:p,last:p,time,hit,shell,screen:old});
+                    phone.gesture=Some(PhoneGesture{start:p,last:p,time,hit,shell,glance_scroll:false,screen:old});
                     phone.gesture_out=None;
                     self.redraw_all(cx);
                     return true;
@@ -1110,6 +1160,18 @@ impl App {
             }
             PhonePointerPhase::Move=>{
                 let Some(g)=phone.gesture.as_mut() else{return phone.screen!=PhoneScreen::App;};
+                // Glance's vertical body drags scroll the feed before the
+                // Home recognizer can turn them into search/shade pulls.
+                // Horizontal paging and gestures starting in the header
+                // keep their existing paths.
+                if !phone.shade.is_open() && phone.pages.drag_glance(g, p, screen, self.phone_gestures.current().is_some()) {
+                    g.last=p;
+                    phone.pages.glance_sample(p.y, time);
+                    self.phone_gestures.cancel();
+                    phone.gesture_out=None;
+                    self.animate_phone(cx);
+                    return true;
+                }
                 let delta=p-g.start;let last=p-g.last;g.last=p;
                 let (shell,from)=(g.shell,g.screen);
                 let divider=g.hit==Some(PhoneHit::Divider);
@@ -1129,17 +1191,34 @@ impl App {
                     phone.search_drag(last.y,p.y,time,search_scroll_max);
                 }else if from==PhoneScreen::Recents && !shell {
                     if delta.y.abs()>delta.x.abs()*1.2 {phone.dismiss_y=delta.y.min(0.0);}
-                    else {let width=card_rect(screen,0.0,0.0).size.x+22.0;phone.page=(phone.page-last.x/width).clamp(-0.25,phone.order.len().saturating_sub(1)as f64+0.25);}
-                }else if divider {phone.groups.drag_divider(p,app_rect(screen));}
+                    else {let width=phone.card_rect(screen,0.0,0.0).size.x+22.0;phone.page=(phone.page-last.x/width).clamp(-0.25,phone.order.len().saturating_sub(1)as f64+0.25);}
+                }else if divider {let app = phone.app_content_rect(screen);phone.groups.drag_divider(p,app);}
                 self.animate_phone(cx);true
             }
             PhonePointerPhase::Up=>{
                 let Some(g)=phone.gesture.take() else{return phone.screen!=PhoneScreen::App;};
+                phone.pages.release(0.0, screen.size.x);
+                if g.glance_scroll {
+                    phone.pages.release(0.0, screen.size.x);
+                    phone.pages.glance_lift(time);
+                    self.phone_gestures.cancel();
+                    phone.gesture_out=None;
+                    self.animate_phone(cx);
+                    return true;
+                }
                 let delta=p-g.start;
                 // A drawer scroll lifted at speed keeps going; a lift after a
                 // pause, or anything else, stops it.
                 let scrolled=g.screen==PhoneScreen::Drawer && !g.shell && delta.length()>=12.0;
+                // A pull on a list already at its top closes search, like the
+                // pull that opened it (mobile.rs).
+                let pull_close=g.screen==PhoneScreen::Drawer && !g.shell && g.hit!=Some(PhoneHit::Scrub)
+                    && phone.search_pull_closes();
                 phone.search_lift(time,scrolled);
+                if pull_close {
+                    self.phone_action(cx,PhoneHit::CancelSearch);
+                    self.animate_phone(cx);return true;
+                }
                 if let (Some(PhoneHit::Shade(h)),true)=(&g.hit,delta.length()>=12.0 && !g.shell) {
                     let native_dismiss=matches!(h,ShadeHit::Note(id) if cfg!(target_os="android") && phone.android.notices.contains_key(id))
                         && (delta.x>96.0 || (time-g.time<0.3 && delta.x>40.0));
@@ -1153,6 +1232,12 @@ impl App {
                     self.animate_phone(cx);return true;
                 }
                 let out=if g.shell {self.phone_gestures.feed(FingerPhase::Up,p,time,&ctx,&phone.exclusions)} else {None};
+                let velocity = self.phone_gestures.release_velocity();
+                let page = matches!(out, Some(ShellGesture::Commit(GestureKind::Page(_)) | ShellGesture::Cancel(GestureKind::Page(_))));
+                phone.pages.release(if page { velocity.x } else { 0.0 }, screen.size.x);
+                if matches!(out, Some(ShellGesture::Commit(GestureKind::HomeSearch) | ShellGesture::Cancel(GestureKind::HomeSearch))) {
+                    phone.search_reveal_velocity = (velocity.y / self.phone_gestures.metrics.commit_distance).clamp(-8.0, 8.0);
+                }
                 phone.gesture_out=out;
                 self.gesture_out_age=0;
                 match out {
@@ -1168,7 +1253,9 @@ impl App {
                             if let Some(PhoneHit::Card(client))=g.hit {self.request_close(cx,client);if !self.close_pending(client) {self.state_mut().phone.navigate(PhoneScreen::Recents);}}
                         }else if delta.length()<12.0 {
                             if let Some(hit)=g.hit.filter(|h|Some(h)==hit.as_ref()) {self.phone_action(cx,hit);}
-                        }else if !crate::mobile_navigation::ENABLED && g.screen==PhoneScreen::Home && delta.y < -55.0 && delta.y.abs()>delta.x.abs() {self.phone_action(cx,PhoneHit::Drawer);}
+                        }else if !crate::mobile_navigation::ENABLED && g.screen==PhoneScreen::Home
+                            && !ctx.glance.is_some_and(|r|r.contains(g.start))
+                            && delta.y < -55.0 && delta.y.abs()>delta.x.abs() {self.phone_action(cx,PhoneHit::Drawer);}
                     }
                 }
                 self.state_mut().phone.dismiss_y=0.0;
@@ -1187,5 +1274,46 @@ impl App {
             }
             _=>phone.screen!=PhoneScreen::App,
         }
+    }
+}
+
+/// Consume only the notification actually tapped. A dismissed/stale shade hit
+/// cannot reopen a card, and another publisher's notification stays intact.
+fn take_glance_notification(targets: &mut crate::glance::NoteTargets, shade: &mut ShadeState, id: u64) -> Option<String> {
+    let key = targets.activated(id)?;
+    if !shade.notifications.iter().any(|note| note.id == id) { return None; }
+    shade.dismiss(id);
+    shade.close();
+    Some(key)
+}
+
+#[cfg(test)]
+mod card_notification_tests {
+    use super::*;
+
+    #[test]
+    fn shade_tap_opens_its_exact_publisher_card_once() {
+        let mut shade = ShadeState::default();
+        let first = shade.post("os.mail", "Earlier", "", 0., vec![]);
+        let second = shade.post("os.news", "Latest", "", 1., vec![]);
+        let mut targets = crate::glance::NoteTargets::default();
+        targets.record(first, "os.mail/mail-event-1");
+        targets.record(second, "os.news/news-card-2");
+        assert_eq!(take_glance_notification(&mut targets, &mut shade, first).as_deref(), Some("os.mail/mail-event-1"));
+        assert!(targets.contains(second));
+        assert_eq!(shade.notifications.len(), 1);
+        assert_eq!(shade.notifications[0].app, "os.news");
+        assert!(take_glance_notification(&mut targets, &mut shade, first).is_none());
+    }
+
+    #[test]
+    fn dismissed_shade_hit_cannot_open_a_card_or_consume_another_notification() {
+        let mut shade = ShadeState::default();
+        let id = shade.post("os.mail", "Gone", "", 0., vec![]);
+        let mut targets = crate::glance::NoteTargets::default();
+        targets.record(id, "os.mail/gone");
+        shade.dismiss(id);
+        assert!(take_glance_notification(&mut targets, &mut shade, id).is_none());
+        assert!(!targets.contains(id));
     }
 }

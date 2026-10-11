@@ -49,6 +49,17 @@ pub enum Network {
     Any,
 }
 
+/// The port to the shell's octos kernel an app that is itself an octos
+/// client gets (`kernel`; ADR 0003).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum KernelPort {
+    /// None: a port the app opens is closed.
+    None,
+    /// The coding scope the kernel router enforces: the app's own
+    /// sessions, in workspaces the person picked.
+    Coding,
+}
+
 /// One `native-apps.json` entry, as far as the shell reads it.
 #[derive(Debug)]
 pub struct NativeApp {
@@ -91,10 +102,15 @@ pub struct NativeApp {
     /// `agent.system_tools`: its own read tools the system agent may
     /// call while the app runs (full names).
     pub system_tools: &'static [&'static str],
+    /// `agent.own_tools`: the tools its own agent may call (full
+    /// names; every one of `tools` unless the entry narrows them).
+    pub own_tools: &'static [&'static str],
     /// `agent.budget`: its agent's tool calls per turn and per day
     /// (`None`: the shell's defaults).
     pub calls_per_turn: Option<u32>,
     pub calls_per_day: Option<u32>,
+    /// `kernel`: its port to the shell's kernel.
+    pub kernel: KernelPort,
 }
 
 pub const APPS: &[NativeApp] = &[
@@ -120,8 +136,10 @@ pub const APPS: &[NativeApp] = &[
         generic_tools: &["read_file", "write_file", "edit_file", "diff_edit", "apply_patch", "glob", "grep", "list_dir", "code_structure", "ask_user_question", "view_image", "recall", "recall_memory", "memory_search", "memory_load", "save_memory", "memory_note", "web_search", "web_fetch", "tool_search"],
         grants: &[],
         system_tools: &[],
+        own_tools: &[],
         calls_per_turn: None,
         calls_per_day: None,
+        kernel: KernelPort::None,
     },
     NativeApp {
         id: "reference",
@@ -145,8 +163,10 @@ pub const APPS: &[NativeApp] = &[
         generic_tools: &[],
         grants: &[],
         system_tools: &[],
+        own_tools: &[],
         calls_per_turn: None,
         calls_per_day: None,
+        kernel: KernelPort::None,
     },
     NativeApp {
         id: "sheets",
@@ -159,19 +179,21 @@ pub const APPS: &[NativeApp] = &[
         ios: Hosting::Module,
         ohos: Hosting::Module,
         wasm: Hosting::Module,
-        octos: &[],
+        octos: &["octos.session.open", "octos.session.history", "octos.turn.start", "octos.turn.interrupt"],
         tools: &[],
         network: Network::None,
         processes: false,
         accounts: false,
         external: &[],
         storage: r#"{"accounts": false, "agent_workspace": "none", "external": []}"#,
-        tools_json: r##"[]"##,
+        tools_json: r##"[{"name":"sheets.new","description":"Create an empty workbook session on the sheet engine. Answers the workbook handle and its sheet names. Nothing touches disk until sheets.export.","input_schema":{"type":"object","properties":{},"additionalProperties":false},"risk":"act"},{"name":"sheets.open","description":"Open an xlsx file from your workspace as a workbook session. The path is relative to your workspace; paths outside it are refused.","input_schema":{"type":"object","properties":{"path":{"type":"string","minLength":1,"maxLength":512}},"required":["path"],"additionalProperties":false},"risk":"act"},{"name":"sheets.set","description":"Set cells in an open workbook: each entry is a cell like A1 with a value (number, text or boolean) or a formula. Formulas compute at the next sheets.recalc.","input_schema":{"type":"object","properties":{"book":{"type":"integer","minimum":1},"sheet":{},"cells":{"type":"array","minItems":1,"maxItems":256,"items":{"type":"object","properties":{"at":{"type":"string","maxLength":12},"value":{},"formula":{"type":"string","maxLength":2048}},"required":["at"],"additionalProperties":false}}},"required":["book","cells"],"additionalProperties":false},"risk":"act"},{"name":"sheets.get","description":"Read a rectangle of computed values from an open workbook, row-major, as a range like A1:C9 or a single cell like B2.","input_schema":{"type":"object","properties":{"book":{"type":"integer","minimum":1},"sheet":{},"range":{"type":"string","minLength":2,"maxLength":24}},"required":["book","range"],"additionalProperties":false},"risk":"read","shareable":true},{"name":"sheets.eval","description":"Evaluate one spreadsheet formula and answer its value, without storing anything: against an open workbook when `book` is given, else as a plain calculation.","input_schema":{"type":"object","properties":{"book":{"type":"integer","minimum":1},"sheet":{},"at":{"type":"string","maxLength":12},"formula":{"type":"string","minLength":1,"maxLength":2048}},"required":["formula"],"additionalProperties":false},"risk":"read","shareable":true},{"name":"sheets.fill","description":"Fill a formula down a column of an open workbook for up to two million rows. The numeric subset runs as one compiled kernel (milliseconds for a million rows); anything else computes row by row on the engine's evaluator — the answer says which. Results land as values.","input_schema":{"type":"object","properties":{"book":{"type":"integer","minimum":1},"sheet":{},"column":{"type":"string","minLength":1,"maxLength":4},"rows":{"type":"integer","minimum":1,"maximum":2000000},"formula":{"type":"string","minLength":1,"maxLength":2048}},"required":["book","column","rows","formula"],"additionalProperties":false},"risk":"act"},{"name":"sheets.recalc","description":"Recalculate every stored formula in an open workbook, so sheets.get reads fresh values.","input_schema":{"type":"object","properties":{"book":{"type":"integer","minimum":1}},"required":["book"],"additionalProperties":false},"risk":"act"},{"name":"sheets.export","description":"Write an open workbook as an xlsx file into your workspace. The path is relative to your workspace; paths outside it are refused, and a file already at that path is never replaced: choose a new name.","input_schema":{"type":"object","properties":{"book":{"type":"integer","minimum":1},"path":{"type":"string","minLength":1,"maxLength":512}},"required":["book","path"],"additionalProperties":false},"risk":"act"},{"name":"sheets.close","description":"Close an open workbook session without exporting it. Unexported changes are gone; the engine holds at most sixteen open workbooks.","input_schema":{"type":"object","properties":{"book":{"type":"integer","minimum":1}},"required":["book"],"additionalProperties":false},"risk":"act"}]"##,
         generic_tools: &[],
         grants: &[],
-        system_tools: &[],
+        system_tools: &["sheets.get", "sheets.eval"],
+        own_tools: &["sheets.new", "sheets.open", "sheets.set", "sheets.get", "sheets.eval", "sheets.fill", "sheets.recalc", "sheets.export", "sheets.close"],
         calls_per_turn: None,
         calls_per_day: None,
+        kernel: KernelPort::None,
     },
     NativeApp {
         id: "terminal",
@@ -184,7 +206,7 @@ pub const APPS: &[NativeApp] = &[
         ios: Hosting::Module,
         ohos: Hosting::Module,
         wasm: Hosting::Module,
-        octos: &[],
+        octos: &["octos.session.open", "octos.session.history", "octos.turn.start", "octos.turn.interrupt"],
         tools: &[
             ToolPolicy { tool: "run", confirm: Confirm::Host, auto_approvable: false },
         ],
@@ -197,8 +219,10 @@ pub const APPS: &[NativeApp] = &[
         generic_tools: &[],
         grants: &[],
         system_tools: &[],
+        own_tools: &["terminal.read_screen", "terminal.read_scrollback"],
         calls_per_turn: None,
         calls_per_day: None,
+        kernel: KernelPort::None,
     },
     NativeApp {
         id: "appcard",
@@ -222,8 +246,10 @@ pub const APPS: &[NativeApp] = &[
         generic_tools: &[],
         grants: &[],
         system_tools: &[],
+        own_tools: &[],
         calls_per_turn: None,
         calls_per_day: None,
+        kernel: KernelPort::None,
     },
     NativeApp {
         id: "apphub",
@@ -236,19 +262,21 @@ pub const APPS: &[NativeApp] = &[
         ios: Hosting::Module,
         ohos: Hosting::Module,
         wasm: Hosting::Module,
-        octos: &[],
+        octos: &["octos.session.open", "octos.session.history", "octos.turn.start", "octos.turn.interrupt"],
         tools: &[],
         network: Network::Any,
         processes: false,
         accounts: false,
         external: &[],
         storage: r#"{"accounts": false, "agent_workspace": "none", "external": []}"#,
-        tools_json: r##"[]"##,
+        tools_json: r##"[{"name":"apphub.search","description":"Find apps in the signed OctoSense catalog whose name, description, category or publisher match every word of the query. Answers each app's id, name, subtitle, category, publisher, version and status (available, installed, update available, built in or unavailable). Does not install anything.","input_schema":{"type":"object","properties":{"query":{"type":"string","maxLength":200},"category":{"type":"string","maxLength":64}},"required":["query"],"additionalProperties":false},"risk":"read","shareable":true},{"name":"apphub.installed","description":"List the apps installed from App Hub: id, name, version and whether an update is available.","input_schema":{"type":"object","properties":{},"additionalProperties":false},"risk":"read","shareable":true},{"name":"apphub.updates","description":"List the installed apps that have a newer release in the catalog: id, name and the catalog's version. Does not update anything.","input_schema":{"type":"object","properties":{},"additionalProperties":false},"risk":"read","shareable":true}]"##,
         generic_tools: &[],
         grants: &[],
-        system_tools: &[],
+        system_tools: &["apphub.search", "apphub.installed", "apphub.updates"],
+        own_tools: &["apphub.search", "apphub.installed", "apphub.updates"],
         calls_per_turn: None,
         calls_per_day: None,
+        kernel: KernelPort::None,
     },
     NativeApp {
         id: "calculator",
@@ -272,8 +300,10 @@ pub const APPS: &[NativeApp] = &[
         generic_tools: &[],
         grants: &[],
         system_tools: &["calculator.eval"],
+        own_tools: &["calculator.eval"],
         calls_per_turn: None,
         calls_per_day: None,
+        kernel: KernelPort::None,
     },
     NativeApp {
         id: "clock",
@@ -297,8 +327,10 @@ pub const APPS: &[NativeApp] = &[
         generic_tools: &[],
         grants: &[],
         system_tools: &["clock.now"],
+        own_tools: &["clock.now"],
         calls_per_turn: None,
         calls_per_day: None,
+        kernel: KernelPort::None,
     },
     NativeApp {
         id: "notes",
@@ -322,8 +354,10 @@ pub const APPS: &[NativeApp] = &[
         generic_tools: &[],
         grants: &[],
         system_tools: &["notes.search", "notes.read"],
+        own_tools: &["notes.search", "notes.read"],
         calls_per_turn: None,
         calls_per_day: None,
+        kernel: KernelPort::None,
     },
     NativeApp {
         id: "reminders",
@@ -347,8 +381,10 @@ pub const APPS: &[NativeApp] = &[
         generic_tools: &[],
         grants: &[],
         system_tools: &["reminders.due", "reminders.list"],
+        own_tools: &["reminders.due", "reminders.list"],
         calls_per_turn: None,
         calls_per_day: None,
+        kernel: KernelPort::None,
     },
     NativeApp {
         id: "weather",
@@ -372,8 +408,37 @@ pub const APPS: &[NativeApp] = &[
         generic_tools: &[],
         grants: &[],
         system_tools: &["weather.current"],
+        own_tools: &["weather.current"],
         calls_per_turn: None,
         calls_per_day: None,
+        kernel: KernelPort::None,
+    },
+    NativeApp {
+        id: "octoscode",
+        feature: "app-octoscode",
+        bin: None,
+        macos: Hosting::Module,
+        windows: Hosting::Module,
+        linux: Hosting::Module,
+        android: Hosting::Module,
+        ios: Hosting::Module,
+        ohos: Hosting::Module,
+        wasm: Hosting::Module,
+        octos: &[],
+        tools: &[],
+        network: Network::None,
+        processes: false,
+        accounts: false,
+        external: &["home:rw"],
+        storage: r#"{"accounts": false, "agent_workspace": "none", "external": ["home:rw"]}"#,
+        tools_json: r##"[]"##,
+        generic_tools: &[],
+        grants: &[],
+        system_tools: &[],
+        own_tools: &[],
+        calls_per_turn: None,
+        calls_per_day: None,
+        kernel: KernelPort::Coding,
     },
     NativeApp {
         id: "task",
@@ -397,8 +462,10 @@ pub const APPS: &[NativeApp] = &[
         generic_tools: &[],
         grants: &[],
         system_tools: &[],
+        own_tools: &[],
         calls_per_turn: None,
         calls_per_day: None,
+        kernel: KernelPort::None,
     },
 ];
 
@@ -481,4 +548,6 @@ pub fn link(out: &mut Vec<&'static dyn AppModule>) {
     out.push(&makepad_reminders::REMINDERS_MODULE);
     #[cfg(feature = "app-weather")]
     out.push(&makepad_weather::WEATHER_MODULE);
+    #[cfg(feature = "app-octoscode")]
+    out.push(&octoscode_module::OCTOSCODE_MODULE);
 }

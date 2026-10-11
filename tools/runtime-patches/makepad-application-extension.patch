@@ -1,0 +1,29 @@
+diff --git a/tools/cargo_makepad/src/android/java/dev/makepad/android/MakepadActivity.java b/tools/cargo_makepad/src/android/java/dev/makepad/android/MakepadActivity.java
+index b10842450..41aa2c8f7 100644
+--- a/tools/cargo_makepad/src/android/java/dev/makepad/android/MakepadActivity.java
++++ b/tools/cargo_makepad/src/android/java/dev/makepad/android/MakepadActivity.java
+@@ -1259,12 +1259,22 @@ public class MakepadActivity
+ 
+     private void createApplicationExtension() {
+         try {
+-            Class<?> type = Class.forName(getPackageName() + ".MakepadAppExtension");
++            // The application id can differ from the Java namespace in a
++            // side-by-side test build. Honour its explicit integration class.
++            android.content.pm.ApplicationInfo app = getPackageManager().getApplicationInfo(
++                    getPackageName(), android.content.pm.PackageManager.GET_META_DATA);
++            String className = app.metaData == null ? null
++                    : app.metaData.getString("dev.makepad.android.APPLICATION_EXTENSION");
++            if (className == null || className.isEmpty()) {
++                className = getPackageName() + ".MakepadAppExtension";
++            }
++            Class<?> type = Class.forName(className);
+             mApplicationExtension = (ApplicationExtension) type
+                 .getConstructor(MakepadActivity.class).newInstance(this);
+         } catch (ClassNotFoundException absent) {
+             // Ordinary Makepad applications do not need an extension.
+-        } catch (ReflectiveOperationException | ClassCastException failure) {
++        } catch (ReflectiveOperationException | ClassCastException
++                | android.content.pm.PackageManager.NameNotFoundException failure) {
+             Log.e("Makepad", "Application extension could not initialize", failure);
+         }
+     }

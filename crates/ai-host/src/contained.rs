@@ -1,9 +1,9 @@
 //! `octos` for contained apps: the Card runner's assistant service.
 //!
-//! A store app (an App Hub bundle the Card runner hosts) that declares
-//! `octos.*` services calls `host.request("octos.turn.start", {text}, …)`.
-//! The isolate's gate already refused every service the manifest did not
-//! declare; what reaches this service is handed to ONE octos peer per app,
+//! An admitted app with an opted-in, consented agent calls
+//! `host.request("octos.turn.start", {text}, …)`. Capability declarations
+//! describe intended use; identity, consent, account scope and the public
+//! method whitelist authorize access. Calls reach ONE octos peer per app,
 //! owned by the shell's system agent on the shell's kernel — the same
 //! host-owned peer contract Rinx uses (ADR 0007), named `card.<app id>` so a
 //! store app can never share a native module's peer or memory.
@@ -26,9 +26,10 @@
 //! **Consent and grants** (ADR 0004 §4). The service follows
 //! [`crate::Policy::contained_gate`]: behind the person's consent at first
 //! use (the shipped default), off, or on for every app (the developer
-//! override `OCTOSENSE_CONTAINED_APPS=1`). An app's peer is granted only
-//! the `octos.*` services its manifest declares ([`declared`]), and turning
-//! its agent off in Settings releases the live peer at once ([`revoke`]).
+//! override `OCTOSENSE_CONTAINED_APPS=1`). An admitted, opted-in agent gets
+//! the four public assistant methods ([`declared`]); the override never
+//! bypasses admission or opts a plain app in. Turning its agent off in
+//! Settings releases the live peer at once ([`revoke`]).
 //!
 //! **An agent for every app that declares one** (ADR 0004 §4). A script
 //! app's peer does not wait for the app to call `octos`: once the person
@@ -36,9 +37,9 @@
 //! its tools registered), so the system agent's `peer_list` shows it and
 //! `peer_send_input` reaches it, and the shell's "Ask <app>" panel opens
 //! the app's conversation on it ([`conversation`]). The app's own `octos`
-//! calls use the same peer, still gated by the services its manifest
-//! declares; an app that declares none (News: it ships `tools.json` only)
-//! never calls it, and has its agent all the same.
+//! calls use the same peer and supported methods. An app that declares
+//! none of those names can still opt in through an agent block or admitted
+//! tools; an app with no opt-in never obtains an agent.
 //!
 //! The logic does not need a kernel: peers come from a [`PeerFactory`]. The
 //! shell's factory (`cfg(kernel)`) launches them through
@@ -78,6 +79,7 @@ pub fn account_of(app_id: &str) -> Option<String> {
 /// revokes the old account's contexts and the host's lifecycle signs in or
 /// out). True when a peer was live.
 pub fn account_changed(app_id: &str) -> bool {
+    clear_guidance(app_id);
     let Some(service) = live(|l| l.get(app_id).cloned()) else { return false };
     service.set_account(account_of(app_id).as_deref());
     true
@@ -102,12 +104,12 @@ pub const UNSUPPORTED_ARGS: &str = "Unsupported Octos arguments";
 pub const BAD_TEXT: &str = "Provide text (at most 32 KiB)";
 pub const NO_SHEET: &str = "The assistant has no sheet; octos calls come from the app";
 pub const NO_CONSENT: &str = "Waiting for the person to allow this app's agent (OctoSense asks the first time)";
-pub const NOT_DECLARED: &str = "This app's manifest does not declare that assistant service";
+pub const NOT_DECLARED: &str = "This app has not opted in to an assistant";
+pub const NOT_ADMITTED: &str = "The assistant caller is not an admitted app in this host profile";
 
 /// The shell's consent at first use (ADR 0004 §4): whether an app may have
 /// its agent now; asking the person the first time is the shell's part.
-/// Unset (a host without a consent surface, and this crate's tests): no
-/// gate beyond the policy switch.
+/// A host without a consent surface fails closed under the Consent policy.
 static CONSENT: std::sync::OnceLock<fn(&str) -> bool> = std::sync::OnceLock::new();
 
 /// The shell installs its consent check once, at startup.
@@ -115,30 +117,32 @@ pub fn set_consent(check: fn(&str) -> bool) {
     let _ = CONSENT.set(check);
 }
 
-/// The `octos.*` services an app's manifest declares (`None`: the shell
-/// knows no such app). Unset (this crate's tests): all of them.
+/// Verify the current bundle identity and exact host profile on every script
+/// request. This is separate from agent opt-in and the person's consent.
+static CALLER_ADMITTED: std::sync::OnceLock<fn(&str, &std::path::Path) -> bool> = std::sync::OnceLock::new();
+
+pub fn set_caller_admitted(check: fn(&str, &std::path::Path) -> bool) {
+    let _ = CALLER_ADMITTED.set(check);
+}
+
+/// Agent discovery from the admitted app registry. `None` means no opted-in
+/// agent; `Some`, including an empty declaration list, means it has one.
 static DECLARED: std::sync::OnceLock<DeclaredLookup> = std::sync::OnceLock::new();
 
-/// Maps an app id to the `octos.*` services its manifest declares.
 pub type DeclaredLookup = fn(&str) -> Option<BTreeSet<String>>;
 
-/// The shell installs its manifest lookup once, at startup.
+/// Compatibility name: declarations remain disclosure metadata. Discovery must
+/// still opt an app in through its agent block, tools, or assistant declaration.
 pub fn set_declared(lookup: DeclaredLookup) {
     let _ = DECLARED.set(lookup);
 }
 
-/// What `app_id` may be granted: the `octos.*` services its manifest
-/// declares, and only those (ADR 0004 §4).
+/// Public assistant methods for an opted-in agent. Merely exposing the public
+/// API never creates an agent for an app that has not opted in. Unknown methods
+/// are refused by the parser and broker, independently of manifest contents.
 pub fn declared(app_id: &str) -> Result<BTreeSet<String>, String> {
-    let all = || octosense_app_peers::OCTOS_SERVICES.iter().map(|s| s.to_string()).collect::<BTreeSet<String>>();
-    let services = match DECLARED.get() {
-        None => all(),
-        Some(lookup) => lookup(app_id).ok_or(NOT_DECLARED)?.intersection(&all()).cloned().collect(),
-    };
-    if services.is_empty() {
-        return Err(NOT_DECLARED.into());
-    }
-    Ok(services)
+    DECLARED.get().and_then(|lookup| lookup(app_id)).ok_or(NOT_DECLARED)?;
+    Ok(peer_services())
 }
 
 /// Where the shell's own preparations get peers ([`prepare`]): the factory
@@ -150,12 +154,9 @@ pub fn set_factory(factory: Arc<dyn PeerFactory>) {
     *FACTORY.lock().unwrap_or_else(|e| e.into_inner()) = Some(factory);
 }
 
-/// The services a peer is launched with: all of them, for the shell's own
-/// surfaces (the "Ask <app>" panel reads history, starts turns and stops
-/// them). What the APP may call is still only what its manifest declares,
-/// twice over: [`ContainedOctos`] checks [`declared`] before any call
-/// reaches the peer, and the app's own context is opened with exactly
-/// those services (the broker checks every call against its context's).
+/// The fixed public assistant surface. Both the host's conversation panel and
+/// an admitted app with an opted-in, consented agent use these four methods.
+/// Neither can add an arbitrary kernel RPC by naming it in a manifest.
 fn peer_services() -> BTreeSet<String> {
     octosense_app_peers::OCTOS_SERVICES.iter().map(|s| s.to_string()).collect()
 }
@@ -207,6 +208,23 @@ fn obtain(app_id: &str, factory: &dyn PeerFactory) -> Result<Arc<dyn OctosAppSer
     Ok(service)
 }
 
+/// Trusted instruction/skill TEXT supplied separately on each peer turn. This
+/// does not install kernel skills or grant any tools. Scope is the host's exact
+/// active account; loading/persisting admitted base text and overlays belongs
+/// to the shell. Updates affect existing peers on their next turn.
+pub use octosense_app_peers::guidance::{NamedSkill, TrustedGuidance};
+
+pub fn set_guidance(app_id: &str, account: &str, guidance: TrustedGuidance) -> Result<(), String> {
+    if account_of(app_id).as_deref() != Some(account) {
+        return Err("App guidance does not belong to the active account".into());
+    }
+    octosense_app_peers::guidance::set(&format!("{PEER_PREFIX}{app_id}"), account, guidance)
+}
+
+pub fn clear_guidance(app_id: &str) {
+    octosense_app_peers::guidance::clear_app(&format!("{PEER_PREFIX}{app_id}"));
+}
+
 /// The shell prepares `app_id`'s agent (the person allowed it): its peer is
 /// created or resumed and its tools registered now, without a turn. Blocks
 /// (at most a minute): call it off the UI thread. Consent is the caller's
@@ -232,10 +250,20 @@ pub fn is_live(app_id: &str) -> bool {
 /// person's lane): a new sharing context on the app's one peer, created if
 /// needed. Consent is the caller's check.
 pub fn conversation(app_id: &str, instance: &str) -> Result<Arc<dyn OctosContext>, String> {
+    let account = account_of(app_id).ok_or(SIGN_IN)?;
+    conversation_for_account(app_id, instance, &account)
+}
+
+/// Open on exactly the host-bound account. A changed selection must never
+/// retarget a card; the broker also rejects a stale account in ContextSpec.
+pub fn conversation_for_account(app_id: &str, instance: &str, account: &str) -> Result<Arc<dyn OctosContext>, String> {
+    let check = || if account_of(app_id).as_deref() == Some(account) { Ok(()) }
+        else { Err("Account changed; reopen the card under its original account".to_string()) };
+    check()?;
     let factory = FACTORY.lock().unwrap_or_else(|e| e.into_inner()).clone().ok_or(UNAVAILABLE)?;
     let service = obtain(app_id, factory.as_ref())?;
-    let account = account_of(app_id).ok_or(SIGN_IN)?;
-    service.open_conversation(ContextSpec { account, instance: instance.to_owned(), services: service.services() })
+    check()?;
+    service.open_conversation(ContextSpec { account: account.to_owned(), instance: instance.to_owned(), services: service.services() })
 }
 
 /// The contained apps' peers.
@@ -271,6 +299,7 @@ pub(crate) fn reset_for_tests() {
 /// now, closing its contexts and any running turn. A later call needs
 /// consent again and then gets a fresh peer. True when one was live.
 pub fn revoke(app_id: &str) -> bool {
+    clear_guidance(app_id);
     let service = live(|l| l.remove(app_id));
     match service {
         Some(service) => {
@@ -284,7 +313,7 @@ pub fn revoke(app_id: &str) -> bool {
 /// Where contained apps' peers come from.
 pub trait PeerFactory: Send + Sync {
     /// The scoped assistant service for `app_id`'s peer `peer_id`, with
-    /// exactly `services` (its manifest's `octos.*`), or `None` when this
+    /// exactly `services` (the supported public surface), or `None` when this
     /// device cannot give one.
     fn launch(&self, peer_id: &str, app_id: &str, services: &BTreeSet<String>) -> Option<Arc<dyn OctosAppService>>;
 }
@@ -384,8 +413,8 @@ impl ContainedOctos {
         let context = app.service.open_conversation(ContextSpec {
             account: account_of(app_id).ok_or(SIGN_IN)?,
             instance: format!("{}-g{}", app.peer, app.generation),
-            // The app's own handle: only what its manifest declares, even
-            // on a peer the shell launched with every service for its panel.
+            // The supported assistant surface for the admitted, consented app;
+            // account and context leases remain broker-enforced.
             services: services.clone(),
         })?;
         app.context = Some(context.clone());
@@ -461,12 +490,15 @@ impl HostService for ContainedOctos {
         if call.from_sheet {
             return reply.send(Err(NO_SHEET.into()));
         }
+        if CALLER_ADMITTED.get().is_none_or(|admitted| !admitted(&call.app_id, &call.host_dir)) {
+            return reply.send(Err(NOT_ADMITTED.into()));
+        }
         match self.gate {
             crate::ContainedGate::Off => return reply.send(Err(TURNED_OFF.into())),
             // The developer override asks nobody.
             crate::ContainedGate::Everyone => {}
             crate::ContainedGate::Consent => {
-                if CONSENT.get().is_some_and(|granted| !granted(&call.app_id)) {
+                if CONSENT.get().is_none_or(|granted| !granted(&call.app_id)) {
                     return reply.send(Err(NO_CONSENT.into()));
                 }
             }
@@ -475,7 +507,7 @@ impl HostService for ContainedOctos {
             Ok(op) => op,
             Err(e) => return reply.send(Err(e)),
         };
-        // Only what the manifest declares, whatever the isolate let through.
+        // Require an opted-in agent, then expose only the public method set.
         let services = match declared(&call.app_id) {
             Ok(s) if s.contains(&call.service) => s,
             Ok(_) => return reply.send(Err(NOT_DECLARED.into())),
@@ -499,7 +531,7 @@ pub(crate) struct KernelPeers;
 #[cfg(kernel)]
 impl PeerFactory for KernelPeers {
     fn launch(&self, peer_id: &str, app_id: &str, services: &BTreeSet<String>) -> Option<Arc<dyn OctosAppService>> {
-        // Only the manifest's `octos.*` services, never all of them.
+        // The host's supported assistant surface, independently of disclosure metadata.
         let services: Vec<&str> = services.iter().map(String::as_str).collect();
         crate::host_policy().allow(peer_id, services.iter().copied());
         let broker = octosense_app_peers::hosted::launch(peer_id, app_id, services.iter().copied(), crate::host_policy())?;
@@ -508,4 +540,4 @@ impl PeerFactory for KernelPeers {
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;

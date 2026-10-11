@@ -976,7 +976,7 @@ impl Broker {
         let method = method.to_owned();
         let (tx, rx) = std::sync::mpsc::channel();
         self.0.rt().spawn(async move {
-            let _ = tx.send(inner.request(&method, params).await);
+            let _ = tx.send(inner.host_request(&method, params).await);
         });
         rx.recv_timeout(Duration::from_secs(60))
             .map_err(|_| "host request timed out".to_owned())?
@@ -1453,6 +1453,36 @@ impl Inner {
 
     async fn request(self: &Arc<Self>, method: &str, params: Value) -> Result<Value, String> {
         let link = self.ensure_link().await?;
+        if method == "turn/start" {
+            let account = {
+                let st = self.lock();
+                if st.released {
+                    return Err("The app was closed".into());
+                }
+                st.account.clone().ok_or("Sign in before using the assistant")?
+            };
+            // After connection setup and before enqueueing the actual frame:
+            // every app path (including a cached context or retry) passes here.
+            // Never hold the broker's state lock while calling the host.
+            self.tool_host().admit_turn(&self.cfg.app_id, &account)?;
+        }
+        self.request_on_link(link, method, params).await
+    }
+
+    /// Trusted host operations are independent of this app's account and
+    /// release admission. Only Broker::host_request enters here; app handles
+    /// always use request above, regardless of their session's spelling.
+    async fn host_request(self: &Arc<Self>, method: &str, params: Value) -> Result<Value, String> {
+        let link = self.ensure_link().await?;
+        self.request_on_link(link, method, params).await
+    }
+
+    async fn request_on_link(
+        self: &Arc<Self>,
+        link: mpsc::UnboundedSender<String>,
+        method: &str,
+        params: Value,
+    ) -> Result<Value, String> {
         let (tx, rx) = oneshot::channel();
         let id = {
             let mut st = self.lock();
@@ -2079,7 +2109,7 @@ impl Inner {
     /// `system_agent` itself and refuses any other label on it).
     fn start_input(self: &Arc<Self>, input: PeerInput) {
         // The link the input came on: only there may it be refused.
-        let (link, peer) = {
+        let (link, peer, account) = {
             let mut st = self.lock();
             let link = st.link.clone();
             let peer = st.peer.as_ref().map(|(_, p)| p.clone());
@@ -2093,14 +2123,15 @@ impl Inner {
                 speaker: Speaker { kind: host_tools::TurnOrigin::SystemAgent, label: None },
                 at: rfc3339_now(),
             });
-            (link, peer)
+            (link, peer, st.account.clone())
         };
+        let turn_input = crate::guidance::turn_input(&self.cfg.app_id, account.as_deref().unwrap_or(""), &input.text);
         let inner = self.clone();
         self.rt().spawn(async move {
             let params = json!({
                 "session_id": input.session_id,
                 "turn_id": input.turn_id,
-                "input": [{"kind": "text", "text": input.text}],
+                "input": turn_input,
             });
             let turn = input.turn_id.clone();
             let still = move |inner: &Inner| inner.lock().peer_turn.as_deref() == Some(turn.as_str());
@@ -3057,7 +3088,7 @@ impl ContextInner {
         let params = json!({
             "session_id": session,
             "turn_id": turn_id,
-            "input": [{"kind": "text", "text": text}],
+            "input": crate::guidance::turn_input(&inner.cfg.app_id, &self.account, &text),
             "origin": speaker.to_json(),
         });
         let me = Arc::downgrade(self);
@@ -3208,7 +3239,7 @@ impl ContextInner {
                         json!({
                             "session_id": session,
                             "turn_id": turn_id,
-                            "input": [{"kind": "text", "text": text}],
+                            "input": crate::guidance::turn_input(&inner.cfg.app_id, &self.account, &text),
                         }),
                     )
                     .await;

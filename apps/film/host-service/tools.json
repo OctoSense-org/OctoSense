@@ -1,0 +1,71 @@
+{
+  "schema": 1,
+  "tools": [
+    {
+      "name": "film.info",
+      "description": "Probe a media file in your workspace (MP4/MOV, Matroska/WebM, MXF, MPEG TS/PS, Ogg, WAV or a still image): container, video and audio streams, duration in ms, timecode and size. Reads only; offline, pure-Rust codecs. `path` is relative to your workspace, the folder your own file tools (list_dir, read_file) see; files outside it cannot be named.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "path": {"type": "string", "minLength": 1, "maxLength": 512}
+        },
+        "required": ["path"],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "file": {"type": "string"},
+          "duration_ms": {"type": "number"},
+          "video": {"type": ["object", "null"]},
+          "audio": {"type": ["object", "null"]}
+        },
+        "required": ["file", "duration_ms"]
+      },
+      "risk": "read",
+      "implemented_by": "host-service"
+    },
+    {
+      "name": "film.run",
+      "description": "Run up to 64 commands from the film engine's catalog, in order, on the media file or FilmCraft project (.fcproj) at `path` in your workspace, then write the project (.fcproj), the active sequence transcoded (.mp4, .mov, .wav or .gif by `format` or the extension of `out`, `start_ms` to `end_ms`, at most 5 minutes; `audio` false drops the sound), or the frame at `at_ms` as a .png at most `max_side` pixels long to `out` when given. Each command is {id, params}. Only reviewed commands run: those the skill's commands.md lists untagged (work inside the document), and `captions.import` of a caption file in your workspace; anything that reaches other files, code, the network, devices or the app is refused before any command runs. Paths are relative to your workspace, and `out` must be a new file. Read the film-engine skill first.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "path": {"type": "string", "minLength": 1, "maxLength": 512},
+          "cmds": {
+            "type": "array",
+            "maxItems": 64,
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {"type": "string", "minLength": 1, "maxLength": 128},
+                "params": {"type": "object"}
+              },
+              "required": ["id"],
+              "additionalProperties": false
+            }
+          },
+          "out": {"type": "string", "minLength": 1, "maxLength": 512},
+          "format": {"type": "string", "enum": ["h264", "prores", "wav", "gif"]},
+          "at_ms": {"type": "number", "minimum": 0},
+          "start_ms": {"type": "number", "minimum": 0},
+          "end_ms": {"type": "number", "minimum": 0},
+          "audio": {"type": "boolean"},
+          "max_side": {"type": "integer", "minimum": 16, "maximum": 4096}
+        },
+        "required": ["path", "cmds"],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "results": {"type": "array", "items": {"type": "object"}},
+          "out": {"type": ["string", "null"]}
+        },
+        "required": ["results"]
+      },
+      "risk": "act",
+      "implemented_by": "host-service"
+    }
+  ]
+}

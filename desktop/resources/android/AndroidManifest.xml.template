@@ -15,7 +15,7 @@
   Two deliberate differences from AppCard's: the label and package stay
   OctoSense's (`dev.makepad.octosense`, so both apps coexist), and the app is
   NOT `android:persistent` — OctoSense is an ordinary app, not a system
-  component. No `android:icon`: the build ships no launcher mipmaps yet.
+  component. Launcher resources under res/ include legacy and adaptive icons.
 -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
@@ -24,6 +24,8 @@
     android:versionName="{version_name}">
     <uses-sdk android:minSdkVersion="{min_sdk_version}" android:targetSdkVersion="{target_sdk_version}" />
     <application
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher"
         android:label="{label}"
         android:theme="@style/MakepadAppTheme"
         android:allowBackup="true"

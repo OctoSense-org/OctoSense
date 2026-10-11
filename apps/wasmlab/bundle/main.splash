@@ -1,0 +1,261 @@
+// BEGIN shared app interface
+// Shared system-app interface. Run tools/sync-app-interface.py after editing.
+// Bundles carry this prelude so they work in the contained standalone host too.
+// Resolve the current theme after a host restyle, not a retained prelude alias.
+let theme = mod.theme
+let ui_ink = theme.color_text
+let ui_page = theme.color_bg_app
+let ui_light = dot(ui_ink, #x36b61200) < 0.5
+let ui_surface = if ui_light { #xffffff } else { mix(ui_page, ui_ink, 0.06) }
+let ui_field = mix(ui_page, ui_ink, 0.075)
+let ui_hover = mix(ui_page, ui_ink, 0.12)
+let ui_border = mix(ui_page, ui_ink, 0.22)
+let ui_muted = mix(ui_ink, ui_page, 0.24)
+let ui_link = mix(ui_ink, #x356bce, 0.25)
+let ui_primary = #x285cd6
+let ui_success = mix(ui_ink, #x28a55b, 0.20)
+let ui_danger = mix(ui_ink, #xe13b53, 0.20)
+let UiButton = ButtonFlat{height: 44 margin: 0 padding: Inset{left: 14 right: 14}
+    draw_bg +: {border_radius: 12.0 border_size: 0.0 color: #x00000000 color_hover: ui_hover color_down: ui_field color_focus: ui_hover}
+    draw_text +: {color: ui_link color_hover: ui_link color_down: ui_link color_focus: ui_link text_style: theme.font_bold{font_size: 14}}
+}
+let UiPrimary = UiButton{
+    draw_bg +: {color: ui_primary color_hover: #x3468df color_down: #x204cb8 color_focus: #x204cb8}
+    draw_text +: {color: #xffffff color_hover: #xffffff color_down: #xffffff color_focus: #xffffff}
+}
+let UiPill = UiButton{draw_bg +: {color: ui_surface border_radius: 22.0} draw_text +: {color: ui_ink color_hover: ui_ink color_down: ui_ink color_focus: ui_ink}}
+let UiField = TextInput{width: Fill height: 48 margin: 0 padding: Inset{left: 14 right: 14 top: 12 bottom: 12}
+    draw_bg +: {color: ui_field color_hover: ui_field color_focus: ui_field color_empty: ui_field
+        border_color: ui_border border_color_hover: ui_link border_color_focus: ui_link border_color_empty: ui_border border_radius: 12.0}
+    draw_text +: {color: ui_ink color_hover: ui_ink color_focus: ui_ink color_empty: ui_muted color_empty_hover: ui_muted color_empty_focus: ui_muted text_style: theme.font_regular{font_size: 15}}
+    draw_selection.color: #x557dcc55
+}
+let UiCard = RoundedView{width: Fill height: Fit flow: Down spacing: 12 padding: 20
+    show_bg: true draw_bg +: {color: ui_surface border_radius: 16.0}}
+let UiCaption = Label{padding: 0 flow: Flow.Right{wrap: true} width: Fill draw_text +: {color: ui_muted text_style: theme.font_regular{font_size: 13 line_spacing: 1.4}}}
+let UiTitle = Label{padding: 0 flow: Flow.Right{wrap: true} width: Fill draw_text +: {color: ui_ink text_style: theme.font_bold{font_size: 28 line_spacing: 1.2}}}
+// END shared app interface
+// Wasm Lab: Rust functions that ship in this bundle as
+// fns/wasmlab.wasm (built from apps/wasmlab/guest), run by the shell's
+// `wasm` service in a sandbox with a deadline and a memory cap. Each card
+// calls one function through host.request and shows what came back and the
+// round trip, as this script sees it.
+let ground = ui_page
+let ink = ui_ink
+let secondary = ui_muted
+
+let APPS = ["Calendar" "Calculator" "Camera" "Clock" "Contacts" "Files" "Mail" "Maps" "Messages" "Music"
+    "News" "Notes" "Phone" "Photos" "Reminders" "Settings" "Weather" "YouTube" "Terminal" "App Hub"
+    "Sheets" "Wallet" "Health" "Translate" "Podcasts" "Books" "Voice Memos" "Compass" "Measure" "Stocks"
+    "Home" "Find My" "Shortcuts" "Magnifier" "Tips" "Fitness" "Recorder" "Gallery" "Browser" "Assistant"]
+// Commas between the pairs: `] [` would read as indexing.
+let BUSY = [["09:00" "09:30"], ["10:00" "11:00"], ["12:00" "13:00"], ["14:30" "15:00"], ["16:00" "17:30"]]
+let OLD = "milk\neggs\nbread\nbutter\napples\ncoffee\n"
+let NEW = "milk\neggs\nsourdough bread\nbutter\napples\npears\ncoffee\n"
+let SAMPLE = "# Weekly notes\n\nSome *emphasis*, `code` and a [link](https://example.org).\n\n- [x] ship the MVP\n- [ ] measure on the phone\n\n| function | input |\n|---|---|\n| find_slots | busy times |\n| fuzzy_rank | names |\n\n> Quoted, with **bold** inside.\n\n"
+
+let ranked = []
+let rank_note = ""
+let rank_seq = 0
+let duration = 30
+let slots = []
+let slots_note = ""
+let diff = nil
+let diff_note = ""
+let md_note = ""
+let md_head = ""
+let rogue_note = ""
+let runtime = nil
+let runtime_note = ""
+// Start-up reads the runtime only after its first four calls have answered.
+let booting = true
+
+// Milliseconds to one decimal.
+fn ms(t0){ "" + floor((time_now() - t0) * 10000.0 + 0.5) / 10 + " ms" }
+
+fn rank(text){
+    rank_seq = rank_seq + 1
+    let seq = rank_seq
+    let t0 = time_now()
+    host.request("wasm.fuzzy_rank", {query: text items: APPS limit: 8}, fn(r){
+        if seq != rank_seq { return }
+        if r.is_ok {
+            ranked = r.data.ranked
+            let noun = if ranked.len() == 1 { " match" } else { " matches" }
+            rank_note = ranked.len() + noun + " in " + ms(t0)
+        }
+        else { ranked = [] rank_note = r.error }
+        ui.rank_list.render()
+    })
+}
+
+fn find_slots(minutes){
+    duration = minutes
+    let t0 = time_now()
+    host.request("wasm.find_slots", {day_start: "08:30" day_end: "18:00" duration: minutes busy: BUSY max: 12}, fn(r){
+        if r.is_ok { slots = r.data.slots slots_note = slots.len() + " free slots of " + minutes + " min in " + ms(t0) }
+        else { slots = [] slots_note = r.error }
+        ui.durations.render()
+        ui.slot_list.render()
+    })
+}
+
+fn compare(){
+    let t0 = time_now()
+    host.request("wasm.text_diff", {old: OLD new: NEW context: 1}, fn(r){
+        if r.is_ok { diff = r.data diff_note = "+" + diff.added + " −" + diff.removed + " in " + ms(t0) }
+        else { diff = nil diff_note = r.error }
+        ui.diff_view.render()
+    })
+}
+
+fn render_md(copies){
+    let text = ""
+    for i in copies { text = text + SAMPLE }
+    let t0 = time_now()
+    host.request("wasm.md_to_html", text, fn(r){
+        if r.is_ok {
+            md_note = floor(text.len() / 100) / 10 + " KB of Markdown → " + floor(r.data.text.len() / 100) / 10 + " KB of HTML in " + ms(t0)
+            md_head = r.data.text.split("\n")[0]
+        } else { md_note = r.error md_head = "" }
+        ui.md_view.render()
+        // The service queues at most four requests per app: the runtime card
+        // asks once the start-up calls have answered, and then shows them.
+        if booting { booting = false load_runtime() }
+    })
+}
+
+fn misbehave(mode){
+    rogue_note = "Running “" + mode + "”…"
+    ui.rogue_view.render()
+    let t0 = time_now()
+    host.request("wasm.rogue", {mode: mode}, fn(r){
+        if r.is_ok { rogue_note = mode + ": returned (unexpected)" }
+        else { rogue_note = mode + ": " + r.error + " (after " + ms(t0) + ")" }
+        ui.rogue_view.render()
+        // The next call gets a fresh instance.
+        rank(ui.query.text())
+        load_runtime()
+    })
+}
+
+fn load_runtime(){
+    let t0 = time_now()
+    host.request("wasm.functions", {}, fn(r){
+        if r.is_ok { runtime = r.data runtime_note = "Answered in " + ms(t0) }
+        else { runtime = nil runtime_note = r.error }
+        ui.runtime_view.render()
+    })
+}
+
+fn module_line(m){
+    let how = if m.from_cache { "loaded compiled code from the cache" } else { "compiled" }
+    m.file + ": " + floor(m.bytes / 1024) + " KiB, " + how + " in " + m.load_ms + " ms; memory " + floor(m.memory_bytes / 1048576) + " MiB; renewed " + m.renewed + "×"
+}
+
+// A missing key reads as `fallback` (as News and Photos do it).
+fn optional(it, key, fallback){
+    let value = try { it[key] } catch { nil }
+    if value == nil { return fallback }
+    value
+}
+
+fn stats_line(name){
+    let s = optional(runtime.stats, name, nil)
+    if s == nil { return name + ": not called yet" }
+    name + ": " + s.calls + " calls, mean " + s.mean_us + " µs, max " + s.max_us + " µs, " + s.errors + " errors"
+}
+
+fn boot(){
+    rank("cal")
+    find_slots(30)
+    compare()
+    render_md(1)
+}
+start_timeout(0.05, || boot())
+
+let Section = Label{width: Fill text: "" draw_text.color: ink draw_text.text_style: theme.font_bold{font_size: 16}}
+let Note = UiCaption{text: ""}
+let Line = Label{width: Fill text: "" draw_text.color: ink draw_text.text_style.font_size: 14}
+let Code = Label{width: Fill text: "" flow: Flow.Right{wrap: true} draw_text.color: ink draw_text.text_style: theme.font_code{font_size: 12}}
+let Choice = UiPill{}
+let ChoiceOn = UiPill{
+    draw_bg +: {color: ink color_hover: ink color_down: ink}
+    draw_text +: {color: ground color_hover: ground color_down: ground}
+}
+
+SolidView{width: Fill height: Fill flow: Overlay align: Align{x: 0.5} show_bg: true draw_bg.color: ground
+    ScrollYView{width: Fill max_width: 760 height: Fill flow: Down spacing: 14 padding: Inset{left: 14 right: 14 top: 16 bottom: 32}
+        UiTitle{text: "Wasm Lab"}
+        UiCaption{text: "Rust functions shipped in this app, run by the shell in a sandbox: no files, network or other apps, a 2 s deadline and a 256 MiB memory cap."}
+
+        UiCard{
+            Section{text: "Find an app"}
+            query := UiField{empty_text: "Type part of a name" on_change: |text| rank(text)}
+            rank_list := View{width: Fill height: Fit flow: Down spacing: 6 on_render: || {
+                Note{text: rank_note}
+                for it in ranked { Line{text: it.item + "   " + it.score} }
+            }}
+        }
+
+        UiCard{
+            Section{text: "Free time today"}
+            UiCaption{text: "Busy 09:00–09:30, 10:00–11:00, 12:00–13:00, 14:30–15:00, 16:00–17:30; the day runs 08:30–18:00."}
+            durations := View{width: Fill height: Fit flow: Flow.Right{wrap: true} spacing: 8 on_render: || {
+                for m in [15 30 60 90] {
+                    if m == duration { ChoiceOn{text: m + " min" on_click: || find_slots(m)} }
+                    else { Choice{text: m + " min" on_click: || find_slots(m)} }
+                }
+            }}
+            slot_list := View{width: Fill height: Fit flow: Down spacing: 6 on_render: || {
+                Note{text: slots_note}
+                for s in slots { Line{text: s[0] + " – " + s[1]} }
+            }}
+        }
+
+        UiCard{
+            Section{text: "What changed in the list"}
+            diff_view := View{width: Fill height: Fit flow: Down spacing: 6 on_render: || {
+                Note{text: diff_note}
+                if diff != nil { Code{text: diff.unified} }
+            }}
+            UiButton{text: "Compare again" on_click: || compare()}
+        }
+
+        UiCard{
+            Section{text: "Markdown to HTML"}
+            md_view := View{width: Fill height: Fit flow: Down spacing: 6 on_render: || {
+                Note{text: md_note}
+                Code{text: md_head}
+            }}
+            View{width: Fill height: Fit flow: Right spacing: 8
+                UiButton{text: "Render the sample" on_click: || render_md(1)}
+                UiButton{text: "Render it ×40" on_click: || render_md(40)}
+            }
+        }
+
+        UiCard{
+            Section{text: "Misbehave"}
+            UiCaption{text: "Each ends in an error, never a crash; the next call gets a fresh instance."}
+            View{width: Fill height: Fit flow: Flow.Right{wrap: true} spacing: 8
+                UiButton{text: "Loop forever" on_click: || misbehave("loop")}
+                UiButton{text: "Allocate endlessly" on_click: || misbehave("alloc")}
+                UiButton{text: "Panic" on_click: || misbehave("panic")}
+                UiButton{text: "Recurse" on_click: || misbehave("recurse")}
+            }
+            rogue_view := View{width: Fill height: Fit flow: Down on_render: || { Note{text: rogue_note} }}
+        }
+
+        UiCard{
+            Section{text: "Runtime"}
+            runtime_view := View{width: Fill height: Fit flow: Down spacing: 6 on_render: || {
+                Note{text: runtime_note}
+                if runtime != nil {
+                    for m in runtime.modules { Line{text: module_line(m)} }
+                    for name in runtime.functions { Line{text: stats_line(name)} }
+                }
+            }}
+            UiButton{text: "Refresh" on_click: || load_runtime()}
+        }
+    }
+}

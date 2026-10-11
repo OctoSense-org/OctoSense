@@ -4,6 +4,7 @@ public class AndroidImeHandoffTest {
     static int down, up, lastMeta, repeats, volume, deletes;
     static boolean deferred;
     static final java.util.ArrayList<Runnable> queued=new java.util.ArrayList<>();
+    static final java.util.ArrayList<Integer> edits=new java.util.ArrayList<>();
     static Surface current;
     static void flush() { for (Runnable event : queued) event.run(); queued.clear(); }
 
@@ -41,7 +42,13 @@ public class AndroidImeHandoffTest {
     static class View {
         boolean onKeyUp(int key, KeyEvent event) { volume++; return false; }
     }
-    static class Editable { final StringBuilder value = new StringBuilder(); }
+    static class Editable {
+        final StringBuilder value = new StringBuilder();
+        int compositionStart=-1, compositionEnd=-1;
+    }
+    static class BaseInputConnection {
+        static int getComposingSpanStart(Editable editable) { return editable.compositionStart; }
+    }
     static class Selection {
         static int getSelectionStart(Editable ignored) { return ignored.value.length(); }
         static int getSelectionEnd(Editable ignored) { return ignored.value.length(); }
@@ -61,10 +68,18 @@ public class AndroidImeHandoffTest {
             return mSurface.onKey(mSurface, event.getKeyCode(), event);
         }
         boolean commitText(CharSequence value, int cursor) {
-            mSurface.editable.value.append(value);
+            Editable editable=mSurface.editable;
+            if (editable.compositionStart>=0) {
+                editable.value.replace(editable.compositionStart,editable.compositionEnd,value.toString());
+            } else editable.value.append(value);
+            editable.compositionStart=editable.compositionEnd=-1;
             String snapshot=mSurface.editable.value.toString();
             queued.add(() -> { text.setLength(0); text.append(snapshot); });
             if (!deferred) flush();
+            return true;
+        }
+        boolean finishComposingText() {
+            mSurface.editable.compositionStart=mSurface.editable.compositionEnd=-1;
             return true;
         }
         boolean deleteSurroundingTextInCodePoints(int before, int after) { deletes++; return true; }
@@ -72,7 +87,10 @@ public class AndroidImeHandoffTest {
     static class Connection extends BaseConnection {
         boolean mHardwareEdit,closed; int mSuppressOperations;
         boolean ownsEditor() {return !closed;}
-        boolean sendEdit(int kind,String text,int start,int end,int cursor) {return true;}
+        boolean sendEdit(int kind,String text,int start,int end,int cursor) {edits.add(kind);return true;}
+        CharSequence filterInput(CharSequence text) {return text;}
+        void notifyStateChanged() {}
+        void notifyImeOfSelectionUpdate() {}
         Editable getEditable() {return mSurface.getEditable();}
         Connection(Surface surface) { super(surface); }
         /* CONNECTION_METHODS */
@@ -87,7 +105,12 @@ public class AndroidImeHandoffTest {
         if (!condition) throw new AssertionError(message + "; text=" + text);
     }
     static void reset() { text.setLength(0); down=up=lastMeta=repeats=volume=deletes=0;
-        queued.clear(); deferred=false; if(current!=null)current.editable.value.setLength(0); }
+        queued.clear(); edits.clear(); deferred=false;
+        if(current!=null) {
+            current.editable.value.setLength(0);
+            current.editable.compositionStart=current.editable.compositionEnd=-1;
+        }
+    }
     public static void main(String[] arguments) {
         Surface surface=new Surface(); current=surface;
         Connection connection=new Connection(surface);
@@ -150,6 +173,31 @@ public class AndroidImeHandoffTest {
         connection.sendKeyEvent(key(0,'o')); surface.onKey(surface,30,key(1,'o'));
         surface.onKey(surface,30,key(0,'o')); connection.sendKeyEvent(key(1,'o'));
         flush(); check(text.toString().equals("boo"), "both handoffs retain real repeated text");
+        // The phone's settled hardware Enter replaced the active composing
+        // word with a newline. Exercise the actual routing/commit methods,
+        // both immediate and queued, with Android's composing-span semantics.
+        for (boolean viaSurface : new boolean[]{false,true}) {
+            for (boolean defer : new boolean[]{false,true}) {
+                reset(); deferred=defer;
+                String original="# OnePlus Notes test";
+                surface.editable.value.append(original);
+                surface.editable.compositionStart=original.indexOf("test");
+                surface.editable.compositionEnd=original.length();
+                KeyEvent enter=new KeyEvent(0,KeyEvent.KEYCODE_ENTER,0,0,0,null);
+                if (viaSurface) surface.onKey(surface,KeyEvent.KEYCODE_ENTER,enter);
+                else connection.sendKeyEvent(enter);
+                connection.sendKeyEvent(new KeyEvent(1,KeyEvent.KEYCODE_ENTER,0,0,0,null));
+                flush();
+                check(text.toString().equals(original+"\n"), "hardware Enter retains the composing word and inserts once");
+                check(edits.equals(java.util.Arrays.asList(3,1)), "finish composition is ordered before newline commit");
+            }
+        }
+        reset();
+        surface.editable.value.append("say test");
+        surface.editable.compositionStart=4; surface.editable.compositionEnd=8;
+        connection.commitText("tested",1);
+        check(text.toString().equals("say tested") && edits.equals(java.util.Arrays.asList(1)),
+            "ordinary soft IME commit still replaces the composing range");
         reset();
         surface.onKey(surface,0,new KeyEvent(2,0,'中',0,0,"中文"));
         connection.sendKeyEvent(key(0,'!'));

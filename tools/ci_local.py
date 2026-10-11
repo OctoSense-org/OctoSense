@@ -14,6 +14,8 @@ commands cannot drift from the workflows. What GitHub does with an action
   actions/cache (the octos kernel)         a per-user cache shared by every
                                            clone, keyed by the octos revision
   actions/setup-node                       the node/npm on PATH
+  actions/upload-artifact                  files stay at the workflow's local paths;
+                                           nothing is uploaded
 
 A step that cannot run here is SKIPPED with the reason, never passed. Jobs
 GitHub runs on ubuntu-latest run on this Mac; `#[cfg(target_os = "linux")]`
@@ -23,6 +25,7 @@ below and docs/local-ci.md).
 
   tools/ci-local.sh [--only desktop|phone|apps|rom|all[,...]] [--jobs N] [--keep-going] [--no-wait]
   tools/ci-local.sh --linux-host [SSH]  # ubuntu jobs on the Linux host
+  tools/ci-local.sh --linux-host --offload  # and the macOS jobs' portable steps
   tools/ci-local.sh --list              # the plan, nothing run
   tools/ci-local.sh --check-drift       # the local mapping still fits the workflows
   tools/ci-local-merge.sh <PR number>   # merge on a local pass (see docs/local-ci.md)
@@ -43,6 +46,12 @@ OCTOSENSE_CI_LINUX_SLOTS (default 4) runs share the host; each of a run's
 jobs runs in parallel, with its own cargo target in ~/octosense-ci/cache/.
 Their results join the table and last.json marked `"host": "linux"`, bound
 to the commit the host checked out.
+
+Offload (--offload, with --linux-host): the macOS jobs listed with `mac_steps`
+in JOBS run there too, except those steps, which still run here after the
+job's setup; a job whose list is empty runs there entirely. GitHub runs these
+jobs on macOS, so an offloaded run tests their Linux build instead: the steps
+kept here are the ones that check macOS itself.
 """
 import argparse
 import datetime
@@ -69,6 +78,12 @@ GROUPS["all"] = [w for g in ("desktop", "phone", "apps", "rom") for w in GROUPS[
 # Workflows ci-local deliberately does not run, and why. --check-drift skips
 # them (an entry naming no workflow, or one ci-local runs, is drift).
 NOT_LOCAL = {
+    "platform-vault.yml": "actual Windows Credential Manager and backend browser acceptance need a Windows session; "
+                          "compilation or another OS is not native account evidence",
+    "embedded-browser.yml": "native Windows WebView2 acceptance needs a Windows desktop and installed engine; "
+                            "ci-local-merge requires a successful GitHub run on the exact PR head",
+    "wasm-windows.yml": "apps' WebAssembly functions on Windows need a Windows runner; "
+                        "ci-local-merge requires a successful GitHub run on the exact PR head",
     "release-desktop.yml": "a release workflow (tag push or manual run): signed packages for three OSes, "
                            "with a matrix, environments, secrets and artifacts; nothing a pull request merges "
                            "on depends on it, and its packaging scripts' tests run in desktop.yml",
@@ -274,16 +289,29 @@ ACTIONS = {
     "Swatinem/rust-cache": "this clone's target/",
     "actions/cache": "the per-user octos kernel cache",
     "actions/setup-node": "the node/npm on PATH",
+    "actions/upload-artifact": "artifacts retained at the workflow's local paths; no upload",
 }
 
 # Every job the workflows define, and where it runs here. A new job fails
 # --check-drift until it is listed (it would still run, as `run`).
+#
+# `mac_steps` (--offload): a macOS job that may run on the Linux host, except
+# the steps named here, which check macOS itself (the macOS compile, Apple
+# icons and asset catalogs) and stay on this Mac after the job's setup. An
+# empty list sends the whole job; a job without the key always runs here.
 JOBS = {
-    "desktop.yml:desktop": {},
-    "phone.yml:home": {},
+    "desktop.yml:desktop": {"mac_steps": ["Compile the desktop with the shared runtime",
+                                          "Desktop tools and scripts"]},
+    "desktop.yml:native-host-api": {"macos_only": True},
+    # Home's tests run on the host too. Their Splash tests rely on the test
+    # step's MAKEPAD_SPLASH_BUDGET_MS: ~1,000 tests in one process at the
+    # host's 72 threads stretch a 6 ms script entry past makepad's 64 ms
+    # wall-clock budget (makepad#109).
+    "phone.yml:home": {"mac_steps": ["Validate launcher icons and Apple asset catalogs",
+                                     "Compile Home and its bundled modules"]},
     "apps.yml:services": {"linux_only_note": True},
     "apps.yml:kernel-security": {"linux_only_note": True},
-    "apps.yml:apps": {},
+    "apps.yml:apps": {"mac_steps": []},
     "rom.yml:product": {},
     "rom.yml:web-installer": {},
 }
@@ -339,15 +367,64 @@ def linux_host_job_covers(job):
     return triggered_workflows([job["source"]])
 
 
-def plan_jobs(workflows, linux_host=False):
+# The job id suffix of an offloaded job's Linux part (`phone.yml:home@linux`):
+# what --worker-job names on the host; its steps are recorded under the job.
+LINUX_PART = "@linux"
+
+
+def is_setup_step(step):
+    return (step.get("run") or "").strip() == "python3 tools/setup.py"
+
+
+def split_offloaded(workflow, job_id, job):
+    """(here, linux): an offloadable macOS job's two parts (JOBS `mac_steps`),
+    or None. Both keep the actions and the setup step; `here` (None when the
+    list is empty) keeps the named steps and `linux` every other one. The
+    octos kernel cache stays with the part that builds the kernel."""
+    spec = JOBS.get(f"{workflow}:{job_id}", {})
+    if "mac_steps" not in spec or "macos" not in str(job.get("runs-on", "")):
+        return None
+    mac = set(spec["mac_steps"])
+    here, linux = [], []
+    for index, step in enumerate(job.get("steps") or []):
+        if "uses" in step:
+            linux.append(step)
+            if not is_kernel_cache(step):
+                here.append(step)
+        elif is_setup_step(step):
+            here.append(step)
+            linux.append(step)
+        elif step_label(step, index) in mac:
+            here.append(step)
+        else:
+            linux.append(step)
+    return (dict(job, steps=here) if mac else None), dict(job, steps=linux)
+
+
+def base_job_id(job_id):
+    return job_id[:-len(LINUX_PART)] if job_id.endswith(LINUX_PART) else job_id
+
+
+def plan_jobs(workflows, linux_host=False, offload=False):
     """[(workflow, job id, job, where)], where is "local" or "linux": with a
     Linux host, every job whose runs-on is ubuntu runs there, and the
-    LINUX_HOST_JOBS that the chosen workflows cover are added."""
+    LINUX_HOST_JOBS that the chosen workflows cover are added. With offload,
+    an offloadable macOS job is split (split_offloaded): its Linux part, as
+    `<job>@linux`, runs there, and its macOS steps, if any, run here."""
     plan = []
     for workflow in workflows:
         for job_id, job in jobs_of(workflow):
-            where = "linux" if linux_host and "ubuntu" in str(job.get("runs-on", "")) else "local"
-            plan.append((workflow, job_id, job, where))
+            if linux_host and "ubuntu" in str(job.get("runs-on", "")):
+                plan.append((workflow, job_id, job, "linux"))
+                continue
+            parts = split_offloaded(workflow, job_id, job) if linux_host and offload else None
+            if parts:
+                here, linux = parts
+                if here:
+                    plan.append((workflow, job_id, here, "local"))
+                plan.append((workflow, job_id + LINUX_PART, linux, "linux"))
+                continue
+            plan.append((workflow, job_id, job, "local"))
     if linux_host:
         for job_id, job in LINUX_HOST_JOBS.items():
             if set(linux_host_job_covers(job)) & set(workflows):
@@ -360,6 +437,12 @@ def job_definition(key):
     workflow, job_id = key.split(":", 1)
     if workflow == LINUX_HOST:
         return LINUX_HOST_JOBS[job_id]
+    if job_id.endswith(LINUX_PART):
+        base = base_job_id(job_id)
+        parts = split_offloaded(workflow, base, dict(jobs_of(workflow))[base])
+        if not parts:
+            raise KeyError(f"{key}: {workflow}:{base} is not offloadable (JOBS mac_steps)")
+        return parts[1]
     return dict(jobs_of(workflow))[job_id]
 
 
@@ -452,6 +535,11 @@ def check_drift(workflows=None):
     for key in STEP_REQUIREMENTS:
         if key.split(":")[0] in names and key not in seen_steps:
             problems.append(f"{key}: listed in STEP_REQUIREMENTS but no step has that name")
+    for key, spec in JOBS.items():
+        if key.split(":")[0] in names and key in seen_jobs:
+            for label in spec.get("mac_steps", []):
+                if f"{key}:{label}" not in seen_steps:
+                    problems.append(f"{key}: mac_steps names '{label}', which is not a step of the job")
     if workflows is None:
         for job_id, job in LINUX_HOST_JOBS.items():
             if not (ROOT / job["source"]).is_file():
@@ -759,6 +847,8 @@ class Run:
 
     def job_problem(self, workflow, job_id, job):
         runs_on = str(job.get("runs-on", ""))
+        if JOBS.get(f"{workflow}:{job_id}", {}).get("macos_only") and sys.platform != "darwin":
+            return "native acceptance requires a graphical macOS session; unverified on this host"
         if "windows" in runs_on:
             return f"runs on {runs_on}: Windows cannot run here"
         for step in job.get("steps") or []:
@@ -947,7 +1037,8 @@ class Run:
         drift = check_drift()
         self.record("ci-local", "drift", "The local mapping fits the workflows",
                     FAIL if drift else PASS, reason="; ".join(drift))
-        plan = plan_jobs(workflows, linux_host=self.linux is not None)
+        offload = bool(getattr(self.args, "offload", False))
+        plan = plan_jobs(workflows, linux_host=self.linux is not None, offload=offload)
         remote = [(w, j, job) for w, j, job, where in plan if where == "linux"]
         self.linux_info = None
         thread = None
@@ -961,7 +1052,9 @@ class Run:
         if thread:
             while thread.is_alive():
                 thread.join(timeout=1)
-        order = {(w, j): i for i, (w, j, _, _) in enumerate(plan)}
+        order = {}
+        for i, (w, j, _, _) in enumerate(plan):
+            order.setdefault((w, base_job_id(j)), i)
         self.steps.sort(key=lambda s: order.get((s["workflow"], s["job"]), -1))
 
         passed = not any(s["status"] in (FAIL, NOT_RUN) for s in self.steps)
@@ -979,6 +1072,7 @@ class Run:
             "seconds": round(time.time() - started, 1),
             "host": {"system": platform.system(), "machine": platform.machine(), "cpus": os.cpu_count()},
             "linux_host": self.linux_info,
+            "offload": offload,
             "versions": versions,
             "jobs": self.args.jobs,
             "notes": self.notes,
@@ -999,7 +1093,7 @@ class Run:
     def remote_fail(self, keys, reason):
         for key in keys:
             workflow, job_id = key.split(":", 1)
-            self.add_remote_steps([{"workflow": workflow, "job": job_id, "name": "Run on the Linux host",
+            self.add_remote_steps([{"workflow": workflow, "job": base_job_id(job_id), "name": "Run on the Linux host",
                                     "status": FAIL, "seconds": 0, "reason": reason,
                                     "expected_skip": None, "command": None}], sha=None)
 
@@ -1041,7 +1135,7 @@ def merge_remote_result(run, result, sha, keys):
     if result.get("busy"):
         for key in keys:
             workflow, job_id = key.split(":", 1)
-            run.add_remote_steps([{"workflow": workflow, "job": job_id, "name": "Run on the Linux host",
+            run.add_remote_steps([{"workflow": workflow, "job": base_job_id(job_id), "name": "Run on the Linux host",
                                    "status": SKIPPED, "seconds": 0, "expected_skip": False, "command": None,
                                    "reason": "every Linux host slot is busy (--no-wait)"}], sha=sha)
         return
@@ -1344,7 +1438,7 @@ def run_worker(args):
     """One job (--worker-job <workflow>:<job>), its result in --worker-out."""
     run = Run(args, out_dir=args.worker_out)
     workflow, job_id = args.worker_job.split(":", 1)
-    run.run_job(workflow, job_id, job_definition(args.worker_job))
+    run.run_job(workflow, base_job_id(job_id), job_definition(args.worker_job))
     result = {"key": args.worker_job, "steps": run.steps, "actions": run.actions, "notes": run.notes,
               "versions": run.versions(), "log": str(run.log_path.relative_to(ROOT))}
     tmp = run.out_dir / "result.json.tmp"
@@ -1388,8 +1482,8 @@ def format_table(summary, markdown=False):
     return "\n".join(lines)
 
 
-def print_plan(workflows, linux_host=False):
-    for workflow, job_id, job, where in plan_jobs(workflows, linux_host):
+def print_plan(workflows, linux_host=False, offload=False):
+    for workflow, job_id, job, where in plan_jobs(workflows, linux_host, offload):
         print(f"{workflow} / {job_id} (GitHub: {job.get('runs-on')})" + (" -> the Linux host" if where == "linux" else ""))
         for index, step in enumerate(job.get("steps") or []):
             label = step_label(step, index)
@@ -1419,6 +1513,9 @@ def main(argv=None):
                         help="Run the ubuntu jobs and the Linux-only checks on a Linux build host over ssh "
                              "(default: OCTOSENSE_BUILD_HOST, with the key OCTOSENSE_BUILD_KEY, from the "
                              "environment or ~/.config/octosense/build.env)")
+    parser.add_argument("--offload", action="store_true",
+                        help="With --linux-host: run the macOS jobs' portable steps there too, keeping only "
+                             "their macOS steps (JOBS mac_steps) here")
     parser.add_argument("--linux-slots", type=int, default=int(os.environ.get("OCTOSENSE_CI_LINUX_SLOTS", LINUX_SLOTS)),
                         help=f"How many runs may share the Linux host (default {LINUX_SLOTS}, or OCTOSENSE_CI_LINUX_SLOTS)")
     parser.add_argument("--linux-jobs", type=int, default=0,
@@ -1447,6 +1544,8 @@ def main(argv=None):
         if not args.linux_settings[0]:
             parser.error("--linux-host: name the ssh target, or set OCTOSENSE_BUILD_HOST (and OCTOSENSE_BUILD_KEY) "
                          "in the environment or ~/.config/octosense/build.env")
+    if args.offload and args.linux_settings is None:
+        parser.error("--offload needs --linux-host: it moves macOS jobs' steps to the Linux host")
     if args.check_drift:
         problems = check_drift()
         for problem in problems:
@@ -1454,7 +1553,7 @@ def main(argv=None):
         print("ci-local: the local mapping fits the workflows" if not problems else f"ci-local: {len(problems)} drift problem(s)")
         return 1 if problems else 0
     if args.list:
-        print_plan(workflows, args.linux_settings is not None)
+        print_plan(workflows, args.linux_settings is not None, args.offload)
         return 0
     clone_lock = DirLock(ROOT / "target/ci-local/running.lock")
     if not clone_lock.try_acquire({"root": str(ROOT)}):

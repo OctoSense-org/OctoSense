@@ -1,6 +1,7 @@
 let mode = "photo"          // photo | video
 let flash = "off"           // off | auto | on
 let recording = false
+let permission_pending = false
 let rec_started = 0
 let rec_timer = nil
 let shots = []              // app-relative paths, newest last
@@ -46,21 +47,34 @@ fn captured(){
     let path = ui.cam.last()
     if path == "" { return }
     shots.push(path)
-    // The newest few stay in the app; the photo library keeps them all.
-    while shots.len() > keep {
-        let old = shots[0]
-        shots.remove(0)
-        if fs.exists(old) { fs.remove(old) }
-    }
+    // Bound thumbnail history only. Captures remain in app storage; no
+    // platform-independent photo-library export has been requested.
+    while shots.len() > keep { shots.remove(0) }
     save_shots()
     show_thumb()
 }
 fn shutter(){
-    if mode == "photo" { ui.cam.capture(); return }
+    if mode == "photo" { ui.cam.capture({library: false}); return }
     if recording { stop_recording() } else { start_recording() }
 }
+fn permission_failed(r){
+    permission_pending = false
+    if r.is_ok { ui.toast.set_text("Permission was not granted. Open Camera and try again.") }
+    else { ui.toast.set_text(r.error) }
+    ui.retry_camera.set_visible(true)
+}
 fn start_recording(){
-    if !ui.cam.record_start() { return }
+    if permission_pending { return }
+    permission_pending = true
+    host.request("microphone.permission.request", {}, fn(r){
+        permission_pending = false
+        if r.is_ok && r.data.app_consent && r.data.os_permission == "granted" {
+            if mode == "video" && !recording && ui.cam.is_running() { begin_recording() }
+        } else { permission_failed(r) }
+    })
+}
+fn begin_recording(){
+    if !ui.cam.record_start({audio: true library: false}) { return }
     recording = true
     rec_started = time_now()
     ui.rec.set_text("00:00")
@@ -70,6 +84,9 @@ fn start_recording(){
 }
 fn stop_recording(){
     ui.cam.record_stop()
+    settle_recording()
+}
+fn settle_recording(){
     recording = false
     if rec_timer != nil { stop_timer(rec_timer); rec_timer = nil }
     ui.rec_box.set_visible(false)
@@ -100,32 +117,45 @@ fn open_viewer(){
         ui.full.load_image_from_data_async(fs.read_bytes(viewing))
         ui.viewer_note.set_text("")
     } else {
-        ui.viewer_note.set_text("Video saved to your photo library")
+        ui.viewer_note.set_text("Video saved in Camera app storage")
     }
     ui.viewer.set_visible(true)
 }
 fn close_viewer(){ ui.viewer.set_visible(false) }
-fn failed(){ ui.toast.set_text(ui.cam.error()) }
+fn failed(){
+    // Recording starts asynchronously. A failed native request clears the
+    // camera's recording state; stop its UI timer without issuing another
+    // recording request. An unrelated error must not stop a healthy recording.
+    if recording && !ui.cam.is_recording() { settle_recording() }
+    ui.toast.set_text(ui.cam.error()) ui.retry_camera.set_visible(true)
+}
+fn retry_camera(){
+    if permission_pending { return }
+    permission_pending = true
+    ui.toast.set_text("") ui.retry_camera.set_visible(false)
+    host.request("camera.permission.request", {}, fn(r){
+        permission_pending = false
+        if r.is_ok && r.data.app_consent && r.data.os_permission == "granted" { ui.cam.start() }
+        else { permission_failed(r) }
+    })
+}
 fn boot(){
     load_shots()
     show_thumb()
     ui.zooms.render()
     ui.modes.render()
     ui.shutter_face.render()
-    ui.cam.start()
+    retry_camera()
 }
 start_timeout(0.05, || boot())
 
-let Chip = ButtonFlat{height: 34 padding: Inset{left: 12 right: 12}
-    draw_bg +: {border_radius: 17.0 color: #x00000066 color_hover: #x00000088 color_down: #x000000aa border_size: 0.0}
-    draw_text +: {color: #xffffff color_hover: #xffffff color_down: #xffffff text_style +: {font_size: 13}}
+let Chip = ButtonFlat{height: 44 padding: Inset{left: 12 right: 12}
+    draw_bg +: {border_radius: 17.0 color: #x000000b3 color_hover: #x000000cc color_down: #x000000dd color_focus: #x000000cc border_size: 0.0}
+    draw_text +: {color: #xffffff color_hover: #xffffff color_down: #xffffff color_focus: #xffffff text_style +: {font_size: 13}}
 }
-let ChipOn = Chip{draw_text +: {color: #xffd60a color_hover: #xffd60a color_down: #xffd60a}}
-let ModeOff = ButtonFlat{height: 30 padding: Inset{left: 10 right: 10}
-    draw_bg +: {color: #x00000000 color_hover: #x00000000 color_down: #x00000000 border_size: 0.0}
-    draw_text +: {color: #xffffffaa color_hover: #xffffff color_down: #xffffff text_style +: {font_size: 14}}
-}
-let ModeOn = ModeOff{draw_text +: {color: #xffd60a color_hover: #xffd60a color_down: #xffd60a}}
+let ChipOn = Chip{draw_text +: {color: #xffd60a color_hover: #xffd60a color_down: #xffd60a color_focus: #xffd60a}}
+let ModeOff = Chip{draw_text.text_style.font_size: 14}
+let ModeOn = ModeOff{draw_text +: {color: #xffd60a color_hover: #xffd60a color_down: #xffd60a color_focus: #xffd60a}}
 
 SolidView{width: Fill height: Fill flow: Overlay draw_bg.color: #000000
     cam := CameraPreview{width: Fill height: Fill facing: "back"
@@ -142,7 +172,8 @@ SolidView{width: Fill height: Fill flow: Overlay draw_bg.color: #000000
                 rec := Label{text: "00:00" draw_text.color: #xffffff draw_text.text_style: theme.font_bold{font_size: 13}}
             }
         }
-        toast := Label{width: Fill align: Align{x: 0.5} padding: 8 text: "" draw_text.color: #xffd60a draw_text.text_style.font_size: 12}
+        toast := Label{width: Fill align: Align{x: 0.5} padding: 8 text: "" draw_text.color: #xffd60a draw_text.text_style.font_size: 14}
+        retry_camera := Chip{visible: false text: "Retry camera" on_click: || retry_camera()}
         View{width: Fill height: Fill}
         zooms := View{width: Fill height: Fit flow: Right spacing: 8 align: Align{x: 0.5} padding: Inset{bottom: 12} on_render: || {
             for z in [1 2 5] {
@@ -175,14 +206,14 @@ SolidView{width: Fill height: Fill flow: Overlay draw_bg.color: #000000
                 }
             }}
             View{width: Fill height: 1}
-            ButtonFlat{width: 56 height: 56 text: "Flip" on_click: || ui.cam.switch()
-                draw_bg +: {border_radius: 28.0 color: #x00000066 color_hover: #x00000088 color_down: #x000000aa border_size: 0.0}
-                draw_text +: {color: #xffffff color_hover: #xffffff color_down: #xffffff text_style +: {font_size: 14}}}
+            Chip{width: 56 height: 56 text: "Flip" on_click: || ui.cam.switch()
+                draw_bg.border_radius: 28.0
+                draw_text.text_style.font_size: 14}
         }
     }
     viewer := SolidView{visible: false width: Fill height: Fill flow: Down new_batch: true draw_bg.color: #000000
         View{width: Fill height: Fit padding: Inset{left: 8 top: 8}
-            ButtonFlat{text: "‹ Camera" on_click: || close_viewer()
+            ButtonFlat{height: 44 text: "‹ Camera" on_click: || close_viewer()
                 draw_bg +: {color: #x00000000 color_hover: #x00000000 color_down: #x00000000 border_size: 0.0}
                 draw_text +: {color: #xffd60a color_hover: #xffd60a color_down: #xffd60a text_style +: {font_size: 15}}}
         }

@@ -7,8 +7,8 @@
 //!   (`octosense_ai_host::toolbox_peers::catalog`: `workflow.run`,
 //!   `workflow.fork`, `toolbox.search`, `toolbox.web_read`,
 //!   `toolbox.deep_crawl`, each `app: "toolbox"` and `shareable`);
-//! - each app is granted exactly the ones it declares AND the person
-//!   granted ([`grant_module`], [`grant_manifest`]), so the broker's
+//! - script apps request exact shared names in `agent.tools`; native modules
+//!   use their compiled, reviewed offer ([`grant_module`], [`grant_manifest`]), so the broker's
 //!   registration (after every prepare and reconnect) carries them, marked
 //!   with their owner;
 //! - they are offered only once the person allowed the app's agent (the
@@ -63,8 +63,8 @@ pub fn grant_module(app: &str, capabilities: &[&str]) {
     set_grant(app, ToolboxGrant::for_module(app, capabilities));
 }
 
-/// A script app's grant from its manifest (App Hub #26's shape; system
-/// apps only until the shells' App Hub pin verifies it).
+/// A script app's exact `agent.tools` requests and bounded research scope
+/// from its admitted manifest. Capability declarations are disclosure only.
 pub fn grant_manifest(app: &str, manifest: &Value) {
     set_grant(app, ToolboxGrant::for_manifest(app, manifest));
 }

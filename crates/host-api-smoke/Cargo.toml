@@ -1,0 +1,32 @@
+[package]
+name = "octosense-host-api-smoke"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+# Android needs a library entry point. Reuse the exact desktop acceptance
+# host; this package supplies no alternate API implementation or grant path.
+[lib]
+path = "../shell/examples/host-api-lab.rs"
+test = false
+bench = false
+doctest = false
+
+[[bin]]
+name = "octosense-host-api-smoke"
+path = "../shell/examples/host-api-lab.rs"
+
+[features]
+default = ["acceptance-fixtures"]
+acceptance-fixtures = ["octosense-shell/acceptance-fixtures"]
+
+[dependencies]
+makepad-widgets.workspace = true
+makepad-app-module.workspace = true
+octosense-appstore.workspace = true
+octosense-app-hub.workspace = true
+octosense-app-policy.workspace = true
+octosense-shell.workspace = true
+octosense-mail-service.workspace = true
+serde_json.workspace = true

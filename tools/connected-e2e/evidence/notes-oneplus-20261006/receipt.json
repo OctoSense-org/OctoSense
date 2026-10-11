@@ -1,0 +1,55 @@
+{
+  "scope": "OnePlus 6 actual Android APK, local-only Notes",
+  "version_code": 2026100618,
+  "apk_sha256": "2f5809519bfbcadcfd3c32c8d893a03f23d9e8b12bc2613128d58112866f7502",
+  "hardware_enter_preserves_composing_word": true,
+  "soft_keyboard_taps_and_enter_preserve_word": true,
+  "expected_content": "# OnePlus Notes test\n\nLocal draft survives restart.\nTest\n",
+  "content_sha256": "d2ac7532a0bb284c0057a714836ea6bb8c1392483f646ae575f7065be4a8c213",
+  "local_draft_revision": 28,
+  "live_github": false,
+  "private_provider_credentials_copied": false,
+  "cold_restart_exact_draft": true,
+  "new_process_confirmed": true,
+  "date": "2026-10-06",
+  "device": "assigned OnePlus 6",
+  "os": "Android 15",
+  "capture_dimensions": [
+    1080,
+    2280
+  ],
+  "package": "dev.makepad.octosense.connectednotes",
+  "instrumentation": "ADB input + taps on actual soft keyboard + original device PNGs; Android Makepad remote is stubbed",
+  "makepad_patch_tree": "f09a9d268e2112bdd46f8d6c9a2b38e16397f20f",
+  "edge_back_returns_to_same_test_home": true,
+  "normal_home_replaced": false,
+  "public_catalog_modified": false,
+  "source_bundle_digest": "c254ddb25658e9243e2313cf7edcc953452cf15c5afe96ba4227ad0482c65016",
+  "baseline_failure": {
+    "apk_sha256": "2f89c25a1672529585b28be5ca9e8c7e8457df61e4a9e8114154aca5a2513be0",
+    "before_enter": "# OnePlus Notes test",
+    "after_enter": "# OnePlus Notes \n",
+    "reproduced_with_settled_input": true,
+    "fixed_after_enter": "# OnePlus Notes test\n"
+  },
+  "remaining_ux_findings": [
+    "Shell floating menu overlaps the right edge of the editor when keyboard is visible",
+    "Repository explanatory line is clipped at phone width"
+  ],
+  "not_verified": [
+    "Live GitHub OAuth or provider operations",
+    "Android background lifecycle",
+    "Physical human approval",
+    "Android Makepad instrument",
+    "Comprehensive phone soak or numeric UX score"
+  ],
+  "captures": {
+    "01-before-hardware-enter.png": "1813e0d163634d3779f56987adf4df03d5a8b992f5f165866bc70f54abfb0074",
+    "02-fixed-hardware-enter.png": "9d014417d2c54cce3096ae1174333ce79db8f10fdda895ea724a6315b92a9724",
+    "03-fixed-cold-reopen.png": "5f1c5f4bc28ff06140ef0c59c1f3ca82e56e61c16d16e71575d37ad90b63678f",
+    "04-fixed-preview.png": "0707b6f0615c0969893a4ad2e8ff5fe945ef094869973bbf3c6705e944efe88d"
+  },
+  "visual_review": "Original failure, fixed keyboard, cold reopen and preview PNGs individually inspected; editor and retained content are readable except noted floating-menu overlap.",
+  "reviewed_packaging_tool_same_apk": true,
+  "packaging_tool_sha256": "c5921e234e0b6914b418c228d05e4ddf2bbad603e955968536a48b96b51f9255"
+}

@@ -1,0 +1,63 @@
+{
+  "schema": 1,
+  "status": "passed",
+  "source_revision": "933abbcf2737e652acd9cae2a4c9ffc16bfdaec6",
+  "runtime_tree": "6c080f31adb899611e6ebe132ccfa2eead06cf9b",
+  "apk_sha256": "3f1bd36441ec147795033ad668020b8e295758119a01939aa2c5698a614b7f1d",
+  "app_id": "dev.octosense.layoutprobe",
+  "package": "dev.makepad.octosense.publisherlab.checked8af",
+  "checks": [
+    "installed zero-capability fixture identity matches local admitted bytes",
+    "measured aligned origin markers and initial bottom clipping",
+    "real vertical gestures reveal final measured native control",
+    "tap at observed final-control position changes native toggle off to on",
+    "second real tap restores native off state"
+  ],
+  "capabilities": [],
+  "surface": "OS screenshots plus separately labelled Makepad app-texture readback",
+  "fixture_author": "test agent",
+  "driver": "test agent through bounded ADB gestures",
+  "no_provider_or_model": true,
+  "normal_home_changed": false,
+  "unverified": [
+    "L0 reducer or host-service actions",
+    "durable app state",
+    "broad performance/UX acceptance"
+  ],
+  "manifest_sha256": "c601ebcadd7a3519120895706965e58761d2615d275eb05b3f2775239756ec93",
+  "scale_pixels_per_design_point": 2.8117469879518073,
+  "canvas_origin_os_pixels": [
+    0.13554216867469648,
+    79.6355421686747
+  ],
+  "swipes_to_final": 1,
+  "visual_review": {
+    "performed": true,
+    "basis": "Original Android OS screenshots",
+    "result": "The five content sections, footer, and final native switch are visible and readable. Real scrolling exposes the final switch; its observed state changes amber to green and back to amber."
+  },
+  "owned_package_stopped": true,
+  "captures": {
+    "01-top.native.png": "fd536f3cc933b73ba023fd29b636da56b4d7791d1fefeccb5e78c80618f7b2e2",
+    "01-top.os.png": "56649d977e274e657eba652fddfbfbeae4f7237813c53d8d50e4d1e25b15f83c",
+    "02-bottom.native.png": "ec806636cb9a600922d73a31e28fc5cfee974a6e4ef18aa1fcebd8da42c80996",
+    "02-scroll-1.os.png": "998bffc55bac03d53a6059d6f7b95f11ad9a50cc96174867f43ffd1bce7ec4f5",
+    "03-toggle-on.native.png": "2ae89a749a66ae5b108fe4fbba719784e9104001a00e6f879272876b050cd446",
+    "03-toggle-on.os.png": "86f6b6e9bf79b7137410d93dac7fc6ba2cd14ca2cb954c53bedb6fd3ea823ef8",
+    "04-toggle-off.os.png": "998bffc55bac03d53a6059d6f7b95f11ad9a50cc96174867f43ffd1bce7ec4f5"
+  },
+  "evidence_limitations": [
+    "Native app-texture readback lagged the preceding interaction despite capture timestamp changes: the bottom capture still showed the top, and the on-state capture still showed the previous off state. These images are retained as diagnostics and are not used to prove post-scroll or toggle state.",
+    "The measured approximately 80-pixel vertical origin is the Android status-bar inset. It does not establish a nonzero nested host-pane origin beyond OS insets.",
+    "The native toggle demonstrates ephemeral widget interaction only, not an L0 business reducer, backend write, or persisted toggle state."
+  ],
+  "catalog_authority": "ephemeral-local-legacy-test-only",
+  "publisher_proof": "synthetic-ephemeral-test-signature-not-github",
+  "fixture_not_production_published": true,
+  "hub_revision": "ba36df0505e198f998201af312ff5184df98cae9",
+  "functional_checks_passed": 5,
+  "functional_checks_total": 5,
+  "evidence_basis": "Actual OS screenshots and pixel analysis; supplemental native captures lag interactions.",
+  "default_splash_budget_ms": 64,
+  "test_budget_override_used": false
+}

@@ -1,0 +1,886 @@
+{
+  "repository": "https://github.com/octos-org/octoscode-app",
+  "revision": "5d0c2a0962218aa94497201ce1a39b7429f09e36",
+  "reason": "Synthetic UI example data embedded unchanged by crates/octoscode-module/build.rs; only the listed base-pattern spans in complete SHA-256-matching assets are admitted.",
+  "assets": [
+    {
+      "path": "design/components/ws-group/page.card",
+      "size": 2616,
+      "sha256": "39607a6c88904ed7d22cb6a1364242608473a0c53af4e21b03a6da9854ce7ead",
+      "matches": [
+        [
+          349,
+          "Linux home directory",
+          "097c4e083d4cc3cc6a34c1d819c63e1a758fce67f364b5fcd3be8b9418ec643f"
+        ],
+        [
+          482,
+          "Linux home directory",
+          "097c4e083d4cc3cc6a34c1d819c63e1a758fce67f364b5fcd3be8b9418ec643f"
+        ],
+        [
+          611,
+          "Linux home directory",
+          "097c4e083d4cc3cc6a34c1d819c63e1a758fce67f364b5fcd3be8b9418ec643f"
+        ]
+      ]
+    },
+    {
+      "path": "design/components/ws-group/page.design.splash",
+      "size": 2781,
+      "sha256": "43ea6e4dc89f927394f2f95a7c7ead497b5d6f1b5f967c02d7646e6a8cf1db24",
+      "matches": [
+        [
+          1147,
+          "Linux home directory",
+          "097c4e083d4cc3cc6a34c1d819c63e1a758fce67f364b5fcd3be8b9418ec643f"
+        ],
+        [
+          1829,
+          "Linux home directory",
+          "097c4e083d4cc3cc6a34c1d819c63e1a758fce67f364b5fcd3be8b9418ec643f"
+        ],
+        [
+          2520,
+          "Linux home directory",
+          "097c4e083d4cc3cc6a34c1d819c63e1a758fce67f364b5fcd3be8b9418ec643f"
+        ]
+      ]
+    },
+    {
+      "path": "design/stage-b/phase4-new3/cards/phase4n3-02/contract.json",
+      "size": 17603,
+      "sha256": "3199436345d91dca6f653ae7de0d823de49ab5e35e0efe0c0f6d3fd419fc9d4c",
+      "matches": [
+        [
+          3832,
+          "Linux home directory",
+          "768d8e132161678a3434401db0b60a6497856a93891b95d7852d3b79f6fae087"
+        ],
+        [
+          5006,
+          "Linux home directory",
+          "768d8e132161678a3434401db0b60a6497856a93891b95d7852d3b79f6fae087"
+        ],
+        [
+          7542,
+          "Linux home directory",
+          "768d8e132161678a3434401db0b60a6497856a93891b95d7852d3b79f6fae087"
+        ],
+        [
+          10734,
+          "Linux home directory",
+          "768d8e132161678a3434401db0b60a6497856a93891b95d7852d3b79f6fae087"
+        ]
+      ]
+    },
+    {
+      "path": "design/stage-b/phase4-new3/cards/phase4n3-02/mapped.json",
+      "size": 12959,
+      "sha256": "10fb4d8df9f2676d646d1c4b6470006ec43f5a7e84b811fc3ce81ed68b5de263",
+      "matches": [
+        [
+          2289,
+          "Linux home directory",
+          "768d8e132161678a3434401db0b60a6497856a93891b95d7852d3b79f6fae087"
+        ],
+        [
+          3208,
+          "Linux home directory",
+          "768d8e132161678a3434401db0b60a6497856a93891b95d7852d3b79f6fae087"
+        ],
+        [
+          5155,
+          "Linux home directory",
+          "768d8e132161678a3434401db0b60a6497856a93891b95d7852d3b79f6fae087"
+        ],
+        [
+          7606,
+          "Linux home directory",
+          "768d8e132161678a3434401db0b60a6497856a93891b95d7852d3b79f6fae087"
+        ]
+      ]
+    },
+    {
+      "path": "design/stage-b/phase4-new3/cards/phase4n3-02/mapping.json",
+      "size": 17851,
+      "sha256": "93b6e4cd783dd0ff3ffaa51ed3f0a5afc5705a6d9705124d2cf9d4aadc2944fe",
+      "matches": [
+        [
+          3696,
+          "Linux home directory",
+          "768d8e132161678a3434401db0b60a6497856a93891b95d7852d3b79f6fae087"
+        ],
+        [
+          4900,
+          "Linux home directory",
+          "768d8e132161678a3434401db0b60a6497856a93891b95d7852d3b79f6fae087"
+        ],
+        [
+          7231,
+          "Linux home directory",
+          "768d8e132161678a3434401db0b60a6497856a93891b95d7852d3b79f6fae087"
+        ],
+        [
+          10335,
+          "Linux home directory",
+          "768d8e132161678a3434401db0b60a6497856a93891b95d7852d3b79f6fae087"
+        ]
+      ]
+    },
+    {
+      "path": "design/stage-b/phase4-new3/cards/phase4n3-02/observations.json",
+      "size": 15777,
+      "sha256": "0d001dfe3ecc4eab3d8c016d1ca4a113a2a615dbbb7347f4fcdd1f0b832e6213",
+      "matches": [
+        [
+          1811,
+          "Linux home directory",
+          "768d8e132161678a3434401db0b60a6497856a93891b95d7852d3b79f6fae087"
+        ],
+        [
+          1963,
+          "Linux home directory",
+          "768d8e132161678a3434401db0b60a6497856a93891b95d7852d3b79f6fae087"
+        ],
+        [
+          2714,
+          "Linux home directory",
+          "768d8e132161678a3434401db0b60a6497856a93891b95d7852d3b79f6fae087"
+        ],
+        [
+          4442,
+          "Linux home directory",
+          "768d8e132161678a3434401db0b60a6497856a93891b95d7852d3b79f6fae087"
+        ],
+        [
+          4594,
+          "Linux home directory",
+          "768d8e132161678a3434401db0b60a6497856a93891b95d7852d3b79f6fae087"
+        ],
+        [
+          6376,
+          "Linux home directory",
+          "768d8e132161678a3434401db0b60a6497856a93891b95d7852d3b79f6fae087"
+        ],
+        [
+          15145,
+          "Linux home directory",
+          "768d8e132161678a3434401db0b60a6497856a93891b95d7852d3b79f6fae087"
+        ]
+      ]
+    },
+    {
+      "path": "design/stage-b/phase4-new3/cards/phase4n3-02/page.card",
+      "size": 7719,
+      "sha256": "4660042e49774355c84ae46c56c98e952914d52c1f6a49c6909fd3d40fabc409",
+      "matches": [
+        [
+          356,
+          "Linux home directory",
+          "768d8e132161678a3434401db0b60a6497856a93891b95d7852d3b79f6fae087"
+        ],
+        [
+          516,
+          "Linux home directory",
+          "768d8e132161678a3434401db0b60a6497856a93891b95d7852d3b79f6fae087"
+        ],
+        [
+          766,
+          "Linux home directory",
+          "768d8e132161678a3434401db0b60a6497856a93891b95d7852d3b79f6fae087"
+        ],
+        [
+          1065,
+          "Linux home directory",
+          "768d8e132161678a3434401db0b60a6497856a93891b95d7852d3b79f6fae087"
+        ]
+      ]
+    },
+    {
+      "path": "design/stage-b/phase4-new3/cards/phase4n3-02/page.design.splash",
+      "size": 6433,
+      "sha256": "e85a357463209b73e534a53a93ae49782eec0cd19c269ada716a09c8ea5619c1",
+      "matches": [
+        [
+          1099,
+          "Linux home directory",
+          "768d8e132161678a3434401db0b60a6497856a93891b95d7852d3b79f6fae087"
+        ],
+        [
+          1610,
+          "Linux home directory",
+          "768d8e132161678a3434401db0b60a6497856a93891b95d7852d3b79f6fae087"
+        ],
+        [
+          2638,
+          "Linux home directory",
+          "768d8e132161678a3434401db0b60a6497856a93891b95d7852d3b79f6fae087"
+        ],
+        [
+          3921,
+          "Linux home directory",
+          "768d8e132161678a3434401db0b60a6497856a93891b95d7852d3b79f6fae087"
+        ]
+      ]
+    },
+    {
+      "path": "design/stage-b/phase4-new3/cards/phase4n3-02/reference.ocr.json",
+      "size": 3826,
+      "sha256": "bf3cc2671ca98616c7686e81266fb48bed3ce752767692c375300ebad55587c8",
+      "matches": [
+        [
+          1013,
+          "Linux home directory",
+          "768d8e132161678a3434401db0b60a6497856a93891b95d7852d3b79f6fae087"
+        ],
+        [
+          1801,
+          "Linux home directory",
+          "768d8e132161678a3434401db0b60a6497856a93891b95d7852d3b79f6fae087"
+        ],
+        [
+          2787,
+          "Linux home directory",
+          "768d8e132161678a3434401db0b60a6497856a93891b95d7852d3b79f6fae087"
+        ]
+      ]
+    },
+    {
+      "path": "design/stage-b/phase4-new3/cards/phase4n3-03/contract.json",
+      "size": 15061,
+      "sha256": "8f962eb158cf6528c384bed4d9704c52e8d92df1835bce3671df4131fe55c1e1",
+      "matches": [
+        [
+          7588,
+          "Linux home directory",
+          "768d8e132161678a3434401db0b60a6497856a93891b95d7852d3b79f6fae087"
+        ]
+      ]
+    },
+    {
+      "path": "design/stage-b/phase4-new3/cards/phase4n3-03/mapped.json",
+      "size": 11026,
+      "sha256": "db57f31239f5fba355bf53e714fd98c54208a63dee48ea35ba1c4334c921662e",
+      "matches": [
+        [
+          5041,
+          "Linux home directory",
+          "768d8e132161678a3434401db0b60a6497856a93891b95d7852d3b79f6fae087"
+        ]
+      ]
+    },
+    {
+      "path": "design/stage-b/phase4-new3/cards/phase4n3-03/mapping.json",
+      "size": 15538,
+      "sha256": "fe9946c8af443206e1a56e69fb9748d8aa785bf2fce3095526fca089b2783974",
+      "matches": [
+        [
+          7891,
+          "Linux home directory",
+          "768d8e132161678a3434401db0b60a6497856a93891b95d7852d3b79f6fae087"
+        ]
+      ]
+    },
+    {
+      "path": "design/stage-b/phase4-new3/cards/phase4n3-03/observations.json",
+      "size": 13693,
+      "sha256": "ade896ad2737365cf64916be0b4d312e0c7502ac36170d1772f7012533f59760",
+      "matches": [
+        [
+          3496,
+          "Linux home directory",
+          "768d8e132161678a3434401db0b60a6497856a93891b95d7852d3b79f6fae087"
+        ],
+        [
+          3648,
+          "Linux home directory",
+          "768d8e132161678a3434401db0b60a6497856a93891b95d7852d3b79f6fae087"
+        ]
+      ]
+    },
+    {
+      "path": "design/stage-b/phase4-new3/cards/phase4n3-03/page.card",
+      "size": 6837,
+      "sha256": "130e2c215a8a18f21b0641eaf5b6ca483e8c6a99cd384f674dad51977c88ff3f",
+      "matches": [
+        [
+          576,
+          "Linux home directory",
+          "768d8e132161678a3434401db0b60a6497856a93891b95d7852d3b79f6fae087"
+        ]
+      ]
+    },
+    {
+      "path": "design/stage-b/phase4-new3/cards/phase4n3-03/page.design.splash",
+      "size": 5440,
+      "sha256": "d6b032c5769139ae13fbcf1a79b5eb26d560f16efd84001ec0ec14f9ddffe4c9",
+      "matches": [
+        [
+          2374,
+          "Linux home directory",
+          "768d8e132161678a3434401db0b60a6497856a93891b95d7852d3b79f6fae087"
+        ]
+      ]
+    },
+    {
+      "path": "design/stage-b/phase4-new3/cards/phase4n3-03/reference.ocr.json",
+      "size": 3713,
+      "sha256": "5b56ebd8cd7fcf4d507eed14ec4c0cbf356b083dec755350d2b41946249268b1",
+      "matches": [
+        [
+          616,
+          "Linux home directory",
+          "768d8e132161678a3434401db0b60a6497856a93891b95d7852d3b79f6fae087"
+        ]
+      ]
+    },
+    {
+      "path": "design/stage-b/phase4-new3/cards/phase4n3-05/contract.json",
+      "size": 20573,
+      "sha256": "05586acd34df821cd2247d5aee57a0033b2fac6bb410b5064ba94e234764cff1",
+      "matches": [
+        [
+          2557,
+          "Linux home directory",
+          "768d8e132161678a3434401db0b60a6497856a93891b95d7852d3b79f6fae087"
+        ]
+      ]
+    },
+    {
+      "path": "design/stage-b/phase4-new3/cards/phase4n3-05/mapping.json",
+      "size": 18784,
+      "sha256": "16d936ab4e42a9be133c667770eeb1165800d4747c213bc9bd446535f4fef453",
+      "matches": [
+        [
+          2165,
+          "Linux home directory",
+          "768d8e132161678a3434401db0b60a6497856a93891b95d7852d3b79f6fae087"
+        ]
+      ]
+    },
+    {
+      "path": "design/stage-b/phase4-new3/cards/phase4n3-05/observations.json",
+      "size": 20072,
+      "sha256": "beb95bc0dd3ad4435c3b8fe381fdffe6094ebd741f60d6168764a3620b6bd185",
+      "matches": [
+        [
+          1542,
+          "Linux home directory",
+          "768d8e132161678a3434401db0b60a6497856a93891b95d7852d3b79f6fae087"
+        ],
+        [
+          1706,
+          "Linux home directory",
+          "768d8e132161678a3434401db0b60a6497856a93891b95d7852d3b79f6fae087"
+        ]
+      ]
+    },
+    {
+      "path": "design/stage-b/phase4-new3/cards/phase4n3-05/page.card",
+      "size": 8083,
+      "sha256": "739b2396d2f8d73a43b5882e9cd75a2a7682edca2797d0ba308765a072c8eafd",
+      "matches": [
+        [
+          275,
+          "Linux home directory",
+          "768d8e132161678a3434401db0b60a6497856a93891b95d7852d3b79f6fae087"
+        ]
+      ]
+    },
+    {
+      "path": "design/stage-b/phase4-new3/cards/phase4n3-05/page.design.splash",
+      "size": 7430,
+      "sha256": "213a49da2cb8664b868827d537154ad13e95b04922e568202c16fedd548503e2",
+      "matches": [
+        [
+          660,
+          "Linux home directory",
+          "768d8e132161678a3434401db0b60a6497856a93891b95d7852d3b79f6fae087"
+        ]
+      ]
+    },
+    {
+      "path": "design/stage-b/phase4-new3/cards/phase4n3-05/reference.ocr.json",
+      "size": 4808,
+      "sha256": "1a247ed39ac0ebd2f919a7512462d7ab2b3f902d284259e766c6f5ecb4f4a3f4",
+      "matches": [
+        [
+          608,
+          "Linux home directory",
+          "768d8e132161678a3434401db0b60a6497856a93891b95d7852d3b79f6fae087"
+        ]
+      ]
+    },
+    {
+      "path": "design/stage-b/phase4/cards/p4-03/contract.json",
+      "size": 6285,
+      "sha256": "44a306a3d05621885db632fccd9593fa8fa52ebe95bf59e85a05e42e697c6222",
+      "matches": [
+        [
+          3076,
+          "private IPv4 address",
+          "552354592821b7e6b76f87d10c0cb4ff512ffed049dde0e40769a0bcf9f50c8d"
+        ]
+      ]
+    },
+    {
+      "path": "design/stage-b/phase4/cards/p4-03/mapped.json",
+      "size": 9164,
+      "sha256": "49afb14ee34af8ae83517831f0709dd2bd0039816ac316d242c09a845c10d413",
+      "matches": [
+        [
+          3287,
+          "private IPv4 address",
+          "552354592821b7e6b76f87d10c0cb4ff512ffed049dde0e40769a0bcf9f50c8d"
+        ]
+      ]
+    },
+    {
+      "path": "design/stage-b/phase4/cards/p4-03/mapping.json",
+      "size": 7366,
+      "sha256": "d3722dc041edd293af1a0b2d5f00beb22ee137aa6bc4a491cb78b020498c6731",
+      "matches": [
+        [
+          3583,
+          "private IPv4 address",
+          "552354592821b7e6b76f87d10c0cb4ff512ffed049dde0e40769a0bcf9f50c8d"
+        ]
+      ]
+    },
+    {
+      "path": "design/stage-b/phase4/cards/p4-03/observations.json",
+      "size": 6869,
+      "sha256": "a8075ee54ae49a2ec6bfdd6bff32314f2aa803bcd2236c8e8904997f8d8142af",
+      "matches": [
+        [
+          6669,
+          "private IPv4 address",
+          "552354592821b7e6b76f87d10c0cb4ff512ffed049dde0e40769a0bcf9f50c8d"
+        ]
+      ]
+    },
+    {
+      "path": "design/stage-b/phase4/cards/p4-03/page.card",
+      "size": 4456,
+      "sha256": "da5aca2cd16d05388a62d8c13d62e1a69aca4897351e4ddf88089c5dcc370310",
+      "matches": [
+        [
+          447,
+          "private IPv4 address",
+          "552354592821b7e6b76f87d10c0cb4ff512ffed049dde0e40769a0bcf9f50c8d"
+        ]
+      ]
+    },
+    {
+      "path": "design/stage-b/phase4/cards/p4-03/page.design.splash",
+      "size": 3428,
+      "sha256": "c975010bb55747e2c0db1169621ca30b3c7ed72403389b0afb98ee227e45f5e0",
+      "matches": [
+        [
+          1736,
+          "private IPv4 address",
+          "552354592821b7e6b76f87d10c0cb4ff512ffed049dde0e40769a0bcf9f50c8d"
+        ]
+      ]
+    },
+    {
+      "path": "design/stage-b/phase4/cards/p4-03/reference.ocr.json",
+      "size": 1555,
+      "sha256": "ad239e092161c59b2f38dbe0d2131e5809d5df4bc3cabac4cfcd337b4d58f720",
+      "matches": [
+        [
+          1038,
+          "private IPv4 address",
+          "552354592821b7e6b76f87d10c0cb4ff512ffed049dde0e40769a0bcf9f50c8d"
+        ]
+      ]
+    },
+    {
+      "path": "design/stage-b/phase4/cards/p4-05/contract.json",
+      "size": 5361,
+      "sha256": "c77b9ed20ba97f7a8c5488363b359c8f9d9a0b6337ff301505d12495df0cd9cc",
+      "matches": [
+        [
+          2571,
+          "private IPv4 address",
+          "552354592821b7e6b76f87d10c0cb4ff512ffed049dde0e40769a0bcf9f50c8d"
+        ]
+      ]
+    },
+    {
+      "path": "design/stage-b/phase4/cards/p4-05/mapped.json",
+      "size": 8345,
+      "sha256": "8a482af17c38d43717db3396b047d17a9e05b0b82b6226acfc78b66fe37bf51a",
+      "matches": [
+        [
+          2475,
+          "private IPv4 address",
+          "552354592821b7e6b76f87d10c0cb4ff512ffed049dde0e40769a0bcf9f50c8d"
+        ]
+      ]
+    },
+    {
+      "path": "design/stage-b/phase4/cards/p4-05/mapping.json",
+      "size": 6852,
+      "sha256": "23d07c3c93c5546f8bd6a5c09939423334ad21d184d23fd62229d568594985df",
+      "matches": [
+        [
+          3373,
+          "private IPv4 address",
+          "552354592821b7e6b76f87d10c0cb4ff512ffed049dde0e40769a0bcf9f50c8d"
+        ]
+      ]
+    },
+    {
+      "path": "design/stage-b/phase4/cards/p4-05/observations.json",
+      "size": 6839,
+      "sha256": "5529a8ae98208a0d64c7085331d78a924f87dcaa6d3e11e0a59ea740a0de1b22",
+      "matches": [
+        [
+          1397,
+          "private IPv4 address",
+          "552354592821b7e6b76f87d10c0cb4ff512ffed049dde0e40769a0bcf9f50c8d"
+        ],
+        [
+          1563,
+          "private IPv4 address",
+          "552354592821b7e6b76f87d10c0cb4ff512ffed049dde0e40769a0bcf9f50c8d"
+        ]
+      ]
+    },
+    {
+      "path": "design/stage-b/phase4/cards/p4-05/page.card",
+      "size": 3565,
+      "sha256": "d219f933522ec67da181063c5d2ec83f8d2c6e4ad9a8c6c8e3fd02d1a34adac7",
+      "matches": [
+        [
+          272,
+          "private IPv4 address",
+          "552354592821b7e6b76f87d10c0cb4ff512ffed049dde0e40769a0bcf9f50c8d"
+        ]
+      ]
+    },
+    {
+      "path": "design/stage-b/phase4/cards/p4-05/page.design.splash",
+      "size": 3236,
+      "sha256": "2e46f580bf7af726f07550ab2c5e1d1d86461856878d8534bc068c62d101a50d",
+      "matches": [
+        [
+          1269,
+          "private IPv4 address",
+          "552354592821b7e6b76f87d10c0cb4ff512ffed049dde0e40769a0bcf9f50c8d"
+        ]
+      ]
+    },
+    {
+      "path": "design/stage-b/phase4/cards/p4-05/reference.ocr.json",
+      "size": 1683,
+      "sha256": "53e83db51c4ba80d88d9f473cbb315b7cd4f767e02f396708d7afb7a577fc9e7",
+      "matches": [
+        [
+          831,
+          "private IPv4 address",
+          "552354592821b7e6b76f87d10c0cb4ff512ffed049dde0e40769a0bcf9f50c8d"
+        ]
+      ]
+    },
+    {
+      "path": "design/stage-b/phase4/cards/p4-08/contract.json",
+      "size": 7972,
+      "sha256": "11999891ee368e1bb7e6c08f6224b15587f2c7dd49a341be86204add7ddb79cf",
+      "matches": [
+        [
+          6205,
+          "Linux home directory",
+          "768d8e132161678a3434401db0b60a6497856a93891b95d7852d3b79f6fae087"
+        ]
+      ]
+    },
+    {
+      "path": "design/stage-b/phase4/cards/p4-08/mapped.json",
+      "size": 12150,
+      "sha256": "87a42d5730a0fa09e7cdc46df6d8fb3e08531966b8a50e19dcba087e16f44635",
+      "matches": [
+        [
+          6848,
+          "Linux home directory",
+          "768d8e132161678a3434401db0b60a6497856a93891b95d7852d3b79f6fae087"
+        ]
+      ]
+    },
+    {
+      "path": "design/stage-b/phase4/cards/p4-08/mapping.json",
+      "size": 11016,
+      "sha256": "79256ffb82772e2cf4631dde93c64206c2ba9d80b8b0ff6c28e966ac2a58ac0a",
+      "matches": [
+        [
+          8831,
+          "Linux home directory",
+          "768d8e132161678a3434401db0b60a6497856a93891b95d7852d3b79f6fae087"
+        ]
+      ]
+    },
+    {
+      "path": "design/stage-b/phase4/cards/p4-08/observations.json",
+      "size": 9862,
+      "sha256": "95eb3557b86aa24c1a3f5f3feb0ea0e11d2b00ed6c504681c5aeaad97bf45f76",
+      "matches": [
+        [
+          9651,
+          "Linux home directory",
+          "768d8e132161678a3434401db0b60a6497856a93891b95d7852d3b79f6fae087"
+        ]
+      ]
+    },
+    {
+      "path": "design/stage-b/phase4/cards/p4-08/page.card",
+      "size": 5594,
+      "sha256": "675bf7a590f115108df2ef010a199e25d2e89d9472c954d0495d05a4585f47d4",
+      "matches": [
+        [
+          598,
+          "Linux home directory",
+          "768d8e132161678a3434401db0b60a6497856a93891b95d7852d3b79f6fae087"
+        ]
+      ]
+    },
+    {
+      "path": "design/stage-b/phase4/cards/p4-08/page.design.splash",
+      "size": 4648,
+      "sha256": "483a6c27555fc509b4fbdc5b1ecbf84698f60596885497d3914ebdcc7d563957",
+      "matches": [
+        [
+          3719,
+          "Linux home directory",
+          "768d8e132161678a3434401db0b60a6497856a93891b95d7852d3b79f6fae087"
+        ]
+      ]
+    },
+    {
+      "path": "design/stage-b/phase4/cards/p4-08/reference.ocr.json",
+      "size": 1886,
+      "sha256": "9dc7d7ef00faa120c3741b3f7916a3e23bebc03f460c7d4ad50632765d44a136",
+      "matches": [
+        [
+          1519,
+          "Linux home directory",
+          "768d8e132161678a3434401db0b60a6497856a93891b95d7852d3b79f6fae087"
+        ]
+      ]
+    },
+    {
+      "path": "design/stage-b/setup/cards/setup-04/contract.json",
+      "size": 12227,
+      "sha256": "b4196d341a4b2bb73406280d25d36b91cfe16eb9315e02494ec2a7de18d233e2",
+      "matches": [
+        [
+          6277,
+          "Linux home directory",
+          "097c4e083d4cc3cc6a34c1d819c63e1a758fce67f364b5fcd3be8b9418ec643f"
+        ],
+        [
+          7879,
+          "Linux home directory",
+          "097c4e083d4cc3cc6a34c1d819c63e1a758fce67f364b5fcd3be8b9418ec643f"
+        ],
+        [
+          9479,
+          "Linux home directory",
+          "097c4e083d4cc3cc6a34c1d819c63e1a758fce67f364b5fcd3be8b9418ec643f"
+        ]
+      ]
+    },
+    {
+      "path": "design/stage-b/setup/cards/setup-04/mapped.json",
+      "size": 16006,
+      "sha256": "3a2e751c38a509645f0e4b224237fe38d33031e3dc17836ae10417c7011a1e8c",
+      "matches": [
+        [
+          5852,
+          "Linux home directory",
+          "097c4e083d4cc3cc6a34c1d819c63e1a758fce67f364b5fcd3be8b9418ec643f"
+        ],
+        [
+          7454,
+          "Linux home directory",
+          "097c4e083d4cc3cc6a34c1d819c63e1a758fce67f364b5fcd3be8b9418ec643f"
+        ],
+        [
+          9055,
+          "Linux home directory",
+          "097c4e083d4cc3cc6a34c1d819c63e1a758fce67f364b5fcd3be8b9418ec643f"
+        ]
+      ]
+    },
+    {
+      "path": "design/stage-b/setup/cards/setup-04/mapping.json",
+      "size": 12224,
+      "sha256": "ae48dd4bd3363f95ae49d027c85fe2c055f691f389684f11382dc91b86303d76",
+      "matches": [
+        [
+          6515,
+          "Linux home directory",
+          "097c4e083d4cc3cc6a34c1d819c63e1a758fce67f364b5fcd3be8b9418ec643f"
+        ],
+        [
+          8097,
+          "Linux home directory",
+          "097c4e083d4cc3cc6a34c1d819c63e1a758fce67f364b5fcd3be8b9418ec643f"
+        ],
+        [
+          9680,
+          "Linux home directory",
+          "097c4e083d4cc3cc6a34c1d819c63e1a758fce67f364b5fcd3be8b9418ec643f"
+        ]
+      ]
+    },
+    {
+      "path": "design/stage-b/setup/cards/setup-04/observations.json",
+      "size": 12690,
+      "sha256": "6cca71508bd0b1974c657627fb820546dbafd0b89d2872ba701b58cc1cc1278c",
+      "matches": [
+        [
+          3916,
+          "Linux home directory",
+          "097c4e083d4cc3cc6a34c1d819c63e1a758fce67f364b5fcd3be8b9418ec643f"
+        ],
+        [
+          4087,
+          "Linux home directory",
+          "097c4e083d4cc3cc6a34c1d819c63e1a758fce67f364b5fcd3be8b9418ec643f"
+        ],
+        [
+          5161,
+          "Linux home directory",
+          "097c4e083d4cc3cc6a34c1d819c63e1a758fce67f364b5fcd3be8b9418ec643f"
+        ],
+        [
+          5327,
+          "Linux home directory",
+          "097c4e083d4cc3cc6a34c1d819c63e1a758fce67f364b5fcd3be8b9418ec643f"
+        ],
+        [
+          6395,
+          "Linux home directory",
+          "097c4e083d4cc3cc6a34c1d819c63e1a758fce67f364b5fcd3be8b9418ec643f"
+        ],
+        [
+          6563,
+          "Linux home directory",
+          "097c4e083d4cc3cc6a34c1d819c63e1a758fce67f364b5fcd3be8b9418ec643f"
+        ]
+      ]
+    },
+    {
+      "path": "design/stage-b/setup/cards/setup-04/page.card",
+      "size": 6300,
+      "sha256": "08ce2175447c7605a3874a03dc8e69d40841e661e51b60b90b2309a8bd050609",
+      "matches": [
+        [
+          651,
+          "Linux home directory",
+          "097c4e083d4cc3cc6a34c1d819c63e1a758fce67f364b5fcd3be8b9418ec643f"
+        ],
+        [
+          784,
+          "Linux home directory",
+          "097c4e083d4cc3cc6a34c1d819c63e1a758fce67f364b5fcd3be8b9418ec643f"
+        ],
+        [
+          913,
+          "Linux home directory",
+          "097c4e083d4cc3cc6a34c1d819c63e1a758fce67f364b5fcd3be8b9418ec643f"
+        ]
+      ]
+    },
+    {
+      "path": "design/stage-b/setup/cards/setup-04/page.design.splash",
+      "size": 4899,
+      "sha256": "3d33cba900cc78da0cc69f8e04c2f975c3a1ad202d102f45c9be333fe8cf5704",
+      "matches": [
+        [
+          2441,
+          "Linux home directory",
+          "097c4e083d4cc3cc6a34c1d819c63e1a758fce67f364b5fcd3be8b9418ec643f"
+        ],
+        [
+          3096,
+          "Linux home directory",
+          "097c4e083d4cc3cc6a34c1d819c63e1a758fce67f364b5fcd3be8b9418ec643f"
+        ],
+        [
+          3750,
+          "Linux home directory",
+          "097c4e083d4cc3cc6a34c1d819c63e1a758fce67f364b5fcd3be8b9418ec643f"
+        ]
+      ]
+    },
+    {
+      "path": "design/stage-b/setup/cards/setup-04/reference.ocr.json",
+      "size": 3049,
+      "sha256": "148d645e5e1ec2f473b40bb49ccb08c12d987252d90b9c95169ef6396c04b6b7",
+      "matches": [
+        [
+          1623,
+          "Linux home directory",
+          "097c4e083d4cc3cc6a34c1d819c63e1a758fce67f364b5fcd3be8b9418ec643f"
+        ],
+        [
+          2031,
+          "Linux home directory",
+          "097c4e083d4cc3cc6a34c1d819c63e1a758fce67f364b5fcd3be8b9418ec643f"
+        ],
+        [
+          2439,
+          "Linux home directory",
+          "097c4e083d4cc3cc6a34c1d819c63e1a758fce67f364b5fcd3be8b9418ec643f"
+        ]
+      ]
+    },
+    {
+      "path": "design/stage-b/setup/pipeline-output/service-cards/setup/ws-group/page.card",
+      "size": 2616,
+      "sha256": "39607a6c88904ed7d22cb6a1364242608473a0c53af4e21b03a6da9854ce7ead",
+      "matches": [
+        [
+          349,
+          "Linux home directory",
+          "097c4e083d4cc3cc6a34c1d819c63e1a758fce67f364b5fcd3be8b9418ec643f"
+        ],
+        [
+          482,
+          "Linux home directory",
+          "097c4e083d4cc3cc6a34c1d819c63e1a758fce67f364b5fcd3be8b9418ec643f"
+        ],
+        [
+          611,
+          "Linux home directory",
+          "097c4e083d4cc3cc6a34c1d819c63e1a758fce67f364b5fcd3be8b9418ec643f"
+        ]
+      ]
+    },
+    {
+      "path": "design/stage-b/setup/pipeline-output/service-cards/setup/ws-group/page.design.splash",
+      "size": 2781,
+      "sha256": "43ea6e4dc89f927394f2f95a7c7ead497b5d6f1b5f967c02d7646e6a8cf1db24",
+      "matches": [
+        [
+          1147,
+          "Linux home directory",
+          "097c4e083d4cc3cc6a34c1d819c63e1a758fce67f364b5fcd3be8b9418ec643f"
+        ],
+        [
+          1829,
+          "Linux home directory",
+          "097c4e083d4cc3cc6a34c1d819c63e1a758fce67f364b5fcd3be8b9418ec643f"
+        ],
+        [
+          2520,
+          "Linux home directory",
+          "097c4e083d4cc3cc6a34c1d819c63e1a758fce67f364b5fcd3be8b9418ec643f"
+        ]
+      ]
+    }
+  ]
+}

@@ -67,14 +67,21 @@ HOSTINGS = ("module", "process", "process-if-vulkan", "none")
 # How a package links an app: in its default features, in its `mobile-apps`
 # set, only when asked for, or not at all.
 SHELL_LINKS = ("default", "mobile-apps", "opt-in", "off")
-# Every standard shell build runs the octos kernel as a shell service.
-BASE_DEFAULT = ["octos-core"]
+# Every standard shell build runs the octos kernel as a shell service, and
+# the `wasm` service for apps' own WebAssembly functions (ADR 0011; the shell
+# links it on macOS, Linux and Android only).
+BASE_DEFAULT = ["octos-core", "wasm-functions"]
 # Features on by default in one shell only: the phone offers app agents the
 # system toolbox (ADR 0002 §6), reading pages in its own WebView.
-SHELL_BASE_DEFAULT = {"phone": ["toolbox-peers"]}
+SHELL_BASE_DEFAULT = {"phone": ["toolbox-peers"], "desktop": ["craft-engines"]}
 APP_KEYS = {"id", "feature", "crate", "source", "module", "bin", "bin_features", "default_features", "crate_features",
-            "implies", "hosting", "shells", "native_mobile", "sandbox", "storage", "agent"}
-REQUIRED_KEYS = APP_KEYS - {"feature", "bin_features"}
+            "implies", "hosting", "shells", "native_mobile", "sandbox", "storage", "agent", "kernel"}
+REQUIRED_KEYS = APP_KEYS - {"feature", "bin_features", "kernel"}
+# `kernel`: the port to the shell's octos kernel an app that is itself an
+# octos client gets (ADR 0003, "An app that is an octos client"): `coding`,
+# the coding scope the shell's kernel router enforces. Without it, a port the
+# app opens is closed.
+KERNEL_PORTS = ("coding",)
 # The workspace member a process launch selects with the app's crate, so the
 # build gets `bin_features` and the workspace lock (clients.rs `launch_plan`).
 PROCESS_APPS = "crates/process-apps/Cargo.toml"
@@ -210,6 +217,8 @@ def validate(data):
             problems += [f"{where}: {p}" for p in sandbox_problems(app["sandbox"])]
         if isinstance(app["storage"], dict):
             problems += [f"{where}: {p}" for p in storage_problems(app["storage"])]
+        if "kernel" in app and app["kernel"] not in KERNEL_PORTS:
+            problems.append(f"{where}: kernel must be one of {', '.join(KERNEL_PORTS)}")
         if isinstance(app["agent"], dict) and not isinstance(app["agent"].get("octos"), list):
             problems.append(f"{where}: agent.octos must be a list")
         if isinstance(app["agent"], dict):
@@ -289,7 +298,7 @@ def tool_policy_problems(policy):
     return problems
 
 
-AGENT_KEYS = {"octos", "tools", "generic_tools", "grants", "tool_policy", "budget", "system_tools"}
+AGENT_KEYS = {"octos", "tools", "generic_tools", "grants", "tool_policy", "budget", "system_tools", "own_tools"}
 # The fields a `tools.json` entry may carry (octos `ToolDecl`, UPCR-2026-035);
 # `app` is the shell's to set.
 DECL_FIELDS = {"name", "description", "input_schema", "output_schema", "risk", "background", "outward", "confirm", "shareable"}
@@ -306,7 +315,9 @@ def agent_problems(ident, agent):
     gets; never octos's shell), `grants` (other apps' shareable tools,
     `{"app", "tool"}`), `budget` (`calls_per_turn`, `calls_per_day`),
     `system_tools` (its own tools the system agent may call while the app
-    runs: each one of its `tools`, a shareable read tool, by full name)."""
+    runs: each one of its `tools`, a shareable read tool, by full name),
+    `own_tools` (the tools its own agent may call, by full name: each one
+    of its `tools`; without it, all of them)."""
     problems = []
     unknown = sorted(set(agent) - AGENT_KEYS)
     if unknown:
@@ -377,6 +388,16 @@ def agent_problems(ident, agent):
             problems.append(f"agent.system_tools: {name} must be a shareable read tool (the system agent gets read tools only)")
     if len(set(system)) != len(system):
         problems.append("agent.system_tools names a tool twice")
+    own = agent.get("own_tools")
+    if own is not None:
+        if not isinstance(own, list) or not all(isinstance(t, str) for t in own):
+            problems.append("agent.own_tools must be a list of its own tool names")
+            own = []
+        for name in own:
+            if name not in declared:
+                problems.append(f"agent.own_tools: {name} is not one of {ident}'s agent.tools")
+        if len(set(own)) != len(own):
+            problems.append("agent.own_tools names a tool twice")
     budget = agent.get("budget")
     if budget is not None:
         if not isinstance(budget, dict) or not set(budget) <= {"calls_per_turn", "calls_per_day"}:
@@ -621,6 +642,17 @@ def render_rust(apps):
         "    Any,",
         "}",
         "",
+        "/// The port to the shell's octos kernel an app that is itself an octos",
+        "/// client gets (`kernel`; ADR 0003).",
+        "#[derive(Clone, Copy, Debug, PartialEq, Eq)]",
+        "pub enum KernelPort {",
+        "    /// None: a port the app opens is closed.",
+        "    None,",
+        "    /// The coding scope the kernel router enforces: the app's own",
+        "    /// sessions, in workspaces the person picked.",
+        "    Coding,",
+        "}",
+        "",
         "/// One `native-apps.json` entry, as far as the shell reads it.",
         "#[derive(Debug)]",
         "pub struct NativeApp {",
@@ -663,10 +695,15 @@ def render_rust(apps):
         "    /// `agent.system_tools`: its own read tools the system agent may",
         "    /// call while the app runs (full names).",
         "    pub system_tools: &'static [&'static str],",
+        "    /// `agent.own_tools`: the tools its own agent may call (full",
+        "    /// names; every one of `tools` unless the entry narrows them).",
+        "    pub own_tools: &'static [&'static str],",
         "    /// `agent.budget`: its agent's tool calls per turn and per day",
         "    /// (`None`: the shell's defaults).",
         "    pub calls_per_turn: Option<u32>,",
         "    pub calls_per_day: Option<u32>,",
+        "    /// `kernel`: its port to the shell's kernel.",
+        "    pub kernel: KernelPort,",
         "}",
         "",
         "pub const APPS: &[NativeApp] = &[",
@@ -709,10 +746,15 @@ def render_rust(apps):
         out.append(f"        grants: &[{grants}],")
         system = ", ".join(s(x) for x in agent.get("system_tools", []))
         out.append(f"        system_tools: &[{system}],")
+        own = agent.get("own_tools")
+        if own is None:
+            own = [tool["name"] for tool in agent.get("tools") or []]
+        out.append(f"        own_tools: &[{', '.join(s(x) for x in own)}],")
         budget = agent.get("budget") or {}
         for key in ("calls_per_turn", "calls_per_day"):
             value = f"Some({budget[key]})" if key in budget else "None"
             out.append(f"        {key}: {value},")
+        out.append(f"        kernel: KernelPort::{app.get('kernel', 'none').capitalize()},")
         out.append("    },")
     out += [
         "];",

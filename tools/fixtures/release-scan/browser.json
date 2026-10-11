@@ -1,0 +1,108 @@
+{
+  "width": 812.0,
+  "height": 1552.0,
+  "observations": [
+    {
+      "bounds": [
+        -0.0,
+        74.0,
+        351.8667,
+        41.0465
+      ],
+      "confidence": 1.0,
+      "text": "8. Choose a folder"
+    },
+    {
+      "bounds": [
+        112.7778,
+        216.5581,
+        575.1667,
+        51.8837
+      ],
+      "confidence": 1.0,
+      "text": "Choose workspace folder"
+    },
+    {
+      "bounds": [
+        31.5778,
+        309.0,
+        471.4111,
+        29.3721
+      ],
+      "confidence": 1.0,
+      "text": "/ > home \u203a dev \u203a code"
+    },
+    {
+      "bounds": [
+        164.5911,
+        426.1404,
+        101.629,
+        31.9983
+      ],
+      "confidence": 1.0,
+      "text": "octos"
+    },
+    {
+      "bounds": [
+        172.7028,
+        530.444,
+        250.3675,
+        50.9473
+      ],
+      "confidence": 1.0,
+      "text": "octoscode-app"
+    },
+    {
+      "bounds": [
+        173.5896,
+        649.426,
+        94.9097,
+        34.3341
+      ],
+      "confidence": 1.0,
+      "text": "notes"
+    },
+    {
+      "bounds": [
+        171.3349,
+        762.1573,
+        126.4857,
+        36.7087
+      ],
+      "confidence": 1.0,
+      "text": "scratch"
+    },
+    {
+      "bounds": [
+        51.8778,
+        866.0,
+        356.3778,
+        39.0
+      ],
+      "confidence": 1.0,
+      "text": "3 hidden by the server"
+    },
+    {
+      "bounds": [
+        71.834,
+        1015.8643,
+        578.2367,
+        49.4239
+      ],
+      "confidence": 1.0,
+      "text": "/home/user/code/octoscode-app"
+    },
+    {
+      "bounds": [
+        252.6222,
+        1148.0,
+        263.9,
+        43.0698
+      ],
+      "confidence": 1.0,
+      "text": "Use this folder"
+    }
+  ],
+  "image_sha256": "2e0b9de79e8cd1e4164b67852c273fcf18e8e11ef75e87a2c0c71e7a245d7597",
+  "engine": "Apple Vision VNRecognizeTextRequest accurate, en-US (pyobjc)"
+}

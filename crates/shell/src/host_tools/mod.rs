@@ -17,9 +17,10 @@
 //! | the system toolbox's tools (feature `toolbox-peers`) | the `toolbox` owner: its tools declared once, granted per app, offered after consent, run by its executor ([`toolbox`]) |
 //!
 //! **Threads.** Brokers call in on their own threads and the system chat on
-//! its own; every call, cancel and approval is queued and handled on the UI
-//! thread in [`pump`] (the shell calls it on every signal and every tick),
-//! where the approval router, the peer links and the AI bus live. The
+//! its own; every call, cancel and approval is queued for [`pump`]. The
+//! window calls it on signals/ticks; Android's bounded Mail job may also
+//! drive it without a window. A pump gate serializes the two callers. The
+//! approval router, peer links and AI bus communicate through synchronized state. The
 //! router's decisions and the peer links' outcomes come back through queues
 //! too, so nothing here re-enters a lock it holds.
 //!
@@ -27,8 +28,10 @@
 //! (`crate::peer_link`, which keeps the host obligations for the process);
 //! an in-process module's (or a script app's host service's) to the
 //! executor it installed through its service
-//! (`OctosAppService::set_tool_executor`); the Terminal's `run` to the
-//! Terminal on the AI bus. A `confirm: app` tool is confirmed on the owning
+//! (`OctosAppService::set_tool_executor`); a craft engine's (ADR 0013) to
+//! its engine's host service, under the virtual owner `os.<family>`
+//! ([`engines`]); the Terminal's `run` to the Terminal on the AI bus. A
+//! `confirm: app` tool is confirmed on the owning
 //! app's own sheet: an in-process app installs it through its service
 //! (`OctosAppService::set_confirm_sheet`), which registers it with the
 //! router here ([`SheetBridge`]).
@@ -40,10 +43,16 @@ pub mod schema;
 pub mod studio;
 #[cfg(all(unix, any(feature = "app-hub", native_mobile)))]
 pub mod studio_bundles;
+#[cfg(any(feature = "app-hub", native_mobile))]
+pub(crate) mod admission;
 #[cfg(feature = "toolbox-peers")]
 pub mod toolbox;
 #[cfg(any(feature = "app-hub", native_mobile))]
 pub mod script_apps;
+#[cfg(feature = "app-hub")]
+pub mod engines;
+#[cfg(feature = "app-hub")]
+pub mod areas;
 
 #[cfg(test)]
 mod tests;
@@ -106,11 +115,18 @@ pub fn submit(event: Event) {
     makepad_widgets::makepad_platform::thread::SignalToUI::set_ui_signal();
 }
 
-/// On the UI thread: handle everything queued (and what that queues), and
-/// deliver the host services' answers to script apps' tool calls.
+/// Handle queued calls and deliver host-service replies, from a window or
+/// Android Mail job. A concurrent pump yields; no executor receives a Cx.
+/// Human approvals remain pending until a trusted host surface answers.
 pub fn pump() {
+    // A headless Android job and a live window share the same relay.
+    static PUMP: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let Ok(_pump) = PUMP.try_lock() else { return };
     #[cfg(any(feature = "app-hub", native_mobile))]
     script_apps::poll();
+    // Components' calls to their apps' host services (ADR 0014).
+    #[cfg(wasm_functions)]
+    crate::wasm_service::pump_host_calls();
     for _ in 0..8 {
         let events = std::mem::take(&mut *INBOX.lock().unwrap_or_else(|e| e.into_inner()));
         if events.is_empty() {
@@ -207,19 +223,21 @@ pub fn system_call_test(spec: &str) {
     use std::sync::atomic::{AtomicU64, Ordering};
     static NEXT: AtomicU64 = AtomicU64::new(1);
     let (tool, args) = spec.split_once(' ').unwrap_or((spec, "{}"));
-    let read = owner_of(tool).and_then(|owner| declaration(&owner, tool)).is_some_and(|d| d["risk"] == "read");
-    if !read {
+    let owner = owner_of(tool).filter(|owner| declaration(owner, tool).is_some_and(|d| d["risk"] == "read"));
+    let Some(owner) = owner else {
         makepad_widgets::log!("[system-call] {tool}: a test call runs only a declared read tool");
         return;
-    }
+    };
     let Ok(args) = serde_json::from_str::<Value>(args) else {
         makepad_widgets::log!("[system-call] {tool}: the arguments are not JSON");
         return;
     };
     let id = format!("system-call-{}", NEXT.fetch_add(1, Ordering::Relaxed));
+    // The owning app as the kernel names it from the registered declaration
+    // (`os.calendar`, `os.word`), not the name's first segment.
     let params = serde_json::json!({
         "session_id": crate::system_chat::session::SYSTEM_SESSION, "turn_id": format!("turn-{id}"),
-        "call_id": id, "tool_call_id": format!("tc-{id}"), "args_digest": "test",
+        "call_id": id, "tool_call_id": format!("tc-{id}"), "args_digest": "test", "app": owner,
         "name": tool, "caller": {"kind": "system"}, "args": args, "risk": "read", "confirm_required": false,
     });
     let Ok(call) = HostToolCall::parse(&params) else {
@@ -264,8 +282,18 @@ pub fn bus_result(call_id: &str, outcome: ToolOutcome) {
 pub struct ShellToolHost;
 
 impl ToolHost for ShellToolHost {
+    fn admit_turn(&self, app_id: &str, _account: &str) -> Result<(), String> {
+        #[cfg(any(feature = "app-hub", native_mobile))]
+        admission::check(app_of_peer(app_id))?;
+        #[cfg(not(any(feature = "app-hub", native_mobile)))]
+        let _ = app_id;
+        Ok(())
+    }
+
     fn declarations(&self, app_id: &str, account: &str) -> Result<Vec<Value>, String> {
         let app = app_of_peer(app_id).to_string();
+        #[cfg(any(feature = "app-hub", native_mobile))]
+        admission::check(&app)?;
         ensure_loaded(app_id);
         let dev = crate::dev_mode::grants_all(&app);
         // The toolbox's tools only once the person allowed this app's agent
@@ -314,6 +342,8 @@ impl ToolHost for ShellToolHost {
 
     fn admit_input(&self, app_id: &str, account: &str, input: &PeerInput) -> Result<(), InputRefusal> {
         let app = app_of_peer(app_id);
+        #[cfg(any(feature = "app-hub", native_mobile))]
+        admission::check(app).map_err(InputRefusal::Other)?;
         if suspended(app_id, Some(account)) {
             return Err(InputRefusal::SignedOut);
         }
@@ -455,7 +485,7 @@ pub fn interrupt_agent_lane(app: &str, lane: &str) -> Vec<String> {
 
 /// A script app's agent block, loaded from its admitted bundle the first
 /// time its peer registers (a native app's is in the shipped catalog).
-fn ensure_loaded(app_id: &str) {
+pub(crate) fn ensure_loaded(app_id: &str) {
     if app_id == app_of_peer(app_id) {
         return;
     }
@@ -537,7 +567,7 @@ pub fn agent_workspace(app_id: &str, account: &str) -> Option<PathBuf> {
 /// a script app's (`card.<id>`) manifest `storage.accounts` (Mail); else it
 /// acts for the device. The one rule every per-account decision here uses
 /// ([`account_key`]).
-fn keeps_accounts(storage: &crate::app_storage::Storage, app_id: &str) -> bool {
+pub(crate) fn keeps_accounts(storage: &crate::app_storage::Storage, app_id: &str) -> bool {
     let app = app_of_peer(app_id);
     match crate::native_apps::find(app) {
         Some(entry) => entry.accounts,
@@ -615,6 +645,12 @@ pub fn suspended(app_id: &str, account: Option<&str>) -> bool {
 struct ShellEnv;
 
 impl relay::Env for ShellEnv {
+    fn admitted(&self, app: &str) -> Result<(), String> {
+        #[cfg(any(feature = "app-hub", native_mobile))]
+        { admission::check(app) }
+        #[cfg(not(any(feature = "app-hub", native_mobile)))]
+        { let _ = app; Ok(()) }
+    }
     fn consent(&self, app: &str) -> bool {
         approvals::consent_granted(app) || crate::dev_mode::grants_all(app)
     }

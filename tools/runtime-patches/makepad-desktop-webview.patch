@@ -1,0 +1,2330 @@
+diff --git a/platform/Cargo.toml b/platform/Cargo.toml
+index 41a615d82..93aa67187 100644
+--- a/platform/Cargo.toml
++++ b/platform/Cargo.toml
+@@ -44,6 +44,7 @@ makepad-tsdf = { path = "../libs/tsdf", version = "0.1.0" }
+ smallvec = { version = "1.15", path = "../libs/smallvec" }
+ bitflags = { version = "2.10", path = "../libs/bitflags" }
+ foldhash = { version = "0.2", path = "../libs/vulkan/foldhash" }
++url = "2.5.8"
+ 
+ [target.wasm32-unknown-unknown.dependencies]
+ makepad-wasm-bridge = { path = "../libs/wasm_bridge", version = "1.0.0" }
+@@ -108,6 +109,9 @@ ohos-sys = { version = "0.2.1", features = ["xcomponent"] }
+ path = "../libs/futures_legacy"
+ version = "1.0.0"
+ 
++[target.'cfg(windows)'.dependencies.webview2-com]
++version = "=0.39.1"
++
+ [target.'cfg(windows)'.dependencies.windows-core]
+ path = "../libs/windows/windows-core"
+ version = "0.62.2"
+@@ -166,3 +170,8 @@ features = [
+ ## `windows-targets` v0.52.*, so we use that version to avoid duplicates.
+ [target.'cfg(windows)'.dependencies.windows-targets]
+ version = "0.52"
++
++[target.'cfg(windows)'.dependencies.webview2-windows]
++package = "windows"
++version = "=0.62.2"
++features = ["Win32_Foundation", "Win32_System_Com", "Win32_System_Com_StructuredStorage", "Win32_System_LibraryLoader", "Win32_UI_WindowsAndMessaging"]
+diff --git a/platform/src/cx_api.rs b/platform/src/cx_api.rs
+index 8ad82ca09..d419cea94 100644
+--- a/platform/src/cx_api.rs
++++ b/platform/src/cx_api.rs
+@@ -209,8 +209,8 @@ pub fn close(&mut self) {
+     }
+ 
+     /// Inspect the app's own native WebView asynchronously. The snapshot is
+-    /// captured by WebKit, including content absent from the Metal drawable.
+-    #[cfg(target_os = "macos")]
++    /// captured by the native browser, including content absent from the GPU drawable.
++    #[cfg(any(target_os = "macos", target_os = "windows"))]
+     pub fn inspect(&mut self, result_path: String, snapshot_path: Option<String>, scroll_y: Option<f64>) {
+         self.cx.platform_ops.push_back(CxOsOp::InspectSystemBrowser {
+             browser_id: self.id.0, result_path, snapshot_path, scroll_y,
+@@ -538,7 +538,7 @@ pub enum CxOsOp {
+         script: String,
+         result_path: String,
+     },
+-    #[cfg(target_os = "macos")]
++    #[cfg(any(target_os = "macos", target_os = "windows"))]
+     InspectSystemBrowser {
+         browser_id: LiveId,
+         result_path: String,
+@@ -701,7 +701,7 @@ fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+             Self::CloseSystemBrowser { .. } => write!(f, "CloseSystemBrowser"),
+             #[cfg(target_os = "macos")]
+             Self::EvaluateAuthBrowser { .. } => write!(f, "EvaluateAuthBrowser"),
+-            #[cfg(target_os = "macos")]
++            #[cfg(any(target_os = "macos", target_os = "windows"))]
+             Self::InspectSystemBrowser { .. } => write!(f, "InspectSystemBrowser"),
+             Self::SetSystemBrowserHtml { .. } => write!(f, "SetSystemBrowserHtml"),
+             Self::EvalSystemBrowserJs { .. } => write!(f, "EvalSystemBrowserJs"),
+diff --git a/platform/src/event/event.rs b/platform/src/event/event.rs
+index db8830e66..ac73ebfba 100644
+--- a/platform/src/event/event.rs
++++ b/platform/src/event/event.rs
+@@ -591,6 +591,14 @@ pub struct NativeSystemBrowserPageError {
+     pub url: String,
+ }
+ 
++/// A navigation or browser operation was refused without failing the loaded page.
++/// In particular, a blocked subframe must not hide its permitted parent reader.
++#[derive(Clone, Debug, Default)]
++pub struct NativeSystemBrowserPolicyBlocked {
++    pub browser_id: u64,
++    pub description: String,
++}
++
+ /// Result of a native file-picker dialog, carrying the `call_id` its
+ /// `CxOsOp::OpenFileDialog` was issued with.
+ #[derive(Clone, Debug, Default)]
+diff --git a/platform/src/lib.rs b/platform/src/lib.rs
+index 6e041dd51..ce292b230 100644
+--- a/platform/src/lib.rs
++++ b/platform/src/lib.rs
+@@ -98,6 +98,7 @@
+ mod xr_tsdf;
+ 
+ pub mod web_socket;
++pub mod system_browser;
+ 
+ pub mod audio_stream;
+ 
+diff --git a/platform/src/os/linux/linux_webkit.rs b/platform/src/os/linux/linux_webkit.rs
+new file mode 100644
+index 000000000..3a2190f6a
+--- /dev/null
++++ b/platform/src/os/linux/linux_webkit.rs
+@@ -0,0 +1,524 @@
++//! Optional WebKitGTK browser, embedded by XEmbed in an existing X11 window.
++//!
++//! Only system libraries are loaded; ordinary Makepad builds require no GTK or
++//! WebKit development packages. GTK owns a child GtkPlug, never a free-standing
++//! application window. All GTK operations and callbacks run on the UI thread.
++use super::{module_loader::ModuleLoader, x11::x11_sys as x};
++use crate::{
++    cx::Cx,
++    event::{NativeAuthBrowserEvent, NativeSystemBrowserNavigation, NativeSystemBrowserPageError, NativeSystemBrowserPolicyBlocked},
++    makepad_math::Rect,
++    system_browser::{BrowserPolicy, NavigationDecision},
++    window::WindowId,
++};
++use std::{
++    cell::{Cell, RefCell},
++    ffi::{c_char, c_int, c_long, c_uint, c_ulong, c_void, CStr, CString},
++    mem::ManuallyDrop,
++    ptr,
++    rc::Rc,
++};
++
++type Object = *mut c_void;
++type Callback = unsafe extern "C" fn();
++
++#[repr(C)]
++struct Allocation { x: c_int, y: c_int, width: c_int, height: c_int }
++
++macro_rules! api {
++    ($($name:ident: $ty:ty),* $(,)?) => {
++        struct Api {
++            // GTypes retain class/vtable addresses until process exit, even
++            // after the last view closes. Never dlclose their libraries.
++            _libraries: ManuallyDrop<Vec<ModuleLoader>>,
++            $($name: $ty,)*
++        }
++        impl Api {
++            fn load() -> Result<Rc<Self>, &'static str> {
++                let gtk = ModuleLoader::load("libgtk-3.so.0")
++                    .map_err(|_| "Install the system GTK3 and WebKitGTK 4.1 runtime to use embedded browsing")?;
++                let webkit = ModuleLoader::load("libwebkit2gtk-4.1.so.0")
++                    .or_else(|_| ModuleLoader::load("libwebkit2gtk-4.0.so.37"))
++                    .map_err(|_| "Install the system WebKitGTK 4.1 runtime to use embedded browsing")?;
++                let api = Self {
++                    $($name: webkit.get_symbol(stringify!($name))
++                        .or_else(|_| gtk.get_symbol(stringify!($name)))
++                        .map_err(|_| "The installed WebKitGTK/GTK3 runtime is missing a required browser API")?,)*
++                    _libraries: ManuallyDrop::new(vec![gtk, webkit]),
++                };
++                unsafe {
++                    // GTK must use the same protocol as our parent X11 window.
++                    // This does not change Makepad's backend or process env.
++                    (api.gdk_set_allowed_backends)(c"x11".as_ptr());
++                    if (api.gtk_init_check)(ptr::null_mut(), ptr::null_mut()) == 0 {
++                        return Err("GTK could not connect to the X11 display");
++                    }
++                }
++                Ok(Rc::new(api))
++            }
++        }
++    };
++}
++api! {
++    gdk_set_allowed_backends: unsafe extern "C" fn(*const c_char),
++    gdk_display_get_default: unsafe extern "C" fn() -> Object,
++    gdk_display_sync: unsafe extern "C" fn(Object),
++    gdk_x11_display_error_trap_push: unsafe extern "C" fn(Object),
++    gdk_x11_display_error_trap_pop_ignored: unsafe extern "C" fn(Object),
++    gtk_init_check: unsafe extern "C" fn(*mut c_int, *mut *mut *mut c_char) -> c_int,
++    g_main_context_iteration: unsafe extern "C" fn(Object, c_int) -> c_int,
++    g_signal_connect_data: unsafe extern "C" fn(Object, *const c_char, Callback, Object, Option<unsafe extern "C" fn(Object, Object)>, c_uint) -> c_ulong,
++    g_signal_handler_disconnect: unsafe extern "C" fn(Object, c_ulong),
++    g_object_unref: unsafe extern "C" fn(Object),
++    gtk_plug_new: unsafe extern "C" fn(c_ulong) -> Object,
++    gtk_plug_get_id: unsafe extern "C" fn(Object) -> c_ulong,
++    gtk_container_add: unsafe extern "C" fn(Object, Object),
++    gtk_widget_show_all: unsafe extern "C" fn(Object),
++    gtk_widget_destroy: unsafe extern "C" fn(Object),
++    gtk_widget_set_size_request: unsafe extern "C" fn(Object, c_int, c_int),
++    gtk_widget_size_allocate: unsafe extern "C" fn(Object, *const Allocation),
++    gtk_widget_get_scale_factor: unsafe extern "C" fn(Object) -> c_int,
++    gtk_widget_grab_focus: unsafe extern "C" fn(Object),
++    webkit_web_context_new_ephemeral: unsafe extern "C" fn() -> Object,
++    webkit_network_error_quark: unsafe extern "C" fn() -> u32,
++    webkit_policy_error_quark: unsafe extern "C" fn() -> u32,
++    webkit_web_context_set_tls_errors_policy: unsafe extern "C" fn(Object, c_int),
++    webkit_web_view_new_with_context: unsafe extern "C" fn(Object) -> Object,
++    webkit_web_view_get_settings: unsafe extern "C" fn(Object) -> Object,
++    webkit_settings_set_javascript_can_open_windows_automatically: unsafe extern "C" fn(Object, c_int),
++    webkit_settings_set_enable_developer_extras: unsafe extern "C" fn(Object, c_int),
++    webkit_web_view_set_zoom_level: unsafe extern "C" fn(Object, f64),
++    webkit_web_view_load_uri: unsafe extern "C" fn(Object, *const c_char),
++    webkit_web_view_load_html: unsafe extern "C" fn(Object, *const c_char, *const c_char),
++    webkit_web_view_stop_loading: unsafe extern "C" fn(Object),
++    webkit_web_view_get_uri: unsafe extern "C" fn(Object) -> *const c_char,
++    webkit_web_view_get_title: unsafe extern "C" fn(Object) -> *const c_char,
++    webkit_web_view_is_loading: unsafe extern "C" fn(Object) -> c_int,
++    webkit_web_view_run_javascript: unsafe extern "C" fn(Object, *const c_char, Object, Option<unsafe extern "C" fn(Object, Object, Object)>, Object),
++    webkit_web_view_get_back_forward_list: unsafe extern "C" fn(Object) -> Object,
++    webkit_back_forward_list_get_nth_item: unsafe extern "C" fn(Object, c_int) -> Object,
++    webkit_web_view_go_to_back_forward_list_item: unsafe extern "C" fn(Object, Object),
++    webkit_navigation_policy_decision_get_request: unsafe extern "C" fn(Object) -> Object,
++    webkit_response_policy_decision_get_request: unsafe extern "C" fn(Object) -> Object,
++    webkit_response_policy_decision_is_main_frame_main_resource: unsafe extern "C" fn(Object) -> c_int,
++    webkit_response_policy_decision_is_mime_type_supported: unsafe extern "C" fn(Object) -> c_int,
++    webkit_uri_request_get_uri: unsafe extern "C" fn(Object) -> *const c_char,
++    webkit_policy_decision_use: unsafe extern "C" fn(Object),
++    webkit_policy_decision_ignore: unsafe extern "C" fn(Object),
++    webkit_permission_request_deny: unsafe extern "C" fn(Object),
++    webkit_file_chooser_request_cancel: unsafe extern "C" fn(Object),
++    webkit_download_cancel: unsafe extern "C" fn(Object),
++    webkit_authentication_request_cancel: unsafe extern "C" fn(Object),
++}
++thread_local! {
++    static API: RefCell<Option<Result<Rc<Api>, &'static str>>> = const { RefCell::new(None) };
++}
++fn api() -> Result<Rc<Api>, &'static str> {
++    API.with(|slot| slot.borrow_mut().get_or_insert_with(Api::load).clone())
++}
++
++/// Run a bounded amount of GLib work. Never wait for events or a web process.
++pub(crate) fn pump() {
++    API.with(|slot| {
++        let api = match &*slot.borrow() { Some(Ok(api)) => api.clone(), _ => return };
++        for _ in 0..16 {
++            if unsafe { (api.g_main_context_iteration)(ptr::null_mut(), 0) } == 0 { break; }
++        }
++    });
++}
++
++pub(crate) fn unavailable(browser_id: u64, auth: bool, description: &str) {
++    if auth {
++        Cx::post_action(NativeAuthBrowserEvent { browser_id, kind: "error".into(), url: String::new() });
++    } else {
++        Cx::post_action(NativeSystemBrowserPageError {
++            browser_id, code: -1, description: description.into(), url: String::new(),
++        });
++    }
++}
++
++struct State {
++    api: Rc<Api>,
++    id: u64,
++    policy: RefCell<BrowserPolicy>,
++    navigable: bool,
++    finished: Cell<bool>,
++}
++impl State {
++    fn blocked(&self) {
++        if !self.finished.get() {
++            Cx::post_action(NativeSystemBrowserPolicyBlocked {
++                browser_id: self.id,
++                description: "The embedded browser blocked a disallowed navigation or operation".into(),
++            });
++        }
++    }
++    fn error(&self, description: &str) {
++        if !self.finished.get() { unavailable(self.id, false, description); }
++    }
++    unsafe fn navigation(&self, view: Object) {
++        if self.finished.get() { return; }
++        Cx::post_action(NativeSystemBrowserNavigation {
++            browser_id: self.id,
++            url: string((self.api.webkit_web_view_get_uri)(view)),
++            title: string((self.api.webkit_web_view_get_title)(view)),
++            loading: (self.api.webkit_web_view_is_loading)(view) != 0,
++            error: None,
++        });
++    }
++}
++unsafe fn string(value: *const c_char) -> String {
++    if value.is_null() { String::new() } else { CStr::from_ptr(value).to_string_lossy().into_owned() }
++}
++unsafe fn state<'a>(value: Object) -> &'a State { &*(value as *const State) }
++
++unsafe extern "C" fn decide(_view: Object, decision: Object, kind: c_int, data: Object) -> c_int {
++    let s = state(data);
++    if s.finished.get() || kind == 1 { // Never create a popup/auxiliary browsing context.
++        (s.api.webkit_policy_decision_ignore)(decision);
++        s.blocked();
++        return 1;
++    }
++    let (request, main) = match kind {
++        0 => ((s.api.webkit_navigation_policy_decision_get_request)(decision), false),
++        2 => ((s.api.webkit_response_policy_decision_get_request)(decision),
++            (s.api.webkit_response_policy_decision_is_main_frame_main_resource)(decision) != 0),
++        _ => { (s.api.webkit_policy_decision_ignore)(decision); return 1; }
++    };
++    let url = string((s.api.webkit_uri_request_get_uri)(request));
++    let policy = s.policy.borrow();
++    let result = policy.decide(&url, main);
++    let supported = kind != 2 || (s.api.webkit_response_policy_decision_is_mime_type_supported)(decision) != 0;
++    match result {
++        NavigationDecision::Allow if supported => (s.api.webkit_policy_decision_use)(decision),
++        _ => { (s.api.webkit_policy_decision_ignore)(decision); s.blocked(); }
++    }
++    1
++}
++unsafe extern "C" fn load_changed(view: Object, _event: c_int, data: Object) { state(data).navigation(view); }
++unsafe extern "C" fn property_changed(view: Object, _property: Object, data: Object) { state(data).navigation(view); }
++unsafe extern "C" fn load_failed(_view: Object, _event: c_int, _uri: *const c_char, error: *const GError, data: Object) -> c_int {
++    let s = state(data);
++    // Intentional stops and policy cancellations do not fail a retained page.
++    if !error.is_null() && (((*error).domain == (s.api.webkit_network_error_quark)() && (*error).code == 302)
++        || ((*error).domain == (s.api.webkit_policy_error_quark)() && (*error).code == 102)) { return 1; }
++    s.error("The embedded browser could not load the page");
++    1 // Never display an engine-generated error page carrying a sensitive URL.
++}
++#[repr(C)]
++struct GError { domain: u32, code: c_int, message: *mut c_char }
++unsafe extern "C" fn tls_failed(_view: Object, _uri: *const c_char, _certificate: Object, _errors: c_uint, data: Object) -> c_int {
++    state(data).error("The embedded browser rejected an invalid TLS certificate");
++    1
++}
++unsafe extern "C" fn process_terminated(_view: Object, _reason: c_int, data: Object) {
++    state(data).error("The embedded browser process exited");
++}
++unsafe extern "C" fn deny_permission(_view: Object, request: Object, data: Object) -> c_int {
++    let s = state(data); (s.api.webkit_permission_request_deny)(request); s.blocked(); 1
++}
++unsafe extern "C" fn deny_file(_view: Object, request: Object, data: Object) -> c_int {
++    let s = state(data); (s.api.webkit_file_chooser_request_cancel)(request); s.blocked(); 1
++}
++unsafe extern "C" fn deny_authenticate(_view: Object, request: Object, data: Object) -> c_int {
++    let s = state(data); (s.api.webkit_authentication_request_cancel)(request); s.blocked(); 1
++}
++unsafe extern "C" fn deny_download(_context: Object, download: Object, data: Object) {
++    let s = state(data); (s.api.webkit_download_cancel)(download); s.blocked();
++}
++unsafe extern "C" fn deny_popup(_view: Object, _action: Object, data: Object) -> Object {
++    state(data).blocked(); ptr::null_mut()
++}
++unsafe extern "C" fn deny_dialog(_view: Object, _dialog: Object, data: Object) -> c_int {
++    state(data).blocked(); 1
++}
++unsafe extern "C" fn deny_context_menu(_view: Object, _menu: Object, _event: Object, _hit: Object, _data: Object) -> c_int { 1 }
++unsafe extern "C" fn deny_fullscreen(_view: Object, _data: Object) -> c_int { 1 }
++unsafe extern "C" fn deny_print(_view: Object, _operation: Object, _data: Object) -> c_int { 1 }
++unsafe extern "C" fn closed(_view: Object, data: Object) {
++    let s = state(data);
++    if !s.finished.replace(true) {
++        unavailable(s.id, false, "The embedded page closed");
++    }
++    // The X11 owner removes this view after GLib returns, never while its
++    // callback still borrows State.
++}
++
++enum Document { Url(String, bool), Html(String, String) }
++
++pub(crate) struct LinuxSystemBrowser {
++    state: Box<State>,
++    view: Object,
++    plug: Object,
++    context: Object,
++    signals: Vec<(Object, c_ulong)>,
++    display: *mut x::Display,
++    socket: x::Window,
++    plug_id: x::Window,
++    xembed: x::Atom,
++    parent: x::Window,
++    attached: Option<WindowId>,
++    visible: bool,
++    focused: bool,
++    has_allocation: bool,
++    pending_document: Option<Document>,
++}
++impl LinuxSystemBrowser {
++    pub(crate) fn new(display: *mut x::Display, id: u64, url: &str, navigable: bool) -> Result<Self, &'static str> {
++        let policy = BrowserPolicy::reader(url, navigable)?;
++        let api = api()?;
++        unsafe {
++            // Start under an UNMAPPED child of root. No independent GTK toplevel
++            // becomes visible, even if loading starts before the first draw.
++            let root = x::XRootWindow(display, x::XDefaultScreen(display));
++            let socket = x::XCreateWindow(display, root, 0, 0, 1, 1, 0, 0, x::InputOutput, ptr::null_mut(), 0, ptr::null_mut());
++            if socket == 0 { return Err("Could not create the browser child window"); }
++            XSelectInput(display, socket, (x::SubstructureNotifyMask | x::StructureNotifyMask | x::FocusChangeMask) as c_long);
++            XSync(display, 0); // GTK uses a separate X connection: socket must exist first.
++            let context = (api.webkit_web_context_new_ephemeral)();
++            if context.is_null() { x::XDestroyWindow(display, socket); return Err("Could not create an isolated WebKit context"); }
++            (api.webkit_web_context_set_tls_errors_policy)(context, 1); // WEBKIT_TLS_ERRORS_POLICY_FAIL, never IGNORE.
++            let view = (api.webkit_web_view_new_with_context)(context);
++            let plug = (api.gtk_plug_new)(socket);
++            if view.is_null() || plug.is_null() {
++                if !view.is_null() { (api.gtk_widget_destroy)(view); }
++                if !plug.is_null() { (api.gtk_widget_destroy)(plug); }
++                (api.g_object_unref)(context);
++                x::XDestroyWindow(display, socket);
++                return Err("Could not create the embedded WebKit view");
++            }
++            let settings = (api.webkit_web_view_get_settings)(view);
++            (api.webkit_settings_set_javascript_can_open_windows_automatically)(settings, 0);
++            (api.webkit_settings_set_enable_developer_extras)(settings, 0);
++            let mut browser = Self {
++                state: Box::new(State { api: api.clone(), id, policy: RefCell::new(policy), navigable, finished: Cell::new(false) }),
++                view, plug, context, signals: Vec::new(), display, socket, plug_id: 0,
++                xembed: x::XInternAtom(display, c"_XEMBED".as_ptr(), 0), parent: root,
++                attached: None, visible: false, focused: false,
++                has_allocation: false, pending_document: Some(Document::Url(url.to_owned(), false)),
++            };
++            macro_rules! signal { ($object:expr, $name:literal, $callback:ident) => {{
++                let handler = (api.g_signal_connect_data)($object, concat!($name, "\0").as_ptr().cast(),
++                    std::mem::transmute::<*const (), Callback>($callback as *const ()),
++                    (&*browser.state as *const State).cast_mut().cast(), None, 0);
++                browser.signals.push(($object, handler));
++            }}; }
++            signal!(view, "decide-policy", decide);
++            signal!(view, "load-changed", load_changed);
++            signal!(view, "notify::title", property_changed);
++            signal!(view, "notify::uri", property_changed);
++            signal!(view, "load-failed", load_failed);
++            signal!(view, "load-failed-with-tls-errors", tls_failed);
++            signal!(view, "web-process-terminated", process_terminated);
++            signal!(view, "permission-request", deny_permission);
++            signal!(view, "run-file-chooser", deny_file);
++            signal!(view, "authenticate", deny_authenticate);
++            signal!(view, "create", deny_popup);
++            signal!(view, "script-dialog", deny_dialog);
++            signal!(view, "context-menu", deny_context_menu);
++            signal!(view, "enter-fullscreen", deny_fullscreen);
++            signal!(view, "print", deny_print);
++            signal!(view, "close", closed);
++            signal!(context, "download-started", deny_download);
++            (api.gtk_container_add)(plug, view);
++            (api.gtk_widget_show_all)(plug);
++            browser.plug_id = (api.gtk_plug_get_id)(plug);
++            // Establish GTK's child on its X connection before the Makepad
++            // connection sends XEmbed messages or geometry requests to it.
++            (api.gdk_display_sync)((api.gdk_display_get_default)());
++            browser.send_xembed(0, 0, socket as c_long, 0); // EMBEDDED_NOTIFY, protocol 0.
++            Ok(browser)
++        }
++    }
++
++    fn send_xembed(&self, message: c_long, detail: c_long, data1: c_long, data2: c_long) {
++        if self.plug_id == 0 { return; }
++        unsafe {
++            let mut event: x::XEvent = std::mem::zeroed();
++            event.xclient = x::XClientMessageEvent {
++                type_: x::ClientMessage as c_int, serial: 0, send_event: 1,
++                display: self.display, window: self.plug_id, message_type: self.xembed, format: 32,
++                data: x::XClientMessageEvent__bindgen_ty_1 { l: [0, message, detail, data1, data2] },
++            };
++            x::XSendEvent(self.display, self.plug_id, 0, 0, &mut event);
++            x::XFlush(self.display);
++        }
++    }
++
++    pub(crate) fn update(&mut self, window: WindowId, parent: x::Window, full: Rect, clip: Rect, dpi: f64, visible: bool) {
++        if self.state.finished.get() || !visible || clip.size.x <= 0.0 || clip.size.y <= 0.0
++            || full.size.x <= 0.0 || full.size.y <= 0.0 || !dpi.is_finite()
++            || ![full.pos.x, full.pos.y, full.size.x, full.size.y, clip.pos.x, clip.pos.y, clip.size.x, clip.size.y].iter().all(|v| v.is_finite()) {
++            self.hide(); return;
++        }
++        unsafe {
++            if self.parent != parent {
++                self.hide();
++                XReparentWindow(self.display, self.socket, parent, 0, 0);
++                self.parent = parent;
++            }
++            self.attached = Some(window);
++            // The socket clips the plug, preserving the complete document's
++            // layout while parent scroll/clip changes its visible rectangle.
++            x::XMoveWindow(self.display, self.socket, coord(clip.pos.x), coord(clip.pos.y));
++            x::XResizeWindow(self.display, self.socket, extent(clip.size.x), extent(clip.size.y));
++            let scale = (self.state.api.gtk_widget_get_scale_factor)(self.plug).max(1) as f64;
++            let allocation = Allocation { x: 0, y: 0, width: extent(full.size.x / scale) as c_int, height: extent(full.size.y / scale) as c_int };
++            (self.state.api.gtk_widget_set_size_request)(self.plug, allocation.width, allocation.height);
++            // The host may intentionally be hidden (remote instrumentation).
++            // GTK then receives no frame-clock allocation before page load.
++            // Allocate the sole child explicitly so its first document has the
++            // same viewport as the real native child, including in hidden mode.
++            (self.state.api.gtk_widget_size_allocate)(self.plug, &allocation);
++            (self.state.api.gtk_widget_size_allocate)(self.view, &allocation);
++            (self.state.api.webkit_web_view_set_zoom_level)(self.view, (dpi / scale).clamp(0.25, 5.0));
++            x::XMoveWindow(self.display, self.plug_id, coord(full.pos.x - clip.pos.x), coord(full.pos.y - clip.pos.y));
++            x::XResizeWindow(self.display, self.plug_id, extent(full.size.x), extent(full.size.y));
++            if !self.visible {
++                x::XMapWindow(self.display, self.socket);
++                self.send_xembed(1, 0, 0, 0); // WINDOW_ACTIVATE, no focus stealing.
++                self.visible = true;
++            }
++            x::XFlush(self.display);
++        }
++        self.has_allocation = true;
++        if let Some(document) = self.pending_document.take() {
++            match document {
++                Document::Url(url, replace) => self.set_url(&url, replace),
++                Document::Html(html, base) => self.set_html(&html, &base),
++            }
++        }
++    }
++    pub(crate) fn window(&self) -> Option<WindowId> { self.attached }
++    pub(crate) fn is_finished(&self) -> bool { self.state.finished.get() }
++    pub(crate) fn hide(&mut self) {
++        if self.visible {
++            self.focus(false);
++            self.send_xembed(2, 0, 0, 0);
++            unsafe { XUnmapWindow(self.display, self.socket); x::XFlush(self.display); }
++            self.visible = false;
++        }
++    }
++    pub(crate) fn detach(&mut self) {
++        self.hide();
++        unsafe {
++            let root = x::XRootWindow(self.display, x::XDefaultScreen(self.display));
++            XReparentWindow(self.display, self.socket, root, 0, 0);
++            self.parent = root;
++            x::XFlush(self.display);
++        }
++        self.attached = None;
++    }
++    pub(crate) fn focus(&mut self, focused: bool) {
++        if focused && !self.visible { return; }
++        if self.focused == focused { return; }
++        self.focused = focused;
++        self.send_xembed(if focused { 4 } else { 5 }, 0, 0, 0);
++        unsafe {
++            if focused {
++                x::XSetInputFocus(self.display, self.plug_id, 2, 0);
++                (self.state.api.gtk_widget_grab_focus)(self.view);
++            } else if self.visible {
++                x::XSetInputFocus(self.display, self.parent, 2, 0);
++            }
++        }
++    }
++    pub(crate) fn active(&mut self, active: bool) {
++        if self.visible { self.send_xembed(if active { 1 } else { 2 }, 0, 0, 0); }
++        if !active { self.focused = false; self.send_xembed(5, 0, 0, 0); }
++    }
++    pub(crate) fn xembed_message(&mut self, window: x::Window, atom: x::Atom, message: c_long) -> bool {
++        if window != self.socket || atom != self.xembed { return false; }
++        match message { 3 => self.focus(true), 6 | 7 => self.focus(false), _ => {} }
++        true
++    }
++    pub(crate) fn set_url(&mut self, url: &str, replace: bool) {
++        if self.state.finished.get() { return; }
++        if !self.has_allocation { self.pending_document = Some(Document::Url(url.to_owned(), replace)); return; }
++        match BrowserPolicy::reader(url, self.state.navigable) {
++            Ok(policy) => *self.state.policy.borrow_mut() = policy,
++            Err(message) => { self.state.error(message); return; }
++        }
++        if !matches!(self.state.policy.borrow().decide(url, true), NavigationDecision::Allow) {
++            self.state.blocked(); return;
++        }
++        let Ok(uri) = CString::new(url) else { self.state.error("Invalid browser URL"); return; };
++        unsafe {
++            // A native replace is implemented inside the existing document;
++            // normal navigation policies still enforce its destination.
++            if replace {
++                let quoted = js_string(url);
++                self.eval_js(&format!("window.location.replace({quoted})"));
++            } else { (self.state.api.webkit_web_view_load_uri)(self.view, uri.as_ptr()); }
++        }
++    }
++    pub(crate) fn set_html(&mut self, html: &str, base: &str) {
++        if self.state.finished.get() { return; }
++        if !self.has_allocation { self.pending_document = Some(Document::Html(html.to_owned(), base.to_owned())); return; }
++        let Ok(policy) = BrowserPolicy::reader(base, self.state.navigable) else { self.state.error("Invalid browser base URL"); return; };
++        let (Ok(html), Ok(base)) = (CString::new(html), CString::new(base)) else { return; };
++        *self.state.policy.borrow_mut() = policy;
++        unsafe { (self.state.api.webkit_web_view_load_html)(self.view, html.as_ptr(), base.as_ptr()); }
++    }
++    pub(crate) fn eval_js(&self, js: &str) {
++        // Only the owning native host can evaluate script; no page-to-host bridge.
++        if self.state.finished.get() { return; }
++        if let Ok(js) = CString::new(js) {
++            unsafe { (self.state.api.webkit_web_view_run_javascript)(self.view, js.as_ptr(), ptr::null_mut(), None, ptr::null_mut()); }
++        }
++    }
++    pub(crate) fn history_go(&self, delta: i32) {
++        if self.state.finished.get() { return; }
++        unsafe {
++            let list = (self.state.api.webkit_web_view_get_back_forward_list)(self.view);
++            let item = (self.state.api.webkit_back_forward_list_get_nth_item)(list, delta);
++            if !item.is_null() { (self.state.api.webkit_web_view_go_to_back_forward_list_item)(self.view, item); }
++        }
++    }
++}
++impl Drop for LinuxSystemBrowser {
++    fn drop(&mut self) {
++        self.hide();
++        self.state.finished.set(true);
++        unsafe {
++            // Disconnect before destroying GTK objects or releasing callback
++            // state. Web process signals may arrive during destruction.
++            for (object, signal) in self.signals.drain(..) { (self.state.api.g_signal_handler_disconnect)(object, signal); }
++            (self.state.api.webkit_web_view_stop_loading)(self.view);
++            let gdk_display = (self.state.api.gdk_display_get_default)();
++            // A window-manager close can already have destroyed the native
++            // parent. Trap only GTK teardown's expected stale-child errors.
++            (self.state.api.gdk_x11_display_error_trap_push)(gdk_display);
++            (self.state.api.gtk_widget_destroy)(self.plug);
++            // GTK and Makepad use separate X connections. Complete the plug's
++            // unmap/destroy before destroying its socket, otherwise the server
++            // can remove the child before GTK's queued UnmapWindow arrives.
++            (self.state.api.gdk_display_sync)(gdk_display);
++            (self.state.api.gdk_x11_display_error_trap_pop_ignored)(gdk_display);
++            (self.state.api.g_object_unref)(self.context);
++            x::XDestroyWindow(self.display, self.socket);
++            x::XFlush(self.display);
++        }
++    }
++}
++fn coord(value: f64) -> c_int { value.round().clamp(-32768.0, 32767.0) as c_int }
++fn extent(value: f64) -> c_uint { value.ceil().clamp(1.0, 32767.0) as c_uint }
++fn js_string(value: &str) -> String {
++    let mut out = String::from("\"");
++    for character in value.chars() {
++        match character {
++            '"' => out.push_str("\\\""), '\\' => out.push_str("\\\\"),
++            '\n' => out.push_str("\\n"), '\r' => out.push_str("\\r"),
++            c if c.is_control() || c == '\u{2028}' || c == '\u{2029}' => out.push_str(&format!("\\u{:04x}", c as u32)),
++            c => out.push(c),
++        }
++    }
++    out.push('"'); out
++}
++#[link(name = "X11")]
++extern "C" {
++    fn XSelectInput(display: *mut x::Display, window: x::Window, mask: c_long) -> c_int;
++    fn XSync(display: *mut x::Display, discard: c_int) -> c_int;
++    fn XReparentWindow(display: *mut x::Display, window: x::Window, parent: x::Window, x: c_int, y: c_int) -> c_int;
++    fn XUnmapWindow(display: *mut x::Display, window: x::Window) -> c_int;
++}
+diff --git a/platform/src/os/linux/mod.rs b/platform/src/os/linux/mod.rs
+index e234e0fee..1994e6a98 100644
+--- a/platform/src/os/linux/mod.rs
++++ b/platform/src/os/linux/mod.rs
+@@ -2,6 +2,8 @@
+ pub mod opengl_cx;
+ #[cfg(not(any(linux_direct, target_env = "ohos", target_os = "android")))]
+ pub mod file_dialog;
++#[cfg(not(any(linux_direct, target_env = "ohos", target_os = "android")))]
++pub(crate) mod linux_webkit;
+ // The wayland-* crates are dependencies of the linux-gnu targets only, so
+ // this has to carry the same gate as its siblings: Android and OHOS are
+ // `os::linux` too, and would otherwise fail to resolve `wayland_client`.
+diff --git a/platform/src/os/linux/wayland/linux_wayland.rs b/platform/src/os/linux/wayland/linux_wayland.rs
+index 1a814f7e8..f3d3b916b 100644
+--- a/platform/src/os/linux/wayland/linux_wayland.rs
++++ b/platform/src/os/linux/wayland/linux_wayland.rs
+@@ -198,6 +198,7 @@ fn state_event_callback(&mut self, state: &mut WaylandState, event: XlibEvent) -
+             }
+         }
+         match event {
++            XlibEvent::BrowserMessage { .. } => {} // XEmbed is X11-only.
+             XlibEvent::WindowGotFocus(window_id) => {
+                 // repaint all window passes. Metal sometimes doesnt flip buffers when hidden/no focus
+                 let mut cx = self.cx.borrow_mut();
+@@ -736,6 +737,14 @@ fn handle_platform_ops(&self, state: &mut WaylandState) -> EventFlow {
+                 }
+             }
+             match op {
++                CxOsOp::SpawnSystemBrowser { browser_id, .. } => {
++                    super::super::linux_webkit::unavailable(browser_id.0, false,
++                        "Embedded WebKitGTK requires X11/XWayland; relaunch with --linux-backend=x11 in a session with DISPLAY");
++                }
++                CxOsOp::SpawnAuthBrowser { browser_id, .. } => {
++                    super::super::linux_webkit::unavailable(browser_id.0, true,
++                        "Embedded authentication is unavailable on Linux; use the external browser");
++                }
+                 CxOsOp::CreateWindow(window_id) => {
+                     #[cfg(not(use_vulkan))]
+                     let gl_cx = cx.os.opengl_cx.as_ref().unwrap();
+diff --git a/platform/src/os/linux/windowing_backend.rs b/platform/src/os/linux/windowing_backend.rs
+index aeb3efaac..4cbfdb617 100644
+--- a/platform/src/os/linux/windowing_backend.rs
++++ b/platform/src/os/linux/windowing_backend.rs
+@@ -11,6 +11,13 @@
+ /// text, matching the common Windows and GTK defaults.
+ pub const PIXELS_PER_WHEEL_DETENT: f64 = 60.0;
+ 
++static PREFER_X11_FOR_EMBEDDED_BROWSER: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
++
++fn prefers_x11_for_embedded_browser() -> bool {
++    !cfg!(use_vulkan) && env_var_is_nonempty("DISPLAY")
++        && PREFER_X11_FOR_EMBEDDED_BROWSER.load(std::sync::atomic::Ordering::Relaxed)
++}
++
+ fn env_var_is_nonempty(name: &str) -> bool {
+     std::env::var_os(name).is_some_and(|value| !value.is_empty())
+ }
+@@ -42,6 +49,12 @@ fn detect_windowing_protocol() -> WindowingProtocol {
+         return protocol;
+     }
+ 
++    // Hosts that require embedded WebKit may opt into XWayland. Explicit user
++    // choices above always win, and Vulkan still requires native Wayland.
++    if prefers_x11_for_embedded_browser() {
++        return WindowingProtocol::X11;
++    }
++
+     // Check for Wayland first
+     if env_var_is_nonempty("WAYLAND_DISPLAY") {
+         return WindowingProtocol::Wayland;
+@@ -63,6 +76,13 @@ pub enum WindowingProtocol {
+ }
+ 
+ impl Cx {
++    /// Call before starting the UI event loop to prefer X11/XWayland when an X
++    /// display exists. Needed for WebKitGTK XEmbed; no environment is mutated.
++    /// An explicit --linux-backend choice and the Vulkan requirement take priority.
++    pub fn prefer_x11_for_embedded_browser() {
++        PREFER_X11_FOR_EMBEDDED_BROWSER.store(true, std::sync::atomic::Ordering::Relaxed);
++    }
++
+     pub fn event_loop(cx: Rc<RefCell<Cx>>) {
+         #[cfg(use_vulkan)]
+         if is_stdin_loop_mode() {
+@@ -123,6 +143,8 @@ pub fn event_loop(cx: Rc<RefCell<Cx>>) {
+                     println!("Reason: --stdin-loop mode uses X11 stdin backend");
+                 } else if forced_windowing_protocol_from_args() == Some(WindowingProtocol::X11) {
+                     println!("Reason: --linux-backend=x11 override");
++                } else if prefers_x11_for_embedded_browser() {
++                    println!("Reason: host preference for embedded WebKitGTK via X11/XWayland");
+                 } else if env_var_is_nonempty("DISPLAY") {
+                     println!("Reason: DISPLAY environment variable is set");
+                 } else {
+diff --git a/platform/src/os/linux/x11/linux_x11.rs b/platform/src/os/linux/x11/linux_x11.rs
+index 4df47ec0f..55a618663 100644
+--- a/platform/src/os/linux/x11/linux_x11.rs
++++ b/platform/src/os/linux/x11/linux_x11.rs
+@@ -1,6 +1,7 @@
+ use {
+     self::super::super::{
+         egl_sys,
++        linux_webkit::{self, LinuxSystemBrowser},
+         linux_video_playback::{poll_pending_gstreamer_teardowns, GStreamerVideoPlayer},
+         linux_video_player::{
+             collect_linux_video_player_events, prepare_desktop_linux_video, LinuxPrepareResult,
+@@ -48,12 +49,14 @@ pub fn x11_event_loop(cx: Rc<RefCell<Cx>>) {
+ 
+ pub struct X11Cx {
+     pub cx: Rc<RefCell<Cx>>,
++    browsers: std::collections::HashMap<LiveId, LinuxSystemBrowser>,
+ }
+ 
+ impl X11Cx {
+     pub fn event_loop_impl(cx: Rc<RefCell<Cx>>) {
+         let mut x11_cx = X11Cx {
+             cx: cx.clone(),
++            browsers: Default::default(),
+         };
+         cx.borrow_mut().self_ref = Some(cx.clone());
+         cx.borrow_mut().os_type = OsType::LinuxWindow(LinuxWindowParams {
+@@ -73,7 +76,11 @@ pub fn event_loop_impl(cx: Rc<RefCell<Cx>>) {
+                     return EventFlow::Wait;
+                 }
+                 let mut opengl_windows = opengl_windows.borrow_mut();
+-                x11_cx.xlib_event_callback(xlib_app, events, &mut *opengl_windows)
++                let flow = x11_cx.xlib_event_callback(xlib_app, events, &mut *opengl_windows);
++                // XlibApp closes the Display as soon as Exit is returned.
++                // Dispose child sockets while that connection is still valid.
++                if matches!(flow, EventFlow::Exit) { x11_cx.browsers.clear(); }
++                flow
+             }
+         }));
+ 
+@@ -112,7 +119,13 @@ fn xlib_event_callback(
+         }
+ 
+         match event {
++            XlibEvent::BrowserMessage { window, atom, message } => {
++                for browser in self.browsers.values_mut() {
++                    if browser.xembed_message(window, atom, message) { break; }
++                }
++            }
+             XlibEvent::WindowGotFocus(window_id) => {
++                for browser in self.browsers.values_mut().filter(|browser| browser.window() == Some(window_id)) { browser.active(true); }
+                 // repaint all window passes. Metal sometimes doesnt flip buffers when hidden/no focus
+                 let mut cx = self.cx.borrow_mut();
+                 for window in opengl_windows.iter_mut() {
+@@ -123,6 +136,7 @@ fn xlib_event_callback(
+                 cx.call_event_handler(&Event::WindowGotFocus(window_id));
+             }
+             XlibEvent::WindowLostFocus(window_id) => {
++                for browser in self.browsers.values_mut().filter(|browser| browser.window() == Some(window_id)) { browser.active(false); }
+                 let mut cx = self.cx.borrow_mut();
+                 cx.call_event_handler(&Event::WindowLostFocus(window_id));
+             }
+@@ -152,6 +166,7 @@ fn xlib_event_callback(
+                 cx.call_event_handler(&Event::WindowGeomChange(re));
+             }
+             XlibEvent::WindowClosed(wc) => {
++                self.browsers.retain(|_, browser| browser.window() != Some(wc.window_id));
+                 let window_id = wc.window_id;
+                 self.close_popup_children(opengl_windows, xlib_app, window_id);
+ 
+@@ -224,6 +239,7 @@ fn xlib_event_callback(
+                 }
+             }
+             XlibEvent::MouseDown(mut e) => {
++                for browser in self.browsers.values_mut() { browser.focus(false); }
+                 let mut cx = self.cx.borrow_mut();
+                 cx.dpi_override_scale(&mut e.abs, e.window_id);
+                 cx.fingers.process_tap_count(e.abs, e.time);
+@@ -308,6 +324,10 @@ fn xlib_event_callback(
+                 cx.call_event_handler(&Event::TextCut(e))
+             }
+             XlibEvent::Timer(e) => {
++                if e.timer_id == 0 {
++                    linux_webkit::pump();
++                    self.browsers.retain(|_, browser| !browser.is_finished());
++                }
+                 let mut cx = self.cx.borrow_mut();
+                 if e.timer_id == 0 {
+                     let internal_signal = SignalToUI::check_and_clear_internal_signal();
+@@ -571,6 +591,7 @@ fn handle_platform_ops(
+                     opengl_windows.push(opengl_window);
+                 }
+                 CxOsOp::CloseWindow(window_id) => {
++                    self.browsers.retain(|_, browser| browser.window() != Some(window_id));
+                     drop(cx);
+                     self.close_popup_children(opengl_windows, xlib_app, window_id);
+                     cx = self.cx.borrow_mut();
+@@ -600,7 +621,7 @@ fn handle_platform_ops(
+                         }
+                     }
+                 }
+-                CxOsOp::Quit => ret = EventFlow::Exit,
++                CxOsOp::Quit => { self.browsers.clear(); ret = EventFlow::Exit; },
+                 CxOsOp::MinimizeWindow(window_id) => {
+                     if let Some(window) =
+                         opengl_windows.iter_mut().find(|w| w.window_id == window_id)
+@@ -916,6 +937,53 @@ fn handle_platform_ops(
+                         let _ = player.select_audio_track(index);
+                     }
+                 }
++                CxOsOp::SpawnSystemBrowser { browser_id, url, navigable } => {
++                    // Respawn discards prior page state, callbacks and context.
++                    self.browsers.remove(&browser_id);
++                    match LinuxSystemBrowser::new(xlib_app.display, browser_id.0, &url, navigable) {
++                        Ok(browser) => { self.browsers.insert(browser_id, browser); }
++                        Err(error) => linux_webkit::unavailable(browser_id.0, false, error),
++                    }
++                }
++                CxOsOp::SpawnAuthBrowser { browser_id, .. } => {
++                    self.browsers.remove(&browser_id);
++                    // WebKitGTK cannot reliably distinguish a main-frame callback
++                    // before its network request. Keep authentication external;
++                    // never send a callback token to octosense.invalid.
++                    linux_webkit::unavailable(browser_id.0, true,
++                        "Embedded authentication is unavailable on Linux; use the external browser");
++                }
++                CxOsOp::UpdateSystemBrowser { browser_id, area, visible } => {
++                    let target = area.draw_list_id()
++                        .and_then(|id| cx.draw_lists[id].draw_pass_id)
++                        .and_then(|id| cx.get_pass_window_id(id))
++                        .and_then(|id| opengl_windows.iter().find(|window| window.window_id == id)
++                            .and_then(|window| window.xlib_window.window.map(|native| (id, native))));
++                    if let Some(browser) = self.browsers.get_mut(&browser_id) {
++                        if let Some((id, parent)) = target {
++                            let window = &cx.windows[id];
++                            let full = window.layout_rect_to_physical_pixels(area.rect(&cx));
++                            let clip = window.layout_rect_to_physical_pixels(area.clipped_rect(&cx));
++                            browser.update(id, parent, full, clip, window.window_geom.dpi_factor, visible);
++                        } else { browser.hide(); }
++                    }
++                }
++                CxOsOp::DetachSystemBrowser { browser_id } => {
++                    if let Some(browser) = self.browsers.get_mut(&browser_id) { browser.detach(); }
++                }
++                CxOsOp::SetSystemBrowserUrl { browser_id, url, replace } => {
++                    if let Some(browser) = self.browsers.get_mut(&browser_id) { browser.set_url(&url, replace); }
++                }
++                CxOsOp::SetSystemBrowserHtml { browser_id, html, base_url } => {
++                    if let Some(browser) = self.browsers.get_mut(&browser_id) { browser.set_html(&html, &base_url); }
++                }
++                CxOsOp::EvalSystemBrowserJs { browser_id, js } => {
++                    if let Some(browser) = self.browsers.get(&browser_id) { browser.eval_js(&js); }
++                }
++                CxOsOp::SystemBrowserHistoryGo { browser_id, delta } => {
++                    if let Some(browser) = self.browsers.get(&browser_id) { browser.history_go(delta); }
++                }
++                CxOsOp::CloseSystemBrowser { browser_id } => { self.browsers.remove(&browser_id); }
+                 CxOsOp::AttachCameraNativePreview { .. }
+                 | CxOsOp::UpdateCameraNativePreview { .. }
+                 | CxOsOp::DetachCameraNativePreview { .. } => {
+diff --git a/platform/src/os/linux/x11/xlib_app.rs b/platform/src/os/linux/x11/xlib_app.rs
+index c3308698e..62a67d4bd 100644
+--- a/platform/src/os/linux/x11/xlib_app.rs
++++ b/platform/src/os/linux/x11/xlib_app.rs
+@@ -1170,6 +1170,9 @@ pub unsafe fn event_loop_poll(&mut self) {
+                 }
+                 x11_sys::ClientMessage => {
+                     let event = event.xclient;
++                    if event.format == 32 {
++                        self.do_callback(XlibEvent::BrowserMessage { window: event.window, atom: event.message_type, message: event.data.l[1] });
++                    }
+                     if event.message_type == self.atoms.wm_protocols
+                         && event.data.l[0] as c_ulong == self.atoms.wm_delete_window
+                     {
+@@ -1222,6 +1225,7 @@ pub unsafe fn event_loop_poll(&mut self) {
+                     if event.mode == x11_sys::NotifyGrab
+                         || event.mode == x11_sys::NotifyUngrab
+                         || event.detail == x11_sys::NotifyPointer
++                        || event.detail == 2 // NotifyInferior: focus stays inside an embedded child.
+                     {
+                         continue;
+                     }
+@@ -1244,6 +1248,7 @@ pub unsafe fn event_loop_poll(&mut self) {
+                     if event.xfocus.mode == x11_sys::NotifyGrab
+                         || event.xfocus.mode == x11_sys::NotifyUngrab
+                         || event.xfocus.detail == x11_sys::NotifyPointer
++                        || event.xfocus.detail == 2 // NotifyInferior: XEmbed child, same app window.
+                     {
+                         continue;
+                     }
+diff --git a/platform/src/os/linux/x11/xlib_event.rs b/platform/src/os/linux/x11/xlib_event.rs
+index 6e69c6605..84372712a 100644
+--- a/platform/src/os/linux/x11/xlib_event.rs
++++ b/platform/src/os/linux/x11/xlib_event.rs
+@@ -15,6 +15,7 @@ pub enum XlibEvent {
+     WindowClosed(WindowClosedEvent),
+     PopupDismissed(PopupDismissedEvent),
+     Paint,
++    BrowserMessage { window: std::os::raw::c_ulong, atom: std::os::raw::c_ulong, message: std::os::raw::c_long },
+ 
+     MouseDown(MouseDownEvent),
+     MouseUp(MouseUpEvent),
+diff --git a/platform/src/os/windows/d3d11.rs b/platform/src/os/windows/d3d11.rs
+index 08802b7b0..1fdf234af 100644
+--- a/platform/src/os/windows/d3d11.rs
++++ b/platform/src/os/windows/d3d11.rs
+@@ -33,7 +33,7 @@
+             Graphics::{
+                 Direct3D::{
+                     Fxc::D3DCompile, D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST,
+-                    D3D_DRIVER_TYPE_UNKNOWN, D3D_FEATURE_LEVEL_11_0, D3D_SRV_DIMENSION,
++                    D3D_DRIVER_TYPE_UNKNOWN, D3D_DRIVER_TYPE, D3D_FEATURE_LEVEL_11_0, D3D_SRV_DIMENSION,
+                     D3D_SRV_DIMENSION_TEXTURECUBE,
+                 },
+                 Direct3D11::{
+@@ -2543,15 +2543,19 @@ fn create_device_tier() -> windows_core::Result<(
+             // before a hybrid-GPU transition or a driver reinstall keeps handing back the
+             // adapter that went away. Recovery always starts from a fresh factory.
+             let factory: IDXGIFactory2 = CreateDXGIFactory2(DXGI_CREATE_FACTORY_FLAGS(0))?;
+-            let adapter = factory.EnumAdapters(0)?;
++            // Explicit diagnostics/CI opt-in to Windows' built-in software
++            // rasterizer. Normal hosts still select their hardware adapter.
++            let warp = std::env::var_os("MAKEPAD_D3D11_WARP").is_some_and(|value| value == "1");
++            let adapter = if warp { None } else { Some(factory.EnumAdapters(0)?) };
+             let mut device: Option<ID3D11Device> = None;
+             let mut context: Option<ID3D11DeviceContext> = None;
+             let mut query: Option<ID3D11Query> = None;
+             D3D11CreateDevice(
+-                &adapter,
+-                D3D_DRIVER_TYPE_UNKNOWN,
++                adapter.as_ref(),
++                if warp { D3D_DRIVER_TYPE(5) /* D3D_DRIVER_TYPE_WARP */ } else { D3D_DRIVER_TYPE_UNKNOWN },
+                 HMODULE(std::ptr::null_mut()),
+-                D3D11_CREATE_DEVICE_FLAG(0x800 | 0x20), // VIDEO_SUPPORT | BGRA_SUPPORT
++                // WARP does not require the hardware video decoding interface.
++                D3D11_CREATE_DEVICE_FLAG(if warp { 0x20 } else { 0x800 | 0x20 }),
+                 Some(&[D3D_FEATURE_LEVEL_11_0]),
+                 D3D11_SDK_VERSION,
+                 Some(&mut device),
+diff --git a/platform/src/os/windows/mod.rs b/platform/src/os/windows/mod.rs
+index 19aea0eb4..9ec64eaec 100644
+--- a/platform/src/os/windows/mod.rs
++++ b/platform/src/os/windows/mod.rs
+@@ -14,6 +14,7 @@
+ pub mod win32_event;
+ pub mod win32_screen;
+ pub mod win32_window;
++pub mod windows_webview;
+ pub mod windows_media;
+ pub mod windows_media_engine_notify;
+ pub mod windows_mf_source_reader;
+diff --git a/platform/src/os/windows/windows.rs b/platform/src/os/windows/windows.rs
+index 250cb26dd..b9c25eb14 100644
+--- a/platform/src/os/windows/windows.rs
++++ b/platform/src/os/windows/windows.rs
+@@ -24,6 +24,7 @@
+                 win32_window::Win32Window,
+                 windows_game_input::WindowsGameInput,
+                 windows_media::CxWindowsMedia,
++                windows_webview::WindowsSystemBrowser,
+                 windows_video_player::WindowsUnifiedVideoPlayer,
+             },
+         },
+@@ -164,6 +165,7 @@ fn win32_event_callback(
+                 // close path; no other code may synthesize a WindowClosed, or the app
+                 // would see it twice.
+                 let window_id = wc.window_id;
++                self.os.system_browsers.retain(|_, browser| browser.attached_window() != Some(window_id));
+                 // Cascade-close popups parented to this window. Their own WindowClosed
+                 // arrives via the queued authentic event; removing the D3d11Window now
+                 // makes the app's `WindowHandle::close()` response a no-op.
+@@ -994,6 +996,7 @@ fn handle_platform_ops(
+                     });
+                 }
+                 CxOsOp::CloseWindow(window_id) => {
++                    self.os.system_browsers.retain(|_, browser| browser.attached_window() != Some(window_id));
+                     // The authentic WindowClosed event this triggers delivers
+                     // Event::WindowClosed and the exit check; firing it here would double it.
+                     // Remove the D3d11Window now so later ops cannot touch the destroyed hwnd.
+@@ -1294,6 +1297,51 @@ fn handle_platform_ops(
+                         player.set_playback_rate(rate);
+                     }
+                 }
++                CxOsOp::SpawnSystemBrowser { browser_id, url, navigable } => {
++                    self.os.system_browsers.insert(browser_id, WindowsSystemBrowser::new(browser_id, &url, navigable));
++                }
++                CxOsOp::SpawnAuthBrowser { browser_id, url, callback_url, inspectable: _ } => {
++                    self.os.system_browsers.insert(browser_id, WindowsSystemBrowser::new_auth(browser_id, &url, &callback_url));
++                }
++                CxOsOp::UpdateSystemBrowser { browser_id, area, visible } => {
++                    let placement = area.draw_list_id()
++                        .and_then(|id| self.draw_lists[id].draw_pass_id)
++                        .and_then(|pass| self.get_pass_window_id(pass))
++                        .and_then(|id| d3d11_windows.iter().find(|w| w.window_id == id).map(|w|
++                            (id, w.win32_window.hwnd, w.win32_window.get_dpi_factor())));
++                    if let Some((window, hwnd, dpi)) = placement {
++                        let rect = area.rect(self);
++                        let clip = area.clipped_rect(self);
++                        if let Some(browser) = self.os.system_browsers.get_mut(&browser_id) {
++                            browser.update(window, hwnd, rect, clip, dpi, visible);
++                        }
++                    } else if let Some(browser) = self.os.system_browsers.get_mut(&browser_id) {
++                        browser.detach();
++                    }
++                }
++                CxOsOp::DetachSystemBrowser { browser_id } => {
++                    if let Some(browser) = self.os.system_browsers.get_mut(&browser_id) { browser.detach(); }
++                }
++                CxOsOp::SetSystemBrowserUrl { browser_id, url, replace } => {
++                    if let Some(browser) = self.os.system_browsers.get_mut(&browser_id) { browser.set_url(&url, replace); }
++                }
++                CxOsOp::SetSystemBrowserHtml { browser_id, html, base_url } => {
++                    if let Some(browser) = self.os.system_browsers.get_mut(&browser_id) { browser.set_html(&html, &base_url); }
++                }
++                CxOsOp::EvalSystemBrowserJs { browser_id, js } => {
++                    if let Some(browser) = self.os.system_browsers.get(&browser_id) { browser.eval_js(&js); }
++                }
++                CxOsOp::SystemBrowserHistoryGo { browser_id, delta } => {
++                    if let Some(browser) = self.os.system_browsers.get(&browser_id) { browser.history_go(delta); }
++                }
++                CxOsOp::CloseSystemBrowser { browser_id } => { self.os.system_browsers.remove(&browser_id); }
++                CxOsOp::InspectSystemBrowser { browser_id, result_path, snapshot_path, scroll_y } => {
++                    if let Some(browser) = self.os.system_browsers.get(&browser_id) {
++                        browser.inspect(result_path, snapshot_path, scroll_y);
++                    } else {
++                        let _ = std::fs::write(result_path, r#"{"error":"Browser is closed"}"#);
++                    }
++                }
+                 // Track selection is currently implemented on Linux GStreamer only.
+                 CxOsOp::SelectVideoTrack(_, _) | CxOsOp::SelectAudioTrack(_, _) => {}
+                 CxOsOp::AttachCameraNativePreview { .. }
+@@ -1428,6 +1476,7 @@ pub struct CxOs {
+     pub(crate) game_input_events: GameInputEventChannel,
+     pub(crate) windows_game_input: Option<WindowsGameInput>,
+     pub(crate) video_players: HashMap<LiveId, WindowsUnifiedVideoPlayer>,
++    pub(crate) system_browsers: HashMap<LiveId, WindowsSystemBrowser>,
+     pub(crate) async_hlsl_compile: crate::os::windows::d3d11::AsyncHlslCompile,
+     pub(crate) stdin_timers: crate::os::shared_framebuf::PollTimers,
+     /// Earliest time the device-loss recovery may try again, and how many tries this outage
+diff --git a/platform/src/os/windows/windows_webview.rs b/platform/src/os/windows/windows_webview.rs
+new file mode 100644
+index 000000000..bf1ca2e78
+--- /dev/null
++++ b/platform/src/os/windows/windows_webview.rs
+@@ -0,0 +1,1091 @@
++//! WebView2 lives inside a clipping child HWND of the Makepad window. COM
++//! completions run on the existing STA message loop; no nested pump or worker
++//! waits. A weak state reference prevents late creation callbacks resurrecting
++//! closed views. Pages never receive host objects or an IPC bridge.
++use crate::{
++    cx::Cx,
++    event::{NativeAuthBrowserEvent, NativeSystemBrowserNavigation, NativeSystemBrowserPageError, NativeSystemBrowserPolicyBlocked},
++    makepad_live_id::LiveId,
++    makepad_math::Rect,
++    system_browser::{BrowserPolicy, NavigationDecision},
++    window::WindowId,
++};
++use std::{
++    cell::RefCell,
++    rc::Rc,
++    sync::atomic::{AtomicU64, Ordering},
++};
++use webview2_com::{Microsoft::Web::WebView2::Win32::*, *};
++use webview2_windows::{
++    core::{w, Interface, Result, BOOL, PCWSTR, PWSTR},
++    Win32::{
++        Foundation::{E_FAIL, HWND, RECT},
++        System::{
++            Com::{
++                CoTaskMemFree, IStream, StructuredStorage::CreateStreamOnHGlobal, STATFLAG_NONAME,
++                STATSTG, STREAM_SEEK_SET,
++            },
++            LibraryLoader::GetModuleHandleW,
++        },
++        UI::WindowsAndMessaging::*,
++    },
++};
++
++static NEXT_PROFILE: AtomicU64 = AtomicU64::new(1);
++
++type Shared = Rc<RefCell<State>>;
++
++struct State {
++    id: LiveId,
++    policy: Option<BrowserPolicy>,
++    navigable: bool,
++    auth: bool,
++    auth_finished: bool,
++    closed: bool,
++    creating: bool,
++    observed_web_messages: u64,
++    web_message_observer_active: bool,
++    attached_window: Option<WindowId>,
++    child: HWND,
++    bounds: RECT,
++    visible: bool,
++    controller: Option<ICoreWebView2Controller>,
++    webview: Option<ICoreWebView2>,
++    pending: Document,
++    inline: bool,
++}
++
++#[derive(Clone)]
++enum Document {
++    Url(String, bool),
++    Html(String),
++}
++
++pub(crate) struct WindowsSystemBrowser {
++    state: Shared,
++}
++
++impl WindowsSystemBrowser {
++    pub(crate) fn new(id: LiveId, url: &str, navigable: bool) -> Self {
++        Self::create(id, url, navigable, None)
++    }
++
++    pub(crate) fn new_auth(id: LiveId, url: &str, callback: &str) -> Self {
++        Self::create(id, url, false, Some(callback))
++    }
++
++    fn create(id: LiveId, url: &str, navigable: bool, callback: Option<&str>) -> Self {
++        let policy = if let Some(callback) = callback {
++            BrowserPolicy::auth(url, callback)
++        } else {
++            BrowserPolicy::reader(url, navigable)
++        };
++        let state = Rc::new(RefCell::new(State {
++            id,
++            policy: policy.ok(),
++            navigable,
++            auth: callback.is_some(),
++            auth_finished: false,
++            closed: false,
++            creating: false,
++            observed_web_messages: 0,
++            web_message_observer_active: false,
++            attached_window: None,
++            child: HWND::default(),
++            bounds: RECT::default(),
++            visible: false,
++            controller: None,
++            webview: None,
++            pending: Document::Url(url.into(), false),
++            inline: false,
++        }));
++        if state.borrow().policy.is_none() {
++            report_error(&state, "The browser URL is not permitted", -1);
++        }
++        Self { state }
++    }
++
++    pub(crate) fn attached_window(&self) -> Option<WindowId> {
++        self.state.borrow().attached_window
++    }
++
++    pub(crate) fn update(
++        &mut self,
++        window: WindowId,
++        parent: windows::Win32::Foundation::HWND,
++        rect: Rect,
++        clip: Rect,
++        dpi: f64,
++        visible: bool,
++    ) {
++        let parent = HWND(parent.0);
++        // Keep the WebView's full document size while the outer HWND clips it
++        // to the widget's visible area (scrolling, portals and covered edges).
++        let pixel = |v: f64| (v * dpi).round().clamp(i32::MIN as f64, i32::MAX as f64) as i32;
++        let visible = visible && clip.size.x > 0.0 && clip.size.y > 0.0;
++        let bounds = RECT {
++            left: pixel(rect.pos.x - clip.pos.x),
++            top: pixel(rect.pos.y - clip.pos.y),
++            right: pixel(rect.pos.x - clip.pos.x + rect.size.x),
++            bottom: pixel(rect.pos.y - clip.pos.y + rect.size.y),
++        };
++        let (mut child, old_window, controller, creating, closed) = {
++            let mut state = self.state.borrow_mut();
++            let old = state.attached_window;
++            state.attached_window = Some(window);
++            state.bounds = bounds;
++            state.visible = visible;
++            (
++                state.child,
++                old,
++                state.controller.clone(),
++                state.creating,
++                state.closed,
++            )
++        };
++        if closed {
++            return;
++        }
++        unsafe {
++            if child.is_invalid() {
++                let result = CreateWindowExW(
++                    WINDOW_EX_STYLE::default(),
++                    w!("STATIC"),
++                    w!(""),
++                    WS_CHILD | WS_CLIPCHILDREN | WS_CLIPSIBLINGS,
++                    0,
++                    0,
++                    0,
++                    0,
++                    Some(parent),
++                    None,
++                    GetModuleHandleW(None).ok().map(Into::into),
++                    None,
++                );
++                match result {
++                    Ok(hwnd) => {
++                        child = hwnd;
++                        self.state.borrow_mut().child = hwnd;
++                    }
++                    Err(error) => {
++                        report_error(
++                            &self.state,
++                            "Cannot attach the embedded browser",
++                            error.code().0,
++                        );
++                        return;
++                    }
++                }
++            } else if old_window != Some(window) {
++                if let Err(error) = SetParent(child, Some(parent)) {
++                    report_error(
++                        &self.state,
++                        "Cannot reattach the embedded browser",
++                        error.code().0,
++                    );
++                    return;
++                }
++            }
++            if let Err(error) = SetWindowPos(
++                child,
++                None,
++                pixel(clip.pos.x),
++                pixel(clip.pos.y),
++                pixel(clip.size.x).max(0),
++                pixel(clip.size.y).max(0),
++                SWP_NOACTIVATE | SWP_NOZORDER,
++            ) {
++                report_error(
++                    &self.state,
++                    "Cannot resize the embedded browser",
++                    error.code().0,
++                );
++            }
++            let _ = ShowWindow(child, if visible { SW_SHOWNA } else { SW_HIDE });
++            if let Some(controller) = controller {
++                if let Err(error) = controller
++                    .SetBounds(bounds)
++                    .and_then(|_| controller.SetIsVisible(visible))
++                    .and_then(|_| controller.NotifyParentWindowPositionChanged())
++                {
++                    report_error(
++                        &self.state,
++                        "Cannot update the embedded browser",
++                        error.code().0,
++                    );
++                }
++            } else if !creating {
++                self.state.borrow_mut().creating = true;
++                if let Err(error) = start_environment(&self.state, child) {
++                    report_error(
++                        &self.state,
++                        "WebView2 could not start; install the Microsoft Edge WebView2 Runtime",
++                        error.code().0,
++                    );
++                }
++            }
++        }
++    }
++
++    pub(crate) fn detach(&mut self) {
++        let (child, controller) = {
++            let mut state = self.state.borrow_mut();
++            state.visible = false;
++            // Keep ownership tied to the window so its destruction also closes
++            // detached views. The next update may reparent the hidden child.
++            (state.child, state.controller.clone())
++        };
++        unsafe {
++            if let Some(controller) = controller {
++                let _ = controller.SetIsVisible(false);
++            }
++            if !child.is_invalid() {
++                let _ = ShowWindow(child, SW_HIDE);
++            }
++        }
++    }
++
++    pub(crate) fn set_url(&mut self, url: &str, replace: bool) {
++        let accepted = {
++            let mut state = self.state.borrow_mut();
++            if state.auth {
++                !state.auth_finished
++                    && state
++                        .policy
++                        .as_ref()
++                        .is_some_and(|p| matches!(p.decide(url, true), NavigationDecision::Allow))
++            } else if let Ok(policy) = BrowserPolicy::reader(url, state.navigable) {
++                state.policy = Some(policy);
++                true
++            } else {
++                false
++            }
++        };
++        if !accepted {
++            report_blocked(&self.state);
++            return;
++        }
++        {
++            let mut state = self.state.borrow_mut();
++            state.inline = false;
++            state.pending = Document::Url(url.into(), replace);
++        }
++        load_pending(&self.state);
++    }
++
++    pub(crate) fn set_html(&mut self, html: &str, base_url: &str) {
++        if self.state.borrow().auth {
++            report_blocked(&self.state);
++            return;
++        }
++        // NavigateToString keeps an opaque about:blank origin. A base element
++        // resolves relative resources but never grants a host origin or IPC.
++        if html.len() > 2 * 1024 * 1024 {
++            report_error(&self.state, "Embedded HTML exceeds the 2 MiB limit", -1);
++            return;
++        }
++        let html = if base_url.is_empty() || base_url == "about:blank" {
++            html.to_owned()
++        } else if public_resource(base_url) {
++            format!("<base href=\"{}\">{}", html_attribute(base_url), html)
++        } else {
++            report_blocked(&self.state);
++            return;
++        };
++        {
++            let mut state = self.state.borrow_mut();
++            state.inline = true;
++            state.pending = Document::Html(html);
++        }
++        load_pending(&self.state);
++    }
++
++    pub(crate) fn eval_js(&self, js: &str) {
++        let state = self.state.borrow();
++        if state.auth || state.closed || js.len() > 1024 * 1024 {
++            return;
++        }
++        let webview = state.webview.clone();
++        drop(state);
++        if let Some(webview) = webview {
++            if let Err(error) = unsafe { execute(&webview, js) } {
++                report_error(
++                    &self.state,
++                    "The embedded browser script failed",
++                    error.code().0,
++                );
++            }
++        }
++    }
++
++    pub(crate) fn history_go(&self, delta: i32) {
++        // The host's Back/Forward control is allowed in auth, but arbitrary
++        // script evaluation remains forbidden. Every traversal is rechecked.
++        let (auth, finished, webview) = {
++            let s = self.state.borrow();
++            (s.auth, s.closed || s.auth_finished, s.webview.clone())
++        };
++        if finished {
++            return;
++        }
++        if auth {
++            if let Some(webview) = webview {
++                let result = unsafe {
++                    match delta {
++                        -1 => webview.GoBack(),
++                        1 => webview.GoForward(),
++                        _ => return,
++                    }
++                };
++                if let Err(error) = result {
++                    report_error(
++                        &self.state,
++                        "Browser history is unavailable",
++                        error.code().0,
++                    );
++                }
++            }
++        } else {
++            self.eval_js(&format!("history.go({delta})"));
++        }
++    }
++
++    /// Host-owned native acceptance instrumentation. It is unavailable on
++    /// authentication views and writes only to the native caller's paths.
++    pub(crate) fn inspect(
++        &self,
++        result_path: String,
++        snapshot_path: Option<String>,
++        scroll_y: Option<f64>,
++    ) {
++        let (webview, allowed) = {
++            let s = self.state.borrow();
++            let width = s.bounds.right.saturating_sub(s.bounds.left);
++            let height = s.bounds.bottom.saturating_sub(s.bounds.top);
++            (
++                s.webview.clone(),
++                !s.auth && !s.closed && width > 0 && height > 0 && width <= 2048 && height <= 2048,
++            )
++        };
++        if !allowed {
++            let _ = std::fs::write(
++                result_path,
++                r#"{"error":"Browser inspection is unavailable or exceeds 2048px"}"#,
++            );
++            return;
++        }
++        let Some(webview) = webview else {
++            let _ = std::fs::write(result_path, r#"{"error":"Browser is not ready"}"#);
++            return;
++        };
++        // Read the actual native policy. The chrome.webview namespace remains
++        // present when messaging is disabled; namespace presence is not a grant.
++        let settings = unsafe {
++            (|| -> Result<(bool, bool)> {
++                let settings = webview.Settings()?;
++                let mut messages = BOOL::default();
++                let mut objects = BOOL::default();
++                settings.IsWebMessageEnabled(&mut messages)?;
++                settings.AreHostObjectsAllowed(&mut objects)?;
++                Ok((messages.as_bool(), objects.as_bool()))
++            })()
++        };
++        let Ok((web_message_enabled, host_objects_allowed)) = settings else {
++            let _ = std::fs::write(result_path, r#"{"error":"Browser policy inspection failed"}"#);
++            return;
++        };
++        let (web_message_observer_active, observed_web_messages) = {
++            let s = self.state.borrow();
++            (s.web_message_observer_active, s.observed_web_messages)
++        };
++        let scroll = scroll_y
++            .filter(|v| v.is_finite())
++            .map(|v| format!("window.scrollTo(0,{v});"))
++            .unwrap_or_default();
++        let script = wide(&format!(
++            r#"{scroll}({{
++            readyState:document.readyState,title:document.title.slice(0,512),
++            scrollY:window.scrollY,scrollHeight:document.documentElement.scrollHeight,
++            viewportHeight:window.innerHeight,viewportWidth:window.innerWidth,
++            hostBridgePresent:typeof window.octos!=='undefined'||typeof window.octos_native!=='undefined',
++            webMessageEnabled:{web_message_enabled},hostObjectsAllowed:{host_objects_allowed},
++            webMessageObserverActive:{web_message_observer_active},observedWebMessages:{observed_web_messages}
++        }})"#
++        ));
++        let weak = Rc::downgrade(&self.state);
++        let capture_view = webview.clone();
++        let error_path = result_path.clone();
++        let result = unsafe {
++            webview.ExecuteScript(
++                PCWSTR(script.as_ptr()),
++                &ExecuteScriptCompletedHandler::create(Box::new(move |result, metadata| {
++                    let Some(state) = weak.upgrade() else {
++                        return Ok(());
++                    };
++                    if state.borrow().closed {
++                        return Ok(());
++                    }
++                    if result.is_err() || metadata.len() > 16 * 1024 {
++                        let _ = std::fs::write(
++                            &result_path,
++                            r#"{"error":"Browser inspection failed"}"#,
++                        );
++                        return Ok(());
++                    }
++                    if let Some(path) = snapshot_path {
++                        if let Err(error) =
++                            capture(&capture_view, path, result_path.clone(), metadata)
++                        {
++                            let _ = std::fs::write(
++                                result_path,
++                                format!(
++                                    "{{\"error\":\"Browser capture failed ({})\"}}",
++                                    error.code().0
++                                ),
++                            );
++                        }
++                    } else {
++                        let _ = std::fs::write(result_path, metadata);
++                    }
++                    Ok(())
++                })),
++            )
++        };
++        if result.is_err() {
++            let _ = std::fs::write(error_path, r#"{"error":"Browser inspection failed"}"#);
++        }
++    }
++
++    pub(crate) fn cleanup(&mut self) {
++        let (controller, child, cancel) = {
++            let mut state = self.state.borrow_mut();
++            if state.closed {
++                return;
++            }
++            state.closed = true;
++            state.webview.take();
++            let cancel = state.auth && !state.auth_finished;
++            state.auth_finished = true;
++            let child = std::mem::take(&mut state.child);
++            (state.controller.take(), child, cancel)
++        };
++        if cancel {
++            auth_event(&self.state, "cancelled", String::new());
++        }
++        unsafe {
++            if let Some(controller) = controller {
++                close_controller(&controller);
++            }
++            if !child.is_invalid() {
++                let _ = DestroyWindow(child);
++            }
++        }
++    }
++}
++
++impl Drop for WindowsSystemBrowser {
++    fn drop(&mut self) {
++        self.cleanup();
++    }
++}
++
++unsafe fn close_controller(controller: &ICoreWebView2Controller) {
++    // InPrivate never persists cookies/storage. Delete the fresh profile as
++    // well, so its on-disk bookkeeping does not accumulate across app cards.
++    if let Ok(profile) = controller
++        .CoreWebView2()
++        .and_then(|view| view.cast::<ICoreWebView2_13>())
++        .and_then(|view| view.Profile())
++        .and_then(|profile| profile.cast::<ICoreWebView2Profile8>())
++    {
++        let _ = profile.Delete();
++    }
++    let _ = controller.Close();
++}
++
++unsafe fn start_environment(state: &Shared, child: HWND) -> Result<()> {
++    let weak = Rc::downgrade(state);
++    let options: ICoreWebView2EnvironmentOptions = CoreWebView2EnvironmentOptions::default().into();
++    // Never attach an OS account or share a browser profile with another app
++    // card. Controllers use a fresh InPrivate profile below, including auth.
++    options.SetAllowSingleSignOnUsingOSPrimaryAccount(false)?;
++    let folder = std::env::var_os("LOCALAPPDATA")
++        .ok_or_else(|| webview2_windows::core::Error::from(E_FAIL))?;
++    let folder = std::path::PathBuf::from(folder)
++        .join("Makepad")
++        .join("WebView2");
++    let folder = wide(&folder.to_string_lossy());
++    CreateCoreWebView2EnvironmentWithOptions(
++        PCWSTR::null(),
++        PCWSTR(folder.as_ptr()),
++        &options,
++        &CreateCoreWebView2EnvironmentCompletedHandler::create(Box::new(
++            move |result, environment| {
++                let Some(state) = weak.upgrade() else {
++                    return Ok(());
++                };
++                if state.borrow().closed {
++                    return Ok(());
++                }
++                let result = result
++                    .and_then(|_| {
++                        environment.ok_or_else(|| webview2_windows::core::Error::from(E_FAIL))
++                    })
++                    .and_then(|environment| create_controller(&state, &environment, child));
++                if let Err(error) = result {
++                    report_error(
++                        &state,
++                        "WebView2 is unavailable or does not support isolated browser profiles",
++                        error.code().0,
++                    );
++                }
++                Ok(())
++            },
++        )),
++    )
++}
++
++unsafe fn create_controller(
++    state: &Shared,
++    environment: &ICoreWebView2Environment,
++    child: HWND,
++) -> Result<()> {
++    let version: ICoreWebView2Environment10 = environment.cast()?;
++    let options = version.CreateCoreWebView2ControllerOptions()?;
++    options.SetIsInPrivateModeEnabled(true)?;
++    let profile = wide(&format!(
++        "makepad-{}-{}",
++        std::process::id(),
++        NEXT_PROFILE.fetch_add(1, Ordering::Relaxed)
++    ));
++    options.SetProfileName(PCWSTR(profile.as_ptr()))?;
++    let weak = Rc::downgrade(state);
++    let environment = environment.clone();
++    version.CreateCoreWebView2ControllerWithOptions(
++        child,
++        &options,
++        &CreateCoreWebView2ControllerCompletedHandler::create(Box::new(
++            move |result, controller| {
++                let Some(state) = weak.upgrade() else {
++                    if let Some(controller) = controller {
++                        close_controller(&controller);
++                    }
++                    return Ok(());
++                };
++                if state.borrow().closed {
++                    if let Some(controller) = controller {
++                        close_controller(&controller);
++                    }
++                    return Ok(());
++                }
++                let result = result
++                    .and_then(|_| {
++                        controller.ok_or_else(|| webview2_windows::core::Error::from(E_FAIL))
++                    })
++                    .and_then(|controller| {
++                        let webview = controller.CoreWebView2()?;
++                        if let Err(error) = configure(&state, &environment, &webview) {
++                            close_controller(&controller);
++                            return Err(error);
++                        }
++                        let (bounds, visible) = {
++                            let s = state.borrow();
++                            (s.bounds, s.visible)
++                        };
++                        if let Err(error) = controller
++                            .SetBounds(bounds)
++                            .and_then(|_| controller.SetIsVisible(visible))
++                        {
++                            close_controller(&controller);
++                            return Err(error);
++                        }
++                        {
++                            let mut s = state.borrow_mut();
++                            s.controller = Some(controller);
++                            s.webview = Some(webview);
++                        }
++                        load_pending(&state);
++                        Ok(())
++                    });
++                if let Err(error) = result {
++                    report_error(
++                        &state,
++                        "Cannot initialize the embedded browser safely",
++                        error.code().0,
++                    );
++                }
++                Ok(())
++            },
++        )),
++    )
++}
++
++unsafe fn configure(
++    state: &Shared,
++    environment: &ICoreWebView2Environment,
++    webview: &ICoreWebView2,
++) -> Result<()> {
++    let settings = webview.Settings()?;
++    settings.SetAreHostObjectsAllowed(false)?;
++    settings.SetIsWebMessageEnabled(false)?;
++    // Count delivery only for native acceptance diagnostics. Never read the
++    // payload, dispatch it to an app, or grant access to any host operation.
++    // Register before navigation so an initial document cannot evade observation.
++    let weak = Rc::downgrade(state);
++    let mut observer_token = 0;
++    webview.add_WebMessageReceived(
++        &WebMessageReceivedEventHandler::create(Box::new(move |_, _| {
++            if let Some(state) = weak.upgrade() {
++                let mut s = state.borrow_mut();
++                if !s.closed {
++                    s.observed_web_messages = s.observed_web_messages.saturating_add(1);
++                }
++            }
++            Ok(())
++        })),
++        &mut observer_token,
++    )?;
++    state.borrow_mut().web_message_observer_active = true;
++    settings.SetAreDefaultContextMenusEnabled(false)?;
++    settings.SetAreDevToolsEnabled(false)?;
++    settings.SetAreDefaultScriptDialogsEnabled(false)?;
++    settings.SetIsStatusBarEnabled(false)?;
++    settings
++        .cast::<ICoreWebView2Settings3>()?
++        .SetAreBrowserAcceleratorKeysEnabled(false)?;
++    let autofill: ICoreWebView2Settings4 = settings.cast()?;
++    autofill.SetIsPasswordAutosaveEnabled(false)?;
++    autofill.SetIsGeneralAutofillEnabled(false)?;
++    let mut token = 0;
++    for main_frame in [true, false] {
++        let weak = Rc::downgrade(state);
++        let handler = NavigationStartingEventHandler::create(Box::new(move |_, args| {
++            let Some(args) = args else {
++                return Ok(());
++            };
++            let Some(state) = weak.upgrade() else {
++                return args.SetCancel(true);
++            };
++            let url = read_string(|p| args.Uri(p))?;
++            let decision = {
++                let s = state.borrow();
++                if s.closed || s.auth_finished {
++                    NavigationDecision::Block
++                } else if s.inline && url == "about:blank" && main_frame {
++                    NavigationDecision::Allow
++                } else {
++                    s.policy
++                        .as_ref()
++                        .map(|p| p.decide(&url, main_frame))
++                        .unwrap_or(NavigationDecision::Block)
++                }
++            };
++            match decision {
++                NavigationDecision::Allow => {
++                    if main_frame {
++                        navigation(&state, &url, true, None);
++                    }
++                }
++                NavigationDecision::Block => {
++                    args.SetCancel(true)?;
++                    report_blocked(&state);
++                }
++                NavigationDecision::Callback => {
++                    args.SetCancel(true)?;
++                    let emit = {
++                        let mut s = state.borrow_mut();
++                        let emit = !s.auth_finished;
++                        s.auth_finished = true;
++                        emit
++                    };
++                    if emit {
++                        auth_event(&state, "callback", url);
++                    }
++                }
++            }
++            Ok(())
++        }));
++        if main_frame {
++            webview.add_NavigationStarting(&handler, &mut token)?;
++        } else {
++            webview.add_FrameNavigationStarting(&handler, &mut token)?;
++        }
++    }
++    let weak = Rc::downgrade(state);
++    webview.add_NavigationCompleted(
++        &NavigationCompletedEventHandler::create(Box::new(move |sender, args| {
++            let (Some(state), Some(sender), Some(args)) = (weak.upgrade(), sender, args) else {
++                return Ok(());
++            };
++            if state.borrow().closed || state.borrow().auth_finished {
++                return Ok(());
++            }
++            let mut success = BOOL::default();
++            args.IsSuccess(&mut success)?;
++            if success.as_bool() {
++                let url = read_string(|p| sender.Source(p))?;
++                let title = read_string(|p| sender.DocumentTitle(p))?;
++                navigation(&state, &url, false, Some(title));
++            } else {
++                let mut status = COREWEBVIEW2_WEB_ERROR_STATUS::default();
++                args.WebErrorStatus(&mut status)?;
++                // Cancelled policy navigations are reported by NavigationStarting.
++                if status != COREWEBVIEW2_WEB_ERROR_STATUS_OPERATION_CANCELED {
++                    report_error(&state, "The embedded page failed to load", status.0);
++                }
++            }
++            Ok(())
++        })),
++        &mut token,
++    )?;
++    let weak = Rc::downgrade(state);
++    webview.add_DocumentTitleChanged(
++        &DocumentTitleChangedEventHandler::create(Box::new(move |sender, _| {
++            let (Some(state), Some(sender)) = (weak.upgrade(), sender) else {
++                return Ok(());
++            };
++            let url = read_string(|p| sender.Source(p))?;
++            let title = read_string(|p| sender.DocumentTitle(p))?;
++            navigation(&state, &url, false, Some(title));
++            Ok(())
++        })),
++        &mut token,
++    )?;
++    webview.add_NewWindowRequested(
++        &NewWindowRequestedEventHandler::create(Box::new(|_, args| {
++            if let Some(args) = args {
++                args.SetHandled(true)?;
++            }
++            Ok(())
++        })),
++        &mut token,
++    )?;
++    webview.add_PermissionRequested(
++        &PermissionRequestedEventHandler::create(Box::new(|_, args| {
++            if let Some(args) = args {
++                args.SetState(COREWEBVIEW2_PERMISSION_STATE_DENY)?;
++                if let Ok(args) = args.cast::<ICoreWebView2PermissionRequestedEventArgs3>() {
++                    args.SetSavesInProfile(false)?;
++                }
++            }
++            Ok(())
++        })),
++        &mut token,
++    )?;
++    // Require APIs that can block native downloads and client-certificate UI;
++    // an old runtime fails closed instead of silently weakening the boundary.
++    webview.cast::<ICoreWebView2_4>()?.add_DownloadStarting(
++        &DownloadStartingEventHandler::create(Box::new(|_, args| {
++            if let Some(args) = args {
++                args.SetCancel(true)?;
++                args.SetHandled(true)?;
++            }
++            Ok(())
++        })),
++        &mut token,
++    )?;
++    webview
++        .cast::<ICoreWebView2_5>()?
++        .add_ClientCertificateRequested(
++            &ClientCertificateRequestedEventHandler::create(Box::new(|_, args| {
++                if let Some(args) = args {
++                    args.SetCancel(true)?;
++                    args.SetHandled(true)?;
++                }
++                Ok(())
++            })),
++            &mut token,
++        )?;
++    webview
++        .cast::<ICoreWebView2_10>()?
++        .add_BasicAuthenticationRequested(
++            &BasicAuthenticationRequestedEventHandler::create(Box::new(|_, args| {
++                if let Some(args) = args {
++                    args.SetCancel(true)?;
++                }
++                Ok(())
++            })),
++            &mut token,
++        )?;
++    webview
++        .cast::<ICoreWebView2_18>()?
++        .add_LaunchingExternalUriScheme(
++            &LaunchingExternalUriSchemeEventHandler::create(Box::new(|_, args| {
++                if let Some(args) = args {
++                    args.SetCancel(true)?;
++                }
++                Ok(())
++            })),
++            &mut token,
++        )?;
++    webview
++        .cast::<ICoreWebView2_14>()?
++        .add_ServerCertificateErrorDetected(
++            &ServerCertificateErrorDetectedEventHandler::create(Box::new(|_, args| {
++                if let Some(args) = args {
++                    args.SetAction(COREWEBVIEW2_SERVER_CERTIFICATE_ERROR_ACTION_CANCEL)?;
++                }
++                Ok(())
++            })),
++            &mut token,
++        )?;
++    webview.cast::<ICoreWebView2_25>()?.add_SaveAsUIShowing(
++        &SaveAsUIShowingEventHandler::create(Box::new(|_, args| {
++            if let Some(args) = args {
++                args.SetCancel(true)?;
++                args.SetSuppressDefaultDialog(true)?;
++            }
++            Ok(())
++        })),
++        &mut token,
++    )?;
++    // Screen sharing is a separate WebView2 event, not PermissionRequested.
++    // It bubbles from subframes as well; never show the native screen picker.
++    webview
++        .cast::<ICoreWebView2_27>()?
++        .add_ScreenCaptureStarting(
++            &ScreenCaptureStartingEventHandler::create(Box::new(|_, args| {
++                if let Some(args) = args {
++                    args.SetCancel(true)?;
++                    args.SetHandled(true)?;
++                }
++                Ok(())
++            })),
++            &mut token,
++        )?;
++    let weak = Rc::downgrade(state);
++    webview.add_ProcessFailed(
++        &ProcessFailedEventHandler::create(Box::new(move |_, _| {
++            if let Some(state) = weak.upgrade() {
++                report_error(&state, "The embedded browser process stopped", -1);
++            }
++            Ok(())
++        })),
++        &mut token,
++    )?;
++    // Filter fetches as well as top-level navigation. Auth is confined to its
++    // declared origin; readers may fetch public HTTPS resources, never local
++    // files or literal private-network endpoints. DNS rebinding is not solved
++    // by URL policy alone and is not advertised as an OS network sandbox.
++    webview.AddWebResourceRequestedFilter(w!("*"), COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL)?;
++    let weak = Rc::downgrade(state);
++    let environment = environment.clone();
++    webview.add_WebResourceRequested(
++        &WebResourceRequestedEventHandler::create(Box::new(move |_, args| {
++            let Some(args) = args else {
++                return Ok(());
++            };
++            let url = read_string(|p| args.Request()?.Uri(p))?;
++            let allowed = weak.upgrade().is_some_and(|state| {
++                let s = state.borrow();
++                !s.closed
++                    && !s.auth_finished
++                    && if s.auth {
++                        s.policy.as_ref().is_some_and(|p| {
++                            matches!(p.decide(&url, false), NavigationDecision::Allow)
++                        })
++                    } else {
++                        public_resource(&url)
++                            || s.policy.as_ref().is_some_and(|p| {
++                                matches!(p.decide(&url, false), NavigationDecision::Allow)
++                            })
++                            || url == "about:blank"
++                            || url.starts_with("data:")
++                            || url.starts_with("blob:")
++                    }
++            });
++            if !allowed {
++                let response = environment.CreateWebResourceResponse(
++                    None::<&IStream>,
++                    403,
++                    w!("Blocked"),
++                    w!("Content-Type: text/plain\r\n"),
++                )?;
++                args.SetResponse(&response)?;
++            }
++            Ok(())
++        })),
++        &mut token,
++    )?;
++    Ok(())
++}
++
++fn load_pending(state: &Shared) {
++    let (webview, document, allowed) = {
++        let s = state.borrow();
++        (
++            s.webview.clone(),
++            s.pending.clone(),
++            !s.closed && !s.auth_finished && (s.policy.is_some() || s.inline),
++        )
++    };
++    if !allowed {
++        return;
++    }
++    let Some(webview) = webview else {
++        return;
++    };
++    let result = unsafe {
++        match document {
++            Document::Url(url, true) => {
++                execute(&webview, &format!("location.replace({})", js_string(&url)))
++            }
++            Document::Url(url, false) => {
++                let url = wide(&url);
++                webview.Navigate(PCWSTR(url.as_ptr()))
++            }
++            Document::Html(html) => {
++                let html = wide(&html);
++                webview.NavigateToString(PCWSTR(html.as_ptr()))
++            }
++        }
++    };
++    if let Err(error) = result {
++        report_error(state, "Cannot load the embedded page", error.code().0);
++    }
++}
++
++unsafe fn capture(
++    webview: &ICoreWebView2,
++    path: String,
++    result_path: String,
++    metadata: String,
++) -> Result<()> {
++    let stream = CreateStreamOnHGlobal(Default::default(), true)?;
++    let output = stream.clone();
++    webview.CapturePreview(
++        COREWEBVIEW2_CAPTURE_PREVIEW_IMAGE_FORMAT_PNG,
++        &stream,
++        &CapturePreviewCompletedHandler::create(Box::new(move |result| {
++            let result = result.and_then(|_| {
++                let mut stat = STATSTG::default();
++                output.Stat(&mut stat, STATFLAG_NONAME)?;
++                if stat.cbSize == 0 || stat.cbSize > 32 * 1024 * 1024 {
++                    return Err(webview2_windows::core::Error::from(E_FAIL));
++                }
++                output.Seek(0, STREAM_SEEK_SET, None)?;
++                let mut bytes = vec![0u8; stat.cbSize as usize];
++                let mut read = 0;
++                output
++                    .Read(
++                        bytes.as_mut_ptr().cast(),
++                        bytes.len() as u32,
++                        Some(&mut read),
++                    )
++                    .ok()?;
++                if read as usize != bytes.len() {
++                    return Err(webview2_windows::core::Error::from(E_FAIL));
++                }
++                std::fs::write(path, bytes)
++                    .map_err(|_| webview2_windows::core::Error::from(E_FAIL))?;
++                Ok(())
++            });
++            // The metadata file is the completion marker: the PNG is fully
++            // written first, so acceptance never races a partial snapshot.
++            let text = if result.is_ok() {
++                metadata
++            } else {
++                r#"{"error":"Browser capture failed"}"#.into()
++            };
++            let _ = std::fs::write(result_path, text);
++            Ok(())
++        })),
++    )
++}
++
++unsafe fn execute(webview: &ICoreWebView2, js: &str) -> Result<()> {
++    let js = wide(js);
++    webview.ExecuteScript(
++        PCWSTR(js.as_ptr()),
++        &ExecuteScriptCompletedHandler::create(Box::new(|result, _| result)),
++    )
++}
++
++unsafe fn read_string(read: impl FnOnce(*mut PWSTR) -> Result<()>) -> Result<String> {
++    let mut raw = PWSTR::null();
++    let result = read(&mut raw);
++    let value = if result.is_ok() {
++        raw.to_string().unwrap_or_default()
++    } else {
++        String::new()
++    };
++    CoTaskMemFree(Some(raw.0.cast()));
++    result.map(|_| value)
++}
++
++fn public_resource(url: &str) -> bool {
++    BrowserPolicy::reader("about:blank", true)
++        .is_ok_and(|p| matches!(p.decide(url, false), NavigationDecision::Allow))
++}
++
++fn wide(value: &str) -> Vec<u16> {
++    value.encode_utf16().chain(Some(0)).collect()
++}
++fn js_string(value: &str) -> String {
++    let mut result = String::from("\"");
++    for unit in value.encode_utf16() {
++        use std::fmt::Write;
++        let _ = write!(result, "\\u{unit:04x}");
++    }
++    result.push('"');
++    result
++}
++fn html_attribute(value: &str) -> String {
++    value
++        .replace('&', "&amp;")
++        .replace('"', "&quot;")
++        .replace('<', "&lt;")
++        .replace('>', "&gt;")
++}
++fn auth_event(state: &Shared, kind: &str, url: String) {
++    Cx::post_action(NativeAuthBrowserEvent {
++        browser_id: state.borrow().id.0,
++        kind: kind.into(),
++        url,
++    });
++}
++fn report_blocked(state: &Shared) {
++    let s = state.borrow();
++    if s.closed || s.auth_finished {
++        return;
++    }
++    if s.auth {
++        drop(s);
++        auth_event(state, "blocked", String::new());
++    } else {
++        Cx::post_action(NativeSystemBrowserPolicyBlocked {
++            browser_id: s.id.0,
++            description: "Navigation is not permitted in this embedded browser".into(),
++        });
++    }
++}
++fn report_error(state: &Shared, description: &str, code: i32) {
++    let s = state.borrow();
++    if s.closed || s.auth_finished {
++        return;
++    }
++    if s.auth {
++        drop(s);
++        auth_event(state, "error", String::new());
++    } else {
++        Cx::post_action(NativeSystemBrowserPageError {
++            browser_id: s.id.0,
++            code,
++            description: description.into(),
++            url: String::new(),
++        });
++    }
++}
++fn navigation(state: &Shared, url: &str, loading: bool, title: Option<String>) {
++    let s = state.borrow();
++    if s.auth || s.closed {
++        return;
++    }
++    Cx::post_action(NativeSystemBrowserNavigation {
++        browser_id: s.id.0,
++        url: url.chars().take(16384).collect(),
++        title: title.unwrap_or_default().chars().take(2048).collect(),
++        loading,
++        error: None,
++    });
++}
+diff --git a/platform/src/system_browser.rs b/platform/src/system_browser.rs
+new file mode 100644
+index 000000000..1fe6ef745
+--- /dev/null
++++ b/platform/src/system_browser.rs
+@@ -0,0 +1,123 @@
++//! Navigation boundaries shared by the desktop embedded-browser adapters.
++//! The caller has already checked the app's initial URL grant. Native page
++//! navigations must not turn that grant into file, device or external-app access.
++use std::net::IpAddr;
++use url::{Host, Url};
++
++#[derive(Clone, Copy, Debug, PartialEq, Eq)]
++pub enum NavigationDecision {
++    Allow,
++    Block,
++    /// Intercept before loading; deliver only through the host auth event.
++    Callback,
++}
++
++#[derive(Clone)]
++pub struct BrowserPolicy {
++    initial: Url,
++    navigable: bool,
++    callback: Option<Url>,
++}
++
++impl BrowserPolicy {
++    pub fn reader(initial: &str, navigable: bool) -> Result<Self, &'static str> {
++        let initial = address(initial).ok_or("Invalid embedded page address")?;
++        if !page_scheme(&initial) && initial.as_str() != "about:blank" {
++            return Err("Embedded pages require an HTTP or HTTPS address");
++        }
++        Ok(Self { initial, navigable, callback: None })
++    }
++
++    pub fn auth(initial: &str, callback: &str) -> Result<Self, &'static str> {
++        let initial = address(initial).filter(auth_scheme)
++            .ok_or("Invalid authentication origin")?;
++        let callback = address(callback).filter(auth_scheme)
++            .filter(|url| url.query().is_none() && url.fragment().is_none())
++            .ok_or("Invalid authentication callback")?;
++        Ok(Self { initial, navigable: false, callback: Some(callback) })
++    }
++
++    pub fn is_auth(&self) -> bool { self.callback.is_some() }
++
++    pub fn decide(&self, requested: &str, main_frame: bool) -> NavigationDecision {
++        let Some(requested) = address(requested) else { return NavigationDecision::Block; };
++        if let Some(callback) = &self.callback {
++            if requested.origin() == callback.origin() && requested.path() == callback.path() {
++                return if main_frame && requested.fragment().is_none() {
++                    NavigationDecision::Callback
++                } else { NavigationDecision::Block };
++            }
++            return if auth_scheme(&requested) && requested.origin() == self.initial.origin() {
++                NavigationDecision::Allow
++            } else { NavigationDecision::Block };
++        }
++        // Fragment changes stay inside the same document; redirects or links
++        // to another path/query do not inherit a read-only document grant.
++        if same_document(&self.initial, &requested) {
++            return NavigationDecision::Allow;
++        }
++        if self.navigable && public_https(&requested) {
++            NavigationDecision::Allow
++        } else { NavigationDecision::Block }
++    }
++}
++
++fn address(value: &str) -> Option<Url> {
++    if value.is_empty() || value.len() > 16_384
++        || value.chars().any(|c| c.is_control() || c.is_whitespace() || c == '\\')
++    { return None; }
++    let parsed = Url::parse(value).ok()?;
++    if !parsed.username().is_empty() || parsed.password().is_some() { return None; }
++    Some(parsed)
++}
++
++fn page_scheme(url: &Url) -> bool {
++    matches!(url.scheme(), "http" | "https") && url.host().is_some()
++}
++
++fn auth_scheme(url: &Url) -> bool {
++    url.host().is_some() && (url.scheme() == "https"
++        || (url.scheme() == "http" && url.host_str() == Some("127.0.0.1")))
++}
++
++fn same_document(initial: &Url, requested: &Url) -> bool {
++    let mut initial = initial.clone();
++    let mut requested = requested.clone();
++    initial.set_fragment(None);
++    requested.set_fragment(None);
++    initial == requested
++}
++
++fn public_https(url: &Url) -> bool {
++    if url.scheme() != "https" { return false; }
++    match url.host() {
++        Some(Host::Ipv4(ip)) => public_ip(ip.into()),
++        Some(Host::Ipv6(ip)) => public_ip(ip.into()),
++        Some(Host::Domain(host)) => {
++            let host = host.trim_end_matches('.');
++            host.contains('.') && !["localhost", "internal", "local", "lan", "home.arpa"]
++                .iter().any(|name| host == *name || host.strip_suffix(name).is_some_and(|prefix| prefix.ends_with('.')))
++        }
++        None => false,
++    }
++}
++
++fn public_ip(ip: IpAddr) -> bool {
++    match ip {
++        IpAddr::V4(ip) => {
++            let [a, b, ..] = ip.octets();
++            !(ip.is_loopback() || ip.is_private() || ip.is_link_local()
++                || ip.is_unspecified() || ip.is_broadcast() || ip.is_documentation()
++                || ip.is_multicast() || a == 0 || a >= 240
++                || (a == 100 && (64..128).contains(&b)))
++        }
++        IpAddr::V6(ip) => {
++            if let Some(v4) = ip.to_ipv4_mapped() { return public_ip(v4.into()); }
++            let parts = ip.segments();
++            !(ip.is_loopback() || ip.is_unspecified() || ip.is_multicast()
++                || (parts[0] & 0xfe00) == 0xfc00 || (parts[0] & 0xffc0) == 0xfe80
++                || (parts[0] & 0xffc0) == 0xfec0
++                || (parts[0] == 0x2001 && parts[1] == 0xdb8))
++        }
++    }
++}
+diff --git a/widgets/src/web_reader.rs b/widgets/src/web_reader.rs
+index 44240521e..97589c92a 100644
+--- a/widgets/src/web_reader.rs
++++ b/widgets/src/web_reader.rs
+@@ -1,7 +1,7 @@
+ //! A web page inside a script app: the platform's own web view (WKWebView,
+-//! Android's WebView) glued to this widget's rect, driven from script.
+-//! Linux/Windows have no SystemBrowser adapter: open returns false with an
+-//! explicit error rather than claiming success for an invisible browser.
++//! Android's WebView, WebKitGTK on Linux X11/XWayland, or WebView2 on Windows)
++//! glued to this widget's rect, driven from script. Missing native runtimes
++//! and native Wayland report a page error rather than opening another browser.
+ //!
+ //! ```text
+ //! reader := WebReader{width: Fill height: Fill on_error: || show(ui.reader.error())}
+@@ -174,7 +174,7 @@ pub fn open(&mut self, cx: &mut Cx, url: &str) -> bool {
+     }
+ 
+     fn open_on_platform(&mut self, cx: &mut Cx, url: &str, platform: &str) -> bool {
+-        if !matches!(platform, "macos" | "ios" | "android") {
++        if !matches!(platform, "macos" | "ios" | "android" | "linux" | "windows") {
+             self.report(cx, "Embedded web pages are unavailable on this platform; this host has no native WebReader adapter".into());
+             return false;
+         }
+@@ -421,6 +421,12 @@ fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+                         self.auth_changed(cx);
+                     }
+                 }
++                if let Some(blocked) = action.downcast_ref::<crate::makepad_draw::makepad_platform::event::NativeSystemBrowserPolicyBlocked>() {
++                    if blocked.browser_id == self.browser_id().0.get_value() && self.open && !self.auth_mode {
++                        // A denied iframe, popup or permission leaves the permitted page usable.
++                        self.report(cx, blocked.description.clone());
++                    }
++                }
+                 if let Some(err) = action.downcast_ref::<crate::makepad_draw::makepad_platform::event::NativeSystemBrowserPageError>() {
+                     if err.browser_id == self.browser_id().0.get_value() && self.open {
+                         if self.auth_mode {
+@@ -466,7 +472,7 @@ fn unsupported_platform_never_starts_browser_lifecycle() {
+             let value = vm.eval(script! { use mod.widgets.* WebReader {} });
+             WebReader::script_from_value(vm, value)
+         });
+-        for platform in ["linux", "windows", "freebsd", "unknown"] {
++        for platform in ["freebsd", "tvos", "unknown"] {
+             assert!(!reader.open_on_platform(&mut cx, "https://example.test/", platform));
+             assert!(!reader.open);
+             assert!(!reader.spawned);

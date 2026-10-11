@@ -1,5 +1,7 @@
 # octosense-llm-service: the `llm` host service
 
+English | [简体中文](README.zh-CN.md)
+
 The AI providers app (`os.ai-providers`, [../bundle](../bundle)) edits the
 LLM providers the AppCard assistant runs on, through this service. The app
 never sees a key, a PIN or a QR: keys are typed on a host-owned sheet, the
@@ -219,24 +221,22 @@ unreadable to the kernel. A key the keychain refuses also stays in the profile.
 
 ## Tests
 
-From `apps/ai-providers`:
+From the repository root, after `python3 tools/setup.py`:
 
 ```sh
-cargo test --workspace
+cargo test --locked -p octosense-llm-config -p octosense-llm-service
+cargo test --locked -p octosense-llm-service --features octos-core
 ```
 
-The workspace resolves Makepad, Octoscript-Makepad and Octoscript from
-checkouts beside this repository (`../makepad` and so on, as the shells do),
-and the makepad one must carry the contained-app runtime the shells build with
-(splash host requests and sheets). To use another checkout without editing
-the manifest, pass a `--config` file with `[patch."https://github.com/OctoSense-org/makepad.git"]`
-entries pointing at it. The macOS keychain test runs only when asked:
-`cargo test -p octosense-llm-service -- --ignored keychain`.
+The root workspace pins Makepad, Octoscript-Makepad and Octoscript once;
+setup prepares their `.sources/` worktrees. Do not add local source patches.
+The macOS keychain test runs only when explicitly requested:
+`cargo test --locked -p octosense-llm-service -- --ignored keychain`.
 
 ## The `model` service (`model.complete`)
 
 The same crate offers a second family, `model` ([src/complete](src/complete)):
-contained apps granted the `model` capability make a direct, one-shot,
+admitted contained apps make a direct, one-shot,
 schema-checked call to the person's providers (OctoSense ADR 0002, "Direct
 one-shot model calls"). The app names a model class (`fast` or `strong`), a
 task, an input and a JSON Schema; the host picks the provider in the
@@ -247,11 +247,19 @@ charges a per-app daily budget (defaults: 6 calls a minute, 100 calls and
 never sees the provider, the model id or the key. The method table and the
 error codes are in [src/complete/mod.rs](src/complete/mod.rs).
 
-`crates/ai-host` registers it with the `llm` service:
+The shell registers it through [`crates/ai-host`](../../../crates/ai-host).
+Capability declarations describe usage: an app can call `model.complete`
+without listing `model`. The host must supply `complete::Options::grants`
+with a verified app-identity and exact host-directory check. Missing admission
+fails closed; reading an app-provided manifest is not sufficient. The shell
+also supplies an active account lookup. An account app that is signed out
+gets no device-scope fallback; changing accounts invalidates pending results.
 
-```rust
-octosense_llm_service::register_model(&options, octosense_llm_service::complete::Options::default());
-```
+Direct `model` calls do not create a persistent app agent. An agent needs
+separate opt-in and user consent. Model workers retain request/schema limits,
+per-app budgets, concurrency bounds and cancellation checks, and recheck
+admission and account state before delivery. The stable `capability` error
+code now reports denied caller admission, not a missing declaration.
 
 Tests use a fake transport: `cargo test --locked -p octosense-llm-service --test complete`.
 A live check against DeepSeek (costs a fraction of a cent):

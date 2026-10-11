@@ -1,0 +1,70 @@
+{
+  "schema": 1,
+  "tools": [
+    {
+      "name": "vector.info",
+      "description": "Inspect a vector document in your workspace (an SVG, a .vectorcraft file or another format the engine opens): artboards, the layer tree to `depth` levels (default 2, at most 8; every cut level reports its child count), object count, colour mode, units and import warnings. Reads only. `path` is relative to your workspace, the folder your own file tools (list_dir, read_file) see; files outside it cannot be named. A document that links a file outside your workspace is refused.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "path": {"type": "string", "minLength": 1, "maxLength": 512},
+          "depth": {"type": "integer", "minimum": 0, "maximum": 8}
+        },
+        "required": ["path"],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "file": {"type": "string"},
+          "path": {"type": "string"},
+          "artboards": {"type": "array", "items": {"type": "object"}},
+          "objects": {"type": "integer"},
+          "warnings": {"type": ["array", "null"]}
+        },
+        "required": ["file", "path"]
+      },
+      "risk": "read",
+      "implemented_by": "host-service"
+    },
+    {
+      "name": "vector.run",
+      "description": "Run up to 64 commands from the vector engine's catalog, in order, on the document at `path` (SVG, .vectorcraft or another format the engine opens) in your workspace, or on a new default document, then write it in the format `format` or the extension of `out` names (SVG/SVGZ, PDF, EPS, DXF, EMF/WMF, PNG/JPG/WebP/GIF/TIFF/BMP/TGA/PSD or .vectorcraft; raster output is one artboard, `artboard` 0-based, sized by `scale` 0.01 to 16 pixels per point) to `out` when given. Each command is {id, params}. Only reviewed commands run: those the skill's commands.md lists untagged (work inside the document) and effects the engine builds in (never a plug-in); anything that reaches other files, code, the network, devices or the app is refused before any command runs. Paths are relative to your workspace, and `out` must be a new file. Read the vector-engine skill first.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "path": {"type": "string", "minLength": 1, "maxLength": 512},
+          "cmds": {
+            "type": "array",
+            "maxItems": 64,
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {"type": "string", "minLength": 1, "maxLength": 128},
+                "params": {"type": "object"}
+              },
+              "required": ["id"],
+              "additionalProperties": false
+            }
+          },
+          "out": {"type": "string", "minLength": 1, "maxLength": 512},
+          "format": {"type": "string", "minLength": 2, "maxLength": 16},
+          "scale": {"type": "number", "minimum": 0.01, "maximum": 16},
+          "artboard": {"type": "integer", "minimum": 0}
+        },
+        "required": ["cmds"],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "results": {"type": "array", "items": {"type": "object"}},
+          "out": {"type": ["string", "null"]}
+        },
+        "required": ["results"]
+      },
+      "risk": "act",
+      "implemented_by": "host-service"
+    }
+  ]
+}

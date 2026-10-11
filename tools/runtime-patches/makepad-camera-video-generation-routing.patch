@@ -1,0 +1,115 @@
+diff --git a/widgets/src/camera_preview.rs b/widgets/src/camera_preview.rs
+index 9eff00099..dfedf1a5a 100644
+--- a/widgets/src/camera_preview.rs
++++ b/widgets/src/camera_preview.rs
+@@ -376,8 +376,15 @@ fn halt(&mut self, cx: &mut Cx) {
+                     cx.camera_capture(input, CameraCaptureRequest::StopVideo);
+                 }
+             }
++            let was_starting = self.state == State::Starting;
+             self.state = State::Stopping;
+-            self.video(cx).stop_and_cleanup_resources(cx);
++            let video = self.video(cx);
++            video.stop_and_cleanup_resources(cx);
++            if was_starting && video.is_unprepared() {
++                // Video detached the pending generation immediately. Its old
++                // release acknowledgement must not block or complete a retry.
++                self.state = State::Idle;
++            }
+         }
+     }
+ 
+@@ -680,6 +687,9 @@ fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+         if !self.granted("camera.preview") || (self.recording.is_some() && self.recording_audio && !self.granted("microphone.record")) {
+             self.stop(cx);
+         }
++        // Video may retire/replace its native generation while handling an
++        // error. Correlate the parent event before forwarding it to the child.
++        let playback_id = self.video(cx).playback_id();
+         self.view.handle_event(cx, event, scope);
+         if self.timer.is_some_and(|t| t.is_event(event).is_some()) {
+             if self.drawn {
+@@ -745,17 +755,17 @@ fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+                     .collect();
+                 self.drive(cx);
+             }
+-            Event::VideoPlaybackPrepared(e) if self.video(cx).playback_id() == Some(e.video_id) => {
++            Event::VideoPlaybackPrepared(e) if playback_id == Some(e.video_id) => {
+                 if self.state == State::Starting {
+                     self.state = State::Running;
+                 }
+             }
+-            Event::VideoPlaybackResourcesReleased(e) if self.video(cx).playback_id() == Some(e.video_id) => {
++            Event::VideoPlaybackResourcesReleased(e) if playback_id == Some(e.video_id) => {
+                 if self.state == State::Stopping {
+                     self.state = State::Idle;
+                 }
+             }
+-            Event::VideoDecodingError(e) if self.video(cx).playback_id() == Some(e.video_id) => {
++            Event::VideoDecodingError(e) if playback_id == Some(e.video_id) => {
+                 if matches!(self.state, State::Starting | State::Running) {
+                     self.state = State::Idle;
+                     self.wanted = false;
+@@ -785,6 +795,9 @@ fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawSte
+ #[cfg(test)]
+ mod tests {
+     use super::*;
++    use crate::makepad_platform::event::video_playback::{
++        VideoDecodingErrorEvent, VideoPlaybackPreparedEvent, VideoPlaybackResourcesReleasedEvent,
++    };
+ 
+     fn format(width: usize, height: usize, pixel_format: VideoPixelFormat, id: u64) -> VideoFormat {
+         VideoFormat { format_id: VideoFormatId(LiveId(id)), width, height, frame_rate: Some(30.0), pixel_format }
+@@ -827,6 +840,52 @@ fn failed_start_stops_retries_until_explicit_start_and_ignores_other_players() {
+         crate::splash_policy::gc_policies(&[heap]);
+     }
+ 
++    #[test]
++    fn stopping_during_prepare_allows_retry_and_ignores_retired_generation_events() {
++        let mut cx = Cx::new(Box::new(|_, _| {}));
++        let widget = cx.with_vm(|vm| {
++            crate::script_mod(vm);
++            let value = crate::script_eval!(vm, {use mod.widgets.* CameraPreview{}});
++            WidgetRef::script_from_value(vm, value)
++        });
++        let mut preview = widget.borrow_mut::<CameraPreview>().unwrap();
++        let heap = preview.heap_key();
++        crate::splash_policy::set_policy_for_heap(heap, vec!["camera".into()], vec![], None);
++        preview.permission = Some(PermissionStatus::Granted);
++        preview.cameras = vec![CameraChoice { input_id: VideoInputId(LiveId(1)), front: false,
++            formats: vec![format(640, 480, VideoPixelFormat::YUV420, 1)] }];
++        // No native event loop runs: preparation only queues a synthetic source.
++        assert!(preview.start(&mut cx));
++        assert!(preview.video(&cx).is_preparing());
++        let old_id = preview.video(&cx).playback_id().unwrap();
++        preview.stop(&mut cx);
++        assert_eq!(preview.state, State::Idle, "detached cleanup does not wait for an old acknowledgement");
++        assert!(preview.video(&cx).is_unprepared());
++        assert!(preview.start(&mut cx));
++        let new_id = preview.video(&cx).playback_id().unwrap();
++        assert_ne!(new_id, old_id);
++        assert_eq!(preview.state, State::Starting);
++        let prepared = |video_id| Event::VideoPlaybackPrepared(VideoPlaybackPreparedEvent {
++            video_id, video_width: 640, video_height: 480, duration: 0, is_seekable: false,
++            video_tracks: vec![], audio_tracks: vec![],
++        });
++        for event in [prepared(old_id),
++            Event::VideoDecodingError(VideoDecodingErrorEvent { video_id: old_id, error: "retired failure".into() }),
++            Event::VideoPlaybackResourcesReleased(VideoPlaybackResourcesReleasedEvent { video_id: old_id })] {
++            preview.handle_event(&mut cx, &event, &mut Scope::empty());
++            assert_eq!(preview.state, State::Starting, "a retired callback cannot change the new preview");
++            assert!(preview.wanted);
++            assert!(preview.last_error.is_empty());
++        }
++        preview.handle_event(&mut cx, &prepared(new_id), &mut Scope::empty());
++        assert_eq!(preview.state, State::Running);
++        preview.stop(&mut cx);
++        preview.handle_event(&mut cx, &Event::VideoPlaybackResourcesReleased(
++            VideoPlaybackResourcesReleasedEvent { video_id: new_id }), &mut Scope::empty());
++        assert_eq!(preview.state, State::Idle);
++        crate::splash_policy::gc_policies(&[heap]);
++    }
++
+     #[test]
+     fn background_device_consent_checks_os_grants_without_prompting_or_timeout_fallback() {
+         let mut cx = Cx::new(Box::new(|_, _| {}));

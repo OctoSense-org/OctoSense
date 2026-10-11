@@ -1,0 +1,15 @@
+{
+  "revision": "7de61723-0dd9-4e4d-96e4-34ad847bfc1b",
+  "enabled": true,
+  "poll_interval_secs": 30,
+  "skills": [
+    "simulation-review",
+    "interactive-mail-card",
+    "dataset-binding-validation"
+  ],
+  "guidance_sha256": "0ce79d6eb3031561ec1bc14dace92ea0f1beafe65035f6ab1412efead889a1c9",
+  "fixture_codes_in_guidance": false,
+  "incoming_only": true,
+  "simulation_only": true,
+  "note": "Both corrected trials used this same persisted provision; only the provider route changed. The body changed pickup code from4821 to7392 while its tracking reference still contained4821."
+}

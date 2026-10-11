@@ -1,0 +1,997 @@
+{
+  "engine": "effectcraft",
+  "method": "Read every module commands/mod.rs::command_specs() aggregates (plus models.rs, storage.rs, learn.rs, templates.rs, ease_presets.rs, preview.rs, session_settings.rs) and followed each run fn into the Session hooks (services/Importer, exporter, script, plugin_loader, config ConfigStore, browser, storage, models_dir) and into raw std::fs / process::Command / Event::OpenUrl / Event::Frontend, using a per-function sink map of the engine crate plus rg over the render-path crates (effects, render, text, media, model, expr, script) and the egui frontend's command handlers. A command whose run is only frontend() is host; one that changes viewer-only display state, app Settings (config store) or process-wide state is host; an advisory frontend event alongside document work does not change the class (headless backends drain and drop events); renders that only decode the open project's footage are safe. Expressions: effectcraft_expr is full JavaScript on boa 0.22 (eval/Function/regex), I/O-free - its only native host calls read the open project and its footage pixels (host.rs Req::*), with no fs/net/console/module loader - but with no time or memory budget: boa's loop_iteration_limit (10,000,000) counts one loop at a time, so nested loops or a script re-run for up to 2000 host-request passes multiply past it, recursion_limit is 400, and nothing bounds the heap (runtime.rs:211-213, lib.rs:44-46). Engine work runs on the shell's UI thread, so the Phase 2 review (the door's work caps, #418) classes code every command that sets or enables an expression, or evaluates one at every frame: an expression is code the engine runs without a bound wherever the project is drawn. The door's session evaluates no expression at all (the service gives it no expression host), and refuses to write a frame or a Lottie file of a composition that holds an enabled one. Limits: classes are per id, so parameter-dependent reach (LUT/OCIO effect file-path params set via prop.set, glTF sibling-resource URIs) is flagged in why rather than reclassifying the generic setter; frontend behaviour was read only in crates/ui-egui; nothing was built or run; the line numbers are from the pinned checkout d60cb71.",
+  "rules": [
+    {
+      "prefix": "prop.",
+      "class": "safe",
+      "why": "Edit the open project (layers, masks, shapes, paths, paint, puppet, liquify, effects, keyframes, property values, time, markers, tracking) or query it; no path, device, network, settings or other-command reach. The commands that set or enable an expression, or evaluate one at every frame, are excepted (code).",
+      "evidence": [
+        "crates/engine/src/commands/layer.rs,mask.rs,paths.rs,shape_stroke.rs,shape_tool.rs,paint.rs,puppet.rs,liquify.rs: edits go through Session::edit (project copy-on-write)",
+        "crates/engine/src/commands/anim.rs:300-344: anim.reveal/addKeyframe operate on the project; the frontend reveal event is advisory",
+        "crates/expr/src/host.rs:300-470: expression host requests read only the project and its footage",
+        "crates/engine/src/commands/prop.rs:61-101: prop.set clamps a slider value to its valid range and stores it"
+      ]
+    },
+    {
+      "prefix": "keys.",
+      "class": "safe",
+      "why": "In-memory keyframe editing, selection, interpolation and the wiggler/smoother.",
+      "evidence": [
+        "crates/engine/src/commands/anim.rs, crates/engine/src/commands/keys_more.rs, crates/engine/src/commands/key_labels.rs, crates/engine/src/commands/key_transform.rs, crates/engine/src/commands/prop.rs: keyframe ops edit the project",
+        "crates/engine/src/commands/anim_tools.rs:72-136: keys.audioToKeyframes reads comp audio through the session footage source (project media)"
+      ]
+    },
+    {
+      "prefix": "mask.",
+      "class": "safe",
+      "why": "Mask, path, shape, paint, puppet and liquify geometry edits on the open project.",
+      "evidence": [
+        "crates/engine/src/commands/mask.rs, crates/engine/src/commands/paths.rs, crates/engine/src/commands/shape_tool.rs, crates/engine/src/commands/shape_stroke.rs, crates/engine/src/commands/paint.rs, crates/engine/src/commands/puppet.rs, crates/engine/src/commands/liquify.rs"
+      ]
+    },
+    {
+      "prefix": "path.",
+      "class": "safe",
+      "why": "Document geometry edits (project only).",
+      "evidence": [
+        "crates/engine/src/commands/paths.rs"
+      ]
+    },
+    {
+      "prefix": "shape.",
+      "class": "safe",
+      "why": "Shape layer / pen tool edits on the project.",
+      "evidence": [
+        "crates/engine/src/commands/shape_tool.rs, crates/engine/src/commands/shape_stroke.rs"
+      ]
+    },
+    {
+      "prefix": "paint.",
+      "class": "safe",
+      "why": "Paint, clone and eraser strokes and tool options (session state + project strokes).",
+      "evidence": [
+        "crates/engine/src/commands/paint.rs:1-60,500+: strokes edit the project; options live in EditorState.paint"
+      ]
+    },
+    {
+      "prefix": "puppet.",
+      "class": "safe",
+      "why": "Puppet pin mesh editing and recording (project only); puppet.follow, which sets pin expressions, is excepted (code).",
+      "evidence": [
+        "crates/engine/src/commands/puppet.rs"
+      ]
+    },
+    {
+      "prefix": "liquify.",
+      "class": "safe",
+      "why": "Liquify mesh strokes on the project.",
+      "evidence": [
+        "crates/engine/src/commands/liquify.rs"
+      ]
+    },
+    {
+      "prefix": "markers.",
+      "class": "safe",
+      "why": "Layer markers and composition/nested marker queries and edits (project).",
+      "evidence": [
+        "crates/engine/src/commands/markers.rs:216-334"
+      ]
+    },
+    {
+      "prefix": "time.",
+      "class": "safe",
+      "why": "Current-time navigation (EditorState.times); no I/O.",
+      "evidence": [
+        "crates/engine/src/commands/time.rs"
+      ]
+    },
+    {
+      "prefix": "project.",
+      "class": "safe",
+      "why": "Project-panel item management, selection, folders, usage and summary (project only).",
+      "evidence": [
+        "crates/engine/src/commands/project_items.rs, crates/engine/src/commands/file_more.rs:58-67 (project.newFolder), crates/engine/src/commands/panels_cmds.rs:151-158 (setProjectComment), crates/engine/src/commands/query.rs (project.summary)"
+      ]
+    },
+    {
+      "prefix": "camera.",
+      "class": "safe",
+      "why": "3D camera, rig, light-from-model and view-camera edits on the project; the focus links and the stereo rig, which set expressions, are excepted (code).",
+      "evidence": [
+        "crates/engine/src/commands/camera_cmds.rs, crates/engine/src/commands/rig3d.rs, crates/engine/src/commands/focus.rs:38-41 (sets a focus expression), crates/engine/src/commands/three_d.rs (camera.orbit/pan/dolly edit the view camera / camera layer)"
+      ]
+    },
+    {
+      "prefix": "light.",
+      "class": "safe",
+      "why": "Light-from-model / environment-light rig building (project).",
+      "evidence": [
+        "crates/engine/src/commands/rig3d.rs"
+      ]
+    },
+    {
+      "prefix": "material.",
+      "class": "safe",
+      "why": "3D material options on the project; material.revealSource only sets the Project-panel selection.",
+      "evidence": [
+        "crates/engine/src/commands/model3d.rs:131-366: material.set/reset/duplicateAssign edit the project; material_reveal sets state.project_selection"
+      ]
+    },
+    {
+      "prefix": "track.",
+      "class": "safe",
+      "why": "Motion tracking: trackers, analysis and apply run in-process over project footage; no path/device.",
+      "evidence": [
+        "crates/engine/src/tracking.rs, crates/engine/src/camera_track.rs, crates/engine/src/mask_track.rs: analyses render project frames in memory",
+        "crates/engine/src/commands/track.rs, crates/engine/src/commands/mask_interp.rs, crates/engine/src/commands/warp_cmds.rs, crates/engine/src/commands/camera_cmds.rs"
+      ]
+    },
+    {
+      "prefix": "warp.",
+      "class": "safe",
+      "why": "Warp Stabilizer analysis/status over project frames (in-memory).",
+      "evidence": [
+        "crates/engine/src/warp.rs, crates/engine/src/commands/warp_cmds.rs"
+      ]
+    },
+    {
+      "prefix": "roto.",
+      "class": "safe",
+      "why": "Roto Brush strokes, propagation, freeze and status run the segmentation over project frames in memory.",
+      "evidence": [
+        "crates/engine/src/roto.rs, crates/engine/src/commands/roto_cmds.rs: strokes/propagate operate on the layer's rendered frames"
+      ]
+    },
+    {
+      "prefix": "face.",
+      "class": "safe",
+      "why": "Face/roto model registries: the *.models queries list available models from the registry (no fs).",
+      "evidence": [
+        "crates/engine/src/models.rs:272-311: list() reads the static registry and in-memory status"
+      ]
+    },
+    {
+      "prefix": "essential.",
+      "class": "safe",
+      "why": "Essential Graphics controls, mirrors, links and overrides edit the project; list/canAdd/instance are queries.",
+      "evidence": [
+        "crates/engine/src/commands/essential.rs:438-620,893+: control edits via Session::edit; comp.openInEssentialGraphics sets state.essential_primary + a panel hint"
+      ]
+    },
+    {
+      "prefix": "effect.",
+      "class": "safe",
+      "why": "Effect apply/remove/reorder/copy/paste/reset/toggle and the effect list / plug-in list; effect.pickColor renders the layer input in memory.",
+      "evidence": [
+        "crates/engine/src/commands/effect.rs:11-30 (plugins_list reads the registry), 74-258 (apply/pickColor edit the project / render a frame)"
+      ]
+    },
+    {
+      "prefix": "comp.",
+      "class": "safe",
+      "why": "Composition create/settings/open/close/work-area/markers/crop/renderer and VR comp building (project); VR builds nest only fixed internal commands. comp.revealInProject / openInEssentialGraphics set session selection + a panel hint.",
+      "evidence": [
+        "crates/engine/src/commands/comp.rs, crates/engine/src/commands/comp_more.rs, crates/engine/src/commands/vr_editor.rs, crates/engine/src/commands/app_more.rs:439-559 (VR env/cubemap nest fixed comp/layer/effect commands)",
+        "crates/engine/src/commands/layer_menu.rs:659-662: comp.revealInProject sets state.project_selection + frontend(window.panel)"
+      ]
+    },
+    {
+      "prefix": "layer.",
+      "class": "safe",
+      "why": "Layer creation/transform/switches/styles/masks/markers/timing/text-animators and the layer tree query; layer.revealSource/openSource/revealExpressionErrors set session selection or navigate (with an advisory panel hint). layer.expressions, which enables a layer's expressions, is excepted (code).",
+      "evidence": [
+        "crates/engine/src/commands/layer.rs, crates/engine/src/commands/layer_menu.rs, crates/engine/src/commands/layer_time.rs, crates/engine/src/commands/styles.rs, crates/engine/src/commands/three_d.rs, crates/engine/src/commands/text_anim.rs, crates/engine/src/commands/create.rs",
+        "crates/engine/src/commands/layer_menu.rs:626-699: openSource/revealSource/revealExpressionErrors (selection + frontend reveal)"
+      ]
+    },
+    {
+      "prefix": "text.",
+      "class": "safe",
+      "why": "On-canvas text editing, selection, typing, deleting and the session text clipboard; paste uses the in-session text clipboard or a caller-supplied `text`, never the OS clipboard.",
+      "evidence": [
+        "crates/engine/src/commands/text_edit.rs:336-420: paste/pasteMatch use EditorState.text_clipboard (session memory) or p[\"text\"]",
+        "crates/engine/src/lib.rs:258-262: text_clipboard is session state"
+      ]
+    },
+    {
+      "prefix": "edit.",
+      "class": "safe",
+      "why": "Undo/redo/history, cut/copy/paste/duplicate/clear/label/select; the clipboards are in-session memory, not the OS clipboard. The copies that put expressions on the clipboard for edit.paste to set are excepted (code); a paste otherwise copies only expressions the project already holds.",
+      "evidence": [
+        "crates/engine/src/lib.rs:185-201: EditorState.clipboard / key_clipboard / effect_clipboard are session memory",
+        "crates/engine/src/commands/edit.rs:209-380: copy/cut/paste move layers/keys/effects through EditorState, no OS clipboard"
+      ]
+    },
+    {
+      "prefix": "command.",
+      "class": "safe",
+      "why": "Read-only project/comp/layer/command queries and editor-state dumps for agents.",
+      "evidence": [
+        "crates/engine/src/commands/query.rs: command.list/describe, project.summary, comp.info, layer.tree, editor.state; app.capabilities reports hook presence"
+      ]
+    },
+    {
+      "prefix": "editor.",
+      "class": "safe",
+      "why": "Editor-state query.",
+      "evidence": [
+        "crates/engine/src/commands/query.rs:209-214 (editor.state)"
+      ]
+    },
+    {
+      "prefix": "scopes.",
+      "class": "safe",
+      "why": "Lumetri Scopes: renders a comp frame in memory and computes the scope; no I/O.",
+      "evidence": [
+        "crates/engine/src/commands/panels_cmds.rs:160-230: scope_frame renders over the comp background and computes scopes"
+      ]
+    },
+    {
+      "prefix": "motion.",
+      "class": "safe",
+      "why": "Motion Sketch: records pointer samples into Position keyframes (project).",
+      "evidence": [
+        "crates/engine/src/commands/anim_tools.rs:213+"
+      ]
+    },
+    {
+      "prefix": "expr.",
+      "class": "safe",
+      "why": "Expression error list and language-menu metadata; expr.errors evaluates the project's expressions through the session's expression host, which the door's session does not have (it evaluates none), and sets nothing.",
+      "evidence": [
+        "crates/engine/src/commands/expr_tools.rs:43-96: errors() runs host.eval over the project; languageMenu is static"
+      ]
+    },
+    {
+      "prefix": "footage.",
+      "class": "safe",
+      "why": "Footage-panel navigation and comp edits that use footage already in the project; footage.check is excepted.",
+      "evidence": [
+        "crates/engine/src/commands/footage_panel.rs: panel state + overlay/ripple edits using existing items"
+      ]
+    },
+    {
+      "prefix": "jobs.",
+      "class": "safe",
+      "why": "Background-job polling/cancel/wait (session job list).",
+      "evidence": [
+        "crates/engine/src/commands/panels_cmds.rs:15-28, crates/engine/src/jobs.rs"
+      ]
+    },
+    {
+      "prefix": "learn.",
+      "class": "safe",
+      "why": "The running tutorial's state (session); learn.step is excepted.",
+      "evidence": [
+        "crates/engine/src/learn.rs:330-512: start/stop/state/list set session Progress"
+      ]
+    },
+    {
+      "prefix": "scriptui.",
+      "class": "safe",
+      "why": "ScriptUI window/control inspection queries (read the published control tree).",
+      "evidence": [
+        "crates/engine/src/scriptui.rs:635-649: list/get read Session.script_ui"
+      ]
+    },
+    {
+      "prefix": "anim.",
+      "class": "safe",
+      "why": "Guide/time/snapshot/track-point helpers that edit the project or session view state; the file/host ones are excepted.",
+      "evidence": [
+        "crates/engine/src/commands/anim_tools.rs"
+      ]
+    },
+    {
+      "prefix": "renderQueue.",
+      "class": "safe",
+      "why": "Render-queue item editing and templates live in the project; output paths are stored strings written only by renderQueue.render.",
+      "evidence": [
+        "crates/engine/src/commands/render_queue.rs:512-968: add/setOutput*/move/duplicate/templates edit project.render_queue and project.render_templates"
+      ]
+    },
+    {
+      "prefix": "render.",
+      "class": "safe",
+      "why": "Renderer selection and render-queue item/output-module building (project); the immediate-write preview is excepted.",
+      "evidence": [
+        "crates/engine/src/commands/file.rs:639-679 (render.backend edits project settings), crates/engine/src/commands/render_queue.rs:711-759 (addOutputModule/preRender queue items)"
+      ]
+    },
+    {
+      "prefix": "view.3d.",
+      "class": "safe",
+      "why": "The viewer's 3D view camera state per comp (EditorState.views3d), read back by camera.fromView and renders.",
+      "evidence": [
+        "crates/engine/src/commands/three_d.rs:296-600, crates/engine/src/lib.rs:221-223,791-798"
+      ]
+    },
+    {
+      "prefix": "contentFill.",
+      "class": "safe",
+      "why": "Content-Aware Fill panel settings live in session state (EditorState.content_fill); contentFill.generate is excepted.",
+      "evidence": [
+        "crates/engine/src/commands/content_fill.rs:67-75: set() writes EditorState.content_fill"
+      ]
+    },
+    {
+      "prefix": "view.",
+      "class": "host",
+      "why": "Viewer and window chrome: zoom, resolution, rulers, grid, guides show/snap, panels, layout, snapshot, exposure, channel, fast previews, display-colour simulation and locked viewers. These change UI-only view state or persisted appearance settings, not the document; the 3D-view, guide-editing, region-of-interest and guide-file ids are excepted.",
+      "evidence": [
+        "crates/engine/src/commands/frontend.rs:57-82 (zoom/res/rulers/grid/panels), crates/engine/src/commands/viewer_cmds.rs:107-460 (channel/exposure/snapshot/display colour/locked viewer)",
+        "crates/engine/src/commands/view.rs:86-103 (shareViewOptions/extendedViewer persist a pref), crates/engine/src/commands/viewer_cmds.rs:346-425 (customRgb persists prefs.custom_rgb)"
+      ]
+    },
+    {
+      "prefix": "window.",
+      "class": "host",
+      "why": "Panels, workspaces and workspace shortcuts: UI layout state; window.scriptPanel is excepted.",
+      "evidence": [
+        "crates/engine/src/commands/frontend.rs:84-103 (window.panel/workspace), crates/engine/src/commands/app_more.rs:268-273 (assignWorkspaceShortcut)"
+      ]
+    },
+    {
+      "prefix": "app.",
+      "class": "host",
+      "why": "Application chrome: About, Settings dialog, GPU info, Hide/Quit, Quick Apply, keyboard-shortcut viewer, Find; app.capabilities is excepted.",
+      "evidence": [
+        "crates/engine/src/commands/frontend.rs:17-37, crates/engine/src/commands/app_more.rs (gpuInfo via frontend)"
+      ]
+    },
+    {
+      "prefix": "prefs.",
+      "class": "host",
+      "why": "Read/write/reset of application Settings, persisted to the host config store.",
+      "evidence": [
+        "crates/engine/src/commands/settings.rs:12-60: prefs.get/set/reset go through Session.prefs + save_prefs (ConfigStore)",
+        "crates/engine/src/session_settings.rs:141-147: save_prefs writes PREFS_FILE to the config store"
+      ]
+    },
+    {
+      "prefix": "shortcuts.",
+      "class": "host",
+      "why": "Keyboard-shortcut presets persisted to the config store; export/import (paths) are excepted.",
+      "evidence": [
+        "crates/engine/src/commands/settings.rs:83-200, crates/engine/src/session_settings.rs:150-157: shortcuts_changed writes SHORTCUTS_FILE"
+      ]
+    },
+    {
+      "prefix": "storage.",
+      "class": "host",
+      "why": "Browser storage management (the web app's Origin Private File System / IndexedDB store): report quota, request persistence, clear app-managed storage.",
+      "evidence": [
+        "crates/engine/src/storage.rs:38-72: StorageHost.info/request_persist/clear act on the browser storage backend"
+      ]
+    },
+    {
+      "prefix": "cache.",
+      "class": "host",
+      "why": "The persistent disk-cache statistics report (app cache folder).",
+      "evidence": [
+        "crates/engine/src/commands/edit.rs:624-646: disk_stats reads DiskCache.stats() / the browser disk cache"
+      ]
+    },
+    {
+      "prefix": "playback.",
+      "class": "host",
+      "why": "Preview playback settings and include-audio/cache-when-idle toggles, persisted to prefs; playback.toggle/scrubAudio are excepted.",
+      "evidence": [
+        "crates/engine/src/preview.rs:390-428: playback.settings.set writes prefs.preview via save_prefs",
+        "crates/engine/src/commands/frontend.rs:47-48 (playback.audio/cacheWhenIdle toggles)"
+      ]
+    },
+    {
+      "prefix": "help.",
+      "class": "network",
+      "why": "Help links open web URLs / online help (community, website, GitHub, docs, tutorials, feedback, sibling apps) via Event::OpenUrl to an https:// address; the local-only help ids (logging, system report, in-app tutorials, reveal log) are excepted.",
+      "evidence": [
+        "crates/engine/src/commands/help.rs:9-52: open() pushes Event::OpenUrl(links::*) for https URLs",
+        "crates/engine/src/links.rs:6-26: DISCORD/WEBSITE/APP_PAGE/GITHUB/ISSUES are https URLs",
+        "crates/ui-egui/src/lib.rs:1356: OpenUrl -> ctx.open_url (browser)"
+      ]
+    },
+    {
+      "prefix": "script.",
+      "class": "code",
+      "why": "Runs JavaScript against the After Effects-style object model (effectcraft-script): File/Folder reads and writes and TCP Socket (both gated by a scripting pref) and app.executeCommand that runs other commands.",
+      "evidence": [
+        "crates/script/src/lib.rs:1-50: object model incl. File/Folder, Socket, executeCommand",
+        "crates/script/src/socket.rs:16-30: Socket over TCP behind the scripting pref",
+        "crates/script/src/runtime.rs:280-360: File writes / network gated by prefs.scripting.allow_scripts_write_files"
+      ]
+    },
+    {
+      "ids": [
+        "engine.batch"
+      ],
+      "class": "code",
+      "why": "Runs other commands chosen by the caller in one undo step; a deny-list on the outer id cannot see the inner ids.",
+      "evidence": [
+        "crates/engine/src/commands/batch.rs:56-95: engine.batch executes each step's `command` via execute_checked (only engine.batch/file.runScript/script.run are blocked inside)"
+      ]
+    },
+    {
+      "ids": [
+        "file.runScript",
+        "file.installScript",
+        "file.installScriptUIPanel"
+      ],
+      "class": "code",
+      "why": "Run or install code: file.runScript runs a .jsx/.js JavaScript file or a command-script of other command ids; file.installScript / file.installScriptUIPanel copy a caller .jsx/.js into the config Scripts folders so it becomes runnable.",
+      "evidence": [
+        "crates/engine/src/commands/file_more.rs:428-521: run_script runs JS (run_js) or iterates caller command ids",
+        "crates/engine/src/commands/scripts.rs:81-100: install() reads a caller path and writes the script into the config store"
+      ]
+    },
+    {
+      "ids": [
+        "file.executeFile"
+      ],
+      "class": "code",
+      "why": "File.execute(): hands a caller-supplied path to the host to open with its default application; gated behind Settings > Scripting > Allow Scripts to Write Files and Access Network. The shipped egui host opens it via the browser, but another host could launch it.",
+      "evidence": [
+        "crates/engine/src/commands/app_more.rs:182-200: execute_file checks prefs.scripting.allow_scripts_write_files then pushes Event::OpenUrl(file://path)"
+      ]
+    },
+    {
+      "ids": [
+        "window.scriptPanel"
+      ],
+      "class": "code",
+      "why": "Runs a ScriptUI panel's script (opens the panel and executes its JavaScript).",
+      "evidence": [
+        "crates/engine/src/commands/scripts.rs:138-154: open_panel runs the panel script via run_js_named"
+      ]
+    },
+    {
+      "ids": [
+        "scriptui.click",
+        "scriptui.set",
+        "scriptui.close"
+      ],
+      "class": "code",
+      "why": "Dispatch a user action into a script window's JavaScript event handlers (onClick/onChange/onClose), running script code.",
+      "evidence": [
+        "crates/engine/src/scriptui.rs:630-666: click/set/close call ScriptUi.dispatch -> the script's handler"
+      ]
+    },
+    {
+      "ids": [
+        "effect.plugins.load"
+      ],
+      "class": "code",
+      "why": "Loads a WebAssembly effect plug-in into the process-wide effect registry through the host plug-in loader; a registered plug-in is then applied by id like a built-in, and by display name ahead of a built-in it shadows.",
+      "evidence": [
+        "crates/engine/src/commands/effect.rs:34-72: plugins_load reads the .wasm (or every .wasm in a folder via std::fs::read_dir) and calls the plugin_loader",
+        "crates/effects/src/plugin.rs:276-296: register_plugin adds the spec to the process-wide registry; crates/effects/src/lib.rs:486-535: find/lookup resolve plug-ins too"
+      ]
+    },
+    {
+      "ids": [
+        "learn.step"
+      ],
+      "class": "code",
+      "why": "Show-me runs the current tutorial step's own list of commands (varies by step; includes playback.toggle and the persisted view.extendedViewer), so the outer id can run others.",
+      "evidence": [
+        "crates/engine/src/learn.rs:413-427: step_cmd action=showMe executes st.show commands",
+        "crates/engine/src/learn.rs:74-260: step `show` lists include playback.toggle and view.extendedViewer"
+      ]
+    },
+    {
+      "ids": [
+        "prop.setExpression",
+        "prop.pickWhip",
+        "prop.convertExpressionToKeyframes",
+        "layer.expressions",
+        "edit.copyExpressionOnly",
+        "edit.copyWithPropertyLinks",
+        "edit.copyWithRelativePropertyLinks",
+        "paths.pointsFollowNulls",
+        "paths.nullsFollowPoints",
+        "paths.tracePath",
+        "camera.linkFocusToPoi",
+        "camera.linkFocusToLayer",
+        "camera.stereoRig",
+        "puppet.follow"
+      ],
+      "class": "code",
+      "why": "Set or enable an expression, which the engine then runs as JavaScript with no time or memory budget whenever the project is drawn (on the shell's UI thread; see method), or evaluate one at every frame: prop.setExpression sets or enables any text; prop.pickWhip, the focus links, the stereo rig, puppet.follow and the paths.* null rigs write their own expressions (through an inner prop.setExpression the gate never sees); layer.expressions enables a layer's expressions; the three copies put expressions on the clipboard that edit.paste sets on other properties (Copy Expression Only enabled, whatever they were); prop.convertExpressionToKeyframes evaluates an expression at every comp frame of the layer's span, which the comp's duration does not bound.",
+      "evidence": [
+        "crates/expr/src/runtime.rs:211-213: set_loop_iteration_limit(10_000_000) and set_recursion_limit(400), no wall-clock or heap budget",
+        "crates/expr/src/lib.rs:44-46,143-156: MAX_DEPTH 16 nested evaluations, MAX_PASSES 2000 re-runs of the script per evaluation",
+        "crates/engine/src/commands/prop.rs:236-275: prop.setExpression sets text and enabled (default true), or toggles a default expression",
+        "crates/engine/src/commands/link.rs:154-176: prop.pickWhip runs prop.setExpression with a reference expression",
+        "crates/engine/src/commands/focus.rs:35-60: the focus links set cameraOptions/focusDistance expressions",
+        "crates/engine/src/commands/rig3d.rs:33-37,262-268: camera.stereoRig sets the eye cameras' position, point-of-interest and zoom expressions",
+        "crates/engine/src/commands/puppet.rs:534-586: puppet.follow runs prop.setExpression per follower pin",
+        "crates/engine/src/commands/path_nulls.rs:190-282: the three paths.* helpers run prop.setExpression",
+        "crates/engine/src/commands/layer_menu.rs:145-161: layer.expressions sets enabled (default true) on every expression of the layers",
+        "crates/engine/src/commands/edit.rs:268-356: Copy with (Relative) Property Links builds link expressions, Copy Expression Only copies expressions; paste_links sets them (links enabled)",
+        "crates/engine/src/commands/prop.rs:744-766: prop.convertExpressionToKeyframes evaluates the expression at every comp frame from the layer's in to out point"
+      ]
+    },
+    {
+      "ids": [
+        "file.newProject",
+        "file.open",
+        "file.save",
+        "file.saveAs",
+        "file.incrementAndSave",
+        "file.revert",
+        "file.import",
+        "file.importMultiple",
+        "file.saveCopy",
+        "file.saveCopyAsXml",
+        "file.replaceWithLayeredComp",
+        "file.collectFiles",
+        "file.replaceFootage",
+        "file.reloadFootage",
+        "file.openRecent",
+        "file.importRecent",
+        "file.autoSave",
+        "file.createProxy",
+        "file.setProxy"
+      ],
+      "class": "file",
+      "why": "Open/save/import/export project and media files through the session file Services and Importer (the Octosense Guard fences them to the app's effect area). Covers New/Open/Save/Save As/Increment/Revert/Import/Save a Copy(+XML)/Collect Files/Replace & Reload Footage/Open & Import Recent/Auto-Save Now/Create & Set Proxy/Replace with Layered Comp.",
+      "evidence": [
+        "crates/engine/src/commands/file.rs:14-90,207-312: new_project/open/save read & write via s.services; import probes via s.importer",
+        "crates/engine/src/commands/file_more.rs:78-83,373-420,774-872: saveCopy/collectFiles/replaceFootage/reload touch paths (collectFiles also std::fs::create_dir_all)",
+        "crates/engine/src/commands/app_more.rs:129-171: saveCopyAsXml writes; replaceWithLayeredComp reads the PSD path",
+        "crates/engine/src/commands/settings.rs:204-238 (openRecent/autoSave), crates/engine/src/commands/proxy.rs:42-199 (setProxy/createProxy), crates/engine/src/autosave.rs:130-167 (StdFiles writes when no config store)"
+      ]
+    },
+    {
+      "ids": [
+        "file.exportLottie",
+        "file.importLottie",
+        "file.importTimeline",
+        "file.exportTimeline"
+      ],
+      "class": "file",
+      "why": "Lottie and Premiere/timeline interchange read and write files (and extracted image assets) through the session file services; export can run the exporter.",
+      "evidence": [
+        "crates/engine/src/commands/lottie.rs:9-50: export/import read & write via s.services (+ embedded images)",
+        "crates/engine/src/commands/timeline.rs:24-200: import reads a path/probes footage; export writes the file and pre-renders via the exporter"
+      ]
+    },
+    {
+      "ids": [
+        "file.watchFolder",
+        "file.watchFolder.poll"
+      ],
+      "class": "file",
+      "why": "Watch Folder reads a folder of .ecproj projects and renders them, writing <project>.status.json and the render outputs (raw std::fs + exporter).",
+      "evidence": [
+        "crates/engine/src/commands/watch_folder.rs:28-130: pending() reads the folder, write_status() std::fs::write, render_project runs the exporter"
+      ]
+    },
+    {
+      "ids": [
+        "file.findMissing"
+      ],
+      "class": "file",
+      "why": "Find Missing checks footage/effects in memory, but the `fonts` branch enumerates the OS font directories (reads font files).",
+      "evidence": [
+        "crates/engine/src/commands/file_more.rs:328-371: fonts branch calls crate::text_families()",
+        "crates/text/src/fonts.rs:315-335,76-124: scan_system reads the system font folders and opens font files"
+      ]
+    },
+    {
+      "ids": [
+        "file.importVanishingPoint"
+      ],
+      "class": "file",
+      "why": "File > Import > Vanishing Point (.vpe): always disabled (clean-room refusal). Would read a .vpe path if implemented; reaches nothing today.",
+      "evidence": [
+        "crates/engine/src/commands/vpe.rs:14-28: import() returns an error unconditionally"
+      ]
+    },
+    {
+      "ids": [
+        "templates.list",
+        "templates.thumbnail",
+        "templates.create",
+        "templates.saveAs",
+        "templates.delete"
+      ],
+      "class": "file",
+      "why": "List/open/import installed-script and user-template files, and run/write a project template with its footage, through the session file services and config store.",
+      "evidence": [
+        "crates/engine/src/templates.rs:530-607 (user_files/read_user list & read the config Templates dir), 629-760 (create/extract footage), 813-895 (saveAs writes the template + reads footage), 896-899 (delete removes the file)"
+      ]
+    },
+    {
+      "ids": [
+        "text.fonts"
+      ],
+      "class": "file",
+      "why": "Lists OS-installed fonts; `rescan` re-reads the system font directories and opens font files.",
+      "evidence": [
+        "crates/engine/src/commands/text_edit.rs:503-509: text.fonts calls fonts::rescan_system()",
+        "crates/text/src/fonts.rs:330-335: rescan_system -> add_source(DirectorySource::system())"
+      ]
+    },
+    {
+      "ids": [
+        "anim.savePreset",
+        "anim.applyPreset",
+        "anim.applyRecentPreset"
+      ],
+      "class": "file",
+      "why": "Save/Apply Animation Preset read and write .ecpreset files (and recent-preset paths) through the session file services.",
+      "evidence": [
+        "crates/engine/src/commands/animation.rs:49-113: save_preset writes, apply_preset reads via s.services",
+        "crates/engine/src/commands/app_more.rs:102-113: applyRecentPreset applies a recent path"
+      ]
+    },
+    {
+      "ids": [
+        "keys.rpfCameraImport"
+      ],
+      "class": "file",
+      "why": "RPF Camera Import reads a .json/.csv camera-data path through the session file services.",
+      "evidence": [
+        "crates/engine/src/commands/keys_more.rs:197-215: rpf_camera_import calls s.services.read_file(path)"
+      ]
+    },
+    {
+      "ids": [
+        "essential.exportTemplate",
+        "essential.importTemplate",
+        "essential.templateInfo"
+      ],
+      "class": "file",
+      "why": "Export/Import/read an Essential Graphics .ectemplate (a zip with the project and footage) through the session file services (import also writes extracted media with std::fs).",
+      "evidence": [
+        "crates/engine/src/commands/essential.rs:806-964: exportTemplate/import_template/template_info read & write via s.services; import_template std::fs::create_dir_all for media"
+      ]
+    },
+    {
+      "ids": [
+        "render.saveCurrentPreview"
+      ],
+      "class": "file",
+      "why": "Save Current Preview renders the comp straight to a movie file via the exporter (immediate write).",
+      "evidence": [
+        "crates/engine/src/commands/render_queue.rs:763-787: save_current_preview builds an ExportJob and calls exporter.export"
+      ]
+    },
+    {
+      "ids": [
+        "renderQueue.render"
+      ],
+      "class": "file",
+      "why": "Runs the render queue: the exporter writes every checked item's output file (raw std::fs in effectcraft-export).",
+      "evidence": [
+        "crates/engine/src/commands/render_queue.rs:647-660: render -> start_render runs the exporter",
+        "crates/export/src/out.rs:24-26: Out::File std::fs::File::create at the output path"
+      ]
+    },
+    {
+      "ids": [
+        "comp.saveFrameAs",
+        "comp.saveFrameAsPsd",
+        "comp.saveFrameAsExr"
+      ],
+      "class": "file",
+      "why": "Save Frame As writes a PNG / layered PSD / multi-layer EXR of a rendered comp frame through the session file services.",
+      "evidence": [
+        "crates/engine/src/commands/comp_more.rs:111-126: save_frame writes the PNG via s.services",
+        "crates/engine/src/commands/frame_export.rs:203-220: save_psd/save_exr write via s.services"
+      ]
+    },
+    {
+      "ids": [
+        "view.exportGuides",
+        "view.importGuides"
+      ],
+      "class": "file",
+      "why": "Export/Import guides read and write a JSON guides file through the session file services.",
+      "evidence": [
+        "crates/engine/src/commands/view.rs:40-62: export_guides writes, import_guides reads via s.services"
+      ]
+    },
+    {
+      "ids": [
+        "view.customRgb"
+      ],
+      "class": "file",
+      "why": "My Custom RGB may read an ICC profile from a caller path (then persists the profile to prefs).",
+      "evidence": [
+        "crates/engine/src/commands/viewer_cmds.rs:397-414: custom_rgb reads the `icc` path via s.services.read_file, then save_prefs"
+      ]
+    },
+    {
+      "ids": [
+        "shortcuts.export",
+        "shortcuts.import"
+      ],
+      "class": "file",
+      "why": "Export/Import keyboard-shortcut presets read and write a path through the session file services.",
+      "evidence": [
+        "crates/engine/src/commands/settings.rs:172-194: sc_export writes, sc_import reads via s.services"
+      ]
+    },
+    {
+      "ids": [
+        "contentFill.generate",
+        "layer.newContentAwareFill"
+      ],
+      "class": "file",
+      "why": "Content-Aware Fill renders the layer's frames and writes a PNG fill sequence (store_file) into an output folder.",
+      "evidence": [
+        "crates/engine/src/commands/content_fill.rs:176-240,245: run_plan writes the sequence via services.store_file; generate drives it",
+        "crates/engine/src/lib.rs:107-113: Services::store_file default does std::fs::create_dir_all before the guarded write"
+      ]
+    },
+    {
+      "ids": [
+        "layer.create"
+      ],
+      "class": "file",
+      "why": "Create Shapes from Vector reads the source vector file and writes extracted images (PNG) next to it, then imports them.",
+      "evidence": [
+        "crates/engine/src/commands/create.rs:35-37,165-181: shapesFromVector reads f.path and image_footage writes a PNG via s.services then imports it"
+      ]
+    },
+    {
+      "ids": [
+        "layer.alignVideoToData"
+      ],
+      "class": "file",
+      "why": "Align Video to Data reads the footage file's creation time from disk (std::fs::metadata) unless `videoStart` is given.",
+      "evidence": [
+        "crates/engine/src/commands/align_data.rs:185-186: file_dates(footage.path)",
+        "crates/engine/src/media_browser.rs:282-301: file_dates -> std::fs::metadata"
+      ]
+    },
+    {
+      "ids": [
+        "layer.newModel"
+      ],
+      "class": "file",
+      "why": "New 3D Model Layer imports a model from a caller `path` (or decodes a model item), reading sibling buffers/textures by URI.",
+      "evidence": [
+        "crates/engine/src/commands/model3d.rs:110-170: new_model imports a `path` via file.import / decodes the model",
+        "crates/media/src/pool.rs:429-440: model() reads sibling resources as dir.join(uri) with raw read"
+      ]
+    },
+    {
+      "ids": [
+        "footage.check"
+      ],
+      "class": "file",
+      "why": "Check Footage looks for every footage file on disk (Services::exists / Importer::probe) to flag missing items.",
+      "evidence": [
+        "crates/engine/src/footage_check.rs:38-100: start() probes/stats each item's path via the session services and importer"
+      ]
+    },
+    {
+      "ids": [
+        "item.metadata"
+      ],
+      "class": "file",
+      "why": "Item metadata stats the footage file on disk (creation/modified/size) alongside the in-memory project metadata.",
+      "evidence": [
+        "crates/engine/src/commands/panels_cmds.rs:119-148: file_info/metadata call mb::file_dates (std::fs::metadata); importer.probe for footage"
+      ]
+    },
+    {
+      "ids": [
+        "mediaBrowser.list",
+        "mediaBrowser.go",
+        "mediaBrowser.fileInfo",
+        "mediaBrowser.import",
+        "mediaBrowser.action"
+      ],
+      "class": "file",
+      "why": "Media Browser lists folders, navigates, probes file info, imports and runs browser actions over the filesystem.",
+      "evidence": [
+        "crates/engine/src/commands/panels_cmds.rs:40-118: browser_list/go/fileInfo/import/action use the Browser (FsBrowser reads the file system)",
+        "crates/engine/src/media_browser.rs:233-280: list() std::fs::read_dir"
+      ]
+    },
+    {
+      "ids": [
+        "playback.toggle",
+        "playback.scrubAudio"
+      ],
+      "class": "device",
+      "why": "Preview playback: drives the real-time preview (and, when Include Audio is on, the audio device); headless backends drop the event.",
+      "evidence": [
+        "crates/engine/src/commands/frontend.rs:39-56: playback.toggle/scrubAudio emit Event::Frontend",
+        "crates/ui-egui/src/menus.rs:669-760: scrubAudio/toggle drive the audio device / preview loop",
+        "crates/ui-egui/src/audio.rs:1-20: real-time audio preview via the cpal AudioDevice"
+      ]
+    },
+    {
+      "ids": [
+        "view.set3DView",
+        "view.get3D",
+        "view.set3DViewCamera",
+        "view.reset3DView",
+        "view.lookAtSelected",
+        "view.lookAtAll",
+        "view.addGuide",
+        "view.clearGuides",
+        "view.moveGuide",
+        "view.removeGuide",
+        "view.setRegionOfInterest",
+        "camera.fromView"
+      ],
+      "class": "safe",
+      "why": "3D-view switching and view-camera edits, Look At, Reset View and region-of-interest live in session view state and feed document commands (camera.fromView builds a real camera layer); guide add/clear/move/remove edit comp.guides (document).",
+      "evidence": [
+        "crates/engine/src/commands/three_d.rs:296-600 (set3DView/get3D/setViewCamera/reset/lookAt, camera.fromView builds a camera layer)",
+        "crates/engine/src/commands/view.rs:14-78 (addGuide/clearGuides edit comp.guides; setRegionOfInterest sets EditorState.region_of_interest)",
+        "crates/engine/src/commands/viewer_cmds.rs:184-212 (moveGuide/removeGuide edit comp.guides)"
+      ]
+    },
+    {
+      "ids": [
+        "file.openDemoProject",
+        "file.projectSettings",
+        "file.cycleBitDepth",
+        "file.close",
+        "file.closeProject",
+        "file.importPlaceholder",
+        "file.importSolid",
+        "file.newCompFromSelection",
+        "file.consolidateFootage",
+        "file.removeUnusedFootage",
+        "file.reduceProject",
+        "file.interpretFootage",
+        "file.rememberInterpretation",
+        "file.applyInterpretation",
+        "file.replaceWithPlaceholder",
+        "file.replaceWithSolid",
+        "file.timelineFormats",
+        "file.setProxyNone",
+        "file.useProxy",
+        "file.interpretProxy",
+        "file.scripts.list",
+        "app.capabilities",
+        "render.backend",
+        "effect.plugins.list"
+      ],
+      "class": "safe",
+      "why": "Project-only / query exceptions to their file/host namespace defaults: build placeholders/solids/comps, consolidate/remove-unused/reduce, interpret footage (uses project media), close, project settings, formats list, proxy switches, script list; app.capabilities and render.backend are queries/project settings.",
+      "evidence": [
+        "crates/engine/src/commands/file.rs (projectSettings/cycleBitDepth), crates/engine/src/commands/file_more.rs:114-326 (placeholders/solids/newCompFromSelection/consolidate/reduce/interpret), crates/engine/src/commands/proxy.rs:76-139 (setProxyNone/useProxy/interpretProxy)",
+        "crates/engine/src/commands/scripts.rs:102-104 (file.scripts.list), crates/engine/src/commands/query.rs (app.capabilities)"
+      ]
+    },
+    {
+      "ids": [
+        "mediaBrowser.addFavorite",
+        "mediaBrowser.removeFavorite"
+      ],
+      "class": "host",
+      "why": "Media Browser panel state outside the document: a favourite folder kept in the session's EditorState. Without a `path` the favourite is the browser's home folder, the HOME environment variable, which the answer lists.",
+      "evidence": [
+        "crates/engine/src/commands/panels_cmds.rs:84-93: browser_favorite edits s.state.media_browser.favorites and returns the list; browser_dir falls back to b.home()",
+        "crates/engine/src/media_browser.rs:84-86,224-226: media_browser() is the file-system browser when the host sets none; home() reads HOME / USERPROFILE"
+      ]
+    },
+    {
+      "ids": [
+        "layer.revealInFinder",
+        "file.revealInFinder",
+        "help.revealLogFile",
+        "edit.editOriginal"
+      ],
+      "class": "host",
+      "why": "Open a folder or the footage file externally: push Event::OpenUrl(file://...) so the host file manager / browser shows it (Reveal in Finder, Reveal Logging File, Edit Original). The document does not change.",
+      "evidence": [
+        "crates/engine/src/commands/layer_menu.rs:635-650, crates/engine/src/commands/file_more.rs:874-883, crates/engine/src/commands/app_more.rs:290-296, crates/engine/src/commands/edit.rs:660-664: push Event::OpenUrl(folder_url / file://)"
+      ]
+    },
+    {
+      "ids": [
+        "file.newFromTemplate",
+        "anim.browsePresets",
+        "comp.flowchart",
+        "comp.miniFlowchart",
+        "effect.manage",
+        "layer.openLayer",
+        "layer.style.options",
+        "track.editTargetDialog",
+        "track.optionsDialog",
+        "help.inAppTutorials"
+      ],
+      "class": "host",
+      "why": "Frontend-only menu/dialog/panel commands: their run just emits Event::Frontend for the UI (dialogs, panels, Home tabs); headless backends drop it.",
+      "evidence": [
+        "crates/engine/src/commands/frontend.rs:15-109, crates/engine/src/commands/track.rs:76-77, crates/engine/src/templates.rs:935-937, crates/engine/src/commands/help.rs:39-45: run = frontend(...)"
+      ]
+    },
+    {
+      "ids": [
+        "help.enableLogging",
+        "help.systemReport",
+        "help.systemInfo"
+      ],
+      "class": "host",
+      "why": "Local Help actions outside the document: toggle file logging (creates the app log file), and the System Compatibility Report / System Information (read host CPU/OS/memory, on some platforms via a subprocess).",
+      "evidence": [
+        "crates/engine/src/commands/app_more.rs:281-296,322-392,602: enable_logging / system_report / systemInfo",
+        "crates/engine/src/logging.rs:120-133: set_enabled opens/creates the log file in the config/temp dir",
+        "crates/engine/src/sysinfo.rs:66-166: memory/cpu_name/os_version run sysctl/vm_stat/sw_vers via std::process::Command on macOS"
+      ]
+    },
+    {
+      "ids": [
+        "edit.purge"
+      ],
+      "class": "host",
+      "why": "Clears the app's in-memory + persistent caches (layer/footage memory, the disk-cache folder, the browser storage disk cache).",
+      "evidence": [
+        "crates/engine/src/commands/edit.rs:591-620: purge_caches clears layer_cache, footage, disk_cache (deletes cached frames) and the storage host"
+      ]
+    },
+    {
+      "ids": [
+        "file.clearRecent",
+        "file.recoveryInfo",
+        "file.clearRecentFootage",
+        "anim.clearRecentPresets",
+        "file.uninstallScript"
+      ],
+      "class": "host",
+      "why": "Recent-list and installed-script config management persisted to the host config store (recent projects/footage/presets, uninstall script, auto-save/recovery status).",
+      "evidence": [
+        "crates/engine/src/commands/settings.rs:223-249 (clearRecent/recoveryInfo via save_prefs/prefs), crates/engine/src/commands/app_more.rs:95-125 (clearRecentFootage/clearRecentPresets), crates/engine/src/commands/scripts.rs:106-119 (uninstallScript removes from the config store)"
+      ]
+    },
+    {
+      "ids": [
+        "keys.easePreset.save",
+        "keys.easePreset.rename",
+        "keys.easePreset.delete"
+      ],
+      "class": "host",
+      "why": "User ease presets are saved/renamed/deleted in the host config store.",
+      "evidence": [
+        "crates/engine/src/ease_presets.rs:118-126: store() writes EASE_PRESETS_FILE to the config store"
+      ]
+    },
+    {
+      "ids": [
+        "roto.model.install",
+        "face.model.install"
+      ],
+      "class": "file",
+      "why": "Install a trained model: read the caller's weights `path` (raw std::fs::read), verify the SHA-256, and write it into the app models folder.",
+      "evidence": [
+        "crates/engine/src/models.rs:330-350: install() std::fs::read(path) then install_bytes writes via StdFiles"
+      ]
+    },
+    {
+      "ids": [
+        "roto.model.download",
+        "face.model.download"
+      ],
+      "class": "network",
+      "why": "Download the official model weights over the network via the system curl into the app models folder.",
+      "evidence": [
+        "crates/engine/src/models.rs:352-387: download() spawns std::process::Command::new(\"curl\") to fetch m.url"
+      ]
+    },
+    {
+      "ids": [
+        "roto.model.select",
+        "roto.model.remove",
+        "face.model.select",
+        "face.model.remove"
+      ],
+      "class": "host",
+      "why": "Choose or remove a trained model: persists the chosen-model preference and loads/removes it from the app's own models folder (process-global effect registry).",
+      "evidence": [
+        "crates/engine/src/models.rs:313-328 (select: save_prefs + apply_model, loads from models_dir), 389-399 (remove: std::fs::remove_file in the app models folder), 79-80 (set_model into the process-global registry)"
+      ]
+    }
+  ]
+}

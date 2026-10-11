@@ -1,0 +1,14 @@
+diff --git a/widgets/src/label.rs b/widgets/src/label.rs
+index 382e65958..270970ed1 100644
+--- a/widgets/src/label.rs
++++ b/widgets/src/label.rs
+@@ -11,6 +11,9 @@
+     mod.widgets.Label = set_type_default() do mod.widgets.LabelBase{
+         width: Fit
+         height: Fit
++        // Match the native construction default during a retained restyle.
++        // An omitted enum field otherwise reloads Flow's unwrapped default.
++        flow: Flow.Right{wrap: true}
+         padding: theme.mspace_1
+ 
+         draw_text +: {

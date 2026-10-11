@@ -14,18 +14,27 @@
 //!
 //! **Tile size.** Width: the glance column (the phone's screen minus 40 pt,
 //! the desktop panel's 328 pt). Height: the card's own measured height,
-//! clamped to [`TILE_MIN_HEIGHT`]..=[`TILE_MAX_HEIGHT`] (room for a whole
-//! action card, its buttons included); until the first draw measures it,
-//! [`TILE_DEFAULT_HEIGHT`]. A taller card is clipped at the cap ([`overflow`]
-//! says by how much), or scrolled inside its tile where the surface offers
-//! that ([`GlanceTiles::draw_scrolled`]: the glance panel); the app is one
-//! tap away. A script card should size its root `Fit`.
+//! bounded below by [`TILE_MIN_HEIGHT`]; until the first draw measures it,
+//! [`TILE_DEFAULT_HEIGHT`]. The phone feed uses the full measured height so
+//! its scroll range includes trailing controls. Desktop tiles are capped
+//! at [`TILE_MAX_HEIGHT`] ([`overflow`] reports the excess), with scrolling
+//! inside the tile where offered ([`GlanceTiles::draw_scrolled`]). The
+//! expanded card scrolls its focused editor into view when resized, leaving
+//! room for the following action row. Legacy script cards size their root
+//! `Fit`; explicit viewport workspaces use a bounded `Fill` root and own their
+//! scroll regions. Script feed summaries display metadata without running UI.
+//!
+//! **Presentation.** `glance_style` receives the same host-selected stylesheet
+//! as normal app modules. A tile applies it once per revision to its resident
+//! Splash and host sheet; source, item, heap, local state and grants are retained.
+//! The shell's ambient chrome theme is not the app's theme. Explicit colors in
+//! published source remain app-owned; native fallback chat reads selected roles.
 //!
 //! **Policy.** A tile's isolate runs under the publishing app's resolved
 //! policy, applied exactly as the Card runner applies it
 //! (`octosense_app_policy::splash_adapter::apply` with the app's
 //! `isolate_settings`: its jail and quota, capabilities, hosts, prompt right,
-//! budget and heap), so a card can do whatever the app's own UI can. A
+//! budget and heap), with prompt authority restricted by the surface below. A
 //! native module (no manifest) publishes tiles with no capabilities and no
 //! hosts, as does an app whose policy cannot be resolved (logged).
 //!
@@ -34,17 +43,22 @@
 //! reach the card's widgets and its handlers run. Its `host.request` calls
 //! leave through the Card runner's own path (`octosense_appstore::services::
 //! pump`: the isolate's capability gate, then the host services) as that
-//! app, the way the app's own UI calls go out. A service sheet a tile's call
-//! raises is not shown on the tile. The shell keeps one affordance of its
-//! own on each tile, the open button at its top-right corner
-//! ([`open_button`]), which opens the app.
+//! app, the way the app's own UI calls go out. Background tiles cannot raise
+//! service sheets. An explicitly opened viewport workspace may use only the
+//! prompt authority its admitted policy granted: the host mounts its sheet in
+//! a separate, host-owned isolate, and draws and routes modal input there
+//! exclusively. The app stays resident but is not drawn underneath its review.
+//! Dismissal, suspension or account/publication retirement cancels unsubmitted
+//! reviews and stops the sheet isolate, while preserving the app's local draft.
+//! An already approved external write remains bound to its original request.
+//! The shell's tile affordance ([`open_button`]) opens the app.
 //!
 //! **L0 taps.** A lowered L0 card's taps and field edits call `NAV(t:
 //! "l0:{e,k,v}", v?)` (Octoscript-Makepad's general translation). Every
 //! isolate gets a host `NAV` ([`install_nav`]) that queues the call with the
 //! isolate's heap key; nothing else reads it. The card window
 //! (glance_sheet.rs), the desktop's glance panel (glance_panel.rs) and the
-//! phone's glance page (mobile_pages.rs `GlanceCards`) keep their L0 cards
+//! expanded phone workspace (glance_sheet.rs) keep their L0 cards
 //! in a [`LiveCards`], one path for all three: a tile's own isolate's calls
 //! ([`take_taps`], never another tile's) run through its card's
 //! [`L0Session`], made for the app that published the card: the declared
@@ -381,12 +395,74 @@ pub struct L0Session {
     pub source: String,
     pub data: serde_json::Value,
     pub store: octoscript_ui_l0::InstanceStore,
+    pub mail: Option<crate::mail_card::Session>,
+    /// Host-owned conversation for publishers with an agent but no sys.chat.
+    /// Never changes the model-authored source or grants the agent new tools.
+    workspace_chat: Option<WorkspaceChat>,
+    opening_account: Option<String>,
+    /// Navigation is limited to this publication’s declared own-app target.
+    open_url: Option<String>,
+    open_requested: bool,
+    local_changes: bool,
     /// The chat generation the card was last lowered at.
     chat_generation: u64,
     /// The card reads a `sys.chat` (worked out once: every event asks).
     reads_chat: bool,
     /// The shell's mode the card was last lowered in.
     dark: bool,
+}
+
+fn publication_open_url(card: &crate::glance::GlanceCard) -> String {
+    format!("app://{}{}", card.open_app, card.route.as_ref().map(|r| format!("/{r}")).unwrap_or_default())
+}
+
+struct WorkspaceChat {
+    account: String,
+    thread: String,
+    declaration: String,
+    publication: serde_json::Value,
+}
+
+fn bounded_context(value: serde_json::Value) -> serde_json::Value {
+    if serde_json::to_vec(&value).is_ok_and(|bytes| bytes.len() <= 12 * 1024) { value }
+    else { serde_json::json!({"omitted": "Exceeds card context limit"}) }
+}
+
+fn attach_mail_publication(binding: &mut crate::glance_chat::ContextBinding, source: &str, data: &serde_json::Value) {
+    let publication = bounded_context(serde_json::json!({"source":source, "data":data}));
+    binding.source_message["publication"] = publication;
+    // Preserve the authoritative email/draft/lease when a large publication
+    // would exceed the combined context budget. Never truncate its JSON/source.
+    if binding.validate().is_err() {
+        binding.source_message.as_object_mut().unwrap().remove("publication");
+    }
+}
+
+impl WorkspaceChat {
+    fn new(card: &crate::glance::GlanceCard, account: String) -> Self {
+        use sha2::Digest;
+        let thread = format!("card-{:x}", sha2::Sha256::digest(card.key().as_bytes()));
+        let thread = thread[..53].to_string();
+        let declaration = format!("source workspace_conversation sys.chat(app: {}, thread: {}, fields: [entries, id, role, text])\nview root Surface {{ TextBody(text: \"\") }}",
+            serde_json::to_string(&card.app).unwrap(), serde_json::to_string(&thread).unwrap());
+        Self { account, thread, declaration, publication: bounded_context(serde_json::json!({
+            "publisher": card.app, "card_id": card.card_id, "title": card.title, "summary": card.summary,
+            "published_ms": card.published_ms, "data": card.l0.as_ref().map(|l| &l.data),
+        })) }
+    }
+    fn binding(&self, state: &octoscript_ui_l0::InstanceStore) -> crate::glance_chat::ContextBinding {
+        crate::glance_chat::ContextBinding {
+            kind: octosense_l0_chat::ContextKind::Card,
+            account: self.account.clone(), thread: self.thread.clone(),
+            source_message: self.publication.clone(),
+            draft: bounded_context(serde_json::json!({"local_state": state})),
+        }
+    }
+    fn account_valid(&self, app: &str) -> bool {
+        crate::ai_host::contained::account_of(app).as_deref() == Some(&self.account)
+            && crate::app_storage::host().is_some_and(|s| !s.is_signed_out(app,
+                (self.account != crate::ai_host::contained::ACCOUNT).then_some(self.account.as_str())))
+    }
 }
 
 /// What a tap did to an [`L0Session`].
@@ -411,6 +487,136 @@ fn node_arg<'a>(node: &'a octoscript_ui_l0::UiNode, name: &str) -> Option<&'a oc
 }
 
 impl L0Session {
+    pub(crate) fn has_chat(&self) -> bool { self.chat_source().is_ok() }
+    pub(crate) fn mail_reply(&self) -> Option<&serde_json::Value> { self.mail.as_ref().map(|m| m.snapshot()) }
+
+    pub(crate) fn chat_access(&self) -> (Option<String>, bool) {
+        (crate::ai_host::contained::account_of(&self.app), crate::agents::access(&self.app) == crate::agents::Access::Allowed && self.account_valid())
+    }
+
+    pub(crate) fn account_valid(&self) -> bool {
+        self.mail.as_ref().is_none_or(|m| crate::mail_card::account_valid(&m.binding.account))
+            && self.workspace_chat.as_ref().is_none_or(|chat| chat.account_valid(&self.app))
+            && self.opening_account.as_ref().is_none_or(|account|
+                crate::ai_host::contained::account_of(&self.app).as_ref() == Some(account)
+                && crate::app_storage::host().is_some_and(|s| !s.is_signed_out(&self.app,
+                    (account != crate::ai_host::contained::ACCOUNT).then_some(account.as_str()))))
+    }
+
+    fn for_card(card: &crate::glance::GlanceCard) -> Self {
+        let mut session = Self::new(&card.app, &card.l0.as_deref().cloned().unwrap_or(crate::glance::L0Source {
+            source: String::new(), data: serde_json::json!({}), mail: None,
+        }));
+        session.opening_account = card.account.clone();
+        session.open_url = Some(publication_open_url(card));
+        if session.mail.is_none() && !session.reads_chat && crate::agents::all().iter().any(|agent| agent.id == card.app) {
+            if let Some(account) = card.account.clone() {
+                session.workspace_chat = Some(WorkspaceChat::new(card, account));
+            }
+        }
+        session
+    }
+
+    fn chat_source(&self) -> Result<octosense_l0_chat::ChatSource, String> {
+        if let Some(chat) = &self.workspace_chat {
+            return octosense_l0_chat::sources(&chat.declaration).into_iter().next().ok_or_else(|| "Invalid workspace conversation".into());
+        }
+        let mut sources = octosense_l0_chat::sources(&self.source).into_iter().filter(|source| source.app.as_deref() == Some(self.app.as_str()));
+        let source = sources.next().ok_or("This card has no conversation")?;
+        if sources.next().is_some() { return Err("Open the conversation from this card's own controls".into()); }
+        Ok(source)
+    }
+
+    pub(crate) fn chat_snapshot(&mut self) -> Result<serde_json::Value, String> {
+        if let Some(chat) = &self.workspace_chat {
+            let data = crate::glance_chat::seed_bound(&self.app, &chat.declaration, &serde_json::json!({}), &self.store, &chat.binding(&self.store))?;
+            return Ok(data["workspace_conversation"].clone());
+        }
+        if let Some(mail) = &mut self.mail { mail.refresh(); }
+        let source = self.chat_source()?;
+        let data = self.data_now();
+        data.pointer(&format!("/{}", source.name.replace('.', "/"))).cloned().ok_or_else(|| "This conversation is unavailable".into())
+    }
+
+    /// The host's fixed composer accepts text from its native input only.
+    /// Identity, account, thread, consent and draft context still go through
+    /// the same sys.chat adapter used by the generated card.
+    pub(crate) fn chat_submit(&mut self, text: &str) -> Result<(), String> {
+        let source = self.chat_source()?;
+        if let Some(mail) = &mut self.mail { mail.refresh(); }
+        let write = octoscript_ui_l0::CollectionWrite {
+            source: source.name, helper: "sys.chat".into(), op: "append".into(), value: text.into(), field: String::new(),
+        };
+        let data = self.data_now();
+        let origin = Some(octoscript_ui_l0::ValueOrigin::UserInput);
+        if let Some(chat) = &self.workspace_chat {
+            crate::glance_chat::perform_bound(&self.app, &chat.declaration, &self.store, &data, &write, origin, &chat.binding(&self.store))?;
+            return Ok(());
+        }
+        match &self.mail {
+            Some(mail) => {
+                let mut binding = mail.chat_edit_binding()?;
+                attach_mail_publication(&mut binding, &self.source, &self.data);
+                if let Err(error) = crate::glance_chat::perform_bound(&self.app, &self.source, &self.store, &data, &write, origin, &binding) {
+                    drop(crate::mail_card::ChatEditLease::new(Some(&binding)));
+                    return Err(error);
+                }
+            }
+            None => { crate::glance_chat::perform(&self.app, &self.source, &self.store, &data, &write, origin)?; }
+        }
+        Ok(())
+    }
+
+    /// Native Compose reply action. Keep implementation details out of the
+    /// visible human transcript; source identity travels as host-bound context.
+    pub(crate) fn compose_reply(&mut self, source_email: &serde_json::Value) -> Result<(), String> {
+        if self.app != "os.mail" || self.mail.is_some() || !self.account_valid() {
+            return Err("This card cannot start a reply".into());
+        }
+        let source = self.chat_source()?;
+        let data = self.data_now();
+        let mut binding = if let Some(chat) = &self.workspace_chat { chat.binding(&self.store) }
+        else {
+            crate::glance_chat::ContextBinding {
+                kind: octosense_l0_chat::ContextKind::Card,
+                account: self.opening_account.clone().ok_or("Missing card account")?,
+                thread: octosense_l0_chat::thread_of(&source, &self.store, &data).ok_or("Missing card thread")?,
+                source_message: serde_json::json!({}), draft: serde_json::json!({}),
+            }
+        };
+        binding.source_message["compose_reply"] = source_email.clone();
+        let write = octoscript_ui_l0::CollectionWrite {
+            source: source.name, helper: "sys.chat".into(), op: "append".into(),
+            value: "Compose an editable reply to this email. Let me review it before sending.".into(), field: String::new(),
+        };
+        let declaration = self.workspace_chat.as_ref().map(|c| c.declaration.as_str()).unwrap_or(&self.source);
+        crate::glance_chat::perform_bound(&self.app, declaration, &self.store, &data, &write,
+            Some(octoscript_ui_l0::ValueOrigin::UserInput), &binding)?;
+        Ok(())
+    }
+
+    /// A generated transition opened its chat page. The focused host can
+    /// present the same transcript in the native conversation column.
+    pub(crate) fn shows_chat(&self) -> bool {
+        fn contains_chat(session: &L0Session, data: &serde_json::Value, node: &octoscript_ui_l0::UiNode) -> bool {
+            if node.kind == "ChatEntry" { return true; }
+            // An empty conversation has no ChatEntry yet. Inspect its declared
+            // actions in a disposable state clone; never perform these writes.
+            for (_, arg) in &node.args {
+                if let octoscript_ui_l0::NodeValue::Event(event) = arg {
+                    let mut state = session.store.clone();
+                    let outcome = octoscript_ui_l0::dispatch_reporting_with_origin(&session.source, &mut state, &node.key, event,
+                        Some(&serde_json::json!("")), data, octoscript_ui_l0::ValueOrigin::UserInput);
+                    if outcome.writes.iter().any(|write| write.helper == "sys.chat" && write.op == "append") { return true; }
+                }
+            }
+            node.children.iter().any(|node| contains_chat(session, data, node))
+        }
+        if !self.reads_chat { return false; }
+        let data = self.data_now();
+        octoscript_ui_l0::realize_with_state(&self.source, &data, &self.store, Default::default())
+            .complete_root().is_ok_and(|node| contains_chat(self, &data, node))
+    }
     /// The card `app` published.
     pub fn new(app: &str, l0: &crate::glance::L0Source) -> Self {
         L0Session {
@@ -418,6 +624,12 @@ impl L0Session {
             source: l0.source.clone(),
             data: l0.data.clone(),
             store: Default::default(),
+            mail: l0.mail.clone().map(crate::mail_card::Session::new),
+            workspace_chat: None,
+            opening_account: None,
+            open_url: None,
+            open_requested: false,
+            local_changes: false,
             chat_generation: crate::glance_chat::generation(),
             reads_chat: crate::glance_chat::reads_chat(&l0.source),
             dark: dark(),
@@ -427,11 +639,19 @@ impl L0Session {
     /// The data the card reads now: as published, with the host's answer
     /// to each `sys.chat`.
     fn data_now(&self) -> serde_json::Value {
+        if let Some(mail) = &self.mail {
+            let seeded = mail.seed(&self.source, &self.data);
+            return match mail.chat_binding().and_then(|binding| crate::glance_chat::seed_bound(&self.app, &self.source, &seeded, &self.store, &binding)) {
+                Ok(data) => data,
+                Err(_) => crate::mail_card::unavailable_chat(&self.source, &seeded),
+            };
+        }
         crate::glance_chat::seed(&self.app, &self.source, &self.data, &self.store)
     }
 
     /// The card as it stands now, lowered for a Splash.
     pub fn body(&mut self) -> Result<String, String> {
+        if let Some(mail) = &mut self.mail { mail.refresh(); }
         self.chat_generation = crate::glance_chat::generation();
         self.dark = dark();
         lower_with_state(&self.source, &self.data_now(), &self.store)
@@ -446,7 +666,8 @@ impl L0Session {
     /// A conversation the card reads changed since it was last lowered (a
     /// reply arrived): lower it again.
     pub fn chat_moved(&self) -> bool {
-        self.reads_chat && self.chat_generation != crate::glance_chat::generation()
+        (self.reads_chat && self.chat_generation != crate::glance_chat::generation())
+            || self.mail.as_ref().is_some_and(crate::mail_card::Session::moved)
     }
 
     /// Carry out one tile's queued `NAV` calls, in order, then lower the
@@ -506,18 +727,36 @@ impl L0Session {
             }
         };
         let outcome = octoscript_ui_l0::dispatch_reporting_with_origin(&self.source, &mut self.store, &key, &event, payload.as_ref(), &data, origin.unwrap_or(octoscript_ui_l0::ValueOrigin::Authored));
+        self.local_changes |= !outcome.changed.is_empty();
         for write in &outcome.writes {
-            self.perform(write, origin, &data);
+            self.perform(write, origin, &data, keystroke);
         }
         let moved = !outcome.changed.is_empty() || !outcome.writes.is_empty();
         Ok(TapOutcome { event, applied: outcome.applied, relower: moved && !keystroke })
     }
 
-    /// A §5.12 write the card reported, performed by the host: a
-    /// `sys.chat` append (glance_chat.rs). The demo host performs no other.
-    fn perform(&mut self, write: &octoscript_ui_l0::CollectionWrite, origin: Option<octoscript_ui_l0::ValueOrigin>, data: &serde_json::Value) {
+    /// Perform only supported, host-bound collection writes.
+    fn perform(&mut self, write: &octoscript_ui_l0::CollectionWrite, origin: Option<octoscript_ui_l0::ValueOrigin>, data: &serde_json::Value, from_field: bool) {
+        if matches!(write.helper.as_str(), "sys.mail_draft" | "sys.mail_review") {
+            let result = self.mail.as_mut().ok_or_else(|| "Mail card has no host binding".to_string()).and_then(|mail| mail.perform(write, origin, from_field));
+            if let Err(error) = result { log!("glance: Mail write refused: {error}"); }
+            return;
+        }
+        if write.helper == "sys.link" {
+            // A declared control may open only the destination bound at publication.
+            // Arbitrary URLs, app IDs, field edits and unbound sessions are inert.
+            if write.op == "set" && origin.is_some() && !from_field && self.account_valid()
+                && self.open_url.as_deref() == Some(write.value.as_str()) {
+                self.open_requested = true;
+            }
+            return;
+        }
         if write.helper == "sys.chat" {
-            match crate::glance_chat::perform(&self.app, &self.source, &self.store, data, write, origin) {
+            let result = match &self.mail {
+                Some(mail) => mail.chat_binding().and_then(|binding| crate::glance_chat::perform_bound(&self.app, &self.source, &self.store, data, write, origin, &binding)),
+                None => crate::glance_chat::perform(&self.app, &self.source, &self.store, data, write, origin),
+            };
+            match result {
                 Ok(entry) => log!("glance: {} chat {} recorded {}", self.app, write.source, entry.id),
                 Err(e) => log!("glance: {} chat {} refused: {e}", self.app, write.source),
             }
@@ -531,8 +770,8 @@ impl L0Session {
 /// [`L0Session`] and the body its tile draws now. The card window keeps one
 /// for its card, and the glance panel and the phone's glance page one for
 /// their tiles, so a tap runs the same way on each (module docs, "L0
-/// taps"). A script card is not kept here: it runs as published and keeps
-/// its own state.
+/// taps"). A script card keeps only its host conversation here; its original
+/// body and local widget state remain in the resident Splash isolate.
 #[derive(Default)]
 pub struct LiveCards {
     cards: HashMap<String, LiveCard>,
@@ -542,41 +781,81 @@ struct LiveCard {
     /// The card's key (`app/card_id`), for the log.
     key: String,
     /// The publish the session runs: a newer publish of the card starts over.
-    published: std::sync::Arc<crate::glance::L0Source>,
+    published: crate::glance::GlanceCard,
     session: L0Session,
     body: std::sync::Arc<str>,
+    lowered: bool,
 }
 
 impl LiveCards {
+    /// A host-owned pane needs the publication's session, not a generated
+    /// layout. Defer lowering until an actual generated tile asks for it.
+    pub(crate) fn prepare_native(&mut self, tile: &str, card: &crate::glance::GlanceCard) {
+        if self.cards.get(tile).is_some_and(|live| live.published == *card) { return; }
+        self.cards.insert(tile.to_string(), LiveCard {
+            key: card.key(), published: card.clone(), session: L0Session::for_card(card),
+            body: card.body.clone(), lowered: false,
+        });
+    }
+
+    /// Consume navigation once, and reject a removed/replaced publication.
+    pub(crate) fn take_open_request(&mut self) -> Option<(String, Option<String>)> {
+        self.take_open_request_with(crate::glance::card)
+    }
+
+    fn take_open_request_with(&mut self, current: impl Fn(&str) -> Option<crate::glance::GlanceCard>) -> Option<(String, Option<String>)> {
+        for live in self.cards.values_mut() {
+            if std::mem::take(&mut live.session.open_requested) && live.session.account_valid()
+                && current(&live.key).as_ref() == Some(&live.published) {
+                return Some((live.published.open_app.clone(), live.published.route.clone()));
+            }
+        }
+        None
+    }
+
+    pub(crate) fn has_local_changes(&self) -> bool {
+        self.cards.values().any(|card| card.session.local_changes)
+    }
+
+    pub(crate) fn accounts_valid(&self) -> bool {
+        self.cards.values().all(|card| card.session.account_valid())
+    }
+
+    pub(crate) fn session_mut(&mut self, tile: &str) -> Option<&mut L0Session> {
+        self.cards.get_mut(tile).map(|card| &mut card.session)
+    }
+
+    pub(crate) fn restore_store(&mut self, tile: &str, store: octoscript_ui_l0::InstanceStore) {
+        if let Some(card) = self.cards.get_mut(tile) {
+            card.session.store = store;
+            card.session.local_changes = true;
+            if let Ok(body) = card.session.body() { card.body = body.into(); card.lowered = true; }
+        }
+    }
+
+    pub(crate) fn refresh_script_metadata(&mut self, tile: &str, card: &crate::glance::GlanceCard) {
+        if let Some(live) = self.cards.get_mut(tile) {
+            if let Some(chat) = &mut live.session.workspace_chat {
+                *chat = WorkspaceChat::new(card, chat.account.clone());
+            }
+            live.published = card.clone();
+        }
+    }
     /// What tile `tile` draws for `card`: an L0 card as its session has it
     /// now (made on first use for the app that published the card, and made
     /// again for a newer publish), a script card as published. `who` heads
     /// the log lines (`glance panel`).
     pub fn body(&mut self, tile: &str, card: &crate::glance::GlanceCard, who: &str) -> std::sync::Arc<str> {
-        let Some(l0) = &card.l0 else {
-            self.cards.remove(tile);
-            return card.body.clone();
-        };
-        if let Some(live) = self.cards.get_mut(tile).filter(|live| std::sync::Arc::ptr_eq(&live.published, l0)) {
-            // The shell changed mode: the card takes the new palette.
-            if live.session.mode_moved() {
-                match live.session.body() {
-                    Ok(body) => live.body = body.into(),
-                    Err(e) => log!("{who}: {} does not lower in the new mode: {e}", live.key),
-                }
+        self.prepare_native(tile, card);
+        let live = self.cards.get_mut(tile).unwrap();
+        if card.l0.is_none() { return card.body.clone(); }
+        if !live.lowered || live.session.mode_moved() || live.session.chat_moved() {
+            match live.session.body() {
+                Ok(body) => { live.body = body.into(); live.lowered = true; }
+                Err(e) => log!("{who}: {} does not lower in the new mode: {e}", live.key),
             }
-            return live.body.clone();
         }
-        let mut session = L0Session::new(&card.app, l0);
-        let body: std::sync::Arc<str> = match session.body() {
-            Ok(body) => body.into(),
-            Err(e) => {
-                log!("{who}: {} lowers as published only: {e}", card.key());
-                card.body.clone()
-            }
-        };
-        self.cards.insert(tile.to_string(), LiveCard { key: card.key(), published: l0.clone(), session, body: body.clone() });
-        body
+        live.body.clone()
     }
 
     /// Run each live card's queued taps, those of its own tile's isolate
@@ -585,12 +864,14 @@ impl LiveCards {
     pub fn dispatch(&mut self, cx: &mut Cx, tiles: &GlanceTiles, who: &str) -> bool {
         let mut changed = false;
         for (tile, live) in &mut self.cards {
+            if live.published.l0.is_none() { continue; }
             let taps = tiles.heap_key(cx, tile).map(take_taps).unwrap_or_default();
             if taps.is_empty() && !live.session.chat_moved() && !live.session.mode_moved() {
                 continue;
             }
             if let Some(body) = live.session.run(taps, &format!("{who}: {}", live.key)) {
                 live.body = body.into();
+                live.lowered = true;
                 changed = true;
             }
         }
@@ -631,6 +912,14 @@ pub fn tile_height(key: &str) -> f64 {
     HEIGHTS.with(|h| h.borrow().get(key).copied()).map(clamp_height).unwrap_or(TILE_DEFAULT_HEIGHT)
 }
 
+/// A phone feed scrolls the entire card instead of clipping it at a tile
+/// cap. Include long chat replies and the controls following them in its
+/// scroll extent; desktop tiles retain their own bounded scrolling policy.
+pub fn feed_height(key: &str) -> f64 {
+    measured_height(key).filter(|h| h.is_finite())
+        .map(|h| h.max(TILE_MIN_HEIGHT)).unwrap_or(TILE_DEFAULT_HEIGHT)
+}
+
 fn record_height(key: &str, measured: f64) -> bool {
     HEIGHTS.with(|h| {
         let mut h = h.borrow_mut();
@@ -652,14 +941,52 @@ script_mod! {
         width: Fill height: Fill flow: Down
         card := Splash { width: Fill height: Fit }
     }
+    // Script workspaces own their scrolling regions (mail body, editor,
+    // transcript). A Fit ancestor gives their Fill roots no usable height.
+    mod.widgets.GlanceWorkspaceFrame = View {
+        width: Fill height: Fill flow: Overlay
+        card := Splash { width: Fill height: Fill }
+        // Host-owned isolate, outside the app's policy and script tree.
+        sheet := Splash { width: Fill height: Fill visible: false }
+    }
 }
 
 struct Tile {
     frame: WidgetRef,
+    card: SplashRef,
+    sheet: SplashRef,
     body: std::sync::Arc<str>,
     /// The publishing app, whose requests the tile's calls go out as.
     app: String,
     contained: bool,
+    workspace: bool,
+    admitted_prompts: bool,
+    style_revision: u64,
+    viewport: Option<Rect>,
+    focused: Option<WidgetUid>,
+}
+
+fn focused_widget(widget: &WidgetRef, focus: Area) -> Option<WidgetUid> {
+    if focus.is_empty() { return None; }
+    if widget.area() == focus { return Some(widget.widget_uid()); }
+    let mut found = None;
+    widget.children(&mut |_, child| {
+        if found.is_none() { found = focused_widget(&child, focus); }
+    });
+    found
+}
+
+/// Keep the editor and its following action row inside a resized viewport.
+/// Only applied on a viewport/focus change, so reading older chat by hand
+/// never snaps the scroll position back to the composer.
+pub(crate) fn editor_scroll(current: f64, viewport: Rect, editor: Rect, content_height: f64) -> f64 {
+    let actions = 88.0_f64.min((viewport.size.y - editor.size.y - 16.0).max(0.0));
+    let top = viewport.pos.y + 8.0;
+    let bottom = viewport.pos.y + viewport.size.y - 8.0 - actions;
+    let delta = if editor.pos.y + editor.size.y > bottom {
+        editor.pos.y + editor.size.y - bottom
+    } else if editor.pos.y < top { editor.pos.y - top } else { 0.0 };
+    (current + delta).clamp(0.0, (content_height - viewport.size.y).max(0.0))
 }
 
 /// The live tiles one surface draws, by card key. A surface keeps one of
@@ -670,12 +997,95 @@ pub struct GlanceTiles {
     tiles: HashMap<String, Tile>,
     /// Cards scroll inside their rect instead of clipping (the card window).
     scroll: bool,
+    viewport_layout: bool,
+    foreground: bool,
+    /// Only a sheet that handed control to a native login Activity may survive
+    /// Android's Pause. Its isolate identity prevents retaining a replacement.
+    suspended_auth: std::collections::HashSet<usize>,
 }
 
 impl GlanceTiles {
+    /// Event handling and drawing must apply the same foreground decision.
+    /// Android can draw once more after handing control to native sign-in;
+    /// that draw must preserve the already identified host sheet, just like
+    /// Pause does. Explicit workspace dismissal still uses set_foreground.
+    pub(crate) fn sync_foreground(&mut self, cx: &mut Cx, foreground: bool, native_auth_handoff: bool) {
+        if !foreground && native_auth_handoff {
+            self.suspend_for_auth_handoff(cx);
+        } else {
+            self.set_foreground(cx, foreground);
+        }
+    }
+
+    pub(crate) fn focused_editor(&self, cx: &Cx) -> Option<(WidgetUid, Rect)> {
+        let editor = cx.get_ime_area_rect();
+        if editor.size.y <= 0.0 { return None; }
+        self.tiles.values().find_map(|tile|
+            focused_widget(&tile.frame, cx.key_focus()).map(|uid| (uid, editor)))
+    }
+
     /// Tiles whose cards scroll inside their rect (the card window).
     pub fn scrolling() -> Self {
-        GlanceTiles { tiles: HashMap::new(), scroll: true }
+        GlanceTiles { scroll: true, ..Default::default() }
+    }
+
+    /// Only the visible expanded workspace may request host-owned prompts.
+    /// Summary tiles keep their original background policy.
+    pub fn set_foreground(&mut self, cx: &mut Cx, foreground: bool) {
+        let had_handoff = !self.suspended_auth.is_empty();
+        self.suspended_auth.clear();
+        if self.foreground == foreground && !had_handoff { return; }
+        self.foreground = foreground;
+        for tile in self.tiles.values() {
+            if !tile.workspace { continue; }
+            let card = tile.card.clone();
+            card.set_host_prompts(cx, foreground && tile.admitted_prompts);
+            if !foreground {
+                retire_host_sheet(cx, tile);
+            }
+        }
+    }
+
+    /// A native Android login Activity pauses Home while remaining part of the
+    /// user's active sign-in. Disable new app prompts, but keep its exact host
+    /// isolate alive until Home resumes. Explicit dismissal uses set_foreground
+    /// and still retires it. Home/another Activity cancels in the native adapter.
+    pub(crate) fn suspend_for_auth_handoff(&mut self, cx: &mut Cx) {
+        let first = self.foreground;
+        self.foreground = false;
+        let mut retained = std::collections::HashSet::new();
+        for tile in self.tiles.values().filter(|tile| tile.workspace) {
+            tile.card.set_host_prompts(cx, false);
+            let heap = tile.sheet.isolate_heap_key(cx);
+            let handoff = heap.is_some_and(|heap| self.suspended_auth.contains(&heap))
+                || (first && has_native_auth(&tile.sheet));
+            if handoff {
+                if let Some(heap) = heap { retained.insert(heap); }
+            } else {
+                retire_host_sheet(cx, tile);
+            }
+        }
+        self.suspended_auth = retained;
+    }
+
+    pub fn host_sheet_visible(&self, _cx: &mut Cx) -> bool {
+        self.tiles.values().any(|tile| tile.workspace && tile.sheet
+            .borrow().is_some_and(|s| s.view.visible))
+    }
+
+    pub fn dismiss_host_sheets(&mut self, cx: &mut Cx) {
+        for tile in self.tiles.values().filter(|tile| tile.workspace) {
+            retire_host_sheet(cx, tile);
+            tile.card.set_host_prompts(cx, self.foreground && tile.admitted_prompts);
+        }
+    }
+
+    /// An expanded script app gets a bounded viewport, just like its normal
+    /// app window. Its own scroll views and bottom composer share that space.
+    pub fn draw_workspace(&mut self, cx: &mut Cx2d, key: &str, app: &str, contained: bool, body: &std::sync::Arc<str>, rect: Rect) {
+        self.viewport_layout = true;
+        self.draw(cx, key, app, contained, body, rect);
+        self.viewport_layout = false;
     }
 
     /// Draw `card` (its `body`, published by `app`) at `rect`: the rect's
@@ -706,6 +1116,18 @@ impl GlanceTiles {
         }
         let walk = Walk { abs_pos: Some(rect.pos), width: Size::Fixed(rect.size.x), height: Size::Fixed(rect.size.y), ..Walk::default() };
         let mut scope = Scope::empty();
+        if tile.workspace && tile.sheet.borrow().is_some_and(|s| s.view.visible) {
+            // A modal review replaces the workspace surface. Drawing both
+            // siblings lets the renderer batch app text above the host's opaque
+            // background. Keep the app VM/draft resident, but emit no app draw
+            // calls while reviewing; lazy host widgets also need their own VM.
+            let sheet = tile.sheet.clone();
+            match isolate_of(cx, &sheet) {
+                Some(vm_id) => widget_async::with_isolate(cx, vm_id, |cx| sheet.draw_walk_all(cx, &mut scope, walk)),
+                None => sheet.draw_walk_all(cx, &mut scope, walk),
+            }
+            return;
+        }
         // Inside the card's isolate, as the Card runner draws its card.
         match isolate_of(cx, &splash) {
             Some(vm_id) => widget_async::with_isolate(cx, vm_id, |cx| tile.frame.draw_walk_all(cx, &mut scope, walk)),
@@ -715,21 +1137,55 @@ impl GlanceTiles {
         if measured > 1.0 && record_height(key, measured) {
             cx.redraw_all();
         }
+        if self.scroll {
+            let focused = focused_widget(&tile.frame, cx.key_focus());
+            let resized = tile.viewport.is_none_or(|old| old != rect);
+            if focused.is_some() && (resized || focused != tile.focused) {
+                let editor = cx.get_ime_area_rect();
+                if editor.size.y > 0.0 {
+                    let view = tile.frame.as_view();
+                    let current = view.scroll_pos();
+                    let next = editor_scroll(current.y, rect, editor, measured);
+                    if (next - current.y).abs() > 0.5 {
+                        view.set_scroll_pos(cx, dvec2(current.x, next));
+                        tile.frame.redraw(cx);
+                    }
+                }
+            }
+            tile.viewport = Some(rect);
+            tile.focused = focused;
+        }
     }
 
     /// The tile for `key`, made and seated on first use, running `body`.
     pub(crate) fn open(&mut self, cx: &mut Cx, key: &str, app: &str, contained: bool, body: &std::sync::Arc<str>) -> SplashRef {
-        let tile = self.tiles.entry(key.to_string()).or_insert_with(|| Tile { frame: WidgetRef::empty(), body: "".into(), app: app.to_string(), contained });
+        let tile = self.tiles.entry(key.to_string()).or_insert_with(|| Tile { frame: WidgetRef::empty(), card: SplashRef::default(), sheet: SplashRef::default(), body: "".into(), app: app.to_string(), contained, workspace: self.viewport_layout, admitted_prompts: false, style_revision: 0, viewport: None, focused: None });
         if tile.frame.is_empty() {
             let scroll = self.scroll;
+            let viewport = self.viewport_layout;
             tile.frame = cx.with_vm(|vm| {
-                let value = if scroll { script_eval!(vm, { use mod.widgets.* GlanceSheetFrame {} }) } else { script_eval!(vm, { use mod.widgets.* GlanceTileFrame {} }) };
+                let value = if viewport { script_eval!(vm, { use mod.widgets.* GlanceWorkspaceFrame {} }) }
+                    else if scroll { script_eval!(vm, { use mod.widgets.* GlanceSheetFrame {} }) }
+                    else { script_eval!(vm, { use mod.widgets.* GlanceTileFrame {} }) };
                 WidgetRef::script_from_value(vm, value)
             });
-            let splash = tile.frame.splash(cx, ids!(card));
-            seat(cx, &splash, app, contained);
+            // Capture direct host children before evaluating any app source.
+            // A nested app widget named `sheet` can never become host authority.
+            tile.card = tile.frame.splash(cx, ids!(card));
+            if tile.workspace { tile.sheet = tile.frame.splash(cx, ids!(sheet)); }
+            let splash = tile.card.clone();
+            tile.admitted_prompts = seat(cx, &splash, app, contained);
+            if tile.workspace { splash.set_host_prompts(cx, self.foreground && tile.admitted_prompts); }
         }
-        let splash = tile.frame.splash(cx, ids!(card));
+        let (revision, sheet) = crate::glance_style::current(cx);
+        if tile.style_revision != revision {
+            if let Some(sheet) = sheet {
+                if let Some(mut card) = tile.card.borrow_mut() { card.set_stylesheet(cx, (*sheet).clone()); }
+                if let Some(mut host_sheet) = tile.sheet.borrow_mut() { host_sheet.set_stylesheet(cx, (*sheet).clone()); }
+            }
+            tile.style_revision = revision;
+        }
+        let splash = tile.card.clone();
         if tile.body.as_ref() != body.as_ref() {
             splash.set_text(cx, body);
             tile.body = body.clone();
@@ -740,7 +1196,7 @@ impl GlanceTiles {
     /// The heap key of the isolate `key`'s card runs in, once seated.
     pub fn heap_key(&self, cx: &mut Cx, key: &str) -> Option<usize> {
         let tile = self.tiles.get(key)?;
-        let splash = tile.frame.splash(cx, ids!(card));
+        let splash = tile.card.clone();
         let mut splash = splash.borrow_mut()?;
         splash.isolate_heap_key(cx)
     }
@@ -752,8 +1208,17 @@ impl GlanceTiles {
     /// it has tiles; pointer events only while the tiles are on screen.
     pub fn handle_event(&mut self, cx: &mut Cx, event: &Event) {
         for tile in self.tiles.values() {
-            let splash = tile.frame.splash(cx, ids!(card));
-            match isolate_of(cx, &splash) {
+            let splash = tile.card.clone();
+            let sheet = tile.sheet.clone();
+            let modal = sheet.borrow().is_some_and(|s| s.view.visible);
+            #[cfg(any(feature = "app-hub", native_mobile))]
+            let sheet_input = octosense_appstore::services::is_sheet_input_event(event);
+            #[cfg(not(any(feature = "app-hub", native_mobile)))]
+            let sheet_input = false; // This build cannot mount host service sheets.
+            if modal && sheet_input {
+                // The foreground service sheet receives input exclusively.
+                sheet.handle_event(cx, event, &mut Scope::empty());
+            } else { match isolate_of(cx, &splash) {
                 Some(vm_id) => widget_async::with_isolate(cx, vm_id, |cx| {
                     if let Event::NetworkResponses(responses) = event {
                         // Splash's own pump looks the isolate up as not
@@ -763,11 +1228,11 @@ impl GlanceTiles {
                     tile.frame.handle_event(cx, event, &mut Scope::empty());
                 }),
                 None => tile.frame.handle_event(cx, event, &mut Scope::empty()),
-            }
+            }}
             #[cfg(any(feature = "app-hub", native_mobile))]
             if tile.contained {
                 let host_dir = octosense_appstore::data_root(cx).join(".host");
-                octosense_appstore::services::pump(cx, &tile.app, &host_dir, &splash, &SplashRef::default());
+                octosense_appstore::services::pump(cx, &tile.app, &host_dir, &splash, &sheet);
             }
         }
     }
@@ -779,7 +1244,8 @@ impl GlanceTiles {
         let gone: Vec<String> = self.tiles.keys().filter(|k| !live.contains(k)).cloned().collect();
         for key in gone {
             if let Some(tile) = self.tiles.remove(&key) {
-                let splash = tile.frame.splash(cx, ids!(card));
+                if tile.workspace { retire_host_sheet(cx, &tile); }
+                let splash = tile.card.clone();
                 // Its waiting host requests and taps end with it: a late
                 // answer goes nowhere, and neither reaches a tile that
                 // takes its place (it may get the same heap key).
@@ -794,6 +1260,49 @@ impl GlanceTiles {
     }
 }
 
+fn has_native_auth(widget: &WidgetRef) -> bool {
+    if widget.borrow::<makepad_widgets::web_reader::WebReader>()
+        .is_some_and(|reader| reader.auth_browser_id().is_some()) { return true; }
+    let mut found = false;
+    widget.children(&mut |_, child| { found |= has_native_auth(&child); });
+    found
+}
+
+/// Retiring the host isolate drops native ReviewRequest capabilities (which
+/// cancel unsubmitted Gmail tickets), timers and queued sheet requests. The app
+/// isolate stays resident so its durable draft and input survive dismissal.
+fn retire_host_sheet(cx: &mut Cx, tile: &Tile) {
+    let sheet = &tile.sheet;
+    if sheet.borrow().is_none() { return; }
+    tile.card.set_host_prompts(cx, false);
+    // Refuse calls queued while foreground before invoking any host cancellation
+    // hook. Callbacks run with prompts disabled and cannot replace this sheet.
+    let app_heap = tile.card.isolate_heap_key(cx);
+    if let Some(heap) = app_heap {
+        for request in splash_host::take_splash_host_requests_for(&[heap]) {
+            splash_host::splash_host_respond(cx, heap, request.req_id,
+                Err("The workspace was suspended; reopen it and try again"));
+        }
+    }
+    if let Some(heap) = sheet.isolate_heap_key(cx) {
+        let _ = splash_host::take_splash_host_requests_for(&[heap]);
+    }
+    sheet.handle_event(cx, &Event::Background, &mut Scope::empty());
+    #[cfg(any(feature = "app-hub", native_mobile))]
+    if sheet.call_script_fn(cx, id!(host_dismiss), &[]) {
+        let host_dir = octosense_appstore::data_root(cx).join(".host");
+        octosense_appstore::services::pump(cx, &tile.app, &host_dir, &tile.card, sheet);
+    }
+    if let Some(heap) = sheet.isolate_heap_key(cx) {
+        drop_taps(heap);
+        #[cfg(any(feature = "app-hub", native_mobile))]
+        octosense_appstore::services::cancel_heap(heap);
+        let _ = splash_host::take_splash_host_requests_for(&[heap]);
+    }
+    sheet.set_text(cx, "");
+    if let Some(mut s) = sheet.borrow_mut() { s.view.visible = false; }
+}
+
 /// The isolate a tile's card runs in, once its body has been evaluated.
 fn isolate_of(cx: &mut Cx, splash: &SplashRef) -> Option<widget_async::SplashVmId> {
     let splash = splash.borrow()?;
@@ -802,20 +1311,43 @@ fn isolate_of(cx: &mut Cx, splash: &SplashRef) -> Option<widget_async::SplashVmI
 
 /// Seat a new tile's isolate before its body runs: the publishing app's
 /// policy for a contained app, none for a native module (module docs).
-fn seat(cx: &mut Cx, splash: &SplashRef, app: &str, contained: bool) {
+fn seat(cx: &mut Cx, splash: &SplashRef, app: &str, contained: bool) -> bool {
     #[cfg(any(feature = "app-hub", native_mobile))]
     if contained {
-        match app_isolate(cx, app) {
-            Ok(settings) => {
-                let applied = octosense_app_policy::splash_adapter::apply(splash, cx, &settings);
+        // A legacy manifest must not inherit the shell's OS permissions.
+        // Keep this fail-closed state if admission or the manifest reload fails.
+        splash.set_device_consent(cx, true);
+        splash.set_host_caps(cx, Vec::new());
+        splash.set_host_tag(cx, None);
+        let seated = (|| {
+            let mut settings = admitted_app_isolate(cx, app)?;
+            let (_, bundle) = crate::host_tools::script_apps::admitted_bundle(app)?;
+            let admitted_prompts = settings.host_prompts;
+            settings.host_prompts = false;
+            let applied = octosense_app_policy::splash_adapter::apply(splash, cx, &settings);
+            // The generic adapter enables only non-device APIs. Use the same
+            // host-consent and capture-intent setup as the full app, before any
+            // card code runs. Identity never comes from the published body.
+            splash.set_host_tag(cx, Some(app.to_string()));
+            octosense_appstore::apply_device_consent(cx, &bundle, splash)?;
+            Ok::<_, String>((admitted_prompts, applied))
+        })();
+        match seated {
+            Ok((admitted_prompts, applied)) => {
                 log!("glance: {app}'s tile runs under its policy: {} capability(ies), {} host(s)", applied.capabilities, applied.hosts);
-                return;
+                return admitted_prompts;
             }
-            Err(e) => log!("glance: {app}'s tile runs with no grants: {e}"),
+            Err(e) => {
+                splash.set_host_caps(cx, Vec::new());
+                splash.set_host_tag(cx, None);
+                log!("glance: {app}'s tile runs with no grants: {e}");
+            }
         }
     }
     let _ = (app, contained);
     splash.set_policy(cx, Some(Vec::new()), Some(TILE_INSTRUCTION_BUDGET));
+    splash.set_host_prompts(cx, false);
+    false
 }
 
 /// The isolate settings of `app`'s policy, resolved as the Card runner
@@ -824,19 +1356,30 @@ fn seat(cx: &mut Cx, splash: &SplashRef, app: &str, contained: bool) {
 /// surface, so a service its card calls may not raise a sheet over it.
 #[cfg(any(feature = "app-hub", native_mobile))]
 pub fn app_isolate(cx: &Cx, app: &str) -> Result<octosense_app_policy::IsolateSettings, String> {
+    let mut settings = admitted_app_isolate(cx, app)?;
+    settings.host_prompts = false;
+    Ok(settings)
+}
+
+#[cfg(any(feature = "app-hub", native_mobile))]
+fn admitted_app_isolate(cx: &Cx, app: &str) -> Result<octosense_app_policy::IsolateSettings, String> {
     let root = octosense_appstore::data_root(cx);
     let policy = match octosense_appstore::system::system_app(app) {
         Some(system) => octosense_appstore::system::prepare(&root, &system)?.1,
         None => {
             let anchor = std::env::var("OCTOSENSE_HUB_ANCHOR").unwrap_or_else(|_| octosense_appstore::DEFAULT_ANCHOR.to_string());
-            let mut store = octosense_app_hub::Store::new(&anchor, &root, octosense_app_contract::HostLimits::default());
-            let catalog = std::fs::read_to_string(root.join("catalog.json")).unwrap_or_default();
+            let channel = octosense_appstore::source::CatalogChannel::from_environment(&root)?;
+            let mut store = channel.configure(octosense_app_hub::Store::new(&anchor, &root, octosense_app_contract::HostLimits::default())
+                .with_host_api_versions(octosense_appstore::host_api::available_versions()));
+            let catalog = channel.read_cache(&root).map_err(|e| format!("no verified catalog on this device ({e})"))?;
             store.accept_catalog(&catalog).map_err(|e| format!("no verified catalog on this device ({e})"))?;
+            octosense_app_hub_app::catalog::check_verified_catalog_floor(
+                &root, &anchor, store.catalog().map(|catalog| catalog.sequence),
+            )?;
             store.may_run(app)?
         }
     };
-    let mut settings = policy.isolate_settings(&root);
-    settings.host_prompts = false;
+    let settings = policy.isolate_settings(&root);
     std::fs::create_dir_all(&settings.jail_root).map_err(|e| format!("the app's storage: {e}"))?;
     Ok(settings)
 }
@@ -866,6 +1409,25 @@ mod tests {
     use super::*;
 
     #[test]
+    fn mail_chat_receives_exact_publication_but_keeps_large_draft_context_valid() {
+        let mut binding = crate::glance_chat::ContextBinding {
+            kind: octosense_l0_chat::ContextKind::Mail, account: "account".into(), thread: "reply-test".into(),
+            source_message: serde_json::json!({"card_id":"mail-card", "email":{"body":"x".repeat(20 * 1024)}}),
+            draft: serde_json::json!({"body":"y".repeat(6 * 1024), "edit_token":"host-lease"}),
+        };
+        let original_draft = binding.draft.clone();
+        attach_mail_publication(&mut binding, "original model source", &serde_json::json!({"note":{"title":"Original fact"}}));
+        assert_eq!(binding.source_message["publication"]["source"], "original model source");
+        assert_eq!(binding.source_message["publication"]["data"]["note"]["title"], "Original fact");
+        assert!(binding.validate().is_ok());
+        attach_mail_publication(&mut binding, &"z".repeat(8 * 1024), &serde_json::json!({}));
+        assert!(binding.source_message.get("publication").is_none());
+        assert_eq!(binding.draft, original_draft);
+        assert_eq!(binding.source_message["card_id"], "mail-card");
+        assert!(binding.validate().is_ok());
+    }
+
+    #[test]
     fn the_demo_digest_lowers_through_the_card_pipeline() {
         let (source, data) = crate::glance::demo_digest();
         let body = lower(&source, &data).expect("lowers");
@@ -893,7 +1455,7 @@ mod tests {
     }
 
     /// A system app, registered from a pack made on the fly, whose manifest
-    /// grants `glance` and `storage` and nothing else. It is registered as
+    /// declares `glance` and `storage`. It is registered as
     /// a test's, so the catalog tests running beside these leave it out.
     #[cfg(feature = "app-hub")]
     fn register_test_app(id: &'static str) {
@@ -927,23 +1489,278 @@ mod tests {
         splash.borrow_mut().unwrap().isolate_heap_key(cx).expect("the card runs in its own isolate")
     }
 
-    /// A contained app's tile runs under that app's resolved policy, the one
-    /// its Card runner applies: its grants pass the isolate's gate, and
-    /// nothing it was not granted does. A native module's tile gets none.
+    /// Admission and consent registries are process-wide. Exercise the real
+    /// bundle loader in a private profile, independently of parallel tests.
+    #[cfg(feature = "app-hub")]
+    struct AppProfile(std::path::PathBuf);
+    #[cfg(feature = "app-hub")]
+    impl AppProfile {
+        fn isolated(test: &str) -> Option<Self> {
+            const CHILD: &str = "OCTOSENSE_GLANCE_PROFILE_TEST";
+            if std::env::var(CHILD).ok().as_deref() != Some(test) {
+                let name = format!("glance_card::tests::{test}");
+                let output = std::process::Command::new(std::env::current_exe().unwrap())
+                    .args(["--exact", &name, "--nocapture"])
+                    .env(CHILD, test).output().unwrap();
+                assert!(output.status.success(), "{}\n{}",
+                    String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
+                return None;
+            }
+            let root = std::env::temp_dir().join(format!("glance-profile-{}", uuid::Uuid::new_v4()));
+            std::fs::create_dir_all(&root).unwrap();
+            std::env::set_var("OCTOSENSE_APP_DATA", &root);
+            octosense_appstore::set_data_root(root.clone());
+            Some(Self(root))
+        }
+    }
+    #[cfg(feature = "app-hub")]
+    impl Drop for AppProfile {
+        fn drop(&mut self) { let _ = std::fs::remove_dir_all(&self.0); }
+    }
+
+    #[cfg(feature = "app-hub")]
+    fn queued_glance_request(cx: &mut Cx, splash: &SplashRef) -> splash_host::SplashHostRequest {
+        let vm = isolate_of(cx, splash).unwrap();
+        widget_async::with_isolate(cx, vm, |cx| cx.with_vm(|vm| {
+            script_eval!(vm, {mod.host.request("glance.list", {}, nil)});
+        }));
+        let heap = heap_of(cx, splash);
+        let mut requests = splash_host::take_splash_host_requests_for(&[heap]);
+        assert_eq!(requests.len(), 1);
+        requests.pop().unwrap()
+    }
+
+    #[test]
+    #[cfg(feature = "app-hub")]
+    fn native_d3_charts_reach_glance_workspace() {
+        use makepad_widgets::makepad_draw::cx_draw::CxDraw;
+        let mut cx = tile_cx();
+        cx.with_vm(crate::charts::register);
+        let mut tiles = GlanceTiles::scrolling();
+        tiles.viewport_layout = true;
+        let body: std::sync::Arc<str> = r#"
+            height: Fill flow: Down
+            line := d3.LineChart {height: 130 data: [[0 2], [1 6], [2 4]]}
+            bars := d3.BarChart {height: 130 data: [2 6 4] labels: ["A" "B" "C"]}
+            heat := d3.Heatmap {height: 130 data: [[1 2], [3 4]]}
+        "#.into();
+        let card = tiles.open(&mut cx, "chart-fixture", "test.charts", false, &body);
+        let pass = DrawPass::new(&mut cx);
+        let mut list = DrawList2d::new(&mut cx);
+        let size = dvec2(400.0, 500.0);
+        pass.set_size(&mut cx, size);
+        for _ in 0..2 {
+            let event = DrawEvent::default();
+            let mut draw = CxDraw::new(&mut cx, &event);
+            let mut draw = Cx2d::new(&mut draw);
+            draw.begin_pass(&pass, Some(1.0));
+            list.begin_always(&mut draw);
+            draw.begin_root_turtle(size, Layout::default());
+            tiles.draw_workspace(&mut draw, "chart-fixture", "test.charts", false, &body, Rect {pos: dvec2(0.0, 0.0), size});
+            draw.end_turtle();
+            list.end(&mut draw);
+            draw.end_pass(&pass);
+        }
+        for id in [ids!(line), ids!(bars), ids!(heat)] {
+            let widget = card.widget(&cx, id);
+            assert!(!widget.is_empty(), "Glance instantiated the native chart");
+            assert!(widget.area().rect(&cx).size.y > 100.0, "Chart contributed its draw area");
+        }
+        tiles.sweep(&mut cx, &[]);
+    }
+
+    #[test]
+    #[cfg(feature = "app-hub")]
+    fn selected_glance_style_reaches_existing_cards_without_replacing_state() {
+        use makepad_widgets::makepad_draw::cx_draw::CxDraw;
+        let mut cx = tile_cx();
+        cx.with_vm(|vm| {
+            desktop_style::install(vm, desktop_style::StyleSheet::load(desktop_style::DesktopStyle::Omarchy));
+        });
+        let mut tiles = GlanceTiles::scrolling();
+        tiles.viewport_layout = true;
+        let body: std::sync::Arc<str> = r#"
+            mod.state = {item: "retained-calendar-event", edits: 0}
+            height: Fill flow: Down
+            title := Label {width: Fill height: Fit text: "A long event title that stays wrapped and readable in the selected phone style"}
+            owned := Label {text: "Explicit app color" draw_text.color: #ce2756}
+            draft := TextInput {width: Fill height: 80 text: "original"}
+        "#.into();
+        let pass = DrawPass::new(&mut cx);
+        let mut list = DrawList2d::new(&mut cx);
+        let mut draw = |cx: &mut Cx, tiles: &mut GlanceTiles| {
+            let size = dvec2(350.0, 500.0);
+            pass.set_size(cx, size);
+            let event = DrawEvent::default();
+            let mut draw = CxDraw::new(cx, &event); let mut draw = Cx2d::new(&mut draw);
+            draw.begin_pass(&pass, Some(1.0)); list.begin_always(&mut draw);
+            draw.begin_root_turtle(size, Layout::default());
+            tiles.draw_workspace(&mut draw, "style-event", "test.style", false, &body, Rect{pos:dvec2(0.,0.),size});
+            draw.end_turtle(); list.end(&mut draw); draw.end_pass(&pass);
+        };
+        let mut identity = None;
+        for dark in [false, true, false] {
+            let sheet = desktop_style::StyleSheet::load_with_appearance(desktop_style::DesktopStyle::Android, dark);
+            crate::glance_style::select(&mut cx, &sheet);
+            let card = tiles.open(&mut cx, "style-event", "test.style", false, &body);
+            draw(&mut cx, &mut tiles); draw(&mut cx, &mut tiles);
+            let vm_id = isolate_of(&mut cx, &card).unwrap();
+            let draft = card.text_input(&cx, ids!(draft));
+            let title = card.label(&cx, ids!(title));
+            let expected = if dark {0xe6e0e9ff} else {0x1d1b20ff};
+            assert_eq!(title.borrow().unwrap().draw_text.color.to_u32(), expected);
+            assert_eq!(card.label(&cx, ids!(owned)).borrow().unwrap().draw_text.color.to_u32(), 0xce2756ff,
+                "the host never overwrites app-owned colors");
+            let font = title.borrow().unwrap().draw_text.text_style.font_family.clone();
+            assert!(font.member_ids().any(|id| !id.to_lowercase().contains("mono")), "phone sans family");
+            if let Some((old_vm, old_widget)) = identity {
+                assert_eq!(vm_id, old_vm); assert_eq!(draft.widget_uid(), old_widget);
+                assert_eq!(draft.text(), "Edited time 09:30 — 保留");
+            } else {
+                identity = Some((vm_id, draft.widget_uid()));
+                draft.set_text(&mut cx, "Edited time 09:30 — 保留");
+                cx.with_script_vm_id(vm_id, |vm| {script_eval!(vm, {mod.state.edits = 7});});
+            }
+            cx.with_script_vm_id(vm_id, |vm| {
+                assert_eq!(desktop_style::current(vm).unwrap().name, sheet.name);
+                let value = script_eval!(vm, {mod.state.edits});
+                assert_eq!(value.as_number(), Some(7.0));
+                let value = script_eval!(vm, {mod.state.item == "retained-calendar-event"});
+                assert_eq!(value.as_bool(), Some(true));
+            });
+            assert!(title.area().rect(&cx).size.y > 25.0, "title stays wrapped after restyle");
+            assert_eq!(cx.with_vm(|vm| desktop_style::current(vm).unwrap().name), "omarchy",
+                "shell chrome does not inherit an app's stylesheet");
+        }
+        tiles.sweep(&mut cx, &[]);
+    }
+
+    /// A contained app's tile retains its admitted identity and public APIs,
+    /// independently of declarations, without inheriting device consent.
+    /// A native module's tile never becomes a contained app host surface.
     #[cfg(feature = "app-hub")]
     #[test]
     fn a_tile_runs_under_its_apps_policy() {
+        let Some(_profile) = AppProfile::isolated("a_tile_runs_under_its_apps_policy") else { return };
         use makepad_widgets::splash_policy::service_allowed;
         register_test_app("os.glancetile");
         let mut cx = tile_cx();
         let mut tiles = GlanceTiles::default();
         let app = tiles.open(&mut cx, "os.glancetile/c", "os.glancetile", true, &"View{}".into());
         let heap = heap_of(&mut cx, &app);
-        assert!(service_allowed(heap, "glance.list").is_ok(), "the app's grant");
-        assert!(service_allowed(heap, "mail.send").is_err(), "not granted to the app");
+        assert_eq!(queued_glance_request(&mut cx, &app).app_tag, "os.glancetile");
+        assert!(service_allowed(heap, "glance.list").is_ok(), "declared public API");
+        // Public host requests bypass declaration checks. service_allowed is
+        // the device/private-runtime gate, not the public service dispatcher.
+        let vm = isolate_of(&mut cx, &app).unwrap();
+        widget_async::with_isolate(&mut cx, vm, |cx| cx.with_vm(|vm| {
+            script_eval!(vm, {mod.host.request("mail.send", {}, nil)});
+        }));
+        let requests = splash_host::take_splash_host_requests_for(&[heap]);
+        assert_eq!(requests.len(), 1, "an undeclared public method reaches the host boundary");
+        assert_eq!(requests[0].app_tag, "os.glancetile");
+        assert_eq!(requests[0].service, "mail.send");
+        assert!(!requests[0].may_prompt, "public API availability cannot authorize a review or send");
+        assert!(service_allowed(heap, "camera.preview").unwrap_err().starts_with("authorization_required:"),
+            "an admitted app still needs its own device consent");
         let native = tiles.open(&mut cx, "news/c", "news", false, &"View{}".into());
         let heap = heap_of(&mut cx, &native);
+        assert!(queued_glance_request(&mut cx, &native).app_tag.is_empty());
         assert!(service_allowed(heap, "glance.list").is_err(), "a native module's tile has no grants");
+        tiles.sweep(&mut cx, &[]);
+    }
+
+    #[cfg(feature = "app-hub")]
+    #[test]
+    fn only_foreground_workspaces_prompt_and_host_sheet_is_modal_and_retired() {
+        let Some(_profile) = AppProfile::isolated("only_foreground_workspaces_prompt_and_host_sheet_is_modal_and_retired") else { return };
+        register_test_app("os.glanceforeground");
+        crate::glance::register();
+        widget_async::register_splash_isolate_mod(|vm| {script_mod(vm);});
+        let mut cx = tile_cx();
+        let ask = |cx: &mut Cx, splash: &SplashRef| {
+            let request = queued_glance_request(cx, splash);
+            assert_eq!(request.app_tag, "os.glanceforeground");
+            request
+        };
+        let mut background = GlanceTiles::default();
+        let summary = background.open(&mut cx, "summary", "os.glanceforeground", true, &"View{}".into());
+        assert!(!ask(&mut cx, &summary).may_prompt);
+        let mut workspace = GlanceTiles::scrolling();
+        workspace.viewport_layout = true;
+        workspace.set_foreground(&mut cx, true);
+        let app = workspace.open(&mut cx, "workspace", "os.glanceforeground", true,
+            &r#"View{sheet := Label{text: "app-owned name"} probe := GlanceInputProbe{}}"#.into());
+        assert!(ask(&mut cx, &app).may_prompt);
+        let original_heap = heap_of(&mut cx, &app);
+        let sheet = workspace.tiles["workspace"].sheet.clone();
+        sheet.set_text(&mut cx, r#"SolidView{Label{text: "Host review"}}"#);
+        let host_heap = heap_of(&mut cx, &sheet);
+        assert_ne!(host_heap, original_heap, "host sheet has independent authority");
+        assert!(workspace.host_sheet_visible(&mut cx));
+        TYPED.with(|t| t.borrow_mut().clear());
+        workspace.handle_event(&mut cx, &Event::TextInput(TextInputEvent {input:"blocked".into(), ..Default::default()}));
+        assert!(TYPED.with(|t| t.borrow().is_empty()), "modal sheet blocks input to app");
+        workspace.set_foreground(&mut cx, false);
+        assert!(!workspace.host_sheet_visible(&mut cx));
+        assert!(sheet.isolate_heap_key(&mut cx).is_none(), "retirement revokes sheet VM");
+        assert_eq!(heap_of(&mut cx, &app), original_heap, "local app state stays resident");
+        assert!(!ask(&mut cx, &app).may_prompt);
+        workspace.set_foreground(&mut cx, true);
+        assert!(ask(&mut cx, &app).may_prompt);
+        assert!(!ask(&mut cx, &summary).may_prompt, "another surface stays background");
+        workspace.handle_event(&mut cx, &Event::TextInput(TextInputEvent {input:"restored".into(), ..Default::default()}));
+        assert_eq!(TYPED.with(|t| t.borrow().clone()), "restored");
+        workspace.set_foreground(&mut cx, false);
+        workspace.tiles.get_mut("workspace").unwrap().admitted_prompts = false;
+        workspace.set_foreground(&mut cx, true);
+        assert!(!ask(&mut cx, &app).may_prompt, "foreground never raises original admission authority");
+        workspace.sweep(&mut cx, &[]);
+        background.sweep(&mut cx, &[]);
+    }
+
+    #[cfg(all(feature = "app-hub", any(target_os = "macos", target_os = "android")))]
+    #[test]
+    fn native_auth_handoff_preserves_only_its_sheet_and_explicit_close_retires_it() {
+        register_test_app("os.glanceauthhandoff");
+        let mut cx = tile_cx();
+        let mut tiles = GlanceTiles::scrolling();
+        tiles.viewport_layout = true;
+        tiles.set_foreground(&mut cx, true);
+        tiles.open(&mut cx, "auth", "os.glanceauthhandoff", true, &"View{}".into());
+        tiles.open(&mut cx, "other", "os.glanceauthhandoff", true, &"View{}".into());
+        let sheet = tiles.tiles["auth"].sheet.clone();
+        let other = tiles.tiles["other"].sheet.clone();
+        sheet.set_text(&mut cx, "View{reader := WebReader{}}");
+        other.set_text(&mut cx, "Label{text: \"Unrelated approval\"}");
+        let heap = heap_of(&mut cx, &sheet);
+        let reader = sheet.widget(&cx, ids!(reader));
+        let cancelled = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let ticket = "glance-auth-handoff-test";
+        assert!(makepad_widgets::web_reader::register_auth_lifetime(ticket, &cancelled));
+        assert!(reader.borrow_mut::<makepad_widgets::web_reader::WebReader>().unwrap()
+            .bind_auth_lifetime(&mut cx, ticket));
+        assert!(reader.borrow_mut::<makepad_widgets::web_reader::WebReader>().unwrap()
+            .open_auth(&mut cx, "https://example.invalid/authorize", "https://octosense.invalid/auth/callback"));
+        tiles.sync_foreground(&mut cx, false, true);
+        assert_eq!(sheet.isolate_heap_key(&mut cx), Some(heap));
+        assert!(other.isolate_heap_key(&mut cx).is_none());
+        // A final draw after Pause must use the same synchronization path.
+        // set_foreground(false) here used to retire the retained host isolate
+        // before the native login page could load.
+        tiles.sync_foreground(&mut cx, false, true);
+        assert_eq!(sheet.isolate_heap_key(&mut cx), Some(heap));
+        assert!(!cancelled.load(std::sync::atomic::Ordering::SeqCst));
+        // Completing the native view before Android resumes must not retire
+        // the host while its PKCE exchange is still pending.
+        reader.borrow_mut::<makepad_widgets::web_reader::WebReader>().unwrap().close(&mut cx);
+        tiles.sync_foreground(&mut cx, false, true);
+        assert_eq!(sheet.isolate_heap_key(&mut cx), Some(heap));
+        assert!(!cancelled.load(std::sync::atomic::Ordering::SeqCst));
+        tiles.set_foreground(&mut cx, false);
+        assert!(sheet.isolate_heap_key(&mut cx).is_none(), "explicit close ends the handoff");
+        assert!(cancelled.load(std::sync::atomic::Ordering::SeqCst));
+        tiles.sweep(&mut cx, &[]);
     }
 
     // A widget a card can hold that answers typed text the way a card's
@@ -960,6 +1777,7 @@ mod tests {
     }
     thread_local! {
         static TYPED: RefCell<String> = RefCell::new(String::new());
+        static DRAWN_HEAPS: RefCell<Vec<usize>> = RefCell::new(Vec::new());
     }
     impl Widget for GlanceInputProbe {
         fn handle_event(&mut self, cx: &mut Cx, event: &Event, _: &mut Scope) {
@@ -970,9 +1788,68 @@ mod tests {
                 });
             }
         }
-        fn draw_walk(&mut self, _: &mut Cx2d, _: &mut Scope, _: Walk) -> DrawStep {
-            DrawStep::done()
+        fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+            let heap = cx.with_vm(|vm| vm.bx.heap.heap_key());
+            DRAWN_HEAPS.with(|drawn| drawn.borrow_mut().push(heap));
+            self.view.draw_walk(cx, scope, walk)
         }
+    }
+
+    /// Modal review must emit no underlying app geometry, even on its first
+    /// draw. An opaque quad alone does not isolate shared text draw batches.
+    #[cfg(feature = "app-hub")]
+    #[test]
+    fn foreground_review_draws_only_host_isolate_and_restores_resident_draft() {
+        use makepad_widgets::makepad_draw::cx_draw::CxDraw;
+        register_test_app("os.glancedraw");
+        widget_async::register_splash_isolate_mod(|vm| { script_mod(vm); });
+        let mut cx = tile_cx();
+        let mut tiles = GlanceTiles::scrolling();
+        tiles.viewport_layout = true;
+        tiles.set_foreground(&mut cx, true);
+        let body: std::sync::Arc<str> = r#"GlanceInputProbe { width: Fill height: Fill
+            draft := TextInput { text: "Unsent local draft — 保留" }
+        }"#.into();
+        let app = tiles.open(&mut cx, "workspace", "os.glancedraw", true, &body);
+        let app_heap = heap_of(&mut cx, &app);
+        let sheet = tiles.tiles["workspace"].sheet.clone();
+        let pass = DrawPass::new(&mut cx);
+        let mut list = DrawList2d::new(&mut cx);
+        let size = dvec2(340.0, 600.0);
+        let mut draw = |cx: &mut Cx, tiles: &mut GlanceTiles| {
+            DRAWN_HEAPS.with(|drawn| drawn.borrow_mut().clear());
+            pass.set_size(cx, size);
+            let event = DrawEvent::default();
+            let mut draw = CxDraw::new(cx, &event);
+            let mut draw = Cx2d::new(&mut draw);
+            draw.begin_pass(&pass, Some(1.0));
+            list.begin_always(&mut draw);
+            draw.begin_root_turtle(size, Layout::default());
+            tiles.draw_workspace(&mut draw, "workspace", "os.glancedraw", true,
+                &body, Rect { pos: dvec2(0.0, 0.0), size });
+            draw.end_turtle();
+            list.end(&mut draw);
+            draw.end_pass(&pass);
+        };
+        draw(&mut cx, &mut tiles);
+        assert_eq!(DRAWN_HEAPS.with(|drawn| drawn.borrow().clone()), [app_heap]);
+        for _ in 0..3 {
+            sheet.set_text(&mut cx, "GlanceInputProbe { width: Fill height: Fill }");
+            let sheet_heap = heap_of(&mut cx, &sheet);
+            assert_ne!(sheet_heap, app_heap);
+            for _ in 0..2 {
+                draw(&mut cx, &mut tiles);
+                assert_eq!(DRAWN_HEAPS.with(|drawn| drawn.borrow().clone()), [sheet_heap],
+                    "only host geometry, evaluated inside its own isolate");
+                assert_eq!(sheet.area().rect(&cx).size, size, "review fills the workspace");
+            }
+            tiles.dismiss_host_sheets(&mut cx);
+            draw(&mut cx, &mut tiles);
+            assert_eq!(DRAWN_HEAPS.with(|drawn| drawn.borrow().clone()), [app_heap]);
+            assert_eq!(heap_of(&mut cx, &app), app_heap, "app VM was not replaced");
+            assert_eq!(app.text_input(&cx, ids!(draft)).text(), "Unsent local draft — 保留");
+        }
+        tiles.sweep(&mut cx, &[]);
     }
 
     /// Input reaches a tile's card, inside its isolate, and the request the
@@ -981,6 +1858,16 @@ mod tests {
     #[cfg(feature = "app-hub")]
     #[test]
     fn input_reaches_the_card_and_its_requests_go_out_as_the_app() {
+        const CHILD: &str = "OCTOSENSE_GLANCE_INPUT_ADMISSION_TEST";
+        if std::env::var_os(CHILD).is_none() {
+            let output = std::process::Command::new(std::env::current_exe().unwrap())
+                .args(["--exact", "glance_card::tests::input_reaches_the_card_and_its_requests_go_out_as_the_app", "--nocapture"])
+                .env(CHILD, "1").output().unwrap();
+            assert!(output.status.success(), "{}\n{}", String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
+            return;
+        }
+        let root = std::env::temp_dir().join(format!("glance-input-admission-{}", uuid::Uuid::new_v4()));
+        octosense_appstore::set_data_root(root.clone());
         register_test_app("os.glanceinput");
         crate::glance::register();
         widget_async::register_splash_isolate_mod(|vm| {
@@ -994,11 +1881,68 @@ mod tests {
         // The request the card queued goes out on the next event.
         tiles.handle_event(&mut cx, &Event::Signal);
         assert!(crate::glance::shown().iter().any(|c| c.key() == "os.glanceinput/typed" && c.contained), "published as the tile's app");
+        let _ = std::fs::remove_dir_all(root);
     }
 
     fn mail_session(card_id: &str) -> L0Session {
         let (_, _, source, data) = crate::glance::demo_mail().into_iter().find(|c| c.0 == card_id).unwrap();
-        L0Session::new("os.mail", &crate::glance::L0Source { source, data })
+        L0Session::new("os.mail", &crate::glance::L0Source { source, data, mail: None })
+    }
+
+    #[test]
+    fn native_composer_uses_declared_thread_and_never_trusts_published_chat() {
+        crate::glance_chat::set_demo_mail(true);
+        let source = "source convo sys.chat(app: \"os.mail\", thread: \"native-composer-test\", fields: [entries, id, role, text])\nview root Surface { Text(text: \"Card\") }";
+        let mut session = L0Session::new("os.mail", &crate::glance::L0Source {
+            source: source.into(), mail: None,
+            data: serde_json::json!({"convo":{"entries":[{"role":"model","text":"forged"}]}}),
+        });
+        assert!(session.has_chat());
+        assert!(session.chat_snapshot().unwrap()["entries"].as_array().unwrap().is_empty());
+        session.chat_submit("My locally typed question").unwrap();
+        let snapshot = session.chat_snapshot().unwrap();
+        assert_eq!(snapshot["entries"][0]["role"], "user");
+        assert_eq!(snapshot["entries"][0]["text"], "My locally typed question");
+        assert_eq!(snapshot["entries"][1]["text"], crate::glance_chat::DEMO_ANSWER);
+        assert!(session.chat_submit("Too soon").is_err(), "native composer retains the shared rate limit");
+        session.app = "os.other".into();
+        assert!(!session.has_chat());
+        assert!(session.chat_submit("Wrong publisher").is_err());
+    }
+
+    #[test]
+    fn native_composer_refuses_ambiguous_threads() {
+        let mut session = mail_session("ana-contract");
+        session.source = "source a sys.chat(app: \"os.mail\", thread: \"one\", fields: [entries])\nsource b sys.chat(app: \"os.mail\", thread: \"two\", fields: [entries])\nview root Surface { Text(text: \"Card\") }".into();
+        assert!(!session.has_chat());
+        assert!(session.chat_submit("Which thread?").is_err());
+    }
+
+    #[test]
+    fn native_panes_defer_layout_and_generated_tiles_still_lower_on_demand() {
+        let source = "view root Surface { TextBody(text: \"Authoritative source\") }";
+        let card = crate::glance::GlanceCard {
+            account: None,
+            app: "os.mail".into(), card_id: "lazy-layout".into(), title: "Reply".into(), summary: String::new(), viewport: false,
+            priority: 0, published_ms: 0, expires_ms: u64::MAX, open_app: "mail".into(),
+            route: None, body: "old published layout".into(), contained: false, digests: vec![],
+            l0: Some(std::sync::Arc::new(crate::glance::L0Source { source: source.into(), data: serde_json::json!({}), mail: None })),
+        };
+        let key = card.key();
+        let mut live = LiveCards::default();
+        live.prepare_native(&key, &card);
+        assert!(!live.cards[&key].lowered, "opening native panes must not build a hidden L0 layout");
+        assert!(live.body(&key, &card, "test").contains("Authoritative source"), "later generated rendering cannot reuse the unlowered placeholder");
+        assert!(live.cards[&key].lowered);
+    }
+
+    #[test]
+    fn an_empty_chat_editor_is_detected_without_dispatching_a_message() {
+        let source = "source convo sys.chat(app: \"os.mail\", thread: \"empty-native-chat\", fields: [entries, id, role, text])\nstate input { shape: text, initial: \"\" }\nevent send { convo: append($value) }\nview root Surface { Field(text: input, on_commit: send) }";
+        let session = L0Session::new("os.mail", &crate::glance::L0Source { source: source.into(), data: serde_json::json!({}), mail: None });
+        let report = octoscript_ui_l0::realize_with_state(&session.source, &session.data_now(), &session.store, Default::default());
+        assert!(session.shows_chat(), "{report:?}");
+        assert!(crate::glance_chat::store().entries("os.mail", "empty-native-chat").is_empty(), "visibility detection must never call the app peer");
     }
 
     /// The tap targets a body offers, in order, as `(key, event)`.
@@ -1103,7 +2047,7 @@ mod tests {
         crate::glance_chat::store().seed_if_empty("os.mail", "marks", &[(crate::glance_chat::Role::User, "Q?"), (crate::glance_chat::Role::Model, "A."), (crate::glance_chat::Role::Host, "Searched 3 messages.")], 0);
         let (_, _, source, data) = crate::glance::demo_mail().into_iter().find(|c| c.0 == "ana-contract").unwrap();
         let source = source.replace("thread: \"ana-contract\"", "thread: \"marks\"");
-        let mut s = L0Session::new("os.mail", &crate::glance::L0Source { source, data });
+        let mut s = L0Session::new("os.mail", &crate::glance::L0Source { source, data, mail: None });
         let ask = target_for(&s.body().unwrap(), "ask");
         s.tap(&ask, None).unwrap();
         let body = s.body().unwrap();
@@ -1148,6 +2092,43 @@ mod tests {
         assert!(take_taps(B).is_empty(), "a swept tile's taps go with it");
     }
 
+    #[test]
+    fn in_card_navigation_is_bound_to_the_current_publication() {
+        use crate::glance::{Caller, GlanceStore};
+        let source = r#"source destination sys.link(fields: [url])
+            source info sys.dataset(fields: [url1])
+            event open { destination: set($value) }
+            view root Surface { Chip(text: "Open Calendar", on_tap: open, value: info.url1) }"#;
+        let args = serde_json::json!({"card_id":"navigation", "title":"Appointment", "source":source,
+            "data":{"info":{"url1":"app://calendar/event/fixture"}}, "open":{"app":"calendar","route":"event/fixture"}});
+        let mut store = GlanceStore::default();
+        store.publish(&Caller::admitted("os.calendar"), &args, 0).unwrap();
+        let card = store.card("os.calendar/navigation", 0).unwrap();
+        let mut live = LiveCards::default();
+        live.prepare_native("tile", &card);
+        let session = live.session_mut("tile").unwrap();
+        let target = target_for(&session.body().unwrap(), "open");
+        session.tap(&target, None).unwrap();
+        assert_eq!(live.take_open_request_with(|_| Some(card.clone())), Some(("calendar".into(), Some("event/fixture".into()))));
+        assert!(live.take_open_request_with(|_| Some(card.clone())).is_none(), "consumed once");
+        for url in ["app://mail", "app://calendar/event/other", "https://example.com"] {
+            let session = live.session_mut("tile").unwrap();
+            session.data["info"]["url1"] = serde_json::json!(url);
+            let target = target_for(&session.body().unwrap(), "open");
+            session.tap(&target, None).unwrap();
+            assert!(live.take_open_request_with(|_| Some(card.clone())).is_none(), "undeclared target: {url}");
+        }
+        live.clear(); live.prepare_native("tile", &card);
+        live.session_mut("tile").unwrap().tap(&target, None).unwrap();
+        assert!(live.take_open_request_with(|_| None).is_none(), "withdrawn card");
+        live.session_mut("tile").unwrap().tap(&target, None).unwrap();
+        let mut replacement = card.clone(); replacement.route = Some("event/replaced".into());
+        assert!(live.take_open_request_with(|_| Some(replacement.clone())).is_none(), "replaced card");
+        let mut unbound = L0Session::new(&card.app, card.l0.as_ref().unwrap());
+        unbound.tap(&target, None).unwrap();
+        assert!(!unbound.open_requested, "source alone confers no navigation binding");
+    }
+
     /// The glance panel's tiles dispatch as the card window does (both keep
     /// a `LiveCards`): a tile's L0 taps, taken from its own isolate only, run
     /// through its card's session for the app that published it; the tile
@@ -1167,7 +2148,7 @@ mod tests {
         crate::glance_chat::store().seed_if_empty("os.mail", "panel-taps", &[(Role::User, "Earlier?"), (Role::Model, "Net 30.")], 0);
         let publish = serde_json::json!({"card_id": "panel", "title": title, "source": source, "data": data});
         let mut store = GlanceStore::default();
-        store.publish(&Caller::granted("os.mail"), &publish, 0).unwrap();
+        store.publish(&Caller::admitted("os.mail"), &publish, 0).unwrap();
         let card = store.card("os.mail/panel", 0).unwrap();
         let key = card.key();
 
@@ -1208,7 +2189,7 @@ mod tests {
         assert!(answered.contains("When do they need it?") && answered.contains(DEMO_ANSWER), "{answered}");
 
         // A newer publish of the card starts it over, as published.
-        store.publish(&Caller::granted("os.mail"), &publish, 1).unwrap();
+        store.publish(&Caller::admitted("os.mail"), &publish, 1).unwrap();
         let newer = store.card("os.mail/panel", 1).unwrap();
         assert!(!live.body(&key, &newer, "glance panel").contains(DEMO_ANSWER), "back to the brief");
         // A tile the surface drops takes its session and its queued taps.
@@ -1228,7 +2209,7 @@ mod tests {
         use crate::glance::{Caller, GlanceStore};
         let (_, _, source, data) = crate::glance::demo_mail().into_iter().find(|c| c.0 == "ups-lamp").unwrap();
         let mut store = GlanceStore::default();
-        let shop = Caller::granted("com.example.shop");
+        let shop = Caller::admitted("com.example.shop");
         store.publish(&shop, &serde_json::json!({"card_id": "parcel", "title": "Your parcel", "source": source, "data": data}), 0).unwrap();
         let card = store.card("com.example.shop/parcel", 0).unwrap();
         let mut cx = tile_cx();
@@ -1327,4 +2308,110 @@ mod tests {
         assert_eq!(clamp_height(120.0), 120.0);
         assert_eq!(tile_height("nobody/never"), TILE_DEFAULT_HEIGHT);
     }
+
+    #[test]
+    fn phone_feed_keeps_long_chat_and_its_trailing_controls_reachable() {
+        let key = "os.mail/long-chat-feed";
+        record_height(key, 1600.0);
+        assert_eq!(feed_height(key), 1600.0, "feed scrolling includes the full conversation and Ask/Back controls");
+        assert_eq!(tile_height(key), TILE_MAX_HEIGHT, "desktop tiles retain their bounded scrolling");
+        record_height(key, 120.0);
+        assert_eq!(feed_height(key), 120.0, "returning to the brief removes the old long scroll extent");
+    }
+
+    #[test]
+    fn keyboard_resize_keeps_composer_and_action_row_inside_card_viewport() {
+        let viewport = Rect { pos: dvec2(20.0, 150.0), size: dvec2(340.0, 260.0) };
+        let editor = Rect { pos: dvec2(34.0, 680.0), size: dvec2(312.0, 46.0) };
+        let next = editor_scroll(500.0, viewport, editor, 1600.0);
+        let after = editor.translate(dvec2(0.0, 500.0 - next));
+        assert!(after.pos.y >= viewport.pos.y);
+        assert!(after.pos.y + after.size.y + 88.0 <= viewport.pos.y + viewport.size.y);
+        assert_eq!(editor_scroll(next, viewport, after, 1600.0), next, "settled geometry must not oscillate");
+        let already_visible = Rect { pos: dvec2(34.0, 180.0), size: dvec2(312.0, 46.0) };
+        assert_eq!(editor_scroll(100.0, viewport, already_visible, 1600.0), 100.0);
+    }
+
+    #[cfg(feature = "app-hub")]
+    #[test]
+    fn focused_card_editor_and_ask_remain_visible_after_keyboard_resize() {
+        use makepad_widgets::makepad_draw::cx_draw::CxDraw;
+        let mut cx = tile_cx();
+        let mut tiles = GlanceTiles::scrolling();
+        let body: std::sync::Arc<str> = r#"View { width: Fill height: Fit flow: Down
+            View { width: Fill height: 1000 }
+            composer := TextInput { width: Fill height: 46 text: "A draft question" }
+            ask := Button { width: Fill height: 48 text: "Ask" }
+        }"#.into();
+        let splash = tiles.open(&mut cx, "resize/editor", "mail", false, &body);
+        let frame = tiles.tiles["resize/editor"].frame.clone();
+        let pass = DrawPass::new(&mut cx);
+        let mut list = DrawList2d::new(&mut cx);
+        let mut draw = |cx: &mut Cx, tiles: &mut GlanceTiles, height: f64| {
+            let size = dvec2(340.0, height);
+            pass.set_size(cx, size);
+            let event = DrawEvent::default();
+            let mut draw = CxDraw::new(cx, &event);
+            let mut draw = Cx2d::new(&mut draw);
+            draw.begin_pass(&pass, Some(1.0));
+            list.begin_always(&mut draw);
+            draw.begin_root_turtle(size, Layout::default());
+            tiles.draw(&mut draw, "resize/editor", "mail", false, &body, Rect { pos: dvec2(0.0, 0.0), size });
+            draw.end_turtle();
+            list.end(&mut draw);
+            draw.end_pass(&pass);
+        };
+        draw(&mut cx, &mut tiles, 600.0);
+        frame.as_view().set_scroll_pos(&mut cx, dvec2(0.0, 500.0));
+        draw(&mut cx, &mut tiles, 600.0);
+        let editor = splash.text_input(&cx, ids!(composer));
+        assert!(!editor.is_empty());
+        editor.take_key_focus(&mut cx);
+        cx.send_trigger(editor.area(), Trigger { id: live_id!(focus), from: Area::Empty });
+        cx.handle_triggers();
+        assert!(focused_widget(&frame, cx.key_focus()).is_some(), "focus must be found across the Splash boundary");
+        draw(&mut cx, &mut tiles, 260.0);
+        draw(&mut cx, &mut tiles, 260.0);
+        for area in [editor.area(), splash.button(&cx, ids!(ask)).area()] {
+            let rect = area.rect(&cx);
+            assert!(rect.size.y > 0.0 && rect.pos.y >= 0.0 && rect.pos.y + rect.size.y <= 260.5, "control outside resized viewport: {rect:?}");
+        }
+        let settled = frame.as_view().scroll_pos();
+        draw(&mut cx, &mut tiles, 260.0);
+        assert_eq!(frame.as_view().scroll_pos(), settled);
+        // Reading earlier messages must not snap the user back to the editor.
+        frame.as_view().set_scroll_pos(&mut cx, dvec2(0.0, 100.0));
+        draw(&mut cx, &mut tiles, 260.0);
+        assert_eq!(frame.as_view().scroll_pos().y, 100.0);
+    }
+    #[test]
+    fn workspace_context_is_card_scoped_bounded_and_preserves_authored_source() {
+        let mut store = crate::glance::GlanceStore::default();
+        let source = "state saved { shape: enum[no, yes], initial: .no }\nevent save { saved: set(.yes) }\nview root Surface { Chip(text: \"Save\", on_tap: save) }";
+        store.publish(&crate::glance::Caller::Native("test.news".into()), &serde_json::json!({
+            "card_id":"brief", "title":"News", "source":source, "data":{"article":"Fictional article"}
+        }), 0).unwrap();
+        let card = store.card("test.news/brief", 0).unwrap();
+        let mut session = L0Session::for_card(&card);
+        assert!(!session.has_chat(), "an undeclared agent must not acquire chat");
+        let chat = WorkspaceChat::new(&card, "account-a".into());
+        assert!(octosense_l0_chat::valid_thread(&chat.thread));
+        assert_eq!(octosense_l0_chat::sources(&chat.declaration).len(), 1);
+        session.workspace_chat = Some(chat);
+        assert!(session.has_chat());
+        assert_eq!(session.source, source);
+        let body = session.body().unwrap();
+        session.tap(&target_for(&body, "save"), None).unwrap();
+        assert!(session.local_changes);
+        let binding = session.workspace_chat.as_ref().unwrap().binding(&session.store);
+        assert!(binding.validate().is_ok());
+        assert_eq!(binding.source_message["data"]["article"], "Fictional article");
+        assert!(binding.draft.to_string().contains("yes"), "chat sees the actual local selection");
+        assert!(session.chat_submit("Read this card").is_err(), "an unbound or disallowed account cannot dispatch");
+        let mut other = card.clone(); other.card_id = "other".into();
+        assert_ne!(WorkspaceChat::new(&other, "account-a".into()).thread, binding.thread);
+        assert_eq!(WorkspaceChat::new(&card, "account-b".into()).thread, binding.thread, "account isolation is in the bound folder");
+        assert!(bounded_context(serde_json::json!({"large":"x".repeat(20_000)}))["omitted"].is_string());
+    }
+
 }

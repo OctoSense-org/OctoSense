@@ -1,0 +1,11 @@
+{
+  "version_code": 2026100407,
+  "package": "dev.makepad.octosense.studio",
+  "apk_sha256": "0d1f43cb6dc71b3844d0c0aa6683e217e4a852c80bdb3f63222184ad5daff402",
+  "base_commit": "25389bd525138ee238998f21494b577ec33ecfb0",
+  "changed_payload_hashes": {
+    "apps/mail/bundle/AGENT.md": "830d46f9d62c94b93f8d9874cca38efcc3d51deca072458e05eb023b672c42b6",
+    "apps/mail/bundle/skills/incoming-mail-triage/SKILL.md": "f8245bdc94a302fbc603dc9f8d22385eee5175b282a07f38fdf8ce325938a03b",
+    "crates/app-peers/src/guidance.rs": "da730127ef1557b94fbf790b696468eec301771644e58a4b83a68f0437892e68"
+  }
+}

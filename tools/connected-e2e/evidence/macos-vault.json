@@ -1,0 +1,28 @@
+{
+  "schema": 1,
+  "date": "2026-10-06",
+  "platform": "macOS",
+  "scope": "actual OS Keychain adapter with unique disposable profile and fictional credential",
+  "test": "host_vault_acceptance::platform_vault_persists_across_reopen_without_plaintext_credentials",
+  "command": "cargo test --locked -p octosense-oauth-service --features host host_vault_acceptance::platform_vault_persists_across_reopen_without_plaintext_credentials -- --ignored --exact",
+  "result": "passed",
+  "tests_passed": 1,
+  "live_oauth": false,
+  "physical_approval": false,
+  "verified": [
+    "credential store and reopen/read",
+    "logical account revocation",
+    "no access or refresh token bytes in profile files"
+  ],
+  "not_proven": [
+    "remote provider authorization",
+    "physical deletion from OS vault: legacy removal adapter has no result"
+  ],
+  "source_sha256": {
+    "crates/oauth-service/src/host_vault_acceptance.rs": "ff672463d37614b7f64f20a92c5e0e0a3de213dacb7b478d81d1bc894b6afe2a",
+    "crates/oauth-service/src/host.rs": "6db459c85c3690db4e0c2f5727fcb8b4bf0fa8fddae25024bdeba1325f41eb4e",
+    "crates/oauth-service/src/store.rs": "e928a20572359187a39b7bed1639fbb609ad70ac704b897df8f37ffff7612b1f",
+    "Cargo.lock": "032ae9064ab4d020f29af868c4d4678ad2d22f68928f25aa7f05d2cf6b758f88"
+  },
+  "rerun": "Repeated after the final host-sheet close/cancellation and shared App Hub pin changes; 1 passed"
+}

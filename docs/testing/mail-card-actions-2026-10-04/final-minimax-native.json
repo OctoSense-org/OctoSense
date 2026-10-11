@@ -1,0 +1,591 @@
+{
+  "card_id": "mail-c6f667ed0f5738885fddd9e3dd1ac29677c9e731",
+  "model": "MiniMax-M3.1-Flash-Preview (parent verified metadata)",
+  "policy_revision": "7de61723",
+  "input": {
+    "artifact": "cards/mail-c6f667ed0f5738885fddd9e3dd1ac29677c9e731.json",
+    "artifact_sha256": "ba148a244245359e4749551227ac9812b2aadbec80cb8029806a70671bcc5911",
+    "card_id": "mail-c6f667ed0f5738885fddd9e3dd1ac29677c9e731",
+    "source_sha256": "b5110599465b06d634ea2deed854af89d14d3f7919692cdb8dc4ad6baed89a3a",
+    "data_semantically_exact": true,
+    "policy_revision": "7de61723",
+    "model": "MiniMax-M3.1-Flash-Preview (parent verified metadata)"
+  },
+  "result": "FAIL: initial action labels and native hit targets absent; no clicks or detail states verified",
+  "runs": {
+    "narrow400": {
+      "native_clicks_passed": false,
+      "error": "Expected one visible label 'Show code', found 0",
+      "events": [],
+      "labels": [
+        {
+          "text": "",
+          "rect": [
+            20,
+            36,
+            19,
+            19
+          ],
+          "visible": true
+        },
+        {
+          "text": "Mail",
+          "rect": [
+            47,
+            40,
+            182,
+            11
+          ],
+          "visible": true
+        },
+        {
+          "text": "Oct 4, 2026",
+          "rect": [
+            236,
+            40,
+            54,
+            11
+          ],
+          "visible": true
+        },
+        {
+          "text": "Simulation — no real parcel",
+          "rect": [
+            20,
+            63,
+            270,
+            11
+          ],
+          "visible": true
+        },
+        {
+          "text": "Desk lamp ready for pickup",
+          "rect": [
+            20,
+            83,
+            270,
+            63
+          ],
+          "visible": true
+        },
+        {
+          "text": "Demo Supply · Example Parcel",
+          "rect": [
+            20,
+            154,
+            270,
+            11
+          ],
+          "visible": true
+        },
+        {
+          "text": "Delivery was attempted but nobody was home. The desk lamp is now at the Example Pickup Desk.",
+          "rect": [
+            20,
+            173,
+            270,
+            67
+          ],
+          "visible": true
+        },
+        {
+          "text": "Collect by",
+          "rect": [
+            20,
+            248,
+            47,
+            11
+          ],
+          "visible": true
+        },
+        {
+          "text": "Mon, Oct 5, 9:00 PM PDT",
+          "rect": [
+            75,
+            248,
+            215,
+            11
+          ],
+          "visible": true
+        },
+        {
+          "text": "Pickup location",
+          "rect": [
+            20,
+            283,
+            73,
+            11
+          ],
+          "visible": true
+        },
+        {
+          "text": "Example Pickup Desk, 100 Demo Street, Demo City",
+          "rect": [
+            101,
+            268,
+            189,
+            42
+          ],
+          "visible": true
+        },
+        {
+          "text": "",
+          "rect": [
+            20,
+            318,
+            14,
+            13
+          ],
+          "visible": true
+        },
+        {
+          "text": "AI",
+          "rect": [
+            38,
+            318,
+            11,
+            13
+          ],
+          "visible": true
+        },
+        {
+          "text": "Next step: go to the pickup desk with your code and photo ID.",
+          "rect": [
+            20,
+            334,
+            270,
+            42
+          ],
+          "visible": true
+        },
+        {
+          "text": "Show code",
+          "rect": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "visible": false
+        },
+        {
+          "text": "Details",
+          "rect": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "visible": false
+        }
+      ],
+      "tap_targets": [
+        {
+          "rect": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "visible": false
+        },
+        {
+          "rect": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "visible": false
+        }
+      ]
+    },
+    "cap440": {
+      "native_clicks_passed": false,
+      "error": "Expected one visible label 'Show code', found 0",
+      "events": [],
+      "labels": [
+        {
+          "text": "",
+          "rect": [
+            20,
+            36,
+            19,
+            19
+          ],
+          "visible": true
+        },
+        {
+          "text": "Mail",
+          "rect": [
+            47,
+            40,
+            216,
+            11
+          ],
+          "visible": true
+        },
+        {
+          "text": "Oct 4, 2026",
+          "rect": [
+            270,
+            40,
+            54,
+            11
+          ],
+          "visible": true
+        },
+        {
+          "text": "Simulation — no real parcel",
+          "rect": [
+            20,
+            63,
+            304,
+            11
+          ],
+          "visible": true
+        },
+        {
+          "text": "Desk lamp ready for pickup",
+          "rect": [
+            20,
+            83,
+            304,
+            26
+          ],
+          "visible": true
+        },
+        {
+          "text": "Demo Supply · Example Parcel",
+          "rect": [
+            20,
+            117,
+            304,
+            11
+          ],
+          "visible": true
+        },
+        {
+          "text": "Delivery was attempted but nobody was home. The desk lamp is now at the Example Pickup Desk.",
+          "rect": [
+            20,
+            136,
+            304,
+            67
+          ],
+          "visible": true
+        },
+        {
+          "text": "Collect by",
+          "rect": [
+            20,
+            211,
+            47,
+            11
+          ],
+          "visible": true
+        },
+        {
+          "text": "Mon, Oct 5, 9:00 PM PDT",
+          "rect": [
+            75,
+            211,
+            249,
+            11
+          ],
+          "visible": true
+        },
+        {
+          "text": "Pickup location",
+          "rect": [
+            20,
+            246,
+            73,
+            11
+          ],
+          "visible": true
+        },
+        {
+          "text": "Example Pickup Desk, 100 Demo Street, Demo City",
+          "rect": [
+            101,
+            230,
+            223,
+            42
+          ],
+          "visible": true
+        },
+        {
+          "text": "",
+          "rect": [
+            20,
+            281,
+            14,
+            13
+          ],
+          "visible": true
+        },
+        {
+          "text": "AI",
+          "rect": [
+            38,
+            280,
+            11,
+            13
+          ],
+          "visible": true
+        },
+        {
+          "text": "Next step: go to the pickup desk with your code and photo ID.",
+          "rect": [
+            20,
+            296,
+            304,
+            42
+          ],
+          "visible": true
+        },
+        {
+          "text": "Show code",
+          "rect": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "visible": false
+        },
+        {
+          "text": "Details",
+          "rect": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "visible": false
+        }
+      ],
+      "tap_targets": [
+        {
+          "rect": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "visible": false
+        },
+        {
+          "rect": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "visible": false
+        }
+      ]
+    },
+    "tall800": {
+      "native_clicks_passed": false,
+      "error": "Expected one visible label 'Show code', found 0",
+      "events": [],
+      "labels": [
+        {
+          "text": "",
+          "rect": [
+            20,
+            36,
+            19,
+            19
+          ],
+          "visible": true
+        },
+        {
+          "text": "Mail",
+          "rect": [
+            47,
+            40,
+            216,
+            11
+          ],
+          "visible": true
+        },
+        {
+          "text": "Oct 4, 2026",
+          "rect": [
+            270,
+            40,
+            54,
+            11
+          ],
+          "visible": true
+        },
+        {
+          "text": "Simulation — no real parcel",
+          "rect": [
+            20,
+            63,
+            304,
+            11
+          ],
+          "visible": true
+        },
+        {
+          "text": "Desk lamp ready for pickup",
+          "rect": [
+            20,
+            83,
+            304,
+            26
+          ],
+          "visible": true
+        },
+        {
+          "text": "Demo Supply · Example Parcel",
+          "rect": [
+            20,
+            117,
+            304,
+            11
+          ],
+          "visible": true
+        },
+        {
+          "text": "Delivery was attempted but nobody was home. The desk lamp is now at the Example Pickup Desk.",
+          "rect": [
+            20,
+            136,
+            304,
+            67
+          ],
+          "visible": true
+        },
+        {
+          "text": "Collect by",
+          "rect": [
+            20,
+            211,
+            47,
+            11
+          ],
+          "visible": true
+        },
+        {
+          "text": "Mon, Oct 5, 9:00 PM PDT",
+          "rect": [
+            75,
+            211,
+            249,
+            11
+          ],
+          "visible": true
+        },
+        {
+          "text": "Pickup location",
+          "rect": [
+            20,
+            246,
+            73,
+            11
+          ],
+          "visible": true
+        },
+        {
+          "text": "Example Pickup Desk, 100 Demo Street, Demo City",
+          "rect": [
+            101,
+            230,
+            223,
+            42
+          ],
+          "visible": true
+        },
+        {
+          "text": "",
+          "rect": [
+            20,
+            281,
+            14,
+            13
+          ],
+          "visible": true
+        },
+        {
+          "text": "AI",
+          "rect": [
+            38,
+            280,
+            11,
+            13
+          ],
+          "visible": true
+        },
+        {
+          "text": "Next step: go to the pickup desk with your code and photo ID.",
+          "rect": [
+            20,
+            296,
+            304,
+            42
+          ],
+          "visible": true
+        },
+        {
+          "text": "Show code",
+          "rect": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "visible": false
+        },
+        {
+          "text": "Details",
+          "rect": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "visible": false
+        }
+      ],
+      "tap_targets": [
+        {
+          "rect": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "visible": false
+        },
+        {
+          "rect": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "visible": false
+        }
+      ]
+    }
+  },
+  "findings": [
+    "Show code and Details labels and OctoscriptTap targets have zero rectangles and v0 at310x400,344x440 and344x800. Even tall800 fails, excluding pure vertical overflow.",
+    "At344x440 the outer actionCol occupies[20,346,304,72] but its chip widgets are zero-sized. Lowered Splash has Fill RoundedView inside Fit content and Fit tap wrappers. Accepted Chip(width:.fill) encounters native layout limitation; not an L0 parse error.",
+    "Root phone screenshot independently viewed: matching missing buttons with blank bottom.",
+    "Code7392 exists in exact source dataset but is NOT verified in rendered code state because first action is inaccessible.",
+    "Source details also binds Tracking ref label to status, and model-copy claims parcel stays at desk after deadline; those are separate semantic concerns reported by parent, not successful runtime states.",
+    "No native clicks dispatched and no host effects performed. No model card source/data edited."
+  ],
+  "visual_reviewed": [
+    "cap440/00-before.png",
+    "phone-full-brief.png"
+  ],
+  "guidance": "Have model remove explicit width on Chip and shorten preceding brief content; preserve exact email facts and local transitions. Re-run native and physical tests on newly model-authored bytes."
+}

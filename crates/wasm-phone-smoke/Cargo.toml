@@ -1,0 +1,34 @@
+[package]
+name = "octosense-wasm-phone-smoke"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+# Android needs a library entry point. The fixture uses the normal signed
+# Store, script-tool dispatcher and Wasm service without alternate grants.
+[lib]
+path = "src/main.rs"
+test = false
+bench = false
+doctest = false
+
+[[bin]]
+name = "octosense-wasm-phone-smoke"
+path = "src/main.rs"
+
+[features]
+default = ["acceptance-fixtures"]
+acceptance-fixtures = ["octosense-shell/acceptance-fixtures", "octosense-shell/wasm-functions"]
+
+[dependencies]
+makepad-widgets.workspace = true
+makepad-app-module.workspace = true
+octosense-appstore.workspace = true
+octosense-app-hub.workspace = true
+octosense-app-policy.workspace = true
+octosense-shell.workspace = true
+serde_json.workspace = true
+
+[build-dependencies]
+serde_json.workspace = true

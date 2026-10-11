@@ -1,0 +1,88 @@
+{
+  "width": 812.0,
+  "height": 1552.0,
+  "observations": [
+    {
+      "bounds": [
+        0.0,
+        -0.0,
+        281.9444,
+        41.0
+      ],
+      "confidence": 1.0,
+      "text": "3. Link problem"
+    },
+    {
+      "bounds": [
+        216.5333,
+        187.0,
+        374.4222,
+        45.3488
+      ],
+      "confidence": 1.0,
+      "text": "Pair with Octos"
+    },
+    {
+      "bounds": [
+        110.5222,
+        351.907,
+        552.6111,
+        38.3488
+      ],
+      "confidence": 1.0,
+      "text": "This pairing link was already used."
+    },
+    {
+      "bounds": [
+        110.5222,
+        424.0,
+        426.3,
+        36.186
+      ],
+      "confidence": 1.0,
+      "text": "Ask Octos for a new code."
+    },
+    {
+      "bounds": [
+        51.7801,
+        579.4133,
+        106.2064,
+        32.2433
+      ],
+      "confidence": 1.0,
+      "text": "Server"
+    },
+    {
+      "bounds": [
+        87.9667,
+        676.7442,
+        426.3,
+        38.3488
+      ],
+      "confidence": 1.0,
+      "text": "http://192.168.1.20:50190"
+    },
+    {
+      "bounds": [
+        51.8778,
+        809.8372,
+        209.7667,
+        31.5814
+      ],
+      "confidence": 1.0,
+      "text": "Access token"
+    },
+    {
+      "bounds": [
+        320.0208,
+        1235.0225,
+        142.6362,
+        36.1643
+      ],
+      "confidence": 1.0,
+      "text": "Connect"
+    }
+  ],
+  "image_sha256": "2b5d5f5886d5b1d5342973132341134f9369ea38ff76b13a7843357b2c4a17f7",
+  "engine": "Apple Vision VNRecognizeTextRequest accurate, en-US (pyobjc)"
+}

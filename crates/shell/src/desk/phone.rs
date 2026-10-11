@@ -131,7 +131,7 @@ impl WmDesk {
     pub fn phone_hit(&self,p:Vec2d)->Option<PhoneHit> {self.phone_ui.hit(p)}
     pub fn phone_hit_rect(&self,hit:&PhoneHit)->Option<Rect> {self.phone_ui.hit_rect(hit)}
     pub fn phone_search_event(&mut self,cx:&mut Cx,event:&Event,state:&mut WmState)->bool {
-        let enabled=state.style.target.mobile() && state.phone.searching();
+        let enabled=state.style.target.mobile() && state.phone.searching() && !state.phone.search_closing;
         self.phone_ui.search_event(cx,event,&mut state.phone,enabled)
     }
     pub fn dismiss_phone_search(&mut self,cx:&mut Cx,phone:&mut crate::mobile::PhoneState,clear:bool) {
@@ -227,6 +227,7 @@ impl WmDesk {
         for (slot,client,status,connected) in slots {
             if slot.kind.shell_drawn() {continue;}
             let shown_rect=Rect{pos:slot.rect.pos+dvec2(dx,0.0),size:slot.rect.size};
+            if !crate::mobile_pages::intersects_screen(shown_rect, screen) { continue; }
             let gave_up=phone.tiles.gave_up(slot.app);
             let entry=client.and_then(|c|phone.tiles.get(c));
             let mut shown=false;
@@ -282,9 +283,12 @@ impl WmDesk {
         state.phone.body_reflow=(window.y-(full.pos.y+full.size.y)).max(0.0);
         // A hiding keyboard grows the body back a few frames after it starts
         // to go: lay out in the whole window at once, as the keyboard slides
-        // off over it, rather than squeezed above where it was.
+        // off over it, rather than squeezed above where it was. Android can
+        // report positive animated insets after WillHide: a closing search
+        // must keep this full viewport instead of shrinking it again, leaving
+        // an unpainted band and relaying out Home mid-transition.
         let mut full=full;
-        if state.phone.native_keyboard<=0.0 && state.phone.body_reflow>0.0 {
+        if (state.phone.native_keyboard<=0.0 || state.phone.search_closing) && state.phone.body_reflow>0.0 {
             full.size.y+=state.phone.body_reflow;
             state.phone.body_reflow=0.0;
         }
@@ -295,7 +299,8 @@ impl WmDesk {
         // split divider, the apps that own their edges, the keyboard).
         state.phone.exclusions.clear();
         if let Some(z)=state.phone.shade.exclusion(screen) {state.phone.exclusions.add(z,[true;4]);}
-        state.phone.groups.add_exclusions(state.phone.screen,crate::mobile::app_rect(screen),&mut state.phone.exclusions);
+        let app_content = state.phone.app_content_rect(screen);
+        state.phone.groups.add_exclusions(state.phone.screen,app_content,&mut state.phone.exclusions);
         let owns_edges:Vec<ClientId>=state.clients.iter().filter(|(_,s)|s.owns_edges).map(|(c,_)|*c).collect();
         crate::mobile_pages::sync(&mut state.phone,state.style.target,screen);
         self.phone_ui.sync_native_widgets(cx,state,full,screen);
@@ -322,7 +327,7 @@ impl WmDesk {
         state.phone.draw_active = false;
         let style=state.style.target;
         let dark=state.style.dark;
-        let app=mobile::app_rect(screen);
+        let app=phone.app_content_rect(screen);
         if self.phone_ui.set_theme(phone.theme.map(|choice| choice.palette(dark))) {
             // Recolor existing app/tile instances, including captures otherwise
             // keyed only by size and light/dark. Keep their navigation state.
@@ -359,7 +364,7 @@ impl WmDesk {
         // The home-up drag on an open app (its window pulling back over the
         // overview glass) is the same still scene, so it is kept as well;
         // its first frame records, since a settled app draws no home page.
-        let cache_scene=(matches!(phone.screen,PhoneScreen::Home|PhoneScreen::Recents)
+        let cache_scene=!phone.card_open && (matches!(phone.screen,PhoneScreen::Home|PhoneScreen::Recents)
                 && (phone.openness<0.001 || phone.overview>0.001)
             || phone.screen==PhoneScreen::App && phone.overview>0.001)
             && phone.keyboard<0.5 && phone.drag.is_none()
@@ -458,13 +463,16 @@ impl WmDesk {
             if perf {crate::mobile_perf::span(cx.cx,ch.glass,t);}
             Some(b)
         }else{None};
-        if plan.home && !hit {
+        if plan.home && !hit && !phone.card_covers_home {
+            // The quiet scene-record frame is outside the gesture, including
+            // its final settling frame. Prepare first-use navigation there.
+            if record && !moving { self.phone_ui.prewarm_navigation(cx, state, screen); }
             self.phone_ui.draw_home(cx,state,screen,home_backdrop,record);
             self.phone_content(screen);
             state.phone.search_scroll_limit=self.phone_ui.search_scroll_max;
         }
         self.phone_ui.publish_home_geometry(cx,state,full,screen);
-        if plan.home && !hit && phone.home_visible() {self.draw_home_tiles(cx,scope,screen);}
+        if plan.home && !hit && !phone.card_covers_home && phone.home_visible() {self.draw_home_tiles(cx,scope,screen);}
         if record {
             // The scene is complete: its pyramid, to the deepest level an
             // overlay reads (the group window's 4), then the frame ends and
@@ -523,7 +531,7 @@ impl WmDesk {
             if !foreground && phone.overview<0.001 {continue;}
             if foreground && phone.openness<0.001 {continue;}
             let index=phone.order.iter().position(|c|*c==client).unwrap_or(0);
-            let card=mobile::card_rect(screen,index as f64,phone.page);
+            let card=phone.card_rect(screen,index as f64,phone.page);
             let mut display=if foreground {
                 let icon=PhoneSurface::launch_origin(style,screen,phone.tiles.get(client).map(|t|t.app.as_str()));
                 mobile::mix_rect(mobile::mix_rect(icon,app,phone.openness),card,phone.overview)

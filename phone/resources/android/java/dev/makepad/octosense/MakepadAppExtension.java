@@ -57,6 +57,7 @@ import org.json.JSONObject;
 /** Public launcher client and asynchronous bridge adapter in the Home process. */
 public final class MakepadAppExtension implements MakepadActivity.ApplicationExtension {
     private final MakepadActivity activity;
+    private final DeviceCalendarClient deviceCalendar;
     private Runnable unregisterSystemBack;
     private final ObscuredTouchGuard touchGuard=new ObscuredTouchGuard();
     @Override public boolean filterTouchEvent(android.view.MotionEvent event) {return touchGuard.accept(event);}
@@ -67,6 +68,7 @@ public final class MakepadAppExtension implements MakepadActivity.ApplicationExt
     private final UserManager users;
     private volatile NativeWidgets widgets;
     private final HomeGeometryClient homeGeometry;
+    private final HomeGestureEdges homeGestureEdges;
     private final NativeReplyComposer replyComposer;
     private final NotificationAppIdentity notificationIdentity;
     private Bundle lastBridgeSnapshot;
@@ -142,6 +144,7 @@ public final class MakepadAppExtension implements MakepadActivity.ApplicationExt
 
     public MakepadAppExtension(MakepadActivity activity) {
         this.activity=activity;
+        deviceCalendar=new DeviceCalendarClient(activity,(channel,value) -> {offer(() -> emit(channel,value));},() -> resumed&&windowFocused&&!destroyed);
         // Home also hosts trusted Settings, theme controls and native overlays.
         // Protect its window before an external Settings intent can be handled.
         if(android.os.Build.VERSION.SDK_INT>=31) activity.getWindow().setHideOverlayWindows(true);
@@ -149,6 +152,7 @@ public final class MakepadAppExtension implements MakepadActivity.ApplicationExt
         launcher=activity.getSystemService(LauncherApps.class);
         users=activity.getSystemService(UserManager.class);
         homeGeometry=new HomeGeometryClient(activity,this::offer,this::emit);
+        homeGestureEdges=new HomeGestureEdges(activity);
         replyComposer=new NativeReplyComposer(activity,(token,handle,text) -> offer(() ->
                 emit("notification.reply.submit",json("token",token,"handle",handle,"reply",text))),
                 visible -> {replyVisible=visible;updateNativeCoverage();});
@@ -216,6 +220,7 @@ public final class MakepadAppExtension implements MakepadActivity.ApplicationExt
         settingsFocusListener=focused -> {
             windowFocused=focused;
             if(destroyed)return;
+            homeGestureEdges.focus(focused);
             // Retire virtual actions immediately on the UI thread. Preserve
             // this edge in the worker packet even if focus changes again.
             settingsAccessibility.setWindowFocused(focused);
@@ -403,7 +408,8 @@ public final class MakepadAppExtension implements MakepadActivity.ApplicationExt
         if(data.getBytes(StandardCharsets.UTF_8).length>Protocol.MAX_PACKET_BYTES) { resyncNeeded=true; scheduleFlush(); return; }
         if(outbound.isEmpty() && MakepadNative.onAndroidIntegrationEvent(channel,data)) return;
         String key=channel;
-        if(channel.endsWith(".result")) key+=":"+payload.optLong("id",0);
+        if(channel.equals("device_calendar.result")) key+=":"+payload.optString("id","");
+        else if(channel.endsWith(".result")) key+=":"+payload.optLong("id",0);
         if(channel.equals("launcher.catalog")) key+=":"+payload.optLong("chunk",0);
         outbound.put(key,new String[]{channel,data});
         if(outbound.size()>192) {
@@ -443,7 +449,10 @@ public final class MakepadAppExtension implements MakepadActivity.ApplicationExt
         return value;
     }
     private void result(long id,int status,String reason) { emit("launcher.result",json("id",id,"status",status,"reason",reason)); }
-    private void updateNativeCoverage() {homeGeometry.setCovered(widgetsVisible||replyVisible);}
+    private void updateNativeCoverage() {
+        homeGeometry.setCovered(widgetsVisible||replyVisible);
+        homeGestureEdges.cover(widgetsVisible||replyVisible);
+    }
     private android.view.Window validationWindow() {
         android.view.Window pin=ShortcutPinActivity.validationWindow();
         if(pin!=null) return pin;
@@ -482,6 +491,8 @@ public final class MakepadAppExtension implements MakepadActivity.ApplicationExt
         main.post(() -> replyComposer.updateTargets(current));
     }
     @Override public void command(String channel,String payload) {
+        if("device_calendar.probe".equals(channel)){offer(() -> emit("device_calendar.ready",new JSONObject()));return;}
+        if("device_calendar.command".equals(channel)){deviceCalendar.command(payload);return;}
         if(validationBuild&&"validation.ui".equals(channel)) {
             try {observedNotificationRenderer=new JSONObject(payload);} catch(JSONException ignored) {}
             return;
@@ -493,7 +504,7 @@ public final class MakepadAppExtension implements MakepadActivity.ApplicationExt
         // Local view geometry has no worker/Binder/shell round trip. The
         // renderer coalesces unchanged layouts; native state is cached already.
         if("widgets.layout".equals(channel)) {widgets.layout(payload);return;}
-        if("home.layout".equals(channel)) {homeGeometry.layout(payload);return;}
+        if("home.layout".equals(channel)) {homeGeometry.layout(payload);homeGestureEdges.layout(payload);return;}
         if("a11y.layout".equals(channel)) {accessibility.layout(payload);return;}
         if("settings.a11y.layout".equals(channel)) {
             if(resumed&&!destroyed)settingsAccessibility.layout(payload);else settingsAccessibility.clear();
@@ -1542,6 +1553,8 @@ public final class MakepadAppExtension implements MakepadActivity.ApplicationExt
         }
     }
     @Override public void onResume() {
+        homeGestureEdges.resume();
+        MailBackground.resume(activity);
         windowFocused=activity.hasWindowFocus();
         settingsAccessibility.setWindowFocused(windowFocused);
         resumed=true;settingsAccessibility.onResume(); homeGeometry.onResume(); widgets.onResume(); refreshCatalog(); bindBridge(); main.post(() -> { if(!destroyed && agent!=null) agent.bind(); }); requestResync();
@@ -1549,6 +1562,8 @@ public final class MakepadAppExtension implements MakepadActivity.ApplicationExt
         offer(() -> {emitUiMode();emitHints();publishRecentApps();flushEvents();});
     }
     @Override public void onPause() {
+        homeGestureEdges.pause();
+        MailBackground.pause();
         if(captionCustomSettings!=null)captionCustomSettings.retireInBackground();
         resumed=false;windowFocused=false;settingsAccessibility.onPause();if(soundsSettings!=null)agent.stopSoundInBackground();closePlacementMenu();replyComposer.close(); homeGeometry.onPause(); widgets.onPause();
         // Retain the latest lifecycle observation too: a queued pre-pause
@@ -1573,6 +1588,8 @@ public final class MakepadAppExtension implements MakepadActivity.ApplicationExt
         }
     }
     @Override public void onIntent(Intent intent) {
+        String mailToken = MailBackground.entry(intent);
+        if (mailToken != null) offer(() -> emit("mail.notification.open", json("token", mailToken)));
         if(intent!=null) {
             try {
                 String action=intent.getAction();
@@ -1616,6 +1633,8 @@ public final class MakepadAppExtension implements MakepadActivity.ApplicationExt
         if(intent!=null && intent.hasCategory(Intent.CATEGORY_HOME)) {replyComposer.close();widgets.hide();homeGeometry.invalidate();}
     }
     @Override public void onDestroy() {
+        deviceCalendar.close();
+        homeGestureEdges.close();
         if(unregisterSystemBack!=null) {unregisterSystemBack.run();unregisterSystemBack=null;}
         QrImagePickActivity.setListener(null);
         offer(()->{if(captionLanguageSettings!=null)captionLanguageSettings.invalidate();if(systemLanguageSettings!=null)systemLanguageSettings.invalidate();if(keyboardSettings!=null)keyboardSettings.invalidate();});

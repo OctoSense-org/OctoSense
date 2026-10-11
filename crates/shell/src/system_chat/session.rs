@@ -99,27 +99,48 @@ pub struct ShellSystemHost;
 
 impl SystemHost for ShellSystemHost {
     fn declarations(&self) -> Vec<Value> {
-        let mut decls: Vec<Value> = super::grants::host_tools()
+        #[cfg(any(feature = "app-hub", native_mobile))]
+        crate::host_tools::ensure_loaded("card.os.calendar");
+        let granted: Vec<Value> = super::grants::host_tools()
             .into_iter()
             .filter_map(|tool| {
-                let owner = tool.split('.').next().unwrap_or(&tool).to_string();
+                let owner = crate::host_tools::owner_of(&tool)?;
                 crate::host_tools::declaration(&owner, &tool)
             })
             .collect();
         // Which apps have an agent, and asking the person to allow one
         // (ADR 0004 §4; answered by the chat itself, `crate::agents`).
-        decls.extend(crate::agents::declarations());
+        let mut agents = crate::agents::declarations();
         // octos apply_turn_host_tool_rosters applies the kernel allowlist
         // BEFORE adding this connection-owned host set. No baseline kernel
         // tool grant is needed, and external turns cannot inherit this set.
         if crate::host_tools::studio::SUPPORTED && crate::dev_mode::grants_all(crate::host_tools::SYSTEM) {
-            decls.extend(crate::host_tools::studio::declarations(crate::host_tools::SYSTEM));
+            agents.extend(crate::host_tools::studio::declarations(crate::host_tools::SYSTEM));
         }
-        decls
+        session_set(granted, agents)
     }
     fn workspace_opened(&self, workspace: Option<&str>) {
         crate::host_tools::studio::system_workspace_opened(workspace);
     }
+}
+
+/// The system session's host tools: the declarations of its grants, then
+/// the agents' own tools, with the engines' tools (ADR 0013) moved last and
+/// cut first when the set would pass the kernel's cap
+/// ([`super::grants::MAX_SESSION_TOOLS`]), which refuses a larger set whole
+/// and would leave the system agent with none.
+pub(crate) fn session_set(granted: Vec<Value>, agents: Vec<Value>) -> Vec<Value> {
+    let (engines, mut set): (Vec<Value>, Vec<Value>) =
+        granted.into_iter().partition(|decl| decl["name"].as_str().is_some_and(super::grants::is_engine_tool));
+    set.extend(agents);
+    set.extend(engines);
+    let cap = super::grants::MAX_SESSION_TOOLS;
+    if set.len() > cap {
+        let dropped: Vec<&str> = set[cap..].iter().filter_map(|d| d["name"].as_str()).collect();
+        makepad_widgets::log!("system chat: {} host tools pass the kernel's cap of {cap}; not offered: {dropped:?}", set.len());
+        set.truncate(cap);
+    }
+    set
 }
 
 /// What the UI asks of the driver.
@@ -333,6 +354,20 @@ impl Driver {
         self.link.is_some()
     }
 
+    /// How long until the next connection attempt (tests).
+    #[cfg(test)]
+    pub fn retry_in(&self) -> Option<Duration> {
+        self.retry_at.map(|t| t.saturating_duration_since(Instant::now()))
+    }
+
+    /// Make a waiting connection attempt due now (tests).
+    #[cfg(test)]
+    pub fn retry_now(&mut self) {
+        if self.retry_at.is_some() {
+            self.retry_at = Some(Instant::now());
+        }
+    }
+
     fn request(&mut self, method: &str, params: Value, pending: Pending) -> bool {
         self.next_id += 1;
         let id = format!("syschat-{}", self.next_id);
@@ -468,8 +503,10 @@ impl Driver {
         self.model.set_phase(Phase::Connecting);
         match self.connector.connect() {
             Ok(link) => {
+                // The back-off resets only once the session opens: a kernel
+                // that stops before answering (a key it cannot read) would
+                // otherwise be started again twice a second.
                 self.link = Some(link);
-                self.backoff = Duration::from_millis(500);
                 self.retry_at = None;
                 self.request("session/open", json!({"session_id": SYSTEM_SESSION, "profile_id": SYSTEM_PROFILE}), Pending::Open);
             }
@@ -600,6 +637,12 @@ impl Driver {
                 None => {
                     self.system_host.workspace_opened(result.and_then(|r| r["opened"]["workspace_root"].as_str()));
                     self.opened = true;
+                    // Where the kernel runs the system conversation: where
+                    // the engines work for the system agent too.
+                    if let Some(root) = result.and_then(super::workspace::of_opened) {
+                        super::workspace::confirm(&root);
+                    }
+                    self.backoff = Duration::from_millis(500);
                     self.model.set_phase(Phase::Ready);
                     self.sync_tools();
                     self.load_history();

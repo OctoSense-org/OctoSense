@@ -39,6 +39,8 @@ class AndroidImeHandoffTest(unittest.TestCase):
         harness = harness.replace("/* CONNECTION_METHODS */", "\n".join(method(connection, signature) for signature in [
             "public boolean sendKeyEvent(KeyEvent event)",
             "private boolean handleKeyEvent(KeyEvent event)",
+            "public boolean finishComposingText()",
+            "public boolean commitText(CharSequence text, int newCursorPosition)",
             "boolean isTextKey(KeyEvent event)",
             "private boolean isNavigationKey(int keyCode)",
         ]))

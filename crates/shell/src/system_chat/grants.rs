@@ -173,8 +173,71 @@ pub fn command_execution() -> bool {
 pub fn host_tools() -> std::collections::BTreeSet<String> {
     let mut tools = host_tools_given(command_execution(), terminal_target());
     tools.extend(native_system_tools());
+    #[cfg(any(feature = "app-hub", native_mobile))]
+    {
+        // Reviewed narrow system grant (ADR 0004 §7/§12), not every
+        // shareable tool. Keep this check pure: the relay calls it while locked.
+        tools.extend(CALENDAR_TOOLS.iter().map(|tool| tool.to_string()));
+    }
+    #[cfg(feature = "craft-engines")]
+    tools.extend(ENGINE_TOOLS.iter().map(|tool| tool.to_string()));
     tools
 }
+
+#[cfg(any(feature = "app-hub", native_mobile))]
+pub(crate) const CALENDAR_TOOLS: &[&str] = &["calendar.events", "calendar.add_event", "calendar.notify"];
+
+/// The craft engines' tools the system agent may call (ADR 0013), each
+/// declared by its engine's `tools.json` under the virtual owner
+/// `os.<family>` (`host_tools::engines`). A reviewed narrow grant like
+/// [`CALENDAR_TOOLS`], one surface per engine:
+///
+/// - The seven engines with a command catalog it may use (word, deck, cad,
+///   light, film, effect, vector): `<family>.info`, a read, and
+///   `<family>.run`, the engine's reviewed command door. Its service
+///   admits every command of a call before any runs, through an allowlist
+///   built from the engine's reviewed classification
+///   (`octosense_engine_area::door`): a command that works inside the open
+///   document runs, and so does a reviewed read of a file inside the
+///   caller's own folder; any other id is refused (one that reaches other
+///   files, code, the network, a device or the app, or one the
+///   classification does not know).
+/// - sound, design and pdf keep their fixed tools: sound has no command
+///   catalog, design has no door by decision (#418), and pdf's operations
+///   are a few fixed methods.
+///
+/// Every act only creates new files inside the caller's own folder, never
+/// replacing one (`host_tools::areas`). None is destructive or outward.
+#[cfg(feature = "craft-engines")]
+pub(crate) const ENGINE_TOOLS: &[&str] = &[
+    "word.info", "word.run",
+    "deck.info", "deck.run",
+    "cad.info", "cad.run",
+    "light.info", "light.run",
+    "sound.info", "sound.peaks", "sound.convert", "sound.trim", "sound.mix",
+    "design.info", "design.render", "design.export",
+    "film.info", "film.run",
+    "effect.info", "effect.run",
+    "vector.info", "vector.run",
+    "pdf.info", "pdf.text", "pdf.render", "pdf.merge", "pdf.split",
+];
+
+/// Whether `tool` is one of [`ENGINE_TOOLS`]: the system session's set
+/// gives these up first when it would pass [`MAX_SESSION_TOOLS`].
+pub fn is_engine_tool(tool: &str) -> bool {
+    #[cfg(feature = "craft-engines")]
+    return ENGINE_TOOLS.contains(&tool);
+    #[cfg(not(feature = "craft-engines"))]
+    {
+        let _ = tool;
+        false
+    }
+}
+
+/// The most host tools the kernel takes in one registration (octos
+/// `MAX_APP_TOOLS` at the pinned revision). It refuses a larger set whole,
+/// which would leave the system agent with no host tool at all.
+pub const MAX_SESSION_TOOLS: usize = 64;
 
 /// The native apps' own read tools the system agent may call
 /// (`native-apps.json` `agent.system_tools`), for the apps that run here:

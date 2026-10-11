@@ -313,6 +313,7 @@ pub fn fetch(account: &Value, seen: &HashSet<String>) -> Result<Value, String> {
     let _ = wire.pop("QUIT");
     Ok(
         json!({"address":account["address"],"account_id":identity(account),"messages":messages,"available":available,
+        "uid_snapshot":rows.iter().filter_map(|line| std::str::from_utf8(line).ok()?.split_whitespace().nth(1)).collect::<Vec<_>>(),
         "skipped_uids":skipped,"has_more":remaining.len()>25,"synced_at":chrono::Utc::now().to_rfc3339(),"tls_verified":true,"host":account["host"],"transport":"device-pop3"}),
     )
 }
@@ -431,6 +432,16 @@ pub fn decode(raw: &[u8], uid: &str) -> Result<Value, String> {
 }
 
 pub fn send(account: &Value, draft: &Value) -> Result<Value, String> {
+    send_checked(account, draft).map_err(|e| match e {
+        super::drafts::SendFailure::BeforeDelivery(message) | super::drafts::SendFailure::Unknown(message) => message,
+    })
+}
+
+pub fn send_checked(account: &Value, draft: &Value) -> Result<Value, super::drafts::SendFailure> {
+    use super::drafts::SendFailure;
+    // All failures before the DATA payload are known not to have submitted
+    // this message. Once bytes may have reached the server, fail uncertain.
+    let prepared = (|| -> Result<_, String> {
     validate(account)?;
     let to = text(draft, "to").trim();
     if !to.contains('@') || to.contains(['\r', '\n', '<', '>', ' ', ',', ';']) {
@@ -461,6 +472,11 @@ pub fn send(account: &Value, draft: &Value) -> Result<Value, String> {
     wire.smtp(&format!("MAIL FROM:<{}>", text(account, "address")), &[250])?;
     wire.smtp(&format!("RCPT TO:<{to}>"), &[250, 251])?;
     wire.smtp("DATA", &[354])?;
+    Ok(wire)
+    })().map_err(SendFailure::BeforeDelivery)?;
+    let mut wire = prepared;
+    let to = text(draft, "to").trim();
+    let subject = text(draft, "subject");
     let id = text(draft, "message_id");
     let encoded = STANDARD.encode(text(draft, "body"));
     let lines = encoded
@@ -480,7 +496,7 @@ pub fn send(account: &Value, draft: &Value) -> Result<Value, String> {
     // After DATA begins, connection loss must never trigger an automatic retry.
     wire.write(message.as_bytes())
         .and_then(|_| wire.smtp_response(&[250]))
-        .map_err(|_| "Delivery uncertain. Check Gmail Sent before sending again.")?;
+        .map_err(|_| SendFailure::Unknown("Delivery uncertain. Check Sent before explicitly approving another attempt.".into()))?;
     let _ = wire.smtp("QUIT", &[221]);
     Ok(json!({"message_id":id,"accepted":true}))
 }

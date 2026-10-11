@@ -1,0 +1,16 @@
+diff --git a/tools/cargo_makepad/src/android/java/dev/makepad/android/MakepadInputConnection.java b/tools/cargo_makepad/src/android/java/dev/makepad/android/MakepadInputConnection.java
+index 4df279052..3e2e5633f 100644
+--- a/tools/cargo_makepad/src/android/java/dev/makepad/android/MakepadInputConnection.java
++++ b/tools/cargo_makepad/src/android/java/dev/makepad/android/MakepadInputConnection.java
+@@ -836,6 +836,11 @@ public class MakepadInputConnection extends BaseInputConnection {
+                 // Handle Enter key from IME
+                 // Some IMEs send sendKeyEvent(ENTER) instead of commitText("\n")
+                 if (mSurface.isMultiline()) {
++                    // Enter accepts the current composing word, then inserts
++                    // a line break. A bare commitText("\n") replaces that word
++                    // with the newline in both Editable and the Rust editor.
++                    // Keep these operations ordered on the same editor session.
++                    if (!finishComposingText()) return false;
+                     // For multiline: insert newline via commitText
+                     // This ensures proper notification to Rust via ImeTextState
+                     return commitText("\n", 1);

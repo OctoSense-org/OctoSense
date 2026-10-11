@@ -125,6 +125,14 @@ pub struct MpModuleView {
     /// outside the draw that decided it is visible again.
     #[rust]
     wake_frame: Option<NextFrame>,
+    /// The content, slot size and restyle generation (`module_host::style_generation`)
+    /// the app last heard as `on_app_resize`.
+    #[rust]
+    script_viewport: Option<(WidgetUid, Vec2d, u64)>,
+    /// Previous hosted bounds, used to reveal a focused editor when the IME
+    /// shrinks the app. Resize the app, then scroll its own nearest container.
+    #[rust]
+    last_viewport_size: Option<Vec2d>,
 }
 
 impl MpModuleView {
@@ -152,6 +160,8 @@ impl MpModuleView {
         self.root = Some(root);
         self.client = Some(client);
         self.vm_id = vm_id;
+        self.script_viewport = None;
+        self.last_viewport_size = None;
         self.drawn = false;
         self.stopped = None;
         self.draw_bg.redraw(cx);
@@ -589,7 +599,32 @@ impl Widget for MpModuleView {
             //   is outside all of this.
             let mark = cx.unwind_mark();
             let captures = CaptureGauss::scope_depth(cx);
-            let drawn = contain(cx, self.vm_id, "its draw", |cx| root.draw_walk_all(cx, scope, Walk::fill()));
+            let viewport = &mut self.script_viewport;
+            let resized = contain(cx, self.vm_id, "its resize", |cx| {
+                let card = root.splash(cx, ids!(card));
+                let content = card
+                    .borrow()
+                    .filter(|splash| !splash.view.source.is_zero())
+                    .map(|splash| splash.view.widget_uid());
+                if let Some(content) = content {
+                    let current = (content, rect.size, crate::module_host::style_generation());
+                    if *viewport != Some(current) {
+                        *viewport = Some(current);
+                        return card.call_script_fn(
+                            cx,
+                            id!(on_app_resize),
+                            &[rect.size.x.into(), rect.size.y.into()],
+                        );
+                    }
+                }
+                false
+            });
+            if resized == Some(true) {
+                cx.with_vm_and_async(|_| {});
+            }
+            let drawn = resized.and_then(|_| {
+                contain(cx, self.vm_id, "its draw", |cx| root.draw_walk_all(cx, scope, Walk::fill()))
+            });
             if drawn.is_none() {
                 cx.unwind_to(mark);
                 CaptureGauss::unwind_scope_to(cx, captures);
@@ -598,6 +633,21 @@ impl Widget for MpModuleView {
             if drawn.is_none() {
                 self.stop(cx);
             }
+            if drawn.is_some() && self.focused && self.takes_key_focus
+                && self.last_viewport_size.is_some_and(|size| rect.size.y < size.y - 0.5)
+            {
+                if let Some(list) = cx.get_current_draw_list_id() {
+                    if let Some((area, stack)) = CxDraw::iterate_nav_stops(cx, list, |cx, stop| {
+                        cx.has_key_focus(stop.area).then_some(stop.area)
+                    }) {
+                        let focused = area.rect(cx);
+                        if focused.pos.y + focused.size.y > rect.pos.y + rect.size.y - 5.0 {
+                            NavControl::send_trigger_to_scroll_stack(cx, stack);
+                        }
+                    }
+                }
+            }
+            self.last_viewport_size = Some(rect.size);
             self.drawn = true;
         }
         if self.stopped.is_some() {

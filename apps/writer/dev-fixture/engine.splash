@@ -1,0 +1,71 @@
+// Writer's dev fixture: a stand-in for the shell's `word` engine, for UI tests
+// in App Hub's card-host, which serves no host services. It never ships:
+// apps/writer/tests/ui.py puts it in place of engine() in a scratch copy of
+// the bundle, and writes its settings to dev/fixture.json in the app's
+// storage ({"delay": seconds, "fail": ["word.convert", ...]}). Like the
+// engine, it reads and writes the paths it is given in the app's storage, so
+// the app runs its one code path. A document it saves is the Markdown it was
+// given, which word.info and word.inspect read back; other formats are
+// placeholders.
+let fixture = nil
+fn fixture_settings(){
+    if fixture == nil {
+        let f = nil
+        if fs.exists("dev/fixture.json") { f = fs.read("dev/fixture.json").parse_json() }
+        if f == nil { f = {} }
+        fixture = {delay: field(f, "delay", 0.4) fail: field(f, "fail", [])}
+    }
+    return fixture
+}
+fn engine(method, args, done){
+    let f = fixture_settings()
+    let answer = fixture_answer(f, method, args)
+    start_timeout(f.delay, || done(answer))
+}
+fn fixture_answer(f, method, args){
+    for m in f.fail {
+        if m == method { return {is_ok: false data: nil error: method + ": the dev fixture refuses this call"} }
+    }
+    if !fs.exists(args.path) {
+        return {is_ok: false data: nil error: method + ": word: " + args.path + ": No such file or directory (os error 2)"}
+    }
+    let text = fs.read(args.path)
+    if method == "word.convert" {
+        let out = text
+        if args.format != "docx" && args.format != "md" { out = "Writer dev fixture: a stand-in " + args.format + " file\n" }
+        let dir = args.out.replace(regex("/[^/]*$"), "")
+        if dir != args.out && !fs.exists(dir) { fs.mkdir(dir) }
+        fs.write(args.out, out)
+        return {is_ok: true data: {out: args.out format: args.format bytes: out.len()} error: nil}
+    }
+    let blocks = fixture_blocks(text)
+    let words = count_words(text)
+    if method == "word.info" {
+        return {is_ok: true data: {file: args.path pages: 1 + floor(words / 450) words: words paragraphs: blocks.len() sections: 1 comments: 0 properties: {}} error: nil}
+    }
+    if method == "word.inspect" {
+        return {is_ok: true data: {blocks: blocks pages: 1 + floor(words / 450) words: words} error: nil}
+    }
+    return {is_ok: false data: nil error: method + " is not in the dev fixture"}
+}
+// Blocks shaped like word.inspect's, from the first 600 lines (one turn's
+// instruction budget; the engine itself sends up to 2000).
+let fixture_heading_re = regex("^#+\\s")
+let fixture_hashes_re = regex("^#+")
+fn fixture_blocks(text){
+    let out = []
+    let i = 0
+    for line in text.split("\n") {
+        if i >= 600 { break }
+        let t = line.trim()
+        let kind = "Normal"
+        if t.search(fixture_heading_re) == 0 { kind = "Heading" + min(t.match_str(fixture_hashes_re).value.len(), 6) }
+        if kind == "Normal" && t.search(item_re) == 0 { kind = "ListParagraph" }
+        if kind == "Normal" && t.search(">") == 0 { kind = "Quote" }
+        let body = clean_line(t)
+        if kind == "ListParagraph" { out.push({index: out.len() type: "paragraph" style: kind text: body list: {num: 1 level: 0}}) }
+        if kind != "ListParagraph" && t != "" { out.push({index: out.len() type: "paragraph" style: kind text: body}) }
+        i = i + 1
+    }
+    return out
+}

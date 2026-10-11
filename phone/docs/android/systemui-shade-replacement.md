@@ -17,8 +17,11 @@ With the phone unlocked, swipe down from the physical top-right edge for
 **OctoSense Controls**, or the top-left edge for **OctoSense Notifications**.
 Close or Back returns to the underlying app. The panel opens a window without
 launching Home or replacing the resumed app's task. The top gesture region
-includes Android's extra touch margin below the notch. Home's existing internal
-shade remains available when a swipe starts below that system gesture region.
+includes Android's extra touch margin below the notch. While this panel is on,
+Home's own shade stays closed, and a pull on Home opens search. With the panel
+off, or on a phone without the OctoSense ROM, Home's shade opens instead from a
+pull down at the left or right side of the Home page, below that system gesture
+region.
 
 **System setup → System-wide OctoSense panel** opens the persistent switch,
 **Use OctoSense panel across apps**. Switching it off immediately restores

@@ -451,6 +451,39 @@ fn a_kernel_restart_resumes_the_same_session() {
     assert_eq!(d.model.phase(), &Phase::Ready);
 }
 
+/// A kernel that stops before the session opens (on HarmonyOS, a provider
+/// key the embedded core could not read) is started again with a growing
+/// back-off, not twice a second; a session that opens resets it.
+#[test]
+fn a_kernel_that_stops_before_the_session_opens_backs_off() {
+    let (mut d, fake) = driver();
+    let stop = || Some(Closed { restarted: false, why: "the kernel closed its output".into() });
+    let mut delays = Vec::new();
+    d.command(Command::Open);
+    for _ in 0..4 {
+        fake.s().inbox.clear();
+        fake.s().close = stop();
+        settle(&mut d);
+        assert!(matches!(d.model.phase(), Phase::Reconnecting(_)), "{:?}", d.model.phase());
+        delays.push(d.retry_in().expect("a retry is scheduled"));
+        d.retry_now();
+    }
+    let ms: Vec<u128> = delays.iter().map(|d| d.as_millis()).collect();
+    for (got, want) in ms.iter().zip([500, 1000, 2000, 4000]) {
+        assert!(*got > want - 100 && *got <= want, "back-off {ms:?}");
+    }
+    assert_eq!(fake.s().connects, 4);
+    // The fifth start works: the session opens, and the next stop waits the
+    // shortest delay again.
+    fake.s().inbox.clear();
+    settle(&mut d);
+    assert_eq!(d.model.phase(), &Phase::Ready);
+    fake.s().close = stop();
+    settle(&mut d);
+    let again = d.retry_in().expect("a retry is scheduled").as_millis();
+    assert!(again > 400 && again <= 500, "reset to {again} ms");
+}
+
 #[test]
 fn no_provider_and_no_kernel_are_said_plainly() {
     let (mut d, fake) = driver();
@@ -1070,6 +1103,48 @@ fn the_system_agent_gets_the_read_tools_of_the_native_apps_that_run_here_never_t
     let calculator = crate::native_apps::find("calculator").unwrap();
     assert_eq!(calculator.system_tools, ["calculator.eval"]);
     assert_eq!(crate::native_apps::find("notes").unwrap().system_tools, ["notes.search", "notes.read"]);
+    assert_eq!(crate::native_apps::find("apphub").unwrap().system_tools, ["apphub.search", "apphub.installed", "apphub.updates"]);
+}
+
+/// The kernel refuses a host-tool set over its cap whole (octos
+/// `MAX_APP_TOOLS`), which would leave the system agent with no host tool
+/// at all: everything it can be granted at once, with every native app
+/// here and command execution on, fits.
+#[test]
+fn the_system_agents_whole_grant_fits_the_kernels_cap() {
+    let mut most = grants::host_tools_given(true, true);
+    most.extend(grants::native_system_tools_given(|_| true));
+    #[cfg(any(feature = "app-hub", native_mobile))]
+    most.extend(grants::CALENDAR_TOOLS.iter().map(|tool| tool.to_string()));
+    #[cfg(feature = "craft-engines")]
+    most.extend(grants::ENGINE_TOOLS.iter().map(|tool| tool.to_string()));
+    let total = most.len() + crate::agents::declarations().len();
+    assert!(total <= grants::MAX_SESSION_TOOLS, "{total} host tools pass the kernel's cap of {}", grants::MAX_SESSION_TOOLS);
+}
+
+/// Past the cap, the engines' tools give way first, whatever order the
+/// grants came in, and the rest keeps its order; under it nothing goes.
+#[cfg(feature = "craft-engines")]
+#[test]
+fn over_the_kernels_cap_the_engines_tools_give_way_first() {
+    let decl = |name: &str| json!({"name": name, "description": "d", "input_schema": {"type": "object"}, "risk": "read"});
+    let engines: Vec<Value> = grants::ENGINE_TOOLS.iter().map(|tool| decl(tool)).collect();
+    let agents = vec![decl("agents.list"), decl("agents.ask")];
+    // Room for only a few engine tools after every other grant.
+    let room = 5;
+    assert!(engines.len() > room);
+    let n = grants::MAX_SESSION_TOOLS - agents.len() - room;
+    let others: Vec<Value> = (0..n).map(|i| decl(&format!("app{i}.read"))).collect();
+    let mut granted = engines.clone();
+    granted.extend(others.clone());
+    let set = super::session::session_set(granted, agents.clone());
+    assert_eq!(set.len(), grants::MAX_SESSION_TOOLS);
+    assert_eq!(&set[..n], &others[..]);
+    assert_eq!(&set[n..n + 2], &agents[..]);
+    assert!(set[n + 2..].iter().all(|d| grants::is_engine_tool(d["name"].as_str().unwrap())));
+    let set = super::session::session_set(engines.clone(), agents.clone());
+    assert_eq!(set.len(), engines.len() + agents.len(), "under the cap, nothing is dropped");
+    assert_eq!(&set[..2], &agents[..]);
 }
 
 #[test]

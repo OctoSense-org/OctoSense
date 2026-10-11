@@ -27,6 +27,10 @@
 //!   `network`), a restart brings the server straight back, and it does not
 //!   stop when native consumers leave.
 //! - **Shutdown.** [`shutdown`] stops it and waits.
+//! - **The system agent's skills.** Before every start the kernel installs
+//!   the skills the shell registered ([`skills::set_managed`], one per
+//!   linked craft engine) into the skills dir octos reads for the `_main`
+//!   profile ([`skills`]).
 //!
 //! Where it runs: see [`launch`]. The kernel and this crate's frame pump run
 //! on a runtime of their own (8 MiB worker stacks: the embedded core's
@@ -43,7 +47,11 @@ mod kernel;
 mod network;
 pub use network::{connection_file, pairing_link, ClientAccess, Pairing, CONNECTION_FILE, SYSTEM_SESSION};
 pub mod launch;
+mod port;
+pub use port::{Deliver, PortEvent, PortHandle};
 mod router;
+pub use router::{Scope, SCOPE_DENIED};
+pub mod skills;
 pub mod system_tools;
 
 pub use dirs::{kernel_home, profile_path, resolve_core_dir};
@@ -302,13 +310,24 @@ impl Core {
     /// kernel can exist here; a kernel that then fails to start closes the
     /// connection with [`CloseReason::Failed`].
     pub fn connect(&self) -> Result<Connection, Unavailable> {
+        self.connect_with(None)
+    }
+
+    /// [`Core::connect`] for a consumer held to `scope` (an app's kernel
+    /// port): the router checks each of its requests and filters what the
+    /// kernel sends it.
+    pub fn connect_scoped(&self, scope: Arc<dyn Scope>) -> Result<Connection, Unavailable> {
+        self.connect_with(Some(scope))
+    }
+
+    fn connect_with(&self, scope: Option<Arc<dyn Scope>>) -> Result<Connection, Unavailable> {
         let mut st = self.0.state.lock().unwrap();
         let conn = st.next_conn;
         st.next_conn += 1;
         let (tx, rx) = mpsc::unbounded_channel();
         // Join the running generation if it still takes consumers.
         if let Some(current) = st.current.as_mut() {
-            if current.ctl.send(Ctl::Attach(conn, tx.clone())).is_ok() {
+            if current.ctl.send(Ctl::Attach(conn, tx.clone(), scope.clone())).is_ok() {
                 current.connections += 1;
                 return Ok(Connection {
                     core: self.clone(),
@@ -330,7 +349,7 @@ impl Core {
         let (ctl, ctl_rx) = mpsc::unbounded_channel();
         let (done_tx, done_rx) = watch::channel(false);
         let previous = st.last_done.replace(done_rx);
-        ctl.send(Ctl::Attach(conn, tx)).expect("fresh channel");
+        ctl.send(Ctl::Attach(conn, tx, scope)).expect("fresh channel");
         let shared = matches!(launch, Launch::WebSocket { .. });
         let (ready_tx, ready) = watch::channel(None);
         st.current = Some(Generation { id, ctl: ctl.clone(), connections: 1, shared, ready: ready.clone() });
@@ -346,7 +365,13 @@ impl Core {
             }
             // A tool policy that could not be enforced starts nothing
             // (fails closed): the generation ends at once with the reason.
-            let refused = launch::prepare(&launch, &core_dir).err();
+            let refused = match launch::prepare(&launch, &core_dir) {
+                Ok(notes) => {
+                    notes.iter().for_each(|note| (log)(note));
+                    None
+                }
+                Err(why) => Some(why),
+            };
             let ended = move || {
                 if let Some(inner) = weak.upgrade() {
                     let mut st = inner.state.lock().unwrap();
@@ -673,6 +698,14 @@ pub fn core_dir() -> Option<PathBuf> {
     global().core_dir()
 }
 
+/// The system conversation's workspace when one is saved in the core dir
+/// (Talk to Octos' web client saves the one the kernel confirmed): the
+/// router then opens the system conversation there. `None` otherwise: the
+/// kernel picks it, and says which when the conversation opens.
+pub fn system_workspace() -> Option<PathBuf> {
+    core_dir().and_then(|dir| network::saved_system_workspace(&dir))
+}
+
 /// The process kernel's HOME (the parent of a `<home>/.octos` core dir).
 pub fn home() -> Option<PathBuf> {
     core_dir().map(|d| kernel_home(&d))
@@ -691,6 +724,16 @@ pub fn is_available() -> bool {
 /// Connect to the process's kernel, starting it if needed.
 pub fn connect() -> Result<Connection, Unavailable> {
     global().connect()
+}
+
+/// [`connect`] held to `scope` ([`Core::connect_scoped`]).
+pub fn connect_scoped(scope: Arc<dyn Scope>) -> Result<Connection, Unavailable> {
+    global().connect_scoped(scope)
+}
+
+/// Serve an app's kernel port on the kernel's runtime ([`Core::serve_scoped`]).
+pub fn serve_scoped(label: &str, scope: Arc<dyn Scope>, up: std::sync::mpsc::Receiver<String>, deliver: Deliver) -> PortHandle {
+    global().serve_scoped(label, scope, up, deliver)
 }
 
 /// The external clients' connection while Talk to Octos is on (host worker

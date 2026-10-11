@@ -3,8 +3,8 @@
 //!
 //! An app's AI keeps its main path through its own octos agent and the
 //! toolbox's templates. For a bounded job (classify this, summarize that
-//! into three lines, pull these fields out of a message) an app granted
-//! `model` calls, through `host.request`:
+//! into three lines, pull these fields out of a message) an admitted app
+//! calls through `host.request`, independently of capability declarations:
 //!
 //! | method | args | answer |
 //! |---|---|---|
@@ -67,6 +67,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 pub mod ledger;
+pub mod media;
 pub mod schema;
 pub mod wire;
 
@@ -119,7 +120,7 @@ impl Class {
 /// Why a call was refused. The code is stable; the message is for people.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Code {
-    /// The app was not granted `model`.
+    /// The host did not admit this app/profile (legacy stable error code).
     Capability,
     /// The person has no usable AI provider.
     NoProvider,
@@ -390,9 +391,12 @@ impl Transport for Http {
     }
 }
 
-/// Whether an app was granted `model` (`app id`, the Card runner's host
+/// Whether this app is admitted by the host (`app id`, the Card runner's host
 /// directory).
 pub type Grants = Arc<dyn Fn(&str, &Path) -> bool + Send + Sync>;
+/// Host-derived active account scope, never taken from script arguments.
+/// Called on the UI dispatch path: this must be a cheap in-memory snapshot.
+pub type Scope = Arc<dyn Fn(&str, &Path) -> Option<String> + Send + Sync>;
 
 /// Milliseconds since the Unix epoch.
 pub type Clock = Arc<dyn Fn() -> u64 + Send + Sync>;
@@ -401,42 +405,23 @@ fn system_clock() -> u64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
 }
 
-/// The default grant check: the app's own verified manifest, where App Hub
-/// put it next to the host directory (`<apps root>/<id>/bundle/manifest.json`
-/// for an installed app, `<apps root>/.system/<id>/*/manifest.json` for a
-/// system app), lists `model`. The Card runner's isolate already refuses a
-/// `model.*` request from an app whose policy lacks the capability; this is
-/// the service's own check behind it, so a caller the runner does not
-/// police (a future host path) is not served on trust.
-pub fn manifest_grants(app_id: &str, host_dir: &Path) -> bool {
-    let valid = !app_id.is_empty() && app_id.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-')) && !app_id.starts_with('.');
-    let Some(root) = host_dir.parent().filter(|_| valid) else { return false };
-    let lists_model = |path: PathBuf| {
-        std::fs::read_to_string(path)
-            .ok()
-            .and_then(|text| serde_json::from_str::<Value>(&text).ok())
-            .is_some_and(|m| m["id"] == app_id && m["capabilities"].as_array().is_some_and(|c| c.iter().any(|c| c == FAMILY)))
-    };
-    if lists_model(root.join(app_id).join("bundle").join("manifest.json")) {
-        return true;
-    }
-    std::fs::read_dir(root.join(".system").join(app_id))
-        .map(|dirs| dirs.flatten().any(|d| lists_model(d.path().join("manifest.json"))))
-        .unwrap_or(false)
-}
-
 /// What a shell hands [`register_with`]. `Options::default()` reads nothing
 /// and grants nobody: set `providers` (the llm service's registration does).
 #[derive(Clone, Default)]
 pub struct Options {
     pub providers: Option<Arc<dyn Providers>>,
     pub transport: Option<Arc<dyn Transport>>,
-    /// `None`: [`manifest_grants`].
+    /// Verified caller and exact host-profile admission. Missing callback
+    /// fails closed; a manifest declaration alone is never proof of identity.
     pub grants: Option<Grants>,
     pub limits: Option<Limits>,
     /// Where the ledger lives before the first call names the host dir.
     pub ledger_path: Option<PathBuf>,
     pub clock: Option<Clock>,
+    /// Media HTTP transport, separate from the legacy chat-only POST transport.
+    pub media_transport: Option<Arc<dyn media::Transport>>,
+    pub media_limits: Option<media::Limits>,
+    pub scope: Option<Scope>,
 }
 
 impl Options {
@@ -473,6 +458,8 @@ pub struct ModelHost {
     transport: Arc<dyn Transport>,
     ledger: Mutex<Ledger>,
     clock: Clock,
+    media: media::State,
+    scope: Scope,
 }
 
 /// Why one attempt's reply was refused.
@@ -492,6 +479,8 @@ impl ModelHost {
             transport: options.transport.clone().unwrap_or_else(|| Arc::new(Http)),
             ledger: Mutex::new(ledger),
             clock: options.clock.clone().unwrap_or_else(|| Arc::new(system_clock)),
+            media: media::State::new(options),
+            scope: options.scope.clone().unwrap_or_else(|| Arc::new(|_, _| Some("device".into()))),
         }
     }
 
@@ -518,6 +507,12 @@ impl ModelHost {
     /// One call for `app`, blocking (run it off the UI thread). The caller
     /// has checked that `app` may call at all.
     pub fn complete(&self, app: &str, request: Request) -> Result<Completion, Refusal> {
+        self.complete_while(app, request, || true)
+    }
+
+    fn complete_while(&self, app: &str, request: Request, active: impl Fn() -> bool) -> Result<Completion, Refusal> {
+        let check = || if active() { Ok(()) } else { Err(Refusal::new(Code::Capability, "The request ended or this app no longer has model access.")) };
+        check()?;
         let schema = request.check()?;
         let candidates = match &self.providers {
             Some(p) => p.candidates().map_err(|e| Refusal { detail: Some(e), ..Refusal::new(Code::NoProvider, "The AI providers could not be read.") })?,
@@ -552,6 +547,7 @@ impl ModelHost {
         for candidate in &ordered {
             let mut note: Option<String> = None;
             for attempt in 1..=ATTEMPTS {
+                check()?;
                 let user = match &note {
                     None => user.clone(),
                     Some(why) => format!(
@@ -565,10 +561,12 @@ impl ModelHost {
                         text
                     }
                     Err(why) => {
+                        check()?;
                         failures.push(why);
                         break; // the next provider
                     }
                 };
+                check()?;
                 match accept(&text, &schema, request.allow_urls) {
                     Ok(output) => {
                         let class = effective_model(&candidate.provider)
@@ -683,6 +681,9 @@ struct ModelService {
 }
 
 impl HostService for ModelService {
+    fn api_methods(&self) -> Vec<octosense_appstore::services::HostApiMethod> {
+        media::catalog()
+    }
     fn family(&self) -> &'static str {
         FAMILY
     }
@@ -695,28 +696,10 @@ impl HostService for ModelService {
     }
 
     fn call(&mut self, call: ServiceCall, reply: Replier, _host: &mut dyn ServiceHost) {
-        if !(self.grants)(&call.app_id, &call.host_dir) {
-            return reply.send(Err(Refusal::new(Code::Capability, "This app was not granted the model capability.").to_string()));
-        }
-        self.host.attach(&call.host_dir);
-        match call.method() {
-            "budget" => reply.send(Ok(self.host.budget(&call.app_id).to_json())),
-            "complete" => {
-                let request = match Request::from_args(&call.args) {
-                    Ok(r) => r,
-                    Err(refusal) => return reply.send(Err(refusal.to_string())),
-                };
-                let host = self.host.clone();
-                std::thread::spawn(move || {
-                    let answer = host.complete(&call.app_id, request);
-                    if let Err(Refusal { detail: Some(detail), code, .. }) = &answer {
-                        eprintln!("model: {} refused ({}): {detail}", call.app_id, code.as_str());
-                    }
-                    reply.send(answer.map(|c| c.to_reply()).map_err(|r| r.to_string()));
-                });
-            }
-            other => reply.send(Err(Refusal::new(Code::BadRequest, format!("there is no model.{other}")).to_string())),
-        }
+        // The shell's grant callback verifies signed bundle files. Keep that
+        // work, ledger I/O and providers off the UI thread, under one bounded
+        // worker limit for complete, budget and media alike.
+        media::dispatch(self.host.clone(), self.grants.clone(), call, reply);
     }
 }
 
@@ -725,7 +708,7 @@ impl HostService for ModelService {
 pub fn register_with(options: Options) -> Arc<ModelHost> {
     let host = Arc::new(ModelHost::new(&options));
     *HOST.lock().unwrap() = Some(host.clone());
-    let grants = options.grants.clone().unwrap_or_else(|| Arc::new(manifest_grants));
+    let grants = options.grants.clone().unwrap_or_else(|| Arc::new(|_, _| false));
     octosense_appstore::services::register_host_service(Box::new(ModelService { host: host.clone(), grants }));
     host
 }

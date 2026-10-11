@@ -1,0 +1,69 @@
+{
+  "schema": 1,
+  "tools": [
+    {
+      "name": "word.info",
+      "description": "Inspect a document in your workspace (docx, md, html, rtf, odt, txt or json): pages, words, paragraphs, sections, comments and document properties. Reads only. `path` is relative to your workspace, the folder your own file tools (list_dir, read_file) see; files outside it cannot be named.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "path": {"type": "string", "minLength": 1, "maxLength": 512}
+        },
+        "required": ["path"],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "file": {"type": "string"},
+          "pages": {"type": "integer"},
+          "words": {"type": "integer"},
+          "paragraphs": {"type": "integer"},
+          "sections": {"type": "integer"},
+          "comments": {"type": "integer"},
+          "properties": {"type": "object"}
+        },
+        "required": ["file", "pages", "words", "paragraphs"]
+      },
+      "risk": "read",
+      "implemented_by": "host-service"
+    },
+    {
+      "name": "word.run",
+      "description": "Run up to 64 commands from the word engine's catalog, in order, on the document at `path` in your workspace, or on a new empty document, then write it as docx, md, html, rtf, odt, txt, json, pdf or png (by `format` or the extension of `out`) to `out` when given. Each command is {id, params}. Only reviewed commands run: those the skill's commands.md lists untagged (work inside the document), and picture inserts that read an image from your workspace; anything that reaches other files, code, the network, devices or the app is refused before any command runs. Paths are relative to your workspace, and `out` must be a new file. Read the word-engine skill first.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "path": {"type": "string", "minLength": 1, "maxLength": 512},
+          "cmds": {
+            "type": "array",
+            "maxItems": 64,
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {"type": "string", "minLength": 1, "maxLength": 128},
+                "params": {"type": "object"}
+              },
+              "required": ["id"],
+              "additionalProperties": false
+            }
+          },
+          "out": {"type": "string", "minLength": 1, "maxLength": 512},
+          "format": {"type": "string", "enum": ["docx", "md", "html", "rtf", "odt", "txt", "json", "pdf", "png"]}
+        },
+        "required": ["cmds"],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "results": {"type": "array", "items": {"type": "object"}},
+          "out": {"type": ["string", "null"]}
+        },
+        "required": ["results"]
+      },
+      "risk": "act",
+      "implemented_by": "host-service"
+    }
+  ]
+}

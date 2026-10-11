@@ -1,0 +1,35 @@
+{
+  "scope": "Exact copies of model-published arguments; hashes verify copy preservation, not an independent replay of model authorship. Tool/turn attribution is recorded separately.",
+  "cards": [
+    {
+      "file": "cards/mail-7aa5926e1a8c0dc84bd7d0d3ada07e903939ffc0.json",
+      "artifact_sha256": "9ec6f4df1302ebb71dc309a4f812372fa9ef2d49bfea0aac4170f085b3e74707",
+      "source_sha256": "9d03fca8a32d0206094fadf432f0b5d73245deab0d4f202505dfb5fb73c496f2"
+    },
+    {
+      "file": "cards/mail-bc9c7d2f87620754da754c3d569db25f2b7ed176.json",
+      "artifact_sha256": "8b66d26e5083c90d572e9b04854a61ccf855b810b4644171590f713d17d4e907",
+      "source_sha256": "50bee0ef8883958ee42931b1bfc9946f637aa990857307d45879404f9213f176"
+    },
+    {
+      "file": "cards/mail-c6f667ed0f5738885fddd9e3dd1ac29677c9e731.json",
+      "artifact_sha256": "ba148a244245359e4749551227ac9812b2aadbec80cb8029806a70671bcc5911",
+      "source_sha256": "b5110599465b06d634ea2deed854af89d14d3f7919692cdb8dc4ad6baed89a3a"
+    },
+    {
+      "file": "cards/mail-dae90737eddc51e8754563d6d1192679445a2770.json",
+      "artifact_sha256": "3bc6c4ba0724e21569142f439c05fb0b88505096bf9213cc04dd447897885991",
+      "source_sha256": "0aa13f1c989aa4a62c2e79d8de6b144e7491dc3617ecf5a851689e09d3862903"
+    },
+    {
+      "file": "cards/mail-e0cbea1e5de926bda32840a1c6f839a601e21016.json",
+      "artifact_sha256": "fa62b4ebf382a4e71abea3f3eb87ffddb7ccff7a8ec9aa955a912e4dd1a7339f",
+      "source_sha256": "fd6175122343c16de444f3b29889a85edb71c904c9ee9a4877fd025a389eeb8f"
+    },
+    {
+      "file": "cards/mail-f8faa121399a4db82b4ccd81e1d533dbd3272c6b.json",
+      "artifact_sha256": "f86e0347157c7b4e756b760cd9ffbd47436e1ce471ab1badf98cffa5cd4aa740",
+      "source_sha256": "0707e480cc7f9774075898f1cd34980f85d57b4be9eda85f80045ddf1e222ef1"
+    }
+  ]
+}

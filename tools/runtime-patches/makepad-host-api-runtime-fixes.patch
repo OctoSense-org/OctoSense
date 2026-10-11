@@ -1,0 +1,573 @@
+diff --git a/platform/script/src/array.rs b/platform/script/src/array.rs
+index 958ba67aa..04429f457 100644
+--- a/platform/script/src/array.rs
++++ b/platform/script/src/array.rs
+@@ -302,35 +302,35 @@ pub fn set_index(&mut self, index: usize, value: ScriptValue) {
+                 if index >= v.len() {
+                     v.resize(index + 1, 0.0);
+                 }
+-                v[index] = value.as_f64().unwrap_or(0.0) as f32;
++                v[index] = value.as_number().unwrap_or(0.0) as f32;
+             }
+             Self::U32(v) => {
+                 if index >= v.len() {
+                     v.resize(index + 1, 0);
+                 }
+-                v[index] = value.as_f64().unwrap_or(0.0) as u32;
++                v[index] = value.as_number().unwrap_or(0.0) as u32;
+             }
+             Self::U16(v) => {
+                 if index >= v.len() {
+                     v.resize(index + 1, 0);
+                 }
+-                v[index] = value.as_f64().unwrap_or(0.0) as u16;
++                v[index] = value.as_number().unwrap_or(0.0) as u16;
+             }
+             Self::U8(v) => {
+                 if index >= v.len() {
+                     v.resize(index + 1, 0);
+                 }
+-                v[index] = value.as_f64().unwrap_or(0.0) as u8;
++                v[index] = value.as_number().unwrap_or(0.0) as u8;
+             }
+         }
+     }
+     pub fn push(&mut self, value: ScriptValue) {
+         match self {
+             Self::ScriptValue(v) => v.push_back(value),
+-            Self::F32(v) => v.push(value.as_f64().unwrap_or(0.0) as f32),
+-            Self::U32(v) => v.push(value.as_f64().unwrap_or(0.0) as u32),
+-            Self::U16(v) => v.push(value.as_f64().unwrap_or(0.0) as u16),
+-            Self::U8(v) => v.push(value.as_f64().unwrap_or(0.0) as u8),
++            Self::F32(v) => v.push(value.as_number().unwrap_or(0.0) as f32),
++            Self::U32(v) => v.push(value.as_number().unwrap_or(0.0) as u32),
++            Self::U16(v) => v.push(value.as_number().unwrap_or(0.0) as u16),
++            Self::U8(v) => v.push(value.as_number().unwrap_or(0.0) as u8),
+         }
+     }
+     pub fn push_vec(&mut self, vec: &[ScriptVecValue]) {
+@@ -342,22 +342,22 @@ pub fn push_vec(&mut self, vec: &[ScriptVecValue]) {
+             }
+             Self::F32(v) => {
+                 for a in vec {
+-                    v.push(a.value.as_f64().unwrap_or(0.0) as f32)
++                    v.push(a.value.as_number().unwrap_or(0.0) as f32)
+                 }
+             }
+             Self::U32(v) => {
+                 for a in vec {
+-                    v.push(a.value.as_f64().unwrap_or(0.0) as u32)
++                    v.push(a.value.as_number().unwrap_or(0.0) as u32)
+                 }
+             }
+             Self::U16(v) => {
+                 for a in vec {
+-                    v.push(a.value.as_f64().unwrap_or(0.0) as u16)
++                    v.push(a.value.as_number().unwrap_or(0.0) as u16)
+                 }
+             }
+             Self::U8(v) => {
+                 for a in vec {
+-                    v.push(a.value.as_f64().unwrap_or(0.0) as u8)
++                    v.push(a.value.as_number().unwrap_or(0.0) as u8)
+                 }
+             }
+         }
+diff --git a/platform/script/src/array_heap.rs b/platform/script/src/array_heap.rs
+index 515278cb3..d75a9d921 100644
+--- a/platform/script/src/array_heap.rs
++++ b/platform/script/src/array_heap.rs
+@@ -326,6 +326,77 @@ mod tests {
+     use super::*;
+     use crate::array::ScriptArrayStorage;
+ 
++    #[test]
++    fn typed_byte_array_accepts_script_integer_assignments_and_pushes() {
++        let mut host = ScriptVmHost::new((), ());
++        let mut vm = ScriptVm {
++            host: &mut host,
++            bx: Box::new(ScriptVmBase::new()),
++        };
++        vm.bx.captured_errors = Some(Vec::new());
++        let result = vm.eval(ScriptMod {
++            file: "typed-bytes.octoscript".to_owned(),
++            code: r#"
++                let bytes = "abcd".to_bytes()
++                bytes[0] = 0
++                bytes[1] = 127
++                bytes[2] = 128
++                bytes[3] = 255
++                bytes.push(127, 128, 255)
++                bytes
++                ;
++            "#
++            .to_owned(),
++            ..Default::default()
++        });
++        let errors = vm.take_errors();
++        assert!(errors.is_empty(), "{errors:?}");
++        let array = result.as_array().expect("script must return its byte array");
++        let ScriptArrayStorage::U8(bytes) = vm.bx.heap.array_storage(array) else {
++            panic!("to_bytes must preserve typed U8 storage");
++        };
++        assert_eq!(bytes, &[0, 127, 128, 255, 127, 128, 255]);
++    }
++
++    #[test]
++    fn typed_array_insertions_accept_every_numeric_representation() {
++        let values = [
++            ScriptValue::from_f64(127.0),
++            ScriptValue::from_f32(128.0),
++            ScriptValue::from_f16(255.0),
++            ScriptValue::from_u40(127),
++            ScriptValue::from_u32(128),
++            ScriptValue::from_i32(255),
++        ];
++        let expected = [127.0, 128.0, 255.0, 127.0, 128.0, 255.0];
++        let arguments: Vec<_> = values
++            .iter()
++            .map(|&value| ScriptVecValue { key: NIL, value })
++            .collect();
++        for mut storage in [
++            ScriptArrayStorage::U8(Vec::new()),
++            ScriptArrayStorage::U16(Vec::new()),
++            ScriptArrayStorage::U32(Vec::new()),
++            ScriptArrayStorage::F32(Vec::new()),
++        ] {
++            for (index, value) in values.iter().copied().enumerate() {
++                storage.set_index(index, value);
++            }
++            for value in values {
++                storage.push(value);
++            }
++            storage.push_vec(&arguments);
++            assert_eq!(storage.len(), values.len() * 3);
++            for index in 0..storage.len() {
++                assert_eq!(
++                    storage.index(index).and_then(|value| value.as_number()),
++                    Some(expected[index % expected.len()]),
++                    "typed storage lost numeric value at index {index}"
++                );
++            }
++        }
++    }
++
+     #[test]
+     fn reused_array_slot_resets_to_script_value_storage() {
+         let mut heap = ScriptHeap::default();
+diff --git a/platform/script/src/opcodes_ops.rs b/platform/script/src/opcodes_ops.rs
+index e7b529730..9df896a36 100644
+--- a/platform/script/src/opcodes_ops.rs
++++ b/platform/script/src/opcodes_ops.rs
+@@ -121,11 +121,8 @@ fn handle_structural_equality(&mut self, negate: bool) {
+             .bx
+             .heap
+             .deep_eq_bounded(a, b, crate::equality::MAX_EQUALITY_WORK, || {
+-                if let Some(remaining) = thread.instruction_limit_remaining.as_mut() {
+-                    if *remaining == 0 {
+-                        return false;
+-                    }
+-                    *remaining -= 1;
++                if !thread.consume_instruction() {
++                    return false;
+                 }
+                 let Some(deadline) = deadline else {
+                     return true;
+diff --git a/platform/script/src/thread.rs b/platform/script/src/thread.rs
+index cf0804a97..908287413 100644
+--- a/platform/script/src/thread.rs
++++ b/platform/script/src/thread.rs
+@@ -126,6 +126,8 @@ pub struct ScriptThread {
+     /// Base of the CURRENT slot frame (see CallFrame::prev_slot_base).
+     pub(crate) slot_base: usize,
+     pub(crate) instruction_limit_remaining: Option<usize>,
++    /// Reentrant calls share fuel even if a child yields and resumes later.
++    pub(crate) reentrant_instruction_remaining: Option<std::rc::Rc<std::cell::Cell<usize>>>,
+     /// The innermost scope when the root frame returned, kept alive so
+     /// the body can hand it to host->script calls.
+     pub(crate) root_end_scope: Option<ScriptObjectRef>,
+@@ -158,6 +160,7 @@ pub fn new(thread_id: ScriptThreadId) -> Self {
+             slots: Vec::with_capacity(256),
+             slot_base: 0,
+             instruction_limit_remaining: None,
++            reentrant_instruction_remaining: None,
+             trap: ScriptTrapInner::default(),
+             json_parser: Default::default(),
+         }
+@@ -330,6 +333,21 @@ pub(crate) fn take_stack_limit_exceeded(&mut self) -> bool {
+         std::mem::take(&mut self.stack_limit_exceeded)
+     }
+ 
++    pub(crate) fn consume_instruction(&mut self) -> bool {
++        if self.instruction_limit_remaining == Some(0)
++            || self.reentrant_instruction_remaining.as_ref().is_some_and(|fuel| fuel.get() == 0)
++        {
++            return false;
++        }
++        if let Some(remaining) = self.instruction_limit_remaining.as_mut() {
++            *remaining -= 1;
++        }
++        if let Some(remaining) = self.reentrant_instruction_remaining.as_ref() {
++            remaining.set(remaining.get() - 1);
++        }
++        true
++    }
++
+     pub(crate) fn take_call_frame_limit_exceeded(&mut self) -> bool {
+         std::mem::take(&mut self.call_frame_limit_exceeded)
+     }
+@@ -482,6 +500,10 @@ pub fn current(&self) -> usize {
+ 
+     /// Find the first unpaused thread (creating one if needed) and set it as current
+     pub fn set_current_to_first_unpaused_thread(&mut self) {
++        self.set_current_to_first_unpaused_thread_with_limit(usize::MAX);
++    }
++
++    pub(crate) fn set_current_to_first_unpaused_thread_with_limit(&mut self, limit: usize) -> bool {
+         for (id, thread) in self.threads.iter().enumerate() {
+             if !thread.is_paused {
+                 self.current = id;
+@@ -490,12 +512,16 @@ pub fn set_current_to_first_unpaused_thread(&mut self) {
+                 // set_current_thread_id and retain their original authority.
+                 if self.cur_ref().calls.is_empty() {
+                     self.cur().host_prompts_allowed = self.host_prompt_scope;
++                    self.cur().reentrant_instruction_remaining = None;
+                 } else {
+                     self.cur().host_prompts_allowed &= self.host_prompt_scope;
+                 }
+-                return;
++                return true;
+             }
+         }
++        if self.threads.len() >= limit {
++            return false;
++        }
+         // No unpaused thread found, create a new one
+         let id = self.threads.len();
+         self.threads
+@@ -503,6 +529,7 @@ pub fn set_current_to_first_unpaused_thread(&mut self) {
+         self.current = id;
+         self.update_ptr();
+         self.cur().host_prompts_allowed &= self.host_prompt_scope;
++        true
+     }
+ 
+     /// Set the current thread by ScriptThreadId
+diff --git a/platform/script/src/vm.rs b/platform/script/src/vm.rs
+index e9916d8a8..14a217f51 100644
+--- a/platform/script/src/vm.rs
++++ b/platform/script/src/vm.rs
+@@ -656,6 +656,85 @@ fn script_me_from_value(&mut self, me: ScriptValue) -> Option<ScriptMe> {
+     }
+ 
+     fn call_with_scope(&mut self, scope: ScriptObject, me: ScriptValue) -> ScriptValue {
++        if !self.bx.threads.cur_ref().is_paused() {
++            return self.call_with_scope_on_current_thread(scope, me);
++        }
++
++        // A native binding may synchronously call script, which can itself
++        // yield (for example to ui.label.set_text). Its continuation must not
++        // share the suspended native caller's instruction pointer or stacks:
++        // run_core consumes Pause before returning to that native binding.
++        let caller = self.bx.threads.current();
++        let parent = self.bx.threads.cur_ref();
++        let prompts_allowed = parent.host_prompts_allowed;
++        let remaining = parent.instruction_limit_remaining;
++        let stack_limit = parent.stack_limit.saturating_sub(parent.stack.len());
++        let frame_limit = parent.call_frame_limit.map(|limit| limit.saturating_sub(parent.calls.len()));
++        let shared_remaining = parent.reentrant_instruction_remaining.clone()
++            .or_else(|| remaining.map(|remaining| Rc::new(std::cell::Cell::new(remaining))));
++        self.bx.threads.cur().reentrant_instruction_remaining = shared_remaining.clone();
++        let previous_exit_remaining = self.bx.last_limit_exit_remaining;
++        // Script callbacks can yield in a loop; bound the parked thread
++        // stacks as well as bytecode work. Existing idle threads are reused.
++        if !self.bx.threads.set_current_to_first_unpaused_thread_with_limit(128) {
++            let error = script_err_limit!(self.bx.threads.cur_ref().trap, "script reentrant thread limit exceeded");
++            self.drain_errors();
++            self.bx.threads.cur().trap.set_on(Some(ScriptTrapOn::Bail(error)));
++            return error;
++        }
++        let thread = self.bx.threads.cur();
++        let previous_remaining = thread.instruction_limit_remaining;
++        let previous_shared_remaining = thread.reentrant_instruction_remaining.clone();
++        thread.reentrant_instruction_remaining = shared_remaining;
++        let previous_stack_limit = thread.stack_limit;
++        let previous_frame_limit = thread.call_frame_limit;
++        thread.host_prompts_allowed &= prompts_allowed;
++        thread.instruction_limit_remaining = match (remaining, previous_remaining) {
++            (Some(parent), Some(child)) => Some(parent.min(child)),
++            (parent, child) => parent.or(child),
++        };
++        thread.stack_limit = thread.stack_limit.min(stack_limit);
++        thread.call_frame_limit = match (frame_limit, previous_frame_limit) {
++            (Some(parent), Some(child)) => Some(parent.min(child)),
++            (parent, child) => parent.or(child),
++        };
++        let starting_remaining = thread.instruction_limit_remaining;
++        if let Some(remaining) = starting_remaining {
++            self.bx.last_limit_exit_remaining = remaining;
++        }
++        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
++            self.call_with_scope_on_current_thread(scope, me)
++        }));
++        let ending_remaining = self.bx.threads.cur_ref().instruction_limit_remaining
++            .unwrap_or(self.bx.last_limit_exit_remaining);
++        let consumed = starting_remaining.map(|start| start.saturating_sub(ending_remaining));
++        if !self.bx.threads.cur_ref().is_paused() {
++            let thread = self.bx.threads.cur();
++            thread.instruction_limit_remaining = previous_remaining;
++            thread.reentrant_instruction_remaining = previous_shared_remaining;
++            thread.stack_limit = previous_stack_limit;
++            thread.call_frame_limit = previous_frame_limit;
++        }
++        // A yielded child retains its narrowed limits and authority. The
++        // caller keeps its own continuation, charged for work already done.
++        self.bx.threads.set_current(caller);
++        if let (Some(remaining), Some(consumed)) = (
++            self.bx.threads.cur().instruction_limit_remaining.as_mut(), consumed,
++        ) {
++            *remaining = remaining.saturating_sub(consumed);
++        }
++        self.bx.last_limit_exit_remaining = previous_exit_remaining;
++        match result {
++            Ok(value) => value,
++            Err(payload) => std::panic::resume_unwind(payload),
++        }
++    }
++
++    fn call_with_scope_on_current_thread(
++        &mut self,
++        scope: ScriptObject,
++        me: ScriptValue,
++    ) -> ScriptValue {
+         if let Some(fnptr) = self.bx.heap.parent_as_fn(scope) {
+             match fnptr {
+                 ScriptFnPtr::Native(ni) => {
+@@ -1059,6 +1138,7 @@ fn handle_trap_on(&mut self) -> Option<ScriptValue> {
+         Some(match self.bx.threads.cur().trap.take_on().unwrap() {
+             ScriptTrapOn::Pause | ScriptTrapOn::TimeBudgetYield => NIL,
+             ScriptTrapOn::Return(value) => {
++                self.bx.threads.cur().reentrant_instruction_remaining = None;
+                 // Preserve the remaining allowance for consumption accounting
+                 // (with_instruction_limit reads it after the None wipe).
+                 if let Some(rem) = self.bx.threads.cur().instruction_limit_remaining.take() {
+@@ -1067,6 +1147,7 @@ fn handle_trap_on(&mut self) -> Option<ScriptValue> {
+                 value
+             }
+             ScriptTrapOn::Bail(value) => {
++                self.bx.threads.cur().reentrant_instruction_remaining = None;
+                 // Stack corruption or hard failure: unwind calls to find our root frame
+                 // and truncate all stacks back to clean state.
+                 loop {
+@@ -1116,18 +1197,7 @@ pub fn run_core(&mut self) -> ScriptValue {
+                     return value;
+                 }
+             }
+-            let instruction_limit_exceeded = if let Some(remaining) =
+-                self.bx.threads.cur().instruction_limit_remaining.as_mut()
+-            {
+-                if *remaining == 0 {
+-                    true
+-                } else {
+-                    *remaining -= 1;
+-                    false
+-                }
+-            } else {
+-                false
+-            };
++            let instruction_limit_exceeded = !self.bx.threads.cur().consume_instruction();
+             if instruction_limit_exceeded {
+                 let err = script_err_limit!(
+                     self.bx.threads.cur_ref().trap,
+diff --git a/platform/script/tests/fn_ref_callback.rs b/platform/script/tests/fn_ref_callback.rs
+index 4e380243d..18f2a529a 100644
+--- a/platform/script/tests/fn_ref_callback.rs
++++ b/platform/script/tests/fn_ref_callback.rs
+@@ -155,3 +155,104 @@ fn svc_result(r){
+     vm.string_with(text, |_vm, s| out = s.to_string());
+     assert_eq!(out, "DENIED", "callback chain did not update the module var");
+ }
++
++
++#[test]
++fn yielded_reentrant_callback_shares_fuel_and_preserves_prompt_authority() {
++    use std::cell::Cell;
++    use std::rc::Rc;
++    let mut vm = test_vm();
++    let pending = Rc::new(RefCell::new(None));
++    let yielded = Rc::new(Cell::new(false));
++    let module = vm.new_module(id!(hostx));
++    vm.add_method(module, id_lut!(request), script_args_def!(callback = NIL), |vm, args| {
++        let callback = script_value!(vm, args.callback);
++        let caller = vm.bx.threads.current();
++        vm.call(callback, &[]);
++        assert_eq!(vm.bx.threads.current(), caller);
++        2.into()
++    });
++    let thread_out = pending.clone();
++    vm.add_method(module, id_lut!(park), script_args_def!(), move |vm, _args| {
++        assert!(!vm.thread().host_prompts_allowed, "a callback cannot acquire prompt authority");
++        if !yielded.replace(true) {
++            *thread_out.borrow_mut() = Some(vm.thread().thread_id());
++            vm.thread_mut().pause();
++        }
++        NIL
++    });
++    vm.thread_mut().host_prompts_allowed = false;
++    vm.bx.captured_errors = Some(Vec::new());
++    let result = vm.with_instruction_limit(1_000, |vm| vm.eval(ScriptMod {
++        file: "reentrant_callback_parent".into(),
++        code: "let state = {value:0}\nlet result = 40 + mod.hostx.request(fn() {\nmod.hostx.park()\nfor i in 0..10000 { state.value = state.value + 1 }\n})\nfor i in 0..40 { state.value = state.value + 1 }\nresult".into(),
++        ..Default::default()
++    }));
++    let parent_consumed = vm.last_limit_consumed();
++    let errors = vm.take_errors();
++    assert!(errors.is_empty(), "parent errored: {errors:?}");
++    assert_eq!(result.as_number(), Some(42.0));
++    assert!(!vm.thread().is_paused());
++    assert!(parent_consumed > 200 && parent_consumed < 1_000);
++    let child = pending.borrow().expect("callback yielded");
++    assert_ne!(child.to_index(), vm.bx.threads.current());
++    vm.thread_mut().host_prompts_allowed = true;
++    vm.set_thread(child.to_index());
++    vm.bx.captured_errors = Some(Vec::new());
++    let result = vm.with_instruction_limit(1_000, |vm| vm.resume());
++    let child_consumed = vm.last_limit_consumed();
++    assert!(result.is_err());
++    assert!(vm.take_errors().iter().any(|error| error.contains("instruction limit exceeded")));
++    assert!(parent_consumed + child_consumed <= 1_000,
++        "fuel was duplicated: parent={parent_consumed}, child={child_consumed}");
++    assert!(!vm.thread().host_prompts_allowed);
++    let recovered = vm.eval(ScriptMod { file:"callback_recovered".into(), code:"7".into(), ..Default::default() });
++    assert_eq!(recovered.as_number(), Some(7.0), "completed thread retained exhausted family fuel");
++}
++
++#[test]
++fn parked_reentrant_callbacks_are_bounded_and_completed_threads_are_reused() {
++    use std::collections::HashSet;
++    let mut vm = test_vm();
++    let module = vm.new_module(id!(hostx));
++    vm.add_method(module, id_lut!(request), script_args_def!(callback = NIL), |vm, args| {
++        let callback = script_value!(vm, args.callback);
++        vm.call(callback, &[]);
++        NIL
++    });
++    let parked = RefCell::new(HashSet::new());
++    vm.add_method(module, id_lut!(park), script_args_def!(), move |vm, _args| {
++        if parked.borrow_mut().insert(vm.thread().thread_id().to_index()) {
++            vm.thread_mut().pause();
++        }
++        NIL
++    });
++    let effect = std::rc::Rc::new(std::cell::Cell::new(false));
++    let effect_out = effect.clone();
++    vm.add_method(module, id_lut!(effect), script_args_def!(), move |_vm, _args| {
++        effect_out.set(true);
++        NIL
++    });
++    vm.bx.captured_errors = Some(Vec::new());
++    let result = vm.with_instruction_limit(100_000, |vm| vm.eval(ScriptMod {
++        file: "bounded_parked_callbacks".into(),
++        code: "let callback = fn() { mod.hostx.park(); 11 }\ntry { for i in 0..300 { mod.hostx.request(callback) } } catch 99\nmod.hostx.effect()".into(),
++        ..Default::default()
++    }));
++    assert!(result.is_err(), "a callback loop must hit the thread bound");
++    assert!(vm.take_errors().iter().any(|error| error.contains("reentrant thread limit exceeded")));
++    assert!(!effect.get(), "script continued after the resource-limit bail");
++    let allocated = vm.bx.threads.len();
++    assert!(allocated <= 128);
++    assert_eq!(vm.bx.threads.current(), 0);
++    vm.set_thread(1);
++    assert_eq!(vm.resume().as_number(), Some(11.0));
++    vm.set_thread(0);
++    let result = vm.with_instruction_limit(1_000, |vm| vm.eval(ScriptMod {
++        file: "reused_callback_thread".into(),
++        code: "mod.hostx.request(fn() { 9 })\n7".into(),
++        ..Default::default()
++    }));
++    assert_eq!(result.as_number(), Some(7.0));
++    assert_eq!(vm.bx.threads.len(), allocated, "completed callback thread was not reused");
++}
+diff --git a/widgets/src/splash_host.rs b/widgets/src/splash_host.rs
+index b086c99b4..a5ddb50df 100644
+--- a/widgets/src/splash_host.rs
++++ b/widgets/src/splash_host.rs
+@@ -517,6 +517,78 @@ fn delayed_background_callbacks_keep_nested_requests_nonprompting() {
+         gc_bridge(&[heap]);
+     }
+ 
++    /// A refusal deep in a chain of callbacks still updates a widget and
++    /// completes the nested request. Since makepad#118 (OctoSense #450) the
++    /// runtime no longer refuses a family the app did not declare, so the
++    /// host refuses here, as the device service does for an app without
++    /// `location`.
++    #[test]
++    fn a_refused_request_can_update_a_widget_and_complete_a_nested_callback() {
++        use crate::*;
++        let mut cx = Cx::new(Box::new(|_, _| {}));
++        let root = cx.with_vm(|vm| {
++            crate::script_mod(vm);
++            let value = script_eval!(vm, { use mod.widgets.* View { card := Splash{} } });
++            WidgetRef::script_from_value(vm, value)
++        });
++        let card = root.splash(&mut cx, ids!(card));
++        card.set_host_caps(&mut cx, vec!["fixture".into()]);
++        card.set_policy(&mut cx, Some(vec![]), Some(100_000));
++        card.set_host_prompts(&mut cx, false);
++        card.set_text(&mut cx, r#"
++            fn inspect(call_id, report) {
++                host.request("fixture.status", {}, fn(status) {
++                    host.request("fixture.import", {}, fn(imported) {
++                        host.request("fixture.export", {}, fn(exported) {
++                            host.request("location.sample", {}, fn(sample) {
++                                report.os_batch.status = status.data
++                                report.os_batch.imported = imported.is_ok
++                                report.os_batch.import_error = imported.error
++                                report.os_batch.exported = exported.is_ok
++                                report.os_batch.export_error = exported.error
++                                report.os_batch.location = sample.is_ok
++                                report.os_batch.location_error = sample.error
++                                ui.status.set_text("completed")
++                                host.request("fixture.complete", {call_id:call_id report:report}, nil)
++                            })
++                        })
++                    })
++                })
++            }
++            fn run() { inspect("test-call", {os_batch:{}}) }
++            View { status := Label {text:"pending"} }
++        "#);
++        let heap = card.isolate_heap_key(&mut cx).unwrap();
++        assert!(card.call_script_fn(&mut cx, id!(run), &[]));
++        for service in ["fixture.status", "fixture.import", "fixture.export", "location.sample"] {
++            let requests = take_splash_host_requests_for(&[heap]);
++            assert_eq!(requests.len(), 1, "missing {service}");
++            assert_eq!(requests[0].service, service);
++            let answer = if service == "location.sample" {
++                Err("permission_denied: this app was not granted location")
++            } else {
++                Ok("{}")
++            };
++            splash_host_respond(&mut cx, heap, requests[0].req_id, answer);
++        }
++        crate::makepad_platform::makepad_script_std::pump(&mut cx);
++        let vm_id = crate::widget_async::vm_for_heap(&mut cx, heap).unwrap();
++        cx.with_script_vm_id(vm_id, |vm| {
++            assert_eq!(
++                vm.bx.uncaught_error_count, 0,
++                "callback or resumed widget call errored"
++            );
++        });
++        let requests = take_splash_host_requests_for(&[heap]);
++        assert_eq!(requests.len(), 1, "the refusal callback did not complete");
++        assert_eq!(requests[0].service, "fixture.complete");
++        assert!(!requests[0].may_prompt);
++        let result: serde_json::Value = serde_json::from_str(&requests[0].args_json).unwrap();
++        assert_eq!(result["call_id"], "test-call");
++        assert_eq!(result["report"]["os_batch"]["location"], false);
++        gc_bridge(&[heap]);
++    }
++
+     #[test]
+     fn oversized_or_cyclic_host_arguments_never_enter_the_request_queue() {
+         let mut host = ScriptVmHost::new((), ());

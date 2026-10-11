@@ -1,0 +1,49 @@
+diff --git a/tools/cargo_makepad/src/android/java/dev/makepad/android/MakepadActivity.java b/tools/cargo_makepad/src/android/java/dev/makepad/android/MakepadActivity.java
+index 69314ccdf..d5a6b442e 100644
+--- a/tools/cargo_makepad/src/android/java/dev/makepad/android/MakepadActivity.java
++++ b/tools/cargo_makepad/src/android/java/dev/makepad/android/MakepadActivity.java
+@@ -1363,19 +1363,12 @@ public class MakepadActivity
+     private long mQrLastFrameMs = 0;
+     private static final int QR_CAMERA_PERM_REQ = 0x51A2;
+ 
+-    // GPS location (AppCard, automatic) — a LocationListener feeds each fix to Rust via
++    // Legacy GPS cache (AppCard, existing grants only) — a LocationListener feeds each fix to Rust via
+     // MakepadNative.onLocation; the Splash sys.gps(...) helper reads it.
+     private LocationManager mGpsLocationManager;
+     private LocationListener mGpsLocationListener;
+     private static final int LOCATION_PERM_REQ = 0x10CA;
+-    // Guard so the location runtime permission is requested AT MOST ONCE per
+-    // process. startGpsLocationUpdates() runs on every onResume(); without this,
+-    // a user who has DENIED location makes every resume call requestPermissions()
+-    // again, and each call bounces activity focus (pause→resume→focus-change).
+-    // That storm pins the window's HWUI layer redrawing continuously (~30fps on
+-    // a static screen) — the composer/whole-screen flicker. Requesting once, then
+-    // leaving the user's decision alone, lets the window go idle.
+-    private boolean mLocationPermissionRequested = false;
++
+ 
+     static {
+         System.loadLibrary("makepad");
+@@ -2181,18 +2174,10 @@ public class MakepadActivity
+         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M
+             && checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED
+             && checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+-            // Request only once per process. Re-requesting on every onResume()
+-            // when the user has declined creates a pause/resume/focus storm that
+-            // pins the window redrawing (the flicker). If granted later,
+-            // onRequestPermissionsResult re-invokes this and the checks above pass.
+-            if (!mLocationPermissionRequested) {
+-                mLocationPermissionRequested = true;
+-                requestPermissions(new String[]{
+-                    Manifest.permission.ACCESS_FINE_LOCATION,
+-                    Manifest.permission.ACCESS_COARSE_LOCATION
+-                }, LOCATION_PERM_REQ);
+-            }
+-            return; // re-invoked from onRequestPermissionsResult once granted
++            // Startup/resume is not a request to share location. The explicit
++            // Cx::start_location_updates flow owns permission consent; this
++            // legacy cached GPS feed may only use an existing grant.
++            return;
+         }
+         if (mGpsLocationManager == null) {
+             mGpsLocationManager = (LocationManager) getSystemService(Context.LOCATION_SERVICE);

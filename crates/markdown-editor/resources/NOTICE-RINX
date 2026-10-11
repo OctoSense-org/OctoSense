@@ -1,0 +1,24 @@
+Rinx
+Copyright 2026 Rinx Contributors
+https://github.com/upstreamlabs/Rinx
+
+Rinx is an independent derivative of Robrix and Robrix2, extracted from
+OctoSense-org/robrix2's wechat-ui branch at commit
+16913e0c6f0397b4ed1272b7dcd421935521d5f3.
+
+With gratitude to Kevin Boos, Project Robius, the Robrix2 contributors,
+and all upstream contributors for their work on native Rust Matrix clients.
+
+Robrix: https://github.com/project-robius/robrix
+Robrix2: https://github.com/Project-Robius-China/robrix2
+Copyright (c) 2023-2026 Project Robius Developers
+The inherited MIT copyright and permission notice is preserved in LICENSE-MIT.
+
+Rinx is distributed under the Apache License, Version 2.0 (LICENSE).
+Dependencies, copied components, fonts, artwork, and other third-party assets
+retain their respective licenses and attribution requirements. See licenses/
+and crates/article-makepad/MAKEPAD-LICENSE.txt for retained notices.
+
+Rinx modifications include the WeChat-style UI, English/Chinese localization,
+Matrix Moments, scoped mini-app and article-editor integration, native
+makepad-html/Blitz previews, and the independent Rinx application identity.

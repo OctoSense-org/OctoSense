@@ -1861,19 +1861,27 @@ mod tests {
         assert_eq!(centered_card_top(smaller, 280.0, 8.0, Some(300.0)), 138.0);
     }
 
-    /// Settings → Developer options: the Turn on row stays listed while the
-    /// person types the confirmation phrase, and carries what was typed to
-    /// the shell (which checks it; lib.rs `developer_options_activate`).
+    #[test]
+    fn developer_options_visibility_follows_the_build_gate() {
+        let mut model = MenuModel::default();
+        model.open_at("setup", MenuSkin::Menu);
+        assert_eq!(
+            model.rows.iter().any(|r| r.target == "setup.developer"),
+            crate::dev_mode::settings_available(),
+        );
+    }
+
+    /// The Turn on row stays listed while the person types the confirmation
+    /// phrase, and carries it to the shell. Construct this menu's rows directly
+    /// so a release test never needs to enable developer mode to test text entry.
     #[test]
     fn developer_options_carry_the_typed_phrase() {
-        assert!(crate::dev_mode::settings_available(), "a test build is a development build");
-        let mut model = MenuModel::default();
-        model.open_at("", MenuSkin::Menu);
-        model.sel = model.rows.iter().position(|r| r.target == "setup").expect("Setup is listed");
-        assert_eq!(model.activate(), None);
-        model.sel = model.rows.iter().position(|r| r.target == "setup.developer").expect("Developer options");
-        assert_eq!(model.activate(), None);
-        assert_eq!(model.path, "setup.developer");
+        let mut model = MenuModel {
+            path: "setup.developer".into(),
+            items: developer_items(&[], ""),
+            ..MenuModel::default()
+        };
+        model.rebuild();
         // Chosen without the phrase: the row passes an empty confirmation.
         model.sel = model.rows.iter().position(|r| r.target == DEVELOPER_ON).expect("Turn on");
         assert_eq!(model.activate().as_deref(), Some("setup.developer.on:"));
@@ -2031,16 +2039,18 @@ mod tests {
         m.open_at("", MenuSkin::Menu);
         // The standalone shell offers no Desktop style row.
         let styles = if crate::MOBILE_ONLY { 0 } else { 1 };
-        // A development build lists Setup (Developer options) after Style.
-        let setup = usize::from(crate::dev_mode::settings_available());
-        assert_eq!(m.rows.len(), 5 + setup + styles);
+        // Assistant settings keep Setup present in every build. Development
+        // builds place it after Style; release builds append it with Assistant.
+        let developer_setup = usize::from(crate::dev_mode::settings_available());
+        assert_eq!(m.rows.len(), 6 + styles);
+        assert!(m.rows.iter().any(|r| r.target == "setup"));
         assert_eq!(m.rows.iter().any(|r| r.target == "desktop"), styles == 1);
         assert_eq!(m.rows[0].label, "Apps");
         assert_eq!(m.rows[1].label, "At a glance", "the glance panel, right after Apps");
-        if setup == 1 {
+        if developer_setup == 1 {
             assert_eq!(m.rows[4].label, "Setup");
         }
-        assert_eq!(m.rows[4 + setup].label, "System");
+        assert_eq!(m.rows[4 + developer_setup].label, "System");
         assert!(m.rows.iter().all(|r| !r.disabled));
         // Submenu rows carry the chevron.
         assert!(m.rows[0].has_children);

@@ -1,0 +1,686 @@
+{
+  "engine": "photocraft",
+  "method": "Mapped all 817 catalog ids to their CommandSpec in crates/engine/src (commands.rs and the ~80 spec lists it extends; the adjustment, Filter Gallery and stack-mode ids are generated from tables), read every run fn with its test module stripped, and followed the helpers into file_cmds (read_file, write_file, list_images, process_files), smart_cmds::source_bytes, color_cmds::resolve_profile, plugin_cmds, prefs::apply_prefs, automate_cmds (scripts, droplets, script events), print_cmds (lp), Session::after_command and the io, format and text crates. Cross-checked with rg over the engine and its dependency crates for std::fs, photocraft_format::read_file/atomic_write, std::process, std::net, env and config dirs, clipboard crates, nested execute/presets::call and edit_prefs/presets_changed: there is no network code and no OS clipboard (Cut/Copy/Paste use Session::clipboard), every nested execute uses a fixed id except batch, droplets, file.scripts.browse, script events, actions.play and filter.lastFilter, and only actions.play and image.applyDataSet consult Session::authorize. Classes follow the engine's reach, not crates/automation/src/workspace.rs (cited where it refuses an id); preset-library edits are safe as in the sibling engines (only their path import/export is file), and nothing was built or run. Known limit: some paths come from the document rather than params (a linked smart object's absolute path is read on every re-render, by file.package and by the PSD exporter on any save to .psd; video sources, data-set pixel paths and Image Assets layer names likewise), so a door that checks params cannot contain them.",
+  "rules": [
+    {
+      "prefix": "file.",
+      "class": "file",
+      "why": "File-menu commands on caller paths: file.openAs, placeEmbedded and placeLinked read `path` with file_cmds::read_file (photocraft_format::read_file), file.revert re-reads the document's saved DocState.path, and file.saveACopy encodes and writes `path` with write_file (photocraft_format::atomic_write, which also creates missing parent folders). placeLinked leaves a linked smart object whose path later re-renders read again. The workspace policy refuses every file.* id outside its short safe list.",
+      "evidence": [
+        "crates/engine/src/file_cmds.rs:80-97 read_file/write_file wrap photocraft_format::read_file and atomic_write",
+        "crates/engine/src/file_cmds.rs:293-405 revert, save_a_copy, open_as, place (place_bytes makes SmartSource::Linked for placeLinked)",
+        "crates/format/src/atomic.rs:109 create_dir_all of the target's folder",
+        "crates/automation/src/workspace.rs:152-170 authorize_engine_command: file.* outside safe_file_command is refused"
+      ]
+    },
+    {
+      "prefix": "file.export.",
+      "class": "file",
+      "why": "Exporters write files at caller paths or folders: layersToFiles, layerCompsToFiles and artboardsToFiles save one file per item (save_doc), artboardsToPdf, colorLookupTables and pathsToIllustrator write `path` (the last two return text when it is omitted), saveForWebLegacy writes `path` or one image per slice plus an HTML page under `dir`, quickExport writes `path` or beside the saved document, and dataSetsAsFiles and renderVideo create_dir_all `dir` and write one file per data set or frame. renderVideo's catalog params say `{}` but it takes `dir`.",
+      "evidence": [
+        "crates/engine/src/file_cmds.rs:888-971 layers_to_files, color_lookup_tables",
+        "crates/engine/src/comps_cmds.rs:364 save_doc per comp; crates/engine/src/artboard_cmds.rs:354 save_doc per board, :432 write_file PDF",
+        "crates/engine/src/print_cmds.rs:524-539 paths_to_illustrator",
+        "crates/engine/src/web_cmds.rs:709-832 save_for_web, :858-928 quick_export (both fire the `export` script event)",
+        "crates/engine/src/variables_cmds.rs:340-368 export_as_files; crates/engine/src/video_cmds.rs:296-348 render_video"
+      ]
+    },
+    {
+      "prefix": "file.import.",
+      "class": "file",
+      "why": "Read caller paths into the open document: notes from another PSD/.pcraft (std::fs::read), variable data sets from a CSV (std::fs::read_to_string), and videoFramesToLayers reads a file or every image in a folder (read_dir, std::fs::read) even though its catalog params say `{}`.",
+      "evidence": [
+        "crates/engine/src/notes_cmds.rs:148-170 read/import",
+        "crates/engine/src/variables_cmds.rs:267-303 import_data_sets",
+        "crates/engine/src/video_cmds.rs:160-190 load_frames, :270-292 frames_to_layers"
+      ]
+    },
+    {
+      "prefix": "file.automate.",
+      "class": "file",
+      "why": "Automate commands read many caller files: photomerge and mergeToHdrPro load `paths` or a folder (list_images + read_file), contactSheetII reads every input into new documents, and lensCorrection runs the fixed filter.lensCorrection over `input` files and writes the results to `output` (process_files).",
+      "evidence": [
+        "crates/engine/src/photo_cmds.rs:67-100 load_sources",
+        "crates/engine/src/automate_cmds.rs:410-514 contact_sheet",
+        "crates/engine/src/lens_cmds.rs:365-385 lens_batch",
+        "crates/engine/src/file_cmds.rs:662-700 batch_inputs, process_files"
+      ]
+    },
+    {
+      "prefix": "file.scripts.",
+      "class": "file",
+      "why": "imageProcessor and loadFilesIntoStack read `input`/`paths` (files, or a folder through list_images) with read_file; imageProcessor writes converted copies to `output`; statistics loads its inputs through the fixed file.scripts.loadFilesIntoStack.",
+      "evidence": [
+        "crates/engine/src/file_cmds.rs:742-801 image_processor, load_files_into_stack",
+        "crates/engine/src/automate_cmds.rs:366-397 statistics"
+      ]
+    },
+    {
+      "ids": ["file.new", "file.close", "file.closeAll", "file.closeOthers", "file.newFromClipboard", "file.fileInfo", "file.automate.fitImage", "file.automate.cropAndStraightenPhotos", "file.scripts.flattenAllLayerEffects", "file.scripts.flattenAllMasks", "file.scripts.deleteAllEmptyLayers"],
+      "class": "safe",
+      "why": "Naming trap: no path despite the file. prefix. They create or close session documents, turn Session::clipboard (the engine's own clipboard, not the OS one) into a document, edit the in-memory XMP File Info, resize through the fixed image.imageSize, split a scan into new documents, or flatten and delete layers. file.new and file.close* do fire Script Events bindings, which exist only if a code-class command (file.scripts.scriptEventsManager, prefs.set) installed them.",
+      "evidence": [
+        "crates/engine/src/commands.rs:247-301 file.new, file.close",
+        "crates/engine/src/file_cmds.rs:268-289 close_all/close_others, :572-602 file_info, fit_image, :830-884 flatten_all_effects/masks",
+        "crates/engine/src/edit_cmds.rs:166 new_from_clipboard (Session::clipboard)",
+        "crates/engine/src/photo_cmds.rs:733 crop_and_straighten; crates/engine/src/extra_cmds.rs:714 deleteAllEmptyLayers",
+        "crates/engine/src/automate_cmds.rs:260-268 after_command fires newDocument/closeDocument"
+      ]
+    },
+    {
+      "ids": ["file.automate.batch", "file.automate.runDroplet"],
+      "class": "code",
+      "why": "Run caller-chosen command lists over files. batch takes `steps` ([id, params] with any id) and, for each input file, opens it in a scratch Session::new(), which has no authorize hook, runs every step with scratch.execute and saves to `output`; runDroplet reads a droplet JSON from disk and hands its steps to file.automate.batch. A deny-list on the outer id never sees the steps.",
+      "evidence": [
+        "crates/engine/src/file_cmds.rs:643-659 parse_steps, :672-700 process_files (683 Session::new), :723-740 batch",
+        "crates/engine/src/automate_cmds.rs:331-362 run_droplet (read_file, then s.execute(\"file.automate.batch\"))"
+      ]
+    },
+    {
+      "ids": ["file.scripts.browse"],
+      "class": "code",
+      "why": "Runs a script: steps from a script file (`path`, read_file), from `script` text (one `command.id {json}` per line) or from `steps`, each through s.execute in the caller's session. Unlike actions.play it never calls Session::authorize, so nested file, plug-in or prefs steps run unchecked.",
+      "evidence": [
+        "crates/engine/src/automate_cmds.rs:46-97 parse_script/parse_steps, :106-133 run_steps, browse"
+      ]
+    },
+    {
+      "ids": ["file.scripts.scriptEventsManager"],
+      "class": "code",
+      "why": "Installs auto-run scripts: it binds a script file or inline steps to events (newDocument, closeDocument, print, export, everything) in prefs.scriptEvents through edit_prefs. fire_event then runs them with run_steps (s.execute, no authorize) after file.new, file.close*, file.print and the exporters, so later safe-looking commands execute them.",
+      "evidence": [
+        "crates/engine/src/automate_cmds.rs:171-222 script_events, :225-268 fire_event and after_command",
+        "crates/engine/src/web_cmds.rs:742 fire_event(\"export\"); crates/engine/src/print_cmds.rs:365 fire_event(\"print\")"
+      ]
+    },
+    {
+      "ids": ["file.automate.createDroplet"],
+      "class": "code",
+      "why": "Writes an executable: the droplet JSON holding the caller's steps at `path`, and by default on Unix a `<name>.command` shell script, chmod 0755, that execs `photocraft-cli droplet` on whatever is dropped on it.",
+      "evidence": [
+        "crates/engine/src/automate_cmds.rs:283-305 create_droplet, :309-324 write_shim (set_permissions 0o755)"
+      ]
+    },
+    {
+      "ids": ["file.print", "file.printOneCopy"],
+      "class": "device",
+      "why": "The printer: do_print renders a PDF, writes it to the temp dir (or `output`) and spools it with std::process::Command `lp [-d printer] [-n copies] -t <name> <pdf>` unless dryRun or send:false. photocraftManages reads a `printerProfile` path through edit.convertToProfile, and the command fires the `print` script event. printOneCopy repeats the last settings.",
+      "evidence": [
+        "crates/engine/src/print_cmds.rs:208-255 print_image, :317-369 do_print, :372-378 spool_pdf, :388-397 print_one_copy"
+      ]
+    },
+    {
+      "ids": ["file.import.wiaSupport"],
+      "class": "device",
+      "why": "Stub for scanner and camera acquisition (Windows Image Acquisition): it only reports {available, devices: [], note} because no COM binding is wired. Implemented, it reaches imaging hardware.",
+      "evidence": [
+        "crates/engine/src/wia_cmds.rs:11-22 wia"
+      ]
+    },
+    {
+      "ids": ["file.export.exportPreferences"],
+      "class": "host",
+      "why": "Naming trap: no file. It changes the app's Export preferences (quick export format and location, JPEG quality, metadata, sRGB) by running the fixed prefs.set with export.* keys; the desktop persists them with its preferences.",
+      "evidence": [
+        "crates/engine/src/web_cmds.rs:836-854 export_preferences"
+      ]
+    },
+    {
+      "ids": ["file.generate.imageAssets"],
+      "class": "file",
+      "why": "Writes one image per layer whose name is an asset spec (`foo.png`, `200% a@2x.png`, `icons/b.png8`) into `dir`, or `<document>-assets` beside the saved file, now and after each desktop save. The output paths come from layer names joined to the folder with no `..` check, so a door cannot vet them from params.",
+      "evidence": [
+        "crates/engine/src/web_cmds.rs:1003-1040 parse_asset_name, :1076-1144 generate_assets (join(dir, rel), write_file/save_doc), :1147-1188 assets_dir, image_assets, on_saved"
+      ]
+    },
+    {
+      "ids": ["file.package"],
+      "class": "file",
+      "why": "Copies the document and every linked smart object's file into `dir`/<name>/Links: it read_file's each SmartSource::Linked path stored in the document (any absolute path), writes the copies and saves the relinked document there.",
+      "evidence": [
+        "crates/engine/src/print_cmds.rs:401-455 package"
+      ]
+    },
+    {
+      "ids": ["file.automate.conditionalModeChange", "color.profileMismatch"],
+      "class": "file",
+      "why": "No path parameter, but both resolve the working-space profile from Color Settings (ColorState::working, then resolve_profile), which std::fs::read's an .icc/.icm file when Color Settings name one; conditionalModeChange runs the fixed image.mode.<to> with no profile. Only host-class edit.colorSettings or prefs.set, or a desktop's saved preferences, can set such a path, so a fresh headless session reads built-ins only. The workspace policy always refuses color.profileMismatch.",
+      "evidence": [
+        "crates/engine/src/file_cmds.rs:617-640 conditional_mode_change",
+        "crates/engine/src/color_cmds.rs:219-226 working, :474-496 resolve_profile (std::fs::read at 491), :899-930 profile_mismatch",
+        "crates/automation/src/workspace.rs:233-241 profile_command_may_read_ambient"
+      ]
+    },
+    {
+      "prefix": "image.",
+      "class": "safe",
+      "why": "Image-menu edits of the open document in Session::edit: adjustments, canvas size, rotation, crop and trim, bit depth and the palette modes (indexed, bitmap, duotone, multichannel, colour table), Apply Image, Calculations and Match Color from other open documents, measurement and analysis, variable definitions and Trap.",
+      "evidence": [
+        "crates/engine/src/commands.rs:194-227 destructive_adjust, :902-996 ADJ table",
+        "crates/engine/src/image_cmds.rs:379, crates/engine/src/mode_cmds.rs:420, crates/engine/src/adjust_cmds.rs:350 specs",
+        "crates/engine/src/analysis_cmds.rs:1107, crates/engine/src/variables_cmds.rs:392 specs"
+      ]
+    },
+    {
+      "ids": ["image.mode.rgb", "image.mode.grayscale", "image.mode.cmyk", "image.mode.lab"],
+      "class": "file",
+      "why": "`profile` may be a path to an .icc file: convert_mode -> ColorState::resolve -> resolve_profile std::fs::read's it. Without a profile they resolve the Color Settings working space, which may be a path too. The workspace policy refuses path-like profiles, and every image.mode.* id in desktop sessions.",
+      "evidence": [
+        "crates/engine/src/image_cmds.rs:405-437 specs -> convert_mode",
+        "crates/engine/src/color_cmds.rs:665-690 convert_mode, :474-496 resolve_profile",
+        "crates/automation/src/workspace.rs:196-202, :215-231"
+      ]
+    },
+    {
+      "ids": ["image.applyDataSet"],
+      "class": "file",
+      "why": "Pixel Replacement values in the document's data sets are image paths, and replace_pixels std::fs::read's each one; the values come from image.variables.dataSets, a CSV or the opened document. It checks every path with Session::authorize when a hook is installed.",
+      "evidence": [
+        "crates/engine/src/variables_cmds.rs:157-232 apply_to_doc, replace_pixels (std::fs::read at 192), :234-248 apply_data_set (authorize at 238-244)"
+      ]
+    },
+    {
+      "ids": ["layer.newAdjustmentLayer.colorLookup", "image.adjustments.colorLookup", "layer.setAdjustment"],
+      "class": "file",
+      "why": "Color Lookup's `file` param is a .cube, .3dl or .look path read with std::fs::read (adjust_cmds::lookup_from_params); layer.setAdjustment feeds its params to the same parser when the target is a Color Lookup layer. Built-in `lut` ids and inline `data` need no file.",
+      "evidence": [
+        "crates/engine/src/adjust_cmds.rs:66-130 lookup_from_params, read_file, :134-141 update_adjustment",
+        "crates/engine/src/adjust_params.rs:207 colorLookup -> lookup_from_params",
+        "crates/engine/src/commands.rs:677-696 layer.setAdjustment"
+      ]
+    },
+    {
+      "prefix": "edit.",
+      "class": "safe",
+      "why": "Edit-menu work in memory: undo, redo and toggle, fill, stroke and clear, transforms and warps (Again replays only edit.transform), content-aware fill and scale, Fade, purging history and the clipboard, defining brushes, patterns and custom shapes into the session libraries, preset manager and in-band preset export/import, and Cut/Copy/Paste on Session::clipboard (the engine's own clipboard; no OS clipboard is touched).",
+      "evidence": [
+        "crates/engine/src/lib.rs:271-277 clipboard, style and path clipboards are Session fields",
+        "crates/engine/src/edit_cmds.rs:92-176 copy, paste, new_from_clipboard; :373-399 transform_again",
+        "crates/engine/src/edit_menu_cmds.rs:233-264 purge, :563-610 define brush/custom shape, :867-923 export_import (data only)",
+        "crates/engine/src/transform_cmds.rs:410, crates/engine/src/warp_cmds.rs:409 specs"
+      ]
+    },
+    {
+      "prefix": "edit.preferences.",
+      "class": "host",
+      "why": "Each returns one section of the app's Preferences (the GUI opens the dialog on it): history log, scratch disks, plug-ins folder, performance, cursors and the rest.",
+      "evidence": [
+        "crates/engine/src/prefs.rs:1401-1406 preferences_section, :1535-1584 section! specs"
+      ]
+    },
+    {
+      "ids": ["edit.keyboardShortcuts", "edit.menus", "edit.toolbar"],
+      "class": "host",
+      "why": "Application UI customisation (keyboard shortcuts, hidden and coloured menu items, toolbar order) stored in the preferences through edit_prefs; the desktop persists it.",
+      "evidence": [
+        "crates/engine/src/prefs.rs:1409-1527 keyboard_shortcuts, menus, toolbar"
+      ]
+    },
+    {
+      "ids": ["edit.colorSettings"],
+      "class": "host",
+      "why": "App-wide Color Settings (working spaces, policies, intent, monitor profile) kept with the preferences (s.prefs.edit marks them for saving). validate_settings std::fs::read's any .icc path given for a working space or the monitor, and the reply reports the platform's displays; host is stricter than file.",
+      "evidence": [
+        "crates/engine/src/color_cmds.rs:176-194 validate_settings, :828-895 color_settings (persisted at 883)"
+      ]
+    },
+    {
+      "ids": ["edit.checkSpelling"],
+      "class": "host",
+      "why": "Naming trap: action add/addToDictionary and removeFromDictionary edit the user dictionary in the app preferences (edit_prefs on prefs.user_dictionary), not the document; list, change, changeAll and suggest only read and edit type layers.",
+      "evidence": [
+        "crates/engine/src/type_spell_cmds.rs:1-10 module doc, :146-200 add_word, remove_word, check_spelling"
+      ]
+    },
+    {
+      "ids": ["edit.assignProfile", "edit.convertToProfile", "edit.profileInfo"],
+      "class": "file",
+      "why": "`profile` may be a path to an .icc or .icm file (any value with a slash or backslash counts), which resolve_profile reads with std::fs::read; `working` resolves Color Settings, which may name a path too.",
+      "evidence": [
+        "crates/engine/src/color_cmds.rs:474-496 resolve_profile, :725-779 assign_profile, convert_to_profile, profile_info",
+        "crates/automation/src/workspace.rs:221, :233-241"
+      ]
+    },
+    {
+      "ids": ["brush.presets.importAbr", "gradient.presets.importGrd", "pattern.import", "pattern.export", "edit.presets.migratePresets"],
+      "class": "file",
+      "why": "Preset files at caller paths: importAbr and importGrd read `path` (std::fs::metadata + read) unless base64 `data` is given, pattern.import reads a .pat and pattern.export writes one (write_file), and migratePresets reads a presets or preferences JSON (read_to_string) and merges its groups into the session libraries.",
+      "evidence": [
+        "crates/engine/src/preset_import_cmds.rs:28-47 file_bytes, :57-135 import_abr and specs",
+        "crates/engine/src/pattern_cmds.rs:265-292 import, export",
+        "crates/engine/src/migrate_cmds.rs:27-66 migrate"
+      ]
+    },
+    {
+      "prefix": "view.",
+      "class": "safe",
+      "why": "Guides and slices are document data: new, move, delete and clear guides, guide layouts, guides from a shape, clearing canvas or artboard guides and clearing slices edit doc.guides and doc.slices. view.lockSlices sets the session's slice lock (FileMenuState.slices_locked), which the slice commands check.",
+      "evidence": [
+        "crates/engine/src/edit_cmds.rs:528-535 guide specs",
+        "crates/engine/src/file_cmds.rs:1000-1091 new_guide_layout, guides_from_shape, clear_canvas_guides",
+        "crates/engine/src/slice_cmds.rs:37 slices_locked check, :470-480 lock"
+      ]
+    },
+    {
+      "prefix": "view.proofSetup.",
+      "class": "host",
+      "why": "Soft-proof simulations (working plates, legacy Macintosh RGB, colour blindness): they set the document's proof view and turn Proof Colors on, which only changes the canvas display LUT. The plates resolve working-cmyk from Color Settings, possibly an .icc path.",
+      "evidence": [
+        "crates/engine/src/proof_sim.rs:1-17 module doc, :249 resolve(\"working-cmyk\"), :301 specs"
+      ]
+    },
+    {
+      "ids": ["view.proofSetup", "view.proofColors", "view.gamutWarning", "view.thirtyTwoBitPreviewOptions"],
+      "class": "host",
+      "why": "UI-only views: proof setup, Proof Colors, the gamut warning overlay and the 32-bit preview exposure and gamma live in ColorState (proofs, hdr) and change only the canvas display. proofSetup and gamutWarning also read an .icc `profile` path through resolve_profile (host is stricter than file).",
+      "evidence": [
+        "crates/engine/src/color_cmds.rs:196-214 ColorState, :781-825 proof_setup, proof_colors, gamut_warning",
+        "crates/engine/src/proof_sim.rs:301 specs"
+      ]
+    },
+    {
+      "ids": ["view.layerMask", "layer.setEffectsExpanded", "select.isolateLayers", "channel.setVisible", "cloneSource.overlay"],
+      "class": "host",
+      "why": "Panel and canvas view state outside the document, with no history step: the layer-mask view (ChannelView.layer_mask, which also makes untargeted pixel commands paint that mask), the Layers panel's collapsed effects lists (DocState::fx_collapsed) and isolation filter (DocState::isolated_layers), the Channels panel eyes (DocState::channel_view) and the Clone Source overlay display options.",
+      "evidence": [
+        "crates/engine/src/mask_view_cmds.rs:1-18",
+        "crates/engine/src/fx_view_cmds.rs:1-11",
+        "crates/engine/src/select_extra_cmds.rs:75-84",
+        "crates/engine/src/channel_cmds.rs:1111-1140 set_visible",
+        "crates/engine/src/presets/clone_source.rs:323-345 overlay"
+      ]
+    },
+    {
+      "prefix": "prefs.",
+      "class": "host",
+      "why": "prefs.get and prefs.reset read or reset the app Preferences and Color Settings (PrefsStore, which the desktop front end saves as prefs_to_json in its config folder). The defaults keep the plug-ins folder off, so a reset loads no code.",
+      "evidence": [
+        "crates/engine/src/prefs.rs:1-18 module doc, :1198-1215 PrefsStore, :1340-1398 prefs_get, prefs_reset",
+        "crates/engine/src/prefs.rs:606-619 PlugIns defaults (use_additional_plugins_folder: false)"
+      ]
+    },
+    {
+      "ids": ["prefs.set"],
+      "class": "code",
+      "why": "Sets any preference and applies it at once: apply_prefs calls plugin_cmds::sync_prefs, which loads every *.wasm in plugIns.additionalPluginsFolder into the process-wide plug-in registry when useAdditionalPluginsFolder is on; scriptEvents bindings make later file.new/close/print/export run arbitrary steps; colorSettings.* paths are read as ICC files. The workspace policy refuses the colorSettings, scriptEvents, historyLog, plugIns and scratchDisks sections.",
+      "evidence": [
+        "crates/engine/src/prefs.rs:1346-1371 prefs_set, :1232-1243 apply_prefs (1242 plugin_cmds::sync_prefs)",
+        "crates/engine/src/plugin_cmds.rs:175-204 sync_prefs, load_folder (registry::load_folder)",
+        "crates/engine/src/automate_cmds.rs:225-268 fire_event",
+        "crates/automation/src/workspace.rs:243-257 preferences_may_grant_ambient_paths"
+      ]
+    },
+    {
+      "prefix": "plugin.",
+      "class": "code",
+      "why": "WebAssembly plug-ins in a process-wide registry: install loads a module from base64 `data` (Plugin::load) or a .wasm `path` (registry::load_file), reload loads a whole folder (`path` or the Plug-ins preference folder), run executes one on the active layer (and again as a smart filter on every re-render), and remove unregisters one for every session in the process. OctoSense's photo.run door never runs them.",
+      "evidence": [
+        "crates/engine/src/plugin_cmds.rs:65-100 run, :105-111 apply_to_surface (smart-filter re-run), :143-173 install, load_path, :206-220 reload, :223-281 specs"
+      ]
+    },
+    {
+      "ids": ["plugin.list"],
+      "class": "host",
+      "why": "Lists the process-wide plug-in registry (plug-ins any caller installed) and the last plug-in folder report, with its path; it runs nothing.",
+      "evidence": [
+        "crates/engine/src/plugin_cmds.rs:176 static FOLDER, :225-236 plugin.list"
+      ]
+    },
+    {
+      "prefix": "actions.",
+      "class": "safe",
+      "why": "The Actions list in session memory: record and stop copy replayable journal entries (commands that already ran) into an action, delete removes one, list and get read it; nothing runs. A desktop preset store persists the list to actions.json after the command (sync_preset_store); headless sessions have no store.",
+      "evidence": [
+        "crates/engine/src/actions_cmds.rs:118-168 list, get, record, stop, :207-215 delete",
+        "crates/engine/src/preset_store.rs:28-30, :738-763 sync_actions; crates/engine/src/jobs.rs:643-654 after_command"
+      ]
+    },
+    {
+      "ids": ["actions.play"],
+      "class": "code",
+      "why": "Replays an action's recorded steps through s.execute, so the outer id hides the inner commands. Session::authorize is called for each step when a hook is installed (Headless::with_workspace installs authorize_engine_step); a local UI session runs them unchecked.",
+      "evidence": [
+        "crates/engine/src/actions_cmds.rs:170-205 run_recorded, play",
+        "crates/engine/src/lib.rs:306-309 Session::authorize",
+        "crates/automation/src/headless.rs:15-19 untrusted(); crates/automation/src/workspace.rs:204-208 authorize_engine_step"
+      ]
+    },
+    {
+      "prefix": "filter.",
+      "class": "safe",
+      "why": "Filters run on the active pixel layer, a targeted channel or a smart object (recorded as a smart filter) inside jobs::edit_job; their parameters are numbers and enums, gallery textures, frames and trees are built in, and Vanishing Point's paste source is a layer or Session::clipboard. On a linked smart object the re-render reads its linked file (see layer.smartFilter.).",
+      "evidence": [
+        "crates/engine/src/filters.rs:194-255 run_filter, :257-334 specs",
+        "crates/engine/src/filters_ext.rs:528, crates/engine/src/gallery_cmds.rs:136, crates/engine/src/render_cmds.rs:185, crates/engine/src/vp_cmds.rs:198, crates/engine/src/lens_cmds.rs:389 specs",
+        "crates/engine/src/smart_cmds.rs:371-391 add_smart_filter"
+      ]
+    },
+    {
+      "ids": ["filter.distort.displace"],
+      "class": "file",
+      "why": "`mapPath` is a displacement-map image read with std::fs::read and decoded (filters_ext::resolve); `mapDocument` uses an open document instead.",
+      "evidence": [
+        "crates/engine/src/filters_ext.rs:420-445 resolve (std::fs::read at 429)",
+        "crates/automation/src/workspace.rs:218 mapPath"
+      ]
+    },
+    {
+      "ids": ["filter.lastFilter"],
+      "class": "code",
+      "why": "Replays another command: the newest filter.* entry in the session journal, with its original params, through run_filter. That can be filter.distort.displace re-reading its mapPath, and the outer id with `{}` hides which filter runs.",
+      "evidence": [
+        "crates/engine/src/filters.rs:335-357 filter.lastFilter, last_filter (journal)",
+        "crates/engine/src/filters.rs:194-199 run_filter -> filters_ext::resolve"
+      ]
+    },
+    {
+      "prefix": "layer.",
+      "class": "safe",
+      "why": "Layer edits on the open document in Session::edit: new, duplicate, delete and group, properties, masks and vector masks, clipping, arrange, align and distribute, fill and adjustment layers, layer styles, rasterize, matting, artboards, frames, stamps, layer selection and copying layers to another open document. Layer Style copy/paste uses Session::style_clipboard.",
+      "evidence": [
+        "crates/engine/src/commands.rs:423-744 core layer specs",
+        "crates/engine/src/layer_multi_cmds.rs:759, crates/engine/src/layer_menu_cmds.rs:723-787, crates/engine/src/extra_cmds.rs:593, crates/engine/src/layer_style.rs:618 specs",
+        "crates/engine/src/vector_cmds.rs:1245, crates/engine/src/artboard_cmds.rs:436, crates/engine/src/layer_copy_cmds.rs:164 specs"
+      ]
+    },
+    {
+      "prefix": "layer.smartObjects.",
+      "class": "file",
+      "why": "Smart object contents and links: replaceContents reads `path`, exportContents and convertToLinked write `path`, relinkToFile points the layer at `path` and re-renders from it; newSmartObjectViaCopy, editContents, convertToLayers, convertToEmbedded and update(All)ModifiedContent read a linked smart object's file (smart_cmds::source_bytes, photocraft_format::read_file on the absolute path stored in the document). newSmartObjectViaCopy embeds those bytes without decoding them.",
+      "evidence": [
+        "crates/engine/src/smart_cmds.rs:74-90 read_file, source_bytes",
+        "crates/engine/src/smart_cmds.rs:589-660 via_copy, replace_contents, export_contents, edit_contents; :705-725 update_all; :896-943 specs",
+        "crates/engine/src/smart_cmds/unpack.rs:22 source_bytes"
+      ]
+    },
+    {
+      "ids": ["layer.smartObjects.convertToSmartObject", "layer.smartObjects.rasterize", "layer.smartObjects.saveContents", "layer.smartObjects.warp", "layer.smartObjects.puppetWarp", "layer.smartObjects.perspectiveWarp"],
+      "class": "safe",
+      "why": "In-document smart object work: convertToSmartObject embeds the layers as in-memory .pcraft bytes (layer_to_smart), rasterize keeps the cached pixels (layer.rasterize.smartObject), saveContents writes an Edit Contents document back as embedded bytes, and the warps change the placement and re-render (a linked source re-reads its file, as for layer.smartFilter.).",
+      "evidence": [
+        "crates/engine/src/smart_cmds.rs:509-585 layer_to_smart, convert; :664-698 commit_child; :883 rasterize",
+        "crates/engine/src/extra_cmds.rs:539-576 rasterize_one (content_pixels)",
+        "crates/engine/src/warp_cmds.rs:338, :404 refresh; crates/engine/src/distort_cmds.rs:367 specs"
+      ]
+    },
+    {
+      "prefix": "layer.smartObjects.stackMode.",
+      "class": "safe",
+      "why": "Stack modes set SmartObject.stack_mode and re-render the contents per pixel (smart_cmds::refresh, stack_image); for a linked smart object that re-render reads the linked file (see layer.smartFilter.).",
+      "evidence": [
+        "crates/engine/src/layer_menu_cmds.rs:309-337 stack_mode, stack_spec!, :740-751",
+        "crates/engine/src/smart_cmds.rs:174, :296-308 render"
+      ]
+    },
+    {
+      "ids": ["layer.smartObjects.revealInFinder"],
+      "class": "host",
+      "why": "Spawns the platform file manager on the linked file's path from the document: `open -R <path>` on macOS, `explorer /select,<path>` on Windows, `xdg-open <parent>` elsewhere (std::process::Command; dryRun only returns the command). xdg-open hands its argument to the default handler, so a crafted linked path could open something other than a folder.",
+      "evidence": [
+        "crates/engine/src/layer_menu_cmds.rs:339-377 reveal_in_finder, reveal_command, spawn"
+      ]
+    },
+    {
+      "prefix": "layer.smartFilter.",
+      "class": "safe",
+      "why": "Edit a smart object's filter stack (visibility, params, blending, mask, order) and re-render it (edit_filters -> refresh_or_fail). Cross-cutting caveat: when the smart object is linked, render -> source_bytes reads the absolute path stored in the document (photocraft_format::read_file), and so do filters, transforms and canvas size or rotation changes on it; a param check cannot see that path.",
+      "evidence": [
+        "crates/engine/src/smart_cmds.rs:80-90 source_bytes, :296-348 render, refresh, :729-814 edit_filters and filter edits, :944-1011 specs",
+        "crates/engine/src/transform_cmds.rs:285 and crates/engine/src/canvas_geom.rs:192 refresh_layer on smart objects"
+      ]
+    },
+    {
+      "ids": ["layer.smartFilter.setParams"],
+      "class": "file",
+      "why": "Params trap, as layer.setAdjustment: it merges its `params` into a smart filter's parameters and re-renders the smart object at once, and a Color Lookup smart filter (image.adjustments.colorLookup) feeds them to lookup_from_params, which std::fs::read's a `file` (any path, also relative to the process) on every re-render. Other filters ignore unknown keys, but a param check cannot see which filter `index` names.",
+      "evidence": [
+        "crates/engine/src/smart_cmds.rs:759-774 set_filter_params (old.extend(new)); :729-736 edit_filters -> refresh_or_fail",
+        "crates/engine/src/smart_cmds.rs:276-292 apply_smart_filters -> crates/engine/src/filters.rs:165-167 apply_filter_to_surface (image.adjustments.*) -> crates/engine/src/adjust_cmds.rs:209-217 adjust_as_filter",
+        "crates/engine/src/adjust_params.rs:207 colorLookup -> crates/engine/src/adjust_cmds.rs:70-97 lookup_from_params (read_file(path) at 94)"
+      ]
+    },
+    {
+      "prefix": "layer.videoLayers.",
+      "class": "safe",
+      "why": "Frame-stack edits on video layers in the document (blank layers and frames, duplicate, delete, restore, interpret fps, show altered, rasterize); no playback device and no file.",
+      "evidence": [
+        "crates/engine/src/video_cmds.rs:47-154 edit_video and frame edits, :237-245 interpret_footage, :356-371 specs"
+      ]
+    },
+    {
+      "ids": ["layer.videoLayers.newVideoLayerFromFile", "layer.videoLayers.replaceFootage", "layer.videoLayers.reloadFrame"],
+      "class": "file",
+      "why": "Params trap: the catalog says `{}`, but newVideoLayerFromFile and replaceFootage take `path` (a file, or a folder read with read_dir as an image sequence) and std::fs::read every frame; reloadFrame re-reads the layer's stored VideoSource::File path from the document.",
+      "evidence": [
+        "crates/engine/src/video_cmds.rs:156-267 load_frames, new_from_file, replace_footage, reload_frame; :350-354 params \"{} -> {}\""
+      ]
+    },
+    {
+      "ids": ["layer.quickExportAsPng", "layer.exportAs"],
+      "class": "file",
+      "why": "Render the layer alone and write it to `path` (photocraft_io::export, then file_cmds::write_file).",
+      "evidence": [
+        "crates/engine/src/layer_menu_cmds.rs:685-715 export_layer, :788-801 specs"
+      ]
+    },
+    {
+      "ids": ["layer.layerStyle.makeDefault", "layer.layerStyle.defaultFor"],
+      "class": "host",
+      "why": "Layer Style dialog defaults, not the document: makeDefault stores a user default in PresetState.layer_defaults and marks the preferences document dirty (presets_changed) for the desktop to save; defaultFor reads it back. Only the dialog's Reset to Default uses them.",
+      "evidence": [
+        "crates/engine/src/layer_style.rs:570-590",
+        "crates/engine/src/presets/mod.rs:80-82 layer_defaults, :104-139 Persisted, :177-180 presets_changed"
+      ]
+    },
+    {
+      "prefix": "select.",
+      "class": "safe",
+      "why": "Selections on the active document: marquee, lasso and magnetic lasso, magic wand, colour range, quick, object, subject, sky and focus area (computed in-process, no model files), modify, grow, similar, transform, float and drop, save and load selection through channels, Quick Mask, and layer selection helpers.",
+      "evidence": [
+        "crates/engine/src/commands.rs:325-421",
+        "crates/engine/src/selection_cmds.rs:335, crates/engine/src/smartselect_cmds.rs:227, crates/engine/src/magnetic_cmds.rs:177, crates/engine/src/select_extra_cmds.rs:212, crates/engine/src/float_cmds.rs:188 specs"
+      ]
+    },
+    {
+      "prefix": "channel.",
+      "class": "safe",
+      "why": "Channel edits in the document (new, spot, duplicate, optionally into a new session document, delete, rename, move, options, merge spot, split and merge into session documents), the channel list, and the editing target (channel.target*, the Channels panel click or Cmd+2..9).",
+      "evidence": [
+        "crates/engine/src/channel_cmds.rs:28-60 ChannelView target, :1504 specs"
+      ]
+    },
+    {
+      "prefix": "type.",
+      "class": "safe",
+      "why": "Type layers in the document: create, edit, style, warp, convert and rasterize, OpenType features, character and paragraph styles, caret and hit tests, Lorem Ipsum (built-in text) and missing-font remapping. Layout uses photocraft_text::shared(), a process-wide font database that on first use scans the OS font folders (and reads the OS locale) once; no command takes a font path, and type.fonts lists that database.",
+      "evidence": [
+        "crates/engine/src/type_cmds.rs:509, :759-775 type.fonts",
+        "crates/engine/src/type_extra_cmds.rs:510, crates/engine/src/type_styles_cmds.rs:738, crates/engine/src/type_caret_cmds.rs:192 specs",
+        "crates/text/src/lib.rs:138-145 shared(); crates/text/src/fonts.rs:336-390 system font folders; crates/text/src/cjk.rs:93-131 locale"
+      ]
+    },
+    {
+      "prefix": "paint.",
+      "class": "safe",
+      "why": "Painting tools on the active layer, its mask or a channel: brush, pencil, mixer, erasers, bucket and gradient from `points`, clone, healing and retouch tools (sources in the document or the clone slots), the history brush (in-session history) and symmetry from a document path; brush presets come from the session library.",
+      "evidence": [
+        "crates/engine/src/brush_cmds.rs:730, crates/engine/src/eraser_cmds.rs:164, crates/engine/src/paint_cmds.rs:113, crates/engine/src/retouch_cmds.rs:657, crates/engine/src/symmetry_cmds.rs:122 specs"
+      ]
+    },
+    {
+      "prefix": "path.",
+      "class": "safe",
+      "why": "Document vector paths (work path, saved paths, clipping path, shape and vector-mask paths): set, transform, rename and delete, anchor and handle edits, fill and stroke into pixels, make a selection; copy and paste of fill or stroke use the session's path clipboards. `path` here is a vector path, not a file.",
+      "evidence": [
+        "crates/engine/src/vector_cmds.rs:1245, crates/engine/src/path_edit_cmds.rs:112 specs",
+        "crates/engine/src/lib.rs:275-277 path_fill_clipboard, path_stroke_clipboard"
+      ]
+    },
+    {
+      "prefix": "shape.",
+      "class": "safe",
+      "why": "Shape layers (create, edit, info, rasterize) and the Shapes panel library (list, place, new, edit, reset) in session memory; the desktop saves user shapes with its preferences document.",
+      "evidence": [
+        "crates/engine/src/vector_cmds.rs:1245 specs",
+        "crates/engine/src/presets/shapes.rs:358 place -> fixed shape.create, :429 specs; crates/engine/src/presets/mod.rs:104-139"
+      ]
+    },
+    {
+      "prefix": "layerComp.",
+      "class": "safe",
+      "why": "Layer comps stored in the document: new, update, apply, previous and next, delete, duplicate, rename, comment, options, warnings, restore and list.",
+      "evidence": [
+        "crates/engine/src/comps_cmds.rs:373-430 specs"
+      ]
+    },
+    {
+      "prefix": "brush.",
+      "class": "safe",
+      "why": "The session's brush library and brush: list, save, delete, rename and move presets and groups, define from the selection, set the texture pattern, get the brush. The commands edit only Session.tools.presets; a desktop preset store then writes changed groups to <config dir>/Presets (Session::after_command -> sync_preset_store), and headless sessions have no store.",
+      "evidence": [
+        "crates/engine/src/brush_cmds.rs:730, crates/engine/src/brush_preset_cmds.rs:206 specs, crates/engine/src/pattern_cmds.rs:319 texturePattern",
+        "crates/engine/src/preset_store.rs:15-30 module doc, :822-833 sync_preset_store; crates/engine/src/jobs.rs:643-654 after_command"
+      ]
+    },
+    {
+      "prefix": "gradient.",
+      "class": "safe",
+      "why": "Gradient fill layers and the Gradients panel library (list, select, apply, new, edit, reset) in session memory; the desktop saves user gradients with its preferences document.",
+      "evidence": [
+        "crates/engine/src/gradient_fill_cmds.rs:529, crates/engine/src/presets/gradients.rs:489 specs",
+        "crates/engine/src/presets/mod.rs:104-139 Persisted, :177-180 presets_changed"
+      ]
+    },
+    {
+      "prefix": "pattern.",
+      "class": "safe",
+      "why": "The session's pattern library (list, rename, delete) and the Patterns panel groups (list, select, apply, new from the canvas, edit).",
+      "evidence": [
+        "crates/engine/src/pattern_cmds.rs:349-430 specs",
+        "crates/engine/src/presets/patterns.rs:101-158 fixed calls to layer.newFillLayer.pattern, edit.definePattern, pattern.rename/delete"
+      ]
+    },
+    {
+      "prefix": "style.",
+      "class": "safe",
+      "why": "The Styles panel library (list, apply, new, edit, reset) in session memory; apply writes effects to the selected layers.",
+      "evidence": [
+        "crates/engine/src/presets/styles.rs:264-333"
+      ]
+    },
+    {
+      "prefix": "tool.",
+      "class": "safe",
+      "why": "The Tool Presets library (list, new, select, edit, reset) in session memory; select applies the brush and colours through the fixed tools.setBrush.",
+      "evidence": [
+        "crates/engine/src/presets/tools.rs:96-140"
+      ]
+    },
+    {
+      "prefix": "tools.",
+      "class": "safe",
+      "why": "Session tool state (ToolState): foreground and background colours, brush settings and brush size or hardness steps. It is not persisted.",
+      "evidence": [
+        "crates/engine/src/commands.rs:785-798, crates/engine/src/brush_key_cmds.rs:43",
+        "crates/engine/src/lib.rs:226-260 ToolState"
+      ]
+    },
+    {
+      "prefix": "cloneSource.",
+      "class": "safe",
+      "why": "Clone Source slots (sample point, offset, scale, rotation, flips) that the clone stamp and healing brush follow; session state.",
+      "evidence": [
+        "crates/engine/src/presets/clone_source.rs:1-20, :350 specs"
+      ]
+    },
+    {
+      "prefix": "count.",
+      "class": "safe",
+      "why": "Count Tool markers and groups stored with the document.",
+      "evidence": [
+        "crates/engine/src/analysis_cmds.rs:1173-1187 specs"
+      ]
+    },
+    {
+      "prefix": "measurementLog.",
+      "class": "safe",
+      "why": "The session's Measurement Log rows: list and delete.",
+      "evidence": [
+        "crates/engine/src/analysis_cmds.rs:1188-1190 specs"
+      ]
+    },
+    {
+      "ids": ["measurementLog.export"],
+      "class": "file",
+      "why": "With `path` it writes the log as CSV (file_cmds::write_file); without, it returns the CSV text.",
+      "evidence": [
+        "crates/engine/src/analysis_cmds.rs:1000-1011 log_export"
+      ]
+    },
+    {
+      "prefix": "notes.",
+      "class": "safe",
+      "why": "Annotation notes stored in the document: add, edit, delete and list.",
+      "evidence": [
+        "crates/engine/src/notes_cmds.rs:56-145, :191 specs"
+      ]
+    },
+    {
+      "prefix": "slice.",
+      "class": "safe",
+      "why": "Slices are document data (doc.slices); url, target and alt are stored strings, and nothing is fetched.",
+      "evidence": [
+        "crates/engine/src/slice_cmds.rs:163, :487-547 specs"
+      ]
+    },
+    {
+      "prefix": "timeline.",
+      "class": "safe",
+      "why": "The document's timeline (frames, fps, playhead); moving the playhead only syncs video layer content, and nothing plays.",
+      "evidence": [
+        "crates/engine/src/timeline_cmds.rs:26-115"
+      ]
+    },
+    {
+      "prefix": "document.",
+      "class": "safe",
+      "why": "Session queries and tab management: inspect a document, read a composite pixel, activate or reorder open documents.",
+      "evidence": [
+        "crates/engine/src/commands.rs:810-896",
+        "crates/engine/src/inspect.rs:25-40"
+      ]
+    },
+    {
+      "prefix": "jobs.",
+      "class": "safe",
+      "why": "List or cancel this session's background jobs (worker threads that only compute on document snapshots).",
+      "evidence": [
+        "crates/engine/src/jobs.rs:729-762 specs"
+      ]
+    },
+    {
+      "prefix": "session.",
+      "class": "safe",
+      "why": "Returns the open documents (name, path, size, dirty) and the tool colours.",
+      "evidence": [
+        "crates/engine/src/commands.rs:800-809, crates/engine/src/inspect.rs:8-23"
+      ]
+    },
+    {
+      "prefix": "command.",
+      "class": "safe",
+      "why": "Lists the command registry with each id's enabled state.",
+      "evidence": [
+        "crates/engine/src/commands.rs:859-879"
+      ]
+    },
+    {
+      "prefix": "variables.",
+      "class": "safe",
+      "why": "Lists the document's variables and data sets.",
+      "evidence": [
+        "crates/engine/src/variables_cmds.rs:370-384, :429-438"
+      ]
+    }
+  ]
+}

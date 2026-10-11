@@ -47,7 +47,7 @@ The remaining decision describes the complete intended design. Some local app su
 
 At the time of the proposal, the image-driven app/card flow was provided by these desktop tools. The phone implementation above does not yet port that image pipeline:
 
-- **The OctoScript App Design Flow** is about 12,150 lines of Python tooling (about 16,000 with its tests), plus per-app examples. It runs on a Mac with cargo, Makepad Studio and App Hub's `card-host --remote`, and also needs Python 3.12 with numpy, OpenCV, Pillow and fontTools, Swift and Node. Its two image paths are:
+- **App Flow** is about 12,150 lines of Python tooling (about 16,000 with its tests), plus per-app examples. It runs on a Mac with cargo, Makepad Studio and App Hub's `card-host --remote`, and also needs Python 3.12 with numpy, OpenCV, Pillow and fontTools, Swift and Node. Its two image paths are:
   - the Sketch kit (`flows/kits/sketch`), which needs `sketchtool`, Swift and a licensed kit, and has its own gates (`gate_structure`, `gate_composition`, `gate_fill`, `gate_visual`);
   - image-to-card (`flows/image-to-card`, `flows/image-lib`): crop scenes from an image, read their text with Apple Vision OCR (through Swift), map regions to widgets, generate L0, render and compare. Its gate is `flows/image-lib/gate.py`: native geometry, OCR text, ink and colour checks, and the visual-review receipt.
 - **App Hub's `card-studio`** renders a card in a hidden `card-host --remote`, grabs a PNG, runs measured checks (hidden, clipped or truncated text, overflow, overlap, empty or failed states, fit, lint, realize) and builds a critique payload for a vision model. The checks and the payload are plain Rust that depends only on serde and serde_json. They read the remote instrument's snapshot and dump formats and card-host's widget ids, and the critique prompt is written for an L0 glance card. The rendering needs the remote instrument and a separate process.
@@ -154,7 +154,7 @@ The system toolbox's runner becomes the studio runner.
   - SVG checks, image size, cropping and PNG encoding.
 
   Large results are written to files and passed back as paths, because Octoscript's JSON values are capped at 64 KiB.
-- **What moves from the design flow to Octoscript** (rules and text, not pixels):
+- **What moves from App Flow to Octoscript** (rules and text, not pixels):
   - the role-first mapping policy (`semantics`, `core/policy`);
   - review records;
   - the image-to-card code generation (`flows/image-lib/compile.py`, `flows/image-lib/register.py` and `flows/image-to-card/extract.py`), without its desktop assumptions: fonts read from a `splash-makepad` checkout, artwork fetched from a local server, and the single 406×776 artboard;
@@ -225,7 +225,7 @@ An octos change adds a media field to `peer/tool/result`, mapped onto octos's in
 | Octoscript | `sort`, number formatting for scripts | S |
 | octos | An `image_generation` backend (a new issue; #1149 is closed); the tool on the external-client list; a media field on `peer/tool/result` | M |
 | Phone packaging | The developer build (`--dev-mode`), platform-signed on the ROM | S |
-| App Design Flow | The Sketch kit and its gates stay on the desktop; image-to-card Python retires as each part lands on the phone | — |
+| App Flow | The Sketch kit and its gates stay on the desktop; image-to-card Python retires as each part lands on the phone | — |
 
 ## Milestones
 
@@ -238,8 +238,8 @@ An octos change adds a media field to `peer/tool/result`, mapped onto octos's in
 ## Consequences
 
 - One implementation of checks and comparison for desktop and phone, so a card judged on a Mac and on a phone gets the same report.
-- The design flow's Python shrinks to the Sketch kit and desktop-only tools as the image-to-card parts move to Octoscript and Rust.
-- The shell gains a renderer that can show any card offscreen. It is a new attack surface for script cards, which is why preview effects stay in disposable storage with external services disabled.
+- App Flow's Python shrinks to the Sketch kit and desktop-only tools as the image-to-card parts move to Octoscript and Rust.
+- The shell gains a renderer that can show any card offscreen. It is a new attack surface for script cards, which is why studio renders run without side effects: preview effects stay in disposable storage with external services disabled.
 - Rules and templates change on the phone without a build, under the toolbox's digest and budget rules.
 - Developer mode gains the `studio.*` tools, with person-only approvals for capture sessions and any future guarded input that changes external state.
 - ADR 0002 is amended (its amendment of 2026-10-03): its §6 toolbox tools `card_render` and `card_critique_payload` become the `studio.*` host tools, and its §7 rule that the phone evaluates only while charging does not apply to renders the person starts.

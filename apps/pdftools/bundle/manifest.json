@@ -1,0 +1,8 @@
+{
+  "schema": 1,
+  "id": "os.pdftools",
+  "version": "0.1.0",
+  "name": "PDF Tools",
+  "integrity": { "bundle_blake3": "" },
+  "capabilities": ["storage", "files", "pdf"]
+}

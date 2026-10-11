@@ -158,6 +158,10 @@ fn each_platform_runs_its_own_kernel() {
 /// start so the others see a fresh crate.
 #[test]
 fn start_is_once_and_starts_no_kernel() {
+    // `start` registers the kernel's `octos` service and peer factory for the
+    // whole process; without the contained tests' lock it can replace theirs
+    // mid-test, and they then fail with "no octos kernel".
+    let _contained = crate::contained::tests::serial();
     let dir = std::env::temp_dir().join(format!("octosense-ai-host-{}", std::process::id()));
     let host = Host {
         data_dir: Some(dir.to_string_lossy().into_owned()),
@@ -177,4 +181,44 @@ fn start_is_once_and_starts_no_kernel() {
     assert!(std::ptr::eq(started, again), "start runs once");
     shutdown();
     assert!(!kernel_running());
+}
+
+/// A host caption must have a width bound: Fit-width text cannot wrap even
+/// when the Label prototype's native flow permits wrapping.
+#[cfg(feature = "llm")]
+#[test]
+fn provider_import_caption_wraps_inside_a_phone_sheet() {
+    use makepad_widgets::makepad_draw::cx_draw::CxDraw;
+    let sheet = octosense_llm_service::sheets::import(false, true, false);
+    let caption = sheet.split_once("let Caption = ").unwrap().1.split_once('\n').unwrap().0;
+    let text = "Choose image reads the code from a screenshot or photo.";
+    let mut cx = Cx::new(Box::new(|_, _| {}));
+    let root = cx.with_vm(|vm| {
+        makepad_widgets::script_mod(vm);
+        desktop_style::install(vm, desktop_style::StyleSheet::load(desktop_style::DesktopStyle::Android));
+        vm.with_reload(makepad_widgets::script_mod);
+        vm.bx.captured_errors = Some(Vec::new());
+        let value = vm.eval(ScriptMod {code:format!("use mod.prelude.widgets.*\nlet Caption = {caption}\nView{{width: Fill height: Fit padding: 16 flow: Down caption := Caption{{text: \"{text}\"}}}}"),..Default::default()});
+        let root = WidgetRef::script_from_value(vm,value);
+        assert!(vm.take_errors().is_empty());
+        root
+    });
+    let pass = DrawPass::new(&mut cx); let mut list = DrawList2d::new(&mut cx);
+    for width in [280.,340.,430.] {
+        let size = dvec2(width,180.); pass.set_size(&mut cx,size);
+        let event = DrawEvent::default();
+        {
+            let mut draw = CxDraw::new(&mut cx,&event); let mut draw = Cx2d::new(&mut draw);
+            draw.begin_pass(&pass,Some(1.)); list.begin_always(&mut draw); draw.begin_root_turtle(size,Layout::default());
+            root.draw_walk_all(&mut draw,&mut Scope::empty(),Walk::fixed(size.x,size.y));
+            draw.end_turtle(); list.end(&mut draw); draw.end_pass(&pass);
+        }
+        let caption = root.label(&cx,ids!(caption));
+        assert_eq!(caption.text(),text);
+        let area = caption.area().rect(&cx);
+        let text_rect = caption.borrow().unwrap().text_layout_rect;
+        assert!(area.size.x <= width-32.+0.1 && area.pos.x>=16.);
+        assert!(text_rect.size.x <= area.size.x+0.5,"whole instruction fits at {width}: {text_rect:?}/{area:?}");
+        if width==280. { assert!(area.size.y>20.,"narrow caption takes multiple lines"); }
+    }
 }

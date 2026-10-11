@@ -1,0 +1,39 @@
+# octosense-pdf-service — the `pdf` host service (ADR 0013).
+#
+# pdfcraft's PDF engine behind typed `pdf.*` methods, through its own
+# headless automation layer, with every path confined to the call's area:
+# the caller's own folder from the shell's resolver, else the legacy `pdf/`
+# corner of the caller's host directory. A call that names a file opens,
+# acts and closes (inspect, extract text, render a page, merge, split);
+# PDF Tools v2's open documents keep the engine's document, its edits and
+# undo history between calls (apps/pdftools/design/SERVICE.md).
+[package]
+name = "octosense-pdf-service"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+publish = false
+
+[dependencies]
+# The same App Hub rev as Mail and News: one appstore, one service registry
+# (and, through it, Makepad's per-isolate storage scope an open document is
+# bound to).
+octosense-appstore = { workspace = true }
+# Where a call works: the caller's area and its write rules (ADR 0013).
+octosense-engine-area = { workspace = true }
+serde_json = { workspace = true }
+# The engine, pinned to one ymote/pdfcraft revision (ADR 0013); default
+# features off to leave its MCP server out of the build.
+pdfcraft-automation = { workspace = true }
+
+[dev-dependencies]
+# Generates and checks the skill's references (tests/skill.rs).
+octosense-skill-gen = { workspace = true }
+# Its tool manifest is checked with App Hub's own loader (tools.json).
+octosense-app-policy = { workspace = true }
+# The engine's own scripted XFA form: proof that a document's scripts stay off.
+pdfcraft-xfa = { workspace = true }
+# A real app isolate with a storage scope, whose closing releases the
+# documents it opened (src/doc_tests.rs).
+makepad-widgets = { workspace = true }
+tempfile = "3"

@@ -1,4 +1,4 @@
-//! The shell side: an app's scoped assistant service from its declaration.
+//! The shell side: a scoped assistant service for an opted-in, allowed app.
 
 use std::collections::{BTreeSet, HashMap};
 use std::sync::{Arc, Mutex};
@@ -16,15 +16,17 @@ pub fn system_session() -> String {
     format!("{SHARED_PROFILE}:api:octosense#system")
 }
 
-/// Which apps the shell lets use the assistant, and with which services.
-/// Host policy and the person's grants; an app not listed gets nothing.
+/// Which opted-in apps the shell lets use the assistant. Nonempty supported
+/// names establish that offer; an app not listed gets nothing. Methods come
+/// from the fixed public surface, not a subset of declaration metadata.
 #[derive(Default)]
 pub struct HostPolicy {
     grants: Mutex<HashMap<String, BTreeSet<String>>>,
 }
 
 impl HostPolicy {
-    /// Allow `module` the listed services (exact names; others ignored).
+    /// Allow an opted-in `module` to use the public assistant surface.
+    /// At least one supported method is required; unknown names are ignored.
     pub fn allow<'a>(&self, module: &str, services: impl IntoIterator<Item = &'a str>) {
         self.grants
             .lock()
@@ -51,8 +53,9 @@ impl HostPolicy {
     }
 }
 
-/// The effective assistant services of a module: declared ∩ supported ∩
-/// granted. Empty means no assistant (and no peer) for it.
+/// An opted-in native module with the host's consent gets the fixed public
+/// assistant surface. Declarations describe usage; they do not divide that
+/// surface into permissions. No declaration or no host grant means no peer.
 pub fn effective_services<'a>(
     module: &str,
     declared: impl IntoIterator<Item = &'a str>,
@@ -60,7 +63,8 @@ pub fn effective_services<'a>(
 ) -> BTreeSet<String> {
     let declared = octos_services_in(declared);
     let granted = policy.granted(module);
-    declared.intersection(&granted).cloned().collect()
+    if declared.is_empty() || granted.is_empty() { return BTreeSet::new(); }
+    octos_services_in(crate::contract::OCTOS_SERVICES)
 }
 
 /// The scoped service for one instance of `module`, or `None` when it has
@@ -146,7 +150,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_module_gets_only_declared_and_granted_services() {
+    fn a_consented_opted_in_module_gets_the_supported_public_surface() {
         let policy = HostPolicy::default();
         policy.allow(
             "rinx",
@@ -167,7 +171,7 @@ mod tests {
             effective_services("rinx", declared, &policy)
                 .into_iter()
                 .collect::<Vec<_>>(),
-            ["octos.session.history", "octos.session.open"]
+            ["octos.session.history", "octos.session.open", "octos.turn.interrupt", "octos.turn.start"]
         );
         assert!(
             effective_services("maps", ["octos.turn.start"], &policy).is_empty(),

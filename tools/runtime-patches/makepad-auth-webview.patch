@@ -1,0 +1,1539 @@
+diff --git a/platform/src/cx_api.rs b/platform/src/cx_api.rs
+index 363dc7eeb..d3e27fc32 100644
+--- a/platform/src/cx_api.rs
++++ b/platform/src/cx_api.rs
+@@ -131,6 +131,18 @@ pub fn spawn_navigable(&mut self, url: &str) {
+         });
+     }
+ 
++    /// Host-owned, ephemeral authentication page. Native adapters intercept
++    /// the exact callback and admit navigation only on the initial origin.
++    /// This API must not be exposed to contained scripts.
++    pub fn spawn_auth(&mut self, url: &str, callback_url: &str, inspectable: bool) {
++        self.cx.platform_ops.push_back(CxOsOp::SpawnAuthBrowser {
++            browser_id: self.id.0,
++            url: url.to_owned(),
++            callback_url: callback_url.to_owned(),
++            inspectable,
++        });
++    }
++
+     pub fn update(&mut self, area: Area, visible: bool) {
+         self.cx.platform_ops.push_back(CxOsOp::UpdateSystemBrowser {
+             browser_id: self.id.0,
+@@ -204,6 +216,15 @@ pub fn inspect(&mut self, result_path: String, snapshot_path: Option<String>, sc
+             browser_id: self.id.0, result_path, snapshot_path, scroll_y,
+         });
+     }
++
++    /// Explicit native test instrumentation; the auth view refuses this unless
++    /// its host opted into inspection before opening the fictional login.
++    #[cfg(target_os = "macos")]
++    pub fn evaluate_auth(&mut self, script: String, result_path: String) {
++        self.cx.platform_ops.push_back(CxOsOp::EvaluateAuthBrowser {
++            browser_id: self.id.0, script, result_path,
++        });
++    }
+ }
+ 
+ pub trait CxOsApi {
+@@ -483,6 +504,12 @@ pub enum CxOsOp {
+         /// Whether the browser may leave the document it was opened with.
+         navigable: bool,
+     },
++    SpawnAuthBrowser {
++        browser_id: LiveId,
++        url: String,
++        callback_url: String,
++        inspectable: bool,
++    },
+     UpdateSystemBrowser {
+         browser_id: LiveId,
+         area: Area,
+@@ -504,6 +531,12 @@ pub enum CxOsOp {
+         browser_id: LiveId,
+     },
+     #[cfg(target_os = "macos")]
++    EvaluateAuthBrowser {
++        browser_id: LiveId,
++        script: String,
++        result_path: String,
++    },
++    #[cfg(target_os = "macos")]
+     InspectSystemBrowser {
+         browser_id: LiveId,
+         result_path: String,
+@@ -656,12 +689,15 @@ fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+             Self::UpdateCameraNativePreview { .. } => write!(f, "UpdateCameraNativePreview"),
+             Self::DetachCameraNativePreview { .. } => write!(f, "DetachCameraNativePreview"),
+             Self::SpawnSystemBrowser { .. } => write!(f, "SpawnSystemBrowser"),
++            Self::SpawnAuthBrowser { .. } => write!(f, "SpawnAuthBrowser"),
+             Self::UpdateSystemBrowser { .. } => write!(f, "UpdateSystemBrowser"),
+             Self::DetachSystemBrowser { .. } => write!(f, "DetachSystemBrowser"),
+             Self::SetSystemBrowserUrl { .. } => write!(f, "SetSystemBrowserUrl"),
+             Self::SystemBrowserHistoryGo { .. } => write!(f, "SystemBrowserHistoryGo"),
+             Self::CloseSystemBrowser { .. } => write!(f, "CloseSystemBrowser"),
+             #[cfg(target_os = "macos")]
++            Self::EvaluateAuthBrowser { .. } => write!(f, "EvaluateAuthBrowser"),
++            #[cfg(target_os = "macos")]
+             Self::InspectSystemBrowser { .. } => write!(f, "InspectSystemBrowser"),
+             Self::SetSystemBrowserHtml { .. } => write!(f, "SetSystemBrowserHtml"),
+             Self::EvalSystemBrowserJs { .. } => write!(f, "EvalSystemBrowserJs"),
+diff --git a/platform/src/event/event.rs b/platform/src/event/event.rs
+index 8938723e0..db8830e66 100644
+--- a/platform/src/event/event.rs
++++ b/platform/src/event/event.rs
+@@ -518,6 +518,23 @@ pub struct NativeSystemBrowserNavigation {
+     pub error: Option<String>,
+ }
+ 
++/// An isolated host authentication view changed state. Callback URLs are
++/// sensitive and must never be logged or forwarded to contained app scripts.
++#[derive(Clone, Default)]
++pub struct NativeAuthBrowserEvent {
++    pub browser_id: u64,
++    pub kind: String,
++    pub url: String,
++}
++impl std::fmt::Debug for NativeAuthBrowserEvent {
++    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
++        f.debug_struct("NativeAuthBrowserEvent")
++            .field("browser_id", &self.browser_id)
++            .field("kind", &self.kind)
++            .finish_non_exhaustive()
++    }
++}
++
+ /// The app was opened through a deep link.
+ #[derive(Clone, Debug, Default)]
+ pub struct NativeDeepLink {
+diff --git a/platform/src/os/apple/apple_auth_browser.rs b/platform/src/os/apple/apple_auth_browser.rs
+new file mode 100644
+index 000000000..d597c631e
+--- /dev/null
++++ b/platform/src/os/apple/apple_auth_browser.rs
+@@ -0,0 +1,258 @@
++//! Restricted, host-owned authentication mode for the existing WKWebView.
++//! WebKit invokes these delegates on the main thread. State is boxed for a
++//! stable ObjC ivar address and detached before the delegate/state is released.
++use super::*;
++use crate::{cx::Cx, event::NativeAuthBrowserEvent};
++use std::{cell::Cell, sync::OnceLock};
++
++#[derive(PartialEq, Eq)]
++struct Origin {
++    scheme: String,
++    host: String,
++    port: i64,
++}
++
++struct Address {
++    origin: Origin,
++    path: String,
++    fragment: bool,
++    query: bool,
++}
++
++impl Address {
++    unsafe fn from_url(url: ObjcId) -> Option<Self> {
++        if url == nil { return None; }
++        let components: ObjcId = msg_send![class!(NSURLComponents), componentsWithURL: url resolvingAgainstBaseURL: NO];
++        if components == nil { return None; }
++        let user: ObjcId = msg_send![components, user];
++        let password: ObjcId = msg_send![components, password];
++        if user != nil || password != nil { return None; }
++        let scheme: ObjcId = msg_send![components, scheme];
++        let host: ObjcId = msg_send![components, host];
++        if scheme == nil || host == nil { return None; }
++        let scheme = crate::os::apple::apple_util::nsstring_to_string(scheme).to_ascii_lowercase();
++        let host = crate::os::apple::apple_util::nsstring_to_string(host).to_ascii_lowercase();
++        // Production registrations are HTTPS; HTTP is limited to the explicit
++        // local acceptance backend. No file/data/javascript/custom URL schemes.
++        if host.is_empty() || !(scheme == "https" || (scheme == "http" && host == "127.0.0.1")) {
++            return None;
++        }
++        let port: ObjcId = msg_send![components, port];
++        let port: i64 = if port == nil { if scheme == "https" { 443 } else { 80 } }
++            else { msg_send![port, longLongValue] };
++        if !(1..=65535).contains(&port) { return None; }
++        // Compare encoded paths, not lossy decoded paths. Callback lookalikes
++        // such as an encoded slash must never be recognized as the callback.
++        let path: ObjcId = msg_send![components, percentEncodedPath];
++        let mut path = if path == nil { String::new() }
++            else { crate::os::apple::apple_util::nsstring_to_string(path) };
++        if path.is_empty() { path.push('/'); }
++        let fragment: ObjcId = msg_send![components, fragment];
++        let query: ObjcId = msg_send![components, query];
++        Some(Self { origin: Origin { scheme, host, port }, path,
++            fragment: fragment != nil, query: query != nil })
++    }
++
++    fn parse(url: &str) -> Option<Self> {
++        if url.is_empty() || url.len() > 16384 || url.chars().any(char::is_control) { return None; }
++        unsafe {
++            let url: ObjcId = msg_send![class!(NSURL), URLWithString: str_to_nsstring(url)];
++            Self::from_url(url)
++        }
++    }
++}
++
++struct AuthState {
++    browser_id: u64,
++    origin: Option<Origin>,
++    callback: Option<Address>,
++    finished: Cell<bool>,
++}
++
++impl AuthState {
++    fn emit(&self, kind: &str, url: String) {
++        Cx::post_action(NativeAuthBrowserEvent {
++            browser_id: self.browser_id, kind: kind.into(), url,
++        });
++    }
++
++    fn cancel(&self) {
++        if !self.finished.replace(true) { self.emit("cancelled", String::new()); }
++    }
++
++    fn blocked(&self) {
++        if !self.finished.get() { self.emit("blocked", String::new()); }
++    }
++
++    fn same_origin(&self, address: &Address) -> bool {
++        self.callback.is_some() && self.origin.as_ref() == Some(&address.origin)
++    }
++
++    // Returns the WebKit policy: 0 = cancel, 1 = allow. Never open an external
++    // app/browser on behalf of a backend page. Only the exact callback carries
++    // a URL into a host action; other events contain no path/query/credential.
++    unsafe fn navigation(&self, url: ObjcId, main_frame: bool, has_frame: bool) -> i64 {
++        if self.finished.get() { return 0; }
++        let Some(address) = Address::from_url(url) else { self.blocked(); return 0; };
++        if let Some(callback) = &self.callback {
++            if address.origin == callback.origin && address.path == callback.path {
++                if main_frame && !address.fragment {
++                    let absolute: ObjcId = msg_send![url, absoluteString];
++                    if absolute != nil {
++                        let value = crate::os::apple::apple_util::nsstring_to_string(absolute);
++                        if value.len() <= 16384 {
++                            self.finished.set(true);
++                            self.emit("callback", value);
++                            return 0;
++                        }
++                    }
++                }
++                self.blocked();
++                return 0;
++            }
++        }
++        if has_frame && self.same_origin(&address) { 1 }
++        else { self.blocked(); 0 }
++    }
++}
++
++pub(super) struct AuthBrowser {
++    delegate: ObjcId,
++    state: Box<AuthState>,
++    inspectable: bool,
++}
++
++impl AuthBrowser {
++    pub(super) fn new(browser_id: u64, url: &str, callback_url: &str, inspectable: bool) -> Self {
++        let state = Box::new(AuthState {
++            browser_id,
++            origin: Address::parse(url).map(|address| address.origin),
++            callback: Address::parse(callback_url).filter(|address| !address.fragment && !address.query),
++            finished: Cell::new(false),
++        });
++        unsafe {
++            let delegate: ObjcId = msg_send![delegate_class(), new];
++            (*delegate).set_ivar("auth_state", &*state as *const AuthState as *mut c_void);
++            let browser = Self { delegate, state, inspectable };
++            if browser.state.origin.is_none() || browser.state.callback.is_none() {
++                browser.error();
++            }
++            browser
++        }
++    }
++
++    pub(super) fn inspectable(&self) -> bool { self.inspectable }
++
++    pub(super) fn error(&self) {
++        if !self.state.finished.get() { self.state.emit("error", String::new()); }
++    }
++
++    pub(super) fn may_load(&self, url: &str) -> bool {
++        let allowed = !self.state.finished.get() && self.state.callback.is_some()
++            && Address::parse(url).is_some_and(|address| self.state.same_origin(&address));
++        if !allowed { self.state.blocked(); }
++        allowed
++    }
++
++    pub(super) unsafe fn attach(&self, web_view: ObjcId) {
++        let () = msg_send![web_view, setNavigationDelegate: self.delegate];
++        let () = msg_send![web_view, setUIDelegate: self.delegate];
++    }
++
++    pub(super) fn detach(&self, web_view: ObjcId) {
++        self.state.cancel();
++        unsafe {
++            if web_view != nil {
++                let () = msg_send![web_view, setNavigationDelegate: nil];
++                let () = msg_send![web_view, setUIDelegate: nil];
++            }
++        }
++    }
++}
++
++impl Drop for AuthBrowser {
++    fn drop(&mut self) {
++        unsafe {
++            (*self.delegate).set_ivar("auth_state", std::ptr::null_mut::<c_void>());
++            let () = msg_send![self.delegate, release];
++        }
++    }
++}
++
++unsafe fn state(this: &Object) -> Option<&AuthState> {
++    let pointer: *mut c_void = *this.get_ivar("auth_state");
++    (pointer as *const AuthState).as_ref()
++}
++
++fn delegate_class() -> *const Class {
++    static CLASS: OnceLock<usize> = OnceLock::new();
++    *CLASS.get_or_init(|| {
++        extern "C" fn decide(this: &Object, _: Sel, _: ObjcId, action: ObjcId, handler: ObjcId) {
++            unsafe {
++                let policy = if let Some(state) = state(this) {
++                    let request: ObjcId = msg_send![action, request];
++                    let url: ObjcId = msg_send![request, URL];
++                    let frame: ObjcId = msg_send![action, targetFrame];
++                    let main: BOOL = if frame == nil { NO } else { msg_send![frame, isMainFrame] };
++                    let source: ObjcId = msg_send![action, sourceFrame];
++                    let source_main: BOOL = if source == nil { NO } else { msg_send![source, isMainFrame] };
++                    state.navigation(url, main == YES && source_main == YES, frame != nil)
++                } else { 0 };
++                objc_block_invoke!(handler, invoke((policy): i64));
++            }
++        }
++        extern "C" fn response(this: &Object, _: Sel, _: ObjcId, response: ObjcId, handler: ObjcId) {
++            unsafe {
++                let policy = if let Some(state) = state(this) {
++                    let value: ObjcId = msg_send![response, response];
++                    let url: ObjcId = msg_send![value, URL];
++                    let display: BOOL = msg_send![response, canShowMIMEType];
++                    if !state.finished.get() && display == YES
++                        && Address::from_url(url).is_some_and(|address| state.same_origin(&address)) { 1i64 }
++                    else { state.blocked(); 0i64 }
++                } else { 0i64 };
++                objc_block_invoke!(handler, invoke((policy): i64));
++            }
++        }
++        extern "C" fn started(this: &Object, _: Sel, _: ObjcId, _: ObjcId) {
++            unsafe { if let Some(state) = state(this) { if !state.finished.get() { state.emit("loading", String::new()); } } }
++        }
++        extern "C" fn finished(this: &Object, _: Sel, _: ObjcId, _: ObjcId) {
++            unsafe { if let Some(state) = state(this) { if !state.finished.get() { state.emit("loaded", String::new()); } } }
++        }
++        extern "C" fn failed(this: &Object, _: Sel, _: ObjcId, _: ObjcId, error: ObjcId) {
++            unsafe {
++                let code: i64 = msg_send![error, code];
++                // WebKit reports cancellation after intentional policy refusal.
++                if code == -999 { return; }
++                if let Some(state) = state(this) { if !state.finished.get() { state.emit("error", String::new()); } }
++            }
++        }
++        extern "C" fn terminated(this: &Object, _: Sel, _: ObjcId) {
++            unsafe { if let Some(state) = state(this) { if !state.finished.get() { state.emit("error", String::new()); } } }
++        }
++        extern "C" fn closed(this: &Object, _: Sel, _: ObjcId) {
++            unsafe { if let Some(state) = state(this) { state.cancel(); } }
++        }
++        extern "C" fn popup(this: &Object, _: Sel, _: ObjcId, _: ObjcId, _: ObjcId, _: ObjcId) -> ObjcId {
++            unsafe { if let Some(state) = state(this) { state.blocked(); } }
++            nil
++        }
++        let mut declaration = ClassDecl::new("MakepadAuthBrowserDelegate", class!(NSObject)).unwrap();
++        declaration.add_ivar::<*mut c_void>("auth_state");
++        unsafe {
++            declaration.add_method(sel!(webView:decidePolicyForNavigationAction:decisionHandler:), decide as extern "C" fn(&Object, Sel, ObjcId, ObjcId, ObjcId));
++            declaration.add_method(sel!(webView:decidePolicyForNavigationResponse:decisionHandler:), response as extern "C" fn(&Object, Sel, ObjcId, ObjcId, ObjcId));
++            declaration.add_method(sel!(webView:didStartProvisionalNavigation:), started as extern "C" fn(&Object, Sel, ObjcId, ObjcId));
++            declaration.add_method(sel!(webView:didFinishNavigation:), finished as extern "C" fn(&Object, Sel, ObjcId, ObjcId));
++            declaration.add_method(sel!(webView:didFailNavigation:withError:), failed as extern "C" fn(&Object, Sel, ObjcId, ObjcId, ObjcId));
++            declaration.add_method(sel!(webView:didFailProvisionalNavigation:withError:), failed as extern "C" fn(&Object, Sel, ObjcId, ObjcId, ObjcId));
++            declaration.add_method(sel!(webViewWebContentProcessDidTerminate:), terminated as extern "C" fn(&Object, Sel, ObjcId));
++            declaration.add_method(sel!(webViewDidClose:), closed as extern "C" fn(&Object, Sel, ObjcId));
++            declaration.add_method(sel!(webView:createWebViewWithConfiguration:forNavigationAction:windowFeatures:), popup as extern "C" fn(&Object, Sel, ObjcId, ObjcId, ObjcId, ObjcId) -> ObjcId);
++            if let Some(protocol) = Protocol::get("WKNavigationDelegate") { declaration.add_protocol(protocol); }
++            if let Some(protocol) = Protocol::get("WKUIDelegate") { declaration.add_protocol(protocol); }
++        }
++        declaration.register() as *const Class as usize
++    }) as *const Class
++}
+diff --git a/platform/src/os/apple/apple_webview.rs b/platform/src/os/apple/apple_webview.rs
+index 2d7bf1496..77a5b9f05 100644
+--- a/platform/src/os/apple/apple_webview.rs
++++ b/platform/src/os/apple/apple_webview.rs
+@@ -8,6 +8,10 @@
+ #[cfg(target_os = "macos")]
+ use makepad_objc_sys::objc_block;
+ 
++#[cfg(target_os = "macos")]
++#[path = "apple_auth_browser.rs"]
++mod auth_browser;
++
+ #[link(name = "WebKit", kind = "framework")]
+ unsafe extern "C" {}
+ 
+@@ -57,6 +61,7 @@ pub(crate) struct MacosSystemBrowser {
+     attached_window: Option<WindowId>,
+     host_view: ObjcId,
+     web_view: ObjcId,
++    auth: Option<auth_browser::AuthBrowser>,
+ }
+ 
+ #[cfg(target_os = "macos")]
+@@ -67,6 +72,22 @@ pub(crate) fn new(url: &str) -> Self {
+             attached_window: None,
+             host_view: nil,
+             web_view: nil,
++            auth: None,
++        };
++        browser.ensure_web_view();
++        browser.set_url(url, false);
++        browser
++    }
++
++    /// Host-owned authentication view; ordinary reader browsers retain their
++    /// existing behavior. Each attempt gets a fresh, nonpersistent data store.
++    pub(crate) fn new_auth(browser_id: u64, url: &str, callback_url: &str, inspectable: bool) -> Self {
++        let mut browser = Self {
++            current_url: String::new(),
++            attached_window: None,
++            host_view: nil,
++            web_view: nil,
++            auth: Some(auth_browser::AuthBrowser::new(browser_id, url, callback_url, inspectable)),
+         };
+         browser.ensure_web_view();
+         browser.set_url(url, false);
+@@ -79,14 +100,33 @@ fn ensure_web_view(&mut self) {
+         }
+         unsafe {
+             let config: ObjcId = msg_send![class!(WKWebViewConfiguration), new];
++            if let Some(auth) = &self.auth {
++                let store: ObjcId = msg_send![class!(WKWebsiteDataStore), nonPersistentDataStore];
++                if store == nil || config == nil {
++                    auth.error();
++                    if config != nil { let () = msg_send![config, release]; }
++                    return;
++                }
++                let () = msg_send![config, setWebsiteDataStore: store];
++                // A new configuration has no user scripts or script-message
++                // handlers: the backend page cannot invoke native app tools.
++                let preferences: ObjcId = msg_send![config, preferences];
++                let () = msg_send![preferences, setJavaScriptCanOpenWindowsAutomatically: NO];
++            }
+             let web_view: ObjcId = msg_send![class!(WKWebView), alloc];
+             let web_view: ObjcId = msg_send![web_view, initWithFrame: NSRect {
+                 origin: NSPoint { x: 0.0, y: 0.0 },
+                 size: NSSize { width: 1.0, height: 1.0 }
+             } configuration: config];
++            let () = msg_send![config, release];
+             if web_view != nil {
++                if let Some(auth) = &self.auth {
++                    auth.attach(web_view);
++                }
+                 let () = msg_send![web_view, setHidden: YES];
+                 self.web_view = web_view;
++            } else if let Some(auth) = &self.auth {
++                auth.error();
+             }
+         }
+     }
+@@ -192,6 +232,9 @@ pub(crate) fn detach(&mut self) {
+     }
+ 
+     pub(crate) fn set_url(&mut self, url: &str, _replace: bool) {
++        if let Some(auth) = &self.auth {
++            if !auth.may_load(url) { return; }
++        }
+         if self.current_url == url {
+             return;
+         }
+@@ -213,6 +256,10 @@ pub(crate) fn history_go(&mut self, delta: i32) {
+     }
+ 
+     pub(crate) fn inspect(&mut self, result_path: String, snapshot_path: Option<String>, scroll_y: Option<f64>) {
++        if self.auth.as_ref().is_some_and(|auth| !auth.inspectable()) {
++            let _ = std::fs::write(result_path, r#"{"error":"Authentication inspection is disabled"}"#);
++            return;
++        }
+         if self.web_view == nil { return; }
+         let scroll = scroll_y.filter(|y| y.is_finite())
+             .map(|y| format!("window.scrollTo(0,{y});")).unwrap_or_default();
+@@ -252,13 +299,39 @@ pub(crate) fn inspect(&mut self, result_path: String, snapshot_path: Option<Stri
+         }
+     }
+ 
++    /// Native acceptance instrumentation only. Never returns JavaScript values
++    /// and is unavailable on ordinary readers or production auth views.
++    pub(crate) fn evaluate_auth(&mut self, script: String, result_path: String) {
++        if !self.auth.as_ref().is_some_and(|auth| auth.inspectable()) {
++            let _ = std::fs::write(result_path, r#"{"error":"Authentication inspection is disabled"}"#);
++            return;
++        }
++        if self.web_view == nil || script.len() > 32768 {
++            let _ = std::fs::write(result_path, r#"{"error":"Authentication inspection is unavailable"}"#);
++            return;
++        }
++        unsafe {
++            let completion = objc_block!(move |_value: ObjcId, error: ObjcId| {
++                let result = if error != nil {
++                    r#"{"error":"Authentication form action failed"}"#
++                } else { r#"{"ok":true}"# };
++                let _ = std::fs::write(&result_path, result);
++            });
++            let () = msg_send![self.web_view, evaluateJavaScript: str_to_nsstring(&script) completionHandler: &completion];
++        }
++    }
++
+     pub(crate) fn cleanup(&mut self) {
++        if let Some(auth) = &self.auth {
++            auth.detach(self.web_view);
++        }
+         unsafe {
+             if self.web_view != nil {
+                 let () = msg_send![self.web_view, stopLoading];
+             }
+         }
+         self.detach();
++        self.auth = None;
+         unsafe {
+             if self.web_view != nil { let () = msg_send![self.web_view, release]; self.web_view = nil; }
+             if self.host_view != nil { let () = msg_send![self.host_view, release]; self.host_view = nil; }
+@@ -266,6 +339,13 @@ pub(crate) fn cleanup(&mut self) {
+     }
+ }
+ 
++#[cfg(target_os = "macos")]
++impl Drop for MacosSystemBrowser {
++    fn drop(&mut self) {
++        self.cleanup();
++    }
++}
++
+ #[cfg(target_os = "macos")]
+ fn clipped_browser_layout(
+     unclipped_rect: Rect,
+diff --git a/platform/src/os/apple/macos/macos.rs b/platform/src/os/apple/macos/macos.rs
+index 342378ca8..a24f806dd 100644
+--- a/platform/src/os/apple/macos/macos.rs
++++ b/platform/src/os/apple/macos/macos.rs
+@@ -2053,6 +2053,15 @@ fn handle_platform_ops(
+                         .or_insert_with(|| MacosSystemBrowser::new(&url))
+                         .set_url(&url, false);
+                 }
++                CxOsOp::SpawnAuthBrowser { browser_id, url, callback_url, inspectable } => {
++                    // Spawn always starts a new isolated attempt, including
++                    // when the host reuses a view identifier after cancellation.
++                    if let Some(mut previous) = self.os.system_browsers.remove(&browser_id) {
++                        previous.cleanup();
++                    }
++                    self.os.system_browsers.insert(browser_id,
++                        MacosSystemBrowser::new_auth(browser_id.0, &url, &callback_url, inspectable));
++                }
+                 CxOsOp::UpdateSystemBrowser {
+                     browser_id,
+                     area,
+@@ -2121,6 +2130,13 @@ fn handle_platform_ops(
+                         let _ = std::fs::write(result_path, r#"{"error":"native browser is closed"}"#);
+                     }
+                 }
++                CxOsOp::EvaluateAuthBrowser { browser_id, script, result_path } => {
++                    if let Some(browser) = self.os.system_browsers.get_mut(&browser_id) {
++                        browser.evaluate_auth(script, result_path);
++                    } else {
++                        let _ = std::fs::write(result_path, r#"{"error":"native browser is closed"}"#);
++                    }
++                }
+                 CxOsOp::SaveFileDialog(settings) => {
+                     with_macos_app(|app| app.open_save_file_dialog(settings));
+                 }
+diff --git a/platform/src/os/linux/android/android.rs b/platform/src/os/linux/android/android.rs
+index 1012812ae..94029dd20 100644
+--- a/platform/src/os/linux/android/android.rs
++++ b/platform/src/os/linux/android/android.rs
+@@ -1597,6 +1597,10 @@ pub(crate) fn handle_message(&mut self, msg: FromJavaMessage) {
+                 Cx::post_action(crate::event::NativeQrCancelled { reason });
+                 self.handle_action_receiver();
+             }
++            FromJavaMessage::AuthBrowserEvent(auth) => {
++                Cx::post_action(auth);
++                self.handle_action_receiver();
++            }
+             FromJavaMessage::SystemBrowserInvoke {
+                 browser_id,
+                 call_id,
+@@ -2914,6 +2918,9 @@ fn handle_platform_ops(&mut self) -> EventFlow {
+                 CxOsOp::ShowQrScanner => unsafe {
+                     android_jni::to_java_request_qr_scanner();
+                 },
++                CxOsOp::SpawnAuthBrowser { browser_id, url, callback_url, .. } => unsafe {
++                    android_jni::to_java_spawn_auth_browser(browser_id, &url, &callback_url);
++                },
+                 CxOsOp::SpawnSystemBrowser {
+                     browser_id,
+                     url,
+diff --git a/platform/src/os/linux/android/android_jni.rs b/platform/src/os/linux/android/android_jni.rs
+index 376b20e96..2ee73cd8c 100644
+--- a/platform/src/os/linux/android/android_jni.rs
++++ b/platform/src/os/linux/android/android_jni.rs
+@@ -256,6 +256,9 @@ pub enum FromJavaMessage {
+     ComposerExpand,
+     QrScanned { json: String },
+     QrCancelled { reason: String },
++    // NativeAuthBrowserEvent redacts code/state from Debug, including the
++    // renderer-shutdown diagnostic below.
++    AuthBrowserEvent(crate::event::NativeAuthBrowserEvent),
+     SystemBrowserInvoke { browser_id: i64, call_id: i64, tool: String, args: String },
+     SystemBrowserPageError { browser_id: i64, code: i32, description: String, url: String },
+     DeepLink { url: String },
+@@ -2894,6 +2897,22 @@ extern "C" fn Java_dev_makepad_android_MakepadNative_onLocation(
+     });
+ }
+ 
++// Only the renderer-process coordinator calls JNI, after isolated-auth cleanup.
++#[no_mangle]
++pub unsafe extern "C" fn Java_dev_makepad_android_MakepadNative_onAuthBrowserEvent(
++    env: *mut jni_sys::JNIEnv,
++    _: jni_sys::jclass,
++    browser_id: jni_sys::jlong,
++    kind: jni_sys::jstring,
++    url: jni_sys::jstring,
++) {
++    send_from_java_message(FromJavaMessage::AuthBrowserEvent(crate::event::NativeAuthBrowserEvent {
++        browser_id: browser_id as u64,
++        kind: jstring_to_string(env, kind),
++        url: jstring_to_string(env, url),
++    }));
++}
++
+ /// A system browser's main-frame load failed (see `MakepadActivity`'s
+ /// WebViewClient). Delivered as a `NativeSystemBrowserPageError` action so the
+ /// widget hosting the browser can show that the page did not load, instead of
+@@ -3172,6 +3191,21 @@ pub unsafe fn to_java_spawn_system_browser(browser_id: LiveId, url: &str, naviga
+     );
+ }
+ 
++pub unsafe fn to_java_spawn_auth_browser(browser_id: LiveId, url: &str, callback_url: &str) {
++    let env = attach_jni_env();
++    let url = new_java_string(env, url);
++    let callback_url = new_java_string(env, callback_url);
++    ndk_utils::call_void_method!(
++        env,
++        get_activity(),
++        "spawnAuthBrowser",
++        "(JLjava/lang/String;Ljava/lang/String;)V",
++        browser_id.get_value() as jni_sys::jlong,
++        url,
++        callback_url
++    );
++}
++
+ pub unsafe fn to_java_update_system_browser(
+     browser_id: LiveId,
+     left: i32,
+diff --git a/tools/cargo_makepad/src/android/compile.rs b/tools/cargo_makepad/src/android/compile.rs
+index 1caaa86da..fe5d7fbf0 100644
+--- a/tools/cargo_makepad/src/android/compile.rs
++++ b/tools/cargo_makepad/src/android/compile.rs
+@@ -1137,6 +1137,9 @@ fn compile_java(
+         r_class_path.clone(),
+         makepad_java_classes_dir.join("MakepadNative.java"),
+         makepad_java_classes_dir.join("MakepadActivity.java"),
++        makepad_java_classes_dir.join("MakepadAuthActivity.java"),
++        makepad_java_classes_dir.join("MakepadAuthBrowser.java"),
++        makepad_java_classes_dir.join("MakepadAuthPolicy.java"),
+         makepad_java_classes_dir.join("MakepadInputConnection.java"),
+         makepad_java_classes_dir.join("MakepadNetwork.java"),
+         makepad_java_classes_dir.join("MakepadSpeech.java"),
+diff --git a/tools/cargo_makepad/src/android/java/dev/makepad/android/MakepadActivity.java b/tools/cargo_makepad/src/android/java/dev/makepad/android/MakepadActivity.java
+index 41aa2c8f7..69314ccdf 100644
+--- a/tools/cargo_makepad/src/android/java/dev/makepad/android/MakepadActivity.java
++++ b/tools/cargo_makepad/src/android/java/dev/makepad/android/MakepadActivity.java
+@@ -4498,10 +4498,15 @@ public class MakepadActivity
+         });
+     }
+ 
++    public void spawnAuthBrowser(final long browserId, final String url, final String callbackUrl) {
++        runOnUiThread(() -> MakepadAuthBrowser.open(this, browserId, url, callbackUrl));
++    }
++
+     public void closeSystemBrowser(final long browserId) {
+         runOnUiThread(new Runnable() {
+             @Override
+             public void run() {
++                if (MakepadAuthBrowser.close(browserId)) return;
+                 WebView web = mSystemBrowserViews.remove(browserId);
+                 mSystemBrowserNavigable.remove(browserId);
+                 if (web != null) {
+diff --git a/tools/cargo_makepad/src/android/java/dev/makepad/android/MakepadAuthActivity.java b/tools/cargo_makepad/src/android/java/dev/makepad/android/MakepadAuthActivity.java
+new file mode 100644
+index 000000000..665335714
+--- /dev/null
++++ b/tools/cargo_makepad/src/android/java/dev/makepad/android/MakepadAuthActivity.java
+@@ -0,0 +1,217 @@
++package dev.makepad.android;
++
++import android.app.Activity;
++import android.graphics.Color;
++import android.net.http.SslError;
++import android.os.Bundle;
++import android.os.Handler;
++import android.os.Looper;
++import android.os.Messenger;
++import android.os.ResultReceiver;
++import android.view.View;
++import android.view.ViewGroup;
++import android.view.WindowManager;
++import android.webkit.CookieManager;
++import android.webkit.PermissionRequest;
++import android.webkit.SslErrorHandler;
++import android.webkit.WebChromeClient;
++import android.webkit.WebResourceError;
++import android.webkit.WebResourceRequest;
++import android.webkit.WebResourceResponse;
++import android.webkit.WebSettings;
++import android.webkit.WebView;
++import android.webkit.WebViewClient;
++import android.widget.Button;
++import android.widget.LinearLayout;
++import android.widget.TextView;
++
++/** One ephemeral backend login. Must run in the dedicated :makepad_auth process. */
++public final class MakepadAuthActivity extends Activity {
++    private ResultReceiver receiver;
++    private Messenger owner;
++    private WebView web;
++    private MakepadAuthPolicy policy;
++    private TextView status;
++    private Button retry;
++    private boolean finished;
++    private boolean failed;
++    private boolean started;
++    private final Handler main = new Handler(Looper.getMainLooper());
++    @Override public void onCreate(Bundle state) {
++        super.onCreate(state);
++        getWindow().addFlags(WindowManager.LayoutParams.FLAG_SECURE);
++        getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
++        if (android.os.Build.VERSION.SDK_INT >= 31
++                && checkSelfPermission("android.permission.HIDE_OVERLAY_WINDOWS") == android.content.pm.PackageManager.PERMISSION_GRANTED)
++            getWindow().setHideOverlayWindows(true);
++        if (android.os.Build.VERSION.SDK_INT >= 33) getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
++            android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT,() -> goBack());
++        try {
++            receiver = getIntent().getParcelableExtra("receiver");
++            owner = getIntent().getParcelableExtra("owner");
++            String suffix = getIntent().getStringExtra("suffix");
++            if (android.os.Build.VERSION.SDK_INT < 28 || receiver == null || owner == null
++                    || !getPackageName().concat(":makepad_auth").equals(android.app.Application.getProcessName())
++                    || suffix == null || !suffix.matches(MakepadAuthBrowser.PREFIX+"[a-f0-9]{32}"))
++                throw new IllegalArgumentException("auth activity isolation");
++            policy = new MakepadAuthPolicy(getIntent().getStringExtra("url"),getIntent().getStringExtra("callback"));
++            owner.getBinder().linkToDeath(() -> main.post(() -> finishAuth("cancelled","")),0);
++            Bundle ready = new Bundle();
++            ready.putInt("pid",android.os.Process.myPid());
++            ready.putParcelable("child",new Messenger(new Handler(Looper.getMainLooper(), message -> {
++                if (message.what == MakepadAuthBrowser.CANCEL) { finishAuth("cancelled",""); return true; }
++                if (message.what == MakepadAuthBrowser.START && !started && !finished) {
++                    started=true;
++                    try {
++                        // Must precede EVERY android.webkit call in this separate process.
++                        // The host confirms this is still the current attempt before any load.
++                        WebView.setDataDirectorySuffix(suffix);
++                        WebView.setWebContentsDebuggingEnabled(false);
++                        buildUi();
++                    } catch (Exception e) { finishAuth("error",""); }
++                    return true;
++                }
++                return false;
++            })));
++            receiver.send(MakepadAuthBrowser.READY,ready);
++            main.postDelayed(() -> { if (!started && !finished) finishAuth("cancelled",""); },15000);
++        } catch (Exception e) { finishAuth("error",""); }
++    }
++    private void buildUi() {
++        LinearLayout root = new LinearLayout(this);
++        root.setOrientation(LinearLayout.VERTICAL); root.setBackgroundColor(Color.WHITE);
++        root.setImportantForAutofill(View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS);
++        if (android.os.Build.VERSION.SDK_INT >= 30) {
++            // Android 15 enforces edge-to-edge. Keep trusted controls outside
++            // system bars and shrink the form above the actual keyboard.
++            getWindow().setDecorFitsSystemWindows(false);
++            root.setOnApplyWindowInsetsListener((view,insets) -> {
++                android.graphics.Insets safe = insets.getInsets(
++                    android.view.WindowInsets.Type.systemBars() | android.view.WindowInsets.Type.ime());
++                view.setPadding(safe.left,safe.top,safe.right,safe.bottom);
++                return android.view.WindowInsets.CONSUMED;
++            });
++        } else root.setFitsSystemWindows(true);
++        LinearLayout toolbar = new LinearLayout(this);
++        toolbar.setPadding(dp(8),dp(4),dp(8),dp(4));
++        Button back = new Button(this); back.setText("Back"); back.setOnClickListener(v -> goBack());
++        toolbar.addView(back,new LinearLayout.LayoutParams(dp(76),dp(48)));
++        TextView domain = new TextView(this); domain.setText(policy.domain()); domain.setTextColor(Color.rgb(28,37,48));
++        domain.setTextSize(16); domain.setGravity(android.view.Gravity.CENTER); domain.setMaxLines(2);
++        toolbar.addView(domain,new LinearLayout.LayoutParams(0,dp(48),1));
++        Button cancel = new Button(this); cancel.setText("Cancel"); cancel.setOnClickListener(v -> finishAuth("cancelled",""));
++        toolbar.addView(cancel,new LinearLayout.LayoutParams(dp(88),dp(48)));
++        root.addView(toolbar);
++        status = new TextView(this); status.setText("Private sign-in • Loading…"); status.setTextSize(14);
++        status.setTextColor(Color.rgb(55,65,81)); status.setPadding(dp(16),dp(8),dp(16),dp(8)); root.addView(status);
++        retry = new Button(this); retry.setText("Retry sign-in"); retry.setVisibility(View.GONE);
++        retry.setOnClickListener(v -> { failed=false; retry.setVisibility(View.GONE); status.setText("Private sign-in • Loading…"); web.loadUrl(policy.start.toString()); });
++        root.addView(retry,new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(48)));
++        web = new WebView(this);
++        web.setImportantForAutofill(View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS);
++        WebSettings settings = web.getSettings();
++        settings.setJavaScriptEnabled(true); settings.setDomStorageEnabled(true);
++        settings.setAllowFileAccess(false); settings.setAllowContentAccess(false);
++        settings.setAllowFileAccessFromFileURLs(false); settings.setAllowUniversalAccessFromFileURLs(false);
++        settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
++        settings.setCacheMode(WebSettings.LOAD_NO_CACHE);
++        settings.setSaveFormData(false); settings.setSavePassword(false);
++        settings.setJavaScriptCanOpenWindowsAutomatically(false); settings.setSupportMultipleWindows(false);
++        settings.setGeolocationEnabled(false); settings.setMediaPlaybackRequiresUserGesture(true);
++        CookieManager.getInstance().setAcceptThirdPartyCookies(web,false);
++        web.setWebChromeClient(new WebChromeClient() {
++            @Override public boolean onConsoleMessage(android.webkit.ConsoleMessage message) { return true; }
++            @Override public void onPermissionRequest(PermissionRequest request) { request.deny(); }
++            @Override public boolean onShowFileChooser(WebView view, android.webkit.ValueCallback<android.net.Uri[]> callback, FileChooserParams params) { callback.onReceiveValue(null); return true; }
++        });
++        web.setDownloadListener((url,userAgent,disposition,mime,length) -> failure("blocked","Downloads are unavailable during sign-in."));
++        web.setWebViewClient(new WebViewClient() {
++            @Override public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
++                String url=request.getUrl().toString();
++                if (!request.isForMainFrame()) return !policy.navigation(url);
++                return navigation(url);
++            }
++            @Override public boolean shouldOverrideUrlLoading(WebView view,String url) { return navigation(url); }
++            @Override public void onPageStarted(WebView view,String url,android.graphics.Bitmap favicon) {
++                if (navigation(url)) { if (!finished) view.stopLoading(); }
++                else {
++                    failed=false; retry.setVisibility(View.GONE);
++                    status.setText("Private sign-in • Loading…");
++                }
++            }
++            @Override public void onPageFinished(WebView view,String url) {
++                if (!finished && !failed && policy.navigation(url)) { status.setText("Private sign-in • "+policy.domain()); event("loaded"); }
++            }
++            @Override public void onReceivedError(WebView view,WebResourceRequest request,WebResourceError error) {
++                if (request.isForMainFrame()) failure("error","This sign-in page could not load. Check your connection and retry.");
++            }
++            @Override public void onReceivedHttpError(WebView view,WebResourceRequest request,WebResourceResponse response) {
++                if (request.isForMainFrame()) failure("error","The sign-in service is unavailable. Please retry.");
++            }
++            @Override public void onReceivedSslError(WebView view,SslErrorHandler handler,SslError error) {
++                handler.cancel(); failure("error","The sign-in certificate could not be verified.");
++            }
++            @Override public void onReceivedHttpAuthRequest(WebView view,android.webkit.HttpAuthHandler handler,String host,String realm) {
++                handler.cancel(); failure("blocked","This authentication method is unavailable.");
++            }
++            @Override public void onReceivedClientCertRequest(WebView view,android.webkit.ClientCertRequest request) { request.cancel(); }
++            @Override public boolean onRenderProcessGone(WebView view,android.webkit.RenderProcessGoneDetail detail) {
++                finishAuth("error",""); return true;
++            }
++        });
++        root.addView(web,new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,0,1));
++        setContentView(root);
++        root.requestApplyInsets();
++        web.loadUrl(policy.start.toString());
++    }
++    private int dp(int value) { return (int)(getResources().getDisplayMetrics().density*value+0.5f); }
++    private boolean navigation(String url) {
++        if (finished) return true;
++        if (policy.callback(url)) { finishAuth("callback",url); return true; }
++        if (policy.navigation(url)) return false;
++        failure("blocked","This sign-in cannot open another site."); return true;
++    }
++    private void failure(String kind,String message) {
++        if (finished) return;
++        failed=true; status.setText(message); retry.setVisibility(View.VISIBLE); event(kind);
++    }
++    private void event(String kind) {
++        if (receiver == null) return;
++        Bundle data=new Bundle(); data.putString("kind",kind); receiver.send(MakepadAuthBrowser.EVENT,data);
++    }
++    private void goBack() {
++        if (web != null && web.canGoBack()) {
++            android.webkit.WebBackForwardList history=web.copyBackForwardList();
++            String url=history.getItemAtIndex(history.getCurrentIndex()-1).getUrl();
++            if (policy.navigation(url)) { web.goBack(); return; }
++        }
++        finishAuth("cancelled","");
++    }
++    @Override public void onBackPressed() { goBack(); }
++    private void finishAuth(String kind,String url) {
++        if (finished) return;
++        finished=true;
++        if (receiver != null) {
++            Bundle data=new Bundle(); data.putString("kind",kind); data.putString("url",url);
++            receiver.send(MakepadAuthBrowser.TERMINAL,data);
++        }
++        if (web != null) {
++            web.stopLoading();
++            if (web.getParent() instanceof ViewGroup) ((ViewGroup)web.getParent()).removeView(web);
++            web.destroy(); web=null;
++        }
++        finishAndRemoveTask();
++    }
++    @Override protected void onStop() {
++        super.onStop();
++        // A login left through Home/Recents cannot remain live in the background.
++        if (!finished) finishAuth("cancelled","");
++    }
++    @Override protected void onDestroy() {
++        if (!finished) finishAuth("cancelled","");
++        super.onDestroy();
++        // Only this isolated auth process exits. The renderer process owns cleanup and
++        // delays completion until the profile is gone, so a later attempt cannot reuse it.
++        main.postDelayed(() -> android.os.Process.killProcess(android.os.Process.myPid()),100);
++    }
++}
+diff --git a/tools/cargo_makepad/src/android/java/dev/makepad/android/MakepadAuthBrowser.java b/tools/cargo_makepad/src/android/java/dev/makepad/android/MakepadAuthBrowser.java
+new file mode 100644
+index 000000000..65890f62f
+--- /dev/null
++++ b/tools/cargo_makepad/src/android/java/dev/makepad/android/MakepadAuthBrowser.java
+@@ -0,0 +1,191 @@
++package dev.makepad.android;
++
++import android.app.Activity;
++import android.app.ActivityManager;
++import android.content.ComponentName;
++import android.content.Context;
++import android.content.Intent;
++import android.content.pm.ActivityInfo;
++import android.os.Build;
++import android.os.Bundle;
++import android.os.Handler;
++import android.os.Looper;
++import android.os.Message;
++import android.os.Messenger;
++import android.os.ResultReceiver;
++import java.io.File;
++import java.nio.file.Files;
++import java.nio.file.LinkOption;
++import java.nio.file.Path;
++import java.nio.file.attribute.BasicFileAttributes;
++import java.util.UUID;
++
++/** Main-process coordinator. Never initializes android.webkit or touches the reader profile. */
++final class MakepadAuthBrowser {
++    static final String PREFIX = "makepad_auth_";
++    static final int READY = 1, EVENT = 2, TERMINAL = 3, CANCEL = 4, START = 5;
++    private static final Handler MAIN = new Handler(Looper.getMainLooper());
++    private static final java.util.concurrent.ThreadPoolExecutor WORKER = new java.util.concurrent.ThreadPoolExecutor(
++        1,1,0,java.util.concurrent.TimeUnit.SECONDS,new java.util.concurrent.ArrayBlockingQueue<Runnable>(2),
++        task -> new Thread(task,"makepad-auth-profile"),new java.util.concurrent.ThreadPoolExecutor.AbortPolicy());
++    private static Session active;
++    private static final class Session {
++        final long id;
++        final Context context;
++        final MakepadAuthPolicy policy;
++        final String suffix = PREFIX + UUID.randomUUID().toString().replace("-", "");
++        Messenger child;
++        int pid;
++        boolean closing, cleanup, cancel;
++        String terminal = "cancelled", callback = "";
++        Session(Activity activity, long id, MakepadAuthPolicy policy) {
++            context = activity.getApplicationContext(); this.id = id; this.policy = policy;
++        }
++    }
++    static void open(Activity activity, long id, String url, String callback) {
++        if (Build.VERSION.SDK_INT < 28 || active != null) { emit(id,"error",""); return; }
++        final Session session;
++        try {
++            MakepadAuthPolicy policy = new MakepadAuthPolicy(url,callback);
++            ActivityInfo info = activity.getPackageManager().getActivityInfo(new ComponentName(activity,MakepadAuthActivity.class),0);
++            if (info.exported || !(activity.getPackageName()+":makepad_auth").equals(info.processName))
++                throw new IllegalArgumentException("auth activity isolation");
++            session = new Session(activity,id,policy);
++        } catch (Exception e) { emit(id,"error",""); return; }
++        active = session;
++        // A previous main-process death may have left an auth process/profile. Only our exact
++        // private process and directory namespace are eligible; all I/O is off the UI thread.
++        submit(session,() -> {
++            boolean ready = retireProcess(session.context) && cleanProfiles(session.context);
++            MAIN.post(() -> {
++                if (active != session) return;
++                if (!ready) { complete(session,"error",""); return; }
++                if (session.cancel || session.cleanup) { cleanup(session); return; }
++                Intent intent = new Intent(activity,MakepadAuthActivity.class);
++                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS);
++                intent.putExtra("url",url); intent.putExtra("callback",callback); intent.putExtra("suffix",session.suffix);
++                intent.putExtra("owner",new Messenger(new Handler(Looper.getMainLooper())));
++                intent.putExtra("receiver",new ResultReceiver(MAIN) {
++                    @Override protected void onReceiveResult(int kind, Bundle data) {
++                        if (data == null) return;
++                        if (active != session || session.cleanup) {
++                            // startActivity may complete after cancellation/timeout. Never let an
++                            // obsolete activity create a WebView; the handshake has no URL content.
++                            if (kind == READY) {
++                                Messenger stale = data.getParcelable("child");
++                                if (stale != null) try { stale.send(Message.obtain(null,CANCEL)); }
++                                catch (android.os.RemoteException ignored) {}
++                            }
++                            return;
++                        }
++                        if (kind == READY) {
++                            if (session.child != null) return;
++                            session.pid = data.getInt("pid");
++                            session.child = data.getParcelable("child");
++                            if (session.child == null || session.pid <= 0) { close(id); return; }
++                            try { session.child.getBinder().linkToDeath(() -> MAIN.postDelayed(() -> cleanup(session),100),0); }
++                            catch (android.os.RemoteException e) { cleanup(session); }
++                            if (session.cancel) close(id);
++                            else try { session.child.send(Message.obtain(null,START)); }
++                            catch (android.os.RemoteException e) { cleanup(session); }
++                        } else if (kind == TERMINAL && !session.closing) {
++                            session.closing = true;
++                            String event = data.getString("kind", "cancelled");
++                            String value = data.getString("url", "");
++                            session.terminal = "callback".equals(event) && session.policy.callback(value) ? "callback"
++                                : "cancelled".equals(event) ? "cancelled" : "error";
++                            session.callback = "callback".equals(session.terminal) ? value : "";
++                            // The child normally exits in onDestroy; this also bounds broken lifecycle paths.
++                            MAIN.postDelayed(() -> cleanup(session),750);
++                        } else if (kind == EVENT && !session.closing) {
++                            String event = data.getString("kind", "error");
++                            if ("loaded".equals(event) || "error".equals(event) || "blocked".equals(event)) emit(id,event,"");
++                        }
++                    }
++                });
++                try { activity.startActivity(intent); }
++                catch (RuntimeException e) { session.terminal="error"; cleanup(session); }
++                MAIN.postDelayed(() -> {
++                    if (active == session && session.child == null) { session.terminal="error"; close(id); }
++                },15000);
++                MAIN.postDelayed(() -> { if (active == session) close(id); },600000);
++            });
++        });
++    }
++    static boolean close(long id) {
++        Session session = active;
++        if (session == null || session.id != id) return false;
++        session.cancel = true;
++        // Also closes a child that never sends READY, crashes during initialization, or
++        // has already closed its command binder. Never leave admission locked for ten minutes.
++        MAIN.postDelayed(() -> cleanup(session),1000);
++        if (session.child != null && !session.closing) {
++            try { session.child.send(Message.obtain(null,CANCEL)); }
++            catch (android.os.RemoteException e) { cleanup(session); }
++        }
++        return true;
++    }
++    private static void cleanup(Session session) {
++        if (active != session || session.cleanup) return;
++        session.cleanup = true;
++        submit(session,() -> {
++            boolean clean = retireProcess(session.context) && cleanProfiles(session.context);
++            MAIN.post(() -> complete(session,clean ? session.terminal : "error",clean ? session.callback : ""));
++        });
++    }
++    private static void submit(Session session,Runnable work) {
++        try { WORKER.execute(work); }
++        catch (java.util.concurrent.RejectedExecutionException e) { complete(session,"error",""); }
++    }
++    private static void complete(Session session, String kind, String url) {
++        if (active != session) return;
++        active = null;
++        emit(session.id,kind,url);
++    }
++    private static void emit(long id, String kind, String url) { MakepadNative.onAuthBrowserEvent(id,kind,url); }
++    private static boolean retireProcess(Context context) {
++        ActivityManager manager = (ActivityManager)context.getSystemService(Context.ACTIVITY_SERVICE);
++        String name = context.getPackageName()+":makepad_auth";
++        for (int tries=0; tries<30; tries++) {
++            boolean alive = false;
++            java.util.List<ActivityManager.RunningAppProcessInfo> processes = manager.getRunningAppProcesses();
++            if (processes == null) return false;
++            for (ActivityManager.RunningAppProcessInfo process : processes) {
++                if (name.equals(process.processName) && process.uid == android.os.Process.myUid()) {
++                    alive = true;
++                    if (process.pid == android.os.Process.myPid()) return false;
++                    android.os.Process.killProcess(process.pid);
++                }
++            }
++            if (!alive) return true;
++            try { Thread.sleep(100); } catch (InterruptedException e) { Thread.currentThread().interrupt(); return false; }
++        }
++        return false;
++    }
++    private static boolean cleanProfiles(Context context) {
++        try {
++            for (File parent : new File[]{context.getDataDir(),context.getCacheDir()}) {
++                File[] entries = parent.listFiles();
++                if (entries == null || entries.length > 4096) return false;
++                for (File entry : entries) {
++                    String name = entry.getName();
++                    if (name.matches("(?:app_)?[Ww]eb[Vv]iew_"+PREFIX+"[a-f0-9]{32}")) {
++                        int[] budget = {32768};
++                        remove(entry.toPath(),0,budget);
++                    }
++                }
++            }
++            return true;
++        } catch (Exception e) { return false; }
++    }
++    private static void remove(Path path, int depth, int[] budget) throws java.io.IOException {
++        if (--budget[0] < 0 || depth > 32) throw new java.io.IOException("auth profile cleanup bound");
++        BasicFileAttributes attributes = Files.readAttributes(path,BasicFileAttributes.class,LinkOption.NOFOLLOW_LINKS);
++        if (attributes.isDirectory()) {
++            try (java.nio.file.DirectoryStream<Path> children = Files.newDirectoryStream(path)) {
++                for (Path child : children) remove(child,depth+1,budget);
++            }
++        }
++        Files.delete(path); // symlinks are unlinked, never traversed
++    }
++}
+diff --git a/tools/cargo_makepad/src/android/java/dev/makepad/android/MakepadAuthPolicy.java b/tools/cargo_makepad/src/android/java/dev/makepad/android/MakepadAuthPolicy.java
+new file mode 100644
+index 000000000..faa8f789b
+--- /dev/null
++++ b/tools/cargo_makepad/src/android/java/dev/makepad/android/MakepadAuthPolicy.java
+@@ -0,0 +1,43 @@
++package dev.makepad.android;
++
++import java.net.URI;
++import java.util.Locale;
++
++/** Pure URL policy; no WebView calls (safe in the renderer process). */
++final class MakepadAuthPolicy {
++    final URI start;
++    final URI callback;
++    MakepadAuthPolicy(String url, String callbackUrl) {
++        start = parse(url);
++        callback = parse(callbackUrl);
++        if (!allowedOrigin(start) || !allowedOrigin(callback)
++                || callback.getRawQuery() != null) throw new IllegalArgumentException("auth URL policy");
++    }
++    static URI parse(String value) {
++        if (value == null || value.length() > 8192) throw new IllegalArgumentException("auth URL policy");
++        try {
++            URI uri = new URI(value);
++            if (uri.isOpaque() || uri.getHost() == null || uri.getRawUserInfo() != null
++                    || uri.getRawFragment() != null || uri.getRawPath() == null)
++                throw new IllegalArgumentException("auth URL policy");
++            return uri;
++        } catch (java.net.URISyntaxException e) { throw new IllegalArgumentException("auth URL policy"); }
++    }
++    static boolean allowedOrigin(URI uri) {
++        return "https".equals(uri.getScheme())
++            || ("http".equals(uri.getScheme()) && "127.0.0.1".equals(uri.getHost()) && uri.getPort() > 0);
++    }
++    static int port(URI uri) { return uri.getPort() >= 0 ? uri.getPort() : 443; }
++    static boolean origin(URI a, URI b) {
++        return a.getScheme().equals(b.getScheme()) && a.getHost().equalsIgnoreCase(b.getHost()) && port(a) == port(b);
++    }
++    boolean callback(String value) {
++        try { URI u = parse(value); return origin(callback,u) && callback.getRawPath().equals(u.getRawPath()); }
++        catch (IllegalArgumentException e) { return false; }
++    }
++    boolean navigation(String value) {
++        try { return origin(start, parse(value)); }
++        catch (IllegalArgumentException e) { return false; }
++    }
++    String domain() { return start.getHost().toLowerCase(Locale.ROOT) + (start.getPort() > 0 ? ":" + start.getPort() : ""); }
++}
+diff --git a/tools/cargo_makepad/src/android/java/dev/makepad/android/MakepadNative.java b/tools/cargo_makepad/src/android/java/dev/makepad/android/MakepadNative.java
+index c1fe6470b..520fdfa38 100644
+--- a/tools/cargo_makepad/src/android/java/dev/makepad/android/MakepadNative.java
++++ b/tools/cargo_makepad/src/android/java/dev/makepad/android/MakepadNative.java
+@@ -102,6 +102,8 @@ public class MakepadNative {
+     // A system browser's main-frame load failed (no network, host unresolved,
+     // server refused). Rust hands it to the widget hosting the browser so the
+     // failure is shown rather than leaving an empty view on screen.
++    public native static void onAuthBrowserEvent(long browserId, String kind, String url);
++
+     public native static void onSystemBrowserPageError(long browserId, int code, String description, String url);
+ 
+     // The app was opened/resumed via a deep link (ACTION_VIEW URL) or a share
+diff --git a/tools/cargo_makepad/src/android/mod.rs b/tools/cargo_makepad/src/android/mod.rs
+index 3931c6c79..810ea28f7 100644
+--- a/tools/cargo_makepad/src/android/mod.rs
++++ b/tools/cargo_makepad/src/android/mod.rs
+@@ -91,6 +91,12 @@ fn manifest_xml(&self, args: &ManifestArgs<'_>) -> String {
+                     android:hardwareAccelerated="true"
+                     android:largeHeap="true"
+                     tools:targetApi="{target_sdk_version}">
++                    <activity android:name="dev.makepad.android.MakepadAuthActivity"
++                        android:process=":makepad_auth" android:exported="false"
++                        android:excludeFromRecents="true" android:taskAffinity="{url}.makepad_auth"
++                        android:configChanges="orientation|screenSize|keyboardHidden"
++                        android:windowSoftInputMode="adjustResize"
++                        android:theme="@android:style/Theme.Material.Light.NoActionBar" />
+                     <!-- Lets adb shell attach simpleperf to a release build (API 29+, ignored below). -->
+                     <profileable android:shell="true" tools:targetApi="29" />
+                     <meta-data android:name="android.max_aspect" android:value="2.1" />
+diff --git a/widgets/src/web_reader.rs b/widgets/src/web_reader.rs
+index bcdc907b3..d1e2a1b04 100644
+--- a/widgets/src/web_reader.rs
++++ b/widgets/src/web_reader.rs
+@@ -27,9 +27,9 @@
+     makepad_script::ScriptFnRef,
+     view::View,
+     widget::*,
+-    widget_async::{CxWidgetToScriptCallExt, ScriptAsyncResult},
++    widget_async::{CxSplashVmExt, CxWidgetToScriptCallExt, ScriptAsyncResult},
+ };
+-use std::collections::HashMap;
++use std::{collections::HashMap, sync::{Arc, Weak, atomic::{AtomicBool, Ordering}}};
+ 
+ const WATCHDOG_SECONDS: f64 = 0.5;
+ 
+@@ -47,10 +47,43 @@
+ thread_local! {
+     /// heap key -> the web views that heap's readers spawned.
+     static OPENED: std::cell::RefCell<HashMap<usize, Vec<SystemBrowserId>>> = Default::default();
++    /// Native watchdog timers are not script callbacks; isolate GC must stop
++    /// them explicitly even when no widget close handler ran.
++    static WATCHDOGS: std::cell::RefCell<HashMap<usize, Vec<Timer>>> = Default::default();
++}
++
++thread_local! {
++    // One-use host capabilities, not app-visible handles. Only Weak references
++    // are retained, so registration never keeps a dead authorization alive.
++    static AUTH_LIFETIMES: std::cell::RefCell<HashMap<String, Weak<AtomicBool>>> = Default::default();
++}
++
++/// Register an unguessable host ticket before creating its consent sheet.
++/// Returns false (and cancels) if the bounded registry cannot admit it.
++/// Call on the UI thread that owns the sheet; no script registration API exists.
++pub fn register_auth_lifetime(ticket: &str, flag: &Arc<AtomicBool>) -> bool {
++    if ticket.is_empty() || ticket.len() > 128 || flag.load(Ordering::SeqCst) {
++        flag.store(true, Ordering::SeqCst);
++        return false;
++    }
++    let registered = AUTH_LIFETIMES.with(|tickets| {
++        let mut tickets = tickets.borrow_mut();
++        tickets.retain(|_, weak| weak.upgrade().is_some_and(|flag| !flag.load(Ordering::SeqCst)));
++        if tickets.len() >= 128 || tickets.contains_key(ticket) { return false; }
++        tickets.insert(ticket.to_owned(), Arc::downgrade(flag));
++        true
++    });
++    if !registered { flag.store(true, Ordering::SeqCst); }
++    registered
+ }
+ 
+ /// Close every web view opened by readers in these (dead) heaps.
+ pub(crate) fn gc_web_readers(cx: &mut Cx, dead_heaps: &[usize]) {
++    let timers: Vec<Timer> = WATCHDOGS.with(|timers| {
++        let mut timers = timers.borrow_mut();
++        dead_heaps.iter().filter_map(|heap| timers.remove(heap)).flatten().collect()
++    });
++    for timer in timers { cx.stop_timer(timer); }
+     let ids: Vec<SystemBrowserId> = OPENED.with(|o| {
+         let mut o = o.borrow_mut();
+         dead_heaps.iter().filter_map(|heap| o.remove(heap)).flatten().collect()
+@@ -69,6 +102,25 @@ pub struct WebReader {
+     /// Called when a page is refused or fails to load; `error()` says why.
+     #[live]
+     on_error: ScriptFnRef,
++    /// Only host sheets may open authentication; contained heaps are refused.
++    #[live]
++    on_auth: ScriptFnRef,
++    #[rust]
++    auth_mode: bool,
++    #[rust]
++    auth_state: String,
++    #[rust]
++    auth_callback: String,
++    #[rust]
++    auth_redirect: String,
++    #[rust]
++    auth_id: Option<SystemBrowserId>,
++    #[rust]
++    auth_inspectable: bool,
++    #[rust]
++    auth_lifetime: Option<Weak<AtomicBool>>,
++    #[rust]
++    auth_lifetime_ticket: String,
+ 
+     #[rust]
+     last_error: String,
+@@ -91,13 +143,21 @@ pub struct WebReader {
+ impl WebReader {
+     /// Each reader owns its web view: its uid is unique in the process.
+     fn browser_id(&self) -> SystemBrowserId {
+-        SystemBrowserId(LiveId(self.widget_uid().0))
++        self.auth_id.unwrap_or(SystemBrowserId(LiveId(self.widget_uid().0)))
+     }
+ 
+     fn heap_key(&self) -> usize {
+         self.view.source.heap_key()
+     }
+ 
++    fn start_watchdog(&mut self, cx: &mut Cx) {
++        if self.timer.is_none() {
++            let timer = cx.start_interval(WATCHDOG_SECONDS);
++            WATCHDOGS.with(|timers| timers.borrow_mut().entry(self.heap_key()).or_default().push(timer));
++            self.timer = Some(timer);
++        }
++    }
++
+     fn report(&mut self, cx: &mut Cx, why: String) {
+         log!("web reader: {why}");
+         self.last_error = why;
+@@ -108,6 +168,7 @@ fn report(&mut self, cx: &mut Cx, why: String) {
+ 
+     /// Open `url`, when this app may. Returns whether it opened.
+     pub fn open(&mut self, cx: &mut Cx, url: &str) -> bool {
++        if self.auth_mode { self.close(cx); self.auth_mode = false; self.auth_id = None; }
+         let heap = self.heap_key();
+         if !crate::splash_policy::page_allowed(heap, url) {
+             self.report(cx, format!("refused {url}: not on this app's host list, and no `web` grant"));
+@@ -132,13 +193,75 @@ pub fn open(&mut self, cx: &mut Cx, url: &str) -> bool {
+         self.open = true;
+         self.overlay_visible = true;
+         self.drawn = true;
+-        if self.timer.is_none() {
+-            self.timer = Some(cx.start_interval(WATCHDOG_SECONDS));
++        self.start_watchdog(cx);
++        self.view.redraw(cx);
++        true
++    }
++
++    /// Consume a one-use host ticket into this sheet's isolate. Contained
++    /// callers cannot consume tickets, even if they somehow learn one.
++    pub fn bind_auth_lifetime(&mut self, cx: &mut Cx, ticket: &str) -> bool {
++        if crate::splash_policy::is_enforced(self.heap_key()) || self.spawned { return false; }
++        if self.auth_lifetime_ticket == ticket {
++            return self.auth_lifetime.as_ref().and_then(Weak::upgrade)
++                .is_some_and(|flag| !flag.load(Ordering::SeqCst));
+         }
++        if self.auth_lifetime.is_some() { return false; }
++        let Some(vm_id) = cx.script_ref_vm_id(&self.view.source) else { return false; };
++        if vm_id == crate::widget_async::MAIN_SPLASH_VM_ID { return false; }
++        let flag = AUTH_LIFETIMES.with(|tickets| tickets.borrow_mut().remove(ticket))
++            .and_then(|weak| weak.upgrade());
++        let Some(flag) = flag else { return false; };
++        if !crate::widget_async::bind_splash_cancellation(vm_id, flag.clone()) { return false; }
++        self.auth_lifetime = Some(Arc::downgrade(&flag));
++        self.auth_lifetime_ticket = ticket.to_owned();
++        true
++    }
++
++    /// Host-only login presentation over the existing native WebView engine.
++    pub fn open_auth(&mut self, cx: &mut Cx, url: &str, callback: &str) -> bool {
++        if crate::splash_policy::is_enforced(self.heap_key())
++            || !self.auth_lifetime.as_ref().and_then(Weak::upgrade).is_some_and(|flag| !flag.load(Ordering::SeqCst))
++            || !cfg!(any(target_os = "macos", target_os = "android"))
++        { return false; }
++        self.close(cx);
++        self.auth_id = Some(SystemBrowserId(LiveId::unique()));
++        let id = self.browser_id();
++        cx.system_browser(id).spawn_auth(url, callback, self.auth_inspectable);
++        OPENED.with(|o| o.borrow_mut().entry(self.heap_key()).or_default().push(id));
++        self.spawned = true;
++        self.failed = false;
++        self.url = Some(url.to_owned());
++        self.auth_redirect = callback.to_owned();
++        self.auth_callback.clear();
++        self.auth_state = "loading".into();
++        self.auth_mode = true;
++        self.open = true;
++        self.drawn = true;
++        self.start_watchdog(cx);
+         self.view.redraw(cx);
+         true
+     }
+ 
++    fn auth_changed(&mut self, cx: &mut Cx) {
++        if self.on_auth.as_object() != ScriptObject::ZERO {
++            cx.widget_to_script_call(self.widget_uid(), NIL, self.view.source.clone(), self.on_auth.clone(), &[]);
++        }
++    }
++
++    /// Native acceptance hosts may inspect this view; script apps receive no ID.
++    pub fn auth_browser_id(&self) -> Option<SystemBrowserId> {
++        (self.auth_mode && self.spawned && !crate::splash_policy::is_enforced(self.heap_key()))
++            .then(|| self.browser_id())
++    }
++
++    /// Native test-host opt-in only. This method has no script-call adapter.
++    pub fn enable_auth_inspection(&mut self) {
++        if !self.spawned && !crate::splash_policy::is_enforced(self.heap_key()) {
++            self.auth_inspectable = true;
++        }
++    }
++
+     /// Close the page: its web view is destroyed, not hidden, so nothing it
+     /// was doing (a playing video, a timer, a socket) outlives the reader.
+     /// The next `open` starts a fresh view.
+@@ -159,6 +282,13 @@ pub fn close(&mut self, cx: &mut Cx) {
+             self.spawned = false;
+         }
+         if let Some(timer) = self.timer.take() {
++            WATCHDOGS.with(|timers| {
++                let mut timers = timers.borrow_mut();
++                if let Some(owned) = timers.get_mut(&self.heap_key()) {
++                    owned.retain(|owned| owned.0 != timer.0);
++                    if owned.is_empty() { timers.remove(&self.heap_key()); }
++                }
++            });
+             cx.stop_timer(timer);
+         }
+         self.view.redraw(cx);
+@@ -176,6 +306,57 @@ fn hide_overlay(&mut self, cx: &mut Cx) {
+ 
+ impl Widget for WebReader {
+     fn script_call(&mut self, vm: &mut ScriptVm, method: LiveId, args: ScriptValue) -> ScriptAsyncResult {
++        if method == live_id!(bind_auth_lifetime) {
++            if crate::splash_policy::is_enforced(self.heap_key())
++                || crate::splash_policy::is_enforced(vm.bx.heap.heap_key())
++            { return ScriptAsyncResult::Return(FALSE); }
++            let ticket = args.as_object().and_then(|args| {
++                let trap = vm.bx.threads.cur().trap.pass();
++                let value = vm.bx.heap.vec_value(args, 0, trap);
++                vm.bx.heap.cast_to_owned_string(value, "binding host authentication")
++            });
++            let result = ticket.is_some_and(|ticket| vm.with_cx_mut(|cx| self.bind_auth_lifetime(cx, &ticket)));
++            return ScriptAsyncResult::Return(result.into());
++        }
++        if matches!(method, id if id == live_id!(open_auth) || id == live_id!(auth_status)
++            || id == live_id!(auth_callback) || id == live_id!(auth_back) || id == live_id!(auth_retry)) {
++            if crate::splash_policy::is_enforced(self.heap_key()) {
++                return ScriptAsyncResult::Return(FALSE);
++            }
++            if method == live_id!(open_auth) {
++                let mut values = Vec::new();
++                if let Some(args_obj) = args.as_object() {
++                    for index in 0..2 {
++                        let trap = vm.bx.threads.cur().trap.pass();
++                        let value = vm.bx.heap.vec_value(args_obj, index, trap);
++                        values.push(vm.bx.heap.cast_to_owned_string(value, "opening host authentication"));
++                    }
++                }
++                if let [Some(url), Some(callback)] = values.as_slice() {
++                    let ok = vm.with_cx_mut(|cx| self.open_auth(cx, url, callback));
++                    return ScriptAsyncResult::Return(ok.into());
++                }
++                return ScriptAsyncResult::Return(FALSE);
++            }
++            if method == live_id!(auth_status) {
++                return ScriptAsyncResult::Return(vm.bx.heap.new_string_from_str(&self.auth_state));
++            }
++            if method == live_id!(auth_callback) {
++                let value = std::mem::take(&mut self.auth_callback);
++                return ScriptAsyncResult::Return(vm.bx.heap.new_string_from_str(&value));
++            }
++            if self.auth_mode && self.open {
++                vm.with_cx_mut(|cx| {
++                    if method == live_id!(auth_back) {
++                        cx.system_browser(self.browser_id()).history_go(-1);
++                    } else if let Some(url) = self.url.clone() {
++                        let callback = self.auth_redirect.clone();
++                        self.open_auth(cx, &url, &callback);
++                    }
++                });
++            }
++            return ScriptAsyncResult::Return(NIL);
++        }
+         if method == live_id!(open) {
+             let mut url = None;
+             if let Some(args_obj) = args.as_object() {
+@@ -218,8 +399,25 @@ fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+         }
+         if let Event::Actions(actions) = event {
+             for action in actions {
++                if let Some(auth) = action.downcast_ref::<crate::makepad_draw::makepad_platform::event::NativeAuthBrowserEvent>() {
++                    if auth.browser_id == self.browser_id().0.get_value() && self.open && self.auth_mode {
++                        self.auth_state = auth.kind.clone();
++                        if auth.kind == "callback" {
++                            self.auth_callback = auth.url.clone();
++                            self.close(cx);
++                        } else if auth.kind == "cancelled" {
++                            self.close(cx);
++                        }
++                        self.auth_changed(cx);
++                    }
++                }
+                 if let Some(err) = action.downcast_ref::<crate::makepad_draw::makepad_platform::event::NativeSystemBrowserPageError>() {
+                     if err.browser_id == self.browser_id().0.get_value() && self.open {
++                        if self.auth_mode {
++                            self.auth_state = "error".into();
++                            self.auth_changed(cx);
++                            continue;
++                        }
+                         self.failed = true;
+                         self.hide_overlay(cx);
+                         let why = format!("could not load {}: {}", self.url.as_deref().unwrap_or(""), err.description);
+diff --git a/widgets/src/widget_async.rs b/widgets/src/widget_async.rs
+index 1f5a2872e..801b82e1b 100644
+--- a/widgets/src/widget_async.rs
++++ b/widgets/src/widget_async.rs
+@@ -8,7 +8,8 @@
+     std::any::Any,
+     std::cell::RefCell,
+     std::collections::{HashMap, VecDeque},
+-    std::sync::atomic::{AtomicU64, AtomicU8, Ordering},
++    std::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering},
++    std::sync::{Arc, Weak},
+ };
+ 
+ static SCRIPT_ASYNC_COUNTER: AtomicU64 = AtomicU64::new(1);
+@@ -157,12 +158,52 @@ pub(crate) fn apply_splash_isolate_mods(vm: &mut ScriptVm) {
+ }
+ 
+ 
++thread_local! {
++    // Only the UI thread binds/retires isolates. Workers observe their own
++    // atomic flag; no lock, wait or callback executes during Splash::drop.
++    static SPLASH_CANCELLATIONS: RefCell<HashMap<SplashVmId, Vec<Weak<AtomicBool>>>> = RefCell::new(HashMap::new());
++}
++
++/// Bind a host operation to an isolate's lifetime. The host resolves the VM
++/// from its own widget source; this function is never exposed to scripts.
++/// A refused binding cancels the operation, rather than leaving it unowned.
++pub fn bind_splash_cancellation(vm_id: SplashVmId, flag: Arc<AtomicBool>) -> bool {
++    if vm_id == MAIN_SPLASH_VM_ID
++        || flag.load(Ordering::SeqCst)
++        || DEAD_SPLASH_ISOLATES.with(|dead| dead.borrow().contains(&vm_id))
++    {
++        flag.store(true, Ordering::SeqCst);
++        return false;
++    }
++    let bound = SPLASH_CANCELLATIONS.with(|bindings| {
++        let mut bindings = bindings.borrow_mut();
++        bindings.retain(|_, flags| {
++            flags.retain(|flag| flag.upgrade().is_some_and(|flag| !flag.load(Ordering::SeqCst)));
++            !flags.is_empty()
++        });
++        if bindings.values().map(Vec::len).sum::<usize>() >= 1024
++            || bindings.get(&vm_id).is_some_and(|flags| flags.len() >= 16)
++        { return false; }
++        bindings.entry(vm_id).or_default().push(Arc::downgrade(&flag));
++        true
++    });
++    if !bound { flag.store(true, Ordering::SeqCst); }
++    bound
++}
++
+ /// Queue a Splash isolate for reclamation on the next isolate alloc. Called from
+ /// `Splash::drop`, which has no `Cx`. Ignores the main VM (id 0), never an isolate.
+ pub(crate) fn mark_splash_isolate_dead(vm_id: SplashVmId) {
+     if vm_id == MAIN_SPLASH_VM_ID {
+         return;
+     }
++    SPLASH_CANCELLATIONS.with(|bindings| {
++        if let Some(flags) = bindings.borrow_mut().remove(&vm_id) {
++            for flag in flags {
++                if let Some(flag) = flag.upgrade() { flag.store(true, Ordering::SeqCst); }
++            }
++        }
++    });
+     DEAD_SPLASH_ISOLATES.with(|g| g.borrow_mut().push(vm_id));
+ }
+ 

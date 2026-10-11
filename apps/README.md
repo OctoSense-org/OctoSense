@@ -4,35 +4,61 @@ English | [简体中文](README.zh-CN.md)
 
 **New to the code?** Read the [desktop, Home, ROM and system-app walkthrough](../desktop/docs/code-walkthrough.md), then the [agent and Tokio walkthrough](../docs/architecture-walkthrough.md). The first follows launch, native hosting, script bundles, app data and Android platform boundaries.
 
-> **Where this fits.** System apps run in App Hub's Card runner. News, Mail, Calendar, Photos, Maps, YouTube and Camera declare app agents; AI providers configures the host and declares none. The shell gives each enabled app/account its own peer and drives its conversations for the system agent, the “Ask <app>” panel and in-card chat. Declared tools pass through the shell's relay and approval router to a host service; the shell's shared notice service handles apps that only expose `<namespace>.notify`. See [App agents](#app-agents) for the exact tools and [architecture](../docs/architecture.md) for the two lanes and trust boundaries. Glance accepts L0 and Splash cards under the publishing app's policy.
+> **Where this fits.** System apps run in App Hub's Card runner. News, Mail, Calendar, Photos, Maps, YouTube and Camera declare app agents; AI providers configures the host and declares none, and neither does Writer. The shell gives each enabled app/account its own peer and drives its conversations for the system agent, the “Ask <app>” panel and in-card chat. Declared tools pass through the shell's relay and approval router to a host service; the shell's shared notice service handles apps that only expose `<namespace>.notify`. See [App agents](#app-agents) for the exact tools and [architecture](../docs/architecture.md) for the two lanes and trust boundaries. Glance accepts L0 and Splash cards under the publishing app's policy.
 
 The first-party apps that ship with [OctoSense](https://github.com/OctoSense-org),
 the agent shell on top of your operating system, and the host services behind
 them. They live in `apps/` of the [OctoSense repository](../README.md); until
 2026-09-27 they were the OctoSense-System-Apps repository (archived).
 
-- **News, Photos, Maps, Camera, Mail, Calendar, AI providers and YouTube** are *contained script apps*. Each is
+- **News, Photos, Maps, Camera, Mail, Calendar, AI providers, YouTube, Quick Deck, PDF Tools and Writer** are *contained script apps*. Each is
   a Makepad Script/Splash program in a `bundle/`, run by App Hub's Card runner
   in its own isolate, under the permissions admitted from its `manifest.json`. That is the same containment a store app gets. They are also worked
   examples of the app shape any developer publishes through the App Hub.
 - **Mail's host service** (`mail/host-service`) is the Rust half of Mail:
   IMAP/POP3/SMTP, the account store and the sign-in sheet, run by the shell.
   The app gets mail, never a password or a socket. It also runs Mail's
-  agent's tool `mail.notify`, which puts a notice card on the glance screen.
+  agent's account-scoped read/sync tools and `mail.notify`/`mail.publish_card`, which publish Mail cards on the glance screen.
 - **Calendar's host service** (`calendar/host-service`) keeps Calendar's
   events in the host's directory and runs Calendar's agent's tools:
   `calendar.events`, `add_event`, `remove_event`, and `notify` and `agenda`,
-  which put an event or agenda card on the glance screen. Calendar is a
-  desktop system app (`desktop/system-apps.json`).
+  which put an event or agenda card on the glance screen. Calendar ships in both shells
+  (`desktop/system-apps.json` and `phone/system-apps.json`).
 - **News's host service** (`news/host-service`) collects News's stories on a
   timer, with no model, and runs News's agent tools `news.list`, `news.read`
   and `news.notify` (the shell draws the notice).
+- **The word engine service** (`word/host-service`, ADR 0013) is wordcraft's document engine behind typed `word.*` methods: document info, plain-text extraction, structure inspection, conversion between docx, md, html, rtf, odt, txt and pdf, and writing a minimal new document, all inside the caller's own folder. Writer (`writer/bundle`, desktop only) is its app; Writer's calls work in Writer's own storage.
 - **The `llm` host service** (`ai-providers/host-service`) is the Rust half
   of AI providers: the assistant's LLM providers over octos's model catalog,
   keys in the platform secret store, Test connection, and moving providers
   between devices by a PIN-protected `OCTOS1E` QR (camera, image or paste).
   Keys are typed and QRs drawn only on the host's own sheets; the app sees
   masked status.
+- **The `model` media APIs** use those host-held providers for bounded image,
+  speech, embedding and asynchronous video requests. Apps declare `model` and
+  exact host API versions; provider entitlement is checked when used. See the
+  [media contract and validation limits](ai-providers/host-service/MEDIA.md).
+- **The `deck` host service** (`deck/host-service`, ADR 0013) is the deckcraft presentation engine behind `deck.*`: decks inspected, read as outline text, rendered to PNG, created from titles and bullets, and converted (pptx, native, outline, PDF), confined to the caller's own folder. Its app is Quick Deck (`quickdeck/bundle`), whose calls work in Quick Deck's own storage.
+- **The `cad` engine service** (`cad/host-service`): the cadcraft drafting engine behind `cad.*` (ADR 0013, no bundle yet) — inspect, query, measure, render and convert DXF/DWG drawings, every path inside the caller's own folder.
+- **The `light` engine service** (`light/host-service`) is lightcraft's RAW
+  develop engine behind `light.*` (ADR 0013): EXIF/XMP metadata, the develop
+  control catalog, and single or batch parametric develop, for system apps
+  only and contained to the caller's own folder. No bundle yet.
+- **The `sound` host service** (`sound/host-service`) is soundcraft's audio engine behind `sound.*` (ADR 0013), offline file processing only — info, convert, trim, mix and waveform peaks inside the caller's own folder; it never opens an audio or MIDI device, and no bundle exists yet.
+- **The `design` host service** (`design/host-service`) is designcraft's page-layout engine (ADR 0013) behind `design.*`: document info, page renders to PNG and PDF/IDML/EPUB export, with every path inside the caller's own folder; no bundle yet.
+- **The `film` host service** (`film/host-service`) is the pinned filmcraft
+  video engine (ADR 0013) behind `film.*`: probe, frame-to-PNG and bounded
+  exports through its own pure-Rust codecs — headless, offline, no bundle yet.
+- **The `effect` host service** (`effect/host-service`) is the effectcraft
+  motion-graphics engine (ADR 0013) behind `effect.*` for system apps:
+  project info, comp frames rendered to PNG, the engine's command catalog
+  and Lottie import/export, every file in the caller's own folder; no
+  bundle yet.
+- **The vector engine service** (`vector/host-service`,
+  `octosense-vector-service`) runs the pinned vectorcraft engine headless
+  behind `vector.*` (ADR 0013): inspect, convert, draw by engine commands and
+  render vector documents (SVG, PDF, EPS, DXF, raster) inside the caller's
+  own folder; system apps only, no bundle yet.
 - **AppCard** (`appcard`) is an optional native app: the "Ask anything"
   assistant, a Rust module (`octos-app`) that the shells link in-process and
   that runs on the shell's octos kernel. It is **opt-in**: both shells link
@@ -55,35 +81,69 @@ Rules for agents working here are in [AGENTS.md](AGENTS.md) and
 
 **Building your own app?** You do not need to build or change this
 repository. Start at the [OctoSense-org profile](https://github.com/OctoSense-org)'s
-reading list (OctoScript-App-Design-Flow's `AGENTS.md`, then
-`docs/QUICKSTART.md`), and read the bundles here as worked examples
+reading list: the `AGENTS.md` of OctoSense App Flow (formerly Design Flow),
+then its `docs/QUICKSTART.md`. Read the bundles here as worked examples
 (`apps/<name>/bundle/main.splash`). To run one next to your app, clone the
-OctoSense repository into the same workspace and, from
-OctoScript-App-Design-Flow:
+OctoSense repository into the same workspace, then run this from your App Flow checkout:
 `tools/octo run ../OctoSense/apps/photos/bundle --system --no-stamp --app-data /tmp/sys-apps`
 (`--no-stamp` leaves the checkout unmodified; Mail needs a shell, see below).
 
 ## The apps
 
+### Shared appearance
+
+News, Photos, Mail, Calendar, Maps, AI providers, YouTube, PDF Tools and Writer share the interface
+in [`interface.splash`](interface.splash): theme-aware page/card/field surfaces,
+readable secondary text, 44-point actions and 48-point inputs. Desktop content
+has a maximum width; narrow windows keep the same actions. Camera and media
+viewers retain a dark viewing surface. App Hub uses the same spacing and action
+hierarchy in its native module. Expanded Glance cards and in-card chat use the
+shared shell on both desktop and phone.
+
+When a keyboard shrinks a focused hosted app, the shell reveals the active
+editor through the app’s own scrolling container and keeps fixed actions in
+place. Maps switches its tiles with the host appearance. Camera controls use
+a dark scrim to remain readable over a bright preview; Android waits for the
+first-use permission answer before preparing that preview. A permission dialog
+pauses only a playing video; it cannot turn an unprepared camera into a fake
+playing state when the app resumes. The preview uses its resolved on-screen
+size for aspect-preserving fill, including `Fill` layouts and resized windows;
+a rotated camera frame is cropped at the edges instead of stretched. AI providers’
+Android QR scanner chooses a preview/YUV size advertised by the camera before
+opening it; the preview keeps that aspect ratio, and callbacks from an earlier
+scanner session cannot close a newly opened one.
+
+After editing the interface, run `python3 tools/sync-app-interface.py` from the
+repository root. It embeds the exact prelude in each contained bundle;
+`python3 tools/sync-app-interface.py --check` detects drift in CI.
+The prelude resolves the current host theme on restyle, without replacing
+unsaved input. [Local native UX checks](../tools/app-ux/README.md) exercise
+editing, persistence, appearance switching, browsing and search in isolated
+profiles. Phone-sized desktop captures are not physical-device verification.
+
 | App | Id | What it does | Capabilities (manifest) | Network hosts (manifest) | Host services |
 | --- | --- | --- | --- | --- | --- |
 | [News](news/bundle) | `os.news` | Hacker News, TechMeme and Google News feeds in tabs (Today, HN, TechMeme, Google, Saved), with a reader for stories | `storage`, `net`, `images`, `web`, `news`, `glance` | `hn.algolia.com`, `www.techmeme.com`, `news.google.com`, `api.gdeltproject.org`, `feeds.bbci.co.uk`, `feeds.npr.org`, `www.theguardian.com`, `feeds.arstechnica.com` | [`news`](news/host-service) |
-| [Photos](photos/bundle) | `os.photos` | A sample library: moments, albums, people, favorites, a grid with selection, a full-screen viewer | `storage`, `glance` | none | `photos.notify` via the shell notice service (full-size photos use the asset mount) |
-| [Maps](maps/bundle) | `os.maps` | `MapView` map, place search, places, routes with a changeable start and up to two stops, and a drive mode with turn-by-turn and a 2D/3D view; starts at the device's GPS fix when there is one | `storage`, `net`, `location`, `glance` | `photon.komoot.io`, `router.project-osrm.org`, `overpass-api.de`, `overpass.kumi.systems`, `maps.mail.ru`, `overpass.openstreetmap.fr` | `maps.notify` via the shell notice service |
+| [Photos](photos/bundle) | `os.photos` | A sample library with AI-curated Memories, optional story prompts, saved stories and slideshows; moments, albums, people, favorites, a grid with selection, a full-screen viewer | `storage`, `glance`, `model` | none (the host calls the model) | `model.complete`; its own `photos` service on the desktop: `photos.notify` through the shell's notice hook, `photos.info` on the photo engine; on the phone, which leaves that engine out, the shell notice service answers `photos.notify` and `photos.info` is unavailable (full-size photos use the asset mount) |
+| [Maps](maps/bundle) | `os.maps` | `MapView` map of places that can always be dragged and zoomed: search near the visible area, place cards with OpenStreetMap details (hours, phone, website, cuisine), saved places as pins, a long press for "What's here", directions with a changeable start and up to two stops, and a drive mode with turn-by-turn and a 2D/3D view; starts at the device's GPS fix when there is one; the browse map draws makepad's pre-baked world map (`makepad.nl`), the drive maps and the place details read OpenStreetMap through Overpass | `storage`, `net`, `location`, `web`, `glance` | `photon.komoot.io`, `router.project-osrm.org`, `overpass-api.de`, `overpass.kumi.systems`, `maps.mail.ru`, `overpass.openstreetmap.fr`, `makepad.nl` | `maps.notify` via the shell notice service |
 | [Camera](camera/bundle) | `os.camera` (Home) | Photo and video over the runtime's `CameraPreview` widget, flash and zoom, a thumbnail of the last shot and a viewer | `storage`, `camera`, `microphone`, `library`, `glance` | none | `camera.notify` via the shell notice service |
 | [Mail](mail/bundle) | `os.mail` | Accounts, folders, message list, reader (HTML rebuilt by the service) and composer; its agent puts notice cards on the glance screen (`mail.notify`) | `storage`, `mail`, `glance` | none (the service connects, not the app) | [`mail`](mail/host-service) |
 | [AI providers](ai-providers/bundle) | `os.ai-providers` | The assistant's LLM providers: a primary and fallbacks, each with a model pull-down from octos's catalog and Test connection; an add wizard (family, model, route, key, test); Show QR for phone and import by camera, image or paste | `storage`, `llm` | none (the service connects, not the app) | [`llm`](ai-providers/host-service) |
 | [YouTube](youtube/bundle) | `os.youtube` | YouTube search (the runtime's keyless `sys.video`, which reads YouTube's own results page), result rows with thumbnails and LIVE or length badges, topic chips, playback of YouTube's mobile watch page in `WebReader`, and a history of what was played on this device | `storage`, `net`, `glance` | `www.youtube.com`, `m.youtube.com`, `i.ytimg.com` | `youtube.notify` via the shell notice service |
-| [Calendar](calendar/bundle) | `os.calendar` (desktop) | Its agent keeps the person's events and puts event and agenda cards on the glance screen; its own window cannot list the events yet (it needs an App Hub `calendar` capability) | `storage`, `glance` | none | [`calendar`](calendar/host-service) (for Calendar's agent only) |
+| [Calendar](calendar/bundle) | `os.calendar` | Month/day calendar, event details and editor; app-owned event/agenda cards in Glance, with saved-event navigation | `calendar`, `glance` | none | [`calendar`](calendar/host-service) (Calendar-owned executor; granted cross-app tools) |
+| [Quick Deck](quickdeck/bundle) | `os.quickdeck` (desktop) | An outline becomes a deck in four steps: write the slides (a title and points each), generate, review every slide (a thumbnail grid, and a slide view with a strip), export PowerPoint or PDF; keeps a list of its decks | `storage`, `deck` | none | [`deck`](deck/host-service): `new`, `info`, `render`, `convert`, in Quick Deck's own storage |
+| [PDF Tools](pdftools/bundle) | `os.pdftools` (desktop) | The PDFs in its own storage: a library with each first page, a document view with page thumbnails, text with find, and info; a page view; merge in three steps (choose, order, done) and split every few pages or where you choose; open a PDF from the device (up to 64 MiB) and remove one. See [its README](pdftools/README.md), with the hidden-shell journey that tests it | `storage`, `files`, `pdf` | none | the [`pdf`](pdf/host-service) engine service in the app's own storage: `pdf.info`, `pdf.render`, `pdf.text`, `pdf.merge`, `pdf.split`; the shell's `files.status` and `files.import` |
+| [Writer](writer/bundle) | `os.writer` (desktop) | A calm editor on a white page (a line starting with `#` is a heading, `-` a bullet, `>` a quote), a document list, Save as a Word document, a preview of the saved document with an outline from its headings, and export to PDF, Markdown, HTML or OpenDocument; drafts autosave in the app's storage | `storage`, `word` | none | [`word`](word/host-service) (`word.convert`, `word.info`, `word.inspect`), in Writer's own storage |
 | [AppCard](appcard) | native, opt-in | The AppCard assistant: a routing brain picks or composes an app agent, which generates a live Splash or webview card. Shells link it only with `app-appcard`; not shipped by default | n/a (not a bundle) | n/a | the shell's octos kernel |
 
-What each capability means is defined by App Hub's closed list
-(`KNOWN_CAPABILITIES` in `crates/app-policy/src/manifest.rs`): `images` shows
-pictures from any public https host, `web` opens a page in the system WebView,
-`library` offers captures to the system photo library, `mail` reaches the
-host's mail service, `llm` reaches the host's LLM-provider service, `news`
-reads the host's news service, `glance` publishes cards to the glance
-screen. `net` reaches only the hosts the manifest lists.
+Capability names come from the shared `octosense-app-contract` 1.x crate
+(`KNOWN_CAPABILITIES` in App Hub's `crates/app-contract/src/manifest.rs`).
+They describe intended use: images, WebView pages, photo-library export,
+Mail, News, Glance or one-shot model calls. `net` and `network.hosts`
+disclose network use; they do not restrict public API execution. Declarations
+do not grant device consent, account access or tool sharing. Capture/export
+intent must be explicit, and `llm` provider management remains system-only.
+See [capabilities and execution boundaries](../docs/capabilities.md).
 
 ### Status and known gaps
 
@@ -92,28 +152,70 @@ screen. `net` reaches only the hosts the manifest lists.
   runtime). Playback opens YouTube's mobile watch page, which autoplays muted
   and shows its own "Open App" prompt. Search reads YouTube's results page and
   depends on its layout.
-- **Camera**: on the OnePlus 6 test run (2026-09-25) Camera captured a photo
-  and released the camera in the background, but the live preview drew pure
-  black; unresolved. Desktop builds have no camera and the Android emulator
-  refuses one, so capture is untested elsewhere.
-- **Photos**: the bundle ships only 75 thumbnails (`bundle/thumbs/`, about
-  2 MB). The full-size files the viewer shows are served at
+- **Camera**: the Redmi Note 12 test package (2026-10-07) passed delayed
+  first-use permission, front/back switching, Photo/Video preview selection and
+  background resume. The stretched `Fill` preview is corrected; native GPU
+  circle measurements pass, while a clear-scene visual comparison on the phone
+  is still pending. The OnePlus 6 black preview reported on 2026-09-25 has not
+  been retested. Still capture was not exercised in this run; Android video
+  recording remains unimplemented.
+- **AI providers camera import**: the Redmi Note 12 scanner opens with supported
+  preview buffers and passed cancel, system Back, background interruption and
+  reopening. QR decoding and importing a provider were not exercised in this run.
+- **Photos Memories**: open **Memories → Create memories**, optionally entering
+  a theme such as “summer with family.” The host's `model.complete` uses the
+  provider configured in **Settings → AI providers** to curate up to three
+  stories with titles, short narratives and ordered slideshows. It receives
+  catalog metadata (dates, places, names, tags, titles and favorite flags),
+  never image bytes or credentials. This release uses the sample catalog;
+  it does not import the device library or analyze image pixels. Generation
+  runs only when requested. The latest 12 stories are kept in
+  alternating `accounts/device/memories.json` and `memories-backup.json`
+  snapshots, separately from albums and favorites; a failed write leaves
+  the previous snapshot recoverable.
+  Local moments and saved stories work without AI. Errors, invalid photo IDs,
+  missing providers and budget limits preserve saved stories. The model service
+  allows 270 seconds for its provider attempts; Photos clears its loading state
+  on timeout and allows retry, with a 300-second fallback if no callback arrives. **Stop waiting**
+  discards a late reply; the host request may still finish and count toward
+  its budget. A standalone `card-host` has no model service.
+- **Photos images**: the bundle ships only 75 thumbnails (`bundle/thumbs/`, about
+  2 MB). Its Home preview keeps three columns and fits one, two or three rows
+  to the card's available width and height, with favorites first. Photos fill
+  the card edge to edge; the title overlays the lower-left corner instead of
+  reserving a header row. The shell's
+  in-process card host calls the optional `on_app_resize(width, height)` hook
+  in the app's own isolate when its slot changes size or the card reloads.
+  It applies the queued UI updates before drawing the Home preview frame.
+  The full-size files the viewer shows are served at
   `{{assets}}/photos/...` only when a shell mounts them: Home mounts
   `photos/resources/photos` (about 87 MB, `phone/system-apps.json`);
   the desktop mounts nothing (`desktop/system-apps.json`), so the viewer has
-  no full-size image there.
-- **Maps**: on the OnePlus 6 (2026-09-27) search, place, route, adding and
-  removing a stop, driving with turn-by-turn and the 2D view worked. The 3D
-  drive view draws the route but no map tiles, on the phone and on the
-  desktop, before and after the stops change.
+  no full-size image there. The viewer keeps a thumbnail fallback visible.
+  Memories on physical phones and with a live AI provider are **unverified**.
+- **Maps**: on the Pixel 7 Pro (2026-10-08, dark mode) the place map
+  worked: it opened at the GPS fix and ◎ flew back to it; the map dragged
+  and zoomed with two fingers; search near the visible map, Saved and
+  Recent, a place card with OpenStreetMap details and its Website reader,
+  Save and pins, a long press, Directions framed once and then left to the
+  person, ‹ Back and Close removing the route, and the drive view with End.
+  The 3D drive view drew map tiles near the route, some still missing after
+  30 seconds. Before the place map, on the OnePlus 6 (2026-09-27), search,
+  place, route, adding and removing a stop, driving with turn-by-turn and
+  the 2D view worked; the 3D drive view drew the route but no map tiles, on
+  the phone and on the desktop, before and after the stops changed. The
+  OnePlus 6T, iOS and OpenHarmony are **unverified**.
 - **News**: runs in `card-host` during development, but not exercised
   end to end in the shell PRs' test runs (the test phone had no network).
 - **Mail**: verified with the demo mailbox on desktop and on the OnePlus 6.
   Mail's and the `llm` host services use the App Hub revision selected by the root
   `Cargo.toml`, shared with the shells, so a build has one `octosense-appstore` and
-  one host-service registry.
-- **Script bundles have no CI.** [`apps.yml`](../.github/workflows/apps.yml)
-  tests the host services, AppCard and the shell services, not the bundles.
+  one host-service registry. Manifest and policy validation use the shared
+  versioned `octosense-app-contract` crate.
+- **Script bundle checks are partial.** [`apps.yml`](../.github/workflows/apps.yml)
+  runs Photos' app-contract admission, Splash memory logic and model-schema checks as part of
+  `cargo test --locked -p octosense-llm-service`, and News has script tests.
+  There is no comprehensive automated UI check for every bundle.
 - **AppCard `personal-data` skill** reads the old native Mail module's
   `mailbox-*.json` files. The script Mail app's mail now lives in the host
   service's own directory (`<host_dir>/mail/box-*.json`), so the skill
@@ -123,8 +225,35 @@ screen. `net` reaches only the hosts the manifest lists.
   sheet came up, the agent added an event and its card opened the glance
   panel. Not packed on the phone. Its host service's tests are not in
   `apps.yml` yet.
-- Only Camera ships its own launcher icon (`bundle/icon.png`); the shells
-  draw the others.
+- **Quick Deck** (2026-10-09, macOS, hidden windows, light and dark): run end
+  to end in a desktop shell built from its branch. A typed outline became a
+  deck through `deck.new`, `deck.info` and one `deck.render` per slide, all
+  writing into Quick Deck's own storage (`decks/<id>/g<n>/`); the review grid
+  and the slide view show the engine's PNGs, and the PowerPoint and PDF
+  exports land beside them. Refusals show in the app: a nearly full storage,
+  a deck file the engine can't read, and a path outside the storage. A light
+  or dark switch keeps the screen the person is on. The `deck` service runs on
+  the shell's UI thread (#399), so the shell pauses while it works: about 3 s
+  for a five-slide deck, 16 s on the very first call of a session. Every
+  screen and state, refusals included, is also covered in `card-host` by
+  `quickdeck/tests/ui.py` with the dev fixture below.
+- **Writer** (2026-10-09). In a hidden desktop shell built from this tree
+  (`MAKEPAD_WM_TEST_APP=writer`, a hidden `--remote` run, light and dark),
+  with the real `word` engine working in Writer's own storage: a document
+  typed through the instrument was saved as a Word document (`word.convert`
+  of the Markdown Writer writes to `work/`), reopened in Preview
+  (`word.info`, `word.inspect`), edited, saved over the open document and
+  reopened, and exported to PDF, Markdown, HTML and OpenDocument
+  (`exports/`). A damaged DOCX showed the engine's refusal, and a DOCX that
+  went missing was saved again before the preview. Switching between light
+  and dark kept the open document and its preview, and text typed after the
+  switch was kept and saved. In `card-host`, which has no `word` service,
+  Save and Preview answer "Writer can't … here: this device has no word
+  engine" and keep the draft; `writer/tests/ui.py` runs every screen there,
+  light and dark (see Writer's tests, below). Writer is desktop only, so
+  there is no phone run.
+- Camera and AI providers ship PNG launcher artwork; YouTube, Quick Deck and
+  Writer ship SVG artwork. The shell frames bundle icons for the selected platform style.
 
 ## How the shells pack them
 
@@ -150,11 +279,14 @@ standalone launcher and ROM image). Each packaging:
    ```
 
 2. Links the host services `octosense-mail-service`,
-   `octosense-calendar-service`, `octosense-news-service` and
-   `octosense-llm-service` (workspace path dependencies) through the shell,
-   [`crates/shell`](../crates/shell) (its `app-hub` feature), and registers them at startup (`crates/shell/src/apps.rs`, `register_host_services`): Mail with `register()` for real accounts, or `register_demo()`
-   when the shell's app config has `mail_demo: true`. Mail and News install
-   `on_notify` callbacks to the shell's common notice renderer; Calendar
+   `octosense-calendar-service`, `octosense-news-service`,
+   `octosense-llm-service` and the sheet engine's `octosense-sheets-service`
+   (workspace path dependencies) through the shell,
+   [`crates/shell`](../crates/shell) (its `app-hub` feature; the photo engine's
+   `octosense-photo-service` comes with the desktop-only `craft-engines`, weighed
+   per engine in [ADR 0013](../docs/adr/0013-craft-engines-as-pinned-services.md)), and registers them at startup (`crates/shell/src/apps.rs`, `register_host_services`): Mail with `register()` for real accounts, or `register_demo()`
+   when the shell's app config has `mail_demo: true`. Mail, News and, with the photo
+   engine, Photos install `on_notify` callbacks to the shell's common notice renderer; Calendar
    installs its card publisher. The shell registers `NoticeService` for
    remaining system-app namespaces; `llm` with the octos
    kernel's core dir and the shell's QR scanner and image picker (see
@@ -183,10 +315,14 @@ mail/host-service/           octosense-mail-service, the `mail` host service (Ru
 mail/docs/                   Mail's plans (the email action card)
 calendar/host-service/       octosense-calendar-service, the `calendar` host service; resources/event.card, agenda.card
 news/host-service/           octosense-news-service, the `news` host service (News's data service)
+pdf/host-service/            octosense-pdf-service, the `pdf` host service (the pdfcraft engine, ADR 0013); examples/pdftools_fixture.rs writes PDF Tools' sample PDFs for its tests
+pdftools/                    PDF Tools: bundle/, tests/ui.py (its hidden-shell journey), README.md
 <name>/bundle/tools.json     app tools: News, Mail, Calendar, Photos, Maps, YouTube, Camera
+<family>/host-service/tools.json  the craft engines' tools (word, deck, cad, light, sound, design, film, effect, vector, pdf), the system agent's (ADR 0013)
 ../crates/shell/src/glance_notice.rs   shared notice service; ../crates/shell/resources/glance/notice.card
 ai-providers/                the `llm` host service (host-service/) and octosense-llm-config (config/:
                              octos's model catalog and provider registry, the profile merge, OCTOS1/OCTOS1E QR)
+writer/                      Writer: bundle/, tests/ui.py (its card-host UI test), dev-fixture/engine.splash (the stand-in word engine that test swaps in; never shipped)
 reference/                   the reference module
 appcard/                     the native AppCard assistant
   app/                       octos-app + store/transport/render crates (members of the root workspace)
@@ -212,7 +348,7 @@ appcard/                     the native AppCard assistant
 apps/<name>/bundle/
   manifest.json     id, version, name, capabilities, network.hosts, integrity
   main.splash       the program
-  icon.png|svg      optional launcher art (Camera has one)
+  icon.png|svg      optional launcher artwork; the shell owns the outer shape
   thumbs/ ...       any other files the app loads, as {{assets}}/<path>
 ```
 
@@ -230,11 +366,57 @@ A system app has the same shape as a store app, with these differences:
 | Ceilings | `HostLimits::system()`: 64 MB storage, 128 MB memory, a larger instruction budget, since the app lives as long as it is open | `HostLimits::default()`: sized for a card |
 | Extra files | a shell can mount directories into `{{assets}}` | only what is in the bundle |
 
-Everything else is identical: the same isolate, the same capability checks,
-the same network allowlist. How to write such an app (language, APIs, the
+Both use the same isolate and public API policy: declarations describe use;
+verified app identity, storage isolation, actual consent and service-specific
+checks remain enforced. How to write such an app (language, APIs, the
 `octo` CLI) is in
-[OctoScript-App-Design-Flow](https://github.com/OctoSense-org/OctoScript-App-Design-Flow)
+[App Flow](https://github.com/OctoSense-org/OctoSense-App-Flow)
 (`docs/QUICKSTART.md`, `docs/SCRIPT-API.md`).
+
+## Launcher icon artwork
+
+App identity belongs to the app; the outer shape belongs to the selected
+shell style. Home, the dock, App Library, group previews and shell app badges
+use the shared `octosense::style::AppIconDraw` renderer. This also covers apps
+installed from App Hub. Do not render bundle images directly on these surfaces.
+
+| Shell style | Outer shape |
+| --- | --- |
+| Android | Circle, matching OctoSense's existing Android icon set |
+| macOS / OctoSense | Rounded square with the macOS icon set's inset |
+| iOS | Rounded square with the iOS icon set's inset |
+| Windows | Softly rounded tile |
+| NextStep | Square tile |
+| Omarchy / Windows 2000 | Keep the theme's freeform artwork convention |
+
+Native Android package icons are already drawn by Android with its device
+mask and user/profile badges. The shell preserves those pixels. Android does
+not require a circle on every device: [adaptive icon masks vary by
+OEM](https://source.android.com/docs/core/display/adaptive-icons).
+[Apple's app icon guidance](https://developer.apple.com/design/human-interface-guidelines/app-icons)
+uses rounded rectangles for iOS, iPadOS and macOS.
+
+For new bundle icons, supply a square PNG or supported SVG with a full-bleed
+background. Keep essential marks inside the central 66% of the canvas so
+platform corners cannot cut them off. Do not bake a circle, rounded corners
+or an outer shadow into the source. Transparent artwork is supported and
+receives a neutral backing in tile-based styles. Keep the logo and brand
+colours; adapting the frame should not redesign the identity.
+
+Shell-owned SVG icons use `icon_frame::styled_svg` and an explicit background
+element. The same frame policy masks bundle PNG/SVG artwork at draw time, so
+switching styles updates installed icons too. Review Android, macOS and iOS
+at launcher and badge sizes, on light and dark backgrounds. The shell's
+icon-frame/style tests run in the Phone workflow.
+
+For a visual regression check, build the `icon_shapes` example from `phone/`
+with `mobile-apps`. Run it with an isolated `OCTOSENSE_HOME`, hidden windows
+and the Makepad remote control surface (see the root `AGENTS.md`). It shows
+all seven styles, bundled and store PNG/SVG artwork, transparent backgrounds,
+small badges and half-opacity icons. Capture `/g?scale=1` and check the PNG
+with `tools/check_icon_shape_preview.py` (optional dependency: Pillow).
+The default capture offset is the macOS caption; use `--body-y` for another
+backend. Native Android package icons must still be checked on a device.
 
 ## Running a bundle during development
 
@@ -279,14 +461,63 @@ MAKEPAD_APP_CONFIG='{"mail_demo":true}' cargo run --release -p octosense-home --
 
 The demo keeps its password in a file, so no keychain prompt appears.
 
+**Quick Deck's dev fixture.** `card-host` has no `deck` service, and the
+shipped bundle has no fixture code. Quick Deck's UI tests use
+`quickdeck/dev-fixture/`, outside the bundle: `engine.splash`, a stand-in for
+the engine that writes what each call asks for at the paths it is given;
+`fixture.json`, its settings; and real renders of `outline.txt` by the pinned
+deckcraft (d0e57d7e), for its pictures. `quickdeck/tests/ui.py` makes a
+scratch copy of the bundle with `engine.splash` in place of `deck_call()`,
+copies the fixture into the app's storage as `dev/`, and drives every screen
+and state in a hidden `card-host`, light and dark. Its first run uses the
+shipped bundle as it is, which shows that no engine answers.
+
+```sh
+python3 apps/quickdeck/tests/ui.py --card-host <App Hub>/target/release/card-host --output target/quickdeck-ui
+```
+
+The grabs and a receipt per appearance land in `target/quickdeck-ui/light`
+and `target/quickdeck-ui/dark`. In `fixture.json`, `delay` is the seconds each
+call takes, `fail` names a call that fails (`new`, `info`, `render`, `convert`
+or `all`), and `unreadable: true` answers `render` without leaving a picture,
+so each slide shows its text.
+
+**Writer's tests.** The shipped bundle has one engine path,
+`host.request("word.*")`, and no fixture code. Its text rules (what the list
+shows for a draft, the Markdown it hands the engine, the file names, the
+outline, relative times and what a refusal says) are pure functions, run in a
+script VM by `../crates/shell/src/writer_model_tests.rs`:
+
+```sh
+cargo test --locked -p octosense-shell --lib writer_model
+```
+
+`card-host` has no `word` service, so `writer/tests/ui.py` drives every screen
+in a hidden `card-host`, light and dark. Its first runs use the shipped bundle
+as it is: writing, the list, autosave across a restart, deleting, and the
+"Writer can't … here" answers. The other runs use a scratch copy of the bundle
+with `writer/dev-fixture/engine.splash` in place of `engine()`: a stand-in
+that reads and writes the paths each call gives it in the app's storage, with
+its settings (`delay`, `fail`) in the storage as `dev/fixture.json`.
+
+```sh
+python3 apps/writer/tests/ui.py --card-host <App Hub>/target/release/card-host --output target/writer-ui
+```
+
+The grabs and a receipt per appearance land in `target/writer-ui/light` and
+`target/writer-ui/dark`. The real engine's flows were checked in a shell
+(Status, above).
+
 ## Host services and sheets
 
-Some work needs something a contained app must never hold: a socket, a
-credential, a device. A **host service** does that work in the shell, in
-Rust. The app calls it with `host.request("<family>.<method>", args, fn(r){…})`;
-the isolate refuses the call unless the manifest grants the family (`mail`),
-and the service answers with data, never the means. The runtime side lives in
-App Hub (`crates/appstore/src/services.rs`).
+Some operations need host-held credentials or device authority. A **host
+service** performs that work in the shell, in Rust, while the app uses public
+APIs under host-enforced app identity and consent rules. The app calls it with `host.request("<family>.<method>", args, fn(r){…})`;
+the admitted app calls under its verified identity, and the service checks
+its actual account scope, consent and operation rules. A family declaration
+such as `mail` describes usage; it does not grant or deny the call. The service
+answers with data, never credentials or approval authority. The runtime side
+lives in App Hub (`crates/appstore/src/services.rs`).
 
 When the person has to act (type a password, approve an account), the service
 raises a **sheet**: a host-owned Splash surface drawn over the app, in its own
@@ -302,6 +533,8 @@ isolate under no app's policy. Calls from the sheet arrive marked
 - only a service can open a sheet; an app cannot.
 
 ### The `mail` service
+
+Ordinary App Hub apps now have account-bound compose/status APIs and native SMTP review. See the [Mail service guide and migration example](mail/host-service/README.md); direct agent or synthetic sending remains refused.
 
 `octosense-mail-service` (`apps/mail/host-service/src/`):
 
@@ -319,23 +552,58 @@ directory (`<host_dir>/mail`), outside every app's jail. Each account is
 granted only to the apps that added it. The service tests an account before
 keeping it.
 
+Mail’s Inbox offers **Reconnect account**, which opens the same host-owned
+sign-in sheet. Enter the same account address, username and incoming-server settings to
+update its credentials without removing its cached messages or saved drafts.
+On Android, the encrypted password file is tied to the installed package’s
+Keystore key: copying it from a test package to Home cannot restore sign-in.
+Reconnect inside the destination package; never use Remove account as a
+credential-reset workaround.
+
 ### The `calendar` service
 
 `octosense-calendar-service` (`apps/calendar/host-service/src/lib.rs`) answers
-only Calendar (`os.calendar`): App Hub's capability list has no `calendar`,
-so no other app can be granted it, and the shell runs Calendar's agent's
-`calendar.*` tools on it as the system app's own service.
+as Calendar (`os.calendar`). Its executor owns the service call even when Mail
+or the system agent is the caller. Both have explicit grants for the shareable
+`calendar.events`, `calendar.add_event` and `calendar.notify` tools. The relay
+checks the caller before routing. Calendar’s own UI calls as the admitted
+`os.calendar` app; its `calendar` declaration describes use, and the service
+checks that identity. Removal, update, UI
+view and agenda are not included in these cross-app grants.
 
 | Method | Args | Answer |
 | --- | --- | --- |
-| `calendar.events` | `{from?, to?, limit?}` | `{events: [{id, title, start, end, location, notes}]}`, soonest first |
-| `calendar.add_event` | `{title, start, end?, location?, notes?}` | `{id, start}` |
+| `calendar.view` (UI only) | `{month?, day?, direction?, take_focus?}` | Month grid, marked days, selected day’s events, and pending saved-event navigation |
+| `calendar.update_event` (Calendar UI/agent only) | `{id, expected, title, start, end?, timezone?, location?, notes?}` | Saved event; stale expected snapshots are refused; existing event cards refresh quietly |
+| `calendar.events` | `{from?, to?, limit?}` | `{events: [{id, title, start, end, location, notes, timezone?, request_id?}]}`, soonest first |
+| `calendar.add_event` | `{title, start, end?, location?, notes?, timezone?, request_id?}` | `{id, start, reused?}` |
 | `calendar.remove_event` | `{id}` | `{removed}` |
 | `calendar.notify` | `{event}` or `{title, when, location?, notes?}`, and `{card_id?, priority?}` | `{card_id, replaced, expires_at}` once an event card (`resources/event.card`) is on the glance screen, with a notification |
 | `calendar.agenda` | `{days?}` | the same, for the agenda card (`resources/agenda.card`): the next three events within `days` (7) |
 
-Times are local (`2026-10-02T15:00`, or a date for the whole day). Events
-live in `<host_dir>/calendar/events.json`, outside every app's jail.
+Events live in `<host_dir>/calendar/events.json`, outside every app's jail.
+The app’s month/day list and editor use this same store. A saved event’s card
+keeps its id in `open.route = "event/<id>"`. **Open Calendar** sits inside the
+card, below its date/time, and opens that event in the actual app. Its L0
+`sys.link` action uses `app://calendar/event/<id>`; the host accepts only the
+current publication’s declared own-app destination. Other URLs or routes do
+not launch anything. `calendar/cards.json` records saved-event publications, their
+original expiry and dismissals. Restart restores active cards without a new
+notification, identical live notify retries reuse the card, and edits refresh
+its data. Ad-hoc notices and agenda cards are not durable saved-event records.
+An explicit IANA `timezone` retains the event wall time and shows its zone on
+the card; omitted zones retain legacy device-local behavior. Ambiguous or
+missing daylight-saving times are refused. Use RFC3339 offsets for precise
+`from`/`to` filters. A stable `request_id` reuses an exact saved request; changed
+fields with the same key are refused. Omit an unknown end time.
+
+Mail schedules only on a human request or an explicit provisioned policy, reads
+the calendar first, verifies the saved event and then publishes its Calendar
+card. Cold Android Mail jobs register Calendar's service and load its granted
+executor without opening Calendar or preparing another agent. These are local
+events, not Google Calendar sync, invitations or scheduled reminder alarms.
+
+Validation: [Mail → Calendar checks and phone evidence](../docs/testing/mail-calendar-2026-10-05.md).
 
 ### The `llm` service
 
@@ -344,8 +612,9 @@ of AI providers. It keeps the octos kernel's LLM providers in the kernel's
 profile, `<core_dir>/profiles/_main.json` (`octosense-llm-config` merges
 `config.llm` and `config.env_vars`, keeping every other key), and the keys
 where octos reads them: the macOS keychain `octos` service behind a
-`keychain:` marker, `<core_dir>/secrets/` on Linux, the app-private profile
-itself elsewhere (Android). Keys are typed, QRs shown and codes scanned only
+`keychain:` marker, `<core_dir>/secrets/` on desktop Linux, the app-private
+profile itself elsewhere (Android, and HarmonyOS, whose embedded kernel cannot
+read the secrets folder). Keys are typed, QRs shown and codes scanned only
 on the host's sheets; the app sees masked status. Built with its `octos-core`
 feature (the shells' default), it writes under
 `octosense_kernel::core_dir()` and calls `octosense_kernel::restart()`
@@ -366,15 +635,72 @@ model lane and tools. Which system apps have one, and how
 | App | `manifest.json` | `tools.json` | Cards |
 | --- | --- | --- | --- |
 | News | `agent` block, `glance` | `news.list`, `news.read` (read, shareable), `news.notify` (act, background) | the shell's notice card |
-| Mail | `agent` block, `glance`, `storage.accounts` (the agent acts for the signed-in account) | `mail.notify` (act, background) | the shell's notice card |
+| Mail | `agent` block, `glance`, `storage.accounts` (the agent acts for the signed-in account) | `mail.accounts`, `mail.folders`, `mail.sync`, `mail.list`, `mail.peek`, `mail.draft` (read); `mail.notify`, `mail.publish_card`, `mail.skip_event`, `mail.propose_reply`, `mail.suggest_reply`, `mail.propose_send` (act, background) | L0 card or the shell's notice card |
 | Calendar | `agent` block, `glance` | `calendar.events` (read), `calendar.add_event` (act), `calendar.remove_event` (destructive, `confirm: host`), `calendar.notify`, `calendar.agenda` (act) | `event.card`, `agenda.card` |
-| Photos, Maps, YouTube, Camera | `agent` block, `glance` | `photos.notify`, `maps.notify`, `youtube.notify`, `camera.notify` (act, background) | the shell's notice card |
+| Photos | `agent` block, `glance` | `photos.notify` (act, background), `photos.info` (read: the photo engine inspects a file in the Photos agent's own folder, [ADR 0013](../docs/adr/0013-craft-engines-as-pinned-services.md); desktop only, on the phone it answers `unavailable`) | the shell's notice card |
+| Maps, YouTube, Camera | `agent` block, `glance` | `maps.notify`, `youtube.notify`, `camera.notify` (act, background) | the shell's notice card |
 | AI providers | none | none yet: App Hub takes a tool namespace only as `[a-z0-9_]` (and octos a tool name's segments only as `[a-z][a-z0-9_]`), so `ai-providers.notify` is refused | – |
 
-**A service API is not automatically an agent tool.** Mail currently exposes
-only `mail.notify` in its agent tool file; its UI's `mail.list`, `mail.message`
-and `mail.send` methods are not thereby available to its agent. The peer's
-workspace also does not mount Mail's host database or credential vault. Calendar
+**Engine tools ([ADR 0013](../docs/adr/0013-craft-engines-as-pinned-services.md)).**
+The ten craft engines (word, deck, cad, light, sound, design, film, effect,
+vector, pdf) have no app and no app agent; their tools ship with their
+services, in `<family>/host-service/tools.json`. The shell declares them under
+a virtual owner `os.<family>` and grants them to the system agent alone
+(`ENGINE_TOOLS` in [`../crates/shell/src/system_chat/grants.rs`](../crates/shell/src/system_chat/grants.rs)),
+27 tools in all. Seven engines (word, deck, cad, light, film, effect,
+vector) offer `<family>.info` (read) and `<family>.run`, a reviewed command
+door: it runs up to 64 commands of the engine's catalog on one document and
+writes the result to a new file. Each service admits every command of a
+call before it runs any, through an allowlist built from the engine's
+reviewed classification (`skill/safety.json`;
+[`../crates/engine-area/src/door.rs`](../crates/engine-area/src/door.rs)):
+a command that works inside the open document runs, and so does a read of a
+file inside the caller's folder that the service reviewed; an id that
+reaches other files, code, the network, a device or the app is refused, and
+so is an id the classification does not know, a batch or macro, an
+app-wide setter and a plug-in effect. Engine work runs on the shell's UI
+thread, so every door also caps what one call may ask for: counts, sizes,
+frame ranges and the copies that multiply across a call, the document's
+size after every command, and its own output. Sound (no command catalog), design
+(no door, by decision) and pdf (a few fixed operations) keep fixed tools:
+`sound.info`, `peaks`, `convert`, `trim`, `mix`; `design.info`, `render`,
+`export`; `pdf.info`, `text`, `render`, `merge`, `split`. ADR 0013 records
+each engine's surface. An engine works in its caller's own
+folder (ADR 0013, `../crates/shell/src/host_tools/areas.rs`): for the system
+agent, its workspace, where its own file tools see what the engines wrote and
+every engine opens what the others made. Every path is relative to that
+folder and kept inside it, no call replaces an existing file, and output into
+an app's storage keeps to its quota. Sheets' `sheets.*` and Photos'
+`photos.info` work in their own app's agent folder.
+
+**Engine skills.** Each engine, the sheet and photo engines included, also
+ships a skill for the system agent in `<family>/host-service/skill/`: a
+hand-written `SKILL.md` (what the engine does, the tools the system agent has
+for it, the file rules, worked examples) and references generated from the
+engine at its pin: `commands.md` (its command catalog, one line per id,
+tagged by what each command reaches), light's `controls.md` and sheet's
+`functions.md`. Beside them, `safety.json` (every command id's class, from
+which each command door builds its allowlist) stays in the repository. The kernel service installs
+the linked engines' skills into the `_main` profile's skills dir before every
+start ([`../crates/kernel/README.md`](../crates/kernel/README.md#the-system-agents-skills));
+octos lists their one-line descriptions in the system agent's prompt, and the
+agent reads a skill when it needs that engine. Each service's
+`tests/skill.rs` fails when a reference drifts from the pinned engine;
+`OCTOSENSE_SKILL_REGEN=1 cargo test --locked -p octosense-<family>-service --test skill`
+regenerates it.
+
+**Mail card reply modes.** The system agent can provision automatic drafts for replyable important mail and Compose reply on request for automated/no-reply mail. The host adds Compose reply to informational incoming-email cards, verifies the original message and asks the Mail agent to create a draft. The same card becomes Email/Chat with saved editing and host review. See [Mail events](../docs/mail-agent-events.md).
+
+**A service API is not automatically an agent tool.** Mail explicitly declares
+account-scoped read/sync, publication, event-decision and draft/proposal tools.
+`mail.peek` does not mark read; `mail.message` remains a UI API. The UI
+`mail.send` path now prepares a host review, not an unapproved SMTP call. No
+agent tool can approve or send. [Composed Mail cards](../docs/mail-composable-cards.md)
+traces durable editing, contextual chat and the approval boundary: only a
+physical press (a tap on Android or a click on macOS) sends, and synthetic
+or remote input is refused. The macOS path and integrated paired-model phone
+acceptance remain **unverified**. The peer's workspace does not mount Mail's
+host database or credential vault. Calendar
 is a working example of an agent reading/writing its app data through declared
 Rust tools; its script window currently only explains how to ask the agent.
 See the [data-access walkthrough](../desktop/docs/code-walkthrough.md#4-follow-a-tool-into-app-data-and-glance).
@@ -395,10 +721,13 @@ See the [data-access walkthrough](../desktop/docs/code-walkthrough.md#4-follow-a
   `peer_send_input`. `agents.ask` waits for the person's answer and the
   peer (it is declared `outward` with `confirm: app`, so the kernel holds
   it as long as an approval, not a read tool's 30 s), then gives the system
-  agent the peer's slug, so the request goes on in the same turn. A turn
-  starts only when the system agent, the person
-  or a card's in-card chat asks: there are no triggers or schedules yet
-  (ADR 0002 M3, planned).
+  agent the peer's slug, so the request goes on in the same turn. Mail also
+  supports opt-in `mail.messages.new` events configured by `agents.provision`: a
+  durable queue starts incoming turns while OctoSense is alive. Inbox collection
+  runs independently of those turns, and failed events retry individually so
+  one failure cannot block all later mail. Successful host
+  publication or explicit skip plus turn completion is required before ack.
+  General app triggers/cron remain planned. See [Mail events](../docs/mail-agent-events.md).
 - **Talking to it yourself.** The person can chat with the app's agent
   directly, not only through the system agent: in the "Ask <app>" panel,
   which the shell draws for every app with an agent (none of these apps
@@ -420,13 +749,17 @@ See the [data-access walkthrough](../desktop/docs/code-walkthrough.md#4-follow-a
   filled by [`../crates/shell/src/glance_notice.rs`](../crates/shell/src/glance_notice.rs)),
   with the app's icon and name, the time, and the agent's title (at most 80
   characters) and text (at most 600); the same `card_id` replaces the app's
-  earlier notice. Mail's and News's services hand `notify` to the shell;
-  Photos, Maps, YouTube and Camera have no service of their own, so the
-  shell's notice service answers it. `calendar.notify` and
+  earlier notice. Mail's, News's and, where the photo engine is linked (the
+  desktop), Photos' services hand `notify` to the shell (Photos' `photos`
+  service also answers `photos.info` on the photo engine); Maps, YouTube and
+  Camera have no service of their own, nor does Photos on the phone, so the
+  shell's notice service answers it (and there `photos.info` answers that it
+  isn't available on this device). `calendar.notify` and
   `calendar.agenda` fill Calendar's own event and agenda cards. Every card
   is published with `notify` through the shell's `glance` service as the
-  app (the app needs the `glance` capability). The model only supplies the
-  text; it never writes card code.
+  admitted app, preserving its publisher/account identity. These fixed-template
+  tools take model-supplied text; `mail.publish_card` additionally takes model-authored L0
+  source validated by the host.
 - **Trying it** on the desktop: open the assistant (F8) and ask the system
   agent to have an app's agent (Mail, Calendar, News, Photos, Maps or
   YouTube) put a card on the glance screen;
@@ -451,8 +784,8 @@ in `mobile-apps` and native mobile builds):
   consumer leaves.
 - **Configured by AI providers.** The `llm` host service writes the kernel's
   profile, `<core_dir>/profiles/_main.json`, and keys (macOS keychain `octos`
-  service behind `keychain:` markers, `<core_dir>/secrets/` on Linux, the
-  profile itself elsewhere), then calls `restart()`: a running kernel stops,
+  service behind `keychain:` markers, `<core_dir>/secrets/` on desktop Linux,
+  the profile itself elsewhere, HarmonyOS included), then calls `restart()`: a running kernel stops,
   its consumers reconnect and a fresh kernel reads the new providers.
 - **Consumers.** AppCard (opt-in) connects through its transport's `kernel`
   module; Rinx's native mini-app host can take its own connection the same
@@ -529,11 +862,11 @@ from the original repository and does not run.
 ## Changing an app
 
 1. Edit `apps/<name>/bundle/`. Use only APIs documented in
-   OctoScript-App-Design-Flow's `docs/SCRIPT-API.md` or already used by
+   App Flow's `docs/SCRIPT-API.md` or already used by
    another app here; check the runtime source before using anything else.
-2. Ask only for what the app uses. A new network host goes in
-   `network.hosts`; a new capability must exist in App Hub's
-   `KNOWN_CAPABILITIES`.
+2. Describe what the app uses in `capabilities` and `network.hosts`; use
+   capability names from App Hub's `KNOWN_CAPABILITIES`. These are disclosures,
+   not permission grants. Required API versions belong in `host_api.required`.
 3. Never add a password or code field. If the app needs a secret, a host
    service and its sheet handle it.
 4. Run it with `card-host --system` (Mail: in a shell with the demo). Test on
@@ -563,8 +896,8 @@ plus an entry in each shell's `system-apps.json`.
 | Repository | Role |
 | --- | --- |
 | [OctoSense](../README.md) (this repository) | the shells that ship these apps: [`desktop/`](../desktop/README.md) and Home in [`phone/`](../phone/README.md) (standalone launcher or preinstalled by the [`rom/`](../rom/README.md) image); the shell services in `crates/` |
-| [OctoSense-App-Hub](https://github.com/OctoSense-org/OctoSense-App-Hub) | catalog, gate (`hub stamp`, `check`, `scan`, `sign-manifest`, `publish`), `card-host`, the Card runner and host-service registry, and `octosense-app-hub-app`, the crate every shell links |
-| [OctoScript-App-Design-Flow](https://github.com/OctoSense-org/OctoScript-App-Design-Flow) | how to design, build, check and publish an app |
+| [OctoSense-App-Hub](https://github.com/OctoSense-org/OctoSense-App-Hub) | catalog, gate (`hub stamp`, `check`, `scan`, `publisher-verify`), `card-host`, the Card runner and host-service registry, and `octosense-app-hub-app`, the crate every shell links |
+| [OctoSense-App-Flow](https://github.com/OctoSense-org/OctoSense-App-Flow) | how to design, build, check and publish an app |
 | [OctoScript](https://github.com/OctoSense-org/OctoScript), [OctoScript-Makepad](https://github.com/OctoSense-org/OctoScript-Makepad), [makepad](https://github.com/OctoSense-org/makepad) | the language and runtime |
 | [Rinx](https://github.com/hagency-org/Rinx) | Matrix chats and mini apps, a native module; reaches the assistant through `crates/app-peers` |
 | [octos](https://github.com/octos-org/octos) | the agent kernel: run as a shell service by `crates/kernel`, configured by AI providers, used by AppCard and other consumers (one revision selected by the root `Cargo.toml`) |
@@ -579,10 +912,10 @@ plus an entry in each shell's `system-apps.json`.
 
 This directory was the OctoSense-System-Apps repository until 2026-09-27,
 imported here with its history. The bundles and the Mail service were first
-written in OctoSense-mobile (archived) and OctoScript-App-Design-Flow (formerly Octoscript-AppCard),
-where their history remains. AppCard came from
-OctoSense-org/OctoSense-AppCard (`d0a836b8`), split from
-OctoScript-App-Design-Flow's `app/` at `cbbda4da`.
+written in OctoSense-mobile (archived) and OctoSense-App-Flow (first named
+Octoscript-AppCard, then OctoScript-App-Design-Flow), where their history
+remains. AppCard came from OctoSense-org/OctoSense-AppCard (`d0a836b8`), split
+from App Flow's `app/` at `cbbda4da`.
 
 Apache-2.0 ([LICENSE](LICENSE)). Third-party components are listed in
 [NOTICE](NOTICE).

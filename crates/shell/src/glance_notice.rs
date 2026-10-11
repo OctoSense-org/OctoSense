@@ -19,12 +19,18 @@
 //! **Who answers.** A tool runs on the host service of its namespace
 //! (`host_tools::script_apps`). An app whose namespace has a service of its
 //! own answers `notify` there and hands it here: Mail (`octosense_mail_
-//! service::on_notify`) and News (`octosense_news_service::Options::
-//! on_notify`). Every other system app gets [`NoticeService`]: registered
+//! service::on_notify`), News (`octosense_news_service::Options::
+//! on_notify`) and, where the photo engine is linked (the desktop's
+//! `craft-engines`), Photos (`octosense_photo_service::on_notify`, whose
+//! `photos` service also answers `photos.info` on the photo engine, ADR
+//! 0013). Every other system app gets [`NoticeService`]: registered
 //! once, after the shell's own services ([`serve_system_apps`]), for each
 //! system app no service answers, it serves that app alone, and only
 //! `notify`. Its agent reaches it when the app's `tools.json` declares
-//! `<namespace>.notify` (Photos, Maps, YouTube, Camera).
+//! `<namespace>.notify` (Maps, YouTube, Camera, and Photos on Home, which
+//! leaves the photo engine out). There Photos' `photos.info` answers that
+//! it is not available on this device
+//! (`host_tools::script_apps::unlinked_engine`), not "no method".
 use serde_json::{json, Value};
 
 /// The notice card (L0), with slots for the app's icon and name ([`card`]).
@@ -128,6 +134,11 @@ impl octosense_appstore::services::HostService for NoticeService {
     fn call(&mut self, call: octosense_appstore::services::ServiceCall, reply: octosense_appstore::services::Replier, _host: &mut dyn octosense_appstore::services::ServiceHost) {
         if call.app_id != self.app {
             return reply.send(Err(format!("{}.notify serves {} only", self.family, self.app)));
+        }
+        // A method of the app's own whose engine this build leaves out
+        // (Photos' `photos.info` on Home): plainly not here.
+        if let Some(engine) = crate::host_tools::script_apps::unlinked_engine(&call.service) {
+            return reply.send(Err(crate::host_tools::script_apps::not_on_this_device(&call.service, engine)));
         }
         match call.method() {
             "notify" => reply.send(notify(&call.app_id, &call.args)),
@@ -241,6 +252,24 @@ mod tests {
         }
         assert!(ask("os.maps", "photos.notify", json!({"title": "x", "body": "y"})).unwrap_err().contains("serves os.photos only"));
         assert!(ask("os.photos", "photos.list", json!({})).unwrap_err().contains("no method"));
+        // Where the photo engine is linked (the desktop's `craft-engines`,
+        // ADR 0013), Photos' namespace is its own service: `photos.info`
+        // reaches the photos service, not a notice service's "no method".
+        // That service answers first for the folder: this call names none the
+        // host handed out, so it is refused before the engine opens anything.
+        #[cfg(feature = "craft-engines")]
+        {
+            let refused = ask("os.photos", "photos.info", json!({"path": "nothing.png"})).unwrap_err();
+            assert!(!refused.contains("no method"), "{refused}");
+            assert!(refused.starts_with("photos") || refused.contains("photo.info"), "{refused}");
+        }
+        // Home leaves the photo engine out: the notice service answers
+        // Photos' namespace, and `photos.info` says plainly it is not here.
+        #[cfg(not(feature = "craft-engines"))]
+        {
+            let refused = ask("os.photos", "photos.info", json!({"path": "nothing.png"})).unwrap_err();
+            assert_eq!(refused, "photos.info isn't available on this device: the photo engine is only in the desktop build");
+        }
         // Its own app reaches the notice (a blank title is refused there,
         // before anything is published).
         for (app, service) in [("os.photos", "photos.notify"), ("os.ai-providers", "ai-providers.notify")] {

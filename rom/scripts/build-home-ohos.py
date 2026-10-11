@@ -22,6 +22,19 @@ def read_json5(path):
     return json.loads(token.sub(lambda m: m.group() if m.group().startswith('"') else '', path.read_text()))
 
 
+def stage_app_icons(project, home):
+    """Replace the pinned template's application, ability and launch icons."""
+    source = home / 'ohos/icons'
+    app_media = project / 'AppScope/resources/base/media'
+    entry_media = project / 'entry/src/main/resources/base/media'
+    app_media.mkdir(parents=True, exist_ok=True)
+    entry_media.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(source / 'app_icon.png', app_media / 'app_icon.png')
+    shutil.copy2(source / 'app_icon.png', entry_media / 'startIcon.png')
+    for name in ('foreground.png', 'background.png'):
+        shutil.copy2(source / name, entry_media / name)
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--deveco-home', required=True, type=Path)
@@ -80,6 +93,7 @@ def main():
     # The packager override can come from another checkout. Always take the
     # ArkTS shell and metadata from this product's pinned framework source.
     shutil.copytree(REPO / '.sources/makepad/tools/open_harmony/deveco', project, dirs_exist_ok=True)
+    stage_app_icons(project, home)
     # Product-owned window policy: keep native system navigation visible and
     # keep the floating controls inside its safe area.
     shutil.copy2(home / 'ohos/EntryAbility.ets',

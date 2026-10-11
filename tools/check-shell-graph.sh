@@ -14,10 +14,18 @@
 # - the shell's AI services are linked: octosense-ai-host, the octos kernel
 #   (octosense-kernel, formerly octosense-octos-core) and octosense-app-peers;
 # - with App Hub linked, so are the host services its Card runner offers the
-#   system apps (octosense-mail-service, octosense-news-service);
+#   system apps (octosense-mail-service, octosense-news-service) and the
+#   sheet engine service, which the native Sheets app's agent tools run on,
+#   Home's included (octosense-sheets-service, weighed per engine, ADR 0013);
 # - AppCard's UI (octosense-appcard) is NOT linked without `app-appcard`;
 # - hosted Rinx is the library module only (feature "octosense-module"),
 #   never its standalone entry or a kernel of its own (Rinx ADR 0007);
+# - the ADR 0013 engine services only the desktop links (the ten behind the
+#   system agent and the photo engine's) are in desktop's graph (its
+#   `craft-engines` default), never in Home's;
+# - the wasm service's runtime (octosense-wasm-host, ADR 0011) is linked
+#   exactly where the service runs: macOS, Linux and Android, and never for
+#   Windows, iOS or OpenHarmony;
 # - one makepad, one App Hub, one octos: a single makepad-widgets /
 #   makepad-platform, a single octosense-appstore and octosense-app-hub-app,
 #   and every octos-* crate from one octos-org/octos revision.
@@ -44,11 +52,29 @@ done
 
 fail() { echo "::error::$*"; exit 1; }
 
+# The targets the `wasm` service runs on (crates/shell/Cargo.toml, build.rs).
+wasm_runs_on() {
+  case $1 in
+    *-apple-darwin | *-pc-windows-* | *-linux-android* | *-unknown-linux-gnu* | *-unknown-linux-musl* | *-unknown-linux-ohos*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+host_triple=$(rustc -vV | sed -n 's/^host: //p')
+
+# The ADR 0013 engines only the desktop links (`craft-engines`): the ten
+# behind the system agent, and the photo engine (weighed per engine for Home).
+craft_engines=(octosense-word-service octosense-deck-service octosense-cad-service
+  octosense-light-service octosense-sound-service octosense-design-service
+  octosense-film-service octosense-effect-service octosense-vector-service
+  octosense-pdf-service octosense-photo-service)
+
 # Whether package $1 is in the graph (0), absent (1).
 linked() {
   local pkg=$1; shift
   local out
   if out=$(cargo tree "$@" -i "$pkg" --depth 0 2>&1); then
+    # A workspace crate the graph leaves out on this target.
+    grep -q "nothing to print" <<<"$out" && return 1
     return 0
   fi
   grep -q "did not match any packages" <<<"$out" && return 1
@@ -86,10 +112,25 @@ for features in "${feature_sets[@]}"; do
       linked "$pkg" "${args[@]}" || fail "$pkg is missing ($where)"
     done
     if linked octosense-app-hub-app "${args[@]}"; then
-      for pkg in octosense-mail-service octosense-news-service; do
+      for pkg in octosense-mail-service octosense-news-service octosense-sheets-service; do
         linked "$pkg" "${args[@]}" || fail "$pkg is missing with App Hub ($where)"
       done
     fi
+    if wasm_runs_on "${target:-$host_triple}"; then
+      linked octosense-wasm-host "${args[@]}" || fail "the wasm service's runtime (octosense-wasm-host) is missing ($where)"
+    elif linked octosense-wasm-host "${args[@]}"; then
+      fail "octosense-wasm-host is linked where the wasm service does not run ($where)"
+    fi
+    case "${package[1]:-}" in
+      octosense-home)
+        for pkg in "${craft_engines[@]}"; do
+          if linked "$pkg" "${args[@]}"; then fail "$pkg is linked into Home; the craft engines are desktop only ($where)"; fi
+        done ;;
+      octosense)
+        for pkg in "${craft_engines[@]}"; do
+          linked "$pkg" "${args[@]}" || fail "$pkg is missing from the desktop build ($where)"
+        done ;;
+    esac
     if [[ ",$features," != *",app-appcard,"* ]] && linked octosense-appcard "${args[@]}"; then
       fail "octosense-appcard is linked without app-appcard ($where)"
     fi
@@ -106,6 +147,14 @@ for features in "${feature_sets[@]}"; do
     echo "ok: $where (kernel: $kernel_pkg)"
   done
 done
+
+# Where the wasm service does not run, its runtime is not even built.
+for target in aarch64-apple-ios; do
+  if linked octosense-wasm-host --locked ${manifest[@]+"${manifest[@]}"} ${package[@]+"${package[@]}"} --target "$target"; then
+    fail "octosense-wasm-host is linked for $target, where the wasm service does not run"
+  fi
+done
+echo "ok: no wasm runtime for iOS"
 
 # One octos: every octos-* crate in the lock from one octos-org/octos rev
 # (the `nix` patch taken from the octos repo is not an octos crate).

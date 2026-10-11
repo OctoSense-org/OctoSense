@@ -1,0 +1,797 @@
+{
+  "engine": "filmcraft",
+  "method": "Mapped all 675 catalog ids to their CommandSpecs (commands.rs build() plus the commands()/splice/apply_layout of 27 modules; camera_keys!, tt! and label_cmd! expand the numbered ids) and read each run fn and the helpers it reaches, following calls into crates/speech, crates/text (fonts), crates/export and crates/interchange, then rg'd the engine for std::fs, Services calls, set_prefs, std::env/process/thread, network crates, AudioInput and nested Session::execute or spec.run calls. Verified: every nested execute targets a fixed id (nothing is code), the timeline clipboard is EditorState.clipboard (never the OS clipboard), voice-over's AudioInput is the engine's only audio hardware (playback output is the desktop frontend's cpal), and transcript.downloadModel (ureq, feature speech-download) is the only network path. Conventions: decoding media the project already references and text layout's one-time OS font-folder scan are not counted per command; EditorState editing modes are safe, while flags only the frontend's panels read (UI-only views), Preferences reads and writes, and process-wide state are host; stubs are classed by what they would reach. Limits: nothing was built or run, and many file commands use std::fs directly rather than Services, so OctoSense's AreaServices does not confine them.",
+  "rules": [
+    {
+      "prefix": "audio.voiceover.",
+      "class": "device",
+      "why": "Voice-over records from an audio input device through Session.voiceover's AudioInput (the desktop app installs cpal; a synthetic input is used only when no host installed one): start opens it, sync discards the live capture, stop reads the take and writes `<Name> <n>.wav` (std::fs::create_dir_all + services.write_file) to `dir`, the scratch disk, the project folder or the data dir, and settings lists the input devices and persists voiceOver prefs through set_prefs.",
+      "evidence": [
+        "crates/engine/src/voiceover.rs:44-64 AudioInput trait: devices/channels/start/read/discard/stop",
+        "crates/engine/src/voiceover.rs:286-330 settings_json()/settings(): input.devices(), s.set_prefs",
+        "crates/engine/src/voiceover.rs:332-368 start(): s.voiceover.input().start(device, sr)",
+        "crates/engine/src/voiceover.rs:371-385 sync(): input().discard()",
+        "crates/engine/src/voiceover.rs:388-512 record_dir()/stop(): input.read, std::fs::create_dir_all, services.write_file, import_bytes"
+      ]
+    },
+    {
+      "ids": ["audio.toggleScrubbing"],
+      "class": "host",
+      "why": "Naming trap: it opens no audio device. It flips Preferences.audio.scrubAudio by running the fixed prefs.set, which saves preferences.json through set_prefs when the host set a prefs path.",
+      "evidence": [
+        "crates/engine/src/keyboard.rs:679-684 audio.toggleScrubbing: s.execute(\"prefs.set\", {key: audio.scrubAudio})",
+        "crates/engine/src/lib.rs:572-590 set_prefs(): prefs.save(prefs_path)"
+      ]
+    },
+    {
+      "prefix": "captions.",
+      "class": "safe",
+      "why": "Caption tracks and segments are sequence data edited through s.edit / edit_sequence (add, split, merge, text, times, style, and show/hide, which set CaptionTrack.enabled); list, goTo, next and previous read the sequence or move the playhead and caption selection.",
+      "evidence": [
+        "crates/engine/src/captions.rs:222-536 commands(): edits and queries only, apart from import/export",
+        "crates/engine/src/captions.rs:538-547 show_all(): CaptionTrack.enabled in the project",
+        "crates/engine/src/sequence_extras.rs:469-479 show_active_only(): CaptionTrack.enabled"
+      ]
+    },
+    {
+      "ids": ["captions.import", "captions.export"],
+      "class": "file",
+      "why": "captions.import reads `path` (services.read_file) and parses SRT/VTT/SCC/MCC/STL/TTML into a caption track; captions.export writes a track in the chosen format to `path` (services.write_file).",
+      "evidence": [
+        "crates/engine/src/captions.rs:491-497 captions.import: services.read_file(path)",
+        "crates/engine/src/captions.rs:200-212 export(): services.write_file(path)"
+      ]
+    },
+    {
+      "prefix": "clip.",
+      "class": "safe",
+      "why": "Clip and project-item edits through s.edit / edit_sequence: rename, subclips, speed, enable/link/group, frame holds, field and time-interpolation options, gain, audio channels, timecode, interpret footage, nest, replace with clip, poster frames, volume nudges, multicam create/flatten, synchronize and remix. The analysis ones (audioPeak, audioGain normalize, sceneEditDetection, audio sync, remix) decode media the project already references, in memory.",
+      "evidence": [
+        "crates/engine/src/clip_ops.rs:57-245 commands(): every run edits via Session::edit/edit_sequence; extract_audio is the module's only write",
+        "crates/engine/src/commands.rs:1184-1322 clip.rename/speedDuration/enable/link/group/audioGain/audioPeak/frameHold/nest",
+        "crates/engine/src/scene_detect.rs:30 clip.sceneEditDetection: in-memory background job, no std::fs or Services write",
+        "crates/engine/src/color.rs:295-314 interpret(): MediaClip.interpret.color_space"
+      ]
+    },
+    {
+      "ids": ["clip.generateAudioWaveform", "clip.sourceSettings", "clip.restoreCaptionsFromSource"],
+      "class": "safe",
+      "why": "Naming traps with no I/O: generateAudioWaveform only returns the ids of the selected audio items (the frontend rebuilds its peaks), sourceSettings returns a fixed 'no source settings' message, and restoreCaptionsFromSource is a stub that is always disabled (no embedded caption reader); implemented, it would read captions embedded in the clip's own, already-referenced media.",
+      "evidence": [
+        "crates/engine/src/project_tools.rs:1068-1074 generate_waveform(): returns item ids",
+        "crates/engine/src/project_tools.rs:1002-1013 source_settings(): static message",
+        "crates/engine/src/project_tools.rs:177-179 clip.restoreCaptionsFromSource: enabled no_embedded_captions, run returns NO_CAPTIONS"
+      ]
+    },
+    {
+      "ids": ["clip.extractAudio", "clip.updateMetadata"],
+      "class": "file",
+      "why": "Naming traps that write files: extractAudio decodes the clip's audio and writes `<stem> Audio Extracted[ n].wav` to `dir`, else next to the project or the media (services.file_size probes, services.write_file), then imports it; updateMetadata writes an XMP sidecar `<media stem>.xmp` beside each selected item's media file (services.read_file of an existing sidecar, services.write_file).",
+      "evidence": [
+        "crates/engine/src/clip_ops.rs:1581-1636 extract_audio(): services.write_file(<dir>/<stem> Audio Extracted.wav), import_bytes",
+        "crates/engine/src/project_tools.rs:1038-1066 sidecar_path()/update_metadata(): services.write_file(<media>.xmp)"
+      ]
+    },
+    {
+      "prefix": "clipMixer.",
+      "class": "safe",
+      "why": "Audio Clip Mixer: set writes clip Volume/Panner values or keyframes (edit_sequence), setMode stores the track's mode in EditorState.clip_mixer_modes, and touch/release hold and commit a value through the in-memory LiveMix; no device is opened.",
+      "evidence": [
+        "crates/engine/src/mixer.rs:23-30 module doc: clip mixer lanes heard live through LiveMix, recorded as clip keyframes",
+        "crates/engine/src/lib.rs:276-279 EditorState.clip_mixer_modes"
+      ]
+    },
+    {
+      "prefix": "color.",
+      "class": "safe",
+      "why": "color.spaces returns the built-in colour-space and working-space tables (ColorSpace::ALL, WorkingSpace::ALL).",
+      "evidence": [
+        "crates/engine/src/color.rs:316-323 spaces()"
+      ]
+    },
+    {
+      "prefix": "command.",
+      "class": "safe",
+      "why": "command.list returns the registry (id, label, menu, params, default shortcut, enablement for this session) and echoes the bound shortcuts from the in-memory Session.shortcuts; it runs nothing.",
+      "evidence": [
+        "crates/engine/src/commands.rs:2464-2474 command.list"
+      ]
+    },
+    {
+      "prefix": "edit.",
+      "class": "safe",
+      "why": "Edits of the open project and sequence (undo/redo, clear, ripple delete, duplicate, labels, paste/remove attributes, remove unused, consolidate duplicates), selection changes, and Find/Find Next over project items and timeline clips (EditorState.find).",
+      "evidence": [
+        "crates/engine/src/commands.rs:1087-1182 edit.undo/redo/cut/copy/paste/clear/rippleDelete/selectAll/deselectAll/duplicate/label",
+        "crates/engine/src/clip_ops.rs:82-120 edit.pasteAttributes/removeAttributes/selectAllMatching/label.*/removeUnused/consolidateDuplicates",
+        "crates/engine/src/project_tools.rs:585-621 find()/find_next()"
+      ]
+    },
+    {
+      "ids": ["edit.cut", "edit.copy", "edit.paste", "edit.pasteInsert"],
+      "class": "safe",
+      "why": "Clipboard check: the clipboard is the engine's own EditorState.clipboard and clipboard_markers (serde-skipped session memory), filled by copy_selection and read by paste; the OS clipboard is never touched.",
+      "evidence": [
+        "crates/engine/src/lib.rs:248-250 EditorState.clipboard (#[serde(skip)])",
+        "crates/engine/src/commands.rs:2672-2729 copy_selection()/paste()"
+      ]
+    },
+    {
+      "ids": ["edit.editOriginal"],
+      "class": "safe",
+      "why": "It only returns the media file paths of the selected items. The desktop frontend opens them in another application, so the engine itself reaches nothing; a door that hands results to a UI would make this host.",
+      "evidence": [
+        "crates/engine/src/project_tools.rs:961-977 edit_original(): Ok({paths})",
+        "crates/engine/src/project_tools.rs:16 module table: 'the frontend opens the files'"
+      ]
+    },
+    {
+      "prefix": "effects.",
+      "class": "safe",
+      "why": "Effect instances, parameters, keyframes and transitions on clips through edit_sequence; effects.list reads the built-in definitions, and setDefaultTransition stores EditorState.default_video/audio_transition.",
+      "evidence": [
+        "crates/engine/src/commands.rs:2169-2354 effects.apply/remove/setParam/toggleAnimation/toggleEnabled/reset/keyframes",
+        "crates/engine/src/commands.rs:2903-2929 list_effects()",
+        "crates/engine/src/mixer.rs:1148-1162 effects.setDefaultTransition: s.state.default_*_transition"
+      ]
+    },
+    {
+      "prefix": "essentialSound.",
+      "class": "safe",
+      "why": "Essential Sound settings on clips (type, repair, clarity, ducking keys) through edit_sequence; autoMatch and generateDucking measure loudness by decoding project media, and applyPreset reads the built-in presets or the user presets already loaded in Session.prefs.",
+      "evidence": [
+        "crates/engine/src/essential_sound.rs:89-100 presets: builtin_presets + s.prefs.essential_sound.user_presets (in memory)",
+        "crates/engine/src/essential_sound.rs:265-290 clip_loudness(): media provider decode"
+      ]
+    },
+    {
+      "ids": ["essentialSound.savePreset", "essentialSound.deletePreset"],
+      "class": "host",
+      "why": "User sound presets live in the application preferences (Preferences.essential_sound.user_presets): both commands rewrite that list and call set_prefs, which saves preferences.json in the data directory when the host set prefs_path.",
+      "evidence": [
+        "crates/engine/src/essential_sound.rs:218-259 save_preset()/delete_preset(): s.set_prefs(prefs)",
+        "crates/engine/src/autosave.rs:282-294 EssentialSoundPrefs.user_presets",
+        "crates/engine/src/lib.rs:572-590 set_prefs()"
+      ]
+    },
+    {
+      "prefix": "events.",
+      "class": "safe",
+      "why": "The Events panel log (Session.log, session memory): list reads it and clear empties it.",
+      "evidence": [
+        "crates/engine/src/panels.rs:1-9 module doc; panels.rs has no std::fs or Services calls",
+        "crates/engine/src/panels.rs:347 events.list"
+      ]
+    },
+    {
+      "prefix": "export.",
+      "class": "file",
+      "why": "export.quick encodes the active sequence with a preset to `path`, or to a default next to the project, ~/Movies or home (spawn_export: std::fs::create_dir_all, then the exporter's std::fs::File::create unless the host exports in memory), plus an optional caption sidecar.",
+      "evidence": [
+        "crates/engine/src/export_tools.rs:787-806 quick()",
+        "crates/engine/src/export_tools.rs:373-433 spawn_export(): create_dir_all, write_sidecar, filmcraft_export::export",
+        "crates/export/src/lib.rs:331 output std::fs::File::create(path)",
+        "crates/export/src/pipeline.rs:254 export image overlay: std::fs::read(path)"
+      ]
+    },
+    {
+      "ids": ["export.resolve"],
+      "class": "file",
+      "why": "It resolves export settings without encoding, but to name the output it stats `path` (Path::is_dir after ~ expansion) or, with no path, reads HOME and stats ~/Movies, then returns that host path; no write.",
+      "evidence": [
+        "crates/engine/src/export_tools.rs:808-831 resolve(): output_path()",
+        "crates/engine/src/export_tools.rs:299-355 default_export_dir()/expand_home()/output_path(): env HOME, is_dir"
+      ]
+    },
+    {
+      "prefix": "export.presets.",
+      "class": "file",
+      "why": "User export presets and favourites persist in <data dir>/export-presets.json: save, delete and favorite rewrite it (persist: std::fs::create_dir_all + atomic_write), import reads `path` (services.read_file) and persists, export writes the chosen presets to `path` (services.write_file).",
+      "evidence": [
+        "crates/engine/src/export_tools.rs:84-88 persist()",
+        "crates/engine/src/export_tools.rs:880-985 presets_save/delete/favorite/import/export"
+      ]
+    },
+    {
+      "ids": ["export.presets.list", "export.presets.get", "export.formats"],
+      "class": "safe",
+      "why": "They read the built-in export presets, the user presets already loaded into Session.export_presets, and the static format table; no file access.",
+      "evidence": [
+        "crates/engine/src/export_tools.rs:851-878 presets_list()/presets_get()",
+        "crates/engine/src/export_tools.rs:987-1000 formats()"
+      ]
+    },
+    {
+      "prefix": "export.queue.",
+      "class": "file",
+      "why": "The queue (session state) encodes to the paths resolved at add time: add snapshots the project and resolves `path` (and starts with start:true), start and retry{start} run pump_queue, which calls spawn_export, and list also calls pump_queue, which starts the next Ready item while the queue is running.",
+      "evidence": [
+        "crates/engine/src/export_tools.rs:542-596 pump_queue(): spawn_export of the next Ready item",
+        "crates/engine/src/export_tools.rs:603-668 queue_add()",
+        "crates/engine/src/export_tools.rs:674-686 queue_list()/queue_start()",
+        "crates/engine/src/export_tools.rs:732-747 queue_retry()"
+      ]
+    },
+    {
+      "ids": ["export.queue.stop", "export.queue.cancel", "export.queue.remove", "export.queue.move", "export.queue.clear"],
+      "class": "safe",
+      "why": "Queue bookkeeping in session memory: stop clears ExportQueue.running, cancel sets the running job's cancel flag (its wait loop pumps with running false, so nothing new starts), and remove, move and clear edit ExportQueue.items.",
+      "evidence": [
+        "crates/engine/src/export_tools.rs:688-785 queue_stop/cancel_item/queue_cancel/queue_remove/queue_move/queue_clear"
+      ]
+    },
+    {
+      "prefix": "file.",
+      "class": "file",
+      "why": "Project files and interchange at caller paths: open and revert read a .fcproj (services.read_file) and record it in recent projects (set_prefs), saves write it (services.write_file, plus a schema backup), importAaf reads an AAF/OMF and writes its embedded audio beside it, mediaPropertiesFile opens a media file, and the export ids write EDL/FCP XML/FCPXML/OTIO/AAF/OMF/ALE, a subset project, a still frame (to `path` or next to the project) or encoded media (spawn_export).",
+      "evidence": [
+        "crates/engine/src/commands.rs:3163-3194 write_project(): services.read_file/write_file, note_recent_project",
+        "crates/engine/src/commands.rs:3227-3246 open_project(): services.read_file, note_recent_project, relink::on_open",
+        "crates/engine/src/interchange.rs:29-50 import(): AAF/OMF embedded audio, std::fs::create_dir_all + services.write_file",
+        "crates/engine/src/interchange.rs:126-146 export(): services.write_file(path)",
+        "crates/engine/src/aaf_omf.rs:378-440 export_aaf()/export_omf()/import_document()",
+        "crates/engine/src/export_tools.rs:440-490 export_media(): spawn_export",
+        "crates/engine/src/keyboard.rs:534-570 export_frame(): services.write_file",
+        "crates/engine/src/project_tools.rs:747-786 export_selection()/export_ale(); 830-835 media_properties_file(): media.open_file"
+      ]
+    },
+    {
+      "ids": ["file.import", "file.importImageSequence", "file.importFromMediaBrowser"],
+      "class": "file",
+      "why": "file.import reads each path (services.reader or read_file, list_dir for image sequences) as media, captions or an interchange document, then may copy or transcode the new items into Project Settings > Ingest's destination (proxies::ingest: std::fs::create_dir_all + std::fs::copy) and, when Settings > Media Analysis auto-transcribe is on, runs the fixed transcript.generate. The other two forward to it; importFromMediaBrowser defaults to the paths mediaBrowser.select stored.",
+      "evidence": [
+        "crates/engine/src/commands.rs:807-915 file.import: services.reader/read_file, captions/interchange import, s.execute(transcript.generate), proxies::ingest",
+        "crates/engine/src/proxies.rs:380-444 ingest(): std::fs::create_dir_all, std::fs::copy",
+        "crates/engine/src/project_tools.rs:96-123 file.importFromMediaBrowser/importImageSequence: s.execute(file.import)"
+      ]
+    },
+    {
+      "ids": ["file.recover", "file.discardRecovery", "file.recoveryList", "file.autoSaveNow", "file.autoSaveStatus", "file.listAutoSaves"],
+      "class": "file",
+      "why": "Auto-save and crash recovery in <data dir>/Recovery and the Auto-Save folders: recover reads a dead session's snapshot.fcproj and remove_dir_all's it, discardRecovery remove_dir_all's candidates, autoSaveNow makes the worker write an auto-save (and pumps the export queue via poll_persistence), and listAutoSaves read_dir's the auto-save folder. recoveryList and autoSaveStatus serve the startup scan from memory, but they expose other sessions' unsaved project names and paths and the data, session and auto-save directories.",
+      "evidence": [
+        "crates/engine/src/commands.rs:990-1039 file.recover/discardRecovery/recoveryList/autoSaveNow/autoSaveStatus/listAutoSaves",
+        "crates/engine/src/commands.rs:3249-3272 recover(): autosave::load_candidate, discard_candidate",
+        "crates/engine/src/autosave.rs:546-576 scan_candidates()/load_candidate()/discard_candidate(): fs::read_dir, fs::read, fs::remove_dir_all",
+        "crates/engine/src/autosave.rs:979-1026 Worker::auto_save(): write_auto_save, optional atomic_write of the project file"
+      ]
+    },
+    {
+      "ids": ["file.saveAsTemplate", "file.templates", "file.newProjectFromTemplate"],
+      "class": "file",
+      "why": "Project templates in <data dir>/Templates: saveAsTemplate writes the project there or to `path` (std::fs::create_dir_all + services.write_file), templates read_dir's the folder, and newProjectFromTemplate reads a template by name or by any path (services.read_file) and replaces the project.",
+      "evidence": [
+        "crates/engine/src/project_tools.rs:623-700 templates_dir()/save_as_template()/list_templates()/new_from_template()"
+      ]
+    },
+    {
+      "ids": ["file.projectSettings.scratchDisks", "project.ingestSettings"],
+      "class": "file",
+      "why": "They store folders the engine later writes to. Scratch disks redirect captured audio, render previews and auto-saves, and changing them runs previews_follow_path, which moves the existing preview files into the new folder (create_dir_all, rename or copy + remove_file). ingestSettings sets the destination that file.import copies or transcodes new media into.",
+      "evidence": [
+        "crates/engine/src/project_tools.rs:934-955 project_settings_scratch(): s.previews_follow_path()",
+        "crates/engine/src/previews.rs:150-167 move_to(): create_dir_all, rename/copy/remove_file",
+        "crates/engine/src/proxies.rs:548-583 project.ingestSettings: stores ingest.destination",
+        "crates/engine/src/proxies.rs:380-444 ingest() uses that destination"
+      ]
+    },
+    {
+      "ids": ["file.projectManager"],
+      "class": "file",
+      "why": "Project Manager collects or consolidates the used media (optionally proxies and previews) into `destination` (std::fs::create_dir_all, std::fs::copy or transcodes on a background job) and writes the new project there; dryRun only stats sizes (services.file_size).",
+      "evidence": [
+        "crates/engine/src/project_manager.rs:1-11 module doc",
+        "crates/engine/src/project_manager.rs:131-191 services.file_size probes, std::fs::create_dir_all(dest_dir)",
+        "crates/engine/src/project_manager.rs:263-290 job: create_dir_all, std::fs::copy, std::fs::read"
+      ]
+    },
+    {
+      "ids": ["file.exportGraphicsTemplate"],
+      "class": "file",
+      "why": "Same run fn as graphics.template.export: writes the graphic clip as a .fcgt (optionally embedding its font files) to `path` or <data dir>/Graphics Templates (std::fs::create_dir_all + services.write_file).",
+      "evidence": [
+        "crates/engine/src/graphic_templates.rs:1155 file.exportGraphicsTemplate: export_template",
+        "crates/engine/src/graphic_templates.rs:424-533 export_template()"
+      ]
+    },
+    {
+      "ids": ["file.newProject", "file.openDemoProject", "file.newSequence", "file.newSequenceFromClip", "file.newBin", "file.newBinFromSelection", "file.newSearchBin", "file.newOfflineFile", "file.newAdjustmentLayer", "file.newBarsAndTone", "file.newBlackVideo", "file.newColorMatte", "file.newCountingLeader", "file.newTransparentVideo", "file.importDemoFootage", "file.close", "file.closeProject", "file.closeAllProjects", "file.closeAllOtherProjects", "file.mediaProperties", "file.projectSettings.general", "file.replaceFonts"],
+      "class": "safe",
+      "why": "Naming traps: these file.* ids never touch a path. They create items in memory (generators, bins, search bins, offline items whose fileName is only stored, and demo footage and the demo project from synthetic GeneratorSources), reset or close the session's project (close runs sequence.close, closeAllProjects runs file.closeProject, closeAllOtherProjects always errors), read already-probed MediaInfo, edit project settings, or rename fonts in project graphics. newProject and closeProject only re-point the preview store at a fresh, not-yet-created temp folder.",
+      "evidence": [
+        "crates/engine/src/commands.rs:634-806 file.newProject/openDemoProject/newSequence/newBin/newAdjustmentLayer/generators/importDemoFootage: s.edit, demo::add_generator",
+        "crates/engine/src/clip_ops.rs:59-80 and 730-822 newSequenceFromClip/newBinFromSelection/offline_file()/close_project()",
+        "crates/engine/src/project_tools.rs:87-89, 814-828, 857-903 file.close/closeAllProjects/closeAllOtherProjects, media_properties(), project_settings_general()",
+        "crates/engine/src/graphic_templates.rs:1058-1117 replace_fonts(): project graphics only",
+        "crates/engine/src/previews.rs:106-113 reset_temp(): set_dir(untitled_dir(...))"
+      ]
+    },
+    {
+      "prefix": "fonts.",
+      "class": "host",
+      "why": "fonts.list (system: true by default) runs filmcraft_text::fonts::scan_system, which walks the OS font folders (/System/Library/Fonts, /Library/Fonts, ~/Library/Fonts and the Windows/XDG equivalents) and opens every font file, then returns the installed families: an enumeration of the host, not the project.",
+      "evidence": [
+        "crates/engine/src/graphics.rs:1052-1057 fonts.list",
+        "crates/text/src/fonts.rs:88-110 DirectorySource::system()",
+        "crates/text/src/fonts.rs:308-320 scan_system()"
+      ]
+    },
+    {
+      "prefix": "graphics.",
+      "class": "safe",
+      "why": "Graphic clips and their text and shape layers, alignment, arrangement, responsive design and character styles are clip data edited through edit_sequence; graphics.list and graphics.fonts.used are queries. Text layout and fonts.used's `missing` check may resolve a non-bundled family with a one-time scan of the OS font folders, which no parameter can point at, so that is not counted.",
+      "evidence": [
+        "crates/engine/src/graphics.rs:1-1065 graphics commands: no std::fs or Services calls (newFromFile delegates to file.import)",
+        "crates/engine/src/graphic_templates.rs:1118-1128 list_fonts_used(): filmcraft_text::resolve",
+        "crates/text/src/fonts.rs:394-407 resolve(): scan_system() on an unknown family"
+      ]
+    },
+    {
+      "ids": ["graphics.newFromFile"],
+      "class": "file",
+      "why": "Imports `path` by running the fixed file.import (services.reader/read_file) and places it as a layer above the clips at the playhead.",
+      "evidence": [
+        "crates/engine/src/graphics.rs:744-768 graphics.newFromFile: s.execute(\"file.import\", {paths: [path]})"
+      ]
+    },
+    {
+      "prefix": "graphics.template.",
+      "class": "file",
+      "why": "Motion graphics templates (.fcgt): the library is the built-ins plus <data dir>/Graphics Templates (services.list_dir + read_file), apply and thumbnail also accept any `path`, export writes a template to `path` or that folder, install copies a file into it, remove std::fs::remove_file's a user template, and thumbnail can write a PNG to `path`. apply, install and thumbnail also register the template's embedded font data in the process-wide font database.",
+      "evidence": [
+        "crates/engine/src/graphic_templates.rs:64-117 user_templates_dir()/library()/find_template(): services.list_dir/read_file",
+        "crates/engine/src/graphic_templates.rs:120-132 register_fonts(): filmcraft_text::fonts::add_font_data",
+        "crates/engine/src/graphic_templates.rs:424-533 export_template(): std::fs::create_dir_all, services.write_file",
+        "crates/engine/src/graphic_templates.rs:535-572 install_template()/remove_template()/template_thumbnail()"
+      ]
+    },
+    {
+      "ids": ["graphics.template.set", "graphics.template.controls"],
+      "class": "safe",
+      "why": "They edit or list the editable controls of a template already placed as a graphic clip (set_controls on the clip's layers); no library or file access.",
+      "evidence": [
+        "crates/engine/src/graphic_templates.rs:1165-1185 graphics.template.set/controls",
+        "crates/engine/src/graphic_templates.rs:343-360 template_controls()"
+      ]
+    },
+    {
+      "prefix": "help.",
+      "class": "host",
+      "why": "help.systemReport describes the host: OS, OS family, CPU architecture and hardware thread count (std::env::consts, available_parallelism), plus the build's decoders and export formats.",
+      "evidence": [
+        "crates/engine/src/project_tools.rs:1228-1247 system_report()"
+      ]
+    },
+    {
+      "prefix": "history.",
+      "class": "safe",
+      "why": "history.list returns the labels of the session's undo and redo stacks.",
+      "evidence": [
+        "crates/engine/src/commands.rs:2488-2490 history.list"
+      ]
+    },
+    {
+      "prefix": "jobs.",
+      "class": "safe",
+      "why": "jobs.list reports the session's background jobs (progress, result) and jobs.cancel sets a job's cancel flag; neither starts work.",
+      "evidence": [
+        "crates/engine/src/commands.rs:1078-1085 jobs.list/jobs.cancel"
+      ]
+    },
+    {
+      "prefix": "lumetri.",
+      "class": "safe",
+      "why": "Lumetri Color on clips through edit_sequence: presets are compiled in (filmcraft_render::lumetri_presets), applyPreset inserts one, setSection flips a section switch, and applyMatch renders two frames in memory and solves the wheels ('faceDetection' is a skin-tone heuristic, not a model).",
+      "evidence": [
+        "crates/engine/src/color.rs:354-385 list_presets()/apply_preset(): built-in presets",
+        "crates/engine/src/color.rs:409-460 apply_match(): render_clip/render_sequence, color_match::solve",
+        "crates/render/src/color_match.rs:9-12 skin-tone protection heuristic",
+        "crates/engine/src/color.rs:216-236 set_section()"
+      ]
+    },
+    {
+      "ids": ["lumetri.presetThumbnails", "lumetri.setInputLut", "lumetri.setLook"],
+      "class": "file",
+      "why": "presetThumbnails writes the thumbnail-grid PNG to `path` when one is given (std::fs::write); setInputLut and setLook with `path` read a .cube/.3dl file (std::fs::read_to_string in import_lut) into the project's LUT library before assigning it (a `lut` ref alone stays in the project).",
+      "evidence": [
+        "crates/engine/src/color.rs:387-407 preset_thumbnails(): std::fs::write(path, png)",
+        "crates/engine/src/color.rs:198-215 set_lut(): import_lut(path)",
+        "crates/engine/src/color.rs:86-114 import_lut(): std::fs::read_to_string(path)"
+      ]
+    },
+    {
+      "prefix": "lut.",
+      "class": "file",
+      "why": "lut.import reads a .cube/.3dl file from `path` (std::fs::read_to_string) into the project; lut.export writes a LUT as .cube or .3dl to `path` (std::fs::write). Both bypass Services.",
+      "evidence": [
+        "crates/engine/src/color.rs:86-119 import_lut()/import()",
+        "crates/engine/src/color.rs:147-163 export(): std::fs::write(path)"
+      ]
+    },
+    {
+      "ids": ["lut.list", "lut.remove"],
+      "class": "safe",
+      "why": "Naming trap: the LUT library is project data (Project.luts holds each LUT's text) plus compiled-in LUTs. list reads it and remove drops an entry through s.edit, with no file access.",
+      "evidence": [
+        "crates/engine/src/color.rs:121-145 list()/remove()"
+      ]
+    },
+    {
+      "prefix": "markers.",
+      "class": "safe",
+      "why": "In/Out and split points and markers are sequence or item data edited through edit_sequence or project.setMarks; the goTo*, goNext and goPrev ids move the playhead; rippleSequenceMarkers and copyPasteIncludesSequenceMarkers are EditorState editing modes that ripple and paste edits honour.",
+      "evidence": [
+        "crates/engine/src/commands.rs:1579-1732 and 2615-2643 markers.*, mark()",
+        "crates/engine/src/sequence_tools.rs:126-235 split, range and chapter markers, toggles",
+        "crates/engine/src/sequence_extras.rs:485-500 add_flash_cue()"
+      ]
+    },
+    {
+      "ids": ["markers.filterColors", "markers.showAllMarkerColors"],
+      "class": "host",
+      "why": "UI-only view: they set EditorState.hidden_marker_colors, the Markers panel's colour filter, which no engine command reads (goNext, goPrev and edits ignore it); the sequence is unchanged and nothing is persisted.",
+      "evidence": [
+        "crates/engine/src/sequence_tools.rs:183-186 markers.showAllMarkerColors",
+        "crates/engine/src/sequence_tools.rs:912-931 filter_colors()",
+        "crates/engine/src/lib.rs:293-295 EditorState.hidden_marker_colors (read only by these and has_hidden_colors)"
+      ]
+    },
+    {
+      "prefix": "masks.",
+      "class": "safe",
+      "why": "Effect masks (shapes, vertices, feather, mode, selection) are effect data edited through edit_sequence; masks.track computes tracked keyframes on a background thread from decoded frames of the project's own media.",
+      "evidence": [
+        "crates/engine/src/masks.rs:645 masks.track: std::thread spawn of the tracker; no std::fs or Services calls in masks.rs"
+      ]
+    },
+    {
+      "prefix": "media.",
+      "class": "file",
+      "why": "Relinking probes and opens files: findMissing and status stat every media and proxy path of the project (services.file_size), relink and replaceFootage open the new `path`, autoRelink and search walk caller folders (relink::index_folder: std::fs::read_dir), and makeOffline with deleteFiles std::fs::remove_file's the media files.",
+      "evidence": [
+        "crates/engine/src/relink.rs:104-138 scan()/refresh(): services.file_size",
+        "crates/engine/src/relink.rs:400-527 relink()/auto_relink()/index_folder()/search(): std::fs::read_dir",
+        "crates/engine/src/relink.rs:528-562 make_offline(): std::fs::remove_file(path)",
+        "crates/engine/src/relink.rs:564-592 status_json(): services.file_size"
+      ]
+    },
+    {
+      "ids": ["media.createProxies", "media.attachProxies", "media.reconnectFullRes"],
+      "class": "file",
+      "why": "Proxies: createProxies transcodes each file into `destination` or <media dir>/Proxies on a background job (create_dir_all, encoder writes, remove_file on failure), attachProxies opens each given proxy path to check it (media.open_file) unless force, and reconnectFullRes relinks the item to `path`.",
+      "evidence": [
+        "crates/engine/src/proxies.rs:185-255 start_job(): create_dir_all, transcode, remove_file",
+        "crates/engine/src/proxies.rs:284-325 check_proxy()/attach(): s.media.open_file(path)",
+        "crates/engine/src/proxies.rs:502-519 media.reconnectFullRes: relink::relink"
+      ]
+    },
+    {
+      "ids": ["media.detachProxies", "media.proxyPresets", "media.colorInfo"],
+      "class": "safe",
+      "why": "detachProxies clears MediaClip.proxy through s.edit, proxyPresets returns the static PRESETS table, and colorInfo reads the item's probed colour metadata and interpretation.",
+      "evidence": [
+        "crates/engine/src/proxies.rs:478-500 media.detachProxies",
+        "crates/engine/src/proxies.rs:538-546 media.proxyPresets",
+        "crates/engine/src/color.rs:325-345 color_info()"
+      ]
+    },
+    {
+      "ids": ["media.toggleProxies"],
+      "class": "host",
+      "why": "Naming trap: not a view toggle. It writes Preferences.media.enableProxies through set_prefs (saved to preferences.json when the host set prefs_path) and switches the shared MediaPool's proxy mode.",
+      "evidence": [
+        "crates/engine/src/proxies.rs:521-536 media.toggleProxies: s.set_prefs",
+        "crates/engine/src/lib.rs:572-590 set_prefs(): media.set_use_proxies, prefs.save"
+      ]
+    },
+    {
+      "ids": ["media.linkMedia", "media.offlineAll"],
+      "class": "host",
+      "why": "Link Media dialog control: linkMedia rescans the project's media paths (services.file_size) and sets OfflineState.prompt so the frontend opens the dialog; offlineAll only clears that prompt, closing the dialog, and returns the missing items without marking anything.",
+      "evidence": [
+        "crates/engine/src/relink.rs:626-638 media.linkMedia: refresh(), s.offline.prompt",
+        "crates/engine/src/relink.rs:702-712 media.offlineAll: s.offline.prompt = false"
+      ]
+    },
+    {
+      "prefix": "mediaBrowser.",
+      "class": "file",
+      "why": "The Media Browser reads the host filesystem through Services: list lists a directory (list_entries: read_dir + metadata), probe opens a media file, import lists folders and runs file.import, openInSource imports and opens the file, and select stores host paths that later path-less imports (file.importFromMediaBrowser, mediaBrowser.import and openInSource) use.",
+      "evidence": [
+        "crates/engine/src/media_browser.rs:296-305 list_cmd()",
+        "crates/engine/src/media_browser.rs:353-358 select(): s.browser.selection = paths",
+        "crates/engine/src/media_browser.rs:426-482 import()/open_in_source(): list_entries, s.execute(file.import)",
+        "crates/engine/src/media_browser.rs:484-496 probe(): media.probe_file(path)",
+        "crates/engine/src/media_browser.rs:598-616 std_list_entries(): std::fs::read_dir"
+      ]
+    },
+    {
+      "ids": ["mediaBrowser.roots", "mediaBrowser.navigate", "mediaBrowser.favorite", "mediaBrowser.clearRecent", "mediaBrowser.settings"],
+      "class": "host",
+      "why": "Media Browser state kept in the application preferences: navigate lists the target folder, then saves recent directories and lastDir; favorite, clearRecent and settings rewrite Preferences.media_browser (all via set_prefs to preferences.json); roots returns the host's drives and network volumes (Services::volumes), the home directory and those saved favourites and recents.",
+      "evidence": [
+        "crates/engine/src/media_browser.rs:264-269 save_prefs(): s.set_prefs",
+        "crates/engine/src/media_browser.rs:282-294 roots(): services.volumes(), home_dir()",
+        "crates/engine/src/media_browser.rs:307-351 go()/navigate()",
+        "crates/engine/src/media_browser.rs:360-415 favorite()/settings(); 568-573 clearRecent",
+        "crates/engine/src/media_browser.rs:618-666 std_volumes()"
+      ]
+    },
+    {
+      "prefix": "mediaCache.",
+      "class": "file",
+      "why": "The media cache folder is Settings > Media Cache > Location (any path, settable with prefs.set) or <data dir>/Media Cache: info walks it recursively (std::fs::read_dir + metadata) and clean std::fs::remove_file's every file under it except the open project's previews (those too with all:true), bypassing Services.",
+      "evidence": [
+        "crates/engine/src/settings.rs:1227-1233 media_cache_dir()",
+        "crates/engine/src/settings.rs:1238-1265 cache_files()/cache_usage()",
+        "crates/engine/src/settings.rs:1325-1330 clean()",
+        "crates/engine/src/settings.rs:1414-1429 cache_info()/cache_clean()"
+      ]
+    },
+    {
+      "prefix": "metadata.",
+      "class": "safe",
+      "why": "The Metadata panel: get reads an item's clip and file properties from the project, and set edits log fields in ProjectItem.metadata through s.edit. No XMP is written (that is clip.updateMetadata).",
+      "evidence": [
+        "crates/engine/src/panels.rs:1-9 module doc; no std::fs or Services calls in panels.rs",
+        "crates/engine/src/panels.rs:284 metadata.set"
+      ]
+    },
+    {
+      "prefix": "mixer.",
+      "class": "safe",
+      "why": "Audio Track Mixer strips, sends, inserts and automation are sequence data edited through edit_sequence. recordStart, recordStop, touch and release run an automation pass on caller-supplied `time` values with the in-memory LiveMix; the engine opens no output device (playback audio is the frontend's cpal output).",
+      "evidence": [
+        "crates/engine/src/mixer.rs:7-21 module doc: the UI calls recordStart when playback starts; gestures go through LiveMix",
+        "crates/engine/src/settings.rs:102 'Settings > Audio Hardware (the cpal output on desktop)'"
+      ]
+    },
+    {
+      "prefix": "multicam.",
+      "class": "safe",
+      "why": "Multi-camera editing: angle switches, cuts, recording passes driven by `time`, camera edits and audio-follows-video are sequence data or EditorState. Grid layout, page and selection order are editing state too, because they decide which clip and which camera N the numbered keys switch (on_page, multicam_clip_at); grid and inspect are queries.",
+      "evidence": [
+        "crates/engine/src/multicam.rs:53-78 camera_keys!: cut(on_page(...)), cut_to_camera(on_page(...))",
+        "crates/engine/src/multicam.rs:680-705 multicam_clip_at() reads top_down; angle_p() reads the page layout",
+        "crates/engine/src/multicam.rs:1064-1102 grid_layout()/set_page()"
+      ]
+    },
+    {
+      "ids": ["multicam.showPreviewMonitor", "multicam.autoAdjustQuality"],
+      "class": "host",
+      "why": "UI-only view flags in EditorState.multicam_view: no engine command reads show_preview (it shows or hides the frontend's preview monitor), and auto_quality only changes the decode scale multicam.grid suggests for the on-screen grid; neither touches the sequence.",
+      "evidence": [
+        "crates/engine/src/multicam.rs:1104-1121 view_flag()",
+        "crates/engine/src/multicam.rs:1148-1153 grid_info(): auto_quality -> cellScale"
+      ]
+    },
+    {
+      "ids": ["multicam.transmitView"],
+      "class": "device",
+      "why": "Stub: it stores EditorState.multicam_view.transmit and reports device: null ('no transmit (video output) devices yet: the setting is kept for when there are'). Implemented, it sends the multi-camera grid to a video transmit output such as an external monitor or capture card.",
+      "evidence": [
+        "crates/engine/src/multicam.rs:22 module table: send the grid to the transmit device (no transmit output yet: stored only)",
+        "crates/engine/src/multicam.rs:1114-1118 view_flag(): out[device] = null"
+      ]
+    },
+    {
+      "prefix": "perf.",
+      "class": "host",
+      "why": "perf.stats reports process-wide engine state rather than the project: decoder and GOP-cache counters shared by every session, the OS hardware decoder backend and hardware encode sessions (static counters in filmcraft_codecs and filmcraft_export), plus this session's running jobs.",
+      "evidence": [
+        "crates/engine/src/perf.rs:10-56 decode_json()/export_json(): gop_stats, hw_backend, hw_encode_stats",
+        "crates/engine/src/perf.rs:58 stats()"
+      ]
+    },
+    {
+      "prefix": "playhead.",
+      "class": "safe",
+      "why": "Playhead position per sequence in EditorState.playheads (set_playhead); stepForward, stepBack and the 5-frame steps run the fixed playhead.step, and edit-point navigation reads the sequence.",
+      "evidence": [
+        "crates/engine/src/commands.rs:1734-1768 playhead.*",
+        "crates/engine/src/keyboard.rs:73-120 go_to_edit() and navigation",
+        "crates/engine/src/lib.rs:905-913 set_playhead()"
+      ]
+    },
+    {
+      "prefix": "prefs.",
+      "class": "host",
+      "why": "Application preferences (Session.prefs), not the project: get and schema return them; set and reset replace them through set_prefs, which saves <data dir>/preferences.json, flips the process-wide hardware-decoding switch and, when the Media Cache settings change, applies the cache policy. With `mediaCache.location` set to any folder and management olderThan or exceedsSize, enforce_policy std::fs::remove_file's files under that folder.",
+      "evidence": [
+        "crates/engine/src/commands.rs:1040-1068 prefs.get/set/reset",
+        "crates/engine/src/lib.rs:572-590 set_prefs(): apply_hardware_decoding, apply_media_cache, prefs.save",
+        "crates/engine/src/settings.rs:1293-1322 enforce_policy(): remove_files",
+        "crates/engine/src/settings.rs:1343-1355 apply_media_cache()",
+        "crates/engine/src/settings.rs:1390-1412 schema()"
+      ]
+    },
+    {
+      "prefix": "presets.",
+      "class": "file",
+      "why": "Effect presets: user presets persist in <data dir>/effect-presets.json, which save, delete and rename rewrite (persist: create_dir_all + atomic_write); import reads `path` (std::fs::read) and persists, and export writes the chosen presets to `path` (atomic_write), all outside Services.",
+      "evidence": [
+        "crates/engine/src/presets.rs:98-115 PresetLibrary::set_dir()/persist()",
+        "crates/engine/src/presets.rs:437-568 save()/delete()/rename()/export()/import()"
+      ]
+    },
+    {
+      "ids": ["presets.list", "presets.apply"],
+      "class": "safe",
+      "why": "They use the in-memory library (built-in presets authored in code plus user presets loaded at startup); apply re-times keyframes and inserts the effects into the target clips through edit_sequence.",
+      "evidence": [
+        "crates/engine/src/presets.rs:117-125 all()/find()",
+        "crates/engine/src/presets.rs:473-509 apply()"
+      ]
+    },
+    {
+      "prefix": "project.",
+      "class": "safe",
+      "why": "Project panel operations on the project: selection, delete (removes items from the project only), move to bin, source In/Out, matte colour, bins and search bins, inspection, panel rows, and Freeform card positions, stacks and saved arrangements, which are stored in item metadata (undoable).",
+      "evidence": [
+        "crates/engine/src/commands.rs:2356-2475 project.select/delete/moveToBin/setMarks/inspect",
+        "crates/engine/src/project_panel.rs:1-4 module doc: Freeform positions in item metadata",
+        "crates/engine/src/project_panel.rs:619-865 freeform move/resize/align/reset/stack/arrangements: s.edit",
+        "crates/engine/src/project_tools.rs:446-500 search bins"
+      ]
+    },
+    {
+      "prefix": "project.view.",
+      "class": "host",
+      "why": "The Project panel's view (list/icon/freeform, icon and font size, preview area, thumbnails, hover scrub) is kept in the application preferences: get returns Preferences.project_panel and set rewrites it through set_prefs (preferences.json).",
+      "evidence": [
+        "crates/engine/src/project_panel.rs:895-915 save_prefs()/view_json()",
+        "crates/engine/src/project_panel.rs:917-955 view_set(): save_prefs"
+      ]
+    },
+    {
+      "prefix": "project.columns.",
+      "class": "host",
+      "why": "The List view's shown columns and widths are Preferences.project_panel.view.columns: list reads them, set and resize rewrite them through set_prefs.",
+      "evidence": [
+        "crates/engine/src/project_panel.rs:963-1014 columns_set()/columns_resize(): save_prefs",
+        "crates/engine/src/project_panel.rs:1188-1192 project.columns.list"
+      ]
+    },
+    {
+      "prefix": "project.viewPreset.",
+      "class": "host",
+      "why": "Saved Project panel view presets (slots 1-10) are Preferences.project_panel.presets: list reads them, and save, saveAs, restore, rename and delete rewrite them through set_prefs.",
+      "evidence": [
+        "crates/engine/src/project_panel.rs:1067-1150 presets_json()/preset_save/restore/rename/delete(): save_prefs"
+      ]
+    },
+    {
+      "ids": ["project.sort", "project.freeform.options"],
+      "class": "host",
+      "why": "Panel display settings in the preferences: sort writes Preferences.project_panel.view.sort and freeform.options writes the Freeform grid, snap and card options, both through set_prefs; the project is unchanged.",
+      "evidence": [
+        "crates/engine/src/project_panel.rs:1017-1026 sort(): save_prefs",
+        "crates/engine/src/project_panel.rs:870-890 freeform_options(): save_prefs"
+      ]
+    },
+    {
+      "prefix": "scopes.",
+      "class": "safe",
+      "why": "scopes.read renders the program frame at the playhead in memory and computes waveform, parade, histogram and vectorscope data.",
+      "evidence": [
+        "crates/engine/src/scopes.rs:50 scopes.read; scopes.rs has no std::fs or Services calls"
+      ]
+    },
+    {
+      "prefix": "sequence.",
+      "class": "safe",
+      "why": "Sequence edits and navigation: settings, tracks, add edit, lift/extract, transitions, gaps, match frame, nests and subsequences, simplify, colour settings, normalize (decodes project media to measure the mix), timeline tabs, and the EditorState editing modes snapping, linked selection, selection-follows-playhead and the nest toggle; renderBar reads the in-memory render state.",
+      "evidence": [
+        "crates/engine/src/commands.rs:1339-1577 sequence.*",
+        "crates/engine/src/sequence_tools.rs:68-235 groups()",
+        "crates/engine/src/sequence_extras.rs:176-228 mix_peak_db()/normalize_mix()",
+        "crates/engine/src/previews.rs:705-725 bar_json(): memoized segments and the indexed file set"
+      ]
+    },
+    {
+      "ids": ["sequence.renderEffectsInToOut", "sequence.renderInToOut", "sequence.renderSelection", "sequence.renderAudio", "sequence.deleteRenderFiles", "sequence.deleteRenderFilesInToOut"],
+      "class": "file",
+      "why": "Render previews are files: the render ids create_dir_all the preview folder (next to the project, on a scratch disk, or in a temp or media-cache folder) and write <hash>.mov/.wav segments on a background job (std::fs::write + rename); the delete ids std::fs::remove_file them.",
+      "evidence": [
+        "crates/engine/src/previews.rs:446-556 render(): create_dir_all, segment encodes, rename",
+        "crates/engine/src/previews.rs:558-642 render_audio(): std::fs::write + rename",
+        "crates/engine/src/previews.rs:206-227 PreviewStore::delete(): std::fs::remove_file",
+        "crates/engine/src/previews.rs:692-703 delete()"
+      ]
+    },
+    {
+      "ids": ["sequence.transcribe", "transcript.generate"],
+      "class": "file",
+      "why": "Naming trap: speech-to-text. They run the Whisper model named by `model` (Settings > Speech model) from <data dir>/models on the CPU over decoded project audio (filmcraft_speech::load stats and reads the weight files and never downloads), unless a host installed Session.transcriber; sequence.transcribe runs the fixed transcript.generate.",
+      "evidence": [
+        "crates/engine/src/transcript.rs:131-145 transcriber(): models_dir(), filmcraft_speech::load",
+        "crates/engine/src/transcript.rs:147-189 generate()",
+        "crates/speech/src/lib.rs:122-135 load(): installed() check, NotInstalled, Whisper::load(model dir)",
+        "crates/engine/src/sequence_extras.rs:230-255 transcribe(): s.execute(\"transcript.generate\")"
+      ]
+    },
+    {
+      "ids": ["sequence.showThroughEdits"],
+      "class": "host",
+      "why": "UI-only view: it sets EditorState.show_through_edits, which only the timeline drawing reads (sequence.throughEdits and joinThroughEdits work either way); nothing is persisted.",
+      "evidence": [
+        "crates/engine/src/sequence_tools.rs:102-105 sequence.showThroughEdits",
+        "crates/engine/src/lib.rs:284-286 EditorState.show_through_edits (no other engine reader)"
+      ]
+    },
+    {
+      "prefix": "shortcuts.",
+      "class": "host",
+      "why": "Keyboard shortcuts are app state. set, clear, undo, redo and loadPreset change Session.shortcuts and persist <data dir>/Keyboard Shortcuts/active.json; presets read_dir's that folder; savePreset and deletePreset write or remove_file a preset there; export and import write or read `path` (std::fs). resolve only names the bound command and runs nothing.",
+      "evidence": [
+        "crates/engine/src/shortcuts.rs:617-680 custom preset listing (read_dir), set_dir(), persist()",
+        "crates/engine/src/shortcuts.rs:819-870 save_preset()/delete_preset()/export()/import()",
+        "crates/engine/src/shortcuts.rs:1006-1020 read_file()/write_file(): std::fs",
+        "crates/engine/src/shortcuts.rs:1064-1155 commands()"
+      ]
+    },
+    {
+      "prefix": "source.",
+      "class": "safe",
+      "why": "The Source monitor: open loads an item into EditorState.source_item, setPlayhead and inspect move or read its playhead, and insert and overwrite place the source range on the timeline through s.edit.",
+      "evidence": [
+        "crates/engine/src/commands.rs:1770-1803 source.*"
+      ]
+    },
+    {
+      "prefix": "state.",
+      "class": "safe",
+      "why": "state.inspect serialises EditorState (selection, playheads, targeting, modes; the clipboard is serde-skipped).",
+      "evidence": [
+        "crates/engine/src/commands.rs:2481 state.inspect"
+      ]
+    },
+    {
+      "prefix": "timeline.",
+      "class": "safe",
+      "why": "Timeline gestures and keyboard edits on the active sequence (place, select, move, trim, roll, slip, slide, rate stretch, razor, track settings, targeting, nudges and target toggles) through edit_sequence or EditorState.targeting.",
+      "evidence": [
+        "crates/engine/src/commands.rs:1806-2167 timeline.*",
+        "crates/engine/src/keyboard.rs:1-34 module table; 724-741 toggleTarget*"
+      ]
+    },
+    {
+      "prefix": "transcript.",
+      "class": "safe",
+      "why": "Text-based editing on transcripts stored in the project (Project.transcripts): set imports caller-supplied transcript JSON, delete and renameSpeaker edit them, inspect and search read them, select/extract/lift/removePauses/removeFillers edit the sequence, and createCaptions builds a caption track.",
+      "evidence": [
+        "crates/engine/src/transcript.rs:191-402 set()/delete()/inspect()/search()/select()/extract_or_lift()/rename_speaker()/remove_pauses()/remove_fillers()/create_captions()"
+      ]
+    },
+    {
+      "ids": ["transcript.models"],
+      "class": "file",
+      "why": "It lists the Whisper catalogue and checks which models are installed with std::fs::metadata on each weight file under <data dir>/models, returning that directory's path.",
+      "evidence": [
+        "crates/engine/src/transcript.rs:404-416 models()",
+        "crates/speech/src/models.rs:199-202 installed(): std::fs::metadata"
+      ]
+    },
+    {
+      "ids": ["transcript.downloadModel"],
+      "class": "network",
+      "why": "It downloads a Whisper model's weight files over HTTPS from huggingface.co/openai (ureq with rustls) into <data dir>/models (create_dir_all, File::create, rename); in builds without the speech-download feature it is disabled.",
+      "evidence": [
+        "crates/engine/src/transcript.rs:420-434 download_model(): filmcraft_speech::models::download",
+        "crates/speech/src/models.rs:53 model URLs: https://huggingface.co/openai/<repo>/resolve/<rev>/<file>",
+        "crates/speech/src/models.rs:224-280 download()/agent(): ureq + rustls"
+      ]
+    },
+    {
+      "prefix": "trim.",
+      "class": "safe",
+      "why": "Trim mode: edit-point selection, nudges and to-playhead trims delegate to timeline.trim and timeline.roll; shuttle, tick, stop and playAround are a dynamic-trim and loop state machine in Session.trim_play driven by the caller's `clock`, so 'Play Around Edit' and J/K/L shuttle open no audio device in the engine.",
+      "evidence": [
+        "crates/engine/src/trim.rs:12-17 module doc: driven by a caller-supplied clock",
+        "crates/engine/src/trim.rs:195-215 trim_all_raw(): s.execute(timeline.trim/timeline.roll)",
+        "crates/engine/src/trim.rs:420-470 shuttle()/tick()",
+        "crates/engine/src/trim.rs:582-605 play_around(): Session.trim_play.around, set_playhead"
+      ]
+    }
+  ]
+}

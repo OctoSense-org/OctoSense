@@ -1,0 +1,143 @@
+{
+  "schema": 1,
+  "tools": [
+    {
+      "name": "pdf.info",
+      "description": "Inspect a PDF in your workspace: page count and page sizes, metadata, outline, fonts, security and repair notes. Reads only. `path` is relative to your workspace, the folder your own file tools (list_dir, read_file) see; files outside it cannot be named.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "path": {"type": "string", "minLength": 1, "maxLength": 512}
+        },
+        "required": ["path"],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "file": {"type": "string"},
+          "document": {"type": "object"},
+          "pages": {"type": "array", "items": {"type": "object"}}
+        },
+        "required": ["file"]
+      },
+      "risk": "read",
+      "implemented_by": "host-service"
+    },
+    {
+      "name": "pdf.text",
+      "description": "Extract the text of a PDF in your workspace in reading order, per page: all pages (documents up to 512 pages), or the 1-based `pages` listed (at most 512). Reads only. `path` is relative to your workspace (see pdf.info).",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "path": {"type": "string", "minLength": 1, "maxLength": 512},
+          "pages": {"type": "array", "minItems": 1, "maxItems": 512, "items": {"type": "integer", "minimum": 1}}
+        },
+        "required": ["path"],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "pages": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "page": {"type": "integer"},
+                "text": {"type": "string"}
+              }
+            }
+          }
+        },
+        "required": ["pages"]
+      },
+      "risk": "read",
+      "implemented_by": "host-service"
+    },
+    {
+      "name": "pdf.render",
+      "description": "Render one page (1-based `page`) of a PDF in your workspace to a PNG at `out`, its longest edge about `max_side` pixels (default 1024). Both paths are relative to your workspace (see pdf.info); nothing is written outside it, and a file already at `out` is never replaced: choose a new name.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "path": {"type": "string", "minLength": 1, "maxLength": 512},
+          "page": {"type": "integer", "minimum": 1},
+          "out": {"type": "string", "minLength": 5, "maxLength": 512},
+          "max_side": {"type": "integer", "minimum": 16, "maximum": 4096}
+        },
+        "required": ["path", "page", "out"],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "out": {"type": "string"},
+          "width": {"type": "integer"},
+          "height": {"type": "integer"},
+          "bytes": {"type": "integer"}
+        },
+        "required": ["out", "width", "height", "bytes"]
+      },
+      "risk": "act",
+      "implemented_by": "host-service"
+    },
+    {
+      "name": "pdf.merge",
+      "description": "Combine 2 to 16 PDFs in your workspace, in order, into one PDF at `out` (bookmarks are kept under one entry per file). All paths are relative to your workspace (see pdf.info); nothing is written outside it, and a file already at `out` is never replaced: choose a new name.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "paths": {"type": "array", "minItems": 2, "maxItems": 16, "items": {"type": "string", "minLength": 1, "maxLength": 512}},
+          "out": {"type": "string", "minLength": 5, "maxLength": 512}
+        },
+        "required": ["paths", "out"],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "out": {"type": "string"},
+          "bytes": {"type": "integer"}
+        },
+        "required": ["out"]
+      },
+      "risk": "act",
+      "implemented_by": "host-service"
+    },
+    {
+      "name": "pdf.split",
+      "description": "Split a PDF in your workspace into files in `out_dir`, giving exactly one of `every` (pages per file) or `before` (the 1-based pages that start a new file); at most 256 files. All paths are relative to your workspace (see pdf.info); nothing is written outside it, and no existing file is ever replaced: if any part name is taken, nothing is written, so choose a new `out_dir`.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "path": {"type": "string", "minLength": 1, "maxLength": 512},
+          "out_dir": {"type": "string", "minLength": 1, "maxLength": 512},
+          "every": {"type": "integer", "minimum": 1},
+          "before": {"type": "array", "minItems": 1, "maxItems": 255, "items": {"type": "integer", "minimum": 1}}
+        },
+        "required": ["path", "out_dir"],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "files": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "path": {"type": "string"},
+                "first_page": {"type": "integer"},
+                "last_page": {"type": "integer"}
+              }
+            }
+          }
+        },
+        "required": ["files"]
+      },
+      "risk": "act",
+      "implemented_by": "host-service"
+    }
+  ]
+}

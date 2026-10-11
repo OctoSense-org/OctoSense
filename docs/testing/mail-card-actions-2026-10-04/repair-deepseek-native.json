@@ -1,0 +1,1022 @@
+{
+  "card_id": "mail-bc9c7d2f87620754da754c3d569db25f2b7ed176",
+  "model": "DeepSeek (parent verified)",
+  "input": {
+    "artifact": "cards/mail-bc9c7d2f87620754da754c3d569db25f2b7ed176.json",
+    "artifact_sha256": "8b66d26e5083c90d572e9b04854a61ccf855b810b4644171590f713d17d4e907",
+    "card_id": "mail-bc9c7d2f87620754da754c3d569db25f2b7ed176",
+    "source_sha256": "50bee0ef8883958ee42931b1bfc9946f637aa990857307d45879404f9213f176",
+    "data_semantically_exact": true
+  },
+  "result": "PASS local interaction and strict330 viewport checks",
+  "runs": {
+    "strict330": {
+      "native_clicks_passed": true,
+      "events": [
+        [
+          {
+            "applied": true,
+            "changed": [
+              "mode"
+            ],
+            "event": "code",
+            "key": "root/Col#0/when#0/w:Col#0/Chip#0",
+            "origin": "Authored",
+            "stale": [],
+            "writes": []
+          }
+        ],
+        [
+          {
+            "applied": true,
+            "changed": [
+              "mode"
+            ],
+            "event": "back",
+            "key": "root/Col#0/when#1/w:Col#0/Chip#0",
+            "origin": "Authored",
+            "stale": [],
+            "writes": []
+          }
+        ],
+        [
+          {
+            "applied": true,
+            "changed": [
+              "mode"
+            ],
+            "event": "details",
+            "key": "root/Col#0/when#0/w:Col#0/Chip#1",
+            "origin": "Authored",
+            "stale": [],
+            "writes": []
+          }
+        ],
+        [
+          {
+            "applied": true,
+            "changed": [
+              "mode"
+            ],
+            "event": "back",
+            "key": "root/Col#0/when#2/w:Col#0/Chip#0",
+            "origin": "Authored",
+            "stale": [],
+            "writes": []
+          }
+        ]
+      ],
+      "frames": {
+        "00-before.snap.json": {
+          "labels": [
+            {
+              "text": "",
+              "rect": [
+                20,
+                36,
+                19,
+                19
+              ]
+            },
+            {
+              "text": "Mail",
+              "rect": [
+                47,
+                40,
+                185,
+                11
+              ]
+            },
+            {
+              "text": "Simulation",
+              "rect": [
+                239,
+                40,
+                51,
+                11
+              ]
+            },
+            {
+              "text": "Desk lamp ready",
+              "rect": [
+                20,
+                63,
+                270,
+                26
+              ]
+            },
+            {
+              "text": "Mon Oct 5, 2026, 9:00 PM PDT",
+              "rect": [
+                20,
+                97,
+                144,
+                11
+              ]
+            },
+            {
+              "text": "Bring the code and photo ID.",
+              "rect": [
+                20,
+                117,
+                270,
+                17
+              ]
+            },
+            {
+              "text": "Show code",
+              "rect": [
+                44,
+                151,
+                98,
+                21
+              ]
+            },
+            {
+              "text": "Details",
+              "rect": [
+                30,
+                194,
+                41,
+                14
+              ]
+            }
+          ],
+          "last_text_bottom": 208,
+          "tap_targets": [
+            [
+              20,
+              142,
+              146,
+              39
+            ],
+            [
+              20,
+              189,
+              61,
+              24
+            ]
+          ]
+        },
+        "01-after.snap.json": {
+          "labels": [
+            {
+              "text": "",
+              "rect": [
+                20,
+                36,
+                19,
+                19
+              ]
+            },
+            {
+              "text": "Mail",
+              "rect": [
+                47,
+                40,
+                185,
+                11
+              ]
+            },
+            {
+              "text": "Simulation",
+              "rect": [
+                239,
+                40,
+                51,
+                11
+              ]
+            },
+            {
+              "text": "Desk lamp ready",
+              "rect": [
+                20,
+                63,
+                79,
+                11
+              ]
+            },
+            {
+              "text": "9064",
+              "rect": [
+                20,
+                83,
+                270,
+                26
+              ]
+            },
+            {
+              "text": "Bring the code and photo ID.",
+              "rect": [
+                20,
+                117,
+                270,
+                17
+              ]
+            },
+            {
+              "text": "Back",
+              "rect": [
+                44,
+                151,
+                44,
+                21
+              ]
+            }
+          ],
+          "last_text_bottom": 172,
+          "tap_targets": [
+            [
+              20,
+              142,
+              92,
+              39
+            ]
+          ]
+        },
+        "02-after.snap.json": {
+          "labels": [
+            {
+              "text": "",
+              "rect": [
+                20,
+                36,
+                19,
+                19
+              ]
+            },
+            {
+              "text": "Mail",
+              "rect": [
+                47,
+                40,
+                185,
+                11
+              ]
+            },
+            {
+              "text": "Simulation",
+              "rect": [
+                239,
+                40,
+                51,
+                11
+              ]
+            },
+            {
+              "text": "Desk lamp ready",
+              "rect": [
+                20,
+                63,
+                270,
+                26
+              ]
+            },
+            {
+              "text": "Mon Oct 5, 2026, 9:00 PM PDT",
+              "rect": [
+                20,
+                97,
+                144,
+                11
+              ]
+            },
+            {
+              "text": "Bring the code and photo ID.",
+              "rect": [
+                20,
+                117,
+                270,
+                17
+              ]
+            },
+            {
+              "text": "Show code",
+              "rect": [
+                44,
+                151,
+                98,
+                21
+              ]
+            },
+            {
+              "text": "Details",
+              "rect": [
+                30,
+                194,
+                41,
+                14
+              ]
+            }
+          ],
+          "last_text_bottom": 208,
+          "tap_targets": [
+            [
+              20,
+              142,
+              146,
+              39
+            ],
+            [
+              20,
+              189,
+              61,
+              24
+            ]
+          ]
+        },
+        "03-after.snap.json": {
+          "labels": [
+            {
+              "text": "",
+              "rect": [
+                20,
+                36,
+                19,
+                19
+              ]
+            },
+            {
+              "text": "Mail",
+              "rect": [
+                47,
+                40,
+                185,
+                11
+              ]
+            },
+            {
+              "text": "Simulation",
+              "rect": [
+                239,
+                40,
+                51,
+                11
+              ]
+            },
+            {
+              "text": "Desk lamp ready",
+              "rect": [
+                20,
+                63,
+                79,
+                11
+              ]
+            },
+            {
+              "text": "Example Pickup Desk, 100 Demo Street, Demo City",
+              "rect": [
+                20,
+                83,
+                270,
+                42
+              ]
+            },
+            {
+              "text": "9:00 AM–9:00 PM PDT",
+              "rect": [
+                20,
+                133,
+                108,
+                11
+              ]
+            },
+            {
+              "text": "Mon Oct 5, 2026, 9:00 PM PDT",
+              "rect": [
+                20,
+                152,
+                144,
+                11
+              ]
+            },
+            {
+              "text": "Back",
+              "rect": [
+                44,
+                181,
+                44,
+                21
+              ]
+            }
+          ],
+          "last_text_bottom": 202,
+          "tap_targets": [
+            [
+              20,
+              172,
+              92,
+              39
+            ]
+          ]
+        },
+        "04-after.snap.json": {
+          "labels": [
+            {
+              "text": "",
+              "rect": [
+                20,
+                36,
+                19,
+                19
+              ]
+            },
+            {
+              "text": "Mail",
+              "rect": [
+                47,
+                40,
+                185,
+                11
+              ]
+            },
+            {
+              "text": "Simulation",
+              "rect": [
+                239,
+                40,
+                51,
+                11
+              ]
+            },
+            {
+              "text": "Desk lamp ready",
+              "rect": [
+                20,
+                63,
+                270,
+                26
+              ]
+            },
+            {
+              "text": "Mon Oct 5, 2026, 9:00 PM PDT",
+              "rect": [
+                20,
+                97,
+                144,
+                11
+              ]
+            },
+            {
+              "text": "Bring the code and photo ID.",
+              "rect": [
+                20,
+                117,
+                270,
+                17
+              ]
+            },
+            {
+              "text": "Show code",
+              "rect": [
+                44,
+                151,
+                98,
+                21
+              ]
+            },
+            {
+              "text": "Details",
+              "rect": [
+                30,
+                194,
+                41,
+                14
+              ]
+            }
+          ],
+          "last_text_bottom": 208,
+          "tap_targets": [
+            [
+              20,
+              142,
+              146,
+              39
+            ],
+            [
+              20,
+              189,
+              61,
+              24
+            ]
+          ]
+        }
+      }
+    },
+    "cap440": {
+      "native_clicks_passed": true,
+      "events": [
+        [
+          {
+            "applied": true,
+            "changed": [
+              "mode"
+            ],
+            "event": "code",
+            "key": "root/Col#0/when#0/w:Col#0/Chip#0",
+            "origin": "Authored",
+            "stale": [],
+            "writes": []
+          }
+        ],
+        [
+          {
+            "applied": true,
+            "changed": [
+              "mode"
+            ],
+            "event": "back",
+            "key": "root/Col#0/when#1/w:Col#0/Chip#0",
+            "origin": "Authored",
+            "stale": [],
+            "writes": []
+          }
+        ],
+        [
+          {
+            "applied": true,
+            "changed": [
+              "mode"
+            ],
+            "event": "details",
+            "key": "root/Col#0/when#0/w:Col#0/Chip#1",
+            "origin": "Authored",
+            "stale": [],
+            "writes": []
+          }
+        ],
+        [
+          {
+            "applied": true,
+            "changed": [
+              "mode"
+            ],
+            "event": "back",
+            "key": "root/Col#0/when#2/w:Col#0/Chip#0",
+            "origin": "Authored",
+            "stale": [],
+            "writes": []
+          }
+        ]
+      ],
+      "frames": {
+        "00-before.snap.json": {
+          "labels": [
+            {
+              "text": "",
+              "rect": [
+                20,
+                36,
+                19,
+                19
+              ]
+            },
+            {
+              "text": "Mail",
+              "rect": [
+                47,
+                40,
+                219,
+                11
+              ]
+            },
+            {
+              "text": "Simulation",
+              "rect": [
+                273,
+                40,
+                51,
+                11
+              ]
+            },
+            {
+              "text": "Desk lamp ready",
+              "rect": [
+                20,
+                63,
+                304,
+                26
+              ]
+            },
+            {
+              "text": "Mon Oct 5, 2026, 9:00 PM PDT",
+              "rect": [
+                20,
+                97,
+                144,
+                11
+              ]
+            },
+            {
+              "text": "Bring the code and photo ID.",
+              "rect": [
+                20,
+                117,
+                304,
+                17
+              ]
+            },
+            {
+              "text": "Show code",
+              "rect": [
+                44,
+                151,
+                98,
+                21
+              ]
+            },
+            {
+              "text": "Details",
+              "rect": [
+                30,
+                194,
+                41,
+                14
+              ]
+            }
+          ],
+          "last_text_bottom": 208,
+          "tap_targets": [
+            [
+              20,
+              142,
+              146,
+              39
+            ],
+            [
+              20,
+              189,
+              61,
+              24
+            ]
+          ]
+        },
+        "01-after.snap.json": {
+          "labels": [
+            {
+              "text": "",
+              "rect": [
+                20,
+                36,
+                19,
+                19
+              ]
+            },
+            {
+              "text": "Mail",
+              "rect": [
+                47,
+                40,
+                219,
+                11
+              ]
+            },
+            {
+              "text": "Simulation",
+              "rect": [
+                273,
+                40,
+                51,
+                11
+              ]
+            },
+            {
+              "text": "Desk lamp ready",
+              "rect": [
+                20,
+                63,
+                79,
+                11
+              ]
+            },
+            {
+              "text": "9064",
+              "rect": [
+                20,
+                83,
+                304,
+                26
+              ]
+            },
+            {
+              "text": "Bring the code and photo ID.",
+              "rect": [
+                20,
+                117,
+                304,
+                17
+              ]
+            },
+            {
+              "text": "Back",
+              "rect": [
+                44,
+                151,
+                44,
+                21
+              ]
+            }
+          ],
+          "last_text_bottom": 172,
+          "tap_targets": [
+            [
+              20,
+              142,
+              92,
+              39
+            ]
+          ]
+        },
+        "02-after.snap.json": {
+          "labels": [
+            {
+              "text": "",
+              "rect": [
+                20,
+                36,
+                19,
+                19
+              ]
+            },
+            {
+              "text": "Mail",
+              "rect": [
+                47,
+                40,
+                219,
+                11
+              ]
+            },
+            {
+              "text": "Simulation",
+              "rect": [
+                273,
+                40,
+                51,
+                11
+              ]
+            },
+            {
+              "text": "Desk lamp ready",
+              "rect": [
+                20,
+                63,
+                304,
+                26
+              ]
+            },
+            {
+              "text": "Mon Oct 5, 2026, 9:00 PM PDT",
+              "rect": [
+                20,
+                97,
+                144,
+                11
+              ]
+            },
+            {
+              "text": "Bring the code and photo ID.",
+              "rect": [
+                20,
+                117,
+                304,
+                17
+              ]
+            },
+            {
+              "text": "Show code",
+              "rect": [
+                44,
+                151,
+                98,
+                21
+              ]
+            },
+            {
+              "text": "Details",
+              "rect": [
+                30,
+                194,
+                41,
+                14
+              ]
+            }
+          ],
+          "last_text_bottom": 208,
+          "tap_targets": [
+            [
+              20,
+              142,
+              146,
+              39
+            ],
+            [
+              20,
+              189,
+              61,
+              24
+            ]
+          ]
+        },
+        "03-after.snap.json": {
+          "labels": [
+            {
+              "text": "",
+              "rect": [
+                20,
+                36,
+                19,
+                19
+              ]
+            },
+            {
+              "text": "Mail",
+              "rect": [
+                47,
+                40,
+                219,
+                11
+              ]
+            },
+            {
+              "text": "Simulation",
+              "rect": [
+                273,
+                40,
+                51,
+                11
+              ]
+            },
+            {
+              "text": "Desk lamp ready",
+              "rect": [
+                20,
+                63,
+                79,
+                11
+              ]
+            },
+            {
+              "text": "Example Pickup Desk, 100 Demo Street, Demo City",
+              "rect": [
+                20,
+                83,
+                304,
+                42
+              ]
+            },
+            {
+              "text": "9:00 AM–9:00 PM PDT",
+              "rect": [
+                20,
+                133,
+                108,
+                11
+              ]
+            },
+            {
+              "text": "Mon Oct 5, 2026, 9:00 PM PDT",
+              "rect": [
+                20,
+                152,
+                144,
+                11
+              ]
+            },
+            {
+              "text": "Back",
+              "rect": [
+                44,
+                181,
+                44,
+                21
+              ]
+            }
+          ],
+          "last_text_bottom": 202,
+          "tap_targets": [
+            [
+              20,
+              172,
+              92,
+              39
+            ]
+          ]
+        },
+        "04-after.snap.json": {
+          "labels": [
+            {
+              "text": "",
+              "rect": [
+                20,
+                36,
+                19,
+                19
+              ]
+            },
+            {
+              "text": "Mail",
+              "rect": [
+                47,
+                40,
+                219,
+                11
+              ]
+            },
+            {
+              "text": "Simulation",
+              "rect": [
+                273,
+                40,
+                51,
+                11
+              ]
+            },
+            {
+              "text": "Desk lamp ready",
+              "rect": [
+                20,
+                63,
+                304,
+                26
+              ]
+            },
+            {
+              "text": "Mon Oct 5, 2026, 9:00 PM PDT",
+              "rect": [
+                20,
+                97,
+                144,
+                11
+              ]
+            },
+            {
+              "text": "Bring the code and photo ID.",
+              "rect": [
+                20,
+                117,
+                304,
+                17
+              ]
+            },
+            {
+              "text": "Show code",
+              "rect": [
+                44,
+                151,
+                98,
+                21
+              ]
+            },
+            {
+              "text": "Details",
+              "rect": [
+                30,
+                194,
+                41,
+                14
+              ]
+            }
+          ],
+          "last_text_bottom": 208,
+          "tap_targets": [
+            [
+              20,
+              142,
+              146,
+              39
+            ],
+            [
+              20,
+              189,
+              61,
+              24
+            ]
+          ]
+        }
+      }
+    }
+  },
+  "findings": [
+    "Both sizes pass Show code→Back→Details→Back through actual native coordinate clicks and NAV dispatch. Each event changes mode; no durable writes.",
+    "Pickup code9064 is rendered correctly; prior4821/7392 are not displayed.",
+    "Details contains Example Pickup Desk,100 Demo Street,Demo City;9:00AM–9:00PM PDT;Mon Oct5,2026,9:00PM PDT. No invented post-deadline consequence in source/data or visible text.",
+    "At310width brief lasttext208 and lasttargetbottom213; code172/181; details202/211. Identical vertical bounds at344width, all comfortably under330.",
+    "Short action labels fit. Details target61x24logicalpoints is a remaining small-target caveat; primary Show code146x39 and Back92x39. Physical touch acceptance is separate."
+  ],
+  "visual_reviewed": [
+    "strict330/00-before.png",
+    "strict330/01-after.png",
+    "strict330/03-after.png"
+  ],
+  "physical_review": {
+    "viewed": [
+      "phone-full-brief.png",
+      "phone-full-code.png",
+      "phone-full-details.png",
+      "phone-glance-code.png"
+    ],
+    "finding": "Card content and actions readable without clipping in physical full brief/code/details. Pickup9064 and retained Desk lamp ready identity visible in full sheet and Glance. Review scope is the generated card, not background shell drawing or whole-phone polish. Parent operates phone; independent reviewer only reads screenshots."
+  },
+  "scope": "Temporary pinned native renderer plus local-state bridge, not Mail/browser effects. Original source and data unchanged."
+}

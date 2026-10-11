@@ -1,0 +1,124 @@
+{
+  "schema": 1,
+  "scope": "actual-oneplus6-full-shell-app-hub-publisher-ui",
+  "tested_source": "933abbcf2737e652acd9cae2a4c9ffc16bfdaec6",
+  "source_dirty": false,
+  "runtime_tree": "6c080f31adb899611e6ebe132ccfa2eead06cf9b",
+  "hub_revision": "ba36df0505e198f998201af312ff5184df98cae9",
+  "app_contract_version": "1.8.0",
+  "device_model": "OnePlus 6",
+  "input_method": "scoped-adb-with-owned-package-foreground-check",
+  "build_features": [
+    "dev-mode",
+    "app-hub"
+  ],
+  "package": "dev.makepad.octosense.publisherlab.checked8af",
+  "apk_sha256": "e8cd7e350add259ff76f3a7c9e53c95b0429a7ce7c4e8ba028eaca46744b3c7d",
+  "original_apk_sha256": "5c7604de281f3f839b4abe5535107b15e919130c4240adaf1657b331fb0c2b2b",
+  "native_library_sha256": "395768d5dc6072a5f9fb602e51c5047679aabc9034796208503fadacab95f3ab",
+  "native_library_unmodified_by_debug_wrapper": true,
+  "catalog_authority": "ephemeral-local-legacy-not-production-github-v2",
+  "developer_key_used": false,
+  "publisher_proof": "genuine-github-tag-push",
+  "production_publication": false,
+  "normal_home_changed": false,
+  "personal_accounts_used": false,
+  "models_used": false,
+  "owned_package_stopped": true,
+  "functional_checks_passed": 8,
+  "functional_checks_total": 8,
+  "functional_passed": true,
+  "checks": [
+    {
+      "name": "search_and_install_initial_genuine_release",
+      "passed": true
+    },
+    {
+      "name": "open_initial_app_and_persist_note",
+      "passed": true
+    },
+    {
+      "name": "recognize_new_genuine_release_as_update",
+      "passed": true
+    },
+    {
+      "name": "install_update_preserves_exact_github_proof",
+      "passed": true
+    },
+    {
+      "name": "updated_app_loads_existing_note",
+      "passed": true
+    },
+    {
+      "name": "updated_app_adds_second_note",
+      "passed": true
+    },
+    {
+      "name": "updated_app_removes_selected_note",
+      "passed": true
+    },
+    {
+      "name": "process_restart_and_library_open_preserve_final_note",
+      "passed": true
+    }
+  ],
+  "final_state": {
+    "version": "0.1.3",
+    "manifest_and_proof_exact": true,
+    "notes": [
+      [
+        "Saved after RC update"
+      ]
+    ]
+  },
+  "screenshots": {
+    "01-consent.png": "386f42b90d5e9c2bc1e8b9c0f19d4091ea4a5329711c6f5cdc6aef2fe76fb123",
+    "05-search-result.png": "ed31bd87c08e0bb8c350f3bc9af521dddddc4efce1d66c3dae919551e77857b2",
+    "07-install-review.png": "57bd9fb7172a310cfdc01d14ee22df1b258a45e970982ea689c0bd3f77ae5282",
+    "09-open-ready.png": "488e91e27da16e643cf80c22da80677ee95b208aecfe050ed67ae83373ec927a",
+    "12-note-saved.png": "aabeb7f131fd73a67b12d67cc76770e02a85693570b2e258bca8bf5160bd921c",
+    "13-update-catalog.png": "702302df4f3d2bda3b603644909ee29e285665c13aef83cdafd3409bd6c1b811",
+    "15-update-review.png": "47718b47349ef75a56be0a7bb24e4fd11af1445413d5cd07e099bde89e8f0900",
+    "18-note-after-update.png": "73cb0b9a25b7cbe5b0e544293ba5ce962f02997b684ac06a795f106aedafef9b",
+    "19-two-notes.png": "72a48ebf35739d5145f8cfc845dde6c5f354e26c7471cb420268517d6d328289",
+    "20-note-removed.png": "f2b01499291b1b43d864ed9672ca52c7d7cdb901bb6f95abb6e7500cf18210c7",
+    "23-library.png": "d74595d074222568e4b07a23fe7637242d54dc8c394269b11ab3cdc779b7f026",
+    "24-library-opened.png": "6bf71ae303a75a9196d0346acd766b264d4b078d8a3ca2176b5a15b142ae4052"
+  },
+  "actions_sha256": "fbb2e934686f5540dd8da4dc1f6d601ac8faab009363bb6b15d99f4c636d4342",
+  "packaging_receipt_sha256": "8e723aa7b127036fd4d163f7ba4144cd3aa212005ab9057aec5ae3bc24b54f3d",
+  "private_driver_sha256": "d2a26a1af446bb5f0768f17172e9d2489cad8d3ec5fa5665aa0ca54ca2db9dd5",
+  "finished_utc": "2026-10-08T09:20:21.398076+00:00",
+  "visual_review": {
+    "performed": true,
+    "overall": "functional-pass-with-fixture-layout-defect",
+    "finding": "The immutable fixture title Publishing Test Notes clips at the right edge on this phone; input, Add, remove, install review, Update and Open remain reachable. The later starter-template heading fix is not present in these historical test releases."
+  },
+  "test_limits": [
+    "Isolated Home shell without default model/kernel features; this is a debug acceptance APK, not an Android release artifact.",
+    "MAKEPAD_SPLASH_BUDGET_MS is explicitly unset; normal64ms runtime default is exercised.",
+    "Local legacy catalog is temporary; these genuine keyless publisher fixtures are not production App Hub entries.",
+    "Actual OS screenshots and ADB gestures; no native app-texture or Android remote instrumentation used for state assertions.",
+    "No accounts, provider/model calls, physical write approval, production public-catalog discovery or normal Home replacement."
+  ],
+  "fixture_releases": [
+    {
+      "version": "0.1.2",
+      "app_id": "dev.octosense.publisher-fixture",
+      "pack_sha256": "6f0f48859044f280bb70caa9e5686478d712dfc7b497a8ff5d47aac887b80d6f",
+      "catalog_sha256": "54ec6c01c08c2462c836ef47b72557a6ca46c030a72a51b52e401c14c101e137",
+      "source_commit": "9df54b1fc8b701e4356b16dd8e8acdce43fc010d",
+      "full_github_proof_preserved": true
+    },
+    {
+      "version": "0.1.3",
+      "app_id": "dev.octosense.publisher-fixture",
+      "pack_sha256": "ac62bad25923e112cc64ce863df9fac20f6feebecb0e6df253695f4203629053",
+      "catalog_sha256": "a8771e88f82cc27453f2ca4e0912587e3e8fea9faad748c64c58e8d5a3b3bb30",
+      "source_commit": "fdbdf950589f16220a5579786b44c4d1626292e7",
+      "full_github_proof_preserved": true
+    }
+  ],
+  "default_splash_budget_ms": 64,
+  "test_budget_override_used": false
+}

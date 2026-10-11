@@ -121,8 +121,11 @@ impl SafeInsets {
 /// in — Home paging/search or the App Library's swipe back. Vertical library
 /// drags, including filtered search results, belong to its scrolling grid.
 pub struct GestureContext { pub screen: Rect, pub insets: SafeInsets, pub phone: PhoneScreen, pub body: bool,
-    /// The host OS owns edge navigation. Only gestures in the content body
-    /// may be recognized; hosted apps retain their own edge touches.
+    /// Glance's feed owns vertical movement. Even a feed that fits on screen
+    /// must not turn a thumb's initial vertical arc into Home search/shade.
+    pub glance: Option<Rect>,
+    /// The host OS owns edge navigation. Home pages with side-edge touches
+    /// the OS delivers; hosted apps retain their own edge touches.
     pub system_edges: bool,
     /// The shell's own shade is in use. Off when the system-wide OctoSense
     /// panel owns every pull-down: the top band and the home page's side
@@ -137,7 +140,7 @@ pub struct GestureContext { pub screen: Rect, pub insets: SafeInsets, pub phone:
 /// controls on the right — without reaching for the top edge. The App
 /// Library accepts a rightward swipe back; vertical drags scroll its grid.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Origin { Bottom, Top(ShadeSide), Side(Edge), Body, Column(ShadeSide), Library }
+enum Origin { Bottom, Top(ShadeSide), Side(Edge), Body, Column(ShadeSide), HorizontalPage, Library }
 
 #[derive(Clone, Debug)]
 struct Track {
@@ -163,7 +166,7 @@ struct Track {
 }
 
 /// Movement before a touch is a drag, not a tap.
-const SLOP: f64 = 10.0;
+pub(crate) const SLOP: f64 = 10.0;
 /// Jitter tolerated while "holding still".
 const STILL: f64 = 4.0;
 /// How far back the lift velocity looks.
@@ -180,17 +183,20 @@ const HOLD_NEAR: f64 = 0.6;
 pub struct GestureRecognizer {
     pub metrics: GestureMetrics,
     track: Option<Track>,
+    release_velocity: Vec2d,
 }
 
 impl GestureRecognizer {
-    pub fn new(metrics: GestureMetrics) -> Self { Self { metrics, track: None } }
+    pub fn new(metrics: GestureMetrics) -> Self { Self { metrics, track: None, release_velocity: dvec2(0.0, 0.0) } }
     /// The recognizer claimed the finger that is down.
+    /// Velocity of the last release, in logical points/second. Cleared on Down/cancel.
+    pub fn release_velocity(&self) -> Vec2d { self.release_velocity }
     pub fn active(&self) -> bool { self.track.is_some() }
     /// The gesture in progress, as last emitted.
     pub fn current(&self) -> Option<ShellGesture> { self.track.as_ref().and_then(|t| t.live) }
     /// The finger that is down started in a shell band (bottom, top or a
     /// side) rather than in the home page body.
-    pub fn from_band(&self) -> bool { self.track.as_ref().is_some_and(|t| !matches!(t.origin, Origin::Body | Origin::Library)) }
+    pub fn from_band(&self) -> bool { self.track.as_ref().is_some_and(|t| !matches!(t.origin, Origin::Body | Origin::HorizontalPage | Origin::Library)) }
 
     /// Feed one finger event. `Down` decides whether the shell claims the
     /// finger (`active()` afterwards); an excluded edge, a body touch off
@@ -198,6 +204,7 @@ impl GestureRecognizer {
     pub fn feed(&mut self, phase: FingerPhase, p: Vec2d, time: f64, ctx: &GestureContext, exclusions: &ExclusionZones) -> Option<ShellGesture> {
         match phase {
             FingerPhase::Down => {
+                self.release_velocity = dvec2(0.0, 0.0);
                 self.track = None;
                 let origin = self.origin_at(p, ctx, exclusions)?;
                 let mut samples = VecDeque::with_capacity(SAMPLES);
@@ -239,6 +246,7 @@ impl GestureRecognizer {
                 let delta = p - t.start;
                 let progress = Self::progress(kind, t.origin, delta, m.commit_distance);
                 let velocity = Self::velocity(&t);
+                self.release_velocity = velocity;
                 let along = Self::along(kind, t.origin, velocity);
                 // A library flick sends it back only while it is still going
                 // mostly sideways, not a swipe that turned into a scroll.
@@ -246,7 +254,8 @@ impl GestureRecognizer {
                 if kind == GestureKind::HomeUp && t.held { return Some(ShellGesture::Commit(GestureKind::Switcher)); }
                 // Nor one that ended up travelling further down than right.
                 if t.origin == Origin::Library && delta.x <= delta.y.abs() { return Some(ShellGesture::Cancel(kind)); }
-                if progress >= Self::commit_fraction(kind) || flick { Some(ShellGesture::Commit(kind)) } else { Some(ShellGesture::Cancel(kind)) }
+                let reversing_page = matches!(kind, GestureKind::Page(_)) && along <= -m.flick_velocity;
+                if !reversing_page && (progress >= Self::commit_fraction(kind) || flick) { Some(ShellGesture::Commit(kind)) } else { Some(ShellGesture::Cancel(kind)) }
             }
         }
     }
@@ -271,6 +280,7 @@ impl GestureRecognizer {
     /// Another finger took over, the screen rotated, or the shell changed
     /// under the finger: drop the track, telling the surfaces to animate back.
     pub fn cancel(&mut self) -> Option<ShellGesture> {
+        self.release_velocity = dvec2(0.0, 0.0);
         let t = self.track.take()?;
         t.kind.map(ShellGesture::Cancel)
     }
@@ -283,11 +293,19 @@ impl GestureRecognizer {
         let i = ctx.insets;
         if p.x < left - i.left || p.x > right + i.right || p.y < top - i.top || p.y > bottom + i.bottom { return None; }
         let clear = |edge: Edge| !exclusions.excludes(p, edge);
+        let glance_body = ctx.body && ctx.phone == PhoneScreen::Home
+            && ctx.glance.is_some_and(|r| r.contains(p));
+        let launcher_body = ctx.body && matches!(ctx.phone, PhoneScreen::Home | PhoneScreen::Drawer);
         if ctx.system_edges {
-            // Never turn an OS edge gesture into a Home/Back/Switcher action,
-            // or a body gesture after it crosses into the app.
-            if p.x <= left + m.edge_band || p.x >= right - m.edge_band
-                || p.y <= top + m.top_band || p.y >= bottom - m.bottom_band { return None; }
+            // Home reserves its side edges with Android while the launcher
+            // owns input. Delivered touches must page every Home page, not
+            // only Glance. Apps and the top/bottom system bands stay native.
+            if p.y <= top + m.top_band || p.y >= bottom - m.bottom_band { return None; }
+            if p.x <= left + m.edge_band && (!launcher_body || !clear(Edge::Left)) { return None; }
+            if p.x >= right - m.edge_band && (!launcher_body || !clear(Edge::Right)) { return None; }
+            if ctx.phone == PhoneScreen::Home && (p.x <= left + m.edge_band || p.x >= right - m.edge_band) {
+                return Some(Origin::HorizontalPage);
+            }
         } else {
             if p.y >= bottom - m.bottom_band { return clear(Edge::Bottom).then_some(Origin::Bottom); }
             if p.y <= top + m.top_band {
@@ -299,6 +317,9 @@ impl GestureRecognizer {
             if p.x >= right - m.edge_band { return clear(Edge::Right).then_some(Origin::Side(Edge::Right)); }
         }
         if !ctx.body { return None; }
+        if glance_body {
+            return Some(Origin::HorizontalPage);
+        }
         match ctx.phone {
             PhoneScreen::Home => {
                 let column = s.size.x * 0.25;
@@ -336,6 +357,7 @@ impl GestureRecognizer {
                 else if d.y > 0.0 && ay > ax * 1.2 { Some(GestureKind::Shade(side)) }
                 else { None }
             }
+            Origin::HorizontalPage => (ax > ay * 1.2).then_some(GestureKind::Page(dir)),
             // Twice as far right as up or down: a swipe back, not a scroll.
             Origin::Library => (d.x > ay * 2.0).then_some(GestureKind::Back),
 
@@ -401,7 +423,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn native_edges_never_become_shell_navigation() {
+    fn app_side_edges_and_all_system_bars_stay_native() {
         let zones=ExclusionZones::default();
         for phone in [PhoneScreen::Home, PhoneScreen::App, PhoneScreen::Drawer, PhoneScreen::Recents] {
             let context=GestureContext { system_edges: true, shade: false, ..ctx(phone) };
@@ -411,6 +433,7 @@ mod tests {
                 dvec2(s.pos.x+12.0,middle.y), dvec2(s.pos.x+s.size.x-12.0,middle.y),
                 dvec2(middle.x,s.pos.y+12.0), dvec2(middle.x,s.pos.y+s.size.y-12.0),
             ] {
+                if matches!(phone, PhoneScreen::Home | PhoneScreen::Drawer) && start.y == middle.y {continue;}
                 let mut g=GestureRecognizer::default();
                 assert_eq!(g.feed(FingerPhase::Down,start,0.0,&context,&zones),None);
                 assert!(!g.active(),"the OS owns this edge on {phone:?}");
@@ -427,10 +450,72 @@ mod tests {
         assert_eq!(g.feed(FingerPhase::Up,start-dvec2(150.0,0.0),0.3,&context,&zones),
             Some(ShellGesture::Commit(GestureKind::Page(Dir::Left))));
     }
+
+    #[test]
+    fn every_home_page_accepts_both_delivered_side_edges_at_all_body_heights() {
+        let context=GestureContext {system_edges:true,shade:false,..ctx(PhoneScreen::Home)};
+        for y in [50.0,180.0,450.0,820.0] {
+            for (start,end,dir) in [(1.0,190.0,Dir::Right),(411.0,210.0,Dir::Left)] {
+                let mut rec=GestureRecognizer::default();
+                let out=drive(&mut rec,&context,&ExclusionZones::default(),&swipe((start,y),(end,y),0.4,8));
+                assert_eq!(last(&out),ShellGesture::Commit(GestureKind::Page(dir)),"x={start}, y={y}");
+            }
+        }
+        let library=GestureContext {phone:PhoneScreen::Drawer,..context};
+        let out=drive(&mut GestureRecognizer::default(),&library,&ExclusionZones::default(),&swipe((1.0,450.0),(210.0,450.0),0.4,8));
+        assert_eq!(last(&out),ShellGesture::Commit(GestureKind::Back));
+    }
     use FingerPhase::*;
 
     fn screen() -> Rect { Rect { pos: dvec2(0.0, 0.0), size: dvec2(412.0, 892.0) } }
-    fn ctx(phone: PhoneScreen) -> GestureContext { GestureContext { screen: screen(), insets: SafeInsets::default(), phone, body: matches!(phone, PhoneScreen::Home | PhoneScreen::Drawer), system_edges: false, shade: true } }
+    fn ctx(phone: PhoneScreen) -> GestureContext { GestureContext { screen: screen(), insets: SafeInsets::default(), phone, body: matches!(phone, PhoneScreen::Home | PhoneScreen::Drawer), glance: None, system_edges: false, shade: true } }
+
+    #[test]
+    fn glance_leaves_vertical_feed_input_to_the_feed_and_keeps_header_and_system_bars() {
+        let context = GestureContext {
+            system_edges: true,
+            glance: Some(Rect { pos: dvec2(0.0, 112.0), size: dvec2(414.0, 750.0) }),
+            ..ctx(PhoneScreen::Home)
+        };
+        let zones = ExclusionZones::default();
+        for x in [2.0, 12.0, 50.0, 207.0, 360.0, 400.0, 412.0] {
+            let mut rec = GestureRecognizer::default();
+            let out = drive(&mut rec, &context, &zones, &swipe((x, 180.0), (x, 450.0), 0.4, 6));
+            assert!(out.iter().all(Option::is_none), "the feed must not open search or shade");
+        }
+        let mut rec = GestureRecognizer::default();
+        let out = drive(&mut rec, &context, &zones, &swipe((207.0, 60.0), (207.0, 160.0), 0.4, 6));
+        assert!(out.contains(&Some(ShellGesture::Commit(GestureKind::HomeSearch))), "the header keeps its pull gesture");
+        for at in [dvec2(2.0, 12.0), dvec2(400.0, 880.0)] {
+            rec.feed(FingerPhase::Down, at, 1.0, &context, &zones);
+            assert!(!rec.active(), "Android still owns its top and bottom bars");
+        }
+    }
+
+    #[test]
+    fn glance_pages_from_delivered_side_touches_and_respects_exclusions_and_cancel() {
+        let context = GestureContext {
+            system_edges: true,
+            glance: Some(Rect { pos: dvec2(0.0, 112.0), size: dvec2(412.0, 750.0) }),
+            ..ctx(PhoneScreen::Home)
+        };
+        let zones = ExclusionZones::default();
+        for x in [360.0, 392.0, 400.0, 411.0] {
+            let mut rec = GestureRecognizer::default();
+            let out = drive(&mut rec, &context, &zones, &swipe((x, 350.0), (180.0, 350.0), 0.5, 8));
+            assert_eq!(last(&out), ShellGesture::Commit(GestureKind::Page(Dir::Left)), "start x={x}");
+        }
+        let mut rec = GestureRecognizer::default();
+        rec.feed(Down, dvec2(411.0, 350.0), 0.0, &context, &zones);
+        assert!(matches!(rec.feed(Move, dvec2(210.0, 350.0), 0.2, &context, &zones), Some(ShellGesture::PageSwipe { .. })));
+        assert_eq!(rec.cancel(), Some(ShellGesture::Cancel(GestureKind::Page(Dir::Left))));
+        assert_eq!(rec.feed(Up, dvec2(180.0, 350.0), 0.3, &context, &zones), None);
+
+        let mut excluded = ExclusionZones::default();
+        excluded.add(context.screen, [false, false, false, true]);
+        rec.feed(Down, dvec2(411.0, 350.0), 0.0, &context, &excluded);
+        assert!(!rec.active(), "an explicitly excluded control keeps its edge");
+    }
     #[test]
     fn without_the_shell_shade_every_home_pull_is_the_library_and_the_top_band_is_nobodys() {
         let ctx = GestureContext { shade: false, ..ctx(PhoneScreen::Home) };
@@ -540,6 +625,19 @@ mod tests {
         assert!(!rec.active(), "a key at the bottom of the keyboard is a key, not home");
     }
     #[test]
+    fn reversing_a_page_cancels_and_release_velocity_is_not_reused() {
+        let mut rec=GestureRecognizer::default(); let context=ctx(PhoneScreen::Home); let zones=ExclusionZones::default();
+        for (phase,x,t) in [(Down,350.0,0.0),(Move,80.0,0.3),(Move,80.0,0.45),(Move,110.0,0.46),(Move,160.0,0.48)] {
+            rec.feed(phase,dvec2(x,400.0),t,&context,&zones);
+        }
+        assert_eq!(rec.feed(Up,dvec2(210.0,400.0),0.5,&context,&zones),Some(ShellGesture::Cancel(GestureKind::Page(Dir::Left))));
+        assert!(rec.release_velocity().x>900.0);
+        rec.feed(Down,dvec2(250.0,400.0),1.0,&context,&zones);
+        assert_eq!(rec.release_velocity(),dvec2(0.0,0.0));
+        rec.cancel(); assert_eq!(rec.release_velocity(),dvec2(0.0,0.0));
+    }
+
+    #[test]
     fn a_home_horizontal_drag_is_a_page_swipe() {
         let mut rec = GestureRecognizer::default();
         let out = drive(&mut rec, &ctx(PhoneScreen::Home), &ExclusionZones::default(), &swipe((300.0, 400.0), (120.0, 410.0), 0.3, 5));
@@ -559,6 +657,29 @@ mod tests {
         let mut rec = GestureRecognizer::default();
         let out = drive(&mut rec, &ctx(PhoneScreen::Home), &ExclusionZones::default(), &swipe((200.0, 500.0), (204.0, 300.0), 0.3, 5));
         assert!(out.iter().all(|g| g.is_none()), "an upward drag on the home page is the drawer's, not a shell gesture: {out:?}");
+    }
+    #[test]
+    fn with_native_edges_the_home_sides_still_pull_the_shell_shade() {
+        // Android without the system-wide panel: the shade opens from a
+        // pull down in either side column, inside the paging edge strip.
+        let ctx = GestureContext { system_edges: true, shade: true, ..ctx(PhoneScreen::Home) };
+        let zones = ExclusionZones::default();
+        let mut rec = GestureRecognizer::default();
+        let out = drive(&mut rec, &ctx, &zones, &swipe((370.0, 300.0), (374.0, 500.0), 0.3, 5));
+        assert_eq!(last(&out), ShellGesture::Commit(GestureKind::Shade(ShadeSide::Controls)), "{out:?}");
+        let mut rec = GestureRecognizer::default();
+        let out = drive(&mut rec, &ctx, &zones, &swipe((50.0, 300.0), (54.0, 500.0), 0.3, 5));
+        assert_eq!(last(&out), ShellGesture::Commit(GestureKind::Shade(ShadeSide::Notifications)), "{out:?}");
+        let mut rec = GestureRecognizer::default();
+        let out = drive(&mut rec, &ctx, &zones, &swipe((206.0, 300.0), (210.0, 500.0), 0.3, 5));
+        assert_eq!(last(&out), ShellGesture::Commit(GestureKind::HomeSearch), "the middle is still search: {out:?}");
+        // Side-edge paging must not turn a vertical drag into a shade;
+        // the top band still belongs to Android.
+        for start in [(404.0, 300.0), (370.0, 10.0)] {
+            let mut rec = GestureRecognizer::default();
+            let out = drive(&mut rec, &ctx, &zones, &swipe(start, (start.0 - 2.0, 500.0), 0.3, 5));
+            assert!(out.iter().all(|g| g.is_none()) && !rec.active(), "{start:?}: {out:?}");
+        }
     }
     #[test]
     fn a_downward_drag_in_a_home_column_pulls_that_side_of_the_shade() {

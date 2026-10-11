@@ -1,0 +1,14 @@
+{
+  "card_id": "mail-49911c976a8a7e4b496af5abe4efd3b55abc7012",
+  "data": {
+    "note": {
+      "as_of": "2026-10-04T01:41:43+00:00",
+      "summary": "Merchant: Demo Supply \u00b7 Item: Desk lamp \u00b7 Carrier: Example Parcel \u00b7 Tracking: SIM-DEEPSEEK-4821 \u00b7 Status: In transit to the local delivery depot \u00b7 Expected: Tuesday, October 6, 2026, 2:00\u20136:00 PM America/Los_Angeles (PDT, UTC-07:00) \u00b7 Reference: DEEPSEEK-20261004-SHIPPING. Signature required at delivery. Next action: arrange for someone to be available during the 2\u20136 PM PDT window.",
+      "title": "Simulation: Signing needed \u2014 Tue Oct 6, 2\u20136 PM PDT"
+    }
+  },
+  "notify": true,
+  "source": "source note sys.dataset(fields: [title, summary, as_of])\n\ncopy app { class: vocabulary, en: \"Mail\" }\ncopy gist { class: model-copy, en: \"Simulation only \u2014 no real shipment. A signature is required, so plan for someone to be available during the delivery window.\" }\n\nview root Surface(pad: .tight) {\n  Col(gap: 8) {\n    Row(gap: 8, align: .center) {\n      Icon(name: .mail, size: .row)\n      TextCaption(text: copy.app, width: .fill)\n      TextCaption(value: note.as_of)\n    }\n    TextTitle(text: note.title, width: .fill)\n    TextBody(text: note.summary, width: .fill)\n    TextBody(text: copy.gist, width: .fill)\n  }\n}",
+  "summary": "Demo Supply desk lamp (SIM-DEEPSEEK-4821) in transit; expected Tue Oct 6, 2\u20136 PM PDT. Signature required \u2014 someone must be present in that window.",
+  "title": "Simulation: Signature needed for Tue delivery"
+}

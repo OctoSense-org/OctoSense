@@ -323,7 +323,7 @@ fn no_provider_is_named_as_such() {
 }
 
 #[test]
-fn an_app_without_the_capability_is_refused_before_anything_else() {
+fn an_unadmitted_app_is_refused_before_anything_else() {
     let rig = Rig::new("cap", vec![deepseek("deepseek-v4-flash")]);
     for method in ["complete", "budget"] {
         let err = rig.call("com.example.other", method, args()).unwrap_err();
@@ -332,64 +332,39 @@ fn an_app_without_the_capability_is_refused_before_anything_else() {
     assert!(rig.fake.seen().is_empty());
 }
 
-/// The Card runner's isolate gate (Makepad's `splash_policy`, which App Hub
-/// feeds each app's resolved policy) lets `model.*` out only for an app whose
-/// policy lists `model`: `llm` or a neighbouring name is not enough, and
-/// `model` grants nothing else. Behind it, the service's default grant reads
-/// the same manifest, so an app the gate admits is served and one it would
-/// refuse is refused again here.
+/// Admission is the host's verified identity check, independently of whether
+/// the bundle describes model usage. These fixtures never access a real provider.
 #[test]
-fn the_card_runner_gate_and_the_service_agree_on_the_model_capability() {
-    use octosense_appstore::makepad_widgets::splash_policy::{service_allowed, set_policy_for_heap};
-    let without = NEXT.fetch_add(2, Ordering::Relaxed);
-    let with = without + 1;
-    set_policy_for_heap(without, vec!["storage".into(), "llm".into(), "models".into()], Vec::new(), None);
-    for method in ["model.complete", "model.budget"] {
-        assert!(service_allowed(without, method).is_err(), "{method}");
+fn admitted_model_calls_do_not_require_a_capability_declaration() {
+    let rig = Rig::new("declarative-model", vec![deepseek("deepseek-v4-flash")]);
+    let manifest = rig.dir.join(APP).join("bundle/manifest.json");
+    std::fs::create_dir_all(manifest.parent().unwrap()).unwrap();
+    for capabilities in [json!(["model"]), json!([])] {
+        std::fs::write(&manifest, json!({"id":APP,"capabilities":capabilities}).to_string()).unwrap();
+        assert!(rig.call(APP, "budget", json!({})).is_ok());
+        rig.fake.says(GOOD);
+        assert_eq!(rig.complete(args()).unwrap()["output"], serde_json::from_str::<Value>(GOOD).unwrap());
     }
-    set_policy_for_heap(with, vec!["model".into()], Vec::new(), None);
-    for method in ["model.complete", "model.budget"] {
-        assert!(service_allowed(with, method).is_ok(), "{method}");
-    }
-    assert!(service_allowed(with, "llm.list").is_err(), "model grants nothing else");
-
-    // The service's own check, the default one, over manifests where App Hub
-    // puts them: the granted app is served, the other refused.
-    let rig = Rig::with("gate", vec![deepseek("deepseek-v4-flash")], |o| o.grants(complete::manifest_grants));
-    let write = |id: &str, caps: &[&str]| {
-        let path = rig.dir.join(id).join("bundle/manifest.json");
-        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-        std::fs::write(path, json!({"id": id, "capabilities": caps}).to_string()).unwrap();
-    };
-    write(APP, &["storage", "model"]);
-    write("com.example.other", &["storage", "llm"]);
-    assert!(rig.call(APP, "budget", json!({})).is_ok());
-    let err = rig.call("com.example.other", "budget", json!({})).unwrap_err();
-    assert!(err.starts_with("capability: "), "{err}");
-    assert!(rig.fake.seen().is_empty());
+    let other = rig.dir.join("com.example.other/bundle/manifest.json");
+    std::fs::create_dir_all(other.parent().unwrap()).unwrap();
+    std::fs::write(other, json!({"id":"com.example.other","capabilities":["model"]}).to_string()).unwrap();
+    assert!(rig.call("com.example.other", "budget", json!({})).unwrap_err().starts_with("capability:"));
+    assert_eq!(rig.fake.seen().len(), 2);
 }
 
 #[test]
-fn the_default_grant_reads_the_apps_own_manifest() {
-    let root = std::env::temp_dir().join(format!("model-grants-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&root);
-    let host_dir = root.join(".host");
-    let write = |path: PathBuf, caps: &[&str], id: &str| {
-        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-        std::fs::write(path, json!({"id": id, "capabilities": caps}).to_string()).unwrap();
-    };
-    write(root.join("com.a/bundle/manifest.json"), &["model"], "com.a");
-    write(root.join("com.b/bundle/manifest.json"), &["storage", "llm"], "com.b");
-    write(root.join(".system/os.notes/0123456789abcdef/manifest.json"), &["model"], "os.notes");
-    // A manifest that names another id grants nothing.
-    write(root.join("com.c/bundle/manifest.json"), &["model"], "com.a");
-    assert!(complete::manifest_grants("com.a", &host_dir));
-    assert!(!complete::manifest_grants("com.b", &host_dir));
-    assert!(complete::manifest_grants("os.notes", &host_dir));
-    assert!(!complete::manifest_grants("com.c", &host_dir));
-    assert!(!complete::manifest_grants("../com.a", &host_dir));
-    assert!(!complete::manifest_grants("com.missing", &host_dir));
-    let _ = std::fs::remove_dir_all(&root);
+fn a_manifest_without_host_admission_never_authorizes_model_calls() {
+    let rig = Rig::with("missing-admission", vec![deepseek("deepseek-v4-flash")], |mut options| {
+        options.grants = None;
+        options
+    });
+    let manifest = rig.dir.join(APP).join("bundle/manifest.json");
+    std::fs::create_dir_all(manifest.parent().unwrap()).unwrap();
+    std::fs::write(manifest, json!({"id":APP,"capabilities":["model"]}).to_string()).unwrap();
+    for method in ["complete", "budget"] {
+        assert!(rig.call(APP, method, args()).unwrap_err().starts_with("capability:"));
+    }
+    assert!(rig.fake.seen().is_empty());
 }
 
 #[test]

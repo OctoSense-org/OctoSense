@@ -10,17 +10,18 @@ apply too; run every cargo command from the repository root (the root
 workspace) after `python3 tools/setup.py`.
 
 If you are building a new OctoSense app rather than changing these, you are in
-the wrong place: follow OctoScript-App-Design-Flow's
-[AGENTS.md](https://github.com/OctoSense-org/OctoScript-App-Design-Flow/blob/main/AGENTS.md)
-and use the bundles here only as read-only examples. For AI in an app (the
+the wrong place: follow the
+[AGENTS.md](https://github.com/OctoSense-org/OctoSense-App-Flow/blob/main/AGENTS.md)
+of OctoSense App Flow (formerly Design Flow), and use the bundles here only as
+read-only examples. For AI in an app (the
 `octos.*` and `model` capabilities, why `llm` is for system apps only, an
 app's own agent and `tools.json`, the system toolbox, `glance.publish` and
 `sys.digest`, and which of these are available or still coming), read its
-[AI in your app](https://github.com/OctoSense-org/OctoScript-App-Design-Flow/blob/main/docs/AI-SERVICES.md).
+[AI in your app](https://github.com/OctoSense-org/OctoSense-App-Flow/blob/main/docs/AI-SERVICES.md).
 
 - An app is `apps/<name>/bundle/`: `manifest.json` + `main.splash` (+ artwork).
   Learn the language, the APIs and the development loop from
-  [OctoScript App Design Flow](https://github.com/OctoSense-org/OctoScript-App-Design-Flow)
+  [App Flow](https://github.com/OctoSense-org/OctoSense-App-Flow)
   (`docs/QUICKSTART.md`, `docs/SCRIPT-API.md`). Do not invent APIs: if a
   widget or call is not documented there or used by another app here, check the
   runtime source before using it.
@@ -32,20 +33,103 @@ app's own agent and `tools.json`, the system toolbox, `glance.publish` and
   `MAKEPAD_APP_CONFIG='{"mail_demo":true}'`.
 - Validate on a phone through Home (`phone/`) built as a separate test
   package; never replace the device's installed Home.
+- Text on a page follows the host's appearance. On a phone, a page drawn by a
+  plain `View` shows the host's light or dark background, not the app's own
+  `ground` colour (**unverified** on the desktop), so a Label on it uses
+  `theme.color_text`. Keep a fixed dark colour (the apps' `ink`) for text on a
+  surface the app paints itself: a `SolidView` page like Mail's, a text field,
+  a white card or the tab bar. News's title and then Photos' headings
+  shipped in a fixed `ink` and vanished in dark mode, so check every page you
+  change in dark mode as well as light.
 - Mail's service: change `apps/mail/host-service` and run
   `cargo test --locked -p octosense-mail-service`. Calendar's and News's:
   `apps/calendar/host-service`, `apps/news/host-service`, and
   `cargo test --locked -p octosense-calendar-service -p octosense-news-service`.
+  The sheet engine's (gridcraft behind `sheet.*`, ADR 0013, no bundle yet; in
+  Home too): `apps/sheets/host-service` and
+  `cargo test --locked -p octosense-sheets-service`.
+  The photo engine's (photocraft behind `photo.*`, same ADR, no bundle yet;
+  desktop only, `craft-engines`, weighed per engine):
+  `apps/photo/host-service` and `cargo test --locked -p octosense-photo-service`.
+  The word engine's (wordcraft behind `word.*`, same ADR; its app is Writer,
+  `apps/writer/bundle`, desktop only, whose own `word.*` calls work in its
+  storage; its tests are in apps/README.md):
+  `apps/word/host-service` and `cargo test --locked -p octosense-word-service`.
+  The deck engine's (deckcraft behind `deck.*`, same ADR; its app is Quick
+  Deck, `apps/quickdeck/bundle`, desktop only, whose own `deck.*` calls work
+  in its storage; its dev fixture is in apps/README.md):
+  `apps/deck/host-service` and `cargo test --locked -p octosense-deck-service`.
+  The cad engine's (cadcraft behind `cad.*`, same ADR, no bundle yet):
+  `apps/cad/host-service` and `cargo test --locked -p octosense-cad-service`.
+  The light engine's (lightcraft behind `light.*`, same ADR, no bundle yet):
+  `apps/light/host-service` and `cargo test --locked -p octosense-light-service`.
+  The sound engine's (soundcraft behind `sound.*`, same ADR, offline only,
+  no bundle yet): `apps/sound/host-service` and
+  `cargo test --locked -p octosense-sound-service`.
+  The design engine's (designcraft behind `design.*`, same ADR, no bundle
+  yet): `apps/design/host-service` and
+  `cargo test --locked -p octosense-design-service`.
+  The film engine's (filmcraft behind `film.*`, same ADR, offline only, no
+  bundle yet): `apps/film/host-service` and
+  `cargo test --locked -p octosense-film-service`.
+  The effect engine's (effectcraft behind `effect.*`, same ADR, no bundle yet):
+  `apps/effect/host-service` and `cargo test --locked -p octosense-effect-service`.
+  The vector engine's (vectorcraft behind `vector.*`, same ADR, no bundle yet):
+  `apps/vector/host-service` and `cargo test --locked -p octosense-vector-service`.
+  The pdf engine's (pdfcraft behind `pdf.*`, same ADR; PDF Tools,
+  `apps/pdftools/bundle`, is its app, tested end to end in a hidden desktop
+  shell by `apps/pdftools/tests/ui.py` on the sample PDFs its
+  `pdftools_fixture` example writes, see `apps/pdftools/README.md`):
+  `apps/pdf/host-service` and `cargo test --locked -p octosense-pdf-service`.
+  Besides the file methods (`info`, `text`, `render`, `merge`, `split`: the
+  system agent's five tools, which stay as they are), it serves PDF Tools
+  v2's open documents to apps' own requests, as
+  `apps/pdftools/design/SERVICE.md` specifies; change that contract and the
+  service together. `pdf.open` keeps the engine's document, its edits and
+  undo history, under a handle; a document belongs to the caller app, its
+  storage scope (the area's root) and the handle, so another app's or
+  scope's handle is `unknown_doc:`, and a caller keeps at most 8 open
+  (`src/docs.rs`). The table is a `thread_local`, because every call reaches
+  the service on the UI thread (App Hub's `services::pump` inline from the
+  card runner, the relay's and components' calls from `host_tools::pump`),
+  which must take no lock another thread can hold. `pdf.close` releases a
+  document, and so does its app closing: a document is bound to the opening
+  isolate, and the service's listener on App Hub's
+  `services::on_isolate_closed` (called from `cancel_heap`, which every host
+  calls for a closing isolate) releases its documents and their renders
+  before the isolate's heap key, an address, can be reused. Every call also
+  sweeps for a changed storage scope (Makepad's
+  `splash_storage::storage_for_heap` for `Replier::isolate_key()`), and a
+  caller with no isolate gets a 15-minute idle bound. Each method runs
+  reviewed engine commands, its
+  review beside it (`src/reading.rs`, `src/review.rs`, `src/change.rs`): the
+  service builds every engine argument itself and each v2 method refuses a
+  key it does not take, so `comment_add` (`file`) never sees its attachment
+  type or a path; `file` commands that write get a staging path inside the
+  storage only; `doc_open` and `form_fill` (`code`) run with JavaScript off,
+  proven by `doc_tests::a_forms_own_scripts_never_run`. Caps: 24–300 dpi and
+  16 MP a render, `find` ≤ 500 matches, 512 pages a call, an image export
+  ≤ 64 pages and 256 MP in all (checked before anything is written), and a
+  render cache in `.cache/pages/` of 16 MiB and 64 files (an app's storage
+  holds at most 256 entries for its own writes), oldest first, cleared
+  before a write would fail with `storage_full:`. `pdf.fields` marks
+  read-only fields, and `pdf.fill` refuses one. Errors start with a stable
+  code (`src/codes.rs`).
 - Declare an app's agent in its manifest and `bundle/tools.json`. Keep the
   input/output schemas consistent with the executor (octos requires an object
   output schema), and select the actual risk, sharing and confirmation policy.
-  Add the implementation before adding a tool declaration; `implemented_by:
-  "app"` still has no Card runner executor.
+  Add the implementation before adding a tool declaration. A host-service tool
+  needs its handler in the host service. An `implemented_by: "app"` tool needs
+  the app's `app_tool(name, call_id)` hook and `"requires": ["script-tools-v1"]`
+  in the manifest; it runs only while the app is open
+  ([ADR 0012](../docs/adr/0012-app-host-api-discovery.md)).
 - For a notification tool, follow `../crates/shell/src/glance_notice.rs`.
-  Mail/News install `on_notify` callbacks; the shell's `NoticeService` serves
-  Photos, Maps, YouTube and Camera. The fixed notice template lives in
+  Mail/News/Photos install `on_notify` callbacks; the shell's `NoticeService`
+  serves Maps, YouTube and Camera. The fixed notice template lives in
   `../crates/shell/resources/glance/notice.card`; Calendar keeps its own event
-  and agenda templates. Grant `glance` in the manifest and publish as the app.
+  and agenda templates. Declare `glance` usage in the manifest and publish as
+  the admitted app; preserve publisher/account identity and actual consent.
+  The declaration itself does not grant or deny publication.
 - For richer app-owned cards, use `glance.publish` with either L0 `source` and
   optional `data`, or a Splash `script`. Preserve app attribution, policy and
   the distinction between app UI actions and agent tool calls. See
@@ -79,6 +163,12 @@ app's own agent and `tools.json`, the system toolbox, `glance.publish` and
   --features octos-core --test real_kernel`); see its README.
 - Never add a password or one-time-code field to an app; secrets belong to a
   host service's sheet.
+- Launcher artwork follows [the icon guidelines](README.md#launcher-icon-artwork):
+  use a square canvas and keep essential marks inside the central safe area.
+  The shell applies the active platform's shape to both PNG and SVG bundle
+  icons. Do not bake rounded corners, circular masks or outer shadows into
+  new artwork, or add an app-specific rendering path to bypass that policy.
+  Review the icon in Android, macOS and iOS styles, on light and dark grounds.
 
 ## AppCard (apps/appcard)
 
@@ -115,15 +205,107 @@ are in [appcard/AGENTS.md](appcard/AGENTS.md); in short:
 Trace each tool from `bundle/tools.json` through
 `../crates/shell/src/host_tools/script_apps.rs` to its executor. Test schemas,
 caller identity, approval behavior and results at that boundary. Keep UI API
-methods separate from the tools actually declared for the agent: Mail currently
-exposes only `mail.notify`; News exposes list/read/notify; Photos, Maps, YouTube
-and Camera expose notify only. AI providers declares no app agent.
+methods separate from the tools actually declared for the agent: Mail exposes
+account-scoped accounts/folders/sync/list/peek and notify/publish_card; its
+credentials, send and mark-read APIs remain host/UI-only. News exposes list/read/notify; Photos notify and
+info (its `photos` service: `photos.info` on the photo engine, ADR 0013; on
+Home, which leaves that engine out, the shell's notice service answers
+`photos.notify` and `photos.info` is refused as `unavailable`); Maps, YouTube
+and Camera expose notify only. AI providers declares no app agent. The native
+Sheets app declares `sheets.*`, which the shell's engine executor
+(`../crates/shell/src/host_tools/engines.rs`) runs on the sheet engine.
+
+The ten craft engines (word, deck, cad, light, sound, design, film, effect,
+vector, pdf; ADR 0013) declare their tools in `<family>/host-service/tools.json`,
+which each crate's tests load with App Hub's own loader. No app ships them, so
+the shell declares them under a virtual owner `os.<family>` (no bundle, no app
+agent, no Settings row) and runs them on the engine's service as that system
+identity. Only the system agent gets them: `ENGINE_TOOLS` in
+`../crates/shell/src/system_chat/grants.rs`. Seven engines (word, deck, cad,
+light, film, effect, vector) offer `<family>.info` and a reviewed command
+door `<family>.run`; sound, design and pdf keep fixed tools (ADR 0013 lists
+each engine's surface). No app's agent gets an engine tool: none is
+shareable. An engine works in its caller's own folder (ADR
+0013, 9 Oct 2026; `../crates/shell/src/host_tools/areas.rs` decides it):
+for the system agent, its workspace, the folder its own file tools see, so
+it hands an engine a file by placing it there and reads the result back.
+Sheets' `sheets.*` and Photos' `photos.info` work in their own app's agent
+folder. Every path is relative to that folder and kept inside it, links
+resolved; an agent's write never replaces an existing file, and output into
+an app's jail must fit what is left of its storage quota. These rules live
+once in `../crates/engine-area` (`cargo test --locked -p
+octosense-engine-area`); each service applies them, and fences the paths
+written inside the documents it opens (design, vector, effect, film,
+light). Change a tool's schema and the service together, keep both schemas
+objects (octos takes no other), and add a new tool to `ENGINE_TOOLS` only
+after reviewing it; the shell's `host_tools` tests run every granted tool
+against its declared result.
+
+A command door is an allowlist, never a deny-list. Its service builds the
+gate from `skill/safety.json` with `octosense_engine_area::door::Door` and
+its own `REVIEWED` settlements (the `file` commands that only read a file
+named in their parameters, the setters and their reviewed keys, the
+commands that name another command or an effect, whose inner id the gate
+checks in turn, and the limits on parameters that multiply work: counts,
+rows and columns, sizes, frame ranges, with copies multiplying across a
+call), admits every command of a call before running any, and fences what
+a command could plant in the document after each one (vector's linked
+images, effect's LUT and colour files, film's media and effect paths,
+photo's linked smart objects). Engine work runs on the shell's UI thread,
+so every door caps what one call may ask for: give a new multiplying
+parameter a `Limit`, with its reason beside it. A command the engine
+cannot yet do safely on hostile data (deck's media and zip parsing, #448)
+is `Held`: the door refuses it, saying why, until the engine is fixed. Only `safe` ids and reviewed reads
+run; an unclassified id fails the skill drift test, and an id the gate does
+not know is refused. Classify a new id from its implementation, never
+widen a class to make a command run, and keep a door's hostile fixtures
+(a batch wrapping a plug-in install, a plug-ins-folder preference, a
+plug-in effect) passing. Engine crate tests are not in CI (#412): run
+`cargo test --locked -p octosense-<family>-service` yourself after a change.
+
+Every engine (sheet and photo too) ships the system agent's skill for it in
+`<family>/host-service/skill/`, embedded by `src/skill.rs`. `SKILL.md` is
+written by hand: its `## Tools` must list exactly the engine tools the
+system agent is granted, and its `## Examples` calls must match the tools'
+schemas (the shell's `system_chat` tests check both, so a grant or schema
+change fails until the skill follows). `commands.md` and `safety.json` are
+generated from the pinned engine and `skill/safety-rules.json`, the
+hand-written classification of every engine command (safe, file, code,
+network, device, host), made from reading the command implementations;
+regenerate with `OCTOSENSE_SKILL_REGEN=1 cargo test --locked -p
+octosense-<family>-service --test skill` after an engine pin moves, and
+review the classes of new ids before committing.
 
 Use the [product walkthrough](../desktop/docs/code-walkthrough.md) for the data
 and notice paths. For a cross-app tool, update the owner's shareable declaration,
 requesting app's grant and App Hub admission offer together. Keep credentials in
 the host service; expose business data through a narrow method or tool.
+For shipped bundles, register the per-app host offer with
+`octosense_appstore::system::set_agent_tool_offer` before `system::prepare`.
+`AgentBundle::load` alone does not verify the host's admission offer. Test a
+cold process: Mail must load Calendar's granted executor and register its host
+service without opening Calendar or preparing its peer. Calendar scheduling
+uses an explicit event timezone and a stable retry key; unknown end times stay
+omitted. A human request or provisioned scheduling policy supplies intent,
+never instructions inside the email itself.
 
 Update both README languages when declarations, storage or runtime support
-change. Add agent scheduling claims only when the trigger dispatcher exists;
-News's fetch timer currently collects data without starting an LLM turn.
+change. Mail's opt-in dispatcher is `crates/shell/src/agent_events.rs`: an
+initial baseline, durable pending events, incoming-trigger turns, successful-turn
+acknowledgment and bounded retries. News's fetch timer still collects data
+without starting an LLM turn. Host-provisioned skill text is not kernel-native
+skill installation; never claim the general ADR 0002 scheduler is complete.
+Android's Mail-only JobService adapter is in `phone/src/android_mail.rs` and
+`phone/resources/android/java/dev/makepad/octosense/MailJobService.java`;
+`runtime_host` initializes the same host once, and `mail_background` owns bounded
+execution leases and account-scoped notification restoration. A Rust worker
+thread alone is not Android background execution. Test a cold process and a
+stopped job, distinguish forced from natural scheduling, and preserve physical
+send approval. See ADR 0008.
+
+Calendar UI acceptance uses the same `.host/calendar/events.json` as the tools.
+Exercise month/day markers, a saved-event card’s `event/<id>` navigation, direct
+editing with stale-snapshot refusal, quiet card refresh, restart restoration and
+dismissal. `calendar.view` is UI-only; `calendar.update_event` belongs to Calendar’s UI
+and own agent, not new Mail/system grants. Keep App Hub’s explicit `calendar` capability, permission
+wording and the consumer’s single contract source aligned.

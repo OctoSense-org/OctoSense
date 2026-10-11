@@ -6,16 +6,15 @@
 //! The broker registers and the relay routes; this module adds only what is
 //! the toolbox's:
 //!
-//! - **What an app is offered** ([`ToolboxGrant`]): exactly what it declares
-//!   AND the person granted. `research` gives `workflow.run` (read),
-//!   `workflow.fork` (act), `toolbox.search` (read) and `toolbox.web_read`
-//!   (read); `crawl`, with `max_depth`/`max_pages` above 0 in its scope,
-//!   gives `toolbox.deep_crawl` (read). Each is marked with its owning app,
+//! - **What an app is offered** ([`ToolboxGrant`]): the exact shared tool
+//!   names selected in its admitted `agent.tools`, after agent consent.
+//!   `toolbox.deep_crawl` also requires `max_depth`/`max_pages` above 0 in
+//!   the research scope. Each is marked with its owning app,
 //!   `toolbox` ([`octosense_toolbox::peer::OWNER`]); the relay declares the
 //!   toolbox's [`catalog`] once and grants each app its [`ToolboxGrant::tools`].
-//!   Nothing is excluded beyond that: octos's generic tools (its
-//!   `deep_research` among them) stay the kernel's, and the broker registers
-//!   with `generic_tools` omitted.
+//!   Octos's generic tools stay the kernel's. The broker registers the
+//!   host's explicit `generic_tools` selection separately; toolbox access
+//!   never grants arbitrary kernel tools.
 //! - **How a call runs** ([`ToolboxExecutor`], the relay's executor for the
 //!   `toolbox` owner): the toolbox with the calling app's [`AppContext`] (id,
 //!   grants, octos `Scope`, and its host-owned folder), over the octos
@@ -38,15 +37,12 @@
 //! **Where grants come from.** A native module declares `research`/`crawl`
 //! among its capabilities, compiled in and reviewed with the shell
 //! ([`ToolboxGrant::for_module`]; no manifest scope, so octos's defaults and
-//! no crawl limits). A script app declares them in its manifest's
-//! `capabilities`, with its scope in the manifest's top-level [`SCOPE_KEY`]
-//! object, App Hub #26's shape ([`ToolboxGrant::for_manifest`]).
-//! **TEMPORARY, until the shells' App Hub pin includes App Hub #26 (which
-//! checks and pins those capabilities and lets the person grant them) and
-//! the host reads its verified `AppPolicy::research`:** a script app's
-//! declaration is granted only to system apps (`os.*`, shipped inside the
-//! shell and reviewed with it), so a store app cannot grant itself research
-//! by writing it into its manifest ([`system_app_only`]).
+//! no crawl limits). A script app requests exact tools in `agent.tools`,
+//! with its scope in the manifest's top-level [`SCOPE_KEY`] object
+//! ([`ToolboxGrant::for_manifest`]). Its capabilities are disclosure only.
+//! The shell supplies an admitted, digest-checked manifest. Store apps and
+//! system apps follow the same toolbox policy. The relay still requires
+//! consent, actual inter-app grants and the declared resource scope.
 
 use octosense_app_peers::host_tools::{HostToolCall, ToolExecutor, ToolOutcome, ToolReply};
 use octosense_llm_service::complete::{self, Class, Code, ModelHost};
@@ -65,9 +61,8 @@ use tokio::sync::{mpsc, Notify};
 
 pub use octosense_toolbox::peer::OWNER;
 
-/// The manifest object that holds the `research`/`crawl` scope (octos's
-/// `Scope` fields): App Hub #26's shape (`capabilities: ["research",
-/// "crawl"]` plus one top-level `research` object).
+/// The manifest object that holds the research resource scope (octos's
+/// `Scope` fields), independently of capability disclosure.
 pub const SCOPE_KEY: &str = "research";
 
 /// Every toolbox tool, as the relay's catalog declares it (owned by
@@ -76,7 +71,7 @@ pub fn catalog() -> Vec<Value> {
     Library::builtin().map(|l| peer::catalog(&l)).unwrap_or_default()
 }
 
-/// An app's toolbox grant: what it declares AND the person granted.
+/// An app's toolbox grant and scope, narrowed to its selected shared tools.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ToolboxGrant {
     /// `research` and/or `crawl`.
@@ -84,12 +79,15 @@ pub struct ToolboxGrant {
     pub scope: Scope,
     /// Why a declaration was not granted, for the log.
     pub notes: Vec<String>,
+    /// Script apps request individual shared tools, not a whole family.
+    /// None retains the native host's reviewed family selection.
+    selected_tools: Option<BTreeSet<String>>,
 }
 
 impl ToolboxGrant {
     /// Nothing granted.
     pub fn none(note: Option<String>) -> Self {
-        Self { grants: BTreeSet::new(), scope: scope::unrestricted(), notes: note.into_iter().collect() }
+        Self { grants: BTreeSet::new(), scope: scope::unrestricted(), notes: note.into_iter().collect(), selected_tools: None }
     }
 
     /// The toolbox capabilities in both `declared` and `granted`, with the
@@ -110,7 +108,7 @@ impl ToolboxGrant {
             return Self::none(None);
         }
         match scope::parse(scope.unwrap_or(&json!({}))) {
-            Ok(scope) => Self { grants, scope, notes: Vec::new() },
+            Ok(scope) => Self { grants, scope, notes: Vec::new(), selected_tools: None },
             Err(why) => Self::none(Some(format!("{app_id}: its research scope is refused ({why})"))),
         }
     }
@@ -122,27 +120,26 @@ impl ToolboxGrant {
         Self::new(app_id, capabilities.iter().copied(), capabilities.iter().copied(), None)
     }
 
-    /// A script app's grant from its manifest: `research`/`crawl` in its
-    /// `capabilities`, the scope under [`SCOPE_KEY`]. A manifest for another
-    /// id, a scope octos refuses, or (for now) an app that is not a system
-    /// app gets nothing.
+    /// A script app's exact shared tool requests from `agent.tools`, with
+    /// scope under [`SCOPE_KEY`]. Capability declarations never grant tools
+    /// or deny requests. A mismatched id or invalid scope gets nothing.
+    /// The caller supplies an admitted manifest; the relay checks consent
+    /// and sharing, and the executor rechecks this exact tool set.
     pub fn for_manifest(app_id: &str, manifest: &Value) -> Self {
         if manifest.get("id").and_then(Value::as_str) != Some(app_id) {
             return Self::none(Some(format!("{app_id}: the manifest names another app")));
         }
-        let declared: Vec<&str> = manifest["capabilities"]
+        let selected: BTreeSet<String> = manifest["agent"]["tools"]
             .as_array()
-            .map(|c| c.iter().filter_map(Value::as_str).collect())
+            .map(|tools| tools.iter().filter_map(Value::as_str)
+                .filter(|name| [peer::RUN, peer::FORK, peer::SEARCH, peer::WEB_READ, peer::DEEP_CRAWL].contains(name))
+                .map(str::to_owned).collect())
             .unwrap_or_default();
-        let wants = declared.iter().any(|c| *c == RESEARCH || *c == CRAWL);
-        if wants && !system_app_only(app_id) {
-            return Self::none(Some(format!(
-                "{app_id} declares research or crawl, but App Hub does not verify those capabilities on this pin yet: until it does only system apps (os.*) get them"
-            )));
-        }
-        // TEMPORARY: until App Hub's verified grant, a system app's
-        // declaration is its grant.
-        Self::new(app_id, declared.iter().copied(), declared.iter().copied(), manifest.get(SCOPE_KEY))
+        let families: BTreeSet<&str> = selected.iter()
+            .map(|name| if name == peer::DEEP_CRAWL { CRAWL } else { RESEARCH }).collect();
+        let mut grant = Self::new(app_id, families.iter().copied(), families.iter().copied(), manifest.get(SCOPE_KEY));
+        grant.selected_tools = Some(selected);
+        grant
     }
 
     pub fn is_empty(&self) -> bool {
@@ -166,14 +163,10 @@ impl ToolboxGrant {
 
     /// The toolbox tool names this grant offers.
     pub fn tools(&self) -> BTreeSet<&'static str> {
-        peer::tool_names(&self.context("", PathBuf::new()))
+        peer::tool_names(&self.context("", PathBuf::new())).into_iter()
+            .filter(|name| self.selected_tools.as_ref().is_none_or(|selected| selected.contains(*name)))
+            .collect()
     }
-}
-
-/// TEMPORARY (see the module docs): whether a script app `app_id` may have
-/// what it declares without App Hub's check. System apps only.
-pub fn system_app_only(app_id: &str) -> bool {
-    app_id.starts_with("os.")
 }
 
 /// The toolbox's `ModelClient` over the `model` service's host: the

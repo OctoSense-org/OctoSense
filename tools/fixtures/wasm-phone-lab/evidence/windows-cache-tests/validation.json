@@ -1,0 +1,72 @@
+{
+  "schema_version": 1,
+  "kind": "derived-validation-summary",
+  "derived": true,
+  "description": "Public-safe summary derived from GitHub Actions metadata and logs, and an exact Git source comparison; not an original CI receipt.",
+  "repository": "https://github.com/OctoSense-org/OctoSense",
+  "release_source": {
+    "tag": "desktop-v0.1.0-rc.4",
+    "commit": "9266b0083544d86bd7636543b5ff60c61b26460f"
+  },
+  "corrected_test_source": {
+    "commit": "a8e170d4d3cbb19a23d4e0b746dfa6600cb866e5",
+    "pull_request": "https://github.com/OctoSense-org/OctoSense/pull/467",
+    "merged_commit": "af205d9cb6e56c7d9db73c74cb2a75066fb5f6f9",
+    "head_and_merge_tree": "732a56ee5ccc513b6a8968f869d020c65739e1cf"
+  },
+  "windows_validation": {
+    "run_id": 38066866571,
+    "url": "https://github.com/OctoSense-org/OctoSense/actions/runs/38066866571",
+    "head_commit": "a8e170d4d3cbb19a23d4e0b746dfa6600cb866e5",
+    "conclusion": "success",
+    "job_url": "https://github.com/OctoSense-org/OctoSense/actions/runs/38066866571/job/114256173516",
+    "completed_at": "2026-10-10T16:24:24Z",
+    "runtime_tests": {
+      "command": "cargo test --locked -p octosense-wasm-host",
+      "unit": 7,
+      "component": 14,
+      "guest": 7,
+      "runtime": 14,
+      "total_passed": 42,
+      "failed": 0,
+      "ignored": 0,
+      "filtered_out": 0
+    },
+    "shell_with_wasm_service": "check passed"
+  },
+  "prior_failure": {
+    "run_id": 38065611111,
+    "url": "https://github.com/OctoSense-org/OctoSense/actions/runs/38065611111",
+    "head_commit": "9266b0083544d86bd7636543b5ff60c61b26460f",
+    "observation": "The restart fixture expected precompile to report a cache hit, but it reported successful source compilation. The log does not establish which cache-unavailability or deserialize path caused the fallback."
+  },
+  "production_source_comparison": {
+    "changed_files": [
+      "crates/wasm-host/src/cache.rs",
+      "crates/wasm-host/tests/component.rs",
+      "crates/wasm-host/tests/runtime.rs"
+    ],
+    "method": "Compared cache.rs before its cfg(test) module after removing exactly the newly added cfg(test) field, cfg(test) branch, and adjacent explanatory field comments. The resulting UTF-8 text is byte-identical. All other changed files are integration tests; no other source, manifest, lockfile, or workflow changed.",
+    "non_test_cache_source_sha256": "cfd0847c0a4ad09c05958dd08172e82fcde1bc5258e19392d54f8825fe1913c0",
+    "identical": true,
+    "read_wait_ms": 50,
+    "max_concurrent_readers": 2,
+    "max_cache_bytes": 67108864,
+    "production_policy_changed": false
+  },
+  "limitations": [
+    "The successful Windows run tests commit a8e170d4, not the release tag commit 9266b008 with its earlier test fixtures.",
+    "Source equivalence after excluding test-only additions does not establish rebuilt-binary equivalence.",
+    "This record does not prove release archive acceptance, signing, publication, or an installed Windows GUI session.",
+    "The original local CI receipt remains private; only its commit, aggregate counts, and elapsed time are included here."
+  ],
+  "exact_head_local_ci": {
+    "commit": "a8e170d4d3cbb19a23d4e0b746dfa6600cb866e5",
+    "passed_steps": 52,
+    "failed_steps": 0,
+    "skipped_steps": 0,
+    "seconds": 1735.6,
+    "derived": true,
+    "original_receipt_published": false
+  }
+}

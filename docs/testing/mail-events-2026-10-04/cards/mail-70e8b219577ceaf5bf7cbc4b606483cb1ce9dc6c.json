@@ -1,0 +1,21 @@
+{
+  "card_id": "mail-70e8b219577ceaf5bf7cbc4b606483cb1ce9dc6c",
+  "data": {
+    "note": {
+      "as_of": "Oct 4, 2026",
+      "metric1_label": "Item",
+      "metric1_value": "Desk lamp \u00b7 Demo Supply",
+      "metric2_label": "Carrier",
+      "metric2_value": "Example Parcel",
+      "status": "In transit to local depot",
+      "subtitle": "Tue, Oct 6 \u00b7 2:00\u20136:00 PM PDT",
+      "summary": "Be home to sign for the delivery.",
+      "title": "Signature needed at delivery"
+    }
+  },
+  "notify": true,
+  "priority": 60,
+  "source": "source note sys.dataset(fields: [title, subtitle, status, as_of, metric1_label, metric1_value, metric2_label, metric2_value, summary])\n\ncopy app { class: vocabulary, en: \"Mail\" }\ncopy gist { class: model-copy, en: \"Simulation only: no real package, no live tracking, nothing to confirm.\" }\n\nview root Surface(pad: .tight) {\n  Col(gap: 8) {\n    Row(gap: 8, align: .center) {\n      Icon(name: .mail, size: .row)\n      TextCaption(text: copy.app, width: .fill)\n      TextCaption(text: \"Simulation\", width: .fit)\n    }\n    TextTitle(text: note.title, width: .fill)\n    TextBody(text: note.subtitle, width: .fill)\n    TextBody(text: note.status, width: .fill)\n    TextBody(text: note.summary, width: .fill)\n    TextCaption(text: note.metric1_label, width: .label)\n    TextCaption(text: note.metric1_value, width: .fill)\n    TextCaption(text: note.metric2_label, width: .label)\n    TextCaption(text: note.metric2_value, width: .fill)\n    TextBody(text: copy.gist, width: .fill)\n  }\n}",
+  "summary": "Signature required. Be home Tue Oct 6, 2\u20136 PM PDT. Simulation only.",
+  "title": "Desk lamp: signature needed Tue 2\u20136 PM PDT"
+}

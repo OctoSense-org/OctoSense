@@ -9,15 +9,21 @@ OctoSense 仓库的决策：Shell、Shell 服务、系统应用，以及桌面�
 | ADR | 标题 | 状态 |
 | --- | --- | --- |
 | [0001](0001-one-octosense-repository.md)（英文） | 用一个 OctoSense 仓库承载 Shell、Shell 服务、系统应用和两种打包形态 | 已接受 |
-| [0002](0002-event-driven-app-agents.md)（英文） | 事件驱动的应用智能体：应用按自己的触发条件思考，并把卡片发布到一览屏 | 提议中 |
-| [0003](0003-shared-octos-client-access.md)（英文） | Talk to Octos：原生与外部客户端共用一个内核（需手动开启） | 已实现；Android 未验证 |
-| [0004](0004-native-apps-hosting-and-peers.md)（英文） | 原生应用、应用智能体与跨应用协作：一份清单、按目标平台托管、每个应用都有智能体、由本人批准 | 已实施 |
+| [0002](0002-event-driven-app-agents.md)（英文） | 事件驱动的应用智能体：应用按自己的触发条件思考，并把卡片发布到一览屏 | 提议中；部分已实施 |
+| [0003](0003-shared-octos-client-access.md)（英文） | Talk to Octos：原生与外部客户端共用一个内核（需手动开启） | 已实施；Android 未验证 |
+| [0004](0004-native-apps-hosting-and-peers.md)（英文） | 原生应用、应用智能体与跨应用协作：一份清单、按目标平台托管、每个应用都有智能体、由本人批准 | 已实施；三项计划未完成 |
 | [0005](0005-app-contract.md)（英文） | 应用契约：App Hub 与每个应用之间一个小而带版本的接口 | 已实施 |
 | [0006](0006-app-studio-on-the-phone.md)（英文） | 手机上的 App Studio | 已接受 |
+| [0007](0007-composable-mail-action-cards.zh-CN.md) | 可组合的 Mail 卡片：编辑、聊天与经批准的操作 | 实现中；手机验收待完成 |
+| [0008](0008-quiet-android-mail-jobs.zh-CN.md) | Android 静默邮件后台任务与原生卡片通知 | 本次变更已实现；设备验收进行中 |
+| [0010](0010-shared-oauth-and-connected-apps.zh-CN.md) | 共享 OAuth 与独立安装的连接账户应用 | 实现中；真实账户登录已在 macOS 上通过；GitHub 写入、Gmail 发信和设备验收待完成 |
+| [0011](0011-apps-own-functions-in-webassembly.zh-CN.md) | 应用自带的 WebAssembly 函数 | 已接受，有限支持：在 macOS、Linux 和 Android 的标准构建中开启 |
+| [0012](0012-app-host-api-discovery.zh-CN.md) | 面向已安装应用的可发现宿主 API | 已实现；契约 1.11.0 已发布；最终源码通过 Mac/OnePlus 验收；RC4 已发布，Mac 归档包 11/11 |
+| [0013](0013-craft-engines-as-pinned-services.zh-CN.md) | Craft 引擎作为固定修订版服务接入 | 提议中；引擎已实测（gridcraft 内核重算 243×，photocraft 1,203 项测试），服务尚未实现 |
 
 ## Home（手机 Shell）的决策，2026-09-16 至 2026-09-25
 
-这些记录在仓库合并前写于 OctoSense-ROM（已停用，并入本仓库）的 `home/docs/adr/`，现原样作为历史保存在 [`home/`](home/) 下。它们保留原编号，引用时写作“Home ADR 0004”。文中出现 `home/src/`、`home/apps/` 等路径时，对应现在的 `crates/shell/src/`（Shell；设置应用在 `phone/src/`）和 `apps/`（见 ADR 0001）。状态为当时记录的状态。
+这些记录写于 OctoSense-ROM（已停用，并入本仓库）的 `home/docs/adr/`，现作为历史保存在 [`home/`](home/) 下；2026-09-28 Home 0002 和 0004 增加了注明日期的修订，Home 0004 的实施状态行和最后一条 Consequences 也已更新；2026-10-04 Home 0001 和 0002 增加了注明日期的说明，2026-10-08 Home 0003 也增加了注明日期的说明。引用时写作“Home ADR 0004”；文中的“ADR 000N”指 Home ADR，2026-09-28 增补内容中的除外（指本仓库 ADR 0004）。路径相对于原 `home/` 目录或属于其他仓库：`src/` → `crates/shell/src/`（设置应用在 `phone/src/`），`resources/`、`android/` → `phone/resources/`、`phone/android/`，`octosense-rom/` → `rom/`，OctoSense-System-Apps 的 `apps/` → `apps/`（见 ADR 0001）；`crates/app-policy`、`crates/app-hub-app` 属于 App Hub；`apps/calendar/cards/` 曾属于 Octoscript-AppCard。状态为当时记录的状态。
 
 | Home ADR | 标题 | 日期 | 状态 |
 | --- | --- | --- | --- |
@@ -35,4 +41,5 @@ OnePlus 6 镜像及其交付方式的记录位于 [`rom/docs/adr/`](../../rom/do
 ## 其他位置
 
 - 应用与 Agent 之间的代理（`crates/app-peers`）遵循 Rinx [ADR 0007](https://github.com/hagency-org/Rinx/blob/main/docs/adr/0007-host-owned-octos-app-peers.md)（由宿主持有的 octos 应用 peer）。
-- App Hub、目录与准入检查：[OctoSense-App-Hub](https://github.com/OctoSense-org/OctoSense-App-Hub)。
+- App Hub、签名目录与准入检查：[OctoSense-App-Hub](https://github.com/OctoSense-org/OctoSense-App-Hub)。
+- 应用的发布者身份：App Hub [ADR 0002](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/main/docs/adr/0002-github-attested-publisher-identity.zh-CN.md)（通过 GitHub 证明发布者身份）。来自应用公开仓库、带 GitHub 证明的 Release 确立其发布者身份，取代 [Home ADR 0003（英文）](home/0003-app-hub-and-store.md)中的发布者密钥。

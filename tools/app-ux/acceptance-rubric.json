@@ -1,0 +1,75 @@
+{
+  "target": 95,
+  "scale": 100,
+  "scope": "OctoSense App Hub, Glance presentation and existing OctoScript app interfaces; desktop and Android. UI acceptance, not live-service release sign-off.",
+  "reviewer": "Codex author self-review, not independent human approval",
+  "anchors": {
+    "0": "Blocked task or essential content unreadable",
+    "0.6": "Completes with substantial friction",
+    "0.8": "Usable but visible inconsistency or coverage gap",
+    "0.9": "Polished in observed states; minor limitations remain",
+    "1": "All specified states, widths and repeated journeys verified"
+  },
+  "hard_gates": [
+    "No failed core journey",
+    "No clipped or obscured essential editor/action",
+    "Physical-device checks are never replaced by desktop phone previews",
+    "Unverified required cases prevent a final pass"
+  ],
+  "dimensions": [
+    {
+      "id": "clarity",
+      "weight": 20,
+      "criteria": [
+        "One prominent next action in empty and populated states",
+        "Related actions remain next to their content",
+        "No dead-end setup controls"
+      ]
+    },
+    {
+      "id": "legibility",
+      "weight": 20,
+      "criteria": [
+        "Readable text and focus in light and dark",
+        "Essential text and actions fit at phone and desktop widths",
+        "Shared text tokens meet 4.5:1 contrast"
+      ]
+    },
+    {
+      "id": "editing",
+      "weight": 15,
+      "criteria": [
+        "Unicode and multiline edits save the intended values",
+        "Native Android keyboard leaves editors and actions reachable",
+        "Dismissal and return preserve the correct item"
+      ]
+    },
+    {
+      "id": "continuity",
+      "weight": 20,
+      "criteria": [
+        "Six workspaces retain distinct unsent input beyond clean cache capacity",
+        "Saved events, stories and bookmarks survive restart",
+        "Light/dark switches retain the active unsaved editor"
+      ]
+    },
+    {
+      "id": "responsiveness",
+      "weight": 10,
+      "criteria": [
+        "Measured repeated editor-open observations with explicit method",
+        "Bounded background polling stops while editing",
+        "Touch navigation works from all tested Glance start heights"
+      ]
+    },
+    {
+      "id": "consistency",
+      "weight": 15,
+      "criteria": [
+        "One shared app interface with generated-copy check",
+        "App Hub, summaries and full apps retain coherent hierarchy",
+        "Theme changes include map content as well as controls"
+      ]
+    }
+  ]
+}

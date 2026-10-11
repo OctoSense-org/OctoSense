@@ -11,9 +11,19 @@
 //! | `mail.folders` | `{account}` | `[{id, name, role}]`, the inbox first (`role`: inbox, sent, drafts, junk, trash, archive, all, flagged or "") |
 //! | `mail.sync` | `{account, folder?}` | `{new, total}` after fetching new mail |
 //! | `mail.list` | `{account, folder?, offset?, limit?}` | `{folder, total, messages: [{id, sender, address, subject, preview, time, unread}]}` |
+//! | `mail.peek` | `{account, folder?, message, offset?}` | bounded plain-text page without marking read; agent account is host-bound |
+//! | `mail.skip_event` | `{account, event_id, reason}` | durable no-card decision; host alone acknowledges |
+//! | `mail.publish_card` | `{account, card_id, source, data?, title, summary?, notify?, priority?, draft_id?}` | model-authored L0; an optional draft receives a host-resolved binding |
 //! | `mail.message` | `{account, folder?, message}` | `{id, sender, address, subject, body, html, attachments, date, time}` |
 //! | `mail.mark_read` | `{account, folder?, message}` | `{}` |
-//! | `mail.send` | `{account, to, subject, body}` | `{accepted}` |
+//! | `mail.propose_reply` | `{account, folder?, message, body, reply_key?}` | bounded durable draft; optional key distinguishes an explicitly requested later reply |
+//! | `mail.draft` | `{account, draft_id}` | bounded draft/revision/status snapshot |
+//! | `mail.suggest_reply` | `{account, draft_id, expected_revision, body, edit_token?}` | proposal by default; native chat's single-use token saves the requested body at that revision; never sends |
+//! | `mail.propose_send` | `{account, draft_id, expected_revision}` | immutable pending attempt; no approval or SMTP |
+//! | `mail.review_send` | `{account, to, subject, body, compose_id?, expected_revision?, folder?, message?}` | foreground UI only: durable composer and host review, never approval |
+//! | `mail.compose` | `{account, to, subject, body, compose_id?, expected_revision?, folder?, message?}` | app/account-bound saved composer; never approval or SMTP |
+//! | `mail.compose_status` | `{account, compose_id}` | app/account-bound draft and attempt receipt |
+//! | `mail.send` | composer fields | third-party foreground native review; os.mail retains its legacy refusal |
 //! | `mail.notify` | `{title, body, card_id?, priority?}` | `{card_id, replaced, expires_at}` once the shell put Mail's notice card on the glance screen, with a notification ([`on_notify`]) |
 //!
 //! The app never sees a password or a socket. `mail.add_account` raises the
@@ -27,6 +37,15 @@
 //! read flag goes back to the server) or POP3 (the inbox only); both send
 //! over SMTP. `html` is the message rebuilt from the few tags the app's
 //! `Html` view draws, with nothing remote in it; `body` is its text.
+//!
+//! Agent `accounts`, `folders` and `list` are bounded cached reads: the shell
+//! injects its trusted peer account and disables prompts. The UI retains its
+//! existing arrays and network folder listing. UI/background sync share the
+//! durable incoming queue in [`collect_inbox`]; the shell owns scheduling.
+//! Reply draft edits and SMTP authorization belong to [`drafts`]' Rust API.
+//! Only a trusted host control may consume its opaque, single-use `Review`;
+//! script arguments and developer mode cannot mint it. SMTP errors after
+//! submission starts remain uncertain, never an automatic retry.
 //!
 //! State lives under the host's own directory (`<host_dir>/mail`), outside
 //! every app's jail: `accounts.json` (no passwords) and `box-<id>…json` (the
@@ -44,9 +63,13 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 pub mod contacts;
+pub mod drafts;
 pub mod vault;
 mod html;
 mod imap;
+mod incoming;
+pub mod public_review;
+pub use incoming::{acknowledge_event, collect_inbox, event_resolved, pending_events, pending_events_try, resolve_and_ack_try, source_for_card, CollectReport, IncomingEvent};
 
 use vault::Vault;
 
@@ -110,6 +133,113 @@ fn notify(app: &str, args: &Value) -> Result<Value, String> {
     }
 }
 
+/// Publishes model-authored L0 through the shell's own grant/level checker.
+pub type CardPublisher = Arc<dyn Fn(&str, Value) -> Result<Value, String> + Send + Sync>;
+fn card_publisher() -> &'static Mutex<Option<CardPublisher>> {
+    static PUBLISHER: std::sync::OnceLock<Mutex<Option<CardPublisher>>> = std::sync::OnceLock::new();
+    PUBLISHER.get_or_init(Default::default)
+}
+pub fn on_publish_card(publisher: Option<CardPublisher>) {
+    *card_publisher().lock().unwrap_or_else(|e| e.into_inner()) = publisher;
+}
+// Bound the encoded JSON payload, including escaped controls/quotes, while
+// retaining a UTF-8 boundary for peek's next_offset.
+fn clip(value: &str, bytes: usize) -> String {
+    let (mut used, mut end) = (0, 0);
+    for (offset, ch) in value.char_indices() {
+        let cost = match ch {
+            '\"' | '\\' | '\n' | '\r' | '\t' | '\u{08}' | '\u{0c}' => 2,
+            c if c < '\u{20}' => 6,
+            c => c.len_utf8(),
+        };
+        if used + cost > bytes { break; }
+        used += cost;
+        end = offset + ch.len_utf8();
+    }
+    value[..end].to_string()
+}
+
+/// Read-only agent API. The shell injects the peer's trusted account; the
+/// service separately checks that the owning app is granted that account.
+/// Cached folder/list/peek reads neither connect nor modify unread state.
+fn agent_read(store: &Store, app: &str, method: &str, args: &Value) -> Result<Value, String> {
+    let account = text(args, "account");
+    let granted = store.granted(app, account)?;
+    let folder = if text(args, "folder").is_empty() { INBOX } else { text(args, "folder") };
+    if folder.len() > 256 { return Err("Folder is too long".into()); }
+    let result = match method {
+        "accounts" => json!({"accounts": [{"id": account, "address": clip(text(&granted, "address"), 160)}]}),
+        "folders" => {
+            let folders = store.folders(account).unwrap_or(json!(inbox_only()));
+            let all = folders.as_array().cloned().unwrap_or_default();
+            let offset = args["offset"].as_u64().unwrap_or(0).min(usize::MAX as u64) as usize;
+            let rows: Vec<Value> = all.iter().skip(offset).take(8).map(|f| json!({"id": f["id"], "name": clip(text(f, "name"), 80), "role": clip(text(f, "role"), 24)})).collect();
+            json!({"folders": rows, "cached": true, "total": all.len(), "next_offset": (offset.saturating_add(8) < all.len()).then_some(offset.saturating_add(8))})
+        }
+        "list" => {
+            let box_ = store.mailbox(account, folder);
+            let messages = box_["messages"].as_array().cloned().unwrap_or_default();
+            let offset = args["offset"].as_u64().unwrap_or(0).min(usize::MAX as u64) as usize;
+            let limit = args["limit"].as_u64().unwrap_or(5).clamp(1, 5) as usize;
+            let rows: Vec<Value> = messages.iter().skip(offset).take(limit).map(|m| json!({
+                "id": clip(text(m, "id"), 128), "sender": clip(text(m, "sender"), 64),
+                "address": clip(text(m, "address"), 120), "subject": clip(text(m, "subject"), 160),
+                "date": clip(text(m, "date"), 48), "unread": m["unread"]
+            })).collect();
+            json!({"folder": folder, "total": messages.len(), "messages": rows, "next_offset": (offset.saturating_add(limit) < messages.len()).then_some(offset.saturating_add(limit))})
+        }
+        "peek" => {
+            let box_ = store.mailbox(account, folder);
+            let message = box_["messages"].as_array().and_then(|rows| rows.iter().find(|m| text(m, "id") == text(args, "message"))).ok_or("There is no such message.")?;
+            // Body pages are UTF-8 byte bounded; no raw HTML or attachment bytes.
+            let body = text(message, "body");
+            let offset = args["offset"].as_u64().unwrap_or(0).min(usize::MAX as u64) as usize;
+            if offset > body.len() || !body.is_char_boundary(offset) { return Err("Body offset is not a UTF-8 boundary".into()); }
+            let part = clip(&body[offset..], 2000);
+            let end = offset + part.len();
+            json!({"id": message["id"], "account": account, "folder": folder,
+                "sender": clip(text(message, "sender"), 80), "address": clip(text(message, "address"), 160),
+                "subject": clip(text(message, "subject"), 200), "date": clip(text(message, "date"), 48),
+                "body": part, "unread": message["unread"], "next_offset": (end < body.len()).then_some(end)})
+        }
+        _ => return Err("Unknown Mail read method".into()),
+    };
+    if serde_json::to_vec(&result).map_err(|e| e.to_string())?.len() > 3800 { return Err("Mail result exceeds the agent response budget; use a smaller page".into()); }
+    Ok(result)
+}
+
+fn publish_card(store: &Store, app: &str, args: &Value) -> Result<Value, String> {
+    if app != "os.mail" { return Err("Only Mail publishes Mail cards".into()); }
+    store.granted(app, text(args, "account"))?;
+    let source = text(args, "source");
+    let card_id = text(args, "card_id");
+    if source.is_empty() || source.len() > 16 * 1024 { return Err("Provide L0 source of at most 16 KiB".into()); }
+    if card_id.is_empty() || card_id.len() > 64 || !card_id.bytes().all(|c| c.is_ascii_alphanumeric() || b"._-".contains(&c)) { return Err("Invalid card_id".into()); }
+    let title = text(args, "title");
+    if title.trim().is_empty() || title.chars().count() > 80 || text(args, "summary").chars().count() > 200 { return Err("Card title must be 1–80 characters and summary at most 200 characters".into()); }
+    let data = args.get("data").cloned().unwrap_or(json!({}));
+    if !data.is_object() || serde_json::to_vec(&data).map_err(|e| e.to_string())?.len() > 32 * 1024 { return Err("Card data must be an object of at most 32 KiB".into()); }
+    let publisher = card_publisher().lock().unwrap_or_else(|e| e.into_inner()).clone().ok_or("This device shows no glance cards.")?;
+    let mut payload = json!({"source": source, "data": data, "card_id": card_id, "title": title,
+        "summary": text(args, "summary"), "priority": args["priority"].as_i64().unwrap_or(60).clamp(0, 100),
+        "notify": args["notify"].as_bool().unwrap_or(true), "open": {"app": "mail"}});
+    if let Some(id) = args.get("draft_id") {
+        let id = id.as_str().ok_or("draft_id must be text")?;
+        payload["mail_binding"] = drafts::publication_binding(store, app, text(args,"account"), id)?;
+        // An incoming-event card cannot acquire a draft for a different email.
+        if card_id.strip_prefix("mail-").is_some_and(|id| id.len() == 40 && id.bytes().all(|b| b.is_ascii_hexdigit())) {
+            let source = &payload["mail_binding"]["source_message"];
+            if card_id != incoming::event_id(text(args, "account"), text(source, "folder"), text(source, "message")) {
+                return Err("The reply draft does not belong to this incoming email card".into());
+            }
+        }
+    }
+    // Fingerprint normalized host payload, including its authoritative binding.
+    // A deliberate repair keeps the card id but must reach the renderer again.
+    let fingerprint = network::hash(&serde_json::to_string(&payload).map_err(|e| e.to_string())?);
+    incoming::publish_revision(store, app, text(args, "account"), card_id, &fingerprint, payload.get("mail_binding"), || publisher(app, payload.clone()))
+}
+
 /// How mail moves: IMAP or POP3 and SMTP in the shell, or a fake in tests.
 pub trait Transport: Send + Sync {
     /// Sign in and out again: the account works.
@@ -122,6 +252,11 @@ pub trait Transport: Send + Sync {
     /// Tell the server a message was read, where it keeps that.
     fn mark_seen(&self, account: &Value, folder: &str, message: &Value) -> Result<(), String>;
     fn send(&self, account: &Value, draft: &Value) -> Result<Value, String>;
+    /// An unclassified backend error is conservatively uncertain. Only a
+    /// backend that knows SMTP submission has not begun may classify failure.
+    fn send_checked(&self, account: &Value, draft: &Value) -> Result<Value, drafts::SendFailure> {
+        self.send(account, draft).map_err(drafts::SendFailure::Unknown)
+    }
 }
 
 fn is_imap(account: &Value) -> bool {
@@ -155,22 +290,22 @@ impl Transport for Network {
         folders
     }
     fn fetch(&self, account: &Value, folder: &str, state: &Value) -> Result<Value, String> {
-        if is_imap(account) {
-            let mut imap = imap::Imap::connect(account)?;
-            let fetched = imap.fetch(folder, state, 25);
-            imap.logout();
-            return fetched;
-        }
-        if folder != INBOX {
-            return Err("This account reads the inbox only.".into());
-        }
-        let mut seen: Vec<Value> = state["seen"].as_array().cloned().unwrap_or_default();
-        let known: HashSet<String> = seen.iter().filter_map(|v| v.as_str().map(str::to_string)).collect();
-        let fetched = network::fetch(account, &known)?;
-        let messages = fetched["messages"].as_array().cloned().unwrap_or_default();
-        seen.extend(messages.iter().map(|m| m["uid"].clone()));
-        seen.extend(fetched["skipped_uids"].as_array().cloned().unwrap_or_default());
-        Ok(json!({"messages": messages, "state": {"seen": seen}, "reset": false}))
+        // A stalled resolver/server cannot hold the collection worker forever.
+        // A timed-out fetch cannot write mailbox state, and no second fetch is
+        // started until its network thread has actually unwound.
+        use std::sync::atomic::{AtomicBool, Ordering};
+        static ACTIVE: AtomicBool = AtomicBool::new(false);
+        if ACTIVE.swap(true, Ordering::AcqRel) { return Err("A previous mail fetch is still finishing".into()); }
+        let (account, folder, state) = (account.clone(), folder.to_string(), state.clone());
+        let (tx, rx) = std::sync::mpsc::sync_channel(1);
+        let spawn = std::thread::Builder::new().name("mail-fetch".into()).spawn(move || {
+            struct Release;
+            impl Drop for Release { fn drop(&mut self) { ACTIVE.store(false, Ordering::Release); } }
+            let _release = Release;
+            let _ = tx.send(fetch_network(&account, &folder, &state));
+        });
+        if let Err(e) = spawn { ACTIVE.store(false, Ordering::Release); return Err(format!("Cannot start mail fetch: {e}")); }
+        rx.recv_timeout(std::time::Duration::from_secs(90)).map_err(|_| "Mail collection timed out; no mailbox cursor was advanced".to_string())?
     }
     fn mark_seen(&self, account: &Value, folder: &str, message: &Value) -> Result<(), String> {
         let Some(uid) = message["imap_uid"].as_u64().filter(|_| is_imap(account)) else { return Ok(()) };
@@ -182,6 +317,39 @@ impl Transport for Network {
     fn send(&self, account: &Value, draft: &Value) -> Result<Value, String> {
         network::send(account, draft)
     }
+    fn send_checked(&self, account: &Value, draft: &Value) -> Result<Value, drafts::SendFailure> {
+        network::send_checked(account, draft)
+    }
+}
+
+fn fetch_network(account: &Value, folder: &str, state: &Value) -> Result<Value, String> {
+    if is_imap(account) {
+        let mut imap = imap::Imap::connect(account)?;
+        let fetched = imap.fetch(folder, state, 25);
+        imap.logout();
+        return fetched;
+    }
+    if folder != INBOX {
+        return Err("This account reads the inbox only.".into());
+    }
+    let mut seen: Vec<Value> = state["seen"].as_array().cloned().unwrap_or_default();
+    let known: HashSet<String> = seen.iter().filter_map(|v| v.as_str().map(str::to_string)).collect();
+    let fetched = network::fetch(account, &known)?;
+    let messages = fetched["messages"].as_array().cloned().unwrap_or_default();
+    seen = pop_seen(state, &fetched);
+    Ok(json!({"messages": messages, "state": {"seen": seen}, "reset": false}))
+}
+
+fn pop_seen(state: &Value, fetched: &Value) -> Vec<Value> {
+    let mut seen = state["seen"].as_array().cloned().unwrap_or_default();
+    seen.extend(fetched["messages"].as_array().into_iter().flatten().map(|m| m["uid"].clone()));
+    seen.extend(fetched["skipped_uids"].as_array().cloned().unwrap_or_default());
+    if state["_incoming_baseline"] == true {
+        seen.extend(fetched["uid_snapshot"].as_array().cloned().unwrap_or_default());
+    }
+    let mut unique = HashSet::new();
+    seen.retain(|uid| uid.as_str().is_some_and(|s| !s.is_empty() && unique.insert(s.to_string())));
+    seen
 }
 
 /// The accounts `app_id` was granted, in the order the person signed in to
@@ -300,6 +468,8 @@ pub fn register_with(transport: Arc<dyn Transport>) {
 }
 
 pub fn register_with_vault(transport: Arc<dyn Transport>, vault: Arc<dyn Vault>) {
+    incoming::set_backend(transport.clone(), vault.clone());
+    drafts::set_backend(transport.clone(), vault.clone());
     octosense_appstore::services::register_host_service(Box::new(MailService { transport, vault, pending: Arc::default() }));
 }
 
@@ -390,6 +560,7 @@ impl Store {
     }
 
     fn forget(&self, id: &str) {
+        drafts::forget(self, id);
         self.vault.remove(&self.place, id);
         contacts::forget(&self.dir, id);
         if let Ok(entries) = std::fs::read_dir(&self.dir) {
@@ -418,8 +589,21 @@ fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), String> {
         std::fs::create_dir_all(parent).map_err(|e| format!("Cannot store mail: {e}"))?;
     }
     let temp = path.with_extension("tmp");
-    std::fs::write(&temp, bytes).map_err(|e| format!("Cannot store mail: {e}"))?;
-    std::fs::rename(&temp, path).map_err(|e| format!("Cannot store mail: {e}"))
+    use std::io::Write;
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create(true).truncate(true);
+    #[cfg(unix)] {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let mut file = options.open(&temp).map_err(|e| format!("Cannot store mail: {e}"))?;
+    file.write_all(bytes).and_then(|_| file.sync_all()).map_err(|e| format!("Cannot store mail: {e}"))?;
+    std::fs::rename(&temp, path).map_err(|e| format!("Cannot store mail: {e}"))?;
+    #[cfg(unix)]
+    if let Some(parent) = path.parent() {
+        std::fs::File::open(parent).and_then(|f| f.sync_all()).map_err(|e| format!("Cannot flush mail directory: {e}"))?;
+    }
+    Ok(())
 }
 
 /// A fetched message as it is kept: its HTML rebuilt from safe tags, its
@@ -488,6 +672,9 @@ fn work(f: impl FnOnce() + Send + 'static) {
 }
 
 impl HostService for MailService {
+    fn api_methods(&self) -> Vec<octosense_appstore::services::HostApiMethod> {
+        public_review::api_methods()
+    }
     fn family(&self) -> &'static str {
         "mail"
     }
@@ -498,6 +685,9 @@ impl HostService for MailService {
         let folder = Some(text(&call.args, "folder")).filter(|f| !f.is_empty()).unwrap_or(INBOX).to_string();
         match call.method() {
             "accounts" => {
+                if !account_arg.is_empty() {
+                    return reply.send(agent_read(&store, &call.app_id, "accounts", &call.args));
+                }
                 let mine: Vec<Value> = store
                     .accounts()
                     .into_iter()
@@ -542,6 +732,9 @@ impl HostService for MailService {
                     if let Err(e) = transport.test(&account) {
                         return reply.send(Err(e));
                     }
+                    let _guard = incoming::lock();
+                    let _draft_guard = drafts::lock();
+                    drafts::invalidate_locked(&call.host_dir, None);
                     let id = network::identity(&account);
                     let mut accounts = store.accounts();
                     let signed_in = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
@@ -567,6 +760,7 @@ impl HostService for MailService {
                         return reply.send(Err(e));
                     }
                     close_sheet_later(&app_id);
+                    drop(_draft_guard);
                     account_event(AccountEvent::Added { app_id: app_id.clone(), account: id.clone() });
                     if let Some((_, waiting)) = pending.lock().unwrap().take() {
                         waiting.send(Ok(json!({"id": id, "address": account["address"]})));
@@ -575,31 +769,43 @@ impl HostService for MailService {
                 });
             }
             "remove_account" => {
-                let mut accounts = store.accounts();
-                let mut removed = false;
-                if let Some(account) = accounts.iter_mut().find(|a| text(a, "id") == account_arg) {
-                    if let Some(apps) = account["apps"].as_array_mut() {
-                        let before = apps.len();
-                        apps.retain(|a| a != call.app_id.as_str());
-                        removed = apps.len() < before;
+                work(move || {
+                    let _guard = incoming::lock();
+                    // Linearize account removal with a send claim, never with
+                    // its network wait. Late receipts cannot recreate deleted data.
+                    let _draft_guard = drafts::lock();
+                    drafts::invalidate_locked(&call.host_dir, Some(&account_arg));
+                    let mut accounts = store.accounts();
+                    let mut removed = false;
+                    if let Some(account) = accounts.iter_mut().find(|a| text(a, "id") == account_arg) {
+                        if let Some(apps) = account["apps"].as_array_mut() {
+                            let before = apps.len();
+                            apps.retain(|a| a != call.app_id.as_str());
+                            removed = apps.len() < before;
+                        }
                     }
-                }
-                let orphaned: Vec<String> = accounts
-                    .iter()
-                    .filter(|a| a["apps"].as_array().is_none_or(|apps| apps.is_empty()))
-                    .map(|a| text(a, "id").to_string())
-                    .collect();
-                accounts.retain(|a| !orphaned.iter().any(|id| id == text(a, "id")));
-                for id in &orphaned {
-                    store.forget(id);
-                }
-                let saved = store.save_accounts(&accounts);
-                if removed && saved.is_ok() {
-                    account_event(AccountEvent::Removed { app_id: call.app_id.clone(), account: account_arg.clone() });
-                }
-                reply.send(saved.map(|_| json!({})));
+                    let orphaned: Vec<String> = accounts
+                        .iter()
+                        .filter(|a| a["apps"].as_array().is_none_or(|apps| apps.is_empty()))
+                        .map(|a| text(a, "id").to_string())
+                        .collect();
+                    accounts.retain(|a| !orphaned.iter().any(|id| id == text(a, "id")));
+                    for id in &orphaned {
+                        store.forget(id);
+                    }
+                    let saved = store.save_accounts(&accounts);
+                    if removed && saved.is_ok() {
+                        drafts::forget_composers(&store, &call.app_id, &account_arg);
+                    }
+                    drop(_draft_guard);
+                    if removed && saved.is_ok() {
+                        account_event(AccountEvent::Removed { app_id: call.app_id.clone(), account: account_arg.clone() });
+                    }
+                    reply.send(saved.map(|_| json!({})));
+                });
             }
             "folders" => {
+                if !call.may_prompt { return reply.send(agent_read(&store, &call.app_id, "folders", &call.args)); }
                 let account = match store.account_for(&call.app_id, &account_arg) {
                     Ok(account) => account,
                     Err(e) => return reply.send(Err(e)),
@@ -609,6 +815,8 @@ impl HostService for MailService {
                     let answer = match transport.folders(&account) {
                         Ok(folders) => {
                             let folders = json!(folders);
+                            let _guard = incoming::lock();
+                            if let Err(e) = store.granted(&call.app_id, &account_arg) { return reply.send(Err(e)); }
                             let _ = write_atomic(&store.dir.join(format!("folders-{account_arg}.json")), folders.to_string().as_bytes());
                             Ok(folders)
                         }
@@ -619,33 +827,63 @@ impl HostService for MailService {
                 });
             }
             "sync" => {
-                let account = match store.account_for(&call.app_id, &account_arg) {
-                    Ok(account) => account,
-                    Err(e) => return reply.send(Err(e)),
-                };
+                if folder.len() > 256 { return reply.send(Err("Folder is too long".into())); }
                 let transport = self.transport.clone();
                 work(move || {
-                    let mut mailbox = store.mailbox(&account_arg, &folder);
-                    let result = transport.fetch(&account, &folder, &mailbox["state"]).and_then(|fetched| {
-                        let new: Vec<Value> = fetched["messages"].as_array().cloned().unwrap_or_default();
-                        let mut messages: Vec<Value> =
-                            if fetched["reset"] == true { Vec::new() } else { mailbox["messages"].as_array().cloned().unwrap_or_default() };
-                        for message in new.iter().rev() {
-                            messages.insert(0, normalize(message.clone()));
-                        }
-                        let total = messages.len();
-                        mailbox["messages"] = json!(messages);
-                        mailbox["state"] = fetched["state"].clone();
-                        if let Some(object) = mailbox.as_object_mut() {
-                            object.remove("seen");
-                        }
-                        store.save_mailbox(&account_arg, &folder, &mailbox)?;
-                        Ok(json!({"new": new.len(), "total": total}))
-                    });
+                    let result = incoming::collect(&store, transport.as_ref(), &call.app_id, &account_arg, &folder)
+                        .map(|r| json!({"new": r.new, "total": r.total}));
                     reply.send(result);
                 });
             }
+            // Agent reads are separate from the UI's network listing and
+            // message-open operation. They never fetch or mark a message read.
+            "peek" => {
+                reply.send(agent_read(&store, &call.app_id, call.method(), &call.args));
+            }
+            "skip_event" => work(move || reply.send(incoming::skip_event(&store, &call.app_id, &account_arg, text(&call.args, "event_id"), text(&call.args, "reason")))),
+            "publish_card" => work(move || reply.send(publish_card(&store, &call.app_id, &call.args))),
+            "propose_reply" | "draft" | "suggest_reply" | "propose_send" => {
+                work(move || reply.send(drafts::agent_call(&store, &call.app_id, call.method(), &call.args)));
+            }
+            "compose" | "compose_status" => {
+                let rejected = reply.clone();
+                if let Err(error) = public_review::work(move || {
+                    if !reply.is_pending() {
+                        return;
+                    }
+                    if !call.may_prompt
+                        && active_account(&call.host_dir, &call.app_id).as_deref()
+                            != Some(account_arg.as_str())
+                    {
+                        return reply
+                            .send(Err("The app agent must use its active Mail account".into()));
+                    }
+                    let result = if call.method() == "compose" {
+                        drafts::compose_draft(&store, &call.app_id, &call.args)
+                    } else {
+                        drafts::composer_status(&store, &call.app_id, &call.args)
+                    };
+                    reply.send(result.map(|d| drafts::composer_result(&d, call.may_prompt)));
+                }) {
+                    rejected.send(Err(error));
+                }
+            }
+            "sheet.review_close" => {
+                if !call.from_sheet {
+                    return reply.send(Err("Only the host review can close its sheet".into()));
+                }
+                host.close_sheet();
+                reply.send(Ok(Value::Null));
+            }
+            "review_send" if call.app_id != "os.mail" => {
+                public_review::open(&store, &call, reply, host)
+            }
+            "review_send" => {
+                if !call.may_prompt { return reply.send(Err("Open Mail to review a composed message".into())); }
+                work(move || reply.send(drafts::review_composer(&store, &call.app_id, &call.args)));
+            }
             "list" => {
+                if !call.may_prompt { return reply.send(agent_read(&store, &call.app_id, "list", &call.args)); }
                 if let Err(e) = store.granted(&call.app_id, &account_arg) {
                     return reply.send(Err(e));
                 }
@@ -657,67 +895,57 @@ impl HostService for MailService {
                 reply.send(Ok(json!({"folder": folder, "total": messages.len(), "messages": page})));
             }
             "message" | "mark_read" => {
-                if let Err(e) = store.granted(&call.app_id, &account_arg) {
-                    return reply.send(Err(e));
-                }
-                let wanted = text(&call.args, "message").to_string();
-                let mut mailbox = store.mailbox(&account_arg, &folder);
-                let Some(message) = mailbox["messages"]
-                    .as_array_mut()
-                    .and_then(|m| m.iter_mut().find(|m| text(m, "id") == wanted))
-                else {
-                    return reply.send(Err("There is no such message.".into()));
-                };
-                let was_unread = message["unread"].as_bool().unwrap_or(true);
-                message["unread"] = json!(false);
-                let answer = if call.method() == "message" {
-                    let attachments: Vec<Value> = message["attachment_items"]
-                        .as_array()
-                        .map(|items| items.iter().map(|a| json!({"filename": a["filename"], "size": a["size"]})).collect())
-                        .unwrap_or_default();
-                    json!({
-                        "id": message["id"], "sender": message["sender"], "address": message["address"],
-                        "subject": message["subject"], "body": message["body"], "html": text(message, "html"),
-                        "attachments": attachments, "date": message["date"], "time": message["time"],
-                    })
-                } else {
-                    json!({})
-                };
-                let seen = message.clone();
-                let _ = store.save_mailbox(&account_arg, &folder, &mailbox);
-                reply.send(Ok(answer));
-                // The server hears too, where it keeps a read flag; failing
-                // that is not worth an error: the next sync is unaffected.
-                if was_unread {
-                    if let Ok(account) = store.account_for(&call.app_id, &account_arg) {
-                        let transport = self.transport.clone();
-                        work(move || {
-                            let _ = transport.mark_seen(&account, &folder, &seen);
-                        });
-                    }
-                }
-            }
-            "send" => {
-                let account = match store.account_for(&call.app_id, &account_arg) {
-                    Ok(account) => account,
-                    Err(e) => return reply.send(Err(e)),
-                };
-                let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0);
-                let domain = text(&account, "address").split('@').nth(1).unwrap_or("octosense.local").to_string();
-                let draft = json!({
-                    "to": text(&call.args, "to"), "subject": text(&call.args, "subject"), "body": text(&call.args, "body"),
-                    "message_id": format!("<{now:x}@{domain}>"),
-                });
                 let transport = self.transport.clone();
                 work(move || {
-                    let sent = transport.send(&account, &draft);
-                    if sent.is_ok() {
-                        contacts::record_sent(&store.dir, &account_arg, text(&draft, "to"));
+                    let _guard = incoming::lock();
+                    if let Err(e) = store.granted(&call.app_id, &account_arg) {
+                        return reply.send(Err(e));
                     }
-                    reply.send(sent)
+                    let wanted = text(&call.args, "message").to_string();
+                    let mut mailbox = store.mailbox(&account_arg, &folder);
+                    let Some(message) = mailbox["messages"]
+                        .as_array_mut()
+                        .and_then(|m| m.iter_mut().find(|m| text(m, "id") == wanted))
+                    else {
+                        return reply.send(Err("There is no such message.".into()));
+                    };
+                    let was_unread = message["unread"].as_bool().unwrap_or(true);
+                    message["unread"] = json!(false);
+                    let answer = if call.method() == "message" {
+                        let attachments: Vec<Value> = message["attachment_items"]
+                            .as_array()
+                            .map(|items| items.iter().map(|a| json!({"filename": a["filename"], "size": a["size"]})).collect())
+                            .unwrap_or_default();
+                        json!({
+                            "id": message["id"], "sender": message["sender"], "address": message["address"],
+                            "subject": message["subject"], "body": message["body"], "html": text(message, "html"),
+                            "attachments": attachments, "date": message["date"], "time": message["time"],
+                        })
+                    } else {
+                        json!({})
+                    };
+                    let seen = message.clone();
+                    let _ = store.save_mailbox(&account_arg, &folder, &mailbox);
+                    reply.send(Ok(answer));
+                    // The server hears too, where it keeps a read flag; failing
+                    // that is not worth an error: the next sync is unaffected.
+                    if was_unread {
+                        if let Ok(account) = store.account_for(&call.app_id, &account_arg) {
+                            work(move || {
+                                let _ = transport.mark_seen(&account, &folder, &seen);
+                            });
+                        }
+                    }
                 });
             }
-            "notify" => reply.send(notify(&call.app_id, &call.args)),
+            "send" if call.app_id != "os.mail" => public_review::open(&store, &call, reply, host),
+            "send" => {
+                reply.send(Err("approval_required: use mail.review_send with Mail open, or open the reply card, then use the host's Approve & Send control. mail.send cannot authorize delivery.".into()));
+            }
+            "notify" => {
+                if account_arg.is_empty() { reply.send(notify(&call.app_id, &call.args)); }
+                else { work(move || reply.send(incoming::publish_once(&store, &call.app_id, &account_arg, text(&call.args, "card_id"), || notify(&call.app_id, &call.args)))); }
+            }
             other => reply.send(Err(format!("mail has no method {other:?}"))),
         }
     }
@@ -893,6 +1121,16 @@ mod tests {
     }
 
     #[test]
+    fn pop_baseline_covers_undownloaded_old_mail_but_later_batches_do_not_skip_new_mail() {
+        let fetched = json!({"messages":[{"uid":"last"}], "skipped_uids":["oversized"], "uid_snapshot":["old","last","oversized","other-new"]});
+        let baseline = pop_seen(&json!({"_incoming_baseline":true}), &fetched);
+        assert_eq!(baseline, json!(["last","oversized","old","other-new"]).as_array().unwrap().clone());
+        let next = pop_seen(&json!({"seen":["old"]}), &fetched);
+        assert_eq!(next, json!(["old","last","oversized"]).as_array().unwrap().clone());
+        assert!(!next.contains(&json!("other-new")), "an unseen new message outside this batch must remain fetchable");
+    }
+
+    #[test]
     fn should_list_only_the_accounts_an_app_was_granted_when_the_shell_asks() {
         let dir = std::env::temp_dir().join(format!("mail-ids-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
@@ -942,7 +1180,7 @@ mod tests {
     }
 
     #[test]
-    fn an_app_signs_in_on_the_hosts_sheet_and_reads_and_sends_without_the_password() {
+    fn an_app_signs_in_reads_without_the_password_and_cannot_bypass_send_review() {
         let dir = std::env::temp_dir().join(format!("mail-service-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         let mut html_mail = message("u2", "Second");
@@ -1032,11 +1270,179 @@ mod tests {
         assert_eq!(archive["messages"][0]["subject"], "Archived");
         assert_eq!(ask(&dir, "os.mail", "mail.list", json!({"account": id}), false, &mut host).unwrap()["total"], 2, "folders keep their own mail");
 
-        ask(&dir, "os.mail", "mail.send", json!({"account": id, "to": "alex@example.com", "subject": "Hi", "body": "Hello"}), false, &mut host).unwrap();
-        assert_eq!(fake.sent.lock().unwrap()[0]["to"], "alex@example.com");
+        let refused = ask(&dir, "os.mail", "mail.send", json!({"account": id, "to": "alex@example.com", "subject": "Hi", "body": "Hello"}), false, &mut host).unwrap_err();
+        assert!(refused.contains("approval_required"));
+        assert!(fake.sent.lock().unwrap().is_empty());
         // The approval rules' contacts: the account and whom it wrote to, no password.
-        assert_eq!(contacts::known_addresses(&dir), ["alex@example.com", "me@example.com"]);
-        assert!(!std::fs::read_to_string(dir.join("mail").join(contacts::SENT_TO_FILE)).unwrap().contains("s3cret"));
+        assert_eq!(contacts::known_addresses(&dir), ["me@example.com"]);
+        assert!(!dir.join("mail").join(contacts::SENT_TO_FILE).exists());
+
+        // Contestant compatibility path: a normal app's mail.send mounts a
+        // native review. No app/synthetic event can approve it.
+        #[cfg(any(target_os = "macos", target_os = "android"))]
+        {
+            let store = Store::at(&dir, Arc::new(vault::FileVault));
+            let original = store.accounts();
+            let mut accounts = original.clone();
+            accounts[0]["apps"]
+                .as_array_mut()
+                .unwrap()
+                .push(json!("sample.mail"));
+            store.save_accounts(&accounts).unwrap();
+            let pending: Arc<Mutex<Option<public_review::ReviewRequest>>> = Arc::default();
+            let observed = pending.clone();
+            public_review::on_review(Some(Arc::new(move |request| {
+                *observed.lock().unwrap() = Some(request);
+                Ok("native review fixture".into())
+            })));
+            let args = json!({"account":id,"to":"recipient@example.com","subject":"Exact review","body":"Reviewed body"});
+            let staged = ask(
+                &dir,
+                "sample.mail",
+                "mail.compose",
+                args.clone(),
+                false,
+                &mut host,
+            )
+            .unwrap();
+            assert_eq!(staged["status"], "draft");
+            assert!(fake.sent.lock().unwrap().is_empty());
+            let mut review_args = args.clone();
+            review_args["compose_id"] = staged["compose_id"].clone();
+            review_args["expected_revision"] = json!(1);
+            // Holding the draft I/O lock must not block opening/polling the
+            // native preparation surface on the dispatch/UI thread.
+            let held_draft_io = drafts::lock();
+            let (opened_tx, opened_rx) = std::sync::mpsc::sync_channel(1);
+            let request_dir = dir.clone();
+            let request_args = review_args.clone();
+            let dispatch = std::thread::spawn(move || {
+                let mut surface = Host::default();
+                let heap = send(
+                    &request_dir,
+                    "sample.mail",
+                    "mail.send",
+                    request_args,
+                    false,
+                    &mut surface,
+                );
+                opened_tx.send((heap, surface)).unwrap();
+            });
+            let opened = opened_rx.recv_timeout(std::time::Duration::from_secs(2));
+            if opened.is_ok() {
+                let mut request = pending.lock().unwrap();
+                let request = request.as_mut().unwrap();
+                assert!(request.is_preparing());
+                assert!(request.result().is_none());
+                assert!(!request.can_approve());
+            }
+            drop(held_draft_io);
+            dispatch.join().unwrap();
+            let (heap, surface) = opened.expect("native review dispatch waited for draft I/O");
+            host = surface;
+            assert!(host
+                .sheet
+                .as_ref()
+                .is_some_and(|s| s.as_deref() == Some("native review fixture")));
+            assert!(
+                octosense_appstore::services::take_replies_for(&[heap]).is_empty(),
+                "staging is never reported as sent"
+            );
+            let mut review = pending.lock().unwrap().take().unwrap();
+            assert!(
+                !review.can_approve(),
+                "preparation is never an approval-ready snapshot"
+            );
+            for _ in 0..1000 {
+                let _ = review.result();
+                if !review.is_preparing() {
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(5));
+            }
+            assert!(review.can_approve());
+            assert_eq!(review.snapshot()["publisher"], "sample.mail");
+            assert_eq!(review.snapshot()["payload"]["body"], "Reviewed body");
+            assert!(review
+                .approve(false, true)
+                .unwrap_err()
+                .contains("physical"));
+            assert!(review
+                .approve(true, false)
+                .unwrap_err()
+                .contains("physical"));
+            assert!(fake.sent.lock().unwrap().is_empty());
+            review.approve(true, true).unwrap(); // Synthetic native test only, no real transport.
+            let receipt = wait(heap).unwrap();
+            assert_eq!(receipt["accepted"], true);
+            assert_eq!(receipt["status"], "accepted");
+            assert!(receipt["id"].as_str().is_some_and(|s| s.starts_with('<')));
+            assert!(review.approve(true, true).is_err());
+            assert_eq!(fake.sent.lock().unwrap().len(), 1);
+            let saved = ask(
+                &dir,
+                "sample.mail",
+                "mail.compose_status",
+                json!({"account":id,"compose_id":staged["compose_id"]}),
+                false,
+                &mut host,
+            )
+            .unwrap();
+            assert_eq!(saved["status"], "accepted");
+            assert!(ask(
+                &dir,
+                "os.other",
+                "mail.compose_status",
+                json!({"account":id,"compose_id":staged["compose_id"]}),
+                false,
+                &mut host
+            )
+            .is_err());
+            assert!(ask(
+                &dir,
+                "sample.mail",
+                "mail.sheet.review_close",
+                json!({}),
+                false,
+                &mut host
+            )
+            .is_err());
+            let background = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            octosense_appstore::services::dispatch(
+                ServiceCall {
+                    app_id: "sample.mail".into(),
+                    service: "mail.send".into(),
+                    args: args.clone(),
+                    from_sheet: false,
+                    may_prompt: false,
+                    host_dir: dir.clone(),
+                },
+                background,
+                1,
+                &mut host,
+            );
+            assert!(wait(background).unwrap_err().contains("agents/background"));
+            assert!(pending.lock().unwrap().is_none());
+            let cancelled = send(
+                &dir,
+                "sample.mail",
+                "mail.send",
+                args.clone(),
+                false,
+                &mut host,
+            );
+            pending.lock().unwrap().take().unwrap().cancel().unwrap();
+            assert!(wait(cancelled).unwrap_err().contains("cancelled"));
+            assert_eq!(fake.sent.lock().unwrap().len(), 1);
+            let closed = send(&dir, "sample.mail", "mail.send", args, false, &mut host);
+            let mut orphan = pending.lock().unwrap().take().unwrap();
+            octosense_appstore::services::cancel_heap(closed);
+            assert!(orphan.approve(true, true).is_err());
+            orphan.cancel().unwrap();
+            assert_eq!(fake.sent.lock().unwrap().len(), 1);
+            public_review::on_review(None);
+            store.save_accounts(&original).unwrap();
+        }
 
         // An app that never had the account removes nothing.
         ask(&dir, "os.other", "mail.remove_account", json!({"account": id}), false, &mut host).unwrap();

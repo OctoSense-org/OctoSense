@@ -1,0 +1,68 @@
+{
+  "schema": 1,
+  "tools": [
+    {
+      "name": "apilab.inspect",
+      "description": "Read native permission status, discover OS APIs, round-trip temporary synthetic app bytes and verify background refusals. No capture, location sampling, picker or approval.",
+      "implemented_by": "app",
+      "risk": "read",
+      "background": false,
+      "shareable": false,
+      "private_data": true,
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "required": [
+          "account",
+          "camera",
+          "discovery",
+          "missing",
+          "microphone",
+          "background_prompt_allowed",
+          "background_error",
+          "calls",
+          "os_batch",
+          "public_services"
+        ],
+        "properties": {
+          "account": {
+            "type": "string"
+          },
+          "camera": {
+            "type": "object"
+          },
+          "discovery": {
+            "type": "object"
+          },
+          "missing": {
+            "type": "object"
+          },
+          "background_prompt_allowed": {
+            "type": "boolean"
+          },
+          "background_error": {
+            "type": "string"
+          },
+          "calls": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "os_batch": {
+            "type": "object"
+          },
+          "public_services": {
+            "type": "object"
+          },
+          "microphone": {
+            "type": "object"
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  ]
+}

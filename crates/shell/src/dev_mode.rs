@@ -1047,10 +1047,17 @@ mod tests {
     }
 
     #[test]
-    fn debug_builds_are_development_builds() {
-        // Tests build with debug assertions (build.rs sets `dev_mode`); a
-        // `--release` build without `--features dev-mode` is `Release`.
-        assert_eq!(BuildKind::current(), BuildKind::Development);
+    fn build_kind_matches_the_compiled_configuration() {
+        // Exercise build.rs's mapping in both ordinary and --release tests.
+        // Enabling development mode just for tests would hide release gates.
+        let expected = if option_env!("OCTOSENSE_STORE_BUILD").is_some() {
+            BuildKind::Store
+        } else if cfg!(any(debug_assertions, feature = "dev-mode")) {
+            BuildKind::Development
+        } else {
+            BuildKind::Release
+        };
+        assert_eq!(BuildKind::current(), expected);
     }
 
     #[test]

@@ -4,7 +4,7 @@
 
 The system toolbox's library of **OctoScript workflow templates** ([ADR 0002](../../docs/adr/), section 6, "Workflow templates", proposed in OctoSense PR #77). A template is a fixed, bounded procedure (a news digest, a multi-language topic brief, a plan from the weather) written in OctoScript with a manifest that says what it may call. An app's agent picks one and fills its parameters: one model call to choose, instead of a multi-call tool loop. The host then runs the independent steps concurrently.
 
-This crate holds the library, the runner, forks, evaluation, the `mod.research` v1 host module, and the `workflow.*` tool surface as a Rust API. The shells link it through `crates/ai-host`'s `toolbox-peers` feature: on by default on the phone (`phone/Cargo.toml`), off by default on the desktop. Its tools reach app agents only (the system agent gets none yet), and only an app whose manifest declares `research` or `crawl`, which no app does yet. See [What remains](#what-remains).
+This crate holds the library, the runner, forks, evaluation, the `mod.research` v1 host module, and the `workflow.*` tool surface as a Rust API. The shells link it through `crates/ai-host`'s `toolbox-peers` feature: on by default on the phone (`phone/Cargo.toml`), off by default on the desktop. Its tools reach app agents only (the system agent gets none yet). Store and system script apps request exact names in `agent.tools`, subject first to a matching host admission offer, then to agent consent, tool authorization and the manifest's top-level `research` scope. The default store offer excludes toolbox tools; a manifest cannot enable them merely by listing them. The shell can extend the offer for a particular reviewed system app. `research`/`crawl` capability declarations only describe usage; native modules keep their separate, reviewed tool selection. See [What remains](#what-remains).
 
 The first templates are ported from the AppCard research experiment ([`apps/appcard/tools/splash-research`](../../apps/appcard/tools/splash-research)). Its composition harness (Python) was not used; what was needed is in Rust here.
 
@@ -100,7 +100,7 @@ The runner adds what a template cannot see: `the budget refused N call(s)`, `the
 
 ## The app's grant: octos's `Scope`
 
-The scope an app is granted with `research` and `crawl` (ADR 0002 section 6) is `octos_research::toolbox::Scope` (octos#2585): the same JSON, field names and units, with unknown fields refused and empty lists meaning no limit.
+The resource scope for an app's selected research tools (ADR 0002 section 6) is `octos_research::toolbox::Scope` (octos#2585), read from a script app's top-level `research` object independently of capability declarations: the same JSON, field names and units, with unknown fields refused and empty lists meaning no limit.
 
 ```json
 {"langs": ["en", "zh"], "regions": ["US"], "domains_allow": [], "domains_deny": ["example.com"],
@@ -115,14 +115,14 @@ The scope an app is granted with `research` and `crawl` (ADR 0002 section 6) is 
 | `max_age_days` | oldest material, in days | a search's `max_age_hours` is clamped to it; a search without one gets it |
 | `categories` | metasearch categories | `mod.research` searches `news`; a grant without it refuses every search |
 | `max_results` | results per search (default 20) | caps a search's `limit` |
-| `max_depth`, `max_pages` | the `crawl` capability: depth and pages of one crawl (0: not granted) | unused: `mod.research` does not crawl |
+| `max_depth`, `max_pages` | depth and pages of one `toolbox.deep_crawl`; both must be positive, in addition to selecting the tool | unused: `mod.research` does not crawl |
 
 `scope::parse` reads a grant and `AppContext` deserializes its `scope` through it; `scope::unrestricted()` is the empty grant (`Scope::default()` is not: its `max_results` is 0).
 
 - **With `octos-engine`**, `Scope` is octos's type. A grant is parsed by `Scope::from_grant`, each search is narrowed by `Scope::search_args` and each read checked by `Scope::check_domain`. There is no toolbox definition of the scope.
 - **Without it**, `Scope` is `scope::compat::Scope`, a thin parser of the same JSON with the same validation, normalization, domain matching and narrowing, so the fixture and interim backends enforce the same grant. It is not a second definition to maintain: a test built with the feature (`scope::tests::the_thin_parser_matches_octos`) runs both on the same grants, URLs, languages and searches and fails on any difference. Gating the scope on the feature instead would leave the default build, the fixtures and the evaluation with no scope checks at all.
 - **The run budget is not in the grant.** Articles read per run are the template's `max_reads`, narrowed by the app's own budget. The scope's `max_pages` counts pages of one crawl.
-- **Grants in the old shape are refused, not converted.** The toolbox's own scope (`languages`, `allowed_domains`, `denied_domains`, `recency_hours`, and `max_pages` as articles per run) is refused with an error naming each replacement (`` `languages` is now `langs` ``, …). Converting would round hours up to days, widening what the person granted, and would read the old `max_pages` as a crawl limit. No grant in the old shape was ever stored (the toolbox is not wired into App Hub yet), so App Hub pins and the person grants the scope again in the new shape.
+- **Grants in the old shape are refused, not converted.** The toolbox's own scope (`languages`, `allowed_domains`, `denied_domains`, `recency_hours`, and `max_pages` as articles per run) is refused with an error naming each replacement (`` `languages` is now `langs` ``, …). Converting would round hours up to days, widening what the person granted, and would read the old `max_pages` as a crawl limit. A bundle using the old shape must correct it and pass scope validation; the host does not silently widen or reinterpret it.
 
 ## `mod.research` v1
 
@@ -237,16 +237,16 @@ The tests show this rule deciding real cases:
 
 ## How an app agent uses it
 
-The wiring is in place behind `toolbox-peers` (`crates/ai-host/src/toolbox_peers.rs`, `crates/shell/src/host_tools/toolbox.rs`); no app declares `research` yet, so no shipped app agent has gone through it:
+The wiring is behind `toolbox-peers`. App Hub's [`HostLimits::default().offered_tools`](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/8347a489141c0e24cab564883db7c4592935a8b2/crates/app-contract/src/policy.rs#L47) excludes these tools, and [`resolve_agent`](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/8347a489141c0e24cab564883db7c4592935a8b2/crates/app-policy/src/policy.rs#L84) refuses an unoffered name. The shell may use [`set_agent_tool_offer`](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/8347a489141c0e24cab564883db7c4592935a8b2/crates/appstore/src/system.rs#L50) for a particular shipped system app; that does not change store admission.
 
-1. The app's manifest asks for `research` with a scope. App Hub pins the request and the person grants it (for now the host grants it only to system apps, `os.*`).
-2. The shell registers the app's peer `workflow.run`, `workflow.fork`, `toolbox.search` and `toolbox.web_read` (and `toolbox.deep_crawl` with `crawl`), owned by `toolbox`; `workflow.list` and `workflow.evaluate` stay Rust API. The host fills `AppContext` from the peer's identity and the app's grants, never from the model.
+1. The manifest selects exact names in `agent.tools`, with a top-level `research` scope. Every requested tool must be in the host's admission offer. Capability disclosures do not grant tools, and selecting a tool does not bypass the default store restriction.
+2. After admission, [`grant_manifest`](../shell/src/host_tools/toolbox.rs) and [`ToolboxGrant::for_manifest`](../ai-host/src/toolbox_peers.rs) retain the selected `workflow.run`, `workflow.fork`, `toolbox.search`, `toolbox.web_read` or `toolbox.deep_crawl` names, owned by `toolbox`. Crawl also needs positive scope limits. `workflow.list` and `workflow.evaluate` stay Rust API. The host fills `AppContext` from the peer's identity, selected tools and scope, never from the model; the relay offers tools only after agent consent and still enforces sharing.
 3. The agent picks a template, fills its parameters in one model call, and calls `workflow.run`. The host runs it within the app's scope and budget and writes `toolbox/runs/<id>/<run>.json`. The agent gets back the structured result, including provenance.
 4. To improve a procedure, the agent forks it, edits the fork, and evaluates it against the parent on recorded cases. It adopts the fork only if the verdict is `better`.
 
 ## Commands
 
-The pinned octos (`056173e8`) includes `octos-research`, so no override is needed any more. On 2 Oct 2026 `cargo test --locked -p octosense-toolbox` passed at the pin (83 tests). The others below were run on 28 Sep 2026 against octos's merge of #2585 (7bec0918) through a local override, before the pin moved; at the pin `apps.yml` runs the plain, `live` and `octos-engine` tests and both clippy lines, and the live and real-model runs are **unverified** at the pin.
+The pinned octos (`39e22d45`) includes `octos-research`, so no override is needed any more. On 6 Oct 2026 `cargo test --locked -p octosense-toolbox` passed at the pin (83 tests). The others below were run on 28 Sep 2026 against octos's merge of #2585 (7bec0918) through a local override, before the pin moved; at the pin `apps.yml` runs the plain, `live` and `octos-engine` tests and both clippy lines, and the live and real-model runs are **unverified** at the pin.
 
 ```sh
 cargo test --locked -p octosense-toolbox                     # 83 tests, fixtures only (the thin scope parser)
@@ -373,7 +373,7 @@ After the [status rules](#status) and the [summary check](#modresearch-v1): four
 
 ## What remains
 
-- **Peer tool wiring** is in place behind the shell's `toolbox-peers` feature (`crates/ai-host`'s `toolbox_peers`, the shell's `host_tools::toolbox`, and the `peer` module here: the tools per grant, `PeerToolbox::call`, and `toolbox.deep_crawl` over `ResearchBackend::read_links`). The shells' App Hub pin now includes App Hub #26 (`research`/`crawl`), but the host still grants a script app's declaration only to system apps (`os.*`) until it reads App Hub's verified grant. The system agent's toolbox grant (`SystemAgentTools::grant_toolbox` in `crates/kernel`) is not wired.
+- **Peer tool wiring** is in place behind the shell's `toolbox-peers` feature (`crates/ai-host`'s `toolbox_peers`, the shell's `host_tools::toolbox`, and the `peer` module here: the tools per grant, `PeerToolbox::call`, and `toolbox.deep_crawl` over `ResearchBackend::read_links`). The host reads each script app's admitted, digest-checked manifest and selects only its exact `agent.tools`, with the validated `research` scope. Store and system script apps follow the same policy; capability declarations do not grant tools. The system agent's toolbox grant (`SystemAgentTools::grant_toolbox` in `crates/kernel`) is not wired.
 - **Engine**: the octos research engine is behind `ResearchBackend` (`octos-engine`). Still to do:
   - drop the interim adapter once the shells use it;
   - add metasearch (octos#2582) and publisher feeds (octos#2585);

@@ -1,0 +1,74 @@
+{
+  "apps": [
+    {
+      "accounts": true,
+      "app": "org.octosense.samples.githubnotes",
+      "bundle_digest": "c254ddb25658e9243e2313cf7edcc953452cf15c5afe96ba4227ad0482c65016",
+      "capabilities": [
+        "auth",
+        "github",
+        "storage"
+      ],
+      "cross_app_staging_refused": true,
+      "direct_network_hosts": [],
+      "fresh_store_reopen": true,
+      "modified_source_refused": true,
+      "signed_install": true
+    },
+    {
+      "accounts": true,
+      "app": "org.octosense.samples.inbox",
+      "bundle_digest": "2ca58e32e871a5336c878691a0d6b257409a4208428f3731ee82fcae2e097caa",
+      "capabilities": [
+        "auth",
+        "glance",
+        "gmail",
+        "model",
+        "octos.session.open",
+        "octos.turn.start",
+        "storage"
+      ],
+      "cross_app_staging_refused": true,
+      "direct_network_hosts": [],
+      "fresh_store_reopen": true,
+      "modified_source_refused": true,
+      "signed_install": true
+    },
+    {
+      "accounts": true,
+      "app": "org.octosense.samples.googlecalendar",
+      "bundle_digest": "6b8a9397960a684545b283e4f65f8c082405cfe7df945a5c0c8435169a691671",
+      "capabilities": [
+        "auth",
+        "gcalendar",
+        "glance",
+        "octos.session.open",
+        "octos.turn.start",
+        "storage"
+      ],
+      "cross_app_staging_refused": true,
+      "direct_network_hosts": [],
+      "fresh_store_reopen": true,
+      "modified_source_refused": true,
+      "signed_install": true
+    }
+  ],
+  "cleanup": "temporary fixture removed and checked",
+  "input_bundles_unchanged": true,
+  "keys": "ephemeral memory only",
+  "not_verified": [
+    "public catalog publication",
+    "provider OAuth",
+    "live provider reads/writes",
+    "Android runtime"
+  ],
+  "production_catalog_modified": false,
+  "proof": "private signed catalog installation",
+  "result": "pass",
+  "separate_storage_jails": true,
+  "unsigned_catalog_refused": true,
+  "untrusted_anchor_refused": true,
+  "date": "2026-10-06",
+  "installer_sha256": "a2959bea204b0213e705ce7162c3c14766b00b0e1b15536a23554a08b26c06e4",
+  "driver_sha256": "9df9062370e7a047a10b1c8b42a86a62e2cefcc130053f8988f4ede231a9f45b"
+}

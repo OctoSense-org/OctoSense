@@ -1,0 +1,24 @@
+{
+  "card_id": "mail-bc9c7d2f87620754da754c3d569db25f2b7ed176",
+  "title": "[Simulation] Desk lamp ready for pickup",
+  "summary": "Code 9064 \u2014 collect by Mon Oct 5, 9:00 PM PDT at Example Pickup Desk.",
+  "notify": true,
+  "source": "source note sys.dataset(fields: [title, subtitle, status, summary, as_of, metric1_label, metric1_value, metric2_label, metric2_value, pick1_title, pick1_body, pick2_title, pick2_body])\n\nstate mode { shape: enum[brief, code, details], initial: .brief }\nevent code { mode: set(.code) }\nevent details { mode: set(.details) }\nevent back { mode: set(.brief) }\n\ncopy app { class: vocabulary, en: \"Mail\" }\ncopy sim { class: vocabulary, en: \"Simulation\" }\ncopy b_code { class: vocabulary, en: \"Show code\" }\ncopy b_details { class: vocabulary, en: \"Details\" }\ncopy b_back { class: vocabulary, en: \"Back\" }\ncopy req { class: vocabulary, en: \"Bring the code and photo ID.\" }\n\nview root Surface(pad: .tight) {\n  Col(gap: 8) {\n    Row(gap: 8, align: .center) {\n      Icon(name: .mail, size: .row)\n      TextCaption(text: copy.app, width: .fill)\n      TextCaption(text: copy.sim)\n    }\n    when mode == .brief {\n      Col(gap: 8) {\n        TextTitle(text: note.title, width: .fill)\n        TextCaption(text: note.metric2_value)\n        TextBody(text: copy.req, width: .fill)\n        Chip(text: copy.b_code, on_tap: code, tone: .primary)\n        Chip(text: copy.b_details, on_tap: details)\n      }\n    }\n    when mode == .code {\n      Col(gap: 8) {\n        TextCaption(text: note.title)\n        TextTitle(text: note.metric1_value, width: .fill)\n        TextBody(text: copy.req, width: .fill)\n        Chip(text: copy.b_back, on_tap: back, tone: .primary)\n      }\n    }\n    when mode == .details {\n      Col(gap: 8) {\n        TextCaption(text: note.title)\n        TextBody(text: note.pick1_body, width: .fill)\n        TextCaption(text: note.pick2_body)\n        TextCaption(text: note.metric2_value)\n        Chip(text: copy.b_back, on_tap: back, tone: .primary)\n      }\n    }\n  }\n}",
+  "data": {
+    "note": {
+      "title": "Desk lamp ready",
+      "subtitle": "Demo Supply \u00b7 Example Parcel",
+      "status": "Ready for pickup",
+      "summary": "Delivery attempted; no one available to sign.",
+      "as_of": "2026-10-04",
+      "metric1_label": "Pickup code",
+      "metric1_value": "9064",
+      "metric2_label": "Collect by",
+      "metric2_value": "Mon Oct 5, 2026, 9:00 PM PDT",
+      "pick1_title": "Pickup desk",
+      "pick1_body": "Example Pickup Desk, 100 Demo Street, Demo City",
+      "pick2_title": "Pickup hours",
+      "pick2_body": "9:00 AM\u20139:00 PM PDT"
+    }
+  }
+}

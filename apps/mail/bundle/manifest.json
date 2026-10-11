@@ -3,12 +3,39 @@
   "id": "os.mail",
   "version": "1.0.0",
   "name": "Mail",
-  "integrity": { "bundle_blake3": "" },
-  "capabilities": ["storage", "mail", "glance"],
-  "storage": { "accounts": true },
+  "integrity": {
+    "bundle_blake3": ""
+  },
+  "capabilities": [
+    "storage",
+    "mail",
+    "glance"
+  ],
+  "storage": {
+    "accounts": true
+  },
   "agent": {
     "profile": "read-only",
-    "tools": ["ask_user_question"],
-    "model": { "needs": ["tool_calling"] }
+    "tools": [
+      "ask_user_question",
+      "calendar.events",
+      "calendar.add_event",
+      "calendar.notify"
+    ],
+    "model": {
+      "needs": [
+        "tool_calling"
+      ]
+    },
+    "instructions": "AGENT.md",
+    "skills": [
+      "incoming-mail-triage"
+    ],
+    "background": true,
+    "triggers": {
+      "events": [
+        "mail.messages.new"
+      ]
+    }
   }
 }

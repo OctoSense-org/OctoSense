@@ -1,0 +1,1087 @@
+// BEGIN shared app interface
+// Shared system-app interface. Run tools/sync-app-interface.py after editing.
+// Bundles carry this prelude so they work in the contained standalone host too.
+// Resolve the current theme after a host restyle, not a retained prelude alias.
+let theme = mod.theme
+let ui_ink = theme.color_text
+let ui_page = theme.color_bg_app
+let ui_light = dot(ui_ink, #x36b61200) < 0.5
+let ui_surface = if ui_light { #xffffff } else { mix(ui_page, ui_ink, 0.06) }
+let ui_field = mix(ui_page, ui_ink, 0.075)
+let ui_hover = mix(ui_page, ui_ink, 0.12)
+let ui_border = mix(ui_page, ui_ink, 0.22)
+let ui_muted = mix(ui_ink, ui_page, 0.24)
+let ui_link = mix(ui_ink, #x356bce, 0.25)
+let ui_primary = #x285cd6
+let ui_success = mix(ui_ink, #x28a55b, 0.20)
+let ui_danger = mix(ui_ink, #xe13b53, 0.20)
+let UiButton = ButtonFlat{height: 44 margin: 0 padding: Inset{left: 14 right: 14}
+    draw_bg +: {border_radius: 12.0 border_size: 0.0 color: #x00000000 color_hover: ui_hover color_down: ui_field color_focus: ui_hover}
+    draw_text +: {color: ui_link color_hover: ui_link color_down: ui_link color_focus: ui_link text_style: theme.font_bold{font_size: 14}}
+}
+let UiPrimary = UiButton{
+    draw_bg +: {color: ui_primary color_hover: #x3468df color_down: #x204cb8 color_focus: #x204cb8}
+    draw_text +: {color: #xffffff color_hover: #xffffff color_down: #xffffff color_focus: #xffffff}
+}
+let UiPill = UiButton{draw_bg +: {color: ui_surface border_radius: 22.0} draw_text +: {color: ui_ink color_hover: ui_ink color_down: ui_ink color_focus: ui_ink}}
+let UiField = TextInput{width: Fill height: 48 margin: 0 padding: Inset{left: 14 right: 14 top: 12 bottom: 12}
+    draw_bg +: {color: ui_field color_hover: ui_field color_focus: ui_field color_empty: ui_field
+        border_color: ui_border border_color_hover: ui_link border_color_focus: ui_link border_color_empty: ui_border border_radius: 12.0}
+    draw_text +: {color: ui_ink color_hover: ui_ink color_focus: ui_ink color_empty: ui_muted color_empty_hover: ui_muted color_empty_focus: ui_muted text_style: theme.font_regular{font_size: 15}}
+    draw_selection.color: #x557dcc55
+}
+let UiCard = RoundedView{width: Fill height: Fit flow: Down spacing: 12 padding: 20
+    show_bg: true draw_bg +: {color: ui_surface border_radius: 16.0}}
+let UiCaption = Label{padding: 0 flow: Flow.Right{wrap: true} width: Fill draw_text +: {color: ui_muted text_style: theme.font_regular{font_size: 13 line_spacing: 1.4}}}
+let UiTitle = Label{padding: 0 flow: Flow.Right{wrap: true} width: Fill draw_text +: {color: ui_ink text_style: theme.font_bold{font_size: 28 line_spacing: 1.2}}}
+// END shared app interface
+// Quick Deck: an outline becomes a deck, in four steps (Outline, Generate,
+// Review, Export). Every engine call goes to the shell's `deck` host service
+// (deckcraft, ADR 0013) through deck_call(). The engine works in this app's
+// own storage, the folder fs.* sees, so every path here is relative to it;
+// the app keeps to the paths it asked for, never to a path in an answer.
+// Each generation writes a folder of its own (decks/<id>/g<n>/), so a
+// regeneration never has to replace a file, and a failed one leaves the
+// previous deck as it was. Where a picture can't be read, its slide shows
+// its text instead.
+let SLIDE_LIMIT = 40
+let POINT_LIMIT = 12
+// fs.* refuses a 257th file or folder in the storage; leave room.
+let ENTRY_LIMIT = 240
+let STEPS = [{n: "1" name: "Outline" note: "One card per slide: a title and its points."}, {n: "2" name: "Generate" note: "The deck engine lays out every slide."}, {n: "3" name: "Review" note: "Look through every slide."}, {n: "4" name: "Export" note: "Save it as PowerPoint or PDF."}]
+let FORMATS = [{id: "pptx" name: "PowerPoint" ext: ".pptx" note: "Keep editing it in PowerPoint, Keynote or Google Slides."}, {id: "pdf" name: "PDF" ext: ".pdf" note: "Share or print it exactly as it looks here."}]
+
+let booted = false      // the stored decks are read
+let shown = false       // boot() has run to its end
+let decks = []          // every deck, newest first (decks.json)
+let cur = nil           // the deck on screen
+let screen = "decks"
+let app_width = 412
+let app_height = 860
+let save_seq = 0
+let busy = false
+let make_seq = 0
+let make_total = 0
+let make_done = 0
+let make_note = ""
+let make_failed = ""    // the method that stopped the last run
+let make_error = ""
+let render_error = ""   // the first preview that could not be drawn
+let make_gen = 0        // the generation being made, and what it wrote so far
+let make_file = ""
+let make_count = 0
+let make_sent = []
+let make_thumbs = []
+let make_paths = []
+let view_index = 0
+let view_seq = 0
+let view_res = nil      // the large picture of the slide on screen
+let export_format = "pptx"
+let confirm_delete = false
+let export_message = ""
+let export_failed = false
+let outline_issue = ""
+let pictures = []       // [{path, res}] slide pictures already read
+
+// ---- small helpers ----------------------------------------------------------
+
+// A missing key reads as `fallback` (as News, Photos and Wasm Lab do it).
+fn optional(it, key, fallback){
+    let value = try { it[key] } catch { nil }
+    if value == nil { return fallback }
+    value
+}
+fn two(n){ if n < 10 { return "0" + n } "" + n }
+fn new_id(){
+    let t = local_time()
+    "d" + t.year + two(t.month) + two(t.day) + two(t.hour) + two(t.minute) + two(t.second) + "-" + floor(random() * 9000 + 1000)
+}
+fn plural(n, one, many){ if n == 1 { return "1 " + one } "" + n + " " + many }
+fn ago(t){
+    let s = time_now() - t
+    if s < 60 { return "just now" }
+    if s < 3600 { return "" + floor(s / 60) + " min ago" }
+    if s < 86400 { return "" + floor(s / 3600) + " h ago" }
+    let d = local_time(t)
+    let months = ["Jan" "Feb" "Mar" "Apr" "May" "Jun" "Jul" "Aug" "Sep" "Oct" "Nov" "Dec"]
+    months[d.month - 1] + " " + d.day
+}
+fn size_text(b){
+    if b < 1024 { return "" + b + " bytes" }
+    if b < 1048576 { return "" + floor(b / 1024) + " KB" }
+    "" + floor(b / 104857.6) / 10 + " MB"
+}
+fn base_name(p){
+    let parts = p.split("/")
+    parts[parts.len() - 1]
+}
+// A file name that is safe on every filesystem.
+fn safe_name(title){
+    let name = title.replace(regex("[^A-Za-z0-9 _-]", "g"), "").trim()
+    if name == "" { return "Deck" }
+    name
+}
+fn lines_of(text){
+    let out = []
+    for line in text.split("\n") {
+        let t = line.trim()
+        if t != "" { out.push(t) }
+    }
+    out
+}
+fn deck_title(d){
+    if d.slides.len() > 0 {
+        let t = d.slides[0].title.trim()
+        if t != "" { return t }
+    }
+    "Untitled deck"
+}
+fn point_count(d){
+    let n = 0
+    for s in d.slides { n = n + lines_of(s.points).len() }
+    n
+}
+fn slide_count(d){
+    let n = 0
+    for s in d.slides { if s.title.trim() != "" { n = n + 1 } }
+    n
+}
+fn deck_meta(d){
+    if d.built == 0 { return "Draft · " + plural(slide_count(d), "slide", "slides") + " · " + ago(d.edited) }
+    if d.stale { return "Outline changed · generate again · " + ago(d.edited) }
+    plural(d.count, "slide", "slides") + " · made " + ago(d.built)
+}
+fn format_name(id){ if id == "pdf" { return "PDF" } "PowerPoint" }
+fn format_tag(id){ if id == "pdf" { return "PDF" } "PPTX" }
+
+// ---- storage ----------------------------------------------------------------
+
+fn normal_slide(s){ {title: "" + optional(s, "title", "") points: "" + optional(s, "points", "")} }
+fn normal_deck(d){
+    let slides = []
+    for s in optional(d, "slides", []) { slides.push(normal_slide(s)) }
+    if slides.len() == 0 { slides.push({title: "" points: ""}) }
+    {id: optional(d, "id", new_id()) slides: slides made: optional(d, "made", time_now()) edited: optional(d, "edited", time_now())
+        built: optional(d, "built", 0) stale: optional(d, "stale", true) file: optional(d, "file", "") count: optional(d, "count", 0)
+        sent: optional(d, "sent", []) thumbs: optional(d, "thumbs", []) exports: optional(d, "exports", []) gen: optional(d, "gen", 0)}
+}
+fn load(){
+    if fs.exists("decks.json") {
+        let v = fs.read("decks.json").parse_json()
+        let list = []
+        for d in optional(v, "decks", []) { list.push(normal_deck(d)) }
+        decks = list
+    }
+}
+// Write the deck list; false when the storage refused it (full, or at its
+// file limit), so the caller can say so instead of stopping silently.
+fn save_now(){
+    let doc = {schema: 1 decks: decks}
+    let saved = try { fs.write("decks.json", doc.to_json()) true } catch { false }
+    saved == true
+}
+fn schedule_save(){
+    save_seq = save_seq + 1
+    let n = save_seq
+    start_timeout(0.6, || { if n == save_seq { save_now() } })
+}
+// Newest first (no sort in the language: insert each deck in place).
+fn newest_first(list){
+    let out = []
+    for d in list {
+        let next = []
+        let placed = false
+        for e in out {
+            if !placed && d.edited > e.edited { next.push(d) placed = true }
+            next.push(e)
+        }
+        if !placed { next.push(d) }
+        out = next
+    }
+    out
+}
+// A file or folder this app's storage holds for a deck: its files live
+// under decks/<id>/, nothing else is ever removed.
+fn remove_if(p){ if p != "" && p.search("decks/") == 0 && fs.exists(p) { fs.remove(p) } }
+fn remove_dir_if_empty(dir){
+    if dir != "" && dir.search("decks/") == 0 && fs.exists(dir) && fs.list(dir).len() == 0 { fs.remove(dir) }
+}
+fn gen_dir(d, gen){ "decks/" + d.id + "/g" + gen }
+fn remove_files(d){
+    for p in d.thumbs { remove_if(p) }
+    for e in d.exports { remove_if(e.out) }
+    remove_if(d.file)
+    remove_dir_if_empty(gen_dir(d, d.gen))
+    remove_dir_if_empty("decks/" + d.id)
+}
+// Files and folders the storage would hold with one more generation of
+// `slides` slides (fs.* stops at 256; the previous generation stays until
+// the new one is complete).
+fn entries_needed(slides){
+    let n = 8
+    for d in decks { n = n + d.count + d.exports.len() + 3 }
+    n + slides + 3
+}
+
+// ---- the deck engine ----------------------------------------------------------
+
+fn deck_call(method, args, done){
+    // A refused request calls back from inside host.request itself; in
+    // card-host only the first widget call of such a callback took effect.
+    // Answer from a timer instead, as a served request does.
+    host.request("deck." + method, args, fn(r){ start_timeout(0.01, || done(r)) })
+}
+// A slide picture already read from this app's storage, or nil.
+fn picture(path){
+    if path == "" { return nil }
+    for p in pictures { if p.path == path { return p.res } }
+    nil
+}
+// Read one picture the engine wrote. It is missing while the engine still
+// writes in a folder of its own, or when the slide was not drawn.
+fn read_picture(path){
+    if path == "" || picture(path) != nil || !fs.exists(path) { return }
+    // binary_resource: makepad platform/src/script/res.rs, in the widgets prelude.
+    let res = try { binary_resource(fs.read_bytes(path)) } catch { nil }
+    if res != nil { pictures.push({path: path res: res}) }
+}
+// Read pictures one per tick: a read takes a few milliseconds and a handler
+// gets 64, so a deck's worth in one handler can run out of time.
+let warm_seq = 0
+fn warm(paths, done){
+    warm_seq = warm_seq + 1
+    warm_step(paths, 0, warm_seq, done)
+}
+fn warm_step(paths, i, seq, done){
+    if seq != warm_seq { return }
+    if i >= paths.len() { done() return }
+    read_picture(paths[i])
+    start_timeout(0.005, || warm_step(paths, i + 1, seq, done))
+}
+fn forget_pictures(prefix){
+    let kept = []
+    for p in pictures { if p.path.search(prefix) != 0 { kept.push(p) } }
+    pictures = kept
+}
+fn thumb_of(i){
+    if cur == nil || i >= cur.thumbs.len() { return nil }
+    picture(cur.thumbs[i])
+}
+fn readable_thumbs(){
+    let n = 0
+    for i in cur.thumbs.len() { if thumb_of(i) != nil { n = n + 1 } }
+    n
+}
+fn first_points(d, most){
+    let out = []
+    if d.slides.len() > 0 {
+        for b in lines_of(d.slides[0].points) { if out.len() < most { out.push("• " + b) } }
+    }
+    out
+}
+fn sent_title(i){
+    if cur != nil && i < cur.sent.len() { return cur.sent[i].title }
+    "Slide " + (i + 1)
+}
+fn sent_points(i, most){
+    let out = []
+    if cur != nil && i < cur.sent.len() {
+        for b in cur.sent[i].bullets { if out.len() < most { out.push("• " + b) } }
+    }
+    out
+}
+
+// ---- layout numbers -----------------------------------------------------------
+
+fn on_app_resize(width, height){
+    if width <= 0 || height <= 0 { return }
+    app_width = width
+    app_height = height
+    remember()
+    if screen == "review" { ui.grid.render() }
+    if screen == "slide" { ui.stage.render() }
+}
+fn content_width(){ min(app_width, 840) - 32 }
+fn columns(){
+    let w = content_width()
+    if w < 520 { return 2 }
+    if w < 760 { return 3 }
+    4
+}
+fn cell_h(){ floor((content_width() - (columns() - 1) * 12) / columns() * 9 / 16) }
+fn slide_w(){
+    let w = min(app_width, 840) - 40
+    let h = app_height - 56 - 92 - 56 - 48
+    if w * 9 / 16 > h { return floor(h * 16 / 9) }
+    floor(w)
+}
+fn slide_h(){ floor(slide_w() * 9 / 16) }
+fn rows_of(n, cols){
+    let rows = []
+    let row = []
+    for i in n {
+        row.push(i)
+        if row.len() == cols { rows.push(row) row = [] }
+    }
+    if row.len() > 0 { rows.push(row) }
+    rows
+}
+
+// ---- screens ------------------------------------------------------------------
+
+fn go(name){
+    screen = name
+    ui.decks_pane.set_visible(name == "decks")
+    ui.outline_pane.set_visible(name == "outline")
+    ui.make_pane.set_visible(name == "make")
+    ui.review_pane.set_visible(name == "review")
+    ui.slide_pane.set_visible(name == "slide")
+    ui.export_pane.set_visible(name == "export")
+    remember()
+}
+// A host restyle (light/dark, a new style) runs this body again, and every
+// top-level let starts over (makepad widgets/src/splash.rs,
+// eval_styled_body). What the app puts on `mod` at run time is left alone,
+// so the working state is kept there too and recalled after a restyle.
+fn remember(){
+    // Not before boot: the shell sizes the app first, and an early copy of
+    // the empty start state would be recalled instead of the stored decks.
+    if !booted { return }
+    mod.quickdeck_state = {decks: decks cur: cur screen: screen view_index: view_index export_format: export_format
+        app_width: app_width app_height: app_height}
+}
+fn recall(){
+    let kept = try { mod.quickdeck_state } catch { nil }
+    if kept == nil { return false }
+    decks = kept.decks
+    cur = kept.cur
+    screen = kept.screen
+    view_index = kept.view_index
+    export_format = kept.export_format
+    app_width = kept.app_width
+    app_height = kept.app_height
+    true
+}
+// The stored decks, read once (a host restyle recalls them instead), then
+// the first screen.
+fn boot(){
+    if !booted {
+        if !recall() { load() }
+        booted = true
+    }
+    show_screen()
+    shown = true
+}
+fn show_screen(){
+    // A host restyle runs the body again: show the screen the person was on.
+    if cur == nil || screen == "decks" { show_decks() return }
+    if screen == "outline" { open_outline() return }
+    // A run cut short by the restyle can't report back: start it again.
+    if screen == "make" { open_outline() return }
+    if screen == "slide" { render_view() go("slide") return }
+    if screen == "export" { open_export() return }
+    open_review()
+}
+// A handler that overruns its 64 ms stops where it is, and on a busy
+// machine the first boot can. Each try sets up the next before it boots,
+// until one boot has run to its end.
+fn boot_try(left){
+    if shown { return }
+    if left > 1 { start_timeout(0.5, || boot_try(left - 1)) }
+    boot()
+}
+start_timeout(0.05, || boot_try(8))
+
+fn show_decks(){
+    // A deck nobody wrote a word in is not kept.
+    let kept = []
+    for d in decks { if d.built > 0 || slide_count(d) > 0 || point_count(d) > 0 { kept.push(d) } }
+    if kept.len() != decks.len() { decks = kept save_now() }
+    decks = newest_first(decks)
+    cur = nil
+    ui.decks_bar.set_visible(decks.len() > 0)
+    ui.deck_list.render()
+    go("decks")
+    let firsts = []
+    for d in decks { if d.thumbs.len() > 0 { firsts.push(d.thumbs[0]) } }
+    warm(firsts, || { if screen == "decks" { ui.deck_list.render() } })
+}
+fn new_deck(){
+    cur = {id: new_id() slides: [{title: "" points: ""}] made: time_now() edited: time_now() built: 0 stale: true file: "" count: 0 sent: [] thumbs: [] exports: [] gen: 0}
+    decks.push(cur)
+    open_outline()
+}
+fn open_deck(d){
+    cur = d
+    if d.built == 0 || d.stale || d.count == 0 { open_outline() return }
+    open_review()
+}
+
+// ---- 1 Outline ----------------------------------------------------------------
+
+fn open_outline(){
+    confirm_delete = false
+    ui.slides_view.render()
+    outline_hint("")
+    go("outline")
+}
+fn title_hint(i){ if i == 0 { return "Deck title, e.g. Northern Lights" } "Slide title" }
+fn points_hint(i){ if i == 0 { return "Points, one per line (optional)" } "Points, one per line" }
+fn slide_kind(i){ "SLIDE " + (i + 1) }
+fn outline_hint(problem){
+    outline_issue = problem
+    ui.outline_status.render()
+}
+fn outline_summary(){
+    if cur == nil || slide_count(cur) == 0 { return "Start with the deck's title." }
+    plural(slide_count(cur), "slide", "slides") + " · " + plural(point_count(cur), "point", "points")
+}
+fn touched(){
+    cur.edited = time_now()
+    cur.stale = true
+    outline_hint("")
+    schedule_save()
+}
+fn set_title(i, text){
+    if cur == nil || i >= cur.slides.len() { return }
+    let s = cur.slides[i]
+    s.title = text
+    touched()
+}
+fn set_points(i, text){
+    if cur == nil || i >= cur.slides.len() { return }
+    let s = cur.slides[i]
+    s.points = text
+    touched()
+}
+fn add_slide(){
+    if cur.slides.len() >= SLIDE_LIMIT { outline_hint("A deck holds up to " + SLIDE_LIMIT + " slides.") return }
+    cur.slides.push({title: "" points: ""})
+    touched()
+    ui.slides_view.render()
+}
+fn remove_slide(i){
+    if cur.slides.len() < 2 { return }
+    cur.slides.remove(i)
+    touched()
+    ui.slides_view.render()
+}
+// What to fix before the outline can become a deck; "" when it can.
+fn outline_problem(){
+    let n = 0
+    for i in cur.slides.len() {
+        let s = cur.slides[i]
+        let points = lines_of(s.points)
+        if s.title.trim() == "" && points.len() > 0 { return "Slide " + (i + 1) + " has points but no title." }
+        if points.len() > POINT_LIMIT { return "Slide " + (i + 1) + " has more than " + POINT_LIMIT + " points; split it in two." }
+        if s.title.trim() != "" { n = n + 1 }
+    }
+    if n == 0 { return "Give the first slide a title to start." }
+    ""
+}
+
+// ---- 2 Generate ---------------------------------------------------------------
+
+fn generate(){
+    if busy { return }
+    let problem = outline_problem()
+    if problem != "" { outline_hint(problem) return }
+    let slides = []
+    for s in cur.slides {
+        if s.title.trim() != "" { slides.push({title: s.title.trim() bullets: lines_of(s.points)}) }
+    }
+    if entries_needed(slides.len()) > ENTRY_LIMIT || !save_now() { outline_hint("Quick Deck's storage is full: delete a deck you no longer need first.") return }
+    busy = true
+    make_seq = make_seq + 1
+    let seq = make_seq
+    make_total = slides.len()
+    make_done = 0
+    make_failed = ""
+    make_error = ""
+    render_error = ""
+    make_gen = cur.gen + 1
+    make_sent = slides
+    make_thumbs = []
+    make_count = 0
+    make_note = "Laying out " + plural(slides.len(), "slide", "slides") + "…"
+    show_make()
+    go("make")
+    let out = gen_dir(cur, make_gen) + "/deck.deckcraft"
+    make_file = out
+    make_paths = [out]
+    deck_call("new", {out: out slides: slides}, fn(r){
+        if seq != make_seq { return }
+        if !r.is_ok { fail_make("new", r.error) return }
+        make_note = "Checking the deck…"
+        show_make()
+        // Read the deck back: the slides the engine actually made.
+        deck_call("info", {path: make_file}, fn(i){
+            if seq != make_seq { return }
+            if !i.is_ok { fail_make("info", i.error) return }
+            make_count = optional(r.data, "slides", slides.len())
+            let made = optional(i.data, "slides", nil)
+            if made != nil { make_count = made.len() }
+            draw_next(seq, 0)
+        })
+    })
+}
+fn draw_next(seq, i){
+    if i >= make_count { finish(seq) return }
+    make_note = "Drawing slide " + (i + 1) + " of " + make_count + "…"
+    show_make()
+    let out = gen_dir(cur, make_gen) + "/" + (i + 1) + ".png"
+    make_paths.push(out)
+    deck_call("render", {path: make_file slide: i out: out max_side: 480}, fn(r){
+        if seq != make_seq { return }
+        if r.is_ok {
+            make_thumbs.push(out)
+            // One read per answer, so the review opens with its pictures.
+            read_picture(out)
+        } else {
+            make_thumbs.push("")
+            if render_error == "" { render_error = r.error }
+        }
+        make_done = i + 1
+        draw_next(seq, i + 1)
+    })
+}
+fn finish(seq){
+    busy = false
+    make_paths = []
+    // The new generation is complete: it replaces the previous one, whose
+    // files go now.
+    let old_paths = []
+    for p in cur.thumbs { old_paths.push(p) }
+    old_paths.push(cur.file)
+    let old_dir = gen_dir(cur, cur.gen)
+    cur.file = make_file
+    cur.count = make_count
+    cur.sent = make_sent
+    cur.thumbs = make_thumbs
+    cur.gen = make_gen
+    cur.built = time_now()
+    cur.edited = cur.built
+    cur.stale = false
+    save_now()
+    for p in old_paths { remove_if(p) }
+    remove_dir_if_empty(old_dir)
+    forget_pictures(old_dir + "/")
+    open_review()
+}
+// A run that stopped: what it wrote goes, the previous deck stays.
+fn fail_make(method, error){
+    make_failed = method
+    make_error = error
+    busy = false
+    drop_run()
+    show_make()
+}
+fn drop_run(){
+    for p in make_paths { remove_if(p) }
+    make_paths = []
+    remove_dir_if_empty(gen_dir(cur, make_gen))
+}
+fn show_make(){
+    ui.make_card.set_visible(make_failed == "")
+    ui.fail_card.set_visible(make_failed != "")
+    ui.make_bar.set_visible(make_failed != "")
+    ui.make_title.set_text("Making “" + deck_title(cur) + "”")
+    ui.make_detail.set_text(make_note)
+    ui.make_dots.render()
+    if make_failed != "" {
+        ui.fail_error.set_text(make_error)
+        if make_error.search("not granted") >= 0 || make_error.search("no service answers") >= 0 || make_error.search("system apps only") >= 0 {
+            ui.fail_title.set_text("The deck engine isn't available here")
+            ui.fail_help.set_text("This OctoSense build doesn't let Quick Deck use its deck engine. Your outline is saved; it becomes a deck where the engine is available.")
+        } else if make_error.search("left in this storage") >= 0 {
+            ui.fail_title.set_text("Quick Deck's storage is full")
+            ui.fail_help.set_text("Delete a deck you no longer need, then try again. Your outline is saved.")
+        } else {
+            ui.fail_title.set_text("Quick Deck couldn't make the deck")
+            ui.fail_help.set_text("The deck engine stopped with the message above. Your outline is saved, and the last deck you made from it is kept.")
+        }
+    }
+}
+fn leave_make(){
+    // A late answer from the engine is ignored from here on, and what the
+    // run wrote goes.
+    make_seq = make_seq + 1
+    if busy { drop_run() }
+    busy = false
+    open_outline()
+}
+
+// ---- 3 Review -----------------------------------------------------------------
+
+fn open_review(){
+    confirm_delete = false
+    ui.delete_btn.set_text("Delete deck")
+    ui.review_title.set_text(deck_title(cur))
+    ui.review_meta.set_text(plural(cur.count, "slide", "slides") + " · made " + ago(cur.built))
+    ui.review_note.set_visible(false)
+    ui.grid.render()
+    go("review")
+    let id = cur.id
+    warm(cur.thumbs, || review_ready(id))
+}
+// Once the pictures are read: say why any slide shows its text instead.
+fn review_ready(id){
+    if cur == nil || cur.id != id || screen != "review" { return }
+    let readable = readable_thumbs()
+    let note = ""
+    if render_error != "" && readable < cur.count { note = "Some slides couldn't be drawn, so they show their text: " + render_error }
+    else if cur.count > 0 && readable == 0 { note = "The deck is made, but its slide pictures can't be read here, so each slide shows its text." }
+    ui.review_note.set_text(note)
+    ui.review_note.set_visible(note != "")
+    ui.grid.render()
+}
+fn delete_deck(){
+    if !confirm_delete {
+        confirm_delete = true
+        ui.delete_btn.set_text("Tap again to delete “" + deck_title(cur) + "”")
+        return
+    }
+    remove_files(cur)
+    forget_pictures("decks/" + cur.id + "/")
+    let kept = []
+    for d in decks { if d.id != cur.id { kept.push(d) } }
+    decks = kept
+    save_now()
+    show_decks()
+}
+
+// ---- the slide view -------------------------------------------------------------
+
+fn open_slide(i){
+    view_index = i
+    render_view()
+    go("slide")
+}
+fn render_view(){
+    remember()
+    view_seq = view_seq + 1
+    let seq = view_seq
+    view_res = nil
+    ui.slide_count.set_text("" + (view_index + 1) + " of " + cur.count)
+    if view_index + 1 >= cur.count { ui.next_btn.set_text("Done") } else { ui.next_btn.set_text("Next") }
+    ui.stage.render()
+    ui.strip.render()
+    if cur.file == "" { return }
+    let side = max(960, min(2048, slide_w() * 2))
+    deck_call("render", {path: cur.file slide: view_index out: "view.png" max_side: side}, fn(r){
+        if seq != view_seq || !r.is_ok || !fs.exists("view.png") { return }
+        view_res = try { binary_resource(fs.read_bytes("view.png")) } catch { nil }
+        ui.stage.render()
+    })
+}
+fn strip_color(i){ if i == view_index { return ui_primary } ui_border }
+fn jump_slide(i){
+    if i == view_index { return }
+    view_index = i
+    render_view()
+}
+fn step_slide(d){
+    let n = view_index + d
+    if n < 0 { return }
+    if n >= cur.count { open_review() return }
+    view_index = n
+    render_view()
+}
+
+// ---- 4 Export -----------------------------------------------------------------
+
+fn open_export(){
+    ui.export_name.set_text(deck_title(cur) + " · " + plural(cur.count, "slide", "slides"))
+    export_note("", false)
+    ui.done_btn.set_visible(cur.exports.len() > 0)
+    choose(export_format)
+    go("export")
+}
+fn choose(id){
+    export_format = id
+    remember()
+    ui.export_btn.set_text("Export as " + format_name(id))
+    ui.formats.render()
+    ui.results.render()
+}
+fn export_note(message, failed){
+    export_message = message
+    export_failed = failed
+    ui.export_line.render()
+}
+fn export_now(){
+    if busy { return }
+    busy = true
+    let format = export_format
+    export_note("Exporting " + format_name(format) + "…", false)
+    let out = "decks/" + cur.id + "/" + safe_name(deck_title(cur)) + "." + format
+    deck_call("convert", {path: cur.file out: out}, fn(r){
+        busy = false
+        if !r.is_ok {
+            if r.error.search("left in this storage") >= 0 { export_note("Quick Deck's storage is full: delete a deck you no longer need, then export again. (" + r.error + ")", true) return }
+            export_note("Couldn't export: " + r.error, true)
+            return
+        }
+        let kept = []
+        for e in cur.exports { if e.format != format { kept.push(e) } }
+        kept.push({format: format out: out bytes: optional(r.data, "bytes", 0) at: time_now()})
+        cur.exports = kept
+        save_now()
+        export_note("Saved in Quick Deck's storage.", false)
+        ui.done_btn.set_visible(true)
+        ui.results.render()
+    })
+}
+
+// ---- styles -------------------------------------------------------------------
+
+let ink = ui_ink
+let muted = ui_muted
+let paper_ink = #x242424      // text on a slide, which stays white
+let paper_dim = #x5c5c5c
+let deck_orange = #xf26b1d
+let done_green = #x2f9e5a
+let Header = View{width: Fill height: 56 flow: Right align: Align{y: 0.5} padding: Inset{left: 8 right: 8} spacing: 4}
+let Back = UiButton{}
+let Quiet = UiButton{height: 36 padding: Inset{left: 10 right: 10} draw_text +: {color: muted color_hover: ink color_down: ink color_focus: ink text_style: theme.font_regular{font_size: 13}}}
+let Danger = UiButton{draw_text +: {color: ui_danger color_hover: ui_danger color_down: ui_danger color_focus: ui_danger}}
+let Bar = View{width: Fill height: Fit flow: Down spacing: 8 padding: Inset{left: 16 right: 16 top: 10 bottom: 16}}
+let Rule = SolidView{width: Fill height: 1 draw_bg.color: ui_border}
+let SegOn = RoundedView{width: Fill height: 4 show_bg: true draw_bg +: {color: ui_primary border_radius: 2.0}}
+let SegOff = RoundedView{width: Fill height: 4 show_bg: true draw_bg +: {color: ui_border border_radius: 2.0}}
+let StepText = Label{padding: 0 text: "" draw_text +: {color: muted text_style: theme.font_bold{font_size: 12}}}
+let Steps = View{width: Fill height: Fit flow: Down spacing: 8 padding: Inset{left: 16 right: 16 bottom: 4}}
+let SegRow = View{width: Fill height: 4 flow: Right spacing: 6}
+let Section = Label{padding: 0 text: "" draw_text +: {color: muted text_style: theme.font_bold{font_size: 12}}}
+let Strong = Label{padding: 0 width: Fill text: "" flow: Flow.Right{wrap: true} draw_text +: {color: ink text_style: theme.font_bold{font_size: 16}}}
+let Badge = RoundedView{width: 28 height: 28 align: Align{x: 0.5 y: 0.5} show_bg: true draw_bg +: {color: ui_field border_radius: 14.0}}
+let BadgeText = Label{padding: 0 text: "" draw_text +: {color: ink text_style: theme.font_bold{font_size: 13}}}
+let Tag = RoundedView{width: Fit height: Fit padding: Inset{left: 7 right: 7 top: 3 bottom: 3} show_bg: true draw_bg +: {color: ui_field border_radius: 6.0}}
+let TagText = Label{padding: 0 text: "" draw_text +: {color: muted text_style: theme.font_bold{font_size: 11}}}
+let Points = UiField{is_multiline: true height: Fit min_height: 96}
+// A slide drawn from its text, where the engine's picture can't be read.
+let Paper = RoundedView{width: Fill flow: Down spacing: 4 padding: Inset{left: 10 right: 10 top: 9 bottom: 9} show_bg: true
+    draw_bg +: {color: #xffffff border_radius: 3.0 border_size: 1.0 border_color: ui_border}}
+let PaperTitle = Label{padding: 0 width: Fill text: "" flow: Flow.Right{wrap: true} draw_text +: {color: paper_ink text_style: theme.font_bold{font_size: 9}}}
+let PaperLine = Label{padding: 0 width: Fill text: "" draw_text +: {color: paper_dim text_style: theme.font_regular{font_size: 7}}}
+let Frame = RoundedView{width: Fill padding: 1 show_bg: true draw_bg +: {color: ui_border border_radius: 2.0}}
+let Opt = RoundedView{width: Fill height: Fit flow: Right spacing: 14 padding: 16 align: Align{y: 0.5} show_bg: true
+    draw_bg +: {color: ui_surface border_radius: 14.0 border_size: 1.0 border_color: ui_border}}
+let OptOn = Opt{draw_bg +: {border_size: 2.0 border_color: ui_primary}}
+let Radio = RoundedView{width: 22 height: 22 align: Align{x: 0.5 y: 0.5} show_bg: true draw_bg +: {color: #x00000000 border_radius: 11.0 border_size: 2.0 border_color: ui_border}}
+let RadioOn = Radio{draw_bg +: {border_color: ui_primary}}
+let Dot = RoundedView{width: 10 height: 10 show_bg: true draw_bg +: {color: ui_primary border_radius: 5.0}}
+let Tick = RoundedView{width: 10 height: 10 show_bg: true draw_bg +: {color: ui_primary border_radius: 5.0}}
+let Pending = RoundedView{width: 10 height: 10 show_bg: true draw_bg +: {color: ui_border border_radius: 5.0}}
+
+SolidView{width: Fill height: Fill flow: Overlay align: Align{x: 0.5} draw_bg.color: ui_page
+
+    // ---- Decks: the app's own list ----
+    decks_pane := View{width: Fill max_width: 840 height: Fill flow: Down
+        ScrollYView{width: Fill height: Fill flow: Down spacing: 14 padding: Inset{left: 16 right: 16 top: 20 bottom: 24}
+            View{width: Fill height: Fit flow: Right spacing: 12 align: Align{y: 0.5}
+                RoundedView{width: 48 height: 48 flow: Overlay align: Align{x: 0.5 y: 0.5} show_bg: true draw_bg +: {color: deck_orange border_radius: 12.0}
+                    RoundedView{width: 30 height: 20 margin: Inset{left: 9 bottom: 9} show_bg: true draw_bg +: {color: #xffc9a8 border_radius: 3.0}}
+                    RoundedView{width: 30 height: 20 margin: Inset{right: 7 top: 7} flow: Down spacing: 3 padding: Inset{left: 5 top: 5} show_bg: true draw_bg +: {color: #xffffff border_radius: 3.0}
+                        RoundedView{width: 14 height: 3 show_bg: true draw_bg +: {color: #x2b2b2b border_radius: 1.5}}
+                        RoundedView{width: 18 height: 2 show_bg: true draw_bg +: {color: #xf26b1d border_radius: 1.0}}
+                        RoundedView{width: 12 height: 2 show_bg: true draw_bg +: {color: #xbdbdbd border_radius: 1.0}}
+                    }
+                }
+                View{width: Fill height: Fit flow: Down spacing: 2
+                    UiTitle{text: "Quick Deck" draw_text.text_style.font_size: 24}
+                    UiCaption{text: "Outline it, get slides."}
+                }
+            }
+            deck_list := View{width: Fill height: Fit flow: Down spacing: 10 on_render: || {
+                // Always one child: a render that yields none keeps the last rows.
+                View{width: Fill height: 1}
+                if decks.len() == 0 {
+                    UiCard{padding: 24 spacing: 14
+                        Label{padding: 0 width: Fill text: "Turn an outline into slides" draw_text +: {color: ink text_style: theme.font_bold{font_size: 20}}}
+                        UiCaption{text: "Write a title and a few points for each slide. Quick Deck lays them out, shows you every slide, and exports PowerPoint or PDF."}
+                        UiPrimary{width: Fill text: "New deck" on_click: || new_deck()}
+                    }
+                    View{width: Fill height: Fit flow: Down spacing: 12 padding: Inset{left: 8 right: 8 top: 10}
+                        Section{text: "HOW IT WORKS"}
+                        for step in STEPS {
+                            View{width: Fill height: Fit flow: Right spacing: 12 align: Align{y: 0.5}
+                                Badge{BadgeText{text: step.n}}
+                                View{width: Fill height: Fit flow: Down spacing: 2
+                                    Strong{text: step.name draw_text.text_style.font_size: 14}
+                                    UiCaption{text: step.note}
+                                }
+                            }
+                        }
+                    }
+                }
+                if decks.len() > 0 { Section{text: "YOUR DECKS"} }
+                for d in decks {
+                    GestureView{width: Fill height: Fit on_tap: |x, y| open_deck(d)
+                        UiCard{flow: Right spacing: 14 padding: 12 align: Align{y: 0.5}
+                            if d.thumbs.len() > 0 && picture(d.thumbs[0]) != nil {
+                                Frame{width: 114 height: 65 Image{width: Fill height: Fill fit: ImageFit.Stretch src: picture(d.thumbs[0])}}
+                            } else {
+                                Paper{width: 114 height: 65 spacing: 3 padding: Inset{left: 7 right: 7 top: 7 bottom: 7}
+                                    PaperTitle{text: deck_title(d) draw_text.text_style.font_size: 8}
+                                    for line in first_points(d, 3) { PaperLine{text: line draw_text.text_style.font_size: 5.5} }
+                                }
+                            }
+                            View{width: Fill height: Fit flow: Down spacing: 5
+                                Strong{text: deck_title(d)}
+                                UiCaption{text: deck_meta(d)}
+                                if d.exports.len() > 0 {
+                                    View{width: Fill height: Fit flow: Right spacing: 6
+                                        for e in d.exports { Tag{TagText{text: format_tag(e.format)}} }
+                                    }
+                                }
+                            }
+                            Label{padding: 0 text: "›" draw_text +: {color: muted text_style: theme.font_regular{font_size: 22}}}
+                        }
+                    }
+                }
+            }}
+        }
+        decks_bar := View{visible: false width: Fill height: Fit flow: Down
+            Rule{}
+            Bar{UiPrimary{width: Fill text: "New deck" on_click: || new_deck()}}
+        }
+    }
+
+    // ---- 1 Outline ----
+    outline_pane := View{visible: false width: Fill max_width: 840 height: Fill flow: Down
+        Header{Back{text: "‹ Decks" on_click: || show_decks()}}
+        Steps{SegRow{SegOn{} SegOff{} SegOff{} SegOff{}} StepText{text: "STEP 1 OF 4 · OUTLINE"}}
+        ScrollYView{width: Fill height: Fill flow: Down spacing: 12 padding: Inset{left: 16 right: 16 top: 8 bottom: 24}
+            UiTitle{text: "Outline"}
+            UiCaption{text: "Each card is one slide: a title, then its points, one per line."}
+            slides_view := View{width: Fill height: Fit flow: Down spacing: 12 on_render: || {
+                View{width: Fill height: 1}
+                if cur != nil {
+                    for i in cur.slides.len() {
+                        UiCard{spacing: 10 padding: 16
+                            View{width: Fill height: Fit flow: Right spacing: 10 align: Align{y: 0.5}
+                                Badge{BadgeText{text: "" + (i + 1)}}
+                                Section{width: Fill text: slide_kind(i)}
+                                if cur.slides.len() > 1 { Quiet{text: "Remove" on_click: || remove_slide(i)} }
+                            }
+                            UiField{text: cur.slides[i].title empty_text: title_hint(i) on_change: |text| set_title(i, text)}
+                            Points{text: cur.slides[i].points empty_text: points_hint(i) on_change: |text| set_points(i, text)}
+                        }
+                    }
+                }
+            }}
+            UiButton{text: "+ Add slide" on_click: || add_slide()}
+        }
+        Rule{}
+        Bar{
+            outline_status := View{width: Fill height: Fit flow: Down on_render: || {
+                View{width: Fill height: 0}
+                if outline_issue != "" {
+                    Label{padding: 0 width: Fill text: outline_issue flow: Flow.Right{wrap: true} draw_text +: {color: ui_danger text_style: theme.font_bold{font_size: 13}}}
+                } else {
+                    UiCaption{text: outline_summary()}
+                }
+            }}
+            UiPrimary{width: Fill text: "Generate deck" on_click: || generate()}
+        }
+    }
+
+    // ---- 2 Generate ----
+    make_pane := View{visible: false width: Fill max_width: 840 height: Fill flow: Down
+        Header{Back{text: "‹ Outline" on_click: || leave_make()}}
+        Steps{SegRow{SegOn{} SegOn{} SegOff{} SegOff{}} StepText{text: "STEP 2 OF 4 · GENERATE"}}
+        ScrollYView{width: Fill height: Fill flow: Down spacing: 16 padding: Inset{left: 16 right: 16 top: 24 bottom: 24}
+            make_card := UiCard{padding: Inset{left: 24 right: 24 top: 32 bottom: 32} spacing: 14 align: Align{x: 0.5}
+                LoadingSpinner{width: 44 height: 44 draw_bg +: {color: ui_primary}}
+                make_title := Strong{align: Align{x: 0.5} text: "" draw_text.text_style.font_size: 20}
+                make_detail := UiCaption{align: Align{x: 0.5} text: ""}
+                make_dots := View{width: Fill height: Fit flow: Flow.Right{wrap: true} align: Align{x: 0.5} spacing: 6 on_render: || {
+                    View{width: 0 height: 10}
+                    for i in make_total {
+                        if i < make_done { Tick{} } else { Pending{} }
+                    }
+                }}
+            }
+            fail_card := UiCard{visible: false padding: 24 spacing: 12
+                fail_title := Strong{text: "" draw_text.text_style.font_size: 20}
+                RoundedView{width: Fill height: Fit padding: 12 show_bg: true draw_bg +: {color: ui_field border_radius: 10.0}
+                    fail_error := Label{width: Fill padding: 0 text: "" flow: Flow.Right{wrap: true} draw_text +: {color: ink text_style: theme.font_code{font_size: 12}}}
+                }
+                fail_help := UiCaption{text: ""}
+            }
+        }
+        make_bar := View{visible: false width: Fill height: Fit flow: Down
+            Rule{}
+            Bar{
+                UiPrimary{width: Fill text: "Try again" on_click: || generate()}
+                UiButton{width: Fill text: "Edit outline" on_click: || leave_make()}
+            }
+        }
+    }
+
+    // ---- 3 Review ----
+    review_pane := View{visible: false width: Fill max_width: 840 height: Fill flow: Down
+        Header{
+            Back{text: "‹ Outline" on_click: || open_outline()}
+            View{width: Fill height: 1}
+            Back{text: "Decks" on_click: || show_decks()}
+        }
+        Steps{SegRow{SegOn{} SegOn{} SegOn{} SegOff{}} StepText{text: "STEP 3 OF 4 · REVIEW"}}
+        ScrollYView{width: Fill height: Fill flow: Down spacing: 12 padding: Inset{left: 16 right: 16 top: 8 bottom: 24}
+            review_title := UiTitle{text: ""}
+            review_meta := UiCaption{text: ""}
+            review_note := UiCaption{visible: false text: ""}
+            grid := View{width: Fill height: Fit flow: Down spacing: 16 padding: Inset{top: 6} on_render: || {
+                View{width: Fill height: 1}
+                if cur != nil {
+                    for row in rows_of(cur.count, columns()) {
+                        View{width: Fill height: Fit flow: Right spacing: 12
+                            for i in row {
+                                GestureView{width: Fill height: Fit flow: Down spacing: 6 on_tap: |x, y| open_slide(i)
+                                    if thumb_of(i) != nil {
+                                        Frame{height: Fit Image{width: Fill height: Fit fit: ImageFit.Horizontal src: thumb_of(i)}}
+                                    } else {
+                                        Paper{height: cell_h()
+                                            PaperTitle{text: sent_title(i)}
+                                            for line in sent_points(i, 2) { PaperLine{text: line} }
+                                        }
+                                    }
+                                    Label{padding: 0 text: "" + (i + 1) draw_text +: {color: muted text_style: theme.font_regular{font_size: 12}}}
+                                }
+                            }
+                            for k in columns() - row.len() { View{width: Fill height: 1} }
+                        }
+                    }
+                }
+            }}
+        }
+        Rule{}
+        // Delete stays in the pinned bar, under the one primary: at the end of
+        // the scroll content a short window cut it in half at the fold.
+        Bar{
+            UiPrimary{width: Fill text: "Export" on_click: || open_export()}
+            delete_btn := Danger{width: Fill text: "Delete deck" on_click: || delete_deck()}
+        }
+    }
+
+    // ---- the slide view ----
+    slide_pane := View{visible: false width: Fill max_width: 840 height: Fill flow: Down
+        View{width: Fill height: 56 flow: Overlay align: Align{y: 0.5}
+            slide_count := Label{width: Fill align: Align{x: 0.5} padding: 0 text: "" draw_text +: {color: ink text_style: theme.font_bold{font_size: 15}}}
+            Header{Back{text: "‹ All slides" on_click: || open_review()}}
+        }
+        GestureView{width: Fill height: Fill on_swipe: |dx, dy| { if dx < 0 { step_slide(1) } else if dx > 0 { step_slide(-1) } }
+            stage := View{width: Fill height: Fill flow: Down align: Align{x: 0.5 y: 0.42} padding: 20 on_render: || {
+                View{width: 1 height: 1}
+                if cur != nil && view_index < cur.count {
+                    if view_res != nil {
+                        RoundedShadowView{width: Fit height: Fit show_bg: true draw_bg +: {color: #xffffff border_radius: 4.0 shadow_color: #x00000030 shadow_radius: 14.0}
+                            Image{width: slide_w() height: slide_h() fit: ImageFit.Stretch src: view_res}
+                        }
+                    } else {
+                        if thumb_of(view_index) != nil {
+                            RoundedShadowView{width: Fit height: Fit show_bg: true draw_bg +: {color: #xffffff border_radius: 4.0 shadow_color: #x00000030 shadow_radius: 14.0}
+                                Image{width: slide_w() height: slide_h() fit: ImageFit.Stretch src: thumb_of(view_index)}
+                            }
+                        } else {
+                            Paper{width: slide_w() height: slide_h() spacing: 10 padding: Inset{left: 28 right: 28 top: 26 bottom: 26}
+                                PaperTitle{text: sent_title(view_index) draw_text.text_style.font_size: 22}
+                                for line in sent_points(view_index, 8) { PaperLine{text: line draw_text.text_style.font_size: 14} }
+                            }
+                        }
+                    }
+                }
+            }}
+        }
+        // The thumbnail pane of the original, as a strip.
+        strip := ScrollXView{width: Fill height: Fit flow: Right spacing: 8 align: Align{x: 0.5} padding: Inset{left: 16 right: 16 top: 4 bottom: 12} on_render: || {
+            View{width: 0 height: 1}
+            if cur != nil {
+                for i in cur.count {
+                    GestureView{width: Fit height: Fit on_tap: |x, y| jump_slide(i)
+                        RoundedView{width: Fit height: Fit padding: 2 show_bg: true draw_bg +: {color: strip_color(i) border_radius: 4.0}
+                            if thumb_of(i) != nil { Image{width: 64 height: 36 fit: ImageFit.Stretch src: thumb_of(i)} }
+                            else { Paper{width: 64 height: 36 padding: 4 PaperLine{text: "" + (i + 1)}} }
+                        }
+                    }
+                }
+            }
+        }}
+        Rule{}
+        Bar{
+            View{width: Fill height: Fit flow: Right spacing: 10
+                UiButton{width: Fill text: "Previous" on_click: || step_slide(-1)}
+                next_btn := UiPrimary{width: Fill text: "Next" on_click: || step_slide(1)}
+            }
+        }
+    }
+
+    // ---- 4 Export ----
+    export_pane := View{visible: false width: Fill max_width: 840 height: Fill flow: Down
+        Header{
+            Back{text: "‹ Slides" on_click: || open_review()}
+            View{width: Fill height: 1}
+            done_btn := Back{visible: false text: "Done" on_click: || show_decks()}
+        }
+        Steps{SegRow{SegOn{} SegOn{} SegOn{} SegOn{}} StepText{text: "STEP 4 OF 4 · EXPORT"}}
+        ScrollYView{width: Fill height: Fill flow: Down spacing: 12 padding: Inset{left: 16 right: 16 top: 8 bottom: 24}
+            UiTitle{text: "Export"}
+            export_name := UiCaption{text: ""}
+            formats := View{width: Fill height: Fit flow: Down spacing: 10 padding: Inset{top: 4} on_render: || {
+                View{width: Fill height: 1}
+                for f in FORMATS {
+                    GestureView{width: Fill height: Fit on_tap: |x, y| choose(f.id)
+                        if f.id == export_format {
+                            OptOn{
+                                RadioOn{Dot{}}
+                                View{width: Fill height: Fit flow: Down spacing: 3
+                                    Strong{text: f.name}
+                                    UiCaption{text: f.note}
+                                }
+                                Tag{TagText{text: f.ext}}
+                            }
+                        } else {
+                            Opt{
+                                Radio{}
+                                View{width: Fill height: Fit flow: Down spacing: 3
+                                    Strong{text: f.name}
+                                    UiCaption{text: f.note}
+                                }
+                                Tag{TagText{text: f.ext}}
+                            }
+                        }
+                    }
+                }
+            }}
+            results := View{width: Fill height: Fit flow: Down spacing: 8 padding: Inset{top: 8} on_render: || {
+                View{width: Fill height: 1}
+                if cur != nil && cur.exports.len() > 0 {
+                    Section{text: "EXPORTED"}
+                    for e in cur.exports {
+                        UiCard{flow: Right spacing: 12 padding: 14 align: Align{y: 0.5}
+                            RoundedView{width: 28 height: 28 align: Align{x: 0.5 y: 0.5} show_bg: true draw_bg +: {color: done_green border_radius: 14.0}
+                                Label{padding: 0 text: "" draw_text +: {color: #xffffff text_style: theme.font_icons{font_size: 12}}}
+                            }
+                            View{width: Fill height: Fit flow: Down spacing: 3
+                                Strong{text: base_name(e.out) draw_text.text_style.font_size: 14}
+                                UiCaption{text: format_name(e.format) + " · " + size_text(e.bytes) + " · " + ago(e.at)}
+                            }
+                        }
+                    }
+                }
+            }}
+        }
+        Rule{}
+        Bar{
+            export_line := View{width: Fill height: Fit flow: Down on_render: || {
+                View{width: Fill height: 0}
+                if export_message != "" {
+                    if export_failed { Label{padding: 0 width: Fill text: export_message flow: Flow.Right{wrap: true} draw_text +: {color: ui_danger text_style: theme.font_bold{font_size: 13}}} }
+                    else { UiCaption{text: export_message} }
+                }
+            }}
+            export_btn := UiPrimary{width: Fill text: "Export as PowerPoint" on_click: || export_now()}
+        }
+    }
+}

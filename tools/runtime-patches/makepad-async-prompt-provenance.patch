@@ -1,0 +1,833 @@
+diff --git a/platform/script/src/thread.rs b/platform/script/src/thread.rs
+index fa2cbfdf3..cf0804a97 100644
+--- a/platform/script/src/thread.rs
++++ b/platform/script/src/thread.rs
+@@ -96,6 +96,10 @@ pub fn to_index(&self) -> usize {
+ 
+ #[allow(unused)]
+ pub struct ScriptThread {
++    /// Host authority inherited by this execution, including paused resumes.
++    /// Scripts cannot set it. A new independent entry resets the bit; a
++    /// continuation may only restrict it, never promote background work.
++    pub host_prompts_allowed: bool,
+     pub(crate) is_paused: bool,
+     /// Maximum live operand values for this thread. The raw Makepad VM keeps
+     /// its historical one-million-value ceiling; constrained hosts can lower
+@@ -135,6 +139,7 @@ impl ScriptThread {
+     pub fn new(thread_id: ScriptThreadId) -> Self {
+         Self {
+             thread_id,
++            host_prompts_allowed: true,
+             is_paused: false,
+             root_end_scope: None,
+             //last_err: NIL,
+@@ -387,6 +392,9 @@ pub fn def_scope_value(&mut self, heap: &mut ScriptHeap, id: LiveId, value: Scri
+ /// This allows accessing the current thread without borrowing the entire container,
+ /// enabling split borrows between threads and other fields like heap/code.
+ pub struct ScriptThreads {
++    /// Native re-entry while a VM is parked inherits its calling thread's
++    /// authority. The host restores this ceiling when the native frame exits.
++    pub host_prompt_scope: bool,
+     threads: Vec<ScriptThread>,
+     current: usize,
+     /// Cached raw pointer to current thread for fast access in hot paths.
+@@ -399,6 +407,7 @@ pub fn new() -> Self {
+         let mut threads = vec![ScriptThread::new(ScriptThreadId(0))];
+         let cur_ptr = threads.as_mut_ptr();
+         Self {
++            host_prompt_scope: true,
+             threads,
+             current: 0,
+             cur_ptr,
+@@ -407,6 +416,7 @@ pub fn new() -> Self {
+ 
+     pub fn empty() -> Self {
+         Self {
++            host_prompt_scope: true,
+             threads: vec![],
+             current: 0,
+             cur_ptr: std::ptr::null_mut(),
+@@ -476,6 +486,13 @@ pub fn set_current_to_first_unpaused_thread(&mut self) {
+             if !thread.is_paused {
+                 self.current = id;
+                 self.update_ptr();
++                // This selector starts an independent host entry. Resumes use
++                // set_current_thread_id and retain their original authority.
++                if self.cur_ref().calls.is_empty() {
++                    self.cur().host_prompts_allowed = self.host_prompt_scope;
++                } else {
++                    self.cur().host_prompts_allowed &= self.host_prompt_scope;
++                }
+                 return;
+             }
+         }
+@@ -485,11 +502,13 @@ pub fn set_current_to_first_unpaused_thread(&mut self) {
+             .push(ScriptThread::new(ScriptThreadId(id as u32)));
+         self.current = id;
+         self.update_ptr();
++        self.cur().host_prompts_allowed &= self.host_prompt_scope;
+     }
+ 
+     /// Set the current thread by ScriptThreadId
+     pub fn set_current_thread_id(&mut self, thread_id: ScriptThreadId) {
+         self.set_current(thread_id.to_index());
++        self.cur().host_prompts_allowed &= self.host_prompt_scope;
+     }
+ 
+     /// Get the number of threads
+diff --git a/platform/script/std/src/gate.rs b/platform/script/std/src/gate.rs
+index f74915c23..dce1cee8c 100644
+--- a/platform/script/std/src/gate.rs
++++ b/platform/script/std/src/gate.rs
+@@ -9,7 +9,8 @@
+ //! gate installed, everything is allowed, which is the behaviour every
+ //! existing host had. A host that installs a gate answers per heap, so an
+ //! app's allowlist follows its isolate and nothing else.
+-use std::cell::Cell;
++use std::cell::{Cell, RefCell};
++use std::collections::HashMap;
+ 
+ /// `(heap_key, url) -> allowed`. A plain fn so it can live in a thread-local
+ /// without lifetimes; the host keeps its own per-heap table.
+@@ -19,6 +20,37 @@
+     static URL_GATE: Cell<Option<ScriptUrlGate>> = const { Cell::new(None) };
+     static MEDIA_GATE: Cell<Option<ScriptUrlGate>> = const { Cell::new(None) };
+     static SOCKET_GATE: Cell<Option<ScriptSocketGate>> = const { Cell::new(None) };
++    static PROMPT_DENIALS: RefCell<HashMap<usize, usize>> = RefCell::new(HashMap::new());
++}
++
++/// A continuation can deny native prompts without changing the host's surface
++/// baseline. Kept by heap so nested calls into another isolate are independent.
++/// Native widgets and host bridges must intersect this with their own policy.
++pub struct ScriptPromptScope { denied_heap: Option<usize> }
++impl ScriptPromptScope {
++    pub fn enter(heap_key: usize, may_prompt: bool) -> Self {
++        if !may_prompt {
++            PROMPT_DENIALS.with(|denials| *denials.borrow_mut().entry(heap_key).or_default() += 1);
++        }
++        Self { denied_heap: (!may_prompt).then_some(heap_key) }
++    }
++}
++impl Drop for ScriptPromptScope {
++    fn drop(&mut self) {
++        if let Some(heap) = self.denied_heap {
++            PROMPT_DENIALS.with(|denials| {
++                let mut denials = denials.borrow_mut();
++                if let Some(depth) = denials.get_mut(&heap) {
++                    *depth -= 1;
++                    if *depth == 0 { denials.remove(&heap); }
++                }
++            });
++        }
++    }
++}
++
++pub fn script_prompts_allowed(heap_key: usize) -> bool {
++    PROMPT_DENIALS.with(|denials| !denials.borrow().contains_key(&heap_key))
+ }
+ 
+ /// `heap_key -> allowed`: may this heap open what a host list cannot
+@@ -113,6 +145,23 @@ pub fn url_host(url: &str) -> Option<String> {
+ mod tests {
+     use super::*;
+ 
++    #[test]
++    fn prompt_scopes_are_per_heap_nested_and_unwind_safe() {
++        let unwind = std::panic::catch_unwind(|| {
++            let _outer = ScriptPromptScope::enter(901, false);
++            assert!(!script_prompts_allowed(901));
++            assert!(script_prompts_allowed(902));
++            {
++                let _inner = ScriptPromptScope::enter(901, true);
++                assert!(!script_prompts_allowed(901), "nested foreground scope cannot promote the caller");
++            }
++            assert!(!script_prompts_allowed(901));
++            panic!("synthetic native callback panic");
++        });
++        assert!(unwind.is_err());
++        assert!(script_prompts_allowed(901));
++    }
++
+     #[test]
+     fn host_is_extracted_without_scheme_port_path_or_credentials() {
+         assert_eq!(url_host("https://Api.Example.com:8443/v1?x=1").as_deref(), Some("api.example.com"));
+diff --git a/platform/script/std/src/net.rs b/platform/script/std/src/net.rs
+index 7814d6f8e..6796ec618 100644
+--- a/platform/script/std/src/net.rs
++++ b/platform/script/std/src/net.rs
+@@ -24,6 +24,7 @@ pub struct ScriptWebSocket {
+     pub id: LiveId,
+     pub socket_id: LiveId,
+     pub events: WebSocketEvents,
++    pub host_prompts_allowed: bool,
+ }
+ 
+ pub struct ScriptServerWebSocket {
+@@ -36,6 +37,7 @@ pub struct ScriptServerWebSocket {
+ pub struct ScriptHttp {
+     pub id: LiveId,
+     pub events: HttpEvents,
++    pub host_prompts_allowed: bool,
+ }
+ 
+ pub struct ScriptHttpServer {
+@@ -531,6 +533,16 @@ pub fn handle_script_http_servers(host: &mut dyn ScriptHost) {
+ }
+ 
+ pub fn handle_script_web_socket_event(host: &mut dyn ScriptHost, event: NetworkResponse) {
++    let socket_id = match &event {
++        NetworkResponse::WsOpened { socket_id }
++        | NetworkResponse::WsMessage { socket_id, .. }
++        | NetworkResponse::WsClosed { socket_id }
++        | NetworkResponse::WsError { socket_id, .. } => *socket_id,
++        _ => return,
++    };
++    let host_prompts_allowed = script_std(host).data.web_sockets.iter()
++        .find(|socket| socket.socket_id == socket_id)
++        .map(|socket| socket.host_prompts_allowed).unwrap_or(false);
+     match event {
+         NetworkResponse::WsOpened { socket_id } => {
+             let handler = script_std(host)
+@@ -541,6 +553,8 @@ pub fn handle_script_web_socket_event(host: &mut dyn ScriptHost, event: NetworkR
+                 .and_then(|item| item.events.on_opened.as_object());
+             if let Some(handler) = handler {
+                 vm::with_vm_and_async(host, |vm| {
++                    vm.bx.threads.cur().host_prompts_allowed &= host_prompts_allowed;
++                    let _scope = crate::gate::ScriptPromptScope::enter(vm.bx.heap.heap_key(), vm.bx.threads.cur_ref().host_prompts_allowed);
+                     vm.call(handler.into(), &[]);
+                 });
+             }
+@@ -556,6 +570,8 @@ pub fn handle_script_web_socket_event(host: &mut dyn ScriptHost, event: NetworkR
+                         .and_then(|item| item.events.on_string.as_object());
+                     if let Some(handler) = handler {
+                         vm::with_vm_and_async(host, |vm| {
++                            vm.bx.threads.cur().host_prompts_allowed &= host_prompts_allowed;
++                            let _scope = crate::gate::ScriptPromptScope::enter(vm.bx.heap.heap_key(), vm.bx.threads.cur_ref().host_prompts_allowed);
+                             let string = vm.bx.heap.new_string_from_str(&string);
+                             vm.call(handler.into(), &[string.into()]);
+                         });
+@@ -570,6 +586,8 @@ pub fn handle_script_web_socket_event(host: &mut dyn ScriptHost, event: NetworkR
+                         .and_then(|item| item.events.on_binary.as_object());
+                     if let Some(handler) = handler {
+                         vm::with_vm_and_async(host, |vm| {
++                            vm.bx.threads.cur().host_prompts_allowed &= host_prompts_allowed;
++                            let _scope = crate::gate::ScriptPromptScope::enter(vm.bx.heap.heap_key(), vm.bx.threads.cur_ref().host_prompts_allowed);
+                             let data = vm.bx.heap.new_array_from_vec_u8(data);
+                             vm.call(handler.into(), &[data.into()]);
+                         });
+@@ -594,6 +612,8 @@ pub fn handle_script_web_socket_event(host: &mut dyn ScriptHost, event: NetworkR
+             if let Some((index, handler)) = found {
+                 if let Some(handler) = handler {
+                     vm::with_vm_and_async(host, |vm| {
++                        vm.bx.threads.cur().host_prompts_allowed &= host_prompts_allowed;
++                        let _scope = crate::gate::ScriptPromptScope::enter(vm.bx.heap.heap_key(), vm.bx.threads.cur_ref().host_prompts_allowed);
+                         vm.call(handler.into(), &[]);
+                     });
+                 }
+@@ -617,6 +637,8 @@ pub fn handle_script_web_socket_event(host: &mut dyn ScriptHost, event: NetworkR
+             if let Some((index, handler)) = found {
+                 if let Some(handler) = handler {
+                     vm::with_vm_and_async(host, |vm| {
++                        vm.bx.threads.cur().host_prompts_allowed &= host_prompts_allowed;
++                        let _scope = crate::gate::ScriptPromptScope::enter(vm.bx.heap.heap_key(), vm.bx.threads.cur_ref().host_prompts_allowed);
+                         let message = vm.bx.heap.new_string_from_str(&message);
+                         vm.call(handler.into(), &[message.into()]);
+                     });
+@@ -660,6 +682,10 @@ pub fn handle_script_network_events(
+             | NetworkResponse::WsError { .. } => continue,
+         };
+ 
++        let host_prompts_allowed = script_std(host).data.http_requests.iter()
++            .find(|request| request.id == request_id)
++            .map(|request| request.host_prompts_allowed).unwrap_or(false);
++
+         match response {
+             NetworkResponse::HttpStreamChunk { response: res, .. } => {
+                 let handler = script_std(host)
+@@ -670,6 +696,8 @@ pub fn handle_script_network_events(
+                     .and_then(|request| request.events.on_stream.as_object());
+                 if let Some(handler) = handler {
+                     vm::with_vm_and_async(host, |vm| {
++                        vm.bx.threads.cur().host_prompts_allowed &= host_prompts_allowed;
++                        let _scope = crate::gate::ScriptPromptScope::enter(vm.bx.heap.heap_key(), vm.bx.threads.cur_ref().host_prompts_allowed);
+                         let res = res.script_to_value(vm);
+                         vm.call(handler.into(), &[res]);
+                     });
+@@ -692,6 +720,8 @@ pub fn handle_script_network_events(
+                 if let Some((index, handler)) = found {
+                     if let Some(handler) = handler {
+                         vm::with_vm_and_async(host, |vm| {
++                            vm.bx.threads.cur().host_prompts_allowed &= host_prompts_allowed;
++                            let _scope = crate::gate::ScriptPromptScope::enter(vm.bx.heap.heap_key(), vm.bx.threads.cur_ref().host_prompts_allowed);
+                             let res = res.script_to_value(vm);
+                             vm.call(handler.into(), &[res]);
+                         })
+@@ -716,6 +746,8 @@ pub fn handle_script_network_events(
+                 if let Some((index, handler)) = found {
+                     if let Some(handler) = handler {
+                         vm::with_vm_and_async(host, |vm| {
++                            vm.bx.threads.cur().host_prompts_allowed &= host_prompts_allowed;
++                            let _scope = crate::gate::ScriptPromptScope::enter(vm.bx.heap.heap_key(), vm.bx.threads.cur_ref().host_prompts_allowed);
+                             let res = res.script_to_value(vm);
+                             vm.call(handler.into(), &[res]);
+                         })
+@@ -740,6 +772,8 @@ pub fn handle_script_network_events(
+                 if let Some((index, handler)) = found {
+                     if let Some(handler) = handler {
+                         vm::with_vm_and_async(host, |vm| {
++                            vm.bx.threads.cur().host_prompts_allowed &= host_prompts_allowed;
++                            let _scope = crate::gate::ScriptPromptScope::enter(vm.bx.heap.heap_key(), vm.bx.threads.cur_ref().host_prompts_allowed);
+                             let res = err.script_to_value(vm);
+                             vm.call(handler.into(), &[res]);
+                         })
+@@ -870,6 +904,7 @@ pub fn script_mod(vm: &mut ScriptVm) {
+                 return script_err_io!(vm.trap(), "this app may not reach {}", request.url);
+             }
+ 
++            let host_prompts_allowed = vm.bx.threads.cur_ref().host_prompts_allowed;
+             let std = vm.std_mut::<ScriptStd>();
+             let Some(runtime) = std.net.as_ref() else {
+                 return script_err_io!(vm.trap(), "script net runtime is not configured");
+@@ -878,7 +913,7 @@ pub fn script_mod(vm: &mut ScriptVm) {
+             if let Err(err) = runtime.http_start(id, request) {
+                 return script_err_io!(vm.trap(), "http request failed: {err}");
+             }
+-            std.data.http_requests.push(ScriptHttp { id, events });
++            std.data.http_requests.push(ScriptHttp { id, events, host_prompts_allowed });
+             id.escape()
+         },
+     );
+@@ -1145,6 +1180,7 @@ pub fn script_mod(vm: &mut ScriptVm) {
+                 return script_err_io!(vm.trap(), "this app may not reach {}", request.url);
+             }
+ 
++            let host_prompts_allowed = vm.bx.threads.cur_ref().host_prompts_allowed;
+             let std = vm.std_mut::<ScriptStd>();
+             let Some(runtime) = std.net.as_ref() else {
+                 return script_err_io!(vm.trap(), "script net runtime is not configured");
+@@ -1157,6 +1193,7 @@ pub fn script_mod(vm: &mut ScriptVm) {
+                 id,
+                 socket_id: id,
+                 events,
++                host_prompts_allowed,
+             });
+             id.escape()
+         },
+diff --git a/platform/script/std/src/task.rs b/platform/script/std/src/task.rs
+index bed88bd48..c83eb9907 100644
+--- a/platform/script/std/src/task.rs
++++ b/platform/script/std/src/task.rs
+@@ -18,6 +18,7 @@ pub struct ScriptTaskHooks {
+ #[derive(Clone)]
+ pub struct ScriptTask {
+     pub start_task: Option<ScriptFnRef>,
++    pub host_prompts_allowed: bool,
+     pub handle: ScriptHandle,
+     pub queue: ScriptArrayRef,
+     pub max_depth: usize,
+@@ -157,7 +158,7 @@ pub fn handle_script_tasks(host: &mut dyn ScriptHost) {
+                     .heap
+                     .array_len(queue);
+                 if let Some(st) = task.start_task.take() {
+-                    start_task = Some((st, task.handle));
++                    start_task = Some((st, task.handle, task.host_prompts_allowed));
+                     break;
+                 }
+                 if !task.recv_pause.is_empty() && queue_len > 0 {
+@@ -171,14 +172,19 @@ pub fn handle_script_tasks(host: &mut dyn ScriptHost) {
+             }
+         }
+ 
+-        if let Some((start_task, handle)) = start_task.take() {
++        if let Some((start_task, handle, host_prompts_allowed)) = start_task.take() {
+             progressed = true;
+             vm::with_vm(host, |vm| {
++                vm.bx.threads.cur().host_prompts_allowed &= host_prompts_allowed;
++                let _scope = crate::gate::ScriptPromptScope::enter(vm.bx.heap.heap_key(), vm.bx.threads.cur_ref().host_prompts_allowed);
+                 vm.call(start_task.into(), &[handle.into()]);
+             });
+         } else if let Some(next_thread) = next_thread.take() {
+             progressed = true;
+-            let result = vm::with_vm_thread(host, next_thread, |vm| vm.resume());
++            let result = vm::with_vm_thread(host, next_thread, |vm| {
++                let _scope = crate::gate::ScriptPromptScope::enter(vm.bx.heap.heap_key(), vm.bx.threads.cur_ref().host_prompts_allowed);
++                vm.resume()
++            });
+ 
+             let is_paused = host
+                 .script_vm_slot()
+@@ -309,6 +315,7 @@ fn create_task_handle(
+         let array = vm.bx.heap.new_array();
+         let queue = vm.bx.heap.new_array_ref(array);
+         tasks.borrow_mut().push(ScriptTask {
++            host_prompts_allowed: vm.bx.threads.cur_ref().host_prompts_allowed,
+             max_depth,
+             start_task,
+             handle,
+diff --git a/platform/src/script/timer.rs b/platform/src/script/timer.rs
+index c39046301..5e1df79db 100644
+--- a/platform/src/script/timer.rs
++++ b/platform/src/script/timer.rs
+@@ -9,6 +9,7 @@ pub struct CxScriptTimer {
+     pub repeat: bool,
+     pub timer: Timer,
+     pub callback: ScriptFnRef,
++    pub host_prompts_allowed: bool,
+ }
+ 
+ /// A hook that can claim dispatch of a firing script timer, e.g. to run the callback
+@@ -61,6 +62,7 @@ pub(crate) fn handle_script_timer(&mut self, event: &TimerEvent) {
+                 }
+             }
+             self.with_vm_and_async(|vm| {
++                vm.bx.threads.cur().host_prompts_allowed &= timer.host_prompts_allowed;
+                 vm.call(timer.callback.as_object().into(), &[time]);
+             })
+         }
+@@ -208,6 +210,7 @@ fn ensure_seeded(cx: &mut Cx) {
+                 return script_err_type_mismatch!(vm.trap(), "invalid timer arg type");
+             }
+             let callback = ScriptFnRef::script_from_value(vm, callback);
++            let host_prompts_allowed = vm.bx.threads.cur_ref().host_prompts_allowed;
+ 
+             let cx = vm.cx_mut();
+             let timer = cx.start_timeout(delay.as_number().unwrap_or(1.0));
+@@ -218,6 +221,7 @@ fn ensure_seeded(cx: &mut Cx) {
+                 timer,
+                 id,
+                 callback,
++                host_prompts_allowed,
+             });
+             id.escape()
+         },
+@@ -235,6 +239,7 @@ fn ensure_seeded(cx: &mut Cx) {
+                 return script_err_type_mismatch!(vm.trap(), "invalid timer arg type");
+             }
+             let callback = ScriptFnRef::script_from_value(vm, callback);
++            let host_prompts_allowed = vm.bx.threads.cur_ref().host_prompts_allowed;
+ 
+             let cx = vm.cx_mut();
+ 
+@@ -246,6 +251,7 @@ fn ensure_seeded(cx: &mut Cx) {
+                 timer,
+                 id,
+                 callback,
++                host_prompts_allowed,
+             });
+             id.escape()
+         },
+diff --git a/platform/src/script/vm.rs b/platform/src/script/vm.rs
+index 6a8830380..0559cd9dd 100644
+--- a/platform/src/script/vm.rs
++++ b/platform/src/script/vm.rs
+@@ -68,14 +68,17 @@ fn with_cx_mut<R, F: FnOnce(&mut Cx) -> R>(&mut self, f: F) -> R {
+ /// this `ScriptVm` holding its base again, or the enclosing `with_vm`
+ /// parks the placeholder instead of the VM.
+ fn with_vm_parked<R>(vm: &mut ScriptVm, f: impl FnOnce(&mut dyn ScriptHost) -> R) -> R {
+-    let saved_thread_id = vm.bx.threads.current();
+     assert_vm_slot_free(vm.host.as_any().downcast_ref().unwrap());
++    let saved_thread_id = vm.bx.threads.current();
++    let saved_prompt_scope = vm.bx.threads.host_prompt_scope;
++    vm.bx.threads.host_prompt_scope &= vm.bx.threads.cur_ref().host_prompts_allowed;
+     let bx = std::mem::replace(&mut vm.bx, Box::new(ScriptVmBase::empty()));
+     *vm.host.script_vm_slot() = Some(bx);
+     let out = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| f(&mut *vm.host)));
+     match (vm.host.script_vm_slot().take(), out) {
+         (Some(bx), Ok(out)) => {
+             vm.bx = bx;
++            vm.bx.threads.host_prompt_scope = saved_prompt_scope;
+             vm.bx.threads.set_current(saved_thread_id);
+             out
+         }
+@@ -87,6 +90,7 @@ fn with_vm_parked<R>(vm: &mut ScriptVm, f: impl FnOnce(&mut dyn ScriptHost) -> R
+             // lost it leaves the placeholder, and the entry above says so.
+             if let Some(bx) = bx {
+                 vm.bx = bx;
++                vm.bx.threads.host_prompt_scope = saved_prompt_scope;
+                 vm.bx.threads.set_current(saved_thread_id);
+             }
+             std::panic::resume_unwind(payload)
+diff --git a/widgets/src/splash_host.rs b/widgets/src/splash_host.rs
+index 73c28afce..78c9a78c4 100644
+--- a/widgets/src/splash_host.rs
++++ b/widgets/src/splash_host.rs
+@@ -84,9 +84,9 @@ struct HostCallback {
+ 
+ /// A delayed callback retains the authority of the originating request, even
+ /// when its tool has completed and the foreground app has regained its baseline.
+-struct CallbackPromptScope { heap: usize, restore: bool }
++pub(crate) struct CallbackPromptScope { heap: usize, restore: bool }
+ impl CallbackPromptScope {
+-    fn enter(heap: usize, may_prompt: bool) -> Self {
++    pub(crate) fn enter(heap: usize, may_prompt: bool) -> Self {
+         let restore = !may_prompt && BRIDGE.with(|bridge| bridge.borrow_mut().no_prompt.insert(heap));
+         Self { heap, restore }
+     }
+@@ -143,6 +143,7 @@ pub(crate) fn set_prompts_for_heap(heap_key: usize, may_prompt: bool) {
+ 
+ pub(crate) fn prompts_allowed_for_heap(heap_key: usize) -> bool {
+     BRIDGE.with(|b| !b.borrow().no_prompt.contains(&heap_key))
++        && crate::makepad_platform::makepad_script_std::script_prompts_allowed(heap_key)
+ }
+ 
+ /// Drops all bridge state for reclaimed isolates (called from the isolate GC).
+@@ -332,7 +333,9 @@ pub fn script_mod(vm: &mut ScriptVm) {
+                 let mut b = b.borrow_mut();
+                 b.next_req_id += 1;
+                 let req_id = b.next_req_id;
+-                let may_prompt = !b.no_prompt.contains(&heap_key);
++                let may_prompt = !b.no_prompt.contains(&heap_key)
++                    && vm.bx.threads.cur_ref().host_prompts_allowed
++                    && crate::makepad_platform::makepad_script_std::script_prompts_allowed(heap_key);
+                 if let Some(callback) = callback {
+                     b.callbacks.insert((heap_key, req_id), HostCallback { function: callback, may_prompt });
+                 }
+diff --git a/widgets/src/widget_async.rs b/widgets/src/widget_async.rs
+index 801b82e1b..7b8eaebc4 100644
+--- a/widgets/src/widget_async.rs
++++ b/widgets/src/widget_async.rs
+@@ -331,6 +331,7 @@ pub enum ScriptAsyncResult {
+ }
+ 
+ struct WidgetAsyncDone {
++    host_prompts_allowed: bool,
+     vm_id: SplashVmId,
+     target_uid: WidgetUid,
+     id: ScriptAsyncId,
+@@ -353,6 +354,7 @@ struct ScriptToWidgetReturn {
+ }
+ 
+ struct WidgetToScriptCallRequest {
++    host_prompts_allowed: bool,
+     vm_id: SplashVmId,
+     target_uid: WidgetUid,
+     me: ScriptValue,
+@@ -492,6 +494,15 @@ pub fn contain_isolate_panic(what: &str, f: impl FnOnce()) -> bool {
+     }
+ }
+ 
++/// Runner policy and continuation provenance intersect; neither can enlarge
++/// the other. A paused thread retains the bit until its continuation ends.
++fn with_splash_prompt_authority<R>(vm: &mut ScriptVm, f: impl FnOnce(&mut ScriptVm) -> R) -> R {
++    let heap = vm.bx.heap.heap_key();
++    vm.bx.threads.cur().host_prompts_allowed &= crate::splash_host::prompts_allowed_for_heap(heap);
++    let _scope = crate::splash_host::CallbackPromptScope::enter(heap, vm.bx.threads.cur_ref().host_prompts_allowed);
++    f(vm)
++}
++
+ /// A Splash isolate runs untrusted-ish user script on the UI thread; cap how long any
+ /// single entry into it may run.
+ fn with_splash_budget<R>(vm: &mut ScriptVm, f: impl FnOnce(&mut ScriptVm) -> R) -> R {
+@@ -500,7 +511,7 @@ fn with_splash_budget<R>(vm: &mut ScriptVm, f: impl FnOnce(&mut ScriptVm) -> R)
+         std::time::Duration::from_millis(64),
+         512,
+     ));
+-    let out = f(vm);
++    let out = with_splash_prompt_authority(vm, f);
+     vm.bx.run_budget = old_budget;
+     out
+ }
+@@ -653,7 +664,7 @@ fn with_script_vm_id<R>(&mut self, vm_id: SplashVmId, f: impl FnOnce(&mut Script
+         // isolate's heap.
+         let current = self.global::<CxWidgetAsync>().current_vm_id;
+         if current == vm_id {
+-            return self.with_vm(f);
++            return self.with_vm(|vm| with_splash_prompt_authority(vm, f));
+         }
+         if vm_id == MAIN_SPLASH_VM_ID {
+             if current != MAIN_SPLASH_VM_ID {
+@@ -665,7 +676,7 @@ fn with_script_vm_id<R>(&mut self, vm_id: SplashVmId, f: impl FnOnce(&mut Script
+                     "BUG: main-VM script call while isolate {current:?} is installed on Cx"
+                 );
+             }
+-            return self.with_vm(f);
++            return self.with_vm(|vm| with_splash_prompt_authority(vm, f));
+         }
+ 
+         with_isolate_installed(self, vm_id, |cx| cx.with_vm(|vm| with_splash_budget(vm, f)))
+@@ -679,7 +690,7 @@ fn with_script_vm_id_thread<R>(
+     ) -> R {
+         let current = self.global::<CxWidgetAsync>().current_vm_id;
+         if current == vm_id {
+-            return self.with_vm_thread(thread_id, f);
++            return self.with_vm_thread(thread_id, |vm| with_splash_prompt_authority(vm, f));
+         }
+         if vm_id == MAIN_SPLASH_VM_ID {
+             if current != MAIN_SPLASH_VM_ID {
+@@ -687,7 +698,7 @@ fn with_script_vm_id_thread<R>(
+                     "BUG: main-VM script call while isolate {current:?} is installed on Cx"
+                 );
+             }
+-            return self.with_vm_thread(thread_id, f);
++            return self.with_vm_thread(thread_id, |vm| with_splash_prompt_authority(vm, f));
+         }
+ 
+         with_isolate_installed(self, vm_id, |cx| {
+@@ -698,7 +709,7 @@ fn with_script_vm_id_thread<R>(
+     fn with_script_vm_id_trusted<R>(&mut self, vm_id: SplashVmId, f: impl FnOnce(&mut ScriptVm) -> R) -> R {
+         let current = self.global::<CxWidgetAsync>().current_vm_id;
+         if current == vm_id || vm_id == MAIN_SPLASH_VM_ID {
+-            return self.with_vm(f);
++            return self.with_vm(|vm| with_splash_prompt_authority(vm, f));
+         }
+         with_isolate_installed(self, vm_id, |cx| cx.with_vm(f))
+     }
+@@ -1003,10 +1014,12 @@ fn widget_to_script_async_call_fwd(
+                 thread_id: None,
+             });
+             let vm_id = self.cx_mut().global::<CxWidgetAsync>().current_vm_id;
++            let host_prompts_allowed = self.bx.threads.cur_ref().host_prompts_allowed;
+             self.cx_mut()
+                 .global::<CxWidgetAsync>()
+                 .done
+                 .push_back(WidgetAsyncDone {
++                    host_prompts_allowed,
+                     vm_id,
+                     target_uid,
+                     id: async_id,
+@@ -1056,10 +1069,12 @@ fn widget_to_script_call_fwd(
+             return;
+         }
+         let vm_id = self.cx_mut().global::<CxWidgetAsync>().current_vm_id;
++        let host_prompts_allowed = self.bx.threads.cur_ref().host_prompts_allowed;
+         self.cx_mut()
+             .global::<CxWidgetAsync>()
+             .widget_to_script_calls
+             .push_back(WidgetToScriptCallRequest {
++                host_prompts_allowed,
+                 vm_id,
+                 target_uid,
+                 me,
+@@ -1433,9 +1448,11 @@ fn on_widget_script_thread_completed(
+         return false;
+     };
+ 
++    let host_prompts_allowed = cx.with_script_vm_id_thread(vm_id, thread_id, |vm| vm.bx.threads.cur_ref().host_prompts_allowed);
+     cx.global::<CxWidgetAsync>()
+         .done
+         .push_back(WidgetAsyncDone {
++            host_prompts_allowed,
+             vm_id,
+             target_uid,
+             id: async_id,
+@@ -1455,7 +1472,9 @@ fn pump_widget_async(cx: &mut Cx) -> bool {
+         if let Some(req) = req {
+             progressed = true;
+             contain_isolate_panic("widget->script dispatch", || {
++                let _scope = crate::splash_host::CallbackPromptScope::enter(req.script_fn.heap_key(), req.host_prompts_allowed);
+                 cx.with_script_vm_id(req.vm_id, |vm| {
++                    vm.bx.threads.cur().host_prompts_allowed &= req.host_prompts_allowed;
+                     if req.script_fn.as_object() != ScriptObject::ZERO {
+                         let ui_handle = vm.build_ui_handle_for_uid(req.target_uid);
+                         let call_args = vm.make_call_args_object_with_context(
+@@ -1529,6 +1548,8 @@ fn pump_widget_async(cx: &mut Cx) -> bool {
+             progressed = true;
+             contain_isolate_panic("async result delivery", || {
+                 cx.with_script_vm_id(done.vm_id, |vm| {
++                    vm.bx.threads.cur().host_prompts_allowed &= done.host_prompts_allowed;
++                    let _scope = crate::splash_host::CallbackPromptScope::enter(vm.bx.heap.heap_key(), done.host_prompts_allowed);
+                     let widget_ref = vm.with_cx(|cx| cx.widget_tree().widget(done.target_uid));
+                     if widget_ref.is_empty() {
+                         error!(
+@@ -1601,7 +1622,9 @@ fn script_timer_dispatch_hook(cx: &mut Cx, timer: &CxScriptTimer, time: ScriptVa
+             // Same budget/limit as any other isolate entry, so a runaway timer callback
+             // can't hang the host.
+             contain_isolate_panic("timer callback", || {
++                let _scope = crate::splash_host::CallbackPromptScope::enter(heap_key, timer.host_prompts_allowed);
+                 cx.with_script_vm_id(vm_id, |vm| {
++                    vm.bx.threads.cur().host_prompts_allowed &= timer.host_prompts_allowed;
+                     vm.with_instruction_limit(WIDGET_SCRIPT_INSTRUCTION_LIMIT, |vm| {
+                         vm.call(timer.callback.as_object().into(), &[time]);
+                     });
+@@ -1790,6 +1813,191 @@ pub fn leave_isolate(cx: &mut Cx, entry: IsolateEntry) {
+ #[cfg(test)]
+ mod isolate_entry_tests {
+     use super::*;
++    fn install_native_prompt_probe(cx: &mut Cx, vm_id: SplashVmId) {
++        cx.with_script_vm_id(vm_id, |vm| {
++            crate::splash_policy::set_device_consent_for_heap(vm.bx.heap.heap_key(), true);
++            let probe = vm.eval(script! { mod.provenance_probe = {}; mod.provenance_probe }).as_object().unwrap();
++            vm.add_method(probe, id!(allowed), script_args_def!(), |vm, _| {
++                crate::splash_policy::device_prompt_allowed(vm.bx.heap.heap_key()).into()
++            });
++        });
++    }
++
++    fn assert_native_prompt_denied(request: &crate::splash_host::SplashHostRequest) {
++        let args: serde_json::Value = serde_json::from_str(&request.args_json).unwrap();
++        assert_eq!(args["native_prompt"], false, "native device helper must reject background prompts");
++    }
++
++    #[test]
++    fn detached_background_timer_keeps_prompt_provenance_after_foreground_restores() {
++        use crate::*;
++        let mut cx = Cx::new(Box::new(|_, _| {}));
++        let root = cx.with_vm(|vm| {
++            crate::script_mod(vm);
++            let value = script_eval!(vm, { use mod.widgets.* View { card := Splash{} } });
++            WidgetRef::script_from_value(vm, value)
++        });
++        let card = root.splash(&mut cx, ids!(card));
++        card.set_host_caps(&mut cx, vec!["fixture".into()]);
++        card.set_policy(&mut cx, Some(vec![]), Some(100_000));
++        card.set_text(&mut cx, r#"
++            fn background() {
++                mod.std.start_timeout(0.001, fn() { host.request("fixture.delayed", {}, nil) })
++            }
++            fn foreground() { host.request("fixture.user", {}, nil) }
++            Label{text:"timer provenance fixture"}
++        "#);
++        let heap = card.isolate_heap_key(&mut cx).unwrap();
++        card.set_host_prompts(&mut cx, false);
++        assert!(card.call_script_fn(&mut cx, id!(background), &[]));
++        let timer = cx.script_data.timers.timers.iter().find(|t| t.callback.heap_key() == heap).unwrap().clone();
++        card.set_host_prompts(&mut cx, true);
++        assert!(script_timer_dispatch_hook(&mut cx, &timer, NIL));
++        let delayed = crate::splash_host::take_splash_host_requests_for(&[heap]).pop().unwrap();
++        assert!(!delayed.may_prompt, "a detached background timer regained foreground prompt authority");
++        assert!(card.call_script_fn(&mut cx, id!(foreground), &[]));
++        let user = crate::splash_host::take_splash_host_requests_for(&[heap]).pop().unwrap();
++        assert!(user.may_prompt, "a new foreground user entry must retain its own authority");
++    }
++
++    #[test]
++    fn detached_background_task_and_paused_thread_keep_prompt_provenance() {
++        use crate::*;
++        let mut cx = Cx::new(Box::new(|_, _| {}));
++        let root = cx.with_vm(|vm| {
++            crate::script_mod(vm);
++            let value = script_eval!(vm, { use mod.widgets.* View { card := Splash{} } });
++            WidgetRef::script_from_value(vm, value)
++        });
++        let card = root.splash(&mut cx, ids!(card));
++        card.set_host_caps(&mut cx, vec!["fixture".into()]);
++        card.set_policy(&mut cx, Some(vec![]), Some(100_000));
++        card.set_text(&mut cx, r#"
++            let paused = mod.std.promise()
++            let task_pause = mod.std.promise()
++            fn background() {
++                mod.std.task(fn(task) {
++                    task_pause.await()
++                    host.request("fixture.task_resumed", {native_prompt:mod.provenance_probe.allowed()}, nil)
++                    task.end(nil)
++                })
++                paused.await()
++                host.request("fixture.thread_resumed", {native_prompt:mod.provenance_probe.allowed()}, nil)
++            }
++            fn release() { paused.resolve(1); task_pause.resolve(1) }
++            fn foreground() { host.request("fixture.user", {native_prompt:mod.provenance_probe.allowed()}, nil) }
++            Label{text:"paused provenance fixture"}
++        "#);
++        let heap = card.isolate_heap_key(&mut cx).unwrap();
++        let vm_id = cx.script_ref_vm_id(&card.borrow().unwrap().view.source).unwrap();
++        install_native_prompt_probe(&mut cx, vm_id);
++        card.set_host_prompts(&mut cx, false);
++        assert!(card.call_script_fn(&mut cx, id!(background), &[]));
++        card.set_host_prompts(&mut cx, true);
++        with_isolate(&mut cx, vm_id, |cx| crate::makepad_platform::makepad_script_std::handle_script_tasks(cx));
++        assert!(crate::splash_host::take_splash_host_requests_for(&[heap]).is_empty());
++        assert!(card.call_script_fn(&mut cx, id!(release), &[]));
++        with_isolate(&mut cx, vm_id, |cx| crate::makepad_platform::makepad_script_std::handle_script_tasks(cx));
++        let requests = crate::splash_host::take_splash_host_requests_for(&[heap]);
++        assert_eq!(requests.len(), 2, "both the task and paused caller must resume");
++        for request in &requests { assert_native_prompt_denied(request); }
++        assert!(requests.iter().all(|r| !r.may_prompt), "a paused background continuation regained foreground authority");
++        assert!(card.call_script_fn(&mut cx, id!(foreground), &[]));
++        let foreground = crate::splash_host::take_splash_host_requests_for(&[heap]).pop().unwrap();
++        assert!(foreground.may_prompt);
++        let args: serde_json::Value = serde_json::from_str(&foreground.args_json).unwrap();
++        assert_eq!(args["native_prompt"], true, "independent foreground native helpers remain permitted");
++    }
++
++    #[test]
++    fn detached_background_network_callbacks_keep_prompt_provenance() {
++        use crate::*;
++        use crate::makepad_platform::makepad_script_std::makepad_network::{
++            EventSink, HttpRequest, HttpError, NetworkBackend, NetworkError, NetworkRuntime, WsSend,
++        };
++        struct FixtureNetwork;
++        impl NetworkBackend for FixtureNetwork {
++            fn http_start(&self, request_id: LiveId, _request: HttpRequest, sink: EventSink) -> Result<(), NetworkError> {
++                sink.emit(NetworkResponse::HttpError { request_id, error: HttpError {
++                    message: "synthetic transport result".into(), metadata_id: LiveId(0),
++                } })
++            }
++            fn http_cancel(&self, _id: LiveId) -> Result<(), NetworkError> { Ok(()) }
++            fn ws_open(&self, socket_id: LiveId, _request: HttpRequest, sink: EventSink) -> Result<(), NetworkError> {
++                sink.emit(NetworkResponse::WsOpened { socket_id })
++            }
++            fn ws_send(&self, _id: LiveId, _message: WsSend) -> Result<(), NetworkError> { Ok(()) }
++            fn ws_close(&self, _id: LiveId) -> Result<(), NetworkError> { Ok(()) }
++        }
++        let mut cx = Cx::new(Box::new(|_, _| {}));
++        cx.net = std::sync::Arc::new(NetworkRuntime::with_backend(std::sync::Arc::new(FixtureNetwork)));
++        let root = cx.with_vm(|vm| {
++            crate::script_mod(vm);
++            let value = script_eval!(vm, { use mod.widgets.* View { card := Splash{allow_net:true} } });
++            WidgetRef::script_from_value(vm, value)
++        });
++        let card = root.splash(&mut cx, ids!(card));
++        card.set_host_caps(&mut cx, vec!["fixture".into()]);
++        card.set_policy(&mut cx, Some(vec!["fixture.test".into()]), Some(100_000));
++        card.set_text(&mut cx, r#"
++            fn background() {
++                net.http_request(net.HttpRequest{ url:"https://fixture.test" method:net.HttpMethod.GET }) do net.HttpEvents{
++                    on_error: fn(error) {
++                        host.request("fixture.http", {native_prompt:mod.provenance_probe.allowed()}, nil)
++                        mod.std.start_timeout(0.001, fn() { host.request("fixture.http_timer", {}, nil) })
++                    }
++                }
++                net.web_socket("wss://fixture.test") do net.WebSocketEvents{
++                    on_opened: fn() { host.request("fixture.websocket", {native_prompt:mod.provenance_probe.allowed()}, nil) }
++                }
++            }
++            fn foreground() { host.request("fixture.user", {native_prompt:mod.provenance_probe.allowed()}, nil) }
++            Label{text:"network provenance fixture"}
++        "#);
++        let heap = card.isolate_heap_key(&mut cx).unwrap();
++        let vm_id = cx.script_ref_vm_id(&card.borrow().unwrap().view.source).unwrap();
++        install_native_prompt_probe(&mut cx, vm_id);
++        card.set_host_prompts(&mut cx, false);
++        assert!(card.call_script_fn(&mut cx, id!(background), &[]));
++        card.set_host_prompts(&mut cx, true);
++        let mut responses = vec![];
++        while let Some(response) = cx.net.try_recv() { responses.push(response); }
++        assert_eq!(responses.len(), 2, "real script HTTP and WebSocket calls must reach the synthetic backend");
++        handle_splash_network_responses(&mut cx, vm_id, &responses);
++        let requests = crate::splash_host::take_splash_host_requests_for(&[heap]);
++        assert_eq!(requests.len(), 2);
++        for request in &requests { assert_native_prompt_denied(request); }
++        assert!(requests.iter().all(|r| !r.may_prompt), "network callbacks regained foreground authority");
++        let timer = cx.script_data.timers.timers.iter().find(|t| t.callback.heap_key() == heap).unwrap().clone();
++        assert!(script_timer_dispatch_hook(&mut cx, &timer, NIL));
++        assert!(!crate::splash_host::take_splash_host_requests_for(&[heap]).pop().unwrap().may_prompt);
++        assert!(card.call_script_fn(&mut cx, id!(foreground), &[]));
++        let foreground = crate::splash_host::take_splash_host_requests_for(&[heap]).pop().unwrap();
++        assert!(foreground.may_prompt);
++        let args: serde_json::Value = serde_json::from_str(&foreground.args_json).unwrap();
++        assert_eq!(args["native_prompt"], true, "independent foreground native helpers remain permitted");
++    }
++
++    #[test]
++    fn native_reentry_from_a_paused_background_thread_cannot_promote_a_new_thread() {
++        let mut cx = Cx::new(Box::new(|_, _| {}));
++        cx.with_vm(crate::script_mod);
++        cx.with_vm(|vm| {
++            vm.bx.threads.cur().host_prompts_allowed = false;
++            vm.eval(script! { mod.std.promise().await() });
++            assert!(vm.bx.threads.cur_ref().is_paused());
++            let original = vm.bx.threads.current();
++            vm.with_cx_mut(|cx| cx.with_vm(|nested| {
++                assert_ne!(nested.bx.threads.current(), original, "paused caller requires another thread");
++                assert!(!nested.bx.threads.cur_ref().host_prompts_allowed);
++            }));
++            assert_eq!(vm.bx.threads.current(), original);
++            assert!(!vm.bx.threads.cur_ref().host_prompts_allowed);
++        });
++        cx.with_vm(|vm| assert!(vm.bx.threads.cur_ref().host_prompts_allowed,
++            "a new independent foreground entry is not the nested background continuation"));
++    }
++
+     use std::panic::{catch_unwind, AssertUnwindSafe};
+ 
+     /// A guest panics while its isolate is installed — through

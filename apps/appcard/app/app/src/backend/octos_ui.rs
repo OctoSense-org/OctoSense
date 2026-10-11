@@ -940,6 +940,8 @@ impl OctosUiAgent {
             | UiNotification::TurnSteerDropped(_)
             | UiNotification::BackgroundActivity(_)
             | UiNotification::ContextNormalizationReported(_)
+            // `context.state.v1` is not requested, so this never arrives.
+            | UiNotification::ContextStateReported(_)
             | UiNotification::SessionOrchestration(_)
             // 2026-07 protocol catch-up: no plan pane / voice surface here.
             | UiNotification::PlanUpdated(_)

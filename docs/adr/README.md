@@ -9,15 +9,21 @@ How these decisions fit together in the code on `main`, and which parts are stil
 | ADR | Title | Status |
 | --- | --- | --- |
 | [0001](0001-one-octosense-repository.md) | One OctoSense repository for the shell, its services, the system apps and both packagings | Accepted |
-| [0002](0002-event-driven-app-agents.md) | Event-driven app agents: apps think on their own triggers and publish cards to the glance screen | Proposed |
+| [0002](0002-event-driven-app-agents.md) | Event-driven app agents: apps think on their own triggers and publish cards to the glance screen | Proposed; partly implemented |
 | [0003](0003-shared-octos-client-access.md) | Talk to Octos: one kernel for native and external clients (opt-in) | Implemented; Android unverified |
-| [0004](0004-native-apps-hosting-and-peers.md) | Native apps, app agents and cross-app work: one manifest, hosting per target, an agent for every app, approvals by the person | Implemented |
+| [0004](0004-native-apps-hosting-and-peers.md) | Native apps, app agents and cross-app work: one manifest, hosting per target, an agent for every app, approvals by the person | Implemented; three plan items open |
 | [0005](0005-app-contract.md) | The app contract: one small, versioned interface between App Hub and every app | Implemented |
 | [0006](0006-app-studio-on-the-phone.md) | App Studio on the phone | Accepted |
+| [0007](0007-composable-mail-action-cards.md) | Composable Mail cards with editing, chat and approved actions | Implementation in progress; phone acceptance pending |
+| [0008](0008-quiet-android-mail-jobs.md) | Quiet Android Mail jobs and native card notifications | Implemented in this change; device acceptance in progress |
+| [0010](0010-shared-oauth-and-connected-apps.md) | Shared OAuth and independently installed connected apps | Implementation in progress; live sign-in passed on macOS; GitHub writes, Gmail sends and device acceptance pending |
+| [0011](0011-apps-own-functions-in-webassembly.md) | An app's own functions, in WebAssembly | Accepted with limited support: on in standard builds on macOS, Linux and Android |
+| [0012](0012-app-host-api-discovery.md) | Discoverable host APIs for installed apps | Implemented; contract 1.11.0 published; final-source Mac/OnePlus acceptance passed; RC4 published, Mac archive 11/11 |
+| [0013](0013-craft-engines-as-pinned-services.md) | Craft engines as pinned services | Proposed; engines measured (gridcraft recalc 243x on kernels, photocraft 1,203 tests), no service implemented yet |
 
 ## Home (phone shell) decisions, 2026-09-16 to 2026-09-25
 
-Written in OctoSense-ROM (retired; merged into this repository) `home/docs/adr/` before the repositories merged, and kept here unchanged as history under [`home/`](home/). They keep their own numbers; cite them as "Home ADR 0004". Where one names a path such as `home/src/` or `home/apps/`, read `crates/shell/src/` (the shell; Settings is in `phone/src/`) and `apps/` (see ADR 0001). Their status is as they recorded it.
+Written in OctoSense-ROM (retired; merged into this repository) `home/docs/adr/` and kept here as history under [`home/`](home/); on 2026-09-28 Home 0002 and 0004 gained dated amendments and Home 0004's implementation-status line and last Consequences bullet were updated; on 2026-10-04 Home 0001 and 0002 gained dated notes, and on 2026-10-08 Home 0003 did. Cite them as "Home ADR 0004"; inside them "ADR 000N" means a Home ADR, except in those 2026-09-28 additions (this repository's ADR 0004). Paths are relative to the old `home/` or belong to other repositories: `src/` → `crates/shell/src/` (Settings: `phone/src/`), `resources/` and `android/` → `phone/resources/` and `phone/android/`, `octosense-rom/` → `rom/`, OctoSense-System-Apps `apps/` → `apps/` (ADR 0001); `crates/app-policy` and `crates/app-hub-app` are App Hub's; `apps/calendar/cards/` was Octoscript-AppCard's. Their status is as they recorded it.
 
 | Home ADR | Title | Date | Status |
 | --- | --- | --- | --- |
@@ -36,3 +42,4 @@ The OnePlus 6 image and its delivery have their own records in [`rom/docs/adr/`]
 
 - The app-agent broker (`crates/app-peers`) follows Rinx [ADR 0007](https://github.com/hagency-org/Rinx/blob/main/docs/adr/0007-host-owned-octos-app-peers.md) (host-owned octos app peers).
 - The App Hub, its catalog and the admission gate: [OctoSense-App-Hub](https://github.com/OctoSense-org/OctoSense-App-Hub).
+- App publisher identity: App Hub [ADR 0002](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/main/docs/adr/0002-github-attested-publisher-identity.md) (GitHub-attested publisher identity). GitHub-attested releases from an app's public repository identify its publisher, replacing the publisher key of [Home ADR 0003](home/0003-app-hub-and-store.md).

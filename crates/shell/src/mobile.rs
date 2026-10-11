@@ -11,6 +11,8 @@ pub enum PhoneScreen { #[default] Home, App, Recents, Drawer }
 pub enum PhoneHit {
     App(String), TileApp(String), Card(ClientId), Home, Recents, Drawer, Search, Back,
     Floating(crate::mobile_navigation::NavigationHit),
+    /// Android app navigation lives outside the app viewport.
+    AppNavigation(crate::mobile_navigation::NavigationHit),
     /// The desk bar's phone strip (universal builds only): rotate the
     /// window, the style menu, Light/Dark, back to the desktop.
     #[cfg(not(mobile_only))] Rotate,
@@ -34,6 +36,8 @@ pub enum PhoneHit {
     Scrub,
     /// A published card on the glance page: open the app that published it.
     Glance(String),
+    /// A host-bound Mail card: expand this exact publication, not the full app.
+    ExpandGlance(String),
     /// The assistant chip on the home page: the system chat (#143).
     Assistant,
 }
@@ -64,11 +68,18 @@ pub struct PhoneGesture {
     /// The gesture recognizer (mobile_gestures.rs) claimed this finger: it
     /// started in a shell band, or in the home page body.
     pub shell: bool,
+    /// A vertical Glance drag owns the rest of this touch, even if it
+    /// returns to its starting point before release.
+    pub glance_scroll: bool,
     pub screen: PhoneScreen,
 }
 
 #[derive(Clone)]
 pub struct PhoneState {
+    /// The card workspace owns input, including during its transition.
+    pub card_open: bool,
+    /// Only the settled opaque workspace suppresses background drawing.
+    pub card_covers_home: bool,
     pub theme: Option<crate::mobile_theme::Selection>,
     pub navigation: crate::mobile_navigation::FloatingNavigation,
     pub android: crate::android_integration::AndroidState,
@@ -124,6 +135,7 @@ pub struct PhoneState {
     /// Return in the search field: the app to open (mobile_app.rs takes it).
     pub search_launch: Option<String>,
     pub search_focused: bool,
+    pub search_focus_requested: bool,
     pub search_scroll: f64,
     /// The drawer keeps scrolling after a flick: points per second, decaying
     /// in `step`; the surface publishes how far the list can scroll.
@@ -131,10 +143,21 @@ pub struct PhoneState {
     /// The drawer pulled past its top (positive) or bottom (negative): a
     /// stretch that eases back after the lift.
     pub search_stretch: f64,
+    pub search_stretch_velocity: f64,
+    pub search_reveal: f64,
+    pub search_reveal_velocity: f64,
+    pub search_closing: bool,
     pub search_scroll_limit: f64,
     /// The finger's recent samples on the drawer (y, time), newest last:
     /// the lift velocity is measured over them (`search_lift`).
     pub search_track: Vec<(f64, f64)>,
+    /// The list was at its top when the finger landed: pulling it further
+    /// down closes search (`search_pull_closes`).
+    pub search_touch_at_top: bool,
+    /// A finger that landed on the search field and is pulling down: where
+    /// and when it landed. The field lets it go (`search_field_releases`) and
+    /// the shell takes it as a pull on the list from there.
+    pub search_field_pull: Option<(Vec2d, f64)>,
     pub ime: HashMap<ClientId, makepad_platform::ime::HostedImeState>,
     pub shift: bool,
     pub symbols: bool,
@@ -167,13 +190,13 @@ pub struct PhoneState {
 }
 impl Default for PhoneState {
     fn default() -> Self {
-        Self { clock: "9:41".into(), wallpaper_time: 0.0, wallpaper_phase: 0.0, screen: PhoneScreen::Home, client: None, return_to: None, order: Vec::new(),
+        Self { card_open: false, card_covers_home: false, clock: "9:41".into(), wallpaper_time: 0.0, wallpaper_phase: 0.0, screen: PhoneScreen::Home, client: None, return_to: None, order: Vec::new(),
             navigation: Default::default(), theme: None,
             openness: 0.0, overview: 0.0, page: 0.0, dismiss_y: 0.0, gesture: None, touch: None,
             animation_active: false, draw_active: false,
             keyboard: 0.0, native_keyboard: 0.0, native_keyboard_seen: 0.0, body_reflow: 0.0, search_focus_at: 0.0, keyboard_target: 0.0, keyboard_sent_height: 0.0, keyboard_client: None,
-            search_query: String::new(), search_open: false, search_launch: None, search_focused: false, search_scroll: 0.0,
-            search_velocity: 0.0, search_stretch: 0.0, search_scroll_limit: 0.0, search_track: Vec::new(),
+            search_query: String::new(), search_open: false, search_launch: None, search_focused: false, search_focus_requested: false, search_scroll: 0.0,
+            search_velocity: 0.0, search_stretch: 0.0, search_stretch_velocity: 0.0, search_reveal: 0.0, search_reveal_velocity: 0.0, search_closing: false, search_scroll_limit: 0.0, search_track: Vec::new(), search_touch_at_top: false, search_field_pull: None,
             ime: HashMap::new(), shift: false, symbols: false,
             #[cfg(not(mobile_only))] desktop_size: None,
             #[cfg(not(mobile_only))] desktop_clients: Vec::new(),
@@ -192,10 +215,21 @@ impl Default for PhoneState {
             android: Default::default() }
     }
 }
-/// How much of the finger's travel past an end of the drawer list shows as
-/// stretch, and the most it can stretch.
-pub const SEARCH_STRETCH: f64 = 0.45;
-pub const SEARCH_STRETCH_MAX: f64 = 72.0;
+/// The stretch (points) a pull on a list already at its top reaches to close
+/// search: about 105 points of finger travel. A shorter pull only stretches.
+pub const SEARCH_PULL_CLOSE: f64 = 36.0;
+/// How far (points) a finger on the search field moves down, mostly
+/// vertically, before it is a pull and no longer a tap or a selection.
+pub const SEARCH_FIELD_PULL_SLOP: f64 = 12.0;
+
+/// Whether a finger that landed on the search field at `start` and is now at
+/// `p` is pulling down a list that is at its top (`search_scroll`): the field
+/// lets it go, so a pull that starts on the field closes search too. Taps,
+/// sideways selection drags and pulls on a scrolled list stay with it.
+pub fn search_field_releases(start: Vec2d, p: Vec2d, search_scroll: f64) -> bool {
+    let d = p - start;
+    search_scroll <= 0.5 && d.y >= SEARCH_FIELD_PULL_SLOP && d.y > d.x.abs() * 1.5
+}
 /// How far back the drawer's lift velocity looks, in seconds.
 const SEARCH_VELOCITY_WINDOW: f64 = 0.1;
 /// The flicked drawer's friction: its speed falls by e every 1/k seconds,
@@ -203,18 +237,85 @@ const SEARCH_VELOCITY_WINDOW: f64 = 0.1;
 const SEARCH_FRICTION: f64 = 4.0;
 
 impl PhoneState {
+    /// Keep the side edges assigned to the launcher throughout a drag and
+    /// its settling animation. Open workspaces, apps and the IME keep Back.
+    pub fn owns_launcher_edges(&self) -> bool {
+        matches!(self.screen, PhoneScreen::Home | PhoneScreen::Drawer)
+            && self.openness < 0.001 && self.overview < 0.001
+            && !self.card_open && !self.groups.window_visible() && !self.shade.is_open()
+            && !self.navigation.open && self.navigation.visible()
+            && self.keyboard < 0.001 && self.keyboard_target < 0.001 && self.native_keyboard < 0.001
+    }
+    /// Focus loss can interrupt the owned touch after IME suppression has
+    /// already cleared Navigation's held control. No release is guaranteed
+    /// after that, so do not keep waiting for its old native touch id.
+    pub fn cancel_navigation_input(&mut self) {
+        self.pages.release(0.0, 1.0);
+        self.touch = None;
+        self.navigation.cancel();
+        if self.gesture.as_ref().is_some_and(|g| matches!(g.hit, Some(PhoneHit::AppNavigation(_)))) {
+            self.gesture = None;
+        }
+    }
+    pub fn app_dock_for_platform(&self, screen: Rect, android: bool) -> Option<crate::mobile_navigation::AppDock> {
+        (android && self.screen == PhoneScreen::App && self.navigation.visible())
+            .then(|| crate::mobile_navigation::app_dock(screen))
+    }
+    pub fn app_dock(&self, screen: Rect) -> Option<crate::mobile_navigation::AppDock> {
+        self.app_dock_for_platform(screen, cfg!(target_os = "android"))
+    }
+    /// Shared by capture sizing, presentation and split/input geometry. The
+    /// backing app keeps this size in Home/Recents too, so navigation animates
+    /// its retained texture rather than resizing it as the dock disappears.
+    pub fn app_content_rect_for_platform(&self, screen: Rect, android: bool) -> Rect {
+        if android {
+            if self.navigation.visible() { crate::mobile_navigation::app_dock(screen).content }
+            else { screen }
+        } else { app_rect(screen) }
+    }
+    pub fn app_content_rect(&self, screen: Rect) -> Rect {
+        self.app_content_rect_for_platform(screen, cfg!(target_os = "android"))
+    }
+    pub fn card_rect(&self, screen: Rect, index: f64, page: f64) -> Rect {
+        card_rect_for_app(screen, self.app_content_rect(screen), index, page)
+    }
+    pub fn floating_navigation_visible(&self) -> bool {
+        self.navigation.visible() && !(cfg!(target_os = "android") && self.screen == PhoneScreen::App)
+    }
     pub fn navigation_rect(&self) -> Rect {
         // The native KeyboardView already resizes this viewport above the
         // IME. Only the shell's simulated keyboard overlays the viewport,
         // and a search's keyboard is made room for before that resize, so
         // the bubble clears the lifted search bar (`search_keyboard_lift`).
         let lift = self.search_keyboard_lift(crate::host::now());
-        Rect { pos: self.viewport.pos, size: dvec2(self.viewport.size.x,
-            (self.viewport.size.y - self.keyboard - lift).max(1.0)) }
+        let height = (self.viewport.size.y - self.keyboard - lift).max(1.0);
+        // Keep the app-local navigation in Glance's reserved header. Its
+        // normal mid-screen position otherwise obscures live card content.
+        let height = if self.screen == PhoneScreen::Home && self.pages.on_glance() {
+            height.min(crate::mobile_pages::GLANCE_HEADER)
+        } else { height };
+        Rect { pos: self.viewport.pos, size: dvec2(self.viewport.size.x, height) }
     }
     pub fn native_keyboard_event(&mut self, event: &VirtualKeyboardEvent) {
+        match event {
+            VirtualKeyboardEvent::WillShow { .. } | VirtualKeyboardEvent::DidShow { .. } => {
+                self.navigation.set_ime_visible(true);
+                // Consume the old owned finger through release, but never let
+                // its now-hidden navigation target fire after editing starts.
+                if let Some(g) = self.gesture.as_mut().filter(|g| matches!(g.hit, Some(PhoneHit::AppNavigation(_)))) {
+                    g.hit = Some(PhoneHit::AppNavigation(crate::mobile_navigation::NavigationHit::Dismiss));
+                    g.shell = false;
+                }
+            },
+            VirtualKeyboardEvent::DidHide { .. } => self.navigation.set_ime_visible(false),
+            // Keep the editing area clear throughout the hide animation.
+            VirtualKeyboardEvent::WillHide { .. } => {}
+        }
         self.native_keyboard=match event {
             VirtualKeyboardEvent::WillShow{height,..}|VirtualKeyboardEvent::DidShow{height,..}=>height.max(0.0),
+            // WillHide announces a destination, not a zero-height keyboard.
+            // The closing search follows the subsequent animated insets.
+            VirtualKeyboardEvent::WillHide{..} if self.search_closing=>self.native_keyboard,
             VirtualKeyboardEvent::WillHide{..}|VirtualKeyboardEvent::DidHide{..}=>0.0,
         };
         // WillShow carries the height the keyboard will reach; a rising
@@ -232,6 +333,12 @@ impl PhoneState {
     /// native keyboard (the desktop preview), and half a second after focus
     /// if none came (a hardware keyboard).
     pub fn search_keyboard_lift(&self, now: f64) -> f64 {
+        // Focus is released before the IME's hide animation ends. Once
+        // KeyboardView restores the full body, keep the outgoing field above
+        // the still-visible keyboard instead of jumping underneath it.
+        if self.search_closing {
+            return (self.native_keyboard - self.body_reflow).max(0.0);
+        }
         if !self.search_focused || self.native_keyboard_seen <= 0.0 {
             return 0.0;
         }
@@ -261,7 +368,12 @@ impl PhoneState {
     pub fn activate(&mut self, client: ClientId) {
         self.navigation.cancel();
         self.search_open = false;
+        self.search_closing = false;
+        self.search_reveal = 0.0;
+        self.search_reveal_velocity = 0.0;
+        self.pages.release(0.0, 1.0);
         self.search_focused = false;
+        self.search_focus_requested = false;
         if self.client != Some(client) { self.keyboard_target = 0.0; }
         if self.return_to.is_some_and(|r| r.app != client) { self.return_to = None; }
         self.client = Some(client);
@@ -274,7 +386,12 @@ impl PhoneState {
     pub fn navigate(&mut self, screen: PhoneScreen) {
         self.navigation.cancel();
         self.search_open = false;
+        self.search_closing = false;
+        self.search_reveal = 0.0;
+        self.search_reveal_velocity = 0.0;
+        self.pages.release(0.0, 1.0);
         self.search_focused = false;
+        self.search_focus_requested = false;
         self.screen = screen;
         self.return_to = None;
         self.keyboard_target = 0.0;
@@ -282,12 +399,15 @@ impl PhoneState {
         self.dismiss_y = 0.0;
     }
     pub fn open_search(&mut self) {
+        let motion = (self.search_reveal, self.search_reveal_velocity);
         self.navigate(PhoneScreen::Drawer);
+        (self.search_reveal, self.search_reveal_velocity) = motion;
         self.search_open = true;
         self.search_query.clear();
         self.search_scroll = 0.0;
         self.search_velocity = 0.0;
         self.search_stretch = 0.0;
+        self.search_stretch_velocity = 0.0;
         self.search_track.clear();
     }
     pub fn step(&mut self, dt: f64) -> bool {
@@ -323,21 +443,22 @@ impl PhoneState {
             launch.t += if reduced {1.0} else {dt / 0.26};
             if launch.t >= 1.0 { self.launch = None; } else { active = true; }
         }
-        // A flicked drawer coasts and slows (about a second from a fast
-        // flick), stopping dead at either end of the list.
-        if self.search_stretch != 0.0 && self.gesture.is_none() {
-            self.search_stretch *= (-dt * 14.0).exp();
-            if self.search_stretch.abs() < 0.3 { self.search_stretch = 0.0; }
-            active = true;
+        if !matches!(self.gesture_out, Some(crate::mobile_gestures::ShellGesture::HomeSearch { .. })) {
+            let target = if self.searching() && !self.search_closing { 1.0 } else { 0.0 };
+            if reduced { self.search_reveal = target; self.search_reveal_velocity = 0.0; }
+            else { crate::mobile_motion::spring(&mut self.search_reveal, &mut self.search_reveal_velocity, target, dt, 420.0, 1.0); }
+            if (self.search_reveal-target).abs()<0.001 && self.search_reveal_velocity.abs()<0.02 {
+                self.search_reveal=target; self.search_reveal_velocity=0.0;
+            }
+            active |= self.search_reveal != target;
+            if self.search_closing && self.search_reveal == 0.0 { self.navigate(PhoneScreen::Home); }
         }
-        if self.search_velocity != 0.0 {
-            if self.gesture.is_none() && self.screen == PhoneScreen::Drawer {
-                let before = self.search_scroll;
-                self.search_scroll = (self.search_scroll - self.search_velocity * dt).clamp(0.0, self.search_scroll_limit);
-                self.search_velocity *= (-dt * SEARCH_FRICTION).exp();
-                if self.search_velocity.abs() < 30.0 || self.search_scroll == before { self.search_velocity = 0.0; }
-                active = true;
-            } else { self.search_velocity = 0.0; }
+        if self.gesture.is_none() && self.screen == PhoneScreen::Drawer {
+            let mut velocity = -self.search_velocity;
+            active |= crate::mobile_motion::scroll(&mut self.search_scroll, &mut velocity,
+                &mut self.search_stretch, &mut self.search_stretch_velocity,
+                self.search_scroll_limit, dt, SEARCH_FRICTION, reduced);
+            self.search_velocity = -velocity;
         }
         active |= self.shade.step_with_motion(dt, self.gesture_out, self.wallpaper_time, reduced);
         self.absorb_docked(crate::mobile_island::take_docked());
@@ -345,6 +466,7 @@ impl PhoneState {
         // open and comes back as it closes.
         self.island.set_shade_open(self.shade.wants_open());
         active |= self.pages.step_with_motion(dt, if self.screen == PhoneScreen::Home { self.gesture_out } else { None }, reduced);
+        active |= self.pages.step_glance(dt, self.viewport.size.y, self.gesture.is_none() && self.screen == PhoneScreen::Home, reduced);
         if self.pages.take_library_request() { self.navigate(PhoneScreen::Drawer); }
         active
     }
@@ -367,34 +489,30 @@ impl PhoneState {
     }
     /// A finger landed on the drawer list: a coasting list stops under it.
     pub fn search_touch(&mut self, y: f64, time: f64) {
+        self.search_touch_at_top = self.search_scroll <= 0.5;
         self.search_velocity = 0.0;
+        self.search_stretch_velocity = 0.0;
         self.search_track.clear();
         self.search_track.push((y, time));
     }
     /// The finger on the drawer list moved by `dy` points (down positive) to
     /// `y` at `time`; `max` is how far the list scrolls. The list follows
-    /// the finger 1:1. Past either end it stretches at `SEARCH_STRETCH` of
-    /// the finger's travel (up to `SEARCH_STRETCH_MAX`), and a finger that
+    /// the finger 1:1. Past either end resistance increases progressively,
+    /// and a finger that
     /// turns back takes the stretch up before the list moves again.
     pub fn search_drag(&mut self, dy: f64, y: f64, time: f64, max: f64) {
-        let max = max.max(0.0);
-        // Where the finger has put the list, in scroll points; beyond
-        // 0..max it is the overscroll the stretch shows.
-        let pos = self.search_scroll.clamp(0.0, max) - self.search_stretch / SEARCH_STRETCH - dy;
-        if pos < 0.0 {
-            self.search_scroll = 0.0;
-            self.search_stretch = (-pos * SEARCH_STRETCH).min(SEARCH_STRETCH_MAX);
-        } else if pos > max {
-            self.search_scroll = max;
-            self.search_stretch = -((pos - max) * SEARCH_STRETCH).min(SEARCH_STRETCH_MAX);
-        } else {
-            self.search_scroll = pos;
-            self.search_stretch = 0.0;
-        }
+        crate::mobile_motion::drag(&mut self.search_scroll, &mut self.search_stretch, -dy, max);
         // Samples older than the velocity window are of no further use.
         self.search_track.retain(|(_, t)| time - *t <= SEARCH_VELOCITY_WINDOW);
         if self.search_track.len() >= 16 { self.search_track.remove(0); }
         self.search_track.push((y, time));
+    }
+    /// Lifting now closes search: the list was already at its top when the
+    /// finger landed and the finger pulled it on down. Reaching the top in a
+    /// pull that started further down only stretches it, so it takes another
+    /// pull from the top to close, like the pull that opened search.
+    pub fn search_pull_closes(&self) -> bool {
+        self.searching() && self.search_touch_at_top && self.search_stretch >= SEARCH_PULL_CLOSE
     }
     /// The finger left the drawer list at `time`. A list flicked past the
     /// slop keeps going at the finger's speed over the last tenth of a
@@ -405,6 +523,8 @@ impl PhoneState {
             (Some(&(y0, t0)), Some(&(y1, t1))) if t1 - t0 > 0.004 && time - t1 < 0.08 => (y1 - y0) / (t1 - t0),
             _ => 0.0,
         };
+        let velocity = velocity.clamp(-4000.0, 4000.0);
+        self.search_stretch_velocity = if moved && self.search_stretch != 0.0 { crate::mobile_motion::stretch_velocity(self.search_stretch, velocity) } else { 0.0 };
         self.search_velocity = if moved && velocity.abs() > 250.0 && self.search_stretch == 0.0 { velocity } else { 0.0 };
         self.search_track.clear();
     }
@@ -441,7 +561,8 @@ impl PhoneState {
         // Recents hold over the drawer presented at 39 fps (GPU-ready 43 ms)
         // against 55 fps (13 ms) over Home. The iOS App Library is
         // translucent and keeps it.
-        let drawer_covers = !ios && self.screen == PhoneScreen::Drawer;
+        let drawer_covers = !ios && self.screen == PhoneScreen::Drawer
+            && (!self.searching() || self.search_reveal >= 1.0);
         ScenePlan { compose: glass, wallpaper: !app_settled && !drawer_covers, home: !app_settled }
     }
 }
@@ -457,7 +578,9 @@ pub fn app_rect(screen: Rect) -> Rect {
     Rect { pos: screen.pos + dvec2(0.0, top), size: dvec2(screen.size.x, (screen.size.y - top - 24.0).max(1.0)) }
 }
 pub fn card_rect(screen: Rect, index: f64, page: f64) -> Rect {
-    let app = app_rect(screen);
+    card_rect_for_app(screen, app_rect(screen), index, page)
+}
+pub fn card_rect_for_app(screen: Rect, app: Rect, index: f64, page: f64) -> Rect {
     let scale = if screen.size.x > screen.size.y { 0.74 } else { 0.76 };
     let size = app.size * scale;
     Rect { pos: app.pos + (app.size - size) * 0.5 + dvec2((index-page)*(size.x+22.0), -4.0), size }
@@ -469,6 +592,35 @@ pub fn mix_rect(a: Rect, b: Rect, t: f64) -> Rect {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn launcher_edges_stay_owned_during_paging_but_release_for_back_targets() {
+        let mut phone=PhoneState::default();
+        phone.pages.sync(&["a".into(),"b".into(),"c".into()],1,1);
+        for page in [-1,0,1,2] {
+            phone.pages.jump(page);
+            assert!(phone.owns_launcher_edges(),"page {page}");
+        }
+        phone.pages.step(0.016,Some(crate::mobile_gestures::ShellGesture::PageSwipe {
+            dir:crate::mobile_gestures::Dir::Right,progress:0.25,
+        }));
+        assert!(phone.owns_launcher_edges(),"a moving page must retain edge ownership");
+        phone.screen=PhoneScreen::Drawer;
+        assert!(phone.owns_launcher_edges());
+        for screen in [PhoneScreen::App,PhoneScreen::Recents] {
+            phone.screen=screen;
+            assert!(!phone.owns_launcher_edges());
+        }
+        phone.screen=PhoneScreen::Home;
+        phone.card_open=true;assert!(!phone.owns_launcher_edges());phone.card_open=false;
+        phone.keyboard_target=300.0;assert!(!phone.owns_launcher_edges());phone.keyboard_target=0.0;
+        phone.native_keyboard=300.0;assert!(!phone.owns_launcher_edges());phone.native_keyboard=0.0;
+        phone.navigation.open=true;assert!(!phone.owns_launcher_edges());phone.navigation.open=false;
+        phone.overview=0.5;assert!(!phone.owns_launcher_edges());phone.overview=0.0;
+        phone.openness=0.5;assert!(!phone.owns_launcher_edges());phone.openness=0.0;
+        phone.shade.open=0.5;assert!(!phone.owns_launcher_edges());phone.shade.open=0.0;
+        assert!(phone.owns_launcher_edges());
+    }
 
     #[test]
     fn reduced_motion_settles_transitions_but_preserves_touch_and_scroll_physics() {
@@ -496,7 +648,7 @@ mod tests {
         phone.navigate(PhoneScreen::Drawer);
         phone.search_scroll=500.0;phone.search_scroll_limit=2000.0;phone.search_velocity=-600.0;
         phone.step(1.0/60.0);
-        assert_eq!(phone.search_scroll,510.0,"reduced motion cannot advance the physics clock");
+        assert!((phone.search_scroll - (500.0 + 600.0 * (1.0-(-4.0f64/60.0).exp())/4.0)).abs()<1e-9,"reduced motion cannot advance the physics clock");
         assert!(phone.search_velocity < -500.0);
     }
 
@@ -505,7 +657,7 @@ mod tests {
     /// scrolls; a committed Back from the library goes Home (commit_gesture).
     fn drawer_finger(phone: &mut PhoneState, points: &[(f64, f64)], secs: f64) {
         use crate::mobile_gestures::*;
-        let ctx = GestureContext { screen: phone.viewport, insets: SafeInsets::default(), phone: phone.screen, body: true, system_edges: true, shade: false };
+        let ctx = GestureContext { screen: phone.viewport, insets: SafeInsets::default(), phone: phone.screen, body: true, glance: None, system_edges: true, shade: false };
         let zones = ExclusionZones::default();
         let mut rec = GestureRecognizer::default();
         let (start, t0) = (dvec2(points[0].0, points[0].1), 10.0);
@@ -523,8 +675,10 @@ mod tests {
             phone.step(1.0 / 120.0);
         }
         let out = if shell { rec.feed(FingerPhase::Up, last, t0 + secs, &ctx, &zones) } else { None };
+        // As mobile_app.rs: a pull on a list at its top closes search (Cancel).
+        let close = !shell && phone.search_pull_closes();
         phone.search_lift(t0 + secs, (last - start).length() >= 12.0);
-        if out == Some(ShellGesture::Commit(GestureKind::Back)) { phone.navigate(PhoneScreen::Home); }
+        if close || out == Some(ShellGesture::Commit(GestureKind::Back)) { phone.navigate(PhoneScreen::Home); }
     }
     fn searching_phone() -> PhoneState {
         let mut phone = PhoneState::default();
@@ -536,23 +690,101 @@ mod tests {
     }
 
     #[test]
-    fn a_pull_down_at_the_top_of_search_stretches_and_springs_back_without_closing_it() {
+    fn cancelled_search_pull_retracts_and_committed_search_keeps_its_position() {
+        let mut phone=PhoneState::default();
+        phone.search_reveal=0.25;
+        phone.step(1.0/60.0);
+        assert!(phone.search_reveal>0.0 && phone.search_reveal<0.25);
+        assert!(!phone.searching() && !phone.search_focused);
+        for _ in 0..120 {phone.step(1.0/60.0);}
+        assert_eq!(phone.search_reveal,0.0);
+        phone.search_reveal=0.4; phone.search_reveal_velocity=2.0;
+        phone.open_search();
+        assert_eq!(phone.search_reveal,0.4);
+        phone.step(1.0/60.0); assert!(phone.search_reveal>0.4);
+        for _ in 0..120 {phone.step(1.0/60.0);}
+        assert_eq!(phone.search_reveal,1.0);
+        phone.search_closing=true;
+        phone.step(1.0/60.0);
+        assert!(phone.searching() && phone.search_reveal<1.0 && phone.search_reveal>0.0);
+        for _ in 0..120 {phone.step(1.0/60.0);}
+        assert_eq!(phone.screen,PhoneScreen::Home);
+        assert_eq!(phone.search_reveal,0.0);
+    }
+
+    #[test]
+    fn search_dismissal_tracks_the_keyboard_after_focus_and_body_reflow_end() {
+        let mut phone = PhoneState::default();
+        phone.search_closing = true;
+        phone.search_focused = false;
+        phone.native_keyboard = 320.0;
+        phone.body_reflow = 320.0;
+        let full_height = 800.0;
+        assert_eq!(full_height - phone.body_reflow - phone.search_keyboard_lift(10.0), 480.0);
+        phone.body_reflow = 0.0;
+        assert_eq!(full_height - phone.body_reflow - phone.search_keyboard_lift(10.0), 480.0);
+        phone.native_keyboard_event(&VirtualKeyboardEvent::WillHide {
+            time: 10.0, height: 0.0, duration: 0.2, ease: makepad_platform::event::Ease::OutCubic,
+        });
+        assert_eq!(full_height - phone.search_keyboard_lift(10.0), 480.0);
+        phone.native_keyboard_event(&VirtualKeyboardEvent::DidShow {time: 10.1, height: 160.0});
+        assert_eq!(full_height - phone.search_keyboard_lift(10.0), 640.0);
+        phone.native_keyboard_event(&VirtualKeyboardEvent::DidHide {time: 10.2});
+        assert_eq!(phone.search_keyboard_lift(10.0), 0.0);
+    }
+
+    #[test]
+    fn a_pull_down_on_search_already_at_the_top_closes_it() {
         // Straight down, and down along a right thumb's arc (it starts a
-        // little sideways): 300 points over six moves with the list at 0.
+        // little sideways, and must not be taken for the swipe back): 300
+        // points over six moves with the list at 0.
         let straight = [(200.0, 400.0), (200.0, 450.0), (200.0, 500.0), (200.0, 550.0), (200.0, 600.0), (200.0, 650.0), (200.0, 700.0)];
         let arc = [(200.0, 400.0), (214.0, 410.0), (240.0, 460.0), (270.0, 520.0), (295.0, 580.0), (315.0, 640.0), (330.0, 700.0)];
         for (what, path, secs) in [("straight", &straight, 0.3), ("arc", &arc, 0.3), ("fast arc", &arc, 0.1)] {
             let mut phone = searching_phone();
             drawer_finger(&mut phone, path, secs);
-            assert!(phone.searching(), "{what}: a pull at the top must not close search");
-            assert_eq!(phone.search_query, "a", "{what}");
-            assert_eq!(phone.search_scroll, 0.0, "{what}");
-            assert!(phone.search_stretch > 0.0, "{what}: the list stretches under the finger");
-            assert_eq!(phone.search_velocity, 0.0, "{what}: a stretched list does not coast");
-            for _ in 0..60 { phone.step(1.0 / 60.0); }
-            assert_eq!(phone.search_stretch, 0.0, "{what}: the stretch springs back");
-            assert!(phone.searching(), "{what}");
+            assert!(!phone.searching(), "{what}: a pull at the top closes search");
+            assert_eq!(phone.screen, PhoneScreen::Home, "{what}");
         }
+    }
+
+    #[test]
+    fn the_search_field_lets_a_pull_down_go_to_the_list_and_keeps_taps_and_selection() {
+        let start = dvec2(200.0, 300.0);
+        // A pull down from the field, at the list's top: the list takes it.
+        assert!(search_field_releases(start, dvec2(203.0, 314.0), 0.0));
+        // A tap's jitter, a sideways selection drag and an upward drag stay
+        // with the field.
+        assert!(!search_field_releases(start, dvec2(201.0, 306.0), 0.0));
+        assert!(!search_field_releases(start, dvec2(260.0, 320.0), 0.0));
+        assert!(!search_field_releases(start, dvec2(200.0, 260.0), 0.0));
+        // A scrolled list is not pulled from the field.
+        assert!(!search_field_releases(start, dvec2(200.0, 340.0), 120.0));
+    }
+    #[test]
+    fn a_short_pull_at_the_top_stretches_and_springs_back_without_closing_search() {
+        let short = [(200.0, 400.0), (200.0, 420.0), (200.0, 440.0), (200.0, 460.0)];
+        let mut phone = searching_phone();
+        drawer_finger(&mut phone, &short, 0.3);
+        assert!(phone.searching(), "60 points only stretches");
+        assert_eq!(phone.search_query, "a");
+        assert_eq!(phone.search_scroll, 0.0);
+        assert!(phone.search_stretch > 0.0, "the list stretches under the finger");
+        assert_eq!(phone.search_velocity, 0.0, "a stretched list does not coast");
+        for _ in 0..60 { phone.step(1.0 / 60.0); }
+        assert_eq!(phone.search_stretch, 0.0, "the stretch springs back");
+        assert!(phone.searching());
+    }
+
+    #[test]
+    fn a_pull_that_brings_the_list_back_to_its_top_keeps_search_open() {
+        let path = [(200.0, 300.0), (200.0, 400.0), (200.0, 500.0), (200.0, 600.0), (200.0, 700.0)];
+        let mut phone = searching_phone();
+        phone.search_scroll = 250.0;
+        drawer_finger(&mut phone, &path, 0.4);
+        assert_eq!(phone.search_scroll, 0.0, "the list reached its top");
+        assert!(phone.search_stretch > 0.0, "and stretched past it");
+        assert!(phone.searching(), "it takes another pull from the top to close");
     }
 
     #[test]
@@ -594,16 +826,17 @@ mod tests {
         let mut phone = searching_phone();
         phone.search_touch(400.0, 1.0);
         phone.search_drag(100.0, 500.0, 1.1, 2000.0);
-        assert_eq!((phone.search_scroll, phone.search_stretch), (0.0, 45.0));
+        assert_eq!(phone.search_scroll, 0.0);
+        assert!(phone.search_stretch>30.0 && phone.search_stretch<55.0);
         phone.search_drag(-60.0, 440.0, 1.2, 2000.0);
         assert_eq!(phone.search_scroll, 0.0);
-        assert!((phone.search_stretch - 18.0).abs() < 1e-9);
+        assert!(phone.search_stretch>15.0 && phone.search_stretch<22.0);
         phone.search_drag(-60.0, 380.0, 1.3, 2000.0);
         assert!((phone.search_scroll - 20.0).abs() < 1e-9 && phone.search_stretch == 0.0);
         // At the bottom it stretches the other way.
         phone.search_drag(-100.0, 280.0, 1.4, 50.0);
         assert_eq!(phone.search_scroll, 50.0);
-        assert!((phone.search_stretch + 70.0 * SEARCH_STRETCH).abs() < 1e-9);
+        assert!(phone.search_stretch < -20.0 && phone.search_stretch > -38.5);
     }
 
     #[test]

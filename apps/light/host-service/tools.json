@@ -1,0 +1,67 @@
+{
+  "schema": 1,
+  "tools": [
+    {
+      "name": "light.info",
+      "description": "Inspect a photo in your workspace (RAW: DNG, CR2/CR3, NEF, ARW, RAF, ORF, RW2, PEF...; or JPEG, PNG, TIFF): its size and summary, and every EXIF/TIFF/GPS tag and XMP property. Reads only. `path` is relative to your workspace, the folder your own file tools (list_dir, read_file) see; files outside it cannot be named.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "path": {"type": "string", "minLength": 1, "maxLength": 512}
+        },
+        "required": ["path"],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "file": {"type": "string"},
+          "photo": {"type": "object"},
+          "exif": {"type": "array"},
+          "xmp": {"type": "array"}
+        },
+        "required": ["file", "photo"]
+      },
+      "risk": "read",
+      "implemented_by": "host-service"
+    },
+    {
+      "name": "light.run",
+      "description": "Run up to 64 commands from the light engine's catalog, in order, on the photo at `path` in your workspace, then write the developed photo (.jpg, .png, .tif, .webp, .avif or .dng by the extension of `out`; `quality` 1 to 100, `long_edge` caps its size) to `out` when given. Each command is {id, params}. Only reviewed commands run: those the skill's commands.md lists untagged (work inside the document); anything that reaches other files, code, the network, devices or the app is refused before any command runs. Paths are relative to your workspace, and `out` must be a new file. Read the light-engine skill first.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "path": {"type": "string", "minLength": 1, "maxLength": 512},
+          "cmds": {
+            "type": "array",
+            "maxItems": 64,
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {"type": "string", "minLength": 1, "maxLength": 128},
+                "params": {"type": "object"}
+              },
+              "required": ["id"],
+              "additionalProperties": false
+            }
+          },
+          "out": {"type": "string", "minLength": 1, "maxLength": 512},
+          "quality": {"type": "integer", "minimum": 1, "maximum": 100},
+          "long_edge": {"type": "integer", "minimum": 16, "maximum": 16384}
+        },
+        "required": ["path", "cmds"],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "results": {"type": "array", "items": {"type": "object"}},
+          "out": {"type": ["string", "null"]}
+        },
+        "required": ["results"]
+      },
+      "risk": "act",
+      "implemented_by": "host-service"
+    }
+  ]
+}

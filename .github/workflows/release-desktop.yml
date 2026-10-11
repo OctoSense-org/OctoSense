@@ -40,7 +40,11 @@ on:
     paths:
       - 'desktop/packaging/**'
       - 'desktop/scripts/package.py'
+      - 'desktop/scripts/appimage_receipt.py'
       - 'tools/release-scan.py'
+      - 'tools/release-scan-public-assets.json'
+      - 'tools/test_release_scan.py'
+      - 'tools/fixtures/release-scan/**'
       - 'tools/kernel-artifact.py'
       - '.github/workflows/release-desktop.yml'
   workflow_dispatch:
@@ -172,7 +176,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends pkg-config libssl-dev libx11-dev libxcursor-dev \
             libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev libgl1-mesa-dev libegl1-mesa-dev libgles2-mesa-dev \
             libasound2-dev libpulse-dev libdbus-1-dev libudev-dev libdrm-dev libgbm-dev libva-dev dpkg-dev file \
-            desktop-file-utils libfuse2
+            desktop-file-utils libfuse2 squashfs-tools
       - name: Install cargo-packager
         run: cargo install cargo-packager --locked --version 0.11.8
       - name: Neutral build paths
@@ -405,7 +409,6 @@ jobs:
       contents: write
     env:
       TAG: ${{ needs.plan.outputs.tag }}
-      GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
@@ -415,6 +418,7 @@ jobs:
           persist-credentials: false
       - name: HEAD is the tag's commit
         env:
+          GH_TOKEN: ${{ github.token }}
           WANT: ${{ needs.plan.outputs.commit }}
         run: |
           head=$(git rev-parse HEAD)
@@ -441,6 +445,10 @@ jobs:
           cd packages
           sha256sum -- * | sort -k2 > SHA256SUMS
           cat SHA256SUMS
+      - name: Install the non-executing AppImage extractor
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends squashfs-tools
       - name: Scan again what is attached
         env:
           RELEASE_SCAN_EXTRA: ${{ secrets.RELEASE_SCAN_EXTRA }}
@@ -449,6 +457,8 @@ jobs:
           # before signing, and the same app is in the .app.zip scanned now.
           python3 tools/release-scan.py --dmg-bytes-only packages/*
       - name: Attach to the tag's draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           version="${TAG#desktop-v}"
           if gh release view "$TAG" > /dev/null 2>&1; then

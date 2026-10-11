@@ -1,0 +1,117 @@
+diff --git a/widgets/src/splash_host.rs b/widgets/src/splash_host.rs
+index 78c9a78c4..b086c99b4 100644
+--- a/widgets/src/splash_host.rs
++++ b/widgets/src/splash_host.rs
+@@ -6,7 +6,7 @@
+ //! This module is the ONE doorway for all of that: an isolate's script asks,
+ //! the embedding host (the launcher) decides and answers. No policy lives
+ //! here; an undrained or unrecognized request simply never resolves, and a
+-//! host that says no answers `{ok: false}`.
++//! host that says no answers `{is_ok: false}`.
+ //!
+ //! Registered in isolates as `mod.host` (bound as `host` by the Splash
+ //! prefix, like `fs`):
+@@ -218,10 +218,12 @@ pub fn splash_host_respond(
+         };
+         let obj = vm.bx.heap.new_object();
+         let trap = vm.bx.threads.cur().trap.pass();
++        // Intern the native keys so the complete envelope can round-trip as JSON
++        // even when the app never names a field in its source.
+         // `is_ok`, never `ok`: `ok` is a script keyword and unusable as a field.
+-        vm.bx.heap.set_value(obj, id!(is_ok).into(), ok.into(), trap);
+-        vm.bx.heap.set_value(obj, id!(data).into(), data, trap);
+-        vm.bx.heap.set_value(obj, id!(error).into(), error, trap);
++        vm.bx.heap.set_value(obj, id_lut!(is_ok).into(), ok.into(), trap);
++        vm.bx.heap.set_value(obj, id_lut!(data).into(), data, trap);
++        vm.bx.heap.set_value(obj, id_lut!(error).into(), error, trap);
+         if !crate::splash_policy::may_run(heap_key) {
+             delivered = false;
+             return;
+@@ -397,6 +399,87 @@ pub fn script_mod(vm: &mut ScriptVm) {
+ mod tests {
+     use super::*;
+ 
++    #[test]
++    fn raw_service_envelopes_round_trip_without_script_field_lookups() {
++        const CHILD: &str = "MAKEPAD_TEST_RAW_HOST_ENVELOPE";
++        if std::env::var_os(CHILD).is_none() {
++            // No "refusal" mode: the runtime built that envelope for a
++            // request its capability check refused, which makepad#118
++            // removed; the host answers every request now (OctoSense #450).
++            for mode in ["success", "error"] {
++                let output = std::process::Command::new(std::env::current_exe().unwrap())
++                    .args(["--exact", "splash_host::tests::raw_service_envelopes_round_trip_without_script_field_lookups", "--nocapture"])
++                    .env(CHILD, mode).output().unwrap();
++                assert!(
++                    output.status.success(),
++                    "{mode}: {}\n{}",
++                    String::from_utf8_lossy(&output.stdout),
++                    String::from_utf8_lossy(&output.stderr)
++                );
++            }
++            return;
++        }
++        use crate::*;
++        let mode = std::env::var(CHILD).unwrap();
++        let mut cx = Cx::new(Box::new(|_, _| {}));
++        let root = cx.with_vm(|vm| {
++            crate::script_mod(vm);
++            let value = script_eval!(vm, { use mod.widgets.* View { card := Splash{} } });
++            WidgetRef::script_from_value(vm, value)
++        });
++        assert!(
++            [id!(is_ok), id!(data), id!(error)]
++                .iter()
++                .any(|id| id.as_string(|text| text.is_none())),
++            "fresh-process control: the script must not have interned every native envelope key"
++        );
++        let card = root.splash(&mut cx, ids!(card));
++        card.set_host_caps(&mut cx, vec!["fixture".into()]);
++        card.set_policy(&mut cx, Some(vec![]), Some(100_000));
++        let service = "fixture.read";
++        // In particular, do not reference any envelope field in this source:
++        // field access would intern its spelling and mask the native bug.
++        card.set_text(
++            &mut cx,
++            &format!(
++                r#"
++            host.request("{service}", {{}}, fn(reply) {{
++                host.request("fixture.forward", reply, nil)
++            }})
++            Label{{text:"raw response fixture"}}
++        "#
++            ),
++        );
++        let heap = card.isolate_heap_key(&mut cx).unwrap();
++        let initial = take_splash_host_requests_for(&[heap]).pop().unwrap();
++        let result = if mode == "success" {
++            Ok(r#"{"unknown_payload_key": [-2, "value"]}"#)
++        } else {
++            Err("synthetic failure")
++        };
++        splash_host_respond(&mut cx, heap, initial.req_id, result);
++        let forwarded = take_splash_host_requests_for(&[heap]);
++        assert_eq!(
++            forwarded.len(),
++            1,
++            "a raw envelope remains bounded, serializable JSON"
++        );
++        assert_eq!(forwarded[0].service, "fixture.forward");
++        let value: serde_json::Value = serde_json::from_str(&forwarded[0].args_json).unwrap();
++        assert_eq!(value["is_ok"], mode == "success");
++        if mode == "success" {
++            assert_eq!(
++                value["data"]["unknown_payload_key"],
++                serde_json::json!([-2, "value"])
++            );
++            assert!(value["error"].is_null());
++        } else {
++            assert!(value["data"].is_null());
++            assert!(value["error"].as_str().is_some_and(|text| !text.is_empty()));
++        }
++        gc_bridge(&[heap]);
++    }
++
+     #[test]
+     fn delayed_background_callbacks_keep_nested_requests_nonprompting() {
+         use crate::*;

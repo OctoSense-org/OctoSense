@@ -10,6 +10,11 @@
 #![allow(dead_code)] // shell surface (icons, OSD, panels) built ahead of the flows that use it
 
 pub mod agents;
+pub mod runtime_host;
+#[cfg(any(feature = "app-hub", native_mobile))]
+pub mod mail_background;
+#[cfg(any(feature = "app-hub", native_mobile))]
+pub mod agent_events;
 pub mod ai_bus;
 pub mod app_chat;
 pub mod app_storage;
@@ -18,6 +23,7 @@ pub mod approvals;
 pub mod apps;
 pub mod binds;
 pub mod clients;
+pub mod charts;
 pub mod demo_home;
 pub mod desk;
 pub mod desktop_layout;
@@ -34,6 +40,7 @@ pub mod mobile_back;
 pub mod mobile_tiles;
 pub mod mobile_shade;
 pub mod mobile_pages;
+mod mobile_motion;
 pub mod mobile_island;
 pub mod mobile_octopus;
 pub mod mobile_groups;
@@ -46,6 +53,9 @@ pub mod dock_warp;
 pub mod host;
 pub mod host_tools;
 pub mod hub;
+#[cfg(kernel)]
+pub mod coding_scope;
+pub mod kernel_port;
 pub mod layout;
 pub mod octosense;
 pub mod module_host;
@@ -57,6 +67,18 @@ mod module_input_tests;
 mod module_panic_tests;
 #[cfg(test)]
 mod module_peer_tests;
+#[cfg(test)]
+mod module_port_tests;
+#[cfg(test)]
+mod module_resize_tests;
+#[cfg(test)]
+mod maps_model_tests;
+#[cfg(test)]
+mod pdftools_model_tests;
+#[cfg(test)]
+mod system_app_theme_tests;
+#[cfg(test)]
+mod writer_model_tests;
 pub mod module_view;
 pub mod native_apps;
 pub mod sandbox;
@@ -75,12 +97,38 @@ pub mod glance;
 pub mod glance_card;
 pub mod studio;
 use studio::Renderer as StudioRenderer;
+mod glance_style;
 pub mod glance_chat;
+pub mod mail_card;
+#[cfg(any(feature = "app-hub", native_mobile))]
+pub mod mail_review;
+#[cfg(any(feature = "app-hub", native_mobile))]
+pub mod connected_review;
+#[cfg(any(feature = "app-hub", native_mobile))]
+pub mod platform_services;
+#[cfg(any(feature = "app-hub", native_mobile))]
+pub mod files_service;
+#[cfg(any(feature = "app-hub", native_mobile))]
+pub mod device_calendar;
+#[cfg(any(feature = "app-hub", native_mobile))]
+pub mod audio_service;
+#[cfg(any(feature = "app-hub", native_mobile))]
+pub mod glance_routes;
+#[cfg(any(feature = "app-hub", native_mobile))]
+pub mod connected_events;
+#[cfg(any(feature = "app-hub", native_mobile))]
+pub mod connected_backends;
 pub mod glance_digest;
 #[cfg(any(feature = "app-hub", native_mobile))]
 pub mod glance_notice;
+#[cfg(wasm_functions)]
+pub mod wasm_service;
 pub mod glance_panel;
 pub mod glance_sheet;
+mod card_presentation;
+mod card_chat;
+mod mail_clip;
+mod mail_compose;
 use glance::NoteTargets as GlanceNoteTargets;
 // The App derive takes a plain type name for a field.
 use approvals::RequestNotices as ApprovalNotices;
@@ -228,11 +276,6 @@ script_mod! {
                         shell_glance := ShellGlancePanel{}
                         shell_panel := ShellPanel{}
                         shell_menu := ShellMenu{}
-                        // One glance card, full size, over a dimmed desk
-                        // (glance_sheet.rs): a card's toast opens it.
-                        shell_glance_sheet := ShellGlanceSheet{}
-                        shell_notes := ShellNotifications{}
-                        shell_osd := ShellOsd{}
                         // The approval surface (approvals/): the shell's
                         // approval and first-use sheets, the time-box
                         // indicator, and Settings > Assistant > Approvals.
@@ -243,6 +286,11 @@ script_mod! {
                         // "Ask <app>" (app_chat/): an app agent's
                         // conversation, both lanes, beside the system chat.
                         shell_app_chat := ShellSystemChat{ app_panel: true }
+                        // Cards and notifications stay above phone chat;
+                        // approval sheets and the developer banner remain above them.
+                        shell_glance_sheet := ShellGlanceSheet{}
+                        shell_notes := ShellNotifications{}
+                        shell_osd := ShellOsd{}
                         shell_approvals := ShellApprovals{}
                         shell_approvals_settings := ShellApprovalsSettings{}
                         // Developer mode's banner (dev_mode.rs): over
@@ -424,14 +472,14 @@ pub struct App {
     pub quit_waiting_since: Option<f64>,
     /// The notifications cards asked for (`glance.publish` with `notify`):
     /// the desktop toasts' ids and the card each opens, and the phone
-    /// shade's ids, which open the glance page.
+    /// shade's ids and the exact card each opens.
     #[rust]
     pub glance_toasts: GlanceNoteTargets,
     /// The toast offering to undo the last dismissal in the glance panel.
     #[rust]
     pub glance_undo_toast: Option<u64>,
     #[rust]
-    pub glance_shade_notes: Vec<u64>,
+    pub glance_shade_notes: GlanceNoteTargets,
     /// The developer-mode generation last acted on (dev_mode.rs).
     #[rust]
     pub dev_generation: u64,
@@ -516,6 +564,7 @@ pub struct App {
     /// home has laid its pages out at the phone's size (mobile_pages.rs).
     #[rust]
     pub test_page: Option<(Timer, i64)>,
+    #[rust] pub test_glance_fixtures: Option<(Timer, String)>,
     /// The hidden WebView that renders pages for the octos reader where
     /// there is no Chrome (the phone): serves `webview_render::renderer`.
     #[rust]
@@ -1675,6 +1724,7 @@ impl App {
     /// permissions: end its instances so the next open takes the new one.
     #[cfg(any(feature = "app-hub", native_mobile))]
     fn installed_app_changed(&mut self, cx: &mut Cx, id: &str) {
+        crate::connected_backends::installed_changed(id);
         // Its storage (ADR 0004 §11): an install records the manifest's
         // block and lays out the folders; a removal (the jail is gone)
         // deletes what the host keeps for it and keeps its agents suspended.
@@ -3755,7 +3805,7 @@ impl App {
             glance_panel::ShellGlancePanelAction::Open { app, route } => {
                 log!("wm: glance card opens {} (route {:?})", app, route);
                 self.set_glance_open(cx, false);
-                self.launch_app(cx, &app);
+                self.launch_glance_app(cx, &app, route.as_deref());
             }
             // A card pressed in the panel: the card window, as its
             // notification opens it.
@@ -3829,30 +3879,95 @@ impl App {
         self.ui.widget(cx, ids!(shell_glance)).borrow::<glance_panel::ShellGlancePanel>().is_some_and(|p| p.open)
     }
 
-    /// The card window (glance_sheet.rs) is modal: while a card is open
-    /// every pointer event is its own (a press outside the card closes it).
+    fn sync_glance_presentation(&mut self, cx: &Cx) {
+        let (open, covered) = self.ui.widget(cx, ids!(shell_glance_sheet)).borrow::<glance_sheet::ShellGlanceSheet>()
+            .map(|s| (s.is_open(), s.covers_background())).unwrap_or_default();
+        if let Some(state) = self.state.as_mut() {
+            state.phone.card_open = open && state.style.target.mobile();
+            state.phone.card_covers_home = covered && state.style.target.mobile();
+            if !open && state.phone.pages.workspace_source.is_some() { state.phone.pages.clear_card_anchor(state.phone.viewport.size.y); }
+        }
+    }
+
+    /// The workspace owns every pointer stream until dismissal completes.
     fn glance_sheet_pointer(&mut self, cx: &mut Cx, event: &Event) -> bool {
         let sheet = self.ui.widget(cx, ids!(shell_glance_sheet));
-        if !sheet.borrow::<glance_sheet::ShellGlanceSheet>().is_some_and(|s| s.is_open()) {
-            return false;
-        }
+        if !sheet.borrow_mut::<glance_sheet::ShellGlanceSheet>().is_some_and(|mut s| s.accepts_pointer(event)) { return false; }
         sheet.handle_event(cx, event, &mut Scope::empty());
-        if matches!(event, Event::MouseDown(_) | Event::MouseUp(_)) {
-            self.redraw_all(cx);
-        }
+        self.sync_glance_presentation(cx);
+        if matches!(event, Event::MouseDown(_) | Event::MouseUp(_) | Event::TouchUpdate(_)) { self.redraw_all(cx); }
         true
     }
 
-    /// Open the published card `key` in the card window; when it is gone
-    /// (withdrawn, expired), the glance panel instead.
-    fn open_glance_card(&mut self, cx: &mut Cx, key: &str) {
+    fn launch_glance_app(&mut self, cx: &mut Cx, app: &str, route: Option<&str>) {
+        #[cfg(any(feature = "app-hub", native_mobile))]
+        {
+            // Glance stores the publisher's manifest ID, whereas installed
+            // apps have a separate hub: launcher identity (ADR 0004).
+            let installed = apps::installed_launch_id(app);
+            if crate::clients::find_app(&installed).is_some() {
+                if let Some(route) = route { crate::glance_routes::queue(app, route); }
+                self.launch_app(cx, &installed);
+                return;
+            }
+        }
+        #[cfg(any(feature = "app-hub", native_mobile))]
+        if app == "calendar" {
+            if let Some(id) = route.and_then(|route| route.strip_prefix("event/")) {
+                let root = octosense_app_hub_app::data_root(cx).join(".host");
+                if let Err(error) = octosense_calendar_service::focus_event(&root, id) {
+                    self.notify(cx, "Calendar", &error);
+                }
+            }
+        }
+        let _ = route;
+        self.launch_app(cx, app);
+    }
+
+    /// Back dismisses the IME, then review, then the workspace.
+    fn close_glance_card(&mut self, cx: &mut Cx) -> bool {
+        let handled = self.ui.widget(cx, ids!(shell_glance_sheet)).borrow_mut::<glance_sheet::ShellGlanceSheet>().is_some_and(|mut s| {
+            if !s.is_open() { return false; }
+            s.back(cx); true
+        });
+        if handled { self.sync_glance_presentation(cx); self.redraw_all(cx); }
+        handled
+    }
+
+    /// Open directly above the current phone screen. Glance supplies a visual
+    /// origin only when that exact summary is visible; notifications need no
+    /// detour through the feed, no activity launch, and no agent restart.
+    pub fn open_glance_card(&mut self, cx: &mut Cx, key: &str) {
         self.set_glance_open(cx, false);
-        let opened = self.ui.widget(cx, ids!(shell_glance_sheet)).borrow_mut::<glance_sheet::ShellGlanceSheet>().is_some_and(|mut s| s.open_card(cx, key));
-        if opened {
-            log!("wm: glance toast opens card {key}");
-        } else {
-            log!("wm: glance card {key} is gone; opening the glance panel");
-            self.set_glance_open(cx, true);
+        let phone = self.state.as_ref().is_some_and(|s| s.style.target.mobile());
+        let mut origin = None;
+        if phone {
+            self.close_chat_panes(cx, true);
+            let state = self.state_mut();
+            state.phone.shade.close();
+            state.phone.pages.feed.sync_published();
+            if state.phone.screen == mobile::PhoneScreen::Home {
+                origin = state.phone.pages.summary_rect(key, state.phone.viewport);
+                if origin.is_some() { state.phone.pages.anchor_card(key); }
+            }
+            state.phone.gesture = None;
+            state.phone.touch = None;
+            state.phone.navigation.cancel();
+        }
+        let insets = self.state.as_ref().map(|s| s.phone.insets).unwrap_or_default();
+        let opened = self.ui.widget(cx, ids!(shell_glance_sheet)).borrow_mut::<glance_sheet::ShellGlanceSheet>().is_some_and(|mut s| {
+            s.set_presentation(phone, insets);
+            if !s.open_card(cx, key) { return false; }
+            s.present(cx, origin); true
+        });
+        self.sync_glance_presentation(cx);
+        if opened { log!("wm: glance opens resident workspace {key}"); }
+        else {
+            log!("wm: glance card {key} is gone; opening the glance feed");
+            if phone {
+                let state = self.state_mut(); state.phone.navigate(mobile::PhoneScreen::Home); state.phone.pages.jump(-1);
+                self.animate_phone(cx);
+            } else { self.set_glance_open(cx, true); }
         }
         self.redraw_all(cx);
     }
@@ -4115,13 +4230,13 @@ impl App {
         }
     }
 
-    /// A press on a toast (shell/notifications.rs `hit`). Only the press: a
-    /// drag of a pane's frame keeps its moves and its release wherever they
-    /// go.
+    /// A toast owns its native touch gesture through release, even after a
+    /// drag cancels activation. Mouse handling takes only the press so a pane
+    /// dragged across a toast keeps its own movement and release.
     fn press_on_toast(&mut self, cx: &mut Cx, event: &Event) -> bool {
-        let Event::MouseDown(e) = event else { return false };
         let notes = self.ui.widget(cx, ids!(shell_notes));
-        let on = notes.borrow::<shell::notifications::ShellNotifications>().is_some_and(|n| n.hit(e.abs));
+        let on = notes.borrow_mut::<shell::notifications::ShellNotifications>()
+            .is_some_and(|mut n| n.owns_pointer(event));
         on
     }
 
@@ -4241,8 +4356,8 @@ impl App {
 
     /// Announce a card that asked for it (`glance.publish` with `notify`):
     /// a toast on a desktop, which opens that card in the card window
-    /// (glance_sheet.rs); a shade notification on the phone, which opens the
-    /// glance page.
+    /// (glance_sheet.rs); a shade notification on the phone opens that same
+    /// card, with its Glance feed underneath for Close/Back.
     fn glance_notify(&mut self, cx: &mut Cx, note: &glance::GlanceNote) {
         let body = if note.summary.is_empty() { "Open the card at a glance" } else { note.summary.as_str() };
         let notes = self.ui.widget(cx, ids!(shell_notes));
@@ -4270,7 +4385,7 @@ impl App {
         let now = cx.seconds_since_app_start();
         if let Some(state) = self.state.as_mut() {
             let id = state.phone.shade.post(&note.app, &note.title, body, now, Vec::new());
-            self.glance_shade_notes.push(id);
+            self.glance_shade_notes.record(id, &note.key);
         }
         log!("glance: {} notifies {}", note.app, note.key);
         self.redraw_all(cx);
@@ -4465,6 +4580,9 @@ impl App {
         // ~0.5s hiccups in every child app). A background thread samples
         // and we only copy its cache here.
         if self.status_rx.is_none() {
+            // Before the first script app reads the time: the worker keeps it
+            // current from its first round on.
+            shell::bar::refresh_script_utc_offset();
             match shell::bar::start_status_sampler(&cx.thread_spawner()) {
                 Ok((rx, worker)) => {
                     self.status_rx = Some(rx);
@@ -5235,6 +5353,13 @@ impl App {
                 }
             }
         }
+        #[cfg(all(feature = "dev-mode", any(feature = "app-hub", native_mobile)))]
+        if self.test_glance_fixtures.as_ref().is_some_and(|(timer, _)| timer.is_timer(te).is_some()) {
+            if let Some((_, path)) = self.test_glance_fixtures.take() {
+                log!("glance fixture admission: {:?}", glance::publish_test_fixtures(&path));
+                self.redraw_all(cx);
+            }
+        }
         if let Some((timer, n)) = &self.test_page {
             if timer.is_timer(te).is_some() {
                 let n = *n;
@@ -5290,9 +5415,25 @@ impl App {
         while i < args.len() {
             if args[i] == "--test-action" {
                 if let Some(name) = args.get(i + 1) {
+                    #[cfg(all(feature = "dev-mode", feature = "acceptance-fixtures", target_os = "android"))]
+                    if name == "backend-auth-fixture" {
+                        if crate::apps::register_android_backend_fixture().is_ok() {
+                            log!("backend fixture: local endpoints registered; no account injected");
+                        } else {
+                            error!("backend fixture: registration rejected");
+                        }
+                        i += 2;
+                        continue;
+                    }
                     // launch-<app id>: spawn a registered app directly — the
                     // deterministic way to put one app on the desk in a test.
                     if self.groups_test_action(cx, name) { i += 2; continue; }
+                    #[cfg(all(feature = "dev-mode", any(feature = "app-hub", native_mobile)))]
+                    if let Some(path) = name.strip_prefix("glance-fixtures:") {
+                        self.test_glance_fixtures = Some((cx.start_timeout(1.5), path.into()));
+                        i += 2;
+                        continue;
+                    }
                     // webview-crawl:<url>,<url>…: a small crawl through the
                     // octos reader with the hidden WebView renderer, one
                     // `[webview-crawl]` log line per page (on-device check).
@@ -5400,6 +5541,18 @@ impl App {
                         log!("wm: --test-action ask-appcard {:?} in {}s", text, delay);
                         let timer = cx.start_timeout(delay);
                         self.test_asks.push((timer, text.to_string()));
+                        i += 2;
+                        continue;
+                    }
+                    // style:<android|ios>: switch to that phone shell first,
+                    // so a later launch-<app id> opens the app at a phone's
+                    // size (an app's phone layout, checked on a desktop).
+                    if let Some(style) = name.strip_prefix("style:") {
+                        match style.trim() {
+                            "android" => self.set_desktop_style(cx, desktop::DesktopStyle::Android),
+                            "ios" => self.set_desktop_style(cx, desktop::DesktopStyle::Ios),
+                            other => log!("wm: --test-action style: no phone style {other:?} (android or ios)"),
+                        }
                         i += 2;
                         continue;
                     }
@@ -5842,42 +5995,8 @@ fn scan_theme_color(source: &str, key: &str) -> Option<Vec4f> {
 
 impl MatchEvent for App {
     fn handle_startup(&mut self, cx: &mut Cx) {
-        // Where App Hub keeps what it installs: `$OCTOSENSE_APP_DATA`, else
-        // `apps/` in the platform data directory or OctoSense's own state.
-        // App storage (ADR 0004 §11): the one source of every app's jail,
-        // account folders and secrets; the startup check refuses any agent
-        // workspace that reaches the secrets.
-        let storage = app_storage::init(cx.get_data_dir().map(std::path::PathBuf::from));
-        #[cfg(any(feature = "app-hub", native_mobile))]
-        octosense_app_hub_app::set_data_root(storage.map(|s| s.layout().apps_root().to_path_buf())
-            .unwrap_or_else(|| cx.get_data_dir().map(std::path::PathBuf::from)
-                .unwrap_or_else(octosense::paths::home).join("apps")));
-        let _ = storage;
-        // The assistant's services (octosense-ai-host): the octos kernel,
-        // configured here and started when a consumer (AppCard, Rinx)
-        // connects, and AI providers' `llm` service, which writes its profile
-        // and restarts it after a change. A no-op where the build links none.
-        // Its octos home is OctoSense's own (`<data dir>/octos-home`; on a
-        // desktop, OctoSense's state dir), never the person's `~/octos-home`.
-        ai_host::start(ai_host::Host::platform(cx.get_data_dir().or_else(|| {
-            Some(octosense::paths::home().to_string_lossy().into_owned())
-        })));
-        // Developer mode (ADR 0004 §13): from this launch's flag or
-        // environment, or a developer profile's saved state; before any app
-        // starts, so grants and approvals see it from the first call.
-        dev_mode::init(&octosense::paths::home());
-        octosense::paths::scope_linked_app_data();
+        runtime_host::init(cx.get_data_dir(), None);
         self.dev_generation = dev_mode::generation();
-        // Approvals (ADR 0004 §8, §4): this home's standing rules, consent
-        // and audit, before any app can ask for an approval.
-        approvals::init(&octosense::paths::home());
-        // The shell is every app agent's tool host (octos UPCR-2026-035):
-        // brokers register app tools and hand their calls, cancels,
-        // approvals and the system agent's inputs to `host_tools`.
-        host_tools::init();
-        // The system agent's grants (Setup > Assistant > Command execution),
-        // handed to the kernel before it first starts.
-        system_chat::init(std::path::Path::new(&octosense::paths::home()));
         // An agent for every app that declares one (ADR 0004 §4): the ones
         // the person already allowed get their peer now, so the system
         // agent's peer_list shows them.
@@ -5906,6 +6025,7 @@ impl MatchEvent for App {
         let sheet = octosense::style::load_sheet(desktop::DesktopStyle::Omarchy, false);
         host::set_child_env("MAKEPAD_WIDGET_STYLE", std::ffi::OsStr::new(&sheet.name));
         self.module_host.apply_style(cx, &sheet);
+        glance_style::select(cx, &sheet);
         let (material, roles) = Self::chrome_from_sheet(&sheet);
         self.stylesheet = Some(sheet);
         let source = theme::load_theme_source(&theme_name);
@@ -6277,6 +6397,9 @@ impl MatchEvent for App {
                 self.installed_app_changed(cx, &id);
                 // Its tools, grants and kernel tools, as installed (ADR 0004 §7).
                 host_tools::script_app_installed(&id);
+                // Its own functions, compiled before its first call (ADR 0014).
+                #[cfg(wasm_functions)]
+                wasm_service::warm(&id);
             }
             #[cfg(all(unix, any(feature = "app-hub", native_mobile)))]
             self.drain_studio(cx);
@@ -6296,6 +6419,8 @@ impl App {
         host::set_child_env("MAKEPAD_HOME", octosense::paths::home().as_os_str());
         desktop_style::install(vm,desktop_style::StyleSheet::load(desktop_style::DesktopStyle::Omarchy));
         crate::makepad_widgets::script_mod(vm);
+        charts::register(vm);
+        octosense::icon_frame::script_mod(vm);
 
         // The theme: evaluated before any module that reads
         // mod.wm_theme. This IS the theming system — splash.
@@ -6366,6 +6491,8 @@ impl App {
         shell::script_mod(vm);
         glance_card::script_mod(vm);
         glance_panel::script_mod(vm);
+        card_chat::script_mod(vm);
+        mail_clip::script_mod(vm);
         glance_sheet::script_mod(vm);
         approvals::script_mod(vm);
         system_chat::script_mod(vm);
@@ -6380,10 +6507,22 @@ impl App {
     }
 
     pub fn shell_handle_event(&mut self, cx: &mut Cx, event: &Event) {
+        #[cfg(any(feature = "app-hub", native_mobile))]
+        self.audio_session_event(cx, event);
+        #[cfg(any(feature = "app-hub", native_mobile))]
+        platform_services::handle_event(cx, event);
+        #[cfg(any(feature = "app-hub", native_mobile))]
+        files_service::handle_event(cx, event);
+        #[cfg(any(feature = "app-hub", native_mobile))]
+        device_calendar::handle_event(cx, event);
         self.webview_render.handle_event(cx, event);
         self.shell_handle_event_inner(cx, event);
         // Studio is independent of modal/phone routes that may consume an event.
         if let Event::Draw(draw) = event { self.studio.draw(cx, draw); }
+        // A switch or Home action must stop device access in this event, not
+        // wait for the newly focused app's next draw.
+        #[cfg(any(feature = "app-hub", native_mobile))]
+        self.audio_session_event(cx, event);
         // Whatever module panicked during this event — in its tile's event
         // or draw, or in a call the shell made — is contained by now; show
         // it closed and free it before the next event (module_host.rs).
@@ -6397,6 +6536,38 @@ impl App {
             log!("wm: every instance and app confirmed; quitting");
             cx.quit();
         }
+    }
+
+    #[cfg(any(feature = "app-hub", native_mobile))]
+    fn audio_session_event(&mut self, cx: &mut Cx, event: &Event) {
+        let glance = self
+            .ui
+            .widget(cx, ids!(shell_glance_sheet))
+            .borrow::<glance_sheet::ShellGlanceSheet>()
+            .and_then(|sheet| {
+                sheet
+                    .open_key()
+                    .and_then(|key| key.split_once('/'))
+                    .map(|(app, _)| app.to_owned())
+            });
+        let focused = self.state.as_ref().and_then(|state| {
+            let client = if state.style.target.mobile() {
+                if state.phone.screen != mobile::PhoneScreen::App {
+                    return None;
+                }
+                state.phone.client?
+            } else {
+                state.layout.focused_client()?
+            };
+            let app = &state.clients.get(&client)?.app;
+            // Hosted Hub previews have no dedicated client identity. They
+            // must open the installed app before requesting native audio.
+            app.strip_prefix("hub:").map(str::to_owned)
+        });
+        let foreground = glance.or(focused);
+        files_service::set_foreground_app(foreground.clone());
+        audio_service::set_foreground_app(foreground);
+        audio_service::handle_event(cx, event);
     }
 
     fn shell_handle_event_inner(&mut self, cx: &mut Cx, event: &Event) {
@@ -6436,14 +6607,18 @@ impl App {
         ai_host::handle_event(cx, event);
         if self.android_event(cx, event) { return; }
         // Android's Home button or gesture, with OctoSense as the Home app.
-        if matches!(event, Event::HomeIntent) { self.phone_home_intent(cx); return; }
+        if matches!(event, Event::HomeIntent) {
+            if let Some(mut sheet) = self.ui.widget(cx, ids!(shell_glance_sheet)).borrow_mut::<glance_sheet::ShellGlanceSheet>() { sheet.hide_workspace(cx); }
+            self.sync_glance_presentation(cx); self.phone_home_intent(cx); return;
+        }
         self.phone_animation_event(cx,event);
         // Android's Back key (and a platform Back of any kind) is the phone's
         // Back: the foreground app is offered it first (mobile_back.rs), so it
         // is not also broadcast through the widget tree.
         if event.back_pressed() && self.state.as_ref().is_some_and(|state| state.style.target.mobile()) {
             log!("[phone] back");
-            // An open assistant pane takes Back first, as its own Close does.
+            if self.close_glance_card(cx) { return; }
+            // An open assistant pane takes Back next, as its own Close does.
             if self.close_chat_panes(cx, false) { return; }
             self.phone_action(cx, mobile::PhoneHit::Back);
             return;
@@ -6548,24 +6723,26 @@ impl App {
                 return;
             }
         }
-        // The glance page's live cards (mobile_pages.rs `GlanceCards`):
-        // every event, and the pointer while the page is what the person
-        // sees. Their taps then run as the desktop panel's do, a card's
-        // clicks only for a plain tap on it: what the finger is (a tap, or a
-        // swipe, a pull, a long press, a press on the shell's controls) is
-        // the shell's to say, read before the shell handles the event. The
-        // shell keeps each card's open button for itself.
+        // Phone Glance paints summaries without generated widgets. A plain
+        // tap promotes the exact publication above the feed into a workspace.
         if self.state.is_some() && self.state_mut().style.target.mobile() {
             let claimed = self.phone_gestures.current().is_some();
             let phone = &self.state_mut().phone;
-            let showing = phone.screen == mobile::PhoneScreen::Home && phone.pages.on_glance() && !phone.shade.is_open();
+            let showing = phone.screen == mobile::PhoneScreen::Home && phone.pages.on_glance() && !phone.shade.is_open() && !phone.card_open;
             let finger = mobile_pages::GlanceFinger::of(event, phone.gesture.as_ref(), claimed, phone.touch);
-            if showing || !event.requires_visibility() {
-                let changed = self.desk(cx).borrow_mut::<WmDesk>().is_some_and(|mut desk| desk.phone_ui.glance_cards.handle_event(cx, event, finger));
-                if changed {
-                    self.redraw_all(cx);
+            if showing {
+                if let mobile_pages::GlanceFinger::Tap(at) = finger {
+                    let key = self.desk(cx).borrow::<WmDesk>().and_then(|desk| desk.phone_ui.glance_cards.under(at).map(str::to_owned));
+                    if let Some(key) = key {
+                        // Finish the Home gesture, then promote the exact publication.
+                        // Preview controls never edit or dispatch inside the feed.
+                        self.phone_pointer(cx, event);
+                        self.open_glance_card(cx, &key);
+                        return;
+                    }
                 }
             }
+
         }
         if self.phone_search_event(cx,event) {return;}
         if self.state.is_some() && self.phone_pointer(cx,event) {return;}
@@ -6735,7 +6912,9 @@ impl App {
             if let Some(state) = &mut self.state {
                 clients::shutdown_clients(&mut state.clients);
             }
-            // Stop the octos kernel, if one runs, and let it release its data dir.
+            // On Android an Activity can end while a Mail job owns the same
+            // process/kernel. The OS owns that process lifetime.
+            #[cfg(not(target_os = "android"))]
             ai_host::shutdown();
         }
         if let Event::Timer(te) = event {
@@ -6790,6 +6969,15 @@ impl App {
         if let Event::Signal = event {
             if self.state.is_some() {
                 self.system_chat_changed(cx);
+                // Review requested from Glance or the native Mail composer:
+                // always use the same host-owned region in the card sheet.
+                if let Some(key) = mail_card::requested_card() {
+                    let already_open = self.ui.widget(cx, ids!(shell_glance_sheet))
+                        .borrow::<glance_sheet::ShellGlanceSheet>()
+                        .is_some_and(|s| s.open_key() == Some(key.as_str()));
+                    if !already_open { self.open_glance_card(cx, &key); }
+                    self.redraw_all(cx);
+                }
             }
             // A card was published, replaced or withdrawn (glance.rs).
             if glance::generation() != self.glance_generation && self.state.is_some() {
@@ -6830,6 +7018,7 @@ impl App {
             self.drain_pane_links(cx);
         }
 
+        self.sync_glance_presentation(cx);
         self.match_event(cx, event);
         if let Some(state) = self.state.as_mut() {
             let mut scope = Scope::with_data(state);
@@ -6837,6 +7026,7 @@ impl App {
         } else {
             self.ui.handle_event(cx, event, &mut Scope::empty());
         }
+        self.sync_glance_presentation(cx);
         // A focus that couldn't land at launch (tile not yet drawn) is
         // re-asserted for a process tile when its first frame arrives
         // (PresentableDraw). A module tile sends no frame, so retry after the

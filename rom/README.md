@@ -19,8 +19,9 @@ consumes that APK, signed with the platform key, and adds the privileged
 system side.
 
 > **Building an OctoSense app?** You do not need the ROM. Start at the
-> [OctoSense-org profile](https://github.com/OctoSense-org)'s reading list
-> (OctoScript-App-Design-Flow's `AGENTS.md`, then `docs/QUICKSTART.md`).
+> [OctoSense-org profile](https://github.com/OctoSense-org)'s reading list:
+> the `AGENTS.md` of OctoSense App Flow (formerly Design Flow), then its
+> `docs/QUICKSTART.md`.
 > Installing your own bundle on a phone is not supported yet; to see it in a
 > shell before publication, use the desktop shell with a local catalog
 > ([desktop README](../desktop/README.md#try-your-own-app-before-it-is-published)).
