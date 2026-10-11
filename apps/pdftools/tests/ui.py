@@ -12,13 +12,16 @@ call is real.
 
   shell    every mode on the samples in the shell's own window, light, then
            dark through the shell's own style menu (the dark pass works on
-           what the light pass left): Home, "Open a PDF from this device"
-           refused, reading and thumbnails, find, a highlight and its reply,
-           a rotation and its undo, combine with a page range, initials
-           placed by Fill & Sign, a text edit, save, a damaged file
+           what the light pass left): Home and its status line against the
+           storage's own bytes (files.status), "Open a PDF from this device"
+           refused, reading and thumbnails, find, a highlight and its reply
+           dated on this machine's clock, a rotation and its undo, combine
+           with a page range, initials placed by Fill & Sign, a text edit with
+           an alignment and a colour, save, a damaged file; then one cover
+           per PDF in the pdf service's cover cache, each in library.json
   restart  the same home again: the library, the titles, the page a PDF was
-           left at, and a PDF placed as files.import leaves one
-           (`Imported PDF.pdf`)
+           left at, a PDF placed as files.import leaves one (`Imported
+           PDF.pdf`), and every current cover kept, not drawn again
   full     storage with no room left: the engine's refusal, then a removal
   empty    no PDFs: the empty library and "Open a PDF from this device" (a
            hidden window never has focus, so the files service refuses the
@@ -439,6 +442,21 @@ def range_fields(app):
                   key=lambda w: w["r"][1])
 
 
+def range_field_of(app, name, timeout=15.0):
+    """The page-range field in `name`'s row of the Combine card (the list may
+    have scrolled the other rows away), once the card shows it: just after
+    a PDF is added, its name may still be in the list of PDFs to add."""
+    found = []
+
+    def beside():
+        label = app.find(name, "Label", timeout=2.0)["r"]
+        row = label[1] + label[3] / 2
+        found[:] = [w["r"] for w in range_fields(app) if abs(w["r"][1] + w["r"][3] / 2 - row) < 40]
+        return bool(found)
+    wait_until(beside, f"no page range beside {name!r}", timeout=timeout)
+    return found[0]
+
+
 def press_combine(app):
     """Combine's own button, at the end of its card (not the mode's tab)."""
     app.scroll(600)
@@ -615,6 +633,90 @@ def fixture_states(app, out, dark):
 
 # ---------------------------------------------------------------- shell journey (the real engine)
 
+# The storage of the shell run going on (shell_runs sets it), and what the
+# runs saw, written to <output>/run.json for the receipt.
+SHELL_JAIL = None
+RECEIPT = {}
+ALIGNS = ["left", "center", "right", "justify"]
+
+
+def jail_bytes(jail):
+    """What the app's storage holds, as the shell measures it: every regular file."""
+    return sum(f.stat().st_size for f in jail.rglob("*") if f.is_file() and not f.is_symlink())
+
+
+def storage_shown(app):
+    """The status line's storage words as (bytes shown, quota in MB), or None."""
+    for w in app.widgets():
+        m = re.fullmatch(r"([\d.]+)(?: (bytes?|KB))? of (\d+) MB used", (w.get("t") or "").strip())
+        if m:
+            scale = {None: 1 << 20, "KB": 1 << 10}.get(m.group(2), 1)
+            return float(m.group(1)) * scale, int(m.group(3))
+    return None
+
+
+def check_storage_line(app, jail):
+    """The status line reads files.status: everything in the app's storage
+    (renders and covers too, not only the PDFs), against its 64 MB."""
+    def close():
+        shown = storage_shown(app)
+        used = jail_bytes(jail)
+        return shown is not None and shown[1] == QUOTA >> 20 and abs(shown[0] - used) <= max(0.12 * (1 << 20), used * 0.05)
+    wait_until(close, f"the status line {storage_shown(app)} is not the storage's {jail_bytes(jail)} bytes", timeout=30)
+    library = sum(f.stat().st_size for f in (jail / LIBRARY).glob("*.pdf"))
+    return {"shown": storage_shown(app), "jail_bytes": jail_bytes(jail), "library_pdf_bytes": library}
+
+
+def check_today(app, moments):
+    """A comment made at one of `moments` reads "Today HH:MM" on this
+    machine's clock: the service gives its local time (the engine stamps it
+    in UTC, which after 17:00 here is already tomorrow)."""
+    stamps = {time.strftime("Today %H:%M", time.localtime(t)) for t in moments}
+    wait_until(lambda: any((w.get("t") or "") in stamps for w in app.widgets()), f"no comment dated {sorted(stamps)}")
+    return sorted(stamps)
+
+
+def align_segment(app, which):
+    """Tap one of the Edit panel's Alignment segments: the row below its label,
+    as wide as Apply and Cancel."""
+    label = app.find("Alignment", "Label")["r"]
+    apply_, cancel = app.find("Apply", "Button")["r"], app.find("Cancel", "Button")["r"]
+    left, right = apply_[0], cancel[0] + cancel[2]
+    app.click(left + (ALIGNS.index(which) + 0.5) * (right - left) / 4, label[1] + label[3] + 10 + 20)
+
+
+def pick_colour(app, shown, chip, name, grab=None):
+    """Open the Edit panel's Colour box (showing `shown`) into its row of
+    colours (grabbed as `grab`, (out, name), when given) and tap number
+    `chip` (0: the paragraph's own colour, then the six), which the box then
+    names."""
+    box = app.find(shown, "Label")["r"]
+    left = app.find("Apply", "Button")["r"][0]  # the box's left edge: the column's
+    centre = box[1] + box[3] / 2
+    app.click(box[0] + box[2] / 2, centre)
+    app.gone(shown)
+    if grab:
+        app.grab(*grab)
+    app.click(left + 1 + 4 + chip * 34 + 15, centre)
+    app.find(name, "Label")
+
+
+def combine_button_in_view(app):
+    """Combine's own button (the card's, below the mode bar) is in view above
+    the status line, with no scroll: its rect."""
+    ax, ay, aw, ah = app.area()
+    own = sorted((w for w in app.widgets() if w["ty"] in ("Button", "ButtonFlat") and w.get("t") == "Combine" and w["r"][1] > ay + 53 + 54),
+                 key=lambda w: w["r"][1])
+    assert own and own[-1]["r"][1] + own[-1]["r"][3] <= ay + ah - 44 + 1, f"Combine's own button is not in view: {own}"
+    return own[-1]["r"]
+
+
+def covers_kept(jail):
+    """The covers in the pdf service's cache: file name -> modification time."""
+    folder = jail / ".cache/covers"
+    return {f.name: f.stat().st_mtime_ns for f in folder.iterdir() if f.is_file()} if folder.is_dir() else {}
+
+
 def shell_journey(app, out, dark):
     """Every mode on the samples, with the real pdf engine, in the shell's
     own window size. The dark pass runs on what the light pass left: the
@@ -625,6 +727,8 @@ def shell_journey(app, out, dark):
     app.see("Quarterly report.pdf")
     app.images(3)
     app.scroll(-3000)
+    if not dark and SHELL_JAIL is not None:
+        RECEIPT["storage_line"] = check_storage_line(app, SHELL_JAIL)
     app.grab(out, f"{p}01-home")
     if not dark:
         app.tap("Open a PDF from this device", "Button")
@@ -661,9 +765,12 @@ def shell_journey(app, out, dark):
     app.find("2 / 4", "Label")
     app.images(1)
     before = comment_count(app)
+    made = time.time()
     click_page(app, 120, 128)  # the Summary's first line
     wait_until(lambda: comment_count(app) == before + 1, "the highlight never joined the comments")
     app.find("Maya Chen", "Label")
+    RECEIPT.setdefault("comment_dates", []).append({"pass": "dark" if dark else "light", "utc_now": time.strftime("%Y-%m-%dT%H:%MZ", time.gmtime()),
+                                                    "shown_one_of": check_today(app, (made, time.time()))})
     app.grab(out, f"{p}04-comment")
     app.tap("Reply...", "TextInput")
     app.type("Checked against the ledger.")
@@ -690,11 +797,17 @@ def shell_journey(app, out, dark):
 
     app.tap("Combine", "Button")
     app.tap("Add files", "Label")
+    app.reveal("Board minutes.pdf")  # the list may scroll inside the card
     app.tap("Board minutes.pdf", "Label")
-    x, y, w, h = range_fields(app)[1]["r"]
+    app.reveal("Board minutes.pdf")  # its row now
+    x, y, w, h = range_field_of(app, "Board minutes.pdf")
     app.click(x + w / 2, y + h / 2)
     app.type("1")
     app.find("(1 page)", "Label")
+    # The card's footer stays in view however tall its list (design 06 when
+    # it fits; the list scrolls inside the card when it doesn't).
+    app.find("One PDF of 5 pages", "Label")
+    RECEIPT.setdefault("combine_button", []).append({"pass": "dark" if dark else "light", "area": app.area(), "button": combine_button_in_view(app)})
     app.grab(out, f"{p}06-combine")
     app.scroll(600)  # the card's end: the total, the name, Combine
     app.find("One PDF of 5 pages", "Label")
@@ -726,6 +839,11 @@ def shell_journey(app, out, dark):
     app.find("Click a paragraph on the page to edit its text.", "Label")
     click_page(app, 120, 168)  # clause 1
     app.find("Paragraph", "Label", exact=False)
+    # Design 08's Alignment and Colour: centred and red, then (the dark pass,
+    # on what the light one left) flush right in the paragraph's own colour.
+    align_segment(app, "right" if dark else "center")
+    if not dark:
+        pick_colour(app, "Its own colour", 4, "Red", grab=(out, "08a-colours"))
     editor = [w for w in app.widgets() if w["ty"] == "TextInput" and (w.get("t") or "").startswith("This agreement")][0]["r"]
     app.click(editor[0] + editor[2] - 6, editor[1] + editor[3] - 7)  # after its last word
     app.type(" (amended)")
@@ -922,15 +1040,36 @@ def shell_runs(args, runs):
         if "shell" in runs or "restart" in runs:
             home = scratch / "home"
             fixture(home / "apps")
+            global SHELL_JAIL
+            SHELL_JAIL = home / "apps" / APP
 
             def light_then_dark(app, out):
                 shell_journey(app, out, dark=False)
                 app.style("octosense-dark", "octosense dark")
                 shell_journey(app, out, dark=True)
             session("shell", home, light_then_dark)
+            # Home drew each PDF's cover once (pdf.cover), and a saved PDF's
+            # older cover went: one cover per PDF, each named in library.json.
+            kept = covers_kept(SHELL_JAIL)
+            prefixes = [name.split("-")[0] for name in kept]
+            assert kept and len(prefixes) == len(set(prefixes)), f"covers: {sorted(kept)}"
+            index = json.loads((SHELL_JAIL / "accounts/device/library.json").read_text())["docs"]
+            named = {e["cover"] for e in index.values() if e.get("cover")}
+            assert named and all(c.startswith(".cache/covers/") and c[len(".cache/covers/"):] in kept for c in named), f"library.json covers: {named}"
+            RECEIPT["covers_after_shell_run"] = sorted(kept)
             if "restart" in runs:
                 fixture("--import-sample", home / "apps" / APP / LIBRARY / "Imported PDF.pdf")
                 session("restart", home, restart)
+                # The restart drew no current cover again: same files, same
+                # times. (A PDF saved after Home last drew its cover has none
+                # in library.json, and is drawn again.)
+                current = {name: at for name, at in kept.items() if ".cache/covers/" + name in named}
+                again = covers_kept(SHELL_JAIL)
+                redrawn = [name for name, at in current.items() if again.get(name) != at]
+                assert current and not redrawn, f"covers drawn again after the restart: {redrawn}"
+                RECEIPT["covers_after_restart"] = {"kept_untouched": sorted(current), "drawn_now": sorted(set(again) - set(kept)),
+                                                   "gone_now": sorted(set(kept) - set(again))}
+        (args.output / "run.json").write_text(json.dumps(RECEIPT, indent=1))
         if "full" in runs:
             home = scratch / "full"
             fixture(home / "apps")
