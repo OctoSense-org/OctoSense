@@ -437,11 +437,21 @@ fn run_call(context: &Context) -> Result<Value, Refusal> {
     context.check()?;
     context.host.attach(&context.call.host_dir);
     match context.call.method() {
+        "vision_capability" => {
+            if super::vision::supported(&context.call.app_id) && context.call.args.as_object().is_some_and(|o| o.is_empty()) {
+                Ok(json!({"schema":1,"supported":true}))
+            } else {
+                Err(Refusal::new(Code::Capability, "Image calls are unavailable to this app on this host."))
+            }
+        }
         "complete" => {
-            let request = super::Request::from_args(&context.call.args)?;
+            let mut args = context.call.args.clone();
+            let image = args.as_object_mut().and_then(|o| o.remove("image"));
+            let request = super::Request::from_args(&args)?;
+            let image = image.as_ref().map(|value| super::vision::load(&context.call.app_id, &context.call.host_dir, value)).transpose()?;
             context
                 .host
-                .complete_while(&context.call.app_id, request, || context.check().is_ok())
+                .complete_while(&context.call.app_id, request, image.as_deref(), || context.check().is_ok())
                 .map(|completion| completion.to_reply())
         }
         "budget" => {
@@ -755,12 +765,21 @@ fn public_url(raw: &str) -> Result<String, Refusal> {
 }
 
 pub(super) fn catalog() -> Vec<HostApiMethod> {
-    wire::schemas()
+    let mut methods: Vec<_> = wire::schemas()
         .into_iter()
         .map(|(name, summary, args, result)| {
             HostApiMethod::new(name, 1, "model", summary, args, result)
                 .with_platforms(&["macos", "android", "windows", "linux", "ios", "openharmony"])
                 .with_agent_access(AgentAccess::Allowed)
         })
-        .collect()
+        .collect();
+    methods.push(HostApiMethod::new("model.vision_capability", 1, "model",
+        "Check whether this host offers Pantry's app-local image call",
+        json!({"type":"object","additionalProperties":false}),
+        json!({"type":"object","required":["schema","supported"],
+            "properties":{"schema":{"const":1},"supported":{"const":true}},
+            "additionalProperties":false}))
+        .with_platforms(&["windows"])
+        .with_agent_access(AgentAccess::Allowed));
+    methods
 }

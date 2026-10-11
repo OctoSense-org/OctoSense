@@ -28,7 +28,7 @@ ureq = { version = "2", default-features = false, features = ["tls"] }
 # A provider QR read out of a picked or dropped image (src/image_qr.rs): PNG
 # and JPEG only, decoded to grey and searched with rqrr, the decoder the
 # phone's scanner is tested against.
-image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }
 rqrr = { version = "0.10", default-features = false }
 
 # The shell's octos kernel (crates/octos-core), with the `octos-core`
