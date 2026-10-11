@@ -10,11 +10,12 @@ writes sample PDFs into PDF Tools' storage there (octosense-pdf-service's
 walks it over Makepad's remote bridge, saving original /g grabs. Every engine
 call is real.
 
-  shell    every mode on the samples, light, then dark through the shell's
-           own style menu: Home, reading and thumbnails, find, comments,
-           page changes and undo, combine with page ranges, Fill & Sign
-           marks, a text edit, save, closing with unsaved changes, a damaged
-           file
+  shell    every mode on the samples in the shell's own window, light, then
+           dark through the shell's own style menu (the dark pass works on
+           what the light pass left): Home, "Open a PDF from this device"
+           refused, reading and thumbnails, find, a highlight and its reply,
+           a rotation and its undo, combine with a page range, initials
+           placed by Fill & Sign, a text edit, save, a damaged file
   restart  the same home again: the library, the titles, the page a PDF was
            left at, and a PDF placed as files.import leaves one
            (`Imported PDF.pdf`)
@@ -30,7 +31,7 @@ card-host runs serve no host services:
            place of engine(), and make_fixture.py's sample documents (the
            approved designs' sample text): every designed screen at the
            designs' 1536 x 1024, light and dark, each grab put beside its
-           design in compare/
+           design in compare/, and the damaged, protected and unsaved states
 
 Shell runs hold a lock folder, so one hidden shell runs on this machine at a
 time, and refuse to start while another OctoSense runs.
@@ -185,13 +186,23 @@ class Driver:
             time.sleep(0.2)
         raise AssertionError(f"{text!r} is still on screen")
 
+    def pictures(self):
+        """The app's own pictures (the engine's renders), not the shell's
+        wallpaper or dock: inside the app's surface and narrower than it."""
+        ax, ay, aw, ah = self.area()
+        return [w for w in self.widgets() if w["ty"] == "Image" and w["r"][2] < aw - 1
+                and ax - 1 <= w["r"][0] <= ax + aw and ay - 1 <= w["r"][1] <= ay + ah]
+
     def images(self, count, timeout=60.0):
         """Wait for at least `count` pictures: the engine's page renders."""
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
-            if sum(1 for w in self.widgets() if w["ty"] == "Image") >= count:
-                time.sleep(0.4)
-                return
+            try:
+                if len(self.pictures()) >= count:
+                    time.sleep(0.4)
+                    return
+            except (OSError, ValueError, AssertionError):
+                pass
             time.sleep(0.3)
         raise AssertionError(f"fewer than {count} page pictures after {timeout} s")
 
@@ -389,17 +400,51 @@ class CardHost(Driver):
 # ---------------------------------------------------------------- helpers
 
 def top_page(app):
-    """The first page image on the canvas: [x, y, w, h] in points."""
-    imgs = [w for w in app.widgets() if w["ty"] == "Image" and w["r"][2] > 300]
+    """The first page image on the canvas: [x, y, w, h] in points (what
+    shows of it: a scroll view reports only its visible part)."""
+    imgs = [w for w in app.pictures() if w["r"][2] > 300]
     assert imgs, "no page on the canvas"
     return min(imgs, key=lambda w: w["r"][1])["r"]
 
 
-def click_page(app, px, py, page_width):
-    """Click at a point of the top page, given in the page's points."""
+def zoom(app):
+    """The pill's zoom, as a scale: '90%' is 0.9."""
+    for w in app.widgets():
+        found = re.fullmatch(r"(\d+)%", w.get("t") or "")
+        if found:
+            return int(found[1]) / 100
+    raise AssertionError("no zoom on the pill")
+
+
+def click_page(app, px, py, page_width=None):
+    """Click at a point of the top page, given in the page's points. The run
+    of pages starts at the top of the canvas, so its top left shows."""
     x, y, w, h = top_page(app)
-    k = w / page_width
+    k = zoom(app)
     app.click(x + px * k, y + py * k)
+
+
+def pill_next(app):
+    """The pill's next page: the first icon button right of 'N / M'."""
+    label = next(w for w in app.widgets() if re.fullmatch(r"\d+ / \d+", w.get("t") or ""))
+    row, (x, y, w, h) = icon_buttons_near(app, label["t"], "Label")
+    bx, by, bw, bh = [r for r in row if r[0] >= x + w - 1][0]
+    app.click(bx + bw / 2, by + bh / 2)
+
+
+def range_fields(app):
+    """Combine's page-range fields, top to bottom (not the search field)."""
+    ax, ay, aw, ah = app.area()
+    return sorted((w for w in app.widgets() if w["ty"] == "TextInput" and w["r"][2] < 200 and w["r"][1] > ay + 110),
+                  key=lambda w: w["r"][1])
+
+
+def press_combine(app):
+    """Combine's own button, at the end of its card (not the mode's tab)."""
+    app.scroll(600)
+    buttons = [w for w in app.widgets() if w["ty"] in ("Button", "ButtonFlat") and w.get("t") == "Combine"]
+    x, y, w, h = max(buttons, key=lambda b: b["r"][1])["r"]
+    app.click(x + w / 2, y + h / 2)
 
 
 def icon_buttons_near(app, text, kind="Button"):
@@ -453,10 +498,21 @@ def fixture_journey(app, out, dark):
     p = "d" if dark else ""
     app.see("Q3 2026 Board Report.pdf")
     app.images(5)
+    # 01-home shows Home with the report open in a tab.
+    app.press("Q3 2026 Board Report.pdf")
+    app.images(3)
+    app.tap("Open", "Button")
     app.scroll(-3000)
+    app.images(5)
     app.grab(out, f"{p}01-home")
 
-    app.press("Q3 2026 Board Report.pdf")
+    # The other screens show five PDFs open: open them in the designs'
+    # order, then come back to the first.
+    for name in ("Riverside Lease 2026.pdf", "Field Guide to Garden Birds.pdf", "Invoice INV-2041.pdf", "Site Survey Photos.pdf"):
+        app.press(name)
+        app.images(1)
+        app.tap("Open", "Button")
+    app.tap("Q3 2026 Board Report.pdf", "Label")
     app.images(3)
     app.tap("3", "Label", below=150)
     app.see("3 / 24")
@@ -560,140 +616,202 @@ def fixture_states(app, out, dark):
 # ---------------------------------------------------------------- shell journey (the real engine)
 
 def shell_journey(app, out, dark):
-    """Every mode on the samples, with the real pdf engine."""
+    """Every mode on the samples, with the real pdf engine, in the shell's
+    own window size. The dark pass runs on what the light pass left: the
+    same tabs, the comment name and initials it kept, its edits."""
     p = "d" if dark else ""
+    if dark:
+        app.tap("Open", "Button")  # Home: the light pass ended on a tab
     app.see("Quarterly report.pdf")
-    app.images(4)
+    app.images(3)
+    app.scroll(-3000)
     app.grab(out, f"{p}01-home")
     if not dark:
         app.tap("Open a PDF from this device", "Button")
-        app.see("Couldn't open a PDF from this device")
-        app.see("Bring PDF Tools to the front, then choose the file again.")
+        app.find("Couldn't open a PDF from this device", "Label")
+        app.find("Bring PDF Tools to the front, then choose the file again.", "Label")
         app.grab(out, "01b-open-from-device")
         app.tap("OK", "Button")
         app.gone("Couldn't open a PDF from this device")
 
     app.press("Quarterly report.pdf")
     app.images(3)
-    app.see("1 / ", exact=False)
+    app.find(" / 4", "Label", exact=False, timeout=60)
+    app.tap("1", "Label", below=150)
+    app.find("1 / 4", "Label")
+    app.images(3)
     app.grab(out, f"{p}02-reading")
     app.tap("2", "Label", below=150)
-    app.see("2 / ", exact=False)
+    app.find("2 / 4", "Label")
     app.images(2)
     app.grab(out, f"{p}02b-page-2")
 
     app.tap("Search in document", "TextInput")
     app.type("revenue")
     app.key("Return")
-    app.see("matches on", exact=False)
+    app.find("9 matches on 4 pages", "Label", timeout=60)
     app.images(1)
     app.grab(out, f"{p}03-find")
     app.tap("Done")
 
     app.tap("Comment", "Button")
     name_once(app)
-    app.see("2 / ", exact=False)
+    app.find("1 / 4", "Label")  # find went to the first match
+    pill_next(app)
+    app.find("2 / 4", "Label")
     app.images(1)
-    click_page(app, 120, 128, 595)  # the Summary's first line
-    app.see("Maya Chen")
+    before = comment_count(app)
+    click_page(app, 120, 128)  # the Summary's first line
+    wait_until(lambda: comment_count(app) == before + 1, "the highlight never joined the comments")
+    app.find("Maya Chen", "Label")
     app.grab(out, f"{p}04-comment")
     app.tap("Reply...", "TextInput")
     app.type("Checked against the ledger.")
     app.tap("Post", "Button")
-    app.see("Checked against the ledger.")
+    app.find("Checked against the ledger.", "Label")
     app.grab(out, f"{p}04b-replied")
 
     app.tap("Pages", "Button")
     app.images(3)
-    tap_tile(app, 2)
-    app.see("1 selected")
+    upright = app.find("2", "Label", below=150)["r"][1]
+    try:
+        app.find("1 selected", "Label", timeout=2)  # the dark pass: still chosen from the light one
+    except AssertionError:
+        tap_tile(app, 2)
+        app.find("1 selected", "Label")
     app.tap("Rotate right", "Button")
-    app.see("Edited")
+    # A page turned on its side draws a wide, low tile: its number rises.
+    wait_until(lambda: app.find("2", "Label", below=150)["r"][1] < upright - 20, "page 2 never turned")
     app.images(3)
     app.grab(out, f"{p}05-pages-rotated")
     click_icon_left_of(app, "Save", nth=2)  # Undo: two icon buttons left of Save
+    wait_until(lambda: abs(app.find("2", "Label", below=150)["r"][1] - upright) < 2, "Undo never turned page 2 back")
     app.grab(out, f"{p}05b-undone")
 
     app.tap("Combine", "Button")
     app.tap("Add files", "Label")
     app.tap("Board minutes.pdf", "Label")
-    ranges = sorted((w for w in app.widgets() if w["ty"] == "TextInput" and w["r"][2] < 200), key=lambda w: w["r"][1])
-    x, y, w, h = ranges[1]["r"]
+    x, y, w, h = range_fields(app)[1]["r"]
     app.click(x + w / 2, y + h / 2)
     app.type("1")
-    app.see("(1 page)")
+    app.find("(1 page)", "Label")
     app.grab(out, f"{p}06-combine")
-    combine = sorted((w for w in app.widgets() if w["ty"] in ("Button", "ButtonFlat") and w.get("t") == "Combine"), key=lambda w: w["r"][1])[-1]["r"]
-    app.click(combine[0] + combine[2] / 2, combine[1] + combine[3] / 2)
-    app.see("Combined into", exact=False)
+    app.scroll(600)  # the card's end: the total, the name, Combine
+    app.find("One PDF of 5 pages", "Label")
+    app.grab(out, f"{p}06a-combine-end")
+    press_combine(app)
+    app.find("Combined into", "Label", exact=False, timeout=60)
     app.images(1)
     app.grab(out, f"{p}06b-combined")
 
     app.tap("Open", "Button")
     app.press("Apartment lease.pdf")
-    app.tap("Fill & Sign", "Button")
-    app.see("This PDF has no form fields", exact=False)
-    app.tap("Add initials", "Label")
-    app.tap("Initials", "TextInput")
-    app.type("MC")
     app.images(1)
-    click_page(app, 300, 760, 595)
-    app.see("Edited")
+    app.tap("Fill & Sign", "Button")
+    app.find("This PDF has no form fields", "Label", exact=False)
+    app.find("Saved", "Label")
+    app.tap("Add initials", "Label")
+    try:
+        app.find("Initials", "TextInput", timeout=3)  # empty: the light pass
+        app.tap("Initials", "TextInput")
+        app.type("MC")
+    except AssertionError:
+        app.find("MC", "TextInput")  # kept from the light pass
+    click_page(app, 360, 330)  # beside clause 3
+    app.find("Edited", "Label")
     app.images(1)
     app.grab(out, f"{p}07-fill-sign")
 
     app.tap("Edit", "Button")
-    click_page(app, 120, 168, 595)  # clause 1
-    app.see("Paragraph", exact=False)
+    app.find("Click a paragraph on the page to edit its text.", "Label")
+    click_page(app, 120, 168)  # clause 1
+    app.find("Paragraph", "Label", exact=False)
+    editor = [w for w in app.widgets() if w["ty"] == "TextInput" and (w.get("t") or "").startswith("This agreement")][0]["r"]
+    app.click(editor[0] + editor[2] - 6, editor[1] + editor[3] - 7)  # after its last word
+    app.type(" (amended)")
     app.grab(out, f"{p}08-edit")
     app.tap("Apply", "Button")
+    app.find("Click a paragraph on the page to edit its text.", "Label")
+    app.images(1)
+    app.grab(out, f"{p}08b-edited")
 
     app.tap("Save", "Button")
-    app.see("Saved")
+    app.find("Saved", "Label")
     app.grab(out, f"{p}09-saved")
 
     app.tap("Open", "Button")
     app.press("Damaged scan.pdf")
-    app.see("Couldn't open this PDF")
+    app.find("Couldn't open this PDF", "Label")
     app.grab(out, f"{p}10-damaged")
     app.tap("Close this tab", "Button")
 
 
+def wait_until(check, failure, timeout=30.0):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            if check():
+                return
+        except (AssertionError, OSError, ValueError):
+            pass
+        time.sleep(0.4)
+    raise AssertionError(failure)
+
+
+def comment_count(app):
+    """The count beside the comment panel's heading."""
+    ax, ay, aw, ah = app.area()
+    head = [w for w in app.widgets() if w["ty"] == "Label" and w.get("t") == "Comments" and w["r"][0] > ax + aw / 2]
+    assert head, "no comment panel"
+    hx, hy, hw, hh = head[0]["r"]
+    for w in app.widgets():
+        if w["ty"] == "Label" and (w.get("t") or "").isdigit() and w["r"][0] > hx and abs(w["r"][1] - hy) < 10:
+            return int(w["t"])
+    raise AssertionError("no comment count")
+
+
 def restart(app, out):
     """The same storage after a restart, plus a PDF placed as an import leaves one."""
-    app.see("Quarterly report.pdf")
     app.see("Imported PDF.pdf")
     app.see("Opened today", exact=False)
-    app.images(4)
+    app.images(3)
+    app.scroll(-3000)
     app.grab(out, "r01-home")
     app.press("Imported PDF.pdf")
     app.images(1)
+    app.find("1 / 3", "Label", timeout=60)
     app.grab(out, "r02-imported")
     app.tap("Open", "Button")
     app.press("Quarterly report.pdf")
-    app.see("2 / ", exact=False)  # where the shell run left it
+    app.find("2 / 4", "Label", timeout=60)  # where the shell run left it
+    app.images(1)
     app.grab(out, "r03-place-kept")
 
 
 def full(app, out):
     """No room left: the engine refuses to write, and the app says so."""
-    app.see("PDF Tools' storage is full")
+    app.find("PDF Tools' storage is full", "Label", timeout=90)
     app.grab(out, "f01-home-full")
-    trash = [w for w in app.widgets() if w["ty"] in ("Button", "ButtonFlat") and not w.get("t") and w["r"][2] < 30]
+    app.scroll(400)
+    time.sleep(1)
+    trash = sorted((w for w in app.widgets() if w["ty"] in ("Button", "ButtonFlat") and not w.get("t") and w["r"][2] < 30),
+                   key=lambda w: (w["r"][1], w["r"][0]))
     assert trash, "no remove button on the cards"
     x, y, w, h = trash[0]["r"]
     app.click(x + w / 2, y + h / 2)
+    app.find("Remove it from PDF Tools' storage?", "Label")
+    app.grab(out, "f02-remove-asks")
     app.tap("Remove", "Button")
-    app.see("from PDF Tools.", exact=False)
-    app.grab(out, "f02-removed")
+    app.find("from PDF Tools.", "Label", exact=False, timeout=20)
+    app.grab(out, "f03-removed")
 
 
 def empty(app, out, dark=False):
     p = "d" if dark else ""
-    app.see("No PDFs here yet")
+    app.find("No PDFs here yet", "Label", timeout=60)
     app.grab(out, f"{p}e01-empty")
     app.tap("Open a PDF from this device", "Button")
-    app.see("Bring PDF Tools to the front, then choose the file again.")
+    app.find("Bring PDF Tools to the front, then choose the file again.", "Label")
     app.grab(out, f"{p}e02-empty-open")
     app.tap("OK", "Button")
 

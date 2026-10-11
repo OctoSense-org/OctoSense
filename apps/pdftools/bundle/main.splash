@@ -131,7 +131,12 @@ fn size_text(bytes){
     "" + floor(bytes / 104857.6) / 10 + " MB"
 }
 // "14.6 of 64 MB used": the PDFs, against the app's storage.
-fn used_text(bytes){ "" + floor(bytes / 104857.6) / 10 + " of " + round(QUOTA / 1048576) + " MB used" }
+// Under 1 MB it counts in kilobytes ("90 KB of 64 MB used").
+fn used_text(bytes){
+    let quota_part = " of " + round(QUOTA / 1048576) + " MB used"
+    if bytes < 1048576 { return size_text(bytes) + quota_part }
+    "" + floor(bytes / 104857.6) / 10 + quota_part
+}
 
 // A library row: the file, and what the index kept about it (`known`, or
 // nil): its pages and size, its title (otherwise its name), when it was last
@@ -393,6 +398,7 @@ if st == nil {
         removing: ""          // the PDF whose removal Home asks about
         busy_at: 0            // when the background render went out
         heartbeat: nil        // the interval below, made once
+        index_dirty: false    // library.json waits for the heartbeat
     }
     mod.pdftools = st
 }
@@ -525,6 +531,7 @@ fn load_index(){
     }
 }
 fn save_index(){
+    st.index_dirty = false
     try { fs.write(INDEX, {version: 1 docs: st.index who: st.who}.to_json()) } catch {}
 }
 fn entry_of(d){
@@ -537,7 +544,9 @@ fn entry_of(d){
 }
 fn remember(d){
     st.index[d.name] = entry_of(d)
-    save_index()
+    // The heartbeat writes it (at most every 2 s), so a tap or a page turn
+    // never waits on the disk: one handler has 64 ms of wall-clock time.
+    st.index_dirty = true
 }
 fn forget(name){
     let kept = {}
@@ -815,7 +824,7 @@ fn new_tab(d){
     {name: d.name path: d.path title: d.title doc: nil state: "opening" error: ""
         pages: 0 sizes: [] outline: [] can_edit: true
         edited: false can_undo: false can_redo: false saving: false
-        mode: "read" panel: "pages" panel_kept: "pages" zoom: 1.0 fit: ""
+        mode: "read" panel: "pages" panel_kept: "pages" zoom: 1.0 fit: "" zoom_auto: true
         anchor: 1 page: 1
         renders: {} failed: {} thumbs: {} thumb_failed: {} grid: {} grid_failed: {} tile: 1.0
         find: nil finding: false
@@ -884,7 +893,10 @@ fn load_tab(t){
             d.error = ""
             d.locked = false
             t.page = clamp(d.page, 1, max(1, t.pages))
-            if d.zoom != nil { t.zoom = d.zoom }
+            if d.zoom != nil {
+                t.zoom = d.zoom
+                t.zoom_auto = false
+            }
             remember(d)
         }
         refresh_doc()
@@ -997,7 +1009,9 @@ fn remember_place(t){
     let d = doc_named(t.name)
     if d == nil { return }
     d.page = t.page
-    d.zoom = t.zoom
+    // A zoom the person chose is kept; the automatic one is worked out again.
+    d.zoom = nil
+    if !t.zoom_auto { d.zoom = t.zoom }
     remember(d)
 }
 fn step_page(t, delta){ go_page(t, t.page + delta) }
@@ -1007,7 +1021,9 @@ fn step_page(t, delta){ go_page(t, t.page + delta) }
 fn left_open(t){ t.panel != "" && t.mode != "pages" && t.mode != "combine" && !(narrow() && right_open(t)) }
 fn right_open(t){ t.mode == "comment" || t.mode == "fill" || t.mode == "edit" }
 fn panel_w(t){ pick(t.panel == "pages", PANEL_W, LIST_W) }
-fn right_w(t){ pick(t.mode == "comment", THREAD_W, RIGHT_W) }
+// In a narrow window (the desktop's default) both right panels take 320,
+// so the page keeps its room.
+fn right_w(t){ pick(narrow(), 320, pick(t.mode == "comment", THREAD_W, RIGHT_W)) }
 // Below this width a right panel takes the left panel's place.
 fn narrow(){ st.width < 1180 }
 fn canvas_w(){
@@ -1032,6 +1048,7 @@ fn start_zoom(t){ clamp(floor(fit_width_zoom(t) * 100) / 100, 0.25, 1.0) }
 fn set_zoom(t, z, fit){
     t.zoom = clamp(floor(z * 100 + 0.5) / 100, 0.25, 4.0)
     t.fit = fit
+    t.zoom_auto = false
     go_page(t, t.page)
 }
 // In Pages mode the pill's zoom is the tiles' size.
@@ -1224,7 +1241,9 @@ fn find_text(text){
     t.finding = true
     t.find = {query: q total: 0 matches: [] cur: 0 error: "" by_page: {} pages: []}
     t.panel = "search"
+    let refit = auto_fit(t)
     show()
+    if refit { go_page(t, t.page) }
     engine("find", {doc: t.doc query: q limit: 200}, fn(a){
         t.finding = false
         if !a.is_ok {
@@ -1255,7 +1274,9 @@ fn end_find(t){
     t.find = nil
     t.finding = false
     if t.panel == "search" { t.panel = "pages" }
+    let refit = auto_fit(t)
     show()
+    if refit { go_page(t, t.page) }
 }
 fn go_match(t, i){
     let n = t.find.matches.len()
@@ -1983,6 +2004,9 @@ fn set_mode(t, m){
     if m == "comment" && t.comments == nil { load_comments(t) }
     if m == "fill" && t.fields == nil { load_fields(t) }
     if m == "combine" { start_combine(t) }
+    // Until the person zooms, the page fits the canvas the mode leaves it,
+    // up to 100%.
+    if t.zoom_auto && t.fit == "" { t.zoom = start_zoom(t) }
     show()
     if m != "pages" && m != "combine" { go_page(t, t.page) }
     pump()
@@ -1991,7 +2015,17 @@ fn set_panel(t, p){
     t.panel = pick(t.panel == p, "", p)
     if t.panel == "comments" && t.comments == nil { load_comments(t) }
     show()
+    if auto_fit(t) { go_page(t, t.page) }
     pump()
+}
+// The automatic zoom worked out again for the canvas there is now: whether
+// it changed.
+fn auto_fit(t){
+    if !t.zoom_auto || t.fit != "" || t.state != "ready" { return false }
+    let z = start_zoom(t)
+    if z == t.zoom { return false }
+    t.zoom = z
+    true
 }
 
 // ---- size --------------------------------------------------------------------
@@ -2012,6 +2046,7 @@ fn on_app_resize(width, height){
             refit(t)
             go_page(t, t.page)
         }
+        if t != nil && auto_fit(t) { go_page(t, t.page) }
         show()
     })
 }
@@ -2094,6 +2129,7 @@ fn show(){
 // same under machine load). Made once: a restyle runs this file again.
 fn heartbeat(){
     if !st.booted { boot() return }
+    if optional(st, "index_dirty", false) { save_index() }
     pump()
 }
 fn boot(){
@@ -2154,7 +2190,10 @@ fn home_tab(){
     }
 }
 // The title's room: the tabs share the row, at most 190 pt each.
-fn tab_text_w(){ clamp(floor((st.width - 180) / max(1, st.tabs.len() + pick(st.screen == "home", 1, 0))) - 66, 40, 190) }
+// A tab's title width: what the row leaves after its padding (26), Open
+// (100) and the Home tab (190), shared by the open tabs, less each tab's
+// icon, close cross and padding (86), so Open always shows.
+fn tab_text_w(){ clamp(floor((st.width - 126 - pick(st.screen == "home", 190, 0)) / max(1, st.tabs.len())) - 86, 20, 190) }
 fn doc_tab(i, t){
     let on = st.screen == "doc" && i == st.cur
     let title = shown_name(t.title) + pick(t.edited, " •", "")
@@ -2184,19 +2223,21 @@ fn modebar_view(){
         IconBtn{icon_walk: Walk{width: 20 height: 20} draw_icon +: {svg: icon("undo") color: pick(t != nil && t.can_undo, pt_icon, pt_faint)} on_click: || undo(cur_tab(), false)}
         IconBtn{margin: Inset{left: 4} icon_walk: Walk{width: 20 height: 20} draw_icon +: {svg: icon("redo") color: pick(t != nil && t.can_redo, pt_icon, pt_faint)} on_click: || undo(cur_tab(), true)}
         SolidView{width: 1 height: 26 margin: Inset{left: 12 right: 14} draw_bg.color: pt_line}
-        Primary{width: 128 height: 33 spacing: 9 text: pick(t != nil && t.saving, "Saving…", "Save") icon_walk: Walk{width: 17 height: 17}
+        Primary{width: pick(narrow(), 100, 128) height: 33 spacing: 9 text: pick(t != nil && t.saving, "Saving…", "Save") icon_walk: Walk{width: 17 height: 17}
             draw_icon +: {svg: icon("save")} draw_text +: {text_style: theme.font_regular{font_size: 11.5}}
             on_click: || save(cur_tab(), nil)}
     }
 }
 fn mode_tab(t, m){
     let on = t != nil && t.mode == m.id
-    View{width: m.w height: Fill flow: Down align: Align{x: 0.5}
+    // A narrow window (the desktop's default) trims each tab's padding,
+    // so the search field keeps room for its words.
+    View{width: m.w - pick(narrow(), 16, 0) height: Fill flow: Down align: Align{x: 0.5}
         Flat{width: Fill height: Fill padding: Inset{left: 6 right: 6} text: m.label
             draw_bg +: {color_hover: #x00000000 color_down: #x00000000}
             draw_text +: {color: pick(on, pt_link, pt_ink2) color_hover: pick(on, pt_link, pt_ink) color_down: pt_link color_focus: pick(on, pt_link, pt_ink2) text_style: theme.font_regular{font_size: 12}}
             on_click: || { let x = cur_tab() if x != nil && x.state == "ready" { set_mode(x, m.id) } }}
-        SolidView{width: Fill height: 3 margin: Inset{left: 16 right: 16 bottom: 1} draw_bg.color: pick(on, pt_accent, #x00000000)}
+        SolidView{width: Fill height: 3 margin: pick(narrow(), Inset{left: 8 right: 8 bottom: 1}, Inset{left: 16 right: 16 bottom: 1}) draw_bg.color: pick(on, pt_accent, #x00000000)}
     }
 }
 fn search_field(t){
@@ -2215,7 +2256,8 @@ fn search_field(t){
             text: q empty_text: "Search in document"
             on_return: |text| find_text(text)
             draw_bg +: {color: #x00000000 color_hover: #x00000000 color_focus: #x00000000 color_empty: #x00000000
-                border_color: #x00000000 border_color_hover: #x00000000 border_color_focus: #x00000000 border_color_empty: #x00000000}
+                border_color: #x00000000 border_color_hover: #x00000000 border_color_focus: #x00000000 border_color_empty: #x00000000
+                border_size: 0.0}
             draw_text +: {color: pt_ink color_hover: pt_ink color_focus: pt_ink color_empty: pt_faint color_empty_hover: pt_faint color_empty_focus: pt_faint text_style: theme.font_regular{font_size: 12}}
             draw_selection.color: #x557dcc55}
     }
@@ -2547,7 +2589,10 @@ fn pages_actions(t){
             Flat{text: "Extract" draw_icon +: {svg: icon("extract")} on_click: || extract_pages(cur_tab())}
             Flat{text: "Insert from file" draw_icon +: {svg: icon("insert")} on_click: || { let x = cur_tab() x.inserting = !x.inserting render_toolrow() }}
             Gap{}
-            Label{padding: 0 text: hint draw_text +: {color: pt_muted text_style: theme.font_regular{font_size: 12}}}
+            // In a narrow window the hint gives the buttons its room.
+            if canvas_w() >= 1000 || t.drag != nil {
+                Label{padding: 0 text: hint draw_text +: {color: pt_muted text_style: theme.font_regular{font_size: 12}}}
+            }
         }
         if t.inserting { insert_strip(t) }
         Line{}
@@ -2639,15 +2684,25 @@ fn field_box(t, f, k){
     RoundedView{margin: Inset{left: r[0] * k top: r[1] * k} width: r[2] * k height: r[3] * k show_bg: true
         draw_bg +: {color: pick(need, #xe5534f12, pt_field_box) border_size: pick(on, 2.0, 1.0) border_color: pick(need, #xe5534f, pick(on, #x116cdc, #x7fa6dd)) border_radius: 2.0}}
 }
+// The editor is at least the paragraph's box, and grows down to hold its
+// text: the app's sans is wider than most PDF faces, so it wraps into more
+// lines (the line count is estimated from an average glyph width).
+fn edit_height(e, k){
+    let em = max(8, e.size * k * 0.75) * 1.32
+    let inner = max(40, e.box[2] * k)
+    let lines = ceil(e.draft.len() * em * 0.56 / inner) + e.draft.split("\n").len() - 1
+    max(e.box[3] * k + 16, lines * em * 1.3 + 22)
+}
 fn edit_box(t, k){
     let e = t.edit
     let b = e.box
-    View{margin: Inset{left: b[0] * k - 8 top: b[1] * k - 8} width: b[2] * k + 16 height: b[3] * k + 16 flow: Overlay
+    View{margin: Inset{left: b[0] * k - 8 top: b[1] * k - 8} width: b[2] * k + 16 height: edit_height(e, k) flow: Overlay
         RoundedView{width: Fill height: Fill show_bg: true draw_bg +: {color: #xffffff border_size: 1.5 border_color: #x2171ef border_radius: 0.0}}
         TextInput{width: Fill height: Fill margin: 6 padding: 2 is_multiline: true text: e.draft
             on_change: |text| { let x = cur_tab() if x != nil && x.edit != nil { x.edit.draft = text } }
             draw_bg +: {color: #xffffff color_hover: #xffffff color_focus: #xffffff color_empty: #xffffff
-                border_color: #x00000000 border_color_hover: #x00000000 border_color_focus: #x00000000 border_color_empty: #x00000000}
+                border_color: #x00000000 border_color_hover: #x00000000 border_color_focus: #x00000000 border_color_empty: #x00000000
+                border_size: 0.0}
             draw_text +: {color: #x111111 color_hover: #x111111 color_focus: #x111111 color_empty: #x888888 text_style: theme.font_regular{font_size: max(8, e.size * k * 0.75) line_spacing: 1.3}}
             draw_selection.color: #x557dcc55}
         handle(0, 0) handle(0.5, 0) handle(1, 0) handle(0, 1) handle(0.5, 1) handle(1, 1)
@@ -2833,7 +2888,8 @@ fn combine_row(t, i, it){
             TextInput{width: Fill height: Fill padding: Inset{left: 12 right: 76 top: 11 bottom: 10} text: it.range empty_text: "All"
                 on_change: |text| { let x = cur_tab() x.combine.items[i].range = text start_timeout(0.6, || render_combine()) }
                 draw_bg +: {color: #x00000000 color_hover: #x00000000 color_focus: #x00000000 color_empty: #x00000000
-                    border_color: #x00000000 border_color_hover: #x00000000 border_color_focus: #x00000000 border_color_empty: #x00000000}
+                    border_color: #x00000000 border_color_hover: #x00000000 border_color_focus: #x00000000 border_color_empty: #x00000000
+                border_size: 0.0}
                 draw_text +: {color: pt_ink2 color_hover: pt_ink2 color_focus: pt_ink color_empty: pt_ink2 color_empty_hover: pt_ink2 color_empty_focus: pt_faint text_style: theme.font_regular{font_size: 12}}
                 draw_selection.color: #x557dcc55}
             View{width: Fill height: Fill flow: Right align: Align{x: 1.0 y: 0.5} padding: Inset{right: 12}
@@ -2850,7 +2906,7 @@ fn thread_panel(){
     if t == nil || t.state != "ready" { return View{width: Fill height: 1} }
     let count = 0
     if t.comments != nil { count = t.comments.len() }
-    View{width: Fill height: Fill flow: Down
+    View{width: right_w(t) height: Fill flow: Down
         View{width: Fill height: 60 flow: Right align: Align{y: 0.5} padding: Inset{left: 20 right: 12} spacing: 10
             Label{padding: 0 text: "Comments" draw_text +: {color: pt_ink text_style: theme.font_bold{font_size: 14}}}
             RoundedView{width: Fit height: 24 align: Align{x: 0.5 y: 0.5} padding: Inset{left: 8 right: 8} show_bg: true draw_bg +: {color: pt_hover border_radius: 12.0}
@@ -2969,7 +3025,8 @@ fn reply_box(t, hint, post){
             on_change: |text| { let x = cur_tab() x.reply = text }
             on_return: |text| { let x = cur_tab() x.reply = text post() }
             draw_bg +: {color: #x00000000 color_hover: #x00000000 color_focus: #x00000000 color_empty: #x00000000
-                border_color: #x00000000 border_color_hover: #x00000000 border_color_focus: #x00000000 border_color_empty: #x00000000}
+                border_color: #x00000000 border_color_hover: #x00000000 border_color_focus: #x00000000 border_color_empty: #x00000000
+                border_size: 0.0}
             draw_text +: {color: pt_ink color_hover: pt_ink color_focus: pt_ink color_empty: pt_faint color_empty_hover: pt_faint color_empty_focus: pt_faint text_style: theme.font_regular{font_size: 12.5}}
             draw_selection.color: #x557dcc55}
         Primary{width: 62 height: 35 padding: 0 text: "Post" on_click: || post()}
@@ -2994,7 +3051,7 @@ fn side_panel(){
     fields_panel(t)
 }
 fn fields_panel(t){
-    View{width: Fill height: Fill flow: Down
+    View{width: right_w(t) height: Fill flow: Down
         View{width: Fill height: 50 flow: Right align: Align{y: 0.5} padding: Inset{left: 16 right: 12}
             Label{padding: 0 width: Fill text: "Fields" draw_text +: {color: pt_ink text_style: theme.font_bold{font_size: 13}}}
         }
@@ -3093,7 +3150,7 @@ fn place_editor(t){
     }
 }
 fn edit_panel(t){
-    View{width: Fill height: Fill flow: Down padding: 14
+    View{width: right_w(t) height: Fill flow: Down padding: 14
         RoundedView{width: Fill height: Fit flow: Down show_bg: true draw_bg +: {color: pt_card border_size: 1.0 border_color: pt_line border_radius: 6.0}
             View{width: Fill height: 54 flow: Right align: Align{y: 0.5} padding: Inset{left: 16 right: 8}
                 Label{padding: 0 width: Fill text: "Edit text" draw_text +: {color: pt_ink text_style: theme.font_regular{font_size: 12.5}}}
@@ -3351,11 +3408,12 @@ SolidView{width: Fill height: Fill flow: Overlay draw_bg.color: pt_desk
                     }
                 }
                 line_right := VLine{visible: false}
-                right_thread_box := View{visible: false width: THREAD_W height: Fill
-                    right_thread := SolidView{width: Fill height: Fill flow: Down draw_bg.color: pt_panel on_render: || { thread_panel() }}
+                // Each right panel is as wide as its content says (right_w).
+                right_thread_box := View{visible: false width: Fit height: Fill
+                    right_thread := SolidView{width: Fit height: Fill flow: Down draw_bg.color: pt_panel on_render: || { thread_panel() }}
                 }
-                right_side_box := View{visible: false width: RIGHT_W height: Fill
-                    right_side := SolidView{width: Fill height: Fill flow: Down draw_bg.color: pt_panel on_render: || { side_panel() }}
+                right_side_box := View{visible: false width: Fit height: Fill
+                    right_side := SolidView{width: Fit height: Fill flow: Down draw_bg.color: pt_panel on_render: || { side_panel() }}
                 }
             }
         }
