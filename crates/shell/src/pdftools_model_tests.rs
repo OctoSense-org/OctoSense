@@ -223,3 +223,25 @@ fn an_edit_sends_its_text_and_alignment_and_a_chosen_colour() {
         assert!(hex.len() == 7 && hex.starts_with('#') && hex[1..].bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)), "{c}");
     }
 }
+
+#[test]
+fn the_combine_card_scrolls_its_list_only_when_the_window_is_too_short() {
+    // Each PDF's row and line (114), Add files (60), the box's border (2);
+    // the list of PDFs to add while it is open (10, and 40 a row).
+    let list = |items: u32, adding: u32| pdftools_model(&format!("combine_list_h({items}, {adding}).to_json()"));
+    assert_eq!(list(2, 0), json!(290));
+    assert_eq!(list(1, 5), json!(386));
+    let fits = |list_h: u32, height: u32, error: bool| pdftools_model(&format!("combine_fits({list_h}, {height}, {error}).to_json()"));
+    // Design 06's size (1536 x 1024): two PDFs and the card's own button fit
+    // as designed.
+    assert_eq!(fits(290, 1024, false), json!(true));
+    // The desktop's window above the dock (1292 x 662) and its default
+    // (990 x 603): the list scrolls inside the card, its footer in view.
+    assert_eq!(fits(290, 662, false), json!(false));
+    assert_eq!(fits(290, 603, false), json!(false));
+    // Where it starts to fit: the bars (151), the card's margins (82) and the
+    // rest of the card (279), and a refusal's line (30) takes room.
+    assert_eq!(fits(290, 802, false), json!(true));
+    assert_eq!(fits(290, 801, false), json!(false));
+    assert_eq!(fits(290, 802, true), json!(false));
+}

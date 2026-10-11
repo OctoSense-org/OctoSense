@@ -333,6 +333,23 @@ fn edit_args(doc, e){
     if e.color != nil { args.color = e.color }
     args
 }
+// The Combine card's list in points (design 06's measures): each PDF's row
+// (113) and its line, the Add files row (60), and, while it is open, the
+// list of PDFs to add (`adding_rows`, each 38 and a gap), in a box with a
+// border.
+fn combine_list_h(items, adding_rows){
+    let h = items * 114 + 60 + 2
+    if adding_rows > 0 { h = h + 10 + adding_rows * 40 }
+    h
+}
+// Whether a Combine card with a list `list_h` tall fits an app `height`
+// tall as designed: below the tab row, the mode bar and above the status
+// line, within the card's margins (42 and 40), beside its own padding,
+// title, the total, Name, a refusal (`error`) and the button (279, and 30).
+// When it does not, the list scrolls inside the card and the rest stays.
+fn combine_fits(list_h, height, error){
+    list_h <= height - TAB_H - MODE_H - STATUS_H - 82 - 279 - pick(error, 30, 0)
+}
 // Whether the edit `e` changes anything: its text, alignment or colour.
 fn edit_changes(e){ e.draft != e.text || e.align != e.align0 || e.color != nil }
 // A text colour's name in the Edit panel: "Its own colour" until one is chosen.
@@ -1145,6 +1162,9 @@ fn panel_w(t){ pick(t.panel == "pages", PANEL_W, LIST_W) }
 fn right_w(t){ pick(narrow(), 320, pick(t.mode == "comment", THREAD_W, RIGHT_W)) }
 // Below this width a right panel takes the left panel's place.
 fn narrow(){ st.width < 1180 }
+// A window too short for the Edit panel's measured gaps (the shell's default
+// 603 points): the panel draws them tighter, so Apply stays in view.
+fn short(){ st.height < 760 }
 fn canvas_w(){
     let t = cur_tab()
     let w = st.width - RAIL_W - 1
@@ -2205,7 +2225,18 @@ fn render_canvas(){ ui.canvas.render() }
 fn render_pill(){ ui.pill.render() }
 fn render_toolrow(){ ui.toolrow.render() }
 fn render_grid(){ ui.grid.render() }
-fn render_combine(){ ui.combine.render() }
+fn render_combine(){
+    let tight = combine_tight(cur_tab())
+    ui.combine_fit.set_visible(!tight)
+    ui.combine_tall.set_visible(tight)
+    if tight {
+        ui.combine_tall_head.render()
+        ui.combine_list.render()
+        ui.combine_tall_foot.render()
+    } else {
+        ui.combine.render()
+    }
+}
 fn render_status(){ ui.status.render() }
 fn render_dialog(){
     ui.dialog_box.set_visible(st.confirm != nil)
@@ -2942,35 +2973,76 @@ fn drop_marker(h){
     }
 }
 
-// Combine: PDFs in order, each with its pages, into one new PDF.
+// Combine: PDFs in order, each with its pages, into one new PDF (design
+// 06). When its list fits the window, the card is as tall as it is, in a pane
+// that scrolls; when it does not (a short window, many PDFs), the card fills
+// the pane, its title and footer (the total, Name and the button) stay in
+// view, and the list scrolls inside it, in a scroll view of its own that
+// keeps its place as the list is drawn again (render_combine).
+fn combine_tight(t){
+    if t == nil || t.combine == nil { return false }
+    let c = t.combine
+    let rows = 0
+    if c.adding {
+        rows = 1
+        for d in st.docs { if !combine_has(t, d.name) && d.error == "" && !d.locked { rows = rows + 1 } }
+    }
+    !combine_fits(combine_list_h(c.items.len(), rows), st.height, c.error != "")
+}
 fn combine_view(){
     let t = cur_tab()
     if t == nil || t.combine == nil { return View{width: Fill height: 1} }
-    let c = t.combine
-    let total = combine_total(t)
     RoundedShadowView{width: Fill max_width: 717 height: Fit flow: Down padding: Inset{left: 24 right: 24 top: 34 bottom: 24}
         draw_bg +: {color: pt_card border_size: 1.0 border_color: pt_line border_radius: 7.0 shadow_color: pt_shadow shadow_radius: 8.0 shadow_offset: vec2(0.0, 1.0)}
-        View{width: Fit height: Fit padding: Inset{left: 16 bottom: 22} Label{padding: 0 text: "Combine files" draw_text +: {color: pt_ink text_style: theme.font_bold{font_size: 16}}}}
-        RoundedView{width: Fill height: Fit flow: Down show_bg: true draw_bg +: {color: pt_card border_size: 1.0 border_color: pt_line border_radius: 3.0}
-            for i it in c.items {
-                combine_row(t, i, it)
-                Line{draw_bg.color: pt_line_soft}
-            }
-            GestureView{width: Fill height: 60 padding: Inset{left: 8 right: 8 top: 9 bottom: 9} cursor: MouseCursor.Hand on_tap: |x, y| { let x = cur_tab() x.combine.adding = !x.combine.adding render_combine() }
-                dashed_box()
-            }
-            if c.adding { add_list(t) }
+        combine_head(false)
+        combine_items(t)
+        combine_foot(t, false)
+    }
+}
+// The tall card's parts (the static frame around them is in the layout).
+fn tall_head_view(){ combine_head(true) }
+fn tall_list_view(){
+    let t = cur_tab()
+    if t == nil || t.combine == nil { return View{width: Fill height: 1} }
+    combine_items(t)
+}
+fn tall_foot_view(){
+    let t = cur_tab()
+    if t == nil || t.combine == nil { return View{width: Fill height: 1} }
+    combine_foot(t, true)
+}
+fn combine_head(tight){
+    View{width: Fit height: Fit padding: Inset{left: 16 bottom: pick(tight, 14, 22)} Label{padding: 0 text: "Combine files" draw_text +: {color: pt_ink text_style: theme.font_bold{font_size: 16}}}}
+}
+fn combine_items(t){
+    let c = t.combine
+    RoundedView{width: Fill height: Fit flow: Down show_bg: true draw_bg +: {color: pt_card border_size: 1.0 border_color: pt_line border_radius: 3.0}
+        for i it in c.items {
+            combine_row(t, i, it)
+            Line{draw_bg.color: pt_line_soft}
         }
-        Line{margin: Inset{top: 18 bottom: 20}}
+        GestureView{width: Fill height: 60 padding: Inset{left: 8 right: 8 top: 9 bottom: 9} cursor: MouseCursor.Hand on_tap: |x, y| { let x = cur_tab() x.combine.adding = !x.combine.adding render_combine() }
+            dashed_box()
+        }
+        if c.adding { add_list(t) }
+    }
+}
+// What the card ends with: the total, the new PDF's name, a refusal, Combine.
+// A tall card draws its gaps tighter, to leave the list room.
+fn combine_foot(t, tight){
+    let c = t.combine
+    let total = combine_total(t)
+    View{width: Fill height: Fit flow: Down
+        Line{margin: Inset{top: pick(tight, 12, 18) bottom: pick(tight, 12, 20)}}
         Label{padding: 0 text: pick(total == nil, "Check the pages of each PDF", "One PDF of " + plural(total, "page", "pages")) draw_text +: {color: pt_ink2 text_style: theme.font_regular{font_size: 13}}}
-        View{width: Fill height: Fit flow: Right align: Align{y: 0.5} margin: Inset{top: 22} spacing: 18
+        View{width: Fill height: Fit flow: Right align: Align{y: 0.5} margin: Inset{top: pick(tight, 12, 22)} spacing: 18
             Label{padding: 0 text: "Name" draw_text +: {color: pt_ink2 text_style: theme.font_regular{font_size: 12}}}
             Field{width: 310 height: 40 text: c.name empty_text: "Name of the new PDF" on_change: |text| { let x = cur_tab() x.combine.name = text }}
         }
         if c.error != "" {
-            View{width: Fill height: Fit padding: Inset{top: 14} Label{padding: 0 width: Fill flow: Flow.Right{wrap: true} text: c.error draw_text +: {color: pt_red text_style: theme.font_regular{font_size: 12}}}}
+            View{width: Fill height: Fit padding: Inset{top: pick(tight, 10, 14)} Label{padding: 0 width: Fill flow: Flow.Right{wrap: true} text: c.error draw_text +: {color: pt_red text_style: theme.font_regular{font_size: 12}}}}
         }
-        View{width: Fill height: Fit flow: Right margin: Inset{top: 14}
+        View{width: Fill height: Fit flow: Right margin: Inset{top: pick(tight, 10, 14)}
             Gap{}
             Primary{width: 140 height: 46 spacing: 10 text: pick(c.busy, "Combining…", "Combine") icon_walk: Walk{width: 18 height: 18} draw_icon +: {svg: icon("combine")}
                 draw_text +: {text_style: theme.font_regular{font_size: 13}}
@@ -3309,17 +3381,16 @@ fn edit_panel(t){
                     Label{padding: 0 text: "Paragraph " + t.edit.n draw_text +: {color: pt_ink2 text_style: theme.font_regular{font_size: 12.5}}}
                 }
                 Line{draw_bg.color: pt_line_soft}
-                View{width: Fill height: Fit flow: Down padding: Inset{left: 16 right: 16 top: 18 bottom: 20} spacing: 10
+                View{width: Fill height: Fit flow: Down padding: Inset{left: 16 right: 16 top: pick(short(), 12, 18) bottom: pick(short(), 12, 20)} spacing: pick(short(), 8, 10)
                     Label{padding: 0 text: "Font" draw_text +: {color: pt_ink2 text_style: theme.font_regular{font_size: 12}}}
                     RoundedView{width: Fill height: 40 flow: Right align: Align{y: 0.5} padding: Inset{left: 12 right: 12} show_bg: true draw_bg +: {color: pt_field border_size: 1.0 border_color: pt_field_line border_radius: 4.0}
                         Label{padding: 0 width: Fill max_lines: 1 text_overflow: TextOverflow.Ellipsis text: font_text(t.edit) draw_text +: {color: pt_ink2 text_style: theme.font_regular{font_size: 12}}}
                     }
-                    View{width: Fill height: Fit padding: Inset{top: 14} Label{padding: 0 text: "Alignment" draw_text +: {color: pt_ink2 text_style: theme.font_regular{font_size: 12}}}}
+                    View{width: Fill height: Fit padding: Inset{top: pick(short(), 4, 14)} Label{padding: 0 text: "Alignment" draw_text +: {color: pt_ink2 text_style: theme.font_regular{font_size: 12}}}}
                     align_segments(t.edit)
-                    View{width: Fill height: Fit padding: Inset{top: 14} Label{padding: 0 text: "Colour" draw_text +: {color: pt_ink2 text_style: theme.font_regular{font_size: 12}}}}
+                    View{width: Fill height: Fit padding: Inset{top: pick(short(), 4, 14)} Label{padding: 0 text: "Colour" draw_text +: {color: pt_ink2 text_style: theme.font_regular{font_size: 12}}}}
                     colour_box(t.edit)
-                    if t.edit.colours { colour_list(t.edit) }
-                    View{width: Fill height: Fit flow: Right margin: Inset{top: 22} spacing: 14
+                    View{width: Fill height: Fit flow: Right margin: Inset{top: pick(short(), 12, 22)} spacing: 14
                         Primary{width: Fill height: 37 text: "Apply" on_click: || apply_edit(cur_tab())}
                         Outline{width: Fill height: 37 text: "Cancel" on_click: || cancel_edit(cur_tab())}
                     }
@@ -3360,9 +3431,11 @@ fn swatch(hex){
     }
     RoundedView{width: 22 height: 22 show_bg: true draw_bg +: {color: text_swatch(hex) border_size: 1.0 border_color: pt_thumb_line border_radius: 4.0}}
 }
-// Colour: the chosen colour in a box that opens the list below it (the
-// runtime gives a script no pop-up menu).
+// Colour: the chosen colour in a box that opens into the colours, in its own
+// row (the runtime gives a script no pop-up menu, and the panel is short in
+// a small window: Apply stays in view).
 fn colour_box(e){
+    if e.colours { return colour_list(e) }
     GestureView{width: Fill height: 40 cursor: MouseCursor.Hand on_tap: |x, y| toggle_colours(cur_tab())
         RoundedView{width: Fill height: Fill flow: Right align: Align{y: 0.5} padding: Inset{left: 9 right: 12} spacing: 12 show_bg: true draw_bg +: {color: pt_field border_size: 1.0 border_color: pick(e.colours, pt_accent, pt_field_line) border_radius: 4.0}
             swatch(e.color)
@@ -3371,18 +3444,18 @@ fn colour_box(e){
         }
     }
 }
-// The colours the box opens: one row of squares, the paragraph's own first
-// (the panel is short in a small window; the box names the one chosen).
+// The colours the box opens into, the paragraph's own first: tap one to
+// choose it and close them.
 fn colour_chip(e, hex){
-    GestureView{width: 36 height: 36 align: Align{x: 0.5 y: 0.5} cursor: MouseCursor.Hand on_tap: |x, y| set_colour(cur_tab(), hex)
-        RoundedView{width: 36 height: 36 align: Align{x: 0.5 y: 0.5} show_bg: true
-            draw_bg +: {color: pick(e.color == hex, pt_select, pt_field) border_size: 1.0 border_color: pick(e.color == hex, pt_accent, pt_field_line) border_radius: 4.0}
+    GestureView{width: 30 height: 30 align: Align{x: 0.5 y: 0.5} cursor: MouseCursor.Hand on_tap: |x, y| set_colour(cur_tab(), hex)
+        RoundedView{width: 30 height: 30 align: Align{x: 0.5 y: 0.5} show_bg: true
+            draw_bg +: {color: pick(e.color == hex, pt_select, pt_field) border_size: 1.0 border_color: pick(e.color == hex, pt_accent, pt_field) border_radius: 4.0}
             swatch(hex)
         }
     }
 }
 fn colour_list(e){
-    View{width: Fill height: Fit flow: Right spacing: 6
+    RoundedView{width: Fill height: 40 flow: Right align: Align{y: 0.5} padding: Inset{left: 4 right: 4} spacing: 4 show_bg: true draw_bg +: {color: pt_field border_size: 1.0 border_color: pt_accent border_radius: 4.0}
         colour_chip(e, nil)
         for c in TEXT_COLOURS { colour_chip(e, c.hex) }
     }
@@ -3617,8 +3690,19 @@ SolidView{width: Fill height: Fill flow: Overlay draw_bg.color: pt_desk
                         grid_box := View{visible: false width: Fill height: Fill
                             grid := ScrollYView{width: Fill height: Fill flow: Down align: Align{x: 0.5} padding: Inset{left: 20 right: 20 top: 14 bottom: 92} on_render: || { grid_view() }}
                         }
-                        combine_box := View{visible: false width: Fill height: Fill
-                            combine := ScrollYView{width: Fill height: Fill flow: Down align: Align{x: 0.5} padding: Inset{top: 42 bottom: 40 left: 24 right: 24} on_render: || { combine_view() }}
+                        combine_box := View{visible: false width: Fill height: Fill flow: Down
+                            combine_fit := View{width: Fill height: Fill
+                                combine := ScrollYView{width: Fill height: Fill flow: Down align: Align{x: 0.5} padding: Inset{top: 42 bottom: 40 left: 24 right: 24} on_render: || { combine_view() }}
+                            }
+                            // A short window: the card fills the pane and its list scrolls inside it.
+                            combine_tall := View{visible: false width: Fill height: Fill flow: Down align: Align{x: 0.5} padding: Inset{top: 16 bottom: 16 left: 24 right: 24}
+                                RoundedShadowView{width: Fill max_width: 717 height: Fill flow: Down padding: Inset{left: 24 right: 24 top: 20 bottom: 18}
+                                    draw_bg +: {color: pt_card border_size: 1.0 border_color: pt_line border_radius: 7.0 shadow_color: pt_shadow shadow_radius: 8.0 shadow_offset: vec2(0.0, 1.0)}
+                                    combine_tall_head := View{width: Fill height: Fit on_render: || { tall_head_view() }}
+                                    combine_list := ScrollYView{width: Fill height: Fill flow: Down on_render: || { tall_list_view() }}
+                                    combine_tall_foot := View{width: Fill height: Fit flow: Down on_render: || { tall_foot_view() }}
+                                }
+                            }
                         }
                         notice_box := View{visible: false width: Fill height: Fill
                             notice := View{width: Fill height: Fill flow: Down align: Align{x: 0.5 y: 0.4} padding: 24 on_render: || { notice_view() }}
