@@ -152,3 +152,14 @@ fn a_comment_date_is_read_as_the_service_writes_it() {
     );
     assert_eq!(pdftools_model("comment_time(\"later\").to_json()"), json!(null));
 }
+
+/// The designs are drawn at 1536 x 1024, and the shipped manifest asks the
+/// desktop to open PDF Tools' window at that size: App Hub's `window`, which
+/// needs `schema_minor` 1. The desk clamps it (`desktop_layout`).
+#[cfg(any(feature = "app-hub", native_mobile))]
+#[test]
+fn the_shipped_manifest_asks_for_the_designs_window_size() {
+    let manifest = octosense_app_contract::AppManifest::parse(include_str!("../../../apps/pdftools/bundle/manifest.json")).unwrap();
+    assert_eq!(manifest.schema_minor, 1);
+    assert_eq!(manifest.window, Some(octosense_app_contract::WindowHint::new(1536, 1024)));
+}

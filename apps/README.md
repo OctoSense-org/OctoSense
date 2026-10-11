@@ -346,7 +346,8 @@ appcard/                     the native AppCard assistant
 
 ```
 apps/<name>/bundle/
-  manifest.json     id, version, name, capabilities, network.hosts, integrity
+  manifest.json     id, version, name, capabilities, network.hosts, integrity;
+                    optionally window, the desktop window's size (schema_minor 1)
   main.splash       the program
   icon.png|svg      optional launcher artwork; the shell owns the outer shape
   thumbs/ ...       any other files the app loads, as {{assets}}/<path>

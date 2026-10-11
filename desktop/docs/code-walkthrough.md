@@ -119,6 +119,21 @@ tests installation into the shell before publication.
 `agent_apps` and `register_host_services`. App Hub's native `CARD_MODULE` hosts
 these interpreted programs. The optional AppCard assistant has its own module.
 
+On the desktop, a script app's window opens at the size its manifest asks
+for in `window`, App Hub's optional hint, which needs `"schema_minor": 1`.
+`App::launch_module_as` in [`lib.rs`](../../crates/shell/src/lib.rs) reads it
+with `apps::window_hint`, from the bundle the Card runner opens, and
+`preferred_size` in
+[`desktop_layout.rs`](../../crates/shell/src/desktop_layout.rs) clamps it to
+the desk minus the margins every new window keeps (42 points left and right,
+32 top and bottom), never below 80 x 60. Where the dock floats over the desk
+instead of reserving a strip (the macOS and OctoSense styles), the bottom
+margin is kept above the dock (`desktop::dock_overlay`), so the window's
+bottom edge is never behind it. Without `window`, a window opens at
+72% of the desk's width and 76% of its height, at most 1000 x 720 points.
+The person can resize either, and phones ignore the hint. PDF Tools asks for
+its designs' 1536 x 1024.
+
 Admission verifies the bundle and resolves its metadata and resource limits.
 Capability names disclose usage, not execution permission. A script's
 `host.request(...)` runs under that app's identity. App Hub's

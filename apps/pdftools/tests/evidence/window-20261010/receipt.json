@@ -1,0 +1,72 @@
+{
+  "result": "pass",
+  "date": "2026-10-10",
+  "platform": "macOS 26.6.2, Apple silicon (arm64)",
+  "commit": "487c79dbd336d2e26c3d79e67d38c7f71ed8588d",
+  "commit_note": "The binary was built from this commit, before the branch was rebased onto main; these trees are the same in the pull request's head.",
+  "trees": {
+    "crates/shell": "ec73b9b2e4a728a830b029452b6cf665141a7d09",
+    "apps/pdftools/bundle": "12279a3c1b6aab6493633519ad28b576c3d659e5",
+    "desktop": "81cc112903712f5901ebfa1c237c49f9502c88a4",
+    "Cargo.lock": "96ba999344171d551a5e80a79521877d0c765441"
+  },
+  "app_hub_revision": "d86101d7206162b73ea873e2a31b48364600a110",
+  "binary": {
+    "build": "cargo build --locked -p octosense --no-default-features --features app-hub,craft-engines",
+    "path": "target/debug/octosense",
+    "sha256": "90aa09e6596ac40dc4c10aca6603963c9ebf2a5bec0b7d68bda00ff6a50d1c9a"
+  },
+  "source_sha256": {
+    "apps/pdftools/bundle/manifest.json": "3c062555c5521ec7de41a0c2c86b1bac75be0d005cd7727f9d32c55535000236",
+    "apps/pdftools/bundle/main.splash": "d6db2eca74df93236a11f55d38b824ad71deddd56eb307631c3a512a22780d8a",
+    "apps/pdftools/tests/ui.py": "3039646310fe807dbec7a824193d80be04f8373c83182493b9cecdf4e8878bd5"
+  },
+  "manifest": {"schema_minor": 1, "window": {"width": 1536, "height": 1024}},
+  "launch": "A Terminal.app tab (osascript) under the machine's shell-run lock, with no other OctoSense running: OCTOSENSE_HOME=<fresh home> OCTOS_APP_CORE_DIR=<home>/octos-home/.octos MAKEPAD_HOME=<home>/makepad MAKEPAD_HIDE_WINDOWS=1 MAKEPAD_REMOTE=127.0.0.1:8915; ended with /quit. Points are the shell's layout points; frames are /g grabs at one pixel per point.",
+  "runs": [
+    {
+      "name": "opened from the menu",
+      "how": "No MAKEPAD_WM_TEST_APP. Once the desk had drawn: the shell's menu (Cmd+Space), 'pdf tools', Return.",
+      "frame": "opened-from-the-menu.png (the whole hidden window)",
+      "shell_window_points": [1400, 897],
+      "desk_points": [0, 32, 1400, 865],
+      "log": "wm: pdftools asks for a 1536x1024 window; it opens at 1296x703 (the dock covers 78 points of the desk)",
+      "window_points": [52, 74, 1296, 703],
+      "app_area_points": [54, 108, 1292, 667],
+      "dock_top": 809,
+      "window_bottom": 777,
+      "note": "The work area is 1380 x 845 at (10, 42); OctoSense's dock covers its bottom 78 points, so the window keeps 42 points left and right, 32 below the desk's top and 32 above the dock. The status line ('0 bytes of 64 MB used') shows above the dock."
+    },
+    {
+      "name": "the shell journey",
+      "how": "apps/pdftools/tests/ui.py's `shell` run, unchanged (light, then dark through the shell's style menu), on the samples octosense-pdf-service's pdftools_fixture example writes, with MAKEPAD_WM_TEST_APP=pdftools; a wrapper also kept each grab's /snap.",
+      "engine": "real: every pdf call went to the shell's pdf service",
+      "script_budget": "the runtime's 64 ms (load average 30 to 70)",
+      "result": "pass: every step of both passes, no script errors in the log, the shell exited after /quit",
+      "log": "wm: pdftools asks for a 1536x1024 window; it opens at 1296x698 (the dock covers 78 points of the desk)",
+      "window_note": "Opened before the desk's first draw, so sized on desk_area's fallback 1400 x 860 desk.",
+      "shell_window_points": [1400, 898],
+      "app_area_points": [54, 76, 1292, 662],
+      "layout": "wide: the app is 1292 points wide, above the 1180 where its narrow layout starts (main.splash narrow()); a right panel opens beside the left panel",
+      "frames": {
+        "wide/01-home.png": "Home, the library's covers",
+        "wide/02-reading.png": "Read, page 1, the Pages panel",
+        "wide/03-find.png": "Find: 'revenue', 9 matches on 4 pages, the first highlighted",
+        "wide/04-comment.png": "Comment: a highlight on the Summary's first line, its thread on the right",
+        "wide/06-combine.png": "Combine with Board minutes' page 1, before any scroll: 'One PDF of 5 pages' shows, the card's Combine button does not",
+        "wide/06a-combine-end.png": "the same card after one scroll: the name and the Combine button",
+        "wide/08-edit.png": "Edit: clause 1 in the editor with ' (amended)' typed, the Edit text panel on the right",
+        "wide/d02-reading.png": "the dark pass: Read, page 1"
+      },
+      "status_line": "In every frame the status line ('Saved' or 'Edited', and the storage used) is at y 707 to 725 and the zoom bar (628 to 681 in Read) ends above it; the dock's top is at y 810.",
+      "canvas_points": [139, 184, 1207, 509]
+    }
+  ],
+  "findings": [
+    "Combine: with two PDFs listed, the card's own Combine button is not visible without scrolling at this size. Its bottom would be at y 778, and the canvas ends at y 693, so it is 85 points short. One scroll (109 points) shows it (wide/06a-combine-end.png). Each further PDF adds about 114 points.",
+    "Home: the cards' third caption line (when the PDF was last opened, here 'Not opened yet') sits at the fold: 2 of its 18 points show.",
+    "Both come from height: keeping the window above the dock costs 78 points on this 898-point-tall window. Before that change the startup window's app area was 740 points tall: Home's captions fitted, and the Combine button was about 7 points short.",
+    "A comment made on 10 Oct (PDT) is dated 11 Oct: the known UTC reading listed in apps/pdftools/README.md."
+  ],
+  "not_verified": "Taller screens; other styles; the narrow layout at this commit (the v2-20261010 runs covered it at 990 x 603); Linux, Windows, phones."
+}
