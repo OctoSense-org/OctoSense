@@ -508,10 +508,11 @@ impl WmLayout {
 
     /// [`insert`](Self::insert) for a client whose app asks its desktop
     /// window to open at `preferred` (width, height) points: a script app's
-    /// manifest `window`, which the desk clamps
-    /// (`DesktopWindows::ensure_sized`). `None` is `insert`.
-    pub fn insert_sized(&mut self, client: ClientId, area: LRect, gap: f64, preferred: Option<(f64, f64)>) {
-        self.desktop.ensure_sized(client, area, preferred);
+    /// manifest `window`, which the desk clamps, above a dock that covers
+    /// `dock` points of the desk's bottom (`DesktopWindows::ensure_sized`).
+    /// `None` is `insert`.
+    pub fn insert_sized(&mut self, client: ClientId, area: LRect, gap: f64, preferred: Option<(f64, f64)>, dock: f64) {
+        self.desktop.ensure_sized(client, area, preferred, dock);
         self.insert(client, area, gap);
     }
 
