@@ -44,7 +44,7 @@ python3 rom/scripts/stage-home.py                 # verify the receipt, copy the
 rom/scripts/stage-forks.sh /path/to/lineage-tree  # apply vendor/octosense and stage the Quickstep and SystemUI forks
 ```
 
-**App Studio 开发构建。** Home 构建脚本支持 `--dev-mode`，与只控制签名的 `--development` 独立。独立测试可使用 `--package-name dev.makepad.octosense.studio`；只改变 Home 包名，保留设备上的 Bridge。包含开发者模式的回执不能进入 ROM 暂存或发布。参见[构建约定](docs/home-build.md#android-builds)与[进行中的里程碑](../docs/adr/0006-app-studio-on-the-phone.md)。构建计划测试不代表设备运行已验证。
+**App Studio 开发构建。** Home 构建脚本只为独立构建接受 `--dev-mode`：或者配合 `--development`，或者用正式签名加上测试用的 `--package-name`；ROM 变体和已安装 Home 自己的包名都不会带开发者选项。独立测试可使用 `--package-name dev.makepad.octosense.studio`；只改变 Home 包名，保留设备上的 Bridge。包含开发者模式的回执不能进入 ROM 暂存或发布。参见[构建约定](docs/home-build.md#android-builds)与[进行中的里程碑](../docs/adr/0006-app-studio-on-the-phone.md)。构建计划测试不代表设备运行已验证。
 
 然后在主机上，`scripts/run-rom-rootfs.sh` 进入 chroot（位于 `OCTOSENSE_BUILD_ROOT` 下，默认 `/home/ubuntu/octosense-adr0001`），并运行 `build-rom.sh preflight`、`bacon`（完整签名构建）或 `module <name>`。它要求 `build-rom.sh` 位于构建根目录下的 `exports/build-rom.sh`，并由 systemd 启动；该 unit 和主机配置不在本仓库中。`scripts/make-keys.sh` 一次性生成签名密钥；`scripts/release.sh <build-tag>` 从 `~/.config/octosense/build.env` 中指定的主机取回构建完成的镜像。签名、构建回执和 ROM 版本：[docs/home-build.md（英文）](docs/home-build.md)。
 

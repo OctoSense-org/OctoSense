@@ -280,7 +280,7 @@ Agent 可先用普通文件工具从头编写 `manifest.json` 和 `main.splash`�
 | `studio.install {bundle_path}` | 登记本地开发者安装，在 Home 中显示。随后可用 `studio.open {app_id}` 或启动器图块打开；应用自己的状态在关闭、重开后保留。 |
 | `studio.uninstall {app_id}` | 删除调用方自己的一个开发者安装：收据、快照、应用数据和所有者记录。该应用仍有实例打开时拒绝。 |
 
-首个完整应用路径接受 `dev.studio.*` 命名空间下的离线、仅存储权限 `main.splash` 包。应用本身没有 Agent、账户访问和 `net` 模块，每个 `host.request` 都会被拒绝；准入的指令预算只是声明，真正强制的是存储 jail、配额和内存上限。准入还会拒绝含有 URL 或 `{{assets}}` 路径的 `main.splash`：隔离环境只是不提供 `net` 模块，图片或视频仍可能通过其来源地址访问网络。包中可携带原创启动器图标，但暂不支持屏幕内的资源加载路径。[studio_bundles.rs](../crates/shell/src/host_tools/studio_bundles.rs)把包限制为 128 个文件/目录、八层目录、总计 2 MiB；单文件最多 512 KiB，`main.splash` 最多 64 KiB。解析后的策略最多允许 1 MiB 私有应用存储、五百万脚本指令和 16 MiB 堆；清单中更低的限制仍然生效。
+首个完整应用路径接受 `dev.studio.*` 命名空间下的离线、仅存储权限 `main.splash` 包。应用本身没有 Agent、账户访问和 `net` 模块，每个 `host.request` 都会被拒绝；准入的指令预算只是声明，真正强制的是存储 jail、配额和内存上限。准入还会拒绝文本中含有 URL 或 `{{assets}}` 路径的 `main.splash`。这只是一道静态检查，因为 Splash 可以在运行时拼出字符串；真正的离线保证来自隔离环境本身：它不允许任何网络主机，也没有任何宿主能力，运行时发起的 URL 加载会被直接拒绝。包中可携带原创启动器图标，但暂不支持屏幕内的资源加载路径。[studio_bundles.rs](../crates/shell/src/host_tools/studio_bundles.rs)把包限制为 128 个文件/目录、八层目录、总计 2 MiB；单文件最多 512 KiB，`main.splash` 最多 64 KiB。解析后的策略最多允许 1 MiB 私有应用存储、五百万脚本指令和 16 MiB 堆；清单中更低的限制仍然生效。
 
 开发者安装独立于 App Hub 的签名目录。宿主私有收据把准入后的字节绑定到作者所属的应用、账户、session、context 与 `DevTag`。该标记记录开发者 profile 和授予权限的那次启用。打开已安装应用时会重新检查收据和摘要；授权结束后，应用从启动器可用列表移除，运行中的实例停止。另一个对话不能检查、操控或替换它。同一已安装应用只允许一个实例运行，避免同时写入其状态。
 

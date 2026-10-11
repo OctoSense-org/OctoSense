@@ -191,9 +191,9 @@ fn admit_snapshot(
         return Err("main.splash must be nonempty and at most 64 KiB".into());
     }
     // `script_source` has resolved `{{assets}}` already, so that route is
-    // read from the file as written. The isolate withholds only the `net`
-    // module: a URL in an image, video or `sys.*` source would still reach
-    // the network, so an offline screen names none.
+    // read from the file as written. This scan is a lint: Splash builds
+    // strings at runtime, and the offline guarantee is the isolate itself,
+    // which runs with no network hosts and no host capabilities.
     let written = std::fs::read_to_string(root.join("main.splash"))
         .map_err(|e| format!("main.splash: {e}"))?;
     if written.contains("{{assets}}") || source.contains("http_resource(") || source.contains("://") {

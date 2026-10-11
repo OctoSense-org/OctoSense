@@ -128,8 +128,12 @@ unchanged; standalone Home can use the test identity described below. The build 
 the signing keystore. `--dev-mode` separately compiles the existing Home
 `dev-mode` feature, enabling Settings to offer developer options; it does not
 activate them or change release optimization. Default builds omit that feature.
-Both values are recorded in `build.json`. Developer-enabled builds default to
-`out/home/<variant>-dev-mode/`, and ROM staging/publication refuses them.
+It is accepted for standalone builds only, with `--development` or with the
+release signer under a test `--package-name`; the ROM variant and the installed
+Home's own identity are refused, so developer options never upgrade the
+installed Home in place. Both values are recorded in `build.json`.
+Developer-enabled builds default to `out/home/standalone-dev-mode/` (a test
+package adds its name), and ROM staging/publication refuses them.
 
 For testing beside the installed Home, add
 `--package-name dev.makepad.octosense.studio` to a standalone build. The wrapper
