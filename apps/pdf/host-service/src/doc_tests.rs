@@ -679,6 +679,134 @@ fn page_operations_and_text_edits() {
     coded(&w.err("edit_text", json!({"doc": doc, "page": 3, "line": 999, "text": "x"})), "invalid");
 }
 
+/// A page with a heading and a paragraph of three lines in Helvetica, set
+/// flush left in black.
+fn paragraph_pdf() -> Vec<u8> {
+    let content = "BT /F1 18 Tf 50 360 Td (Third quarter) Tj ET\nBT /F1 12 Tf 14 TL 50 320 Td (The quarter closed ahead of plan, with) Tj T* (revenue up in every region while costs) Tj T* (held flat.) Tj ET";
+    let objs = [
+        "<< /Type /Catalog /Pages 2 0 R >>".to_string(),
+        "<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_string(),
+        "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 400 400] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>".to_string(),
+        format!("<< /Length {} >>\nstream\n{content}\nendstream", content.len()),
+        "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>".to_string(),
+    ];
+    assemble(&objs)
+}
+
+/// `[x, y, w, h]` from an answer.
+fn xywh4(v: &Json) -> [f64; 4] {
+    let n = |i: usize| v[i].as_f64().unwrap_or_else(|| panic!("not [x, y, w, h]: {v}"));
+    [n(0), n(1), n(2), n(3)]
+}
+
+/// `pdf.edit_text` formats a paragraph with `align` (left, center, right,
+/// justify) and `color` (`#rrggbb`) and nothing else: no font, size or
+/// move, and a line takes neither. The paragraph is redrawn where it was,
+/// in its own font and size.
+#[test]
+fn a_paragraph_takes_an_alignment_and_a_colour() {
+    let w = World::new();
+    w.put("para.pdf", &paragraph_pdf());
+    let doc = w.open("para.pdf");
+    // The paragraph as pdf.lines gives it: its number, text and box, and its
+    // lines' boxes.
+    let paragraph = || {
+        let lines = w.ok("lines", json!({"doc": doc, "page": 1}));
+        let p = lines["paragraphs"].as_array().unwrap().iter().find(|p| p["text"].as_str().unwrap().starts_with("The quarter")).unwrap_or_else(|| panic!("{lines}")).clone();
+        let boxes: Vec<[f64; 4]> = p["lines"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|n| xywh4(&lines["lines"].as_array().unwrap().iter().find(|l| l["n"] == *n).unwrap()["box"]))
+            .collect();
+        (p["n"].clone(), p["text"].as_str().unwrap().to_string(), xywh4(&p["box"]), boxes)
+    };
+    // Each line's fill colour, as the engine reads the page.
+    let colours = || {
+        docs::with_open(&doc, |d| d.engine.session().docs()[0].text_lines(0).iter().filter(|l| !l.text.contains("Third")).map(|l| l.color).collect::<Vec<_>>()).unwrap()
+    };
+    let (n, text, [x, _, width, _], boxes) = paragraph();
+    assert_eq!(boxes.len(), 3, "three lines");
+    assert!(colours().iter().all(|c| c.iter().all(|v| v.abs() < 0.01)), "black: {:?}", colours());
+    let near = |a: f64, b: f64| (a - b).abs() < 1.0;
+
+    assert_eq!(w.ok("edit_text", json!({"doc": doc, "page": 1, "paragraph": n, "text": text, "align": "right", "color": "#C0392B"})), json!({"edited": true}));
+    let (n, after, _, boxes) = paragraph();
+    assert_eq!(after, text, "the same words");
+    for b in &boxes {
+        assert!(near(b[0] + b[2], x + width), "flush right at {}: {b:?}", x + width);
+    }
+    let red = [0xc0 as f64 / 255.0, 0x39 as f64 / 255.0, 0x2b as f64 / 255.0];
+    for c in colours() {
+        assert!(c.iter().zip(red).all(|(v, r)| (v - r).abs() < 0.01), "#c0392b: {c:?}");
+    }
+    w.ok("edit_text", json!({"doc": doc, "page": 1, "paragraph": n, "text": text, "align": "center"}));
+    let (n, _, _, boxes) = paragraph();
+    for b in &boxes {
+        assert!(near(b[0] + b[2] / 2.0, x + width / 2.0), "centred on {}: {b:?}", x + width / 2.0);
+    }
+    assert!(colours().iter().all(|c| c.iter().zip(red).all(|(v, r)| (v - r).abs() < 0.01)), "an edit without a colour keeps the paragraph's own");
+    w.ok("edit_text", json!({"doc": doc, "page": 1, "paragraph": n, "text": text, "align": "justify"}));
+    let (n, _, _, boxes) = paragraph();
+    let (last, full) = boxes.split_last().unwrap();
+    for b in full {
+        assert!(near(b[0], x) && near(b[0] + b[2], x + width), "justified to [{x}, {}]: {b:?}", x + width);
+    }
+    assert!(near(last[0], x) && last[0] + last[2] < x + width - 10.0, "the last line stays short: {last:?}");
+    w.ok("edit_text", json!({"doc": doc, "page": 1, "paragraph": n, "text": text, "align": "left", "color": "#000000"}));
+    let (n, _, _, boxes) = paragraph();
+    assert!(boxes.iter().all(|b| near(b[0], x)), "flush left: {boxes:?}");
+    assert!(colours().iter().all(|c| c.iter().all(|v| v.abs() < 0.01)), "black again: {:?}", colours());
+    // Each format is one undo step.
+    w.ok("undo", json!({"doc": doc}));
+    assert!(colours().iter().all(|c| c.iter().zip(red).all(|(v, r)| (v - r).abs() < 0.01)), "undone: red again, {:?}", colours());
+    w.ok("redo", json!({"doc": doc}));
+    assert!(colours().iter().all(|c| c.iter().all(|v| v.abs() < 0.01)), "redone: black, {:?}", colours());
+
+    // What the service refuses, before the engine sees it.
+    let edits = w.ok("state", json!({"doc": doc}));
+    let base = json!({"doc": doc, "page": 1, "paragraph": n, "text": text});
+    let with = |key: &str, value: Json| {
+        let mut args = base.clone();
+        args[key] = value;
+        args
+    };
+    for bad in [
+        json!({"doc": doc, "page": 1, "line": 2, "text": "x", "align": "center"}),
+        json!({"doc": doc, "page": 1, "line": 2, "text": "x", "color": "#000000"}),
+        with("align", json!("middle")),
+        with("align", json!("Center")),
+        with("align", json!(1)),
+        with("color", json!("red")),
+        with("color", json!("#12345")),
+        with("color", json!("#1234567")),
+        with("color", json!("123456")),
+        with("color", json!("#ggg000")),
+        with("color", json!([1, 0, 0])),
+        json!({"doc": doc, "page": 1, "paragraph": n, "align": "center"}),
+    ] {
+        coded(&w.err("edit_text", bad.clone()), "invalid");
+    }
+    for (key, value) in [
+        ("font", json!("times")),
+        ("bold", json!(true)),
+        ("italic", json!(true)),
+        ("size", json!(20)),
+        ("underline", json!(true)),
+        ("line_spacing", json!(2)),
+        ("char_spacing", json!(1)),
+        ("scale", json!(120)),
+        ("dx", json!(10)),
+        ("dy", json!(10)),
+        ("width", json!(100)),
+    ] {
+        let e = w.err("edit_text", with(key, value));
+        coded(&e, "invalid");
+        assert!(e.contains(&format!("`{key}` is not one of them")), "{e}");
+    }
+    assert_eq!(w.ok("state", json!({"doc": doc})), edits, "the refusals reached nothing");
+}
+
 #[test]
 fn undo_and_redo_across_calls() {
     let w = World::new().samples();
