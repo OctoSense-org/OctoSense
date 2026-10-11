@@ -120,11 +120,20 @@ class BuildTests(unittest.TestCase):
                       "--package-name", "dev.makepad.octosense.studio")
 
     def test_receipt_requires_the_requested_apk_identity(self):
-        badging = "package: name='dev.makepad.octosense.studio' versionCode='42' versionName='1'\n"
-        self.assertEqual(build.home_version(badging, "dev.makepad.octosense.studio"), 42)
-        for text in (badging, "no package in this APK"):
-            with self.assertRaises(RuntimeError):
-                build.home_version(text, "dev.makepad.octosense")
+        # A test package (--package-name) is the identity verify_pair expects of
+        # Home; the Bridge keeps its own. The default identity refuses that pair.
+        artifacts = {
+            "OctoSenseHome.apk": {"package_name": "dev.makepad.octosense.studio", "version_code": 42,
+                                  "version_name": "1", "certificate_sha256": "a" * 64},
+            "OctoSenseBridge.apk": {"package_name": "dev.makepad.octosense.bridge", "version_code": 42,
+                                    "version_name": "1", "certificate_sha256": "a" * 64},
+        }
+        studio = self.args("--variant", "standalone", "--development", "--version-code", "42",
+                           "--package-name", "dev.makepad.octosense.studio")
+        build.verify_pair(artifacts, studio)
+        default = self.args("--variant", "standalone", "--development", "--version-code", "42")
+        with self.assertRaises(RuntimeError):
+            build.verify_pair(artifacts, default)
 
     def test_existing_packager_skips_tool_compilation(self):
         args = self.args("--variant", "standalone", "--development", "--packager", "/tools/cargo-makepad", "--no-octos-kernel")
