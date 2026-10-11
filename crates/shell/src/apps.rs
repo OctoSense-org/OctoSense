@@ -100,6 +100,40 @@ pub fn card_manifest_id(app: &crate::clients::AppDef) -> Option<&str> {
     app.id.strip_prefix("hub:").or_else(|| app.args.iter().find_map(|a| a.strip_prefix(SYSTEM_ARG)))
 }
 
+/// The size, in points, a script app's manifest asks its desktop window to
+/// open at (App Hub's optional `window`, schema_minor 1), read from the
+/// bundle the Card runner is about to open: a system app's admitted build
+/// (unpacked now if this is its first launch) or an installed app's bundle.
+/// `None` for any other app, and for a manifest that does not ask or does
+/// not parse (the Card runner then refuses it, or opens it as before). The
+/// hint grants nothing; the desk clamps it
+/// (`desktop_layout::preferred_size`).
+#[cfg(any(feature = "app-hub", native_mobile))]
+pub fn window_hint(cx: &mut makepad_widgets::Cx, app: &crate::clients::AppDef) -> Option<(f64, f64)> {
+    window_hint_in(&octosense_app_hub_app::data_root(cx), app)
+}
+
+/// [`window_hint`] under App Hub's apps root `root`, the one the Card runner
+/// opens its apps from.
+#[cfg(any(feature = "app-hub", native_mobile))]
+fn window_hint_in(root: &Path, app: &crate::clients::AppDef) -> Option<(f64, f64)> {
+    let manifest_id = card_manifest_id(app)?;
+    let system = octosense_app_hub_app::system_apps().into_iter().find(|system| system.id == manifest_id);
+    let bundle = match system {
+        Some(system) => octosense_appstore::system::prepare(root, &system).ok()?.0,
+        None => installed_bundle(root, manifest_id),
+    };
+    let text = std::fs::read_to_string(bundle.join(octosense_app_contract::MANIFEST_FILE)).ok()?;
+    let window = octosense_app_contract::AppManifest::parse(&text).ok()?.window?;
+    Some((f64::from(window.width), f64::from(window.height)))
+}
+
+/// Without App Hub there is no script app to ask.
+#[cfg(not(any(feature = "app-hub", native_mobile)))]
+pub fn window_hint(_cx: &mut makepad_widgets::Cx, _app: &crate::clients::AppDef) -> Option<(f64, f64)> {
+    None
+}
+
 /// A system app's launcher row carries its manifest id as this argument.
 const SYSTEM_ARG: &str = "--system=";
 
@@ -949,6 +983,61 @@ mod tests {
         std::fs::create_dir_all(&current).unwrap();
         assert_eq!(installed_bundle(&root, "dev.example.app"), current, "the new layout wins");
         assert_eq!(installed_bundle(&root, "dev.example.none"), root.join("dev.example.none/bundle"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A script app's manifest `window` is the size its desktop window asks
+    /// for (`window_hint`), read from the bundle the Card runner opens: a
+    /// system app's admitted build, unpacked here as on a first launch, or
+    /// an installed app's bundle. No hint, a manifest App Hub refuses, or an
+    /// app that is not a script app: the default size.
+    #[cfg(feature = "app-hub")]
+    #[test]
+    fn a_script_apps_manifest_window_is_the_size_it_asks_for() {
+        let root = std::env::temp_dir().join(format!("shell-window-hint-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        // A system app, packed by digest as the build packs one.
+        let source = root.join("source");
+        std::fs::create_dir_all(&source).unwrap();
+        std::fs::write(source.join("main.splash"), "use mod.widgets.*\nApp { Label { text: \"Probe\" } }\n").unwrap();
+        std::fs::write(source.join("manifest.json"), serde_json::json!({
+            "schema": 1, "schema_minor": 1, "id": "os.windowprobe", "version": "1.0.0", "name": "Window probe",
+            "integrity": {"bundle_blake3": ""}, "window": {"width": 900, "height": 700}
+        }).to_string()).unwrap();
+        let packed = octosense_app_hub::pack::pack_system_app(&source).unwrap();
+        test_system_apps::register(octosense_appstore::system::SystemApp {
+            id: "os.windowprobe", name: "Window probe", pack: Box::leak(packed.pack_json.into_boxed_str()), assets: &[],
+        });
+        let probe = card_row("windowprobe".into(), "Window probe".into(), vec![format!("{SYSTEM_ARG}os.windowprobe")]);
+        assert_eq!(window_hint_in(&root, &probe), Some((900.0, 700.0)));
+        assert!(root.join(".system/os.windowprobe").is_dir(), "unpacked as the Card runner unpacks it");
+        // An installed app: its bundle's manifest.
+        let bundle = root.join(".bundles/org.example.wide/bundle");
+        std::fs::create_dir_all(&bundle).unwrap();
+        let installed = card_row(installed_launch_id("org.example.wide"), "Wide".into(), Vec::new());
+        let manifest = |extra: serde_json::Value| {
+            let mut manifest = serde_json::json!({
+                "schema": 1, "id": "org.example.wide", "version": "1.0.0", "name": "Wide",
+                "integrity": {"bundle_blake3": "0".repeat(64)}
+            });
+            manifest.as_object_mut().unwrap().extend(extra.as_object().unwrap().clone());
+            std::fs::write(bundle.join("manifest.json"), manifest.to_string()).unwrap();
+        };
+        manifest(serde_json::json!({"schema_minor": 1, "window": {"width": 1200, "height": 800}}));
+        assert_eq!(window_hint_in(&root, &installed), Some((1200.0, 800.0)));
+        manifest(serde_json::json!({}));
+        assert_eq!(window_hint_in(&root, &installed), None, "no hint");
+        manifest(serde_json::json!({"window": {"width": 1200, "height": 800}}));
+        assert_eq!(window_hint_in(&root, &installed), None, "App Hub refuses window below schema_minor 1");
+        let mut native = installed.clone();
+        native.bin = "notes".into();
+        assert_eq!(window_hint_in(&root, &native), None, "not a script app");
+        // The build's own PDF Tools (desktop builds pack it) asks for its
+        // designs' 1536 x 1024, admitted as the Card runner admits it.
+        if system_app_ids().contains(&"pdftools") {
+            let pdftools = card_row("pdftools".into(), "PDF Tools".into(), vec![format!("{SYSTEM_ARG}os.pdftools")]);
+            assert_eq!(window_hint_in(&root, &pdftools), Some((1536.0, 1024.0)));
+        }
         let _ = std::fs::remove_dir_all(&root);
     }
     use super::*;

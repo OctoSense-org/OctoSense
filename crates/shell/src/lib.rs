@@ -2631,7 +2631,15 @@ impl App {
             .clients
             .insert(id, clients::ClientSlot::module(id, &app.id, &app.label));
         let gap = self.state_mut().gap;
-        self.state_mut().layout.insert(id, area, gap);
+        // A script app may ask its desktop window to open at a size (its
+        // manifest's `window`), which the desk clamps; without one, or for
+        // any other module, the default size. Phones ignore it: their apps
+        // are full-screen.
+        let preferred = if self.state_mut().style.target.mobile() { None } else { apps::window_hint(cx, app) };
+        self.state_mut().layout.insert_sized(id, area, gap, preferred);
+        if let (Some((w, h)), Some(window)) = (preferred, self.state_mut().layout.desktop.get(id)) {
+            log!("wm: {} asks for a {}x{} window; it opens at {}x{}", app.id, w, h, window.rect.w, window.rect.h);
+        }
         // The tile is a module tile from its first draw; the root is seated
         // in it before anything asks it to draw.
         self.desk(cx).borrow_mut::<WmDesk>().map(|mut d| {
@@ -4966,17 +4974,18 @@ impl App {
             let rect = if resize {
                 // The grabbed corner moves with the pointer; the opposite
                 // one is fixed (DragController.cpp:413-423).
+                use crate::desktop_layout::{MIN_H, MIN_W};
                 let (x, w) = if !resize_x {(start_rect.x,start_rect.w)}else if grab_left {
-                    let w = (start_rect.w - d.x).max(80.0);
+                    let w = (start_rect.w - d.x).max(MIN_W);
                     (start_rect.x + start_rect.w - w, w)
                 } else {
-                    (start_rect.x, (start_rect.w + d.x).max(80.0))
+                    (start_rect.x, (start_rect.w + d.x).max(MIN_W))
                 };
                 let (y, h) = if !resize_y {(start_rect.y,start_rect.h)}else if grab_top {
-                    let h = (start_rect.h - d.y).max(60.0);
+                    let h = (start_rect.h - d.y).max(MIN_H);
                     (start_rect.y + start_rect.h - h, h)
                 } else {
-                    (start_rect.y, (start_rect.h + d.y).max(60.0))
+                    (start_rect.y, (start_rect.h + d.y).max(MIN_H))
                 };
                 LRect::new(x, y, w, h)
             } else {
