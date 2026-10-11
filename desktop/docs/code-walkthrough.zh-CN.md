@@ -100,6 +100,14 @@ MAKEPAD_APP_CONFIG='{"mail_demo":true}' cargo run --locked --release -p octosens
 `register_host_services`。App Hub 的原生 `CARD_MODULE` 托管这些解释执行程序；
 可选的 AppCard 助手使用自己的模块。
 
+在桌面上，脚本应用的窗口按清单 `window` 请求的尺寸打开。`window` 是 App Hub 的可选提示，
+需要 `"schema_minor": 1`。[`lib.rs`](../../crates/shell/src/lib.rs) 中的
+`App::launch_module_as` 用 `apps::window_hint` 从 Card 运行器将要打开的应用包中读取它，
+[`desktop_layout.rs`](../../crates/shell/src/desktop_layout.rs) 中的 `preferred_size`
+再把它限制在桌面减去每个新窗口都保留的边距之内（左右各 42 点，上下各 32 点），且不小于
+80 x 60。没有 `window` 时，窗口宽度取桌面的 72%、高度取 76%，最大 1000 x 720 点。
+两种情况下用户都可以调整窗口大小；手机忽略这个提示。PDF Tools 请求它设计图的 1536 x 1024。
+
 准入验证应用包，解析元数据与资源上限。能力名称披露用途，不是执行许可。脚本的 `host.request(...)` 按应用身份执行。
 App Hub 的 `crates/appstore/src/services.rs` 定义 `HostService`、`ServiceCall` 和回复机制；
 调用携带应用身份和宿主目录，供服务检查。只有明确声明的 Agent 工具，才会把相应操作提供给模型。

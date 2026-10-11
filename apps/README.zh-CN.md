@@ -277,7 +277,8 @@ appcard/                     原生 AppCard 助手
 
 ```
 apps/<name>/bundle/
-  manifest.json     id、version、name、capabilities、network.hosts、integrity
+  manifest.json     id、version、name、capabilities、network.hosts、integrity；
+                    可选的 window：桌面窗口的尺寸（schema_minor 1）
   main.splash       程序
   icon.png|svg      可选的启动器图案；外形由 Shell 统一控制
   thumbs/ ...       应用加载的其他文件，路径为 {{assets}}/<path>

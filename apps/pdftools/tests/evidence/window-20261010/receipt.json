@@ -1,0 +1,42 @@
+{
+  "date": "2026-10-10",
+  "platform": "macOS 26.6.2, Apple silicon (arm64)",
+  "commit": "587aefd4ad9156923a0c4d57dd057a98e50b90e9",
+  "app_hub_revision": "d86101d7206162b73ea873e2a31b48364600a110",
+  "binary": {
+    "build": "cargo build --locked -p octosense --no-default-features --features app-hub,craft-engines",
+    "path": "target/debug/octosense",
+    "sha256": "5c75e51cbd09d3ca8454ea5e37cc4e2524417d08031252d7ea0ce4e38bb1c481"
+  },
+  "manifest": {
+    "path": "apps/pdftools/bundle/manifest.json",
+    "sha256": "3c062555c5521ec7de41a0c2c86b1bac75be0d005cd7727f9d32c55535000236",
+    "schema_minor": 1,
+    "window": {"width": 1536, "height": 1024}
+  },
+  "how": "A hidden desktop shell started from a Terminal.app tab with a fresh OCTOSENSE_HOME, its own OCTOS_APP_CORE_DIR, MAKEPAD_HIDE_WINDOWS=1 and MAKEPAD_REMOTE=127.0.0.1:8915, under the machine's shell-run lock, with no other OctoSense running; driven over the remote bridge (/snap and one /g grab) and ended with /quit. Points are the shell's layout points; the frame is the grab scaled to one pixel per point.",
+  "runs": [
+    {
+      "name": "opened from the menu",
+      "how": "No MAKEPAD_WM_TEST_APP. Once the desk had drawn: the shell's menu (Cmd+Space), 'pdf tools', Return.",
+      "frame": "opened-from-the-menu.png",
+      "shell_window_points": [1400, 899],
+      "desk_points": [0, 32, 1400, 867],
+      "log": "wm: pdftools asks for a 1536x1024 window; it opens at 1296x783",
+      "window_points": [52, 74, 1296, 783],
+      "app_area_points": [54, 108, 1292, 747],
+      "note": "The desk's tile area is 1380 x 847 at (10, 42); the window keeps 42 points left and right and 32 top and bottom inside it. The OctoSense style's dock overlays the desk and reserves no strip, so the window's lowest points lie behind the dock."
+    },
+    {
+      "name": "opened at startup",
+      "how": "MAKEPAD_WM_TEST_APP=pdftools, as tests/ui.py opens it.",
+      "frame": null,
+      "shell_window_points": [1400, 897],
+      "log": "wm: pdftools asks for a 1536x1024 window; it opens at 1296x776",
+      "app_area_points": [54, 76, 1292, 740],
+      "note": "Opened before the desk's first draw, so the shell sized it on its startup proportions (a 1400 x 860 desk), as it sizes every window opened then."
+    }
+  ],
+  "before": "On main before this change (the v2-20261010 runs), PDF Tools got the default window: an app area of 990 x 603 points.",
+  "not_verified": "The app's modes at this size; other screen sizes and styles; Linux, Windows, phones."
+}
