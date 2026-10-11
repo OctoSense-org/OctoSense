@@ -1,7 +1,7 @@
 # ADR 0006: App Studio on the phone
 
 - **Date:** 2026-10-02
-- **Status:** Accepted (2026-10-03). Implementation has not started; milestone 1 comes first.
+- **Status:** Accepted (2026-10-03); amended 2026-10-10 (where the studio stands; the route through components is proposed, not yet accepted; see the amendment at the end). The phone studio work is deferred by the product owner (2026-10-10); milestone 1's renderer and tools are in [#313](https://github.com/OctoSense-org/OctoSense/pull/313), unreviewed and unmerged.
 - **Scope:** How an agent on the phone turns an image (a generated design or a screenshot of an existing app) into an OctoSense app or glance card, looks at its own result and improves it, entirely on the phone, at first in developer mode. Covers the inputs, the in-process renderer, the checks, the rules that can change without a build, the tools agents get, and what of OctoSense App Flow (formerly Design Flow) moves to the phone. There is no compile in the loop and no Mac.
 - **Relates to:** [ADR 0002](0002-event-driven-app-agents.md) (§6 the `card_render` and `card_critique_payload` toolbox tools; §7 a card is rendered, critiqued and revised before it is published; milestone M6); [ADR 0004](0004-native-apps-hosting-and-peers.md) (app agents, host tools, approvals, §13 developer mode); [ADR 0005](0005-app-contract.md) (the app contract and bundles); [Home ADR 0004](home/0004-system-apps-are-contained-script-apps.md) (contained script apps); [Home ADR 0005](home/0005-settings-octoscript-controller.md) and [Home ADR 0006](home/0006-builtin-settings.md) (Settings and its developer options); App Hub's [`card-studio`](https://github.com/OctoSense-org/OctoSense-App-Hub/tree/main/crates/card-studio) crate and [skill](https://github.com/OctoSense-org/OctoSense-App-Hub/tree/main/skills/card-studio); [App Flow](https://github.com/OctoSense-org/OctoSense-App-Flow) (`flows/image-to-card`, `flows/image-lib`); octos issue #1149, closed, which added the `image_generation` stub (its backend needs a new issue).
 
@@ -213,3 +213,189 @@ An octos change adds a media field to `peer/tool/result`, mapped onto octos's in
 - How App Hub treats a published app that began as a clone.
 - Background rendering without a surface.
 - The comparison thresholds that mean "close enough" to a screenshot.
+
+## Amendment, 2026-10-10 (components carry the pipeline; where the studio stands)
+
+Two things changed after this ADR was accepted on 3 October, a review of the
+flow on 10 October listed what is still missing, and on the same day the
+product owner deferred the phone studio work ("no phone app for now").
+This amendment records the state and the route for when the work resumes.
+Nothing in it is assigned, and the product owner has not chosen the route: the
+sections marked "proposed" change the accepted architecture of sections 5 to 7
+only once they do. The facts and the state table are not proposals.
+
+- **An app's Rust runs as WebAssembly components.** [ADR 0014](0014-app-components-in-webassembly.md)
+  is accepted and merged (OctoSense #436, #451, #452, #454, #455). The `wasm`
+  service loads a component from a bundle's `fns/`, keeps its instance between
+  calls, gives it the app's storage folder with `storage`, HTTP to any host
+  with `net`, and the app's host services through `octosense:host`. Shared
+  components (App Hub ADR 0003, OctoSense #454) let apps pin reviewed
+  components from the catalog. Desktop 0.1.0-rc.4 (10 October 2026) ships all
+  of it; Home 0.1.0-beta.2 ships core modules only, and a component has run on
+  a phone so far only in the isolated OnePlus 6 acceptance packages, not in a
+  Home release.
+- **Capabilities are declarations.** The per-app runtime gates are gone from
+  the Makepad fork (makepad#117, makepad#118), a component's host call no
+  longer checks the declared families (OctoSense #452), and OctoSense #457
+  removed the shell's own declared-family checks: an admitted app calls a
+  public host API whether or not its manifest lists the family, in Splash, in
+  an agent tool and in a component. Identity, device consent, OS permissions,
+  account scope, human write review, the storage jail and tool-sharing
+  approvals still apply. Desktop 0.1.0-rc.4 carries this; earlier releases
+  enforce the old gates.
+- **The studio itself.** [OctoSense #313](https://github.com/OctoSense-org/OctoSense/pull/313),
+  opened on 3 October, implements the renderer and tools of milestone 1 for
+  developer builds: `studio.open`, `studio.render`, `studio.input`,
+  `studio.inspect`, `studio.close`, `studio.bundle_check` and `studio.install`,
+  verified on a OnePlus 6 with a Task Planner that DeepSeek V4 Flash wrote and
+  previewed on the phone and that a test harness installed. It is unreviewed,
+  unmerged and conflicts with `main`. Nothing else in this ADR has started:
+  there is no image tool for agents, no measurement or comparison on the
+  phone, no developer build of Home in the shipped APK, and none of App Flow's
+  image-to-card Python is ported.
+
+### Proposed: the studio is a system app
+
+The studio ships as a contained script app, `os.studio` (Home ADR 0004), with:
+
+- a Splash UI: the brief, the design gallery, the review screen where the
+  design and its map are shown together and corrected, the preview and
+  comparison view, and publishing;
+- its own agent, with the `studio.*` tools of section 7 and its components'
+  functions as tools (the proposed amendment to section 5);
+- its own components in `fns/`, which carry the pixel work of section 5;
+- its Octoscript rules and loop of section 6, in its bundle.
+
+It uses services Home already has: `files.pick_photo` for reference images
+(Home 0.1.0-beta.2 serves it, one image of up to 1 MiB; on `main`,
+`files.import` takes 16 MiB on Android), `model.image` for generated designs,
+the agent's own vision for critique, and the `github` service for publishing
+once it writes (slice 5). Section 2's image
+share and multi-image picker become optional: the picker already brings one
+image in.
+
+### Proposed amendment to section 5: the pixel work ships as the studio's components
+
+Section 5 chose Rust shared by phone and desktop and put it in App Hub's
+`card-studio`, compiled into Home. The decision stands; the packaging
+changes. The checks, the measurement and the comparison are Rust crates that
+build two ways: natively into `card-studio` on the desktop, and with App Flow's
+`tools/octo wasm build` into components in the studio's bundle on the phone.
+One implementation, as section 5 wanted, and no shell rebuild to change a
+threshold or a check: the studio updates like any system app.
+
+What becomes a component, each a crate the desktop also links:
+
+| Crate | Replaces | Notes |
+| --- | --- | --- |
+| intake | `atlas.py`, `prepare.py`, the crop checks | Image decoding with `image`; crops as files in the studio's storage folder |
+| ocr | Apple Vision through Swift | `ocrs` with `rten`, pure Rust and already in the shell's lock file through the PDF engine's OCR, unused by anything else; the vision model is the fallback where it does not build or read well enough |
+| measure | the OpenCV surface, colour and divider measurement | `imageproc` or hand-written passes; thresholds as JSON in the bundle |
+| compare | `compare_screens`, `image-lib/gate.py` | Layout bands, colour and fill, crops of disputed regions, sized per surface |
+| checks | `card-studio`'s measured checks | Contrast per text rectangle, empty or failed images, overflow and truncation from the capture |
+
+How they run on the phone, within the `wasm` service's limits
+([WebAssembly in OctoSense](../wasm.md)): one instance per component kept
+between calls, 256 MiB of linear memory, 16 MiB out and 8 MiB of serialized
+input per call, and 2 s a call (10 s for a component that imports
+`wasi:http`). Images pass as files in the storage folder, which the
+component sees as `/`, not as base64 in JSON: a 1 MiB `list<u8>` costs about
+18 ms there and back, and a full screen readback is 10 to 18 MB. The studio's
+script calls them as `wasm.<function>`, and its agent as tools with
+`host_method: "wasm.<function>"`.
+
+What stays shell code, because only the shell can do it: the renderer and
+readback (section 4, #313), driving and inspecting a running draft, the
+developer install, exposing the App Hub gate on a local folder, and the
+`model.image` and image-share plumbing.
+
+### Proposed amendment to section 6: what the toolbox module still does
+
+The rules and the loop stay Octoscript, in the studio's bundle, editable
+without a build. `mod.studio` keeps its file access confined to the project folder,
+`sha256` and the clock, the L0 check and realize, and the SVG, image-size,
+cropping and PNG helpers; its render, check, compare and critique-payload
+calls become section 7's tools and the components' functions. Large results
+are still written to files and passed as paths.
+
+### Proposed amendment to section 7: the tools as built
+
+OctoSense #313 ships `studio.open`, `studio.render`, `studio.input`,
+`studio.inspect`, `studio.close`, `studio.bundle_check` and `studio.install`.
+`studio.check`, `studio.compare` and `studio.critique_payload` are not host
+tools: they are the studio's own functions, called through `wasm.<function>`.
+The grant rules of section 8 are unchanged, and after #457 a tool call no
+longer needs the family declared; `studio.*` tools remain developer-mode
+tools because of what they do, not because of a declaration. A host-tool
+reply is capped at 256 KiB of text, so an image a tool produces goes to the
+workspace as a file, as section 7 already requires.
+
+### Where things stand, 10 October 2026
+
+| Step of the flow | State |
+| --- | --- |
+| Brief, and writing `main.splash` | Works: the system agent writes files into its workspace |
+| Generated designs | Not available to the agent: octos's `image_generation` tool still has no backend (`no_backend_bound`); the `model.image` host method exists for script apps, with the model set by the host (`gpt-image-1`, `gpt-image-1-mini` or MiniMax `image-01`), and no live call is recorded |
+| Reference images in | `files.pick_photo` on Home 0.1.0-beta.2, one image, 1 MiB; no image share target; no capture of other apps |
+| Measurement, OCR, mapping | Not ported; `ocrs` and `rten` are in the lock file and unused outside the PDF engine |
+| Review screen | Not built |
+| Render, drive, inspect, install | Built in #313, developer builds only, unreviewed and unmerged |
+| Checks and comparison | Not built anywhere on the phone; App Hub's checker needs a desktop |
+| Gate on a local folder | The gate code is inside Home and not exposed as a tool |
+| Publish | Creating the repository, committing and tagging can be done from a phone in GitHub's own web UI; the review evidence needs desktop App Hub tools |
+| Developer mode | Not in the shipped Home APK, whose build script has no `--dev-mode` option; release builds answer `Developer mode needs a development build of OctoSense.` |
+
+### The route when the work resumes (proposed, unassigned)
+
+Each slice is usable on its own.
+
+1. **Render and install, developer builds.** Rebase, review and merge #313;
+   add `--dev-mode` to the Home build and produce a developer APK. Gives
+   brief → `main.splash` → preview → install on the phone.
+2. **Inputs.** An agent tool that calls `model.image` and saves the PNG into
+   the agent's workspace, with the provider the person chose and the model the
+   open questions leave to choose; the first live call. Reference images
+   through `files.pick_photo`.
+3. **The pipeline as components.** The five crates above, developed on the
+   desktop with OctoSense's `wasm_call` example (OctoSense #455) and App Flow's
+   `tools/octo wasm call` once App Flow #184 merges, shipped in the studio's
+   bundle; `card-studio` links the same crates. First tasks: run a component
+   in Home on a phone, and build `rten` for `wasm32-wasip2`. If OCR does not
+   build or read well enough, the vision model reads the text.
+4. **Rules, loop and review screen.** The mapping rules and the fix loop as
+   Octoscript in the bundle; the review screen in the studio's UI.
+5. **Gate and publishing from the phone.** The gate as a tool on a local
+   folder; repository, push, tag and submission through the `github` service
+   once it writes, with the review evidence produced on the phone. App Hub's
+   submission guide accepts that evidence.
+6. **Normal mode.** As before: approvals for capture and install, and the
+   policy decision on developer mode in release builds. Capture sessions on
+   the ROM (section 2, original milestone 4) follow this slice; they are
+   deferred, not dropped.
+
+The smallest end-to-end slice is 1, 2, the vision model in place of OCR and
+the compare component: brief → generated design → built app → preview →
+comparison with the design → install, all on the phone.
+
+### What a phone will not do
+
+New Rust service code, new system apps, and building WebAssembly: the
+studio's components are built on a desktop and ship with it, and an app made
+in the studio is Splash on the services Home already has. A PDF tool built
+with a new engine is still built on a desktop.
+
+### What changes where, if the proposal is accepted
+
+| Where | Change |
+| --- | --- |
+| App Hub `card-studio` | Becomes a set of crates that also build as components; the library split, the capture interface, `realize_report` and JSON thresholds as before |
+| OctoSense shell | The renderer, host tools and developer install (#313); the `model.image` agent tool; the gate exposed on a local folder; no pipeline code |
+| OctoSense studio app | New: `os.studio` with its UI, agent, components and Octoscript rules |
+| App Flow | Image-to-card Python retires as each crate lands; the Sketch kit stays on the desktop; the SDK and `tools/octo wasm` are the build path for the components |
+| Phone packaging | The developer build, as before |
+
+### Open questions, added
+
+- Does `rten` build and run for `wasm32-wasip2` within 256 MiB and the 2 s call deadline, and does `ocrs` read UI text well enough? If it runs but not within 2 s, does the studio need a longer deadline for its components?
+- Which Home release ships components. A component has run in Home on a phone only in the isolated acceptance packages, and the first Home release with components is the first that can run the studio's pipeline.
+- Which image model and provider first, and who approves the paid calls.
