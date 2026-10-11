@@ -128,7 +128,7 @@ unchanged; standalone Home can use the test identity described below. The build 
 the signing keystore. `--dev-mode` separately compiles the existing Home
 `dev-mode` feature, enabling Settings to offer developer options; it does not
 activate them or change release optimization. Default builds omit that feature.
-It is accepted for standalone builds only, with `--development` or with the
+`--dev-mode` is accepted for standalone builds only, with `--development` or with the
 release signer under a test `--package-name`; the ROM variant and the installed
 Home's own identity are refused, so developer options never upgrade the
 installed Home in place. Both values are recorded in `build.json`.
