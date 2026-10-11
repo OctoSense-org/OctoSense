@@ -10,7 +10,7 @@ count, never a host path or Android provider URI. No separate blob store is crea
 
 | Method | Arguments | Result |
 | --- | --- | --- |
-| `files.status` | `{}` | `import_supported`, `export_supported`, `photo_pick_supported`, `text_share_supported`, `storage_granted`, `max_file_bytes`, `max_import_bytes`, `max_share_text_bytes`, `foreground_required` |
+| `files.status` | `{}` | `import_supported`, `export_supported`, `photo_pick_supported`, `text_share_supported`, `storage_granted`, `max_file_bytes`, `max_import_bytes`, `max_share_text_bytes`, `foreground_required`; with live storage, `used_bytes` and `quota_bytes` |
 | `files.import` | `{"path":"/documents/report.pdf"}` | `{"cancelled":false,"path":"/documents/report.pdf","bytes":123,"name":"Q3 report.pdf"}` |
 | `files.pick_photo` | `{"path":"/photos/new.png"}` | Choose one PNG/JPEG/WebP; returns the import fields plus its signature-detected `mime` |
 | `files.share` | `{"text":"Good morning 🌅"}` | Android only: `{"handoff":"chooser_opened","delivery":"unknown"}` after native chooser dispatch |
@@ -32,6 +32,17 @@ The request expires after 20 seconds; a missing reply is an uncertain handoff, n
 reason to automatically open another chooser. Closing the app cannot recall an OS
 chooser that has already opened. The native result uses a unique per-request
 correlation value and a bounded reply; stale replies are discarded.
+
+With live app storage, `files.status` also says how much the app's storage
+holds and may hold, so an app can show "14.6 of 64 MB used" without counting
+its own files. `used_bytes` is the host's measure of the app's jail, the root
+App Hub gives the app's isolates (`app_storage::Storage::usage`, the measure
+the engines' room checks keep to): every regular file under it, links never
+followed. `quota_bytes` is the calling isolate's storage quota, the one its
+own writes and imports are checked against. Both are left out when the
+isolate has no live storage or the host keeps no app storage. They are read
+when asked, never pushed: ask again after a change. Status does not open a
+dialog or need the foreground.
 
 `name` is the chosen document's display name, for the app to show: the file
 name without folders, control characters or invisible direction marks, at most 128
@@ -108,6 +119,12 @@ exceptions and release their worker references/attachment on every return path.
 Existing unrelated compiler warnings remain. Interactive dialogs and Android
 provider/device behavior remain **unverified**. All 16 combined Android Java
 templates compiled with 23 existing deprecation warnings.
+
+Storage use in `files.status` (10 Oct 2026): `files_service::tests::status_reports_the_storage_used_and_its_quota`
+(a live isolate on the host's app storage, in a child process: the jail's bytes, a write showing
+on the next status, the isolate's quota) and `status_without_storage_reports_no_use_or_quota`
+passed with `cargo test --locked --features mobile-apps -p octosense-shell --lib files_service`
+from `phone/` on macOS.
 
 Photo/share validation is tracked separately from the older transfer checks above.
 Source tests cover actual signatures, traversal, explicit text limits, rejected

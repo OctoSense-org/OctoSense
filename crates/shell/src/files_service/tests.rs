@@ -386,6 +386,114 @@ fn a_selected_document_is_staged_off_the_ui_thread_and_linked_in_against_the_liv
     let _ = std::fs::remove_dir_all(root);
 }
 
+/// Without live storage, `files.status` says nothing of the storage's use
+/// and does not measure a jail.
+#[test]
+fn status_without_storage_reports_no_use_or_quota() {
+    let answer = status_answer(None, || panic!("no jail is measured without live storage"));
+    assert_eq!(answer["storage_granted"], false);
+    assert!(answer.get("used_bytes").is_none() && answer.get("quota_bytes").is_none(), "{answer}");
+    assert_eq!(answer["max_import_bytes"], MAX_IMPORT);
+    let schema = &FilesService.api_methods()[0].output_schema;
+    for key in ["used_bytes", "quota_bytes"] {
+        assert_eq!(schema["properties"][key]["type"], "integer", "discovery declares {key}");
+    }
+}
+
+/// `files.status` says how much the calling app's storage holds and may
+/// hold: `used_bytes`, as the host's app storage measures the app's jail
+/// (the root App Hub gives its isolates), and `quota_bytes`, the live
+/// storage scope's quota; a write shows on the next status. A child
+/// process owns the global registries and the host's app storage, in a
+/// home of its own.
+#[test]
+fn status_reports_the_storage_used_and_its_quota() {
+    const CHILD: &str = "OCTOSENSE_FILES_STATUS_TEST_CHILD";
+    if std::env::var_os(CHILD).is_none() {
+        let home = std::env::temp_dir().join(format!("files-status-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&home).unwrap();
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", "files_service::tests::status_reports_the_storage_used_and_its_quota", "--nocapture"])
+            .env(CHILD, &home)
+            // Nothing outside this home: no legacy app homes to adopt.
+            .env("OCTOSENSE_HOME", home.join("home"))
+            .env_remove("OCTOSENSE_APP_DATA")
+            .output()
+            .unwrap();
+        let _ = std::fs::remove_dir_all(&home);
+        assert!(output.status.success(), "{}\n{}", String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
+        return;
+    }
+    use makepad_widgets::*;
+    const APP: &str = "os.filesstatus";
+    let root = std::path::PathBuf::from(std::env::var_os(CHILD).unwrap());
+    let storage = crate::app_storage::init(Some(root.clone())).expect("the host's app storage");
+    let apps = storage.layout().apps_root().to_path_buf();
+    octosense_appstore::set_data_root(apps.clone());
+    let dir = crate::host_tools::script_apps::tests::stamped_bundle("camera", APP, |dir, manifest| {
+        manifest["id"] = json!(APP);
+        manifest["capabilities"] = json!([]);
+        manifest["requires"] = json!(["host-api-v1"]);
+        manifest["storage"] = json!({"max_bytes": 8 << 20});
+        manifest.as_object_mut().unwrap().remove("agent");
+        for path in ["tools.json", "AGENT.md"] {
+            let _ = std::fs::remove_file(dir.join(path));
+        }
+        std::fs::write(dir.join("main.splash"), "use mod.widgets.*\nApp { Label {text: \"Status test\"} }\n").unwrap();
+    });
+    let packed = octosense_app_hub::pack::pack_system_app(&dir).unwrap();
+    std::fs::remove_dir_all(dir).unwrap();
+    octosense_appstore::system::register_system_app(octosense_appstore::system::SystemApp {
+        id: APP,
+        name: "Status test",
+        pack: Box::leak(packed.pack_json.into_boxed_str()),
+        assets: &[],
+    });
+
+    // The app's jail holds 3,002 bytes; its isolate is rooted there with an
+    // 8 MiB quota, as App Hub seats it.
+    let jail = storage.layout().app(APP).unwrap().jail;
+    std::fs::create_dir_all(jail.join("library")).unwrap();
+    std::fs::write(jail.join("library/a.pdf"), vec![1u8; 3_000]).unwrap();
+    std::fs::write(jail.join("notes.json"), b"{}").unwrap();
+    let mut cx = Cx::new(Box::new(|_, _| {}));
+    let mut card = cx.with_vm(|vm| {
+        makepad_widgets::script_mod(vm);
+        let value = vm.eval(script! {use mod.widgets.* Splash{}});
+        Splash::script_from_value(vm, value)
+    });
+    card.set_policy(&mut cx, Some(vec![]), None);
+    card.set_host_tag(&mut cx, Some(APP.into()));
+    card.set_sandbox_dir(&mut cx, Some(jail.clone()));
+    card.set_storage_quota(&mut cx, Some(8 << 20));
+    card.set_text(&mut cx, "View {}");
+    let heap = card.isolate_heap_key(&mut cx).unwrap();
+
+    struct NoSheet;
+    impl ServiceHost for NoSheet {
+        fn open_sheet(&mut self, _: String) {
+            panic!("status opened a sheet");
+        }
+        fn close_sheet(&mut self) {}
+    }
+    register();
+    let status = |request: u64| -> serde_json::Value {
+        let call = ServiceCall { app_id: APP.into(), service: "files.status".into(), args: json!({}), from_sheet: false, may_prompt: false, host_dir: apps.join(".host") };
+        services::dispatch(call, heap, request, &mut NoSheet);
+        let (_, _, result) = services::take_replies_for(&[heap]).pop().expect("status answers at once");
+        serde_json::from_str(&result.expect("status answers")).unwrap()
+    };
+    let first = status(1);
+    assert_eq!((first["storage_granted"].clone(), first["used_bytes"].clone(), first["quota_bytes"].clone()), (json!(true), json!(3_002), json!(8 << 20)), "{first}");
+    std::fs::write(jail.join("library/b.pdf"), vec![2u8; 1_000]).unwrap();
+    assert_eq!(status(2)["used_bytes"], 4_002, "a write shows on the next status");
+    // A live scope whose jail cannot be measured says neither.
+    let live = splash_storage::storage_for_heap(heap, APP).expect("live storage");
+    let unmeasured = status_answer(Some(&live), || None);
+    assert_eq!(unmeasured["storage_granted"], true);
+    assert!(unmeasured.get("used_bytes").is_none() && unmeasured.get("quota_bytes").is_none(), "{unmeasured}");
+}
+
 #[test]
 fn queued_foreground_authority_expires_before_launch_but_not_chooser_completion() {
     use makepad_widgets::WindowId;
