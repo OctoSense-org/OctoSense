@@ -111,3 +111,44 @@ fn the_index_keeps_no_title_for_a_pdf_that_shows_its_name() {
     assert_eq!(doc["title"], json!("Quarterly report"));
     assert_eq!(doc["pages"], json!(null));
 }
+
+#[test]
+fn a_page_range_names_the_pages_it_takes() {
+    let pages = |text: &str, total: u32| pdftools_model(&format!("range_pages(\"{text}\", {total}).to_json()"));
+    assert_eq!(pages("", 3), json!([1, 2, 3]), "empty is every page");
+    assert_eq!(pages("All", 2), json!([1, 2]));
+    assert_eq!(pages("1-4, 9", 9), json!([1, 2, 3, 4, 9]), "Combine's example (06-combine)");
+    assert_eq!(pages("1–3", 9), json!([1, 2, 3]), "a typed dash");
+    assert_eq!(pages("2,", 9), json!([2]), "an empty part is left out");
+    for bad in ["x", "12", "4-2", "0", "1-2-3", "2.5"] {
+        assert_eq!(pages(bad, 9), json!(null), "{bad} names no page this PDF has");
+    }
+}
+
+#[test]
+fn a_find_snippet_marks_its_match_in_bold() {
+    assert_eq!(
+        pdftools_model("snippet_html(\"… strong [[revenue]] <up> & more\").to_json()"),
+        json!("… strong <b>revenue</b> &lt;up&gt; &amp; more")
+    );
+}
+
+#[test]
+fn an_avatar_shows_the_first_letters_of_the_first_and_last_names() {
+    let initials = |name: &str| pdftools_model(&format!("initials_of(\"{name}\").to_json()"));
+    assert_eq!(initials("Jun Park"), json!("JP"));
+    assert_eq!(initials("Ana Ruiz"), json!("AR"));
+    assert_eq!(initials("Ana María Ruiz"), json!("AR"));
+    assert_eq!(initials(" Maya "), json!("M"));
+    assert_eq!(initials(""), json!("?"));
+}
+
+#[test]
+fn a_comment_date_is_read_as_the_service_writes_it() {
+    // SERVICE.md: local time without a zone or seconds.
+    assert_eq!(
+        pdftools_model("comment_time(\"2026-10-10T22:21\").to_json()"),
+        json!({"year": 2026, "month": 10, "day": 10, "hour": 22, "minute": 21})
+    );
+    assert_eq!(pdftools_model("comment_time(\"later\").to_json()"), json!(null));
+}

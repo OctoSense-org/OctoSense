@@ -1,0 +1,325 @@
+// PDF Tools' dev fixture: a stand-in for the shell's pdf engine, for UI tests
+// in App Hub's card-host, which serves no host services. It never ships.
+// apps/pdftools/tests/ui.py puts it in place of engine() in a scratch copy of
+// the bundle, after make_fixture.py has filled the app's storage: dev/pages/
+// holds each sample page drawn at 2 pixels per point, and dev/fixture.json
+// what this answers. It keeps SERVICE.md's shapes, so the app runs its one
+// code path; the pages it serves never change (a rotation, an edit or a
+// filled field shows in the answers, not in the pictures).
+let fx = nil
+fn fx_load(){
+    if fx == nil {
+        let f = try { fs.read("dev/fixture.json").parse_json() } catch { nil }
+        if f == nil { f = {docs: {}} }
+        fx = {f: f open: {} next: 1 delay: optional(f, "delay", 0.12) fail: optional(f, "fail", "") ids: 100}
+    }
+    fx
+}
+// Every answer is worked out on a later turn, in a handler of its own.
+fn engine(method, args, done){
+    start_timeout(0.12, || {
+        let x = fx_load()
+        let s = optional(x.open, "" + optional(args, "doc", ""), nil)
+        if method == "find" && s != nil {
+            fx_find(x, s, args, {i: 0 matches: []}, done)
+            return
+        }
+        let answer = fx_answer(x, method, args)
+        start_timeout(0.01, || done(answer))
+    })
+}
+// Find, one page a turn: each page's lines are a file to read and search.
+fn fx_find(x, s, args, run, done){
+    if run.i >= s.order.len() {
+        done(fx_ok({total: run.matches.len() matches: run.matches}))
+        return
+    }
+    let re = regex(fx_escape(("" + args.query).trim()), "i")
+    let e = s.order[run.i]
+    for l in fx_lines(x.f.docs[e.name].id, e.p).lines {
+        let m = re.exec(l.text)
+        if m != nil && run.matches.len() < optional(args, "limit", 200) {
+            let b = l.box
+            let w = b[2] * m.value.len() / max(1, l.text.len())
+            let at = b[0] + b[2] * m.index / max(1, l.text.len())
+            run.matches.push({page: run.i + 1 rects: [[at, b[1], w, b[3]]] snippet: l.text.replace(m.value, "[[" + m.value + "]]")})
+        }
+    }
+    run.i = run.i + 1
+    start_timeout(0.005, || fx_find(x, s, args, run, done))
+}
+fn fx_lines(id, page){
+    let path = "dev/lines/" + id + "/" + page + ".json"
+    if !fs.exists(path) { return {lines: [] paragraphs: []} }
+    let v = try { fs.read(path).parse_json() } catch { nil }
+    if v == nil { return {lines: [] paragraphs: []} }
+    v
+}
+fn fx_ok(data){ {is_ok: true data: data error: nil} }
+fn fx_err(e){ {is_ok: false data: nil error: e} }
+fn fx_copy(v){ v.to_json().parse_json() }
+fn fx_name(path){
+    let parts = ("" + path).split("/")
+    parts[parts.len() - 1]
+}
+fn fx_count(o){
+    let n = 0
+    for k v in o { n = n + 1 }
+    n
+}
+fn fx_snapshot(s){ {order: fx_copy(s.order) comments: fx_copy(s.comments) fields: fx_copy(s.fields)} }
+fn fx_change(s){
+    s.history.push(fx_snapshot(s))
+    s.future = []
+    s.edited = true
+}
+fn fx_sizes(x, s){
+    let out = []
+    for e in s.order {
+        let d = x.f.docs[e.name]
+        let size = d.sizes[e.p - 1]
+        if e.rot % 180 != 0 { out.push([size[1], size[0]]) } else { out.push([size[0], size[1]]) }
+    }
+    out
+}
+fn fx_open_doc(x, name){
+    let d = optional(x.f.docs, name, nil)
+    if d == nil { return nil }
+    let order = []
+    let map = optional(d, "map", nil)
+    if map != nil { for e in map { order.push({name: e.name p: e.p rot: 0}) } } else { for i in d.sizes.len() { order.push({name: name p: i + 1 rot: 0}) } }
+    {name: name order: order comments: fx_copy(d.comments) fields: fx_copy(d.fields) edited: false history: [] future: []}
+}
+fn fx_answer(x, method, args){
+    if x.fail == method || x.fail == "all" { return fx_err("pdf." + method + ": the dev fixture refuses this call") }
+    if method == "open" {
+        let name = fx_name(args.path)
+        if has(optional(x.f, "damaged", []), name) { return fx_err("damaged: the file's cross-reference table is broken (dev fixture)") }
+        if has(optional(x.f, "protected", []), name) { return fx_err("protected: this PDF needs a password to open") }
+        if fx_count(x.open) >= 8 { return fx_err("too_many_open: 8 documents are open") }
+        let s = fx_open_doc(x, name)
+        if s == nil { return fx_err("not_found: " + args.path) }
+        let h = "d" + x.next
+        x.next = x.next + 1
+        x.open[h] = s
+        let d = x.f.docs[name]
+        return fx_ok({doc: h path: args.path pages: s.order.len() sizes: fx_sizes(x, s) title: d.title outline: d.outline fields: s.fields.len() comments: s.comments.len() can_edit: true})
+    }
+    if method == "merge" {
+        let order = []
+        for item in args.paths {
+            let path = pick(item.is_string(), item, optional(item, "path", ""))
+            let d = optional(x.f.docs, fx_name(path), nil)
+            if d == nil { return fx_err("not_found: " + path) }
+            let pages = range_pages(pick(item.is_string(), "", optional(item, "pages", "")), d.sizes.len())
+            if pages == nil { return fx_err("invalid: the pages of " + path) }
+            for p in pages { order.push({name: fx_name(path) p: p rot: 0}) }
+        }
+        return fx_new_file(x, args.out, order)
+    }
+    if method == "info" && optional(args, "doc", nil) == nil {
+        let d = optional(x.f.docs, fx_name(args.path), nil)
+        if d == nil { return fx_err("not_found: " + args.path) }
+        let pages = []
+        for s in d.sizes { pages.push({width: s[0] height: s[1]}) }
+        return fx_ok({file: args.path pages: pages file_size: d.file_size title: d.title})
+    }
+    let s = optional(x.open, "" + optional(args, "doc", ""), nil)
+    if s == nil { return fx_err("unknown_doc: no open document " + optional(args, "doc", "")) }
+    let d = x.f.docs[s.name]
+    if method == "close" {
+        if s.edited && !optional(args, "discard", false) { return fx_err("unsaved: the document has unsaved changes") }
+        let kept = {}
+        for k v in x.open { if k != args.doc { kept[k] = v } }
+        x.open = kept
+        return fx_ok({closed: true})
+    }
+    if method == "state" { return fx_ok({edited: s.edited can_undo: s.history.len() > 0 can_redo: s.future.len() > 0 pages: s.order.len()}) }
+    if method == "info" {
+        let pages = []
+        for z in fx_sizes(x, s) { pages.push({width: z[0] height: z[1]}) }
+        return fx_ok({file: s.name pages: pages file_size: d.file_size title: d.title})
+    }
+    if method == "page" {
+        let e = optional(s.order, args.page - 1, nil)
+        if e == nil { return fx_err("invalid: no page " + args.page) }
+        let src = x.f.docs[e.name]
+        return fx_ok({path: "dev/pages/" + src.id + "/" + e.p + ".png" width: 0 height: 0 dpi: optional(args, "dpi", 96)})
+    }
+    if method == "lines" {
+        let e = optional(s.order, args.page - 1, nil)
+        if e == nil { return fx_err("invalid: no page " + args.page) }
+        return fx_ok(fx_lines(x.f.docs[e.name].id, e.p))
+    }
+    if method == "find" {
+        let q = ("" + args.query).trim()
+        let re = regex(fx_escape(q), "i")
+        let matches = []
+        for i e in s.order {
+            let page = fx_lines(x.f.docs[e.name].id, e.p)
+            for l in page.lines {
+                let m = re.exec(l.text)
+                if m != nil && matches.len() < optional(args, "limit", 200) {
+                    let b = l.box
+                    let w = b[2] * m.value.len() / max(1, l.text.len())
+                    let at = b[0] + b[2] * m.index / max(1, l.text.len())
+                    matches.push({page: i + 1 rects: [[at, b[1], w, b[3]]] snippet: l.text.replace(m.value, "[[" + m.value + "]]")})
+                }
+            }
+        }
+        return fx_ok({total: matches.len() matches: matches})
+    }
+    if method == "text" { return fx_ok({pages: []}) }
+    if method == "comments" { return fx_ok({comments: s.comments}) }
+    if method == "comment" {
+        if args.op == "add" {
+            fx_change(s)
+            x.ids = x.ids + 1
+            let id = "c" + x.ids
+            s.comments.push({id: id page: args.page type: args.type author: optional(args, "author", "PdfCraft") text: optional(args, "text", "") date: fx_now()
+                color: fx_upper(optional(args, "color", "#FFEF00")) status: "none" rects: optional(args, "rects", [[optional(args, "at", [0, 0])[0], optional(args, "at", [0, 0])[1], 18, 18]]) replies: []})
+            return fx_ok({id: id})
+        }
+        let c = nil
+        for k in s.comments { if k.id == args.id { c = k } }
+        if c == nil { return fx_err("invalid: no comment " + args.id) }
+        fx_change(s)
+        let c2 = nil
+        for k in s.comments { if k.id == args.id { c2 = k } }
+        if args.op == "edit" { c2.text = optional(args, "text", c2.text) return fx_ok({id: c2.id}) }
+        if args.op == "reply" {
+            x.ids = x.ids + 1
+            c2.replies.push({id: "r" + x.ids author: optional(args, "author", "PdfCraft") text: args.text date: fx_now()})
+            return fx_ok({id: "r" + x.ids})
+        }
+        if args.op == "status" { c2.status = args.status return fx_ok({id: c2.id}) }
+        if args.op == "delete" {
+            s.comments.retain(|k| k.id != args.id)
+            return fx_ok({deleted: true})
+        }
+        return fx_err("invalid: op " + args.op)
+    }
+    if method == "fields" { return fx_ok({fields: s.fields}) }
+    if method == "fill" {
+        fx_change(s)
+        let n = 0
+        for f in s.fields {
+            let v = optional(args.values, f.name, nil)
+            if v != nil {
+                f.value = v
+                n = n + 1
+            }
+        }
+        return fx_ok({filled: n})
+    }
+    if method == "fill_sign" {
+        fx_change(s)
+        return fx_ok({added: true})
+    }
+    if method == "pages" { return fx_pages(x, s, args) }
+    if method == "edit_text" {
+        fx_change(s)
+        return fx_ok({edited: true})
+    }
+    if method == "undo" || method == "redo" {
+        let from = pick(method == "undo", s.history, s.future)
+        if from.len() == 0 { return fx_ok({edited: s.edited can_undo: s.history.len() > 0 can_redo: s.future.len() > 0}) }
+        let snap = from.pop()
+        if method == "undo" { s.future.push(fx_snapshot(s)) } else { s.history.push(fx_snapshot(s)) }
+        s.order = snap.order
+        s.comments = snap.comments
+        s.fields = snap.fields
+        s.edited = true
+        return fx_ok({edited: s.edited can_undo: s.history.len() > 0 can_redo: s.future.len() > 0})
+    }
+    if method == "save" {
+        s.edited = false
+        return fx_ok({path: "accounts/device/library/" + s.name bytes: d.file_size})
+    }
+    if method == "export" { return fx_ok({paths: []}) }
+    fx_err("pdf." + method + " is not a method of the pdf service")
+}
+let fx_specials = ["\\", ".", "*", "+", "?", "(", ")", "[", "]", "{", "}", "|", "^", "$"]
+fn fx_escape(text){
+    let out = text
+    for c in fx_specials { out = out.replace(c, "\\" + c) }
+    out
+}
+// The service's comment dates: local time, no zone or seconds.
+fn fx_now(){
+    let t = local_time(time_now())
+    "" + t.year + "-" + two(t.month) + "-" + two(t.day) + "T" + two(t.hour) + ":" + two(t.minute)
+}
+// The engine answers colours as #RRGGBB in capitals.
+fn fx_upper(c){
+    let out = "" + c
+    for pair in [["a", "A"], ["b", "B"], ["c", "C"], ["d", "D"], ["e", "E"], ["f", "F"]] { out = out.replace(regex(pair[0], "g"), pair[1]) }
+    out
+}
+// A new file in the library made of pages of others (a merge, an extract):
+// a stand-in file, and a fixture document whose pages are theirs.
+fn fx_new_file(x, out, order){
+    let name = fx_name(out)
+    if fs.exists(out) { return fx_err("invalid: " + out + " already exists") }
+    fs.write(out, "PDF Tools dev fixture: a stand-in PDF\n")
+    // Its pages are drawn by the documents they came from.
+    let first = x.f.docs[order[0].name]
+    let sizes = []
+    for e in order { sizes.push(x.f.docs[e.name].sizes[e.p - 1]) }
+    x.f.docs[name] = {id: first.id title: stem(name) file_size: 400000 sizes: sizes outline: [] comments: [] fields: [] map: order}
+    return fx_ok({out: out bytes: 400000})
+}
+fn fx_pages(x, s, args){
+    let pages = optional(args, "pages", [])
+    if args.op == "extract" {
+        let order = []
+        for p in pages { order.push(s.order[p - 1]) }
+        let r = fx_new_file(x, args.out, order)
+        if !r.is_ok { return r }
+        return fx_ok({path: args.out})
+    }
+    if args.op == "delete" && pages.len() >= s.order.len() { return fx_err("invalid: deleting every page is refused") }
+    fx_change(s)
+    if args.op == "rotate" {
+        for p in pages { s.order[p - 1].rot = s.order[p - 1].rot + args.angle + 360 }
+    }
+    if args.op == "delete" {
+        let kept = []
+        for i e in s.order { if !has(pages, i + 1) { kept.push(e) } }
+        s.order = kept
+    }
+    if args.op == "duplicate" {
+        let out = []
+        for i e in s.order {
+            out.push(e)
+            if has(pages, i + 1) { out.push(fx_copy(e)) }
+        }
+        s.order = out
+    }
+    if args.op == "move" {
+        let moving = []
+        let rest = []
+        for i e in s.order { if has(pages, i + 1) { moving.push(e) } else { rest.push(e) } }
+        let to = clamp(args.to, 1, rest.len() + 1)
+        let out = []
+        for i e in rest {
+            if i + 1 == to { for m in moving { out.push(m) } }
+            out.push(e)
+        }
+        if to > rest.len() { for m in moving { out.push(m) } }
+        s.order = out
+    }
+    if args.op == "insert_file" {
+        let other = fx_open_doc(x, fx_name(args.path))
+        if other == nil { return fx_err("not_found: " + args.path) }
+        let out = []
+        let at = clamp(args.at, 1, s.order.len() + 1)
+        for i e in s.order {
+            if i + 1 == at { for o in other.order { out.push(o) } }
+            out.push(e)
+        }
+        if at > s.order.len() { for o in other.order { out.push(o) } }
+        s.order = out
+    }
+    fx_ok({pages: s.order.len()})
+}

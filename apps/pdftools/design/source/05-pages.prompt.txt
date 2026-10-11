@@ -1,0 +1,70 @@
+Create ONE original image: a single, complete desktop application screen for
+"PDF Tools", a document app inside the OctoSense desktop.
+
+Requested image size: 1536 × 1024 pixels, landscape. Requested quality: high.
+Show only the application's own window content, edge to edge, flat and
+straight on. No operating-system menu bar, no dock, no window title bar or
+traffic lights, no device frame, no perspective, no drop shadow around the
+screen, no captions or annotations outside the interface.
+
+Visual language: an original, precise desktop document tool. The document is
+the brightest thing on screen; the chrome is quiet, thin and well aligned.
+Palette: a cool light grey desk behind the pages, white pages with a soft
+shadow, graphite text, mid-grey secondary text, thin 1-pixel dividers in pale
+grey, and ONE accent colour, a confident medium blue, used only for the
+current mode, the selected item, focus and primary buttons. Yellow marks
+highlighted text and search matches. Green means saved or done, red means an
+error, both used sparingly. Corner radius about 8 px on panels, buttons and
+fields; pages have square corners. Icons are simple outline glyphs with one
+consistent stroke weight. Typography: a neutral sans-serif for the interface,
+small and crisp (about 13–14 px), medium weight for panel titles; document
+pages use a classic serif for body text and a sans-serif for their headings.
+Do not imitate Adobe Acrobat's layout, icons, colours or branding, or any other
+product's.
+
+Window layout, the same in every screen:
+- Top row: document tabs. Each tab shows a small PDF glyph, the file name and
+  a close cross; the active tab is white, the others grey; a "+ Open" button
+  follows the last tab.
+- Second row, the mode bar: the modes "Read", "Comment", "Fill & Sign",
+  "Pages", "Combine", "Edit" as text tabs, the current one in the accent
+  colour with a short underline; on the right a search field with a magnifier
+  and the placeholder "Search in document", then icon buttons for Undo and Redo,
+  and a "Save" button.
+- Left: a narrow icon rail with four icons and tooltips' labels shown under
+  them in tiny text: "Pages", "Outline", "Comments", "Search". The selected
+  icon has a tinted square behind it. Next to the rail, an open panel about
+  240 px wide when the screen calls for it.
+- Centre: the canvas, a light grey desk with the document's pages stacked
+  vertically, centred, one page fully visible and the next starting below.
+- Bottom centre of the canvas: a floating rounded pill with "‹", "3 / 24",
+  "›", a divider, "−", "100%", "+", and two small icons for "Fit width" and
+  "Fit page".
+- Right: a panel about 300 px wide, only in screens that call for it.
+- Bottom edge: a thin status line with "Saved" (with a small green dot) on the
+  left and "14.6 of 64 MB used" on the right.
+
+Use this exact fixture wherever it appears:
+- Documents in the library: "Q3 2026 Board Report.pdf" (24 pages, 2.8 MB,
+  opened today), "Riverside Lease 2026.pdf" (12 pages, 1.1 MB, yesterday),
+  "Field Guide to Garden Birds.pdf" (7 pages, 16 KB, 3 Oct), "Invoice
+  INV-2041.pdf" (1 page, 84 KB, 1 Oct), "Site Survey Photos.pdf" (18 pages,
+  9.6 MB, 28 Sep).
+- The board report belongs to the fictional "Northwind Cooperative". Its
+  sections: Summary, Revenue, Operations, Outlook, Appendix. Page 3 is
+  "Revenue" with a short paragraph that includes the sentence "Revenue grew
+  12% year over year, led by the Northwest region." and a simple bar chart
+  "Revenue by region, Q3 2026" with bars for Northwest, Coast, Valley, Metro.
+- People: Maya Chen (the user), Jun Park and Ana Ruiz (reviewers).
+
+Render every piece of interface text and every control sharply enough to be
+read and measured later. Labels, buttons, fields and panels will be rebuilt as
+native components from this image; page contents are sample document art.
+
+This screen: mode "Pages". No left panel (the rail's "Pages" icon is still
+selected). The canvas becomes a grid of large page thumbnails, five per row,
+pages 1 to 15 visible, each with its number below. Pages 5 and 6 are selected
+with an accent outline and a check badge. A toolbar row under the mode bar:
+"2 selected", then "Rotate left", "Rotate right", "Delete", "Extract",
+"Insert from file", and on the right "Drag pages to reorder". A thin
+insertion marker shows between pages 9 and 10 where a page is being dragged.
