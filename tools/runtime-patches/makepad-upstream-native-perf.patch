@@ -1,0 +1,3089 @@
+diff --git a/draw/src/text/slug_atlas.rs b/draw/src/text/slug_atlas.rs
+index cea51a28e..10736aec9 100644
+--- a/draw/src/text/slug_atlas.rs
++++ b/draw/src/text/slug_atlas.rs
+@@ -71,7 +71,7 @@ pub struct SlugAtlas {
+ 
+ impl SlugAtlas {
+     pub fn new(cx: &mut Cx) -> Self {
+-        Self {
++        let atlas = Self {
+             curve_data: Vec::new(),
+             band_data: Vec::new(),
+             curve_texture: Texture::new_with_format(
+@@ -101,7 +101,11 @@ pub fn new(cx: &mut Cx) -> Self {
+             cached_glyphs: FxHashMap::default(),
+             missing_glyphs: FxHashSet::default(),
+             needs_reset: false,
+-        }
++        };
++        // Both grow by appended rows and are addressed by absolute texel.
++        atlas.curve_texture.set_append_rows(cx, true);
++        atlas.band_texture.set_append_rows(cx, true);
++        atlas
+     }
+ 
+     /// If a reset was requested (the curve buffer exceeded its cap), clear all cached glyph
+@@ -250,8 +254,9 @@ fn prepare_append_only_rgba_f32_texture(
+         // so a height GROWTH leaves all existing rows in place and only the appended rows are
+         // dirty. Backends that must physically reallocate on a height change (GL `glTexImage2D`,
+         // Metal `replaceRegion`) re-upload everything regardless of the `Partial` flag; the D3D11
+-        // backend keeps spare height capacity and honors `Partial`, uploading only the new rows
+-        // via `UpdateSubresource` instead of recreating the (up to ~16 MB) texture every frame.
++        // and desktop GL backends keep spare height capacity for these textures (`append_rows`)
++        // and honor `Partial`, uploading only the new rows instead of recreating the (up to
++        // ~16 MB) texture every frame.
+         let width_changed = *width != new_width;
+         let mut texture_data = data.take().unwrap_or_default();
+         let had_texture_data = !texture_data.is_empty();
+diff --git a/libs/micro_proc_macro/src/macro_lib.rs b/libs/micro_proc_macro/src/macro_lib.rs
+index c64e8066b..1d161936c 100644
+--- a/libs/micro_proc_macro/src/macro_lib.rs
++++ b/libs/micro_proc_macro/src/macro_lib.rs
+@@ -315,6 +315,11 @@ pub fn suf_u32(&mut self, val: u32) -> &mut Self {
+     pub fn suf_u64(&mut self, val: u64) -> &mut Self {
+         self.extend(TokenTree::from(Literal::u64_suffixed(val)))
+     }
++    /// `LiveId(<hash>)` with the hash computed here, what `id!(name)` expands to.
++    pub fn live_id(&mut self, name: &str) -> &mut Self {
++        let id = LiveId::from_str(name);
++        self.add("LiveId (").suf_u64(id.0).add(")")
++    }
+     pub fn unsuf_f32(&mut self, val: f32) -> &mut Self {
+         self.extend(TokenTree::from(Literal::f32_unsuffixed(val)))
+     }
+diff --git a/libs/objc-sys/src/lib.rs b/libs/objc-sys/src/lib.rs
+index 81cbcf80e..f0920d88e 100644
+--- a/libs/objc-sys/src/lib.rs
++++ b/libs/objc-sys/src/lib.rs
+@@ -3,8 +3,11 @@
+ pub use encode::{Encode, EncodeArguments, Encoding};
+ pub use message::{Message, MessageArguments, MessageError};
+ 
++// Keep dynamic-selector callers compatible with the pre-helper API.
+ pub use message::send_message as __send_message;
+ pub use message::send_super_message as __send_super_message;
++pub use message::send_message_or_panic as __send_message_or_panic;
++pub use message::send_super_message_or_panic as __send_super_message_or_panic;
+ 
+ #[macro_use]
+ mod macros;
+diff --git a/libs/objc-sys/src/macros.rs b/libs/objc-sys/src/macros.rs
+index 7d6aa4967..12a6658aa 100644
+--- a/libs/objc-sys/src/macros.rs
++++ b/libs/objc-sys/src/macros.rs
+@@ -1,66 +1,17 @@
+ #[macro_export]
+ macro_rules! class {
+     ($name:ident) => {{
+-        #[allow(deprecated)]
+-        #[inline(always)]
+-        fn get_class(name: &str) -> Option<&'static $crate::runtime::Class> {
+-            unsafe {
+-                #[allow(clippy::replace_consts)]
+-                static CLASS: ::std::sync::atomic::AtomicUsize =
+-                    ::std::sync::atomic::ATOMIC_USIZE_INIT;
+-                // `Relaxed` should be fine since `objc_getClass` is thread-safe.
+-                let ptr = CLASS.load(::std::sync::atomic::Ordering::Relaxed)
+-                    as *const $crate::runtime::Class;
+-                if ptr.is_null() {
+-                    let cls = $crate::runtime::objc_getClass(name.as_ptr() as *const _);
+-                    CLASS.store(cls as usize, ::std::sync::atomic::Ordering::Relaxed);
+-                    if cls.is_null() {
+-                        None
+-                    } else {
+-                        Some(&*cls)
+-                    }
+-                } else {
+-                    Some(&*ptr)
+-                }
+-            }
+-        }
+-        match get_class(concat!(stringify!($name), '\0')) {
+-            Some(cls) => cls,
+-            None => panic!("Class with name {} could not be found", stringify!($name)),
+-        }
++        static CLASS: ::std::sync::atomic::AtomicUsize = ::std::sync::atomic::AtomicUsize::new(0);
++        $crate::runtime::__cached_class(&CLASS, concat!(stringify!($name), '\0'))
+     }};
+ }
+ 
+ #[doc(hidden)]
+ #[macro_export]
+ macro_rules! sel_impl {
+-    // Declare a function to hide unsafety, otherwise we can trigger the
+-    // unused_unsafe lint; see rust-lang/rust#8472
+     ($name:expr) => {{
+-        #[allow(deprecated)]
+-        #[inline(always)]
+-        fn register_sel(name: &str) -> $crate::runtime::Sel {
+-            unsafe {
+-                #[allow(clippy::replace_consts)]
+-                static SEL: ::std::sync::atomic::AtomicUsize =
+-                    ::std::sync::atomic::ATOMIC_USIZE_INIT;
+-                let ptr = SEL.load(::std::sync::atomic::Ordering::Relaxed)
+-                    as *const ::std::os::raw::c_void;
+-                // It should be fine to use `Relaxed` ordering here because `sel_registerName` is
+-                // thread-safe.
+-                if ptr.is_null() {
+-                    let sel = $crate::runtime::sel_registerName(name.as_ptr() as *const _);
+-                    SEL.store(
+-                        sel.as_ptr() as usize,
+-                        ::std::sync::atomic::Ordering::Relaxed,
+-                    );
+-                    sel
+-                } else {
+-                    $crate::runtime::Sel::from_ptr(ptr)
+-                }
+-            }
+-        }
+-        register_sel($name)
++        static SEL: ::std::sync::atomic::AtomicUsize = ::std::sync::atomic::AtomicUsize::new(0);
++        $crate::runtime::__cached_sel(&SEL, $name)
+     }};
+ }
+ 
+@@ -73,39 +24,15 @@ macro_rules! sel {
+ #[macro_export]
+ macro_rules! msg_send {
+     (super($obj:expr, $superclass:expr), $name:ident) => ({
+-        let sel = sel!($name);
+-        let result;
+-        match $crate::__send_super_message(&*$obj, $superclass, sel, ()) {
+-            Err(s) => panic!("{}", s),
+-            Ok(r) => result = r,
+-        }
+-        result
++        $crate::__send_super_message_or_panic(&*$obj, $superclass, sel!($name), ())
+     });
+     (super($obj:expr, $superclass:expr), $($name:ident : $arg:expr)+) => ({
+-        let sel = sel!($($name:)+);
+-        let result;
+-        match $crate::__send_super_message(&*$obj, $superclass, sel, ($($arg,)*)) {
+-            Err(s) => panic!("{}", s),
+-            Ok(r) => result = r,
+-        }
+-        result
++        $crate::__send_super_message_or_panic(&*$obj, $superclass, sel!($($name:)+), ($($arg,)*))
+     });
+     ($obj:expr, $name:ident) => ({
+-        let sel = sel!($name);
+-        let result;
+-        match $crate::__send_message(&*$obj, sel, ()) {
+-            Err(s) => panic!("{}", s),
+-            Ok(r) => result = r,
+-        }
+-        result
++        $crate::__send_message_or_panic(&*$obj, sel!($name), ())
+     });
+     ($obj:expr, $($name:ident : $arg:expr)+) => ({
+-        let sel = sel!($($name:)+);
+-        let result;
+-        match $crate::__send_message(&*$obj, sel, ($($arg,)*)) {
+-            Err(s) => panic!("{}", s),
+-            Ok(r) => result = r,
+-        }
+-        result
++        $crate::__send_message_or_panic(&*$obj, sel!($($name:)+), ($($arg,)*))
+     });
+ }
+diff --git a/libs/objc-sys/src/message/mod.rs b/libs/objc-sys/src/message/mod.rs
+index fc74f5c4e..a339d2b2b 100644
+--- a/libs/objc-sys/src/message/mod.rs
++++ b/libs/objc-sys/src/message/mod.rs
+@@ -249,6 +249,89 @@ pub unsafe fn send_super_message<T, A, R>(
+     verify_message_signature::<A, R>(superclass, sel)
+         .and_then(|_| send_super_unverified(obj, superclass, sel, args))
+ }
++/// `send_message`, panicking with the error's text when it fails: what every
++/// `msg_send!` site does, kept in one place instead of being expanded per site.
++#[doc(hidden)]
++#[inline]
++#[track_caller]
++#[cfg(not(feature = "verify_message"))]
++pub unsafe fn send_message_or_panic<T, A, R>(obj: *const T, sel: Sel, args: A) -> R
++where
++    T: Message,
++    A: MessageArguments,
++    R: Any,
++{
++    match send_message(obj, sel, args) {
++        Ok(r) => r,
++        Err(err) => message_failed(err),
++    }
++}
++
++#[doc(hidden)]
++#[inline]
++#[track_caller]
++#[cfg(feature = "verify_message")]
++pub unsafe fn send_message_or_panic<T, A, R>(obj: *const T, sel: Sel, args: A) -> R
++where
++    T: Message,
++    A: MessageArguments + EncodeArguments,
++    R: Any + Encode,
++{
++    match send_message(obj, sel, args) {
++        Ok(r) => r,
++        Err(err) => message_failed(err),
++    }
++}
++
++#[doc(hidden)]
++#[inline]
++#[track_caller]
++#[cfg(not(feature = "verify_message"))]
++pub unsafe fn send_super_message_or_panic<T, A, R>(
++    obj: *const T,
++    superclass: &Class,
++    sel: Sel,
++    args: A,
++) -> R
++where
++    T: Message,
++    A: MessageArguments,
++    R: Any,
++{
++    match send_super_message(obj, superclass, sel, args) {
++        Ok(r) => r,
++        Err(err) => message_failed(err),
++    }
++}
++
++#[doc(hidden)]
++#[inline]
++#[track_caller]
++#[cfg(feature = "verify_message")]
++pub unsafe fn send_super_message_or_panic<T, A, R>(
++    obj: *const T,
++    superclass: &Class,
++    sel: Sel,
++    args: A,
++) -> R
++where
++    T: Message,
++    A: MessageArguments + EncodeArguments,
++    R: Any + Encode,
++{
++    match send_super_message(obj, superclass, sel, args) {
++        Ok(r) => r,
++        Err(err) => message_failed(err),
++    }
++}
++
++#[cold]
++#[inline(never)]
++#[track_caller]
++fn message_failed(err: MessageError) -> ! {
++    panic!("{}", err)
++}
++
+ /*
+ #[cfg(test)]
+ mod tests {
+diff --git a/libs/objc-sys/src/runtime.rs b/libs/objc-sys/src/runtime.rs
+index 9e9ef6902..9f13e252b 100644
+--- a/libs/objc-sys/src/runtime.rs
++++ b/libs/objc-sys/src/runtime.rs
+@@ -4,6 +4,7 @@
+ use std::os::raw::{c_char, c_int, c_uint, c_void};
+ use std::ptr;
+ use std::str;
++use std::sync::atomic::{AtomicUsize, Ordering};
+ 
+ use encode;
+ use {Encode, Encoding};
+@@ -635,3 +636,57 @@ fn test_object() {
+         assert!(result == 4);
+     }
+ }*/
++
++/// The selector cached in `slot` (one static per `sel!` site), registered on first use.
++/// `name` ends in a NUL.
++#[doc(hidden)]
++#[inline]
++pub fn __cached_sel(slot: &'static AtomicUsize, name: &str) -> Sel {
++    // `Relaxed` is enough: `sel_registerName` is thread-safe and idempotent.
++    let ptr = slot.load(Ordering::Relaxed) as *const c_void;
++    if ptr.is_null() {
++        __register_sel(slot, name)
++    } else {
++        Sel { ptr }
++    }
++}
++
++#[doc(hidden)]
++#[inline(never)]
++pub fn __register_sel(slot: &'static AtomicUsize, name: &str) -> Sel {
++    assert!(name.ends_with('\0'), "selector name must end in NUL");
++    let sel = unsafe { sel_registerName(name.as_ptr() as *const c_char) };
++    slot.store(sel.ptr as usize, Ordering::Relaxed);
++    sel
++}
++
++/// The class cached in `slot` (one static per `class!` site), looked up on first use;
++/// panics when the runtime has no class of that name. `name` ends in a NUL.
++#[doc(hidden)]
++#[inline]
++#[track_caller]
++pub fn __cached_class(slot: &'static AtomicUsize, name: &str) -> &'static Class {
++    let ptr = slot.load(Ordering::Relaxed) as *const Class;
++    if ptr.is_null() {
++        __lookup_class(slot, name)
++    } else {
++        unsafe { &*ptr }
++    }
++}
++
++#[doc(hidden)]
++#[inline(never)]
++#[track_caller]
++pub fn __lookup_class(slot: &'static AtomicUsize, name: &str) -> &'static Class {
++    assert!(name.ends_with('\0'), "class name must end in NUL");
++    // `Relaxed` is enough: `objc_getClass` is thread-safe.
++    let cls = unsafe { objc_getClass(name.as_ptr() as *const c_char) };
++    slot.store(cls as usize, Ordering::Relaxed);
++    if cls.is_null() {
++        panic!(
++            "Class with name {} could not be found",
++            name.trim_end_matches('\0')
++        );
++    }
++    unsafe { &*cls }
++}
+diff --git a/platform/script/derive/src/derive_scriptable.rs b/platform/script/derive/src/derive_scriptable.rs
+index a591e7318..2e6d4e48b 100644
+--- a/platform/script/derive/src/derive_scriptable.rs
++++ b/platform/script/derive/src/derive_scriptable.rs
+@@ -155,9 +155,9 @@ fn derive_script_impl_inner(
+                     a.name == "apply_state" || a.name == "imperative" || a.name == "visible"
+                 });
+                 if preserve_state { tb.add("if !apply.preserves_runtime_state() {"); }
+-                tb.add("{ let mut __field_value = vm.bx.heap.value_for_apply(value, id!(")
+-                    .ident(&field.name)
+-                    .add(").into(), apply);");
++                tb.add("{ let mut __field_value = vm.bx.heap.value_for_apply(value, ")
++                    .live_id(&field.name)
++                    .add(".into(), apply);");
+                 tb.add("if __field_value.is_none() && apply.is_reload(){");
+                 tb.add("    let default_value = <")
+                     .stream(Some(field.ty.clone()))
+@@ -322,7 +322,6 @@ fn derive_script_impl_inner(
+             .stream(where_clause.clone())
+             .add("{");
+ 
+-        tb.add("    fn script_type_id_static()->ScriptTypeId{ ScriptTypeId::of::<Self>()}");
+         tb.add("    fn script_type_name()->Option<LiveId>{ Some(id_lut!(")
+             .ident(&struct_name)
+             .add(")) }");
+@@ -553,7 +552,6 @@ fn gen_new(&self, tb: &mut TokenBuilder) -> Result<(), TokenStream> {
+             .stream(where_clause.clone())
+             .add("{");
+ 
+-        tb.add("    fn script_type_id_static()->ScriptTypeId{ScriptTypeId::of::<Self>()}");
+         tb.add("    fn script_type_name()->Option<LiveId>{ Some(id_lut!(")
+             .ident(&enum_name)
+             .add(")) }");
+@@ -593,9 +591,9 @@ fn gen_new(&self, tb: &mut TokenBuilder) -> Result<(), TokenStream> {
+         tb.add("            if let Some(id) = root_proto.as_id(){");
+         tb.add("                return match id{");
+         for item in &items {
+-            tb.add("                 id!(")
+-                .ident(&item.name)
+-                .add(")=>true,");
++            tb.add("                 ")
++                .live_id(&item.name)
++                .add("=>true,");
+         }
+         tb.add("                     _=>false");
+         tb.add("                 }");
+@@ -623,9 +621,9 @@ fn gen_new(&self, tb: &mut TokenBuilder) -> Result<(), TokenStream> {
+                     if let Some(disc) = &item.discriminant {
+                         tb.add("vm.bx.heap.set_value(bare, id!(_repr_u32_enum_value).into(), ScriptValue::from((").stream(Some(disc.clone())).add(") as f64), vm.bx.threads.cur().trap.pass());");
+                     }
+-                    tb.add("vm.bx.heap.set_value(enum_object, id!(")
+-                        .ident(&item.name)
+-                        .add(").into(), bare.into(), vm.bx.threads.cur().trap.pass());");
++                    tb.add("vm.bx.heap.set_value(enum_object, ")
++                        .live_id(&item.name)
++                        .add(".into(), bare.into(), vm.bx.threads.cur().trap.pass());");
+                     tb.add("vm.bx.heap.freeze(bare);");
+                 }
+                 EnumKind::Tuple(args) => {
+@@ -637,9 +635,9 @@ fn gen_new(&self, tb: &mut TokenBuilder) -> Result<(), TokenStream> {
+                     tb.add("vm.add_method(enum_object, id_lut!(")
+                         .ident(&item.name)
+                         .add("), &[], |vm, args|{");
+-                    tb.add("    let tuple = vm.bx.heap.new_with_proto(id!(")
+-                        .ident(&item.name)
+-                        .add(").into());");
++                    tb.add("    let tuple = vm.bx.heap.new_with_proto(")
++                        .live_id(&item.name)
++                        .add(".into());");
+                     tb.add("    if vm.bx.heap.vec_len(args) != ")
+                         .unsuf_usize(args.len())
+                         .add("{");
+@@ -689,18 +687,18 @@ fn gen_new(&self, tb: &mut TokenBuilder) -> Result<(), TokenStream> {
+                             .add("), <")
+                             .stream(Some(field.ty.clone()))
+                             .add(" as ScriptNew>::script_type_id_static());");
+-                        tb.add(" vm.bx.heap.set_value(named, id!(")
+-                            .ident(&field.name)
+-                            .add(").into(), value, vm.bx.threads.cur().trap.pass());");
++                        tb.add(" vm.bx.heap.set_value(named, ")
++                            .live_id(&field.name)
++                            .add(".into(), value, vm.bx.threads.cur().trap.pass());");
+                     }
+                     tb.add("}");
+                     tb.add("let ty_check = ScriptTypeCheck{props, object: None, is_repr_u32_enum: false};");
+                     tb.add("let ty_index = vm.bx.heap.register_type(None, ty_check);");
+                     tb.add("vm.bx.heap.set_type(named, ty_index);");
+                     tb.add("vm.bx.heap.freeze_component(named);");
+-                    tb.add("vm.bx.heap.set_value(enum_object, id!(")
+-                        .ident(&item.name)
+-                        .add(").into(), named.into(), vm.bx.threads.cur().trap.pass());");
++                    tb.add("vm.bx.heap.set_value(enum_object, ")
++                        .live_id(&item.name)
++                        .add(".into(), named.into(), vm.bx.threads.cur().trap.pass());");
+                     // uh oh crap. we need to get the default value out of the unparsed defaults
+                 }
+             }
+@@ -730,7 +728,7 @@ fn gen_new(&self, tb: &mut TokenBuilder) -> Result<(), TokenStream> {
+         for item in &items {
+             match &item.kind {
+                 EnumKind::Bare => {
+-                    tb.add("        id!(").ident(&item.name).add(")=>{");
++                    tb.add("        ").live_id(&item.name).add("=>{");
+                     tb.add("            *self = Self::")
+                         .ident(&item.name)
+                         .add(";");
+@@ -738,7 +736,7 @@ fn gen_new(&self, tb: &mut TokenBuilder) -> Result<(), TokenStream> {
+                     tb.add("        }");
+                 }
+                 EnumKind::Tuple(args) => {
+-                    tb.add("        id!(").ident(&item.name).add(")=>{");
++                    tb.add("        ").live_id(&item.name).add("=>{");
+                     tb.add("            if let Self::")
+                         .ident(&item.name)
+                         .add("(..)  = self{}else{");
+@@ -771,7 +769,7 @@ fn gen_new(&self, tb: &mut TokenBuilder) -> Result<(), TokenStream> {
+                     tb.add("        }");
+                 }
+                 EnumKind::Named(fields) => {
+-                    tb.add("        id!(").ident(&item.name).add(")=>{");
++                    tb.add("        ").live_id(&item.name).add("=>{");
+                     tb.add("            if let Self::")
+                         .ident(&item.name)
+                         .add("{..}  = self{}else{");
+@@ -790,7 +788,7 @@ fn gen_new(&self, tb: &mut TokenBuilder) -> Result<(), TokenStream> {
+                     }
+                     tb.add("} = self{");
+                     for (i, field) in fields.iter().enumerate() {
+-                        tb.add("if let Some(v) = vm.bx.heap.value_for_apply(value, ScriptValue::from_id(id!(").ident(&field.name).add(")), apply){");
++                        tb.add("if let Some(v) = vm.bx.heap.value_for_apply(value, ScriptValue::from_id(").live_id(&field.name).add("), apply){");
+                         tb.add("    <")
+                             .stream(Some(field.ty.clone()))
+                             .add(" as ScriptApply>::script_apply(")
+@@ -840,9 +838,9 @@ fn gen_new(&self, tb: &mut TokenBuilder) -> Result<(), TokenStream> {
+             match &item.kind {
+                 EnumKind::Bare => {
+                     tb.add("Self::").ident(&item.name).add("=>{");
+-                    tb.add("    Self::script_enum_lookup_variant(vm,id!(")
+-                        .ident(&item.name)
+-                        .add("))");
++                    tb.add("    Self::script_enum_lookup_variant(vm,")
++                        .live_id(&item.name)
++                        .add(")");
+                     tb.add("}");
+                 }
+                 EnumKind::Tuple(args) => {
+@@ -851,9 +849,9 @@ fn gen_new(&self, tb: &mut TokenBuilder) -> Result<(), TokenStream> {
+                         tb.ident(&format!("v{i}")).add(",");
+                     }
+                     tb.add(")=>{");
+-                    tb.add("    let tuple = vm.bx.heap.new_with_proto(id!(")
+-                        .ident(&item.name)
+-                        .add(").into());");
++                    tb.add("    let tuple = vm.bx.heap.new_with_proto(")
++                        .live_id(&item.name)
++                        .add(".into());");
+                     for (i, arg) in args.iter().enumerate() {
+                         tb.add("let value = <")
+                             .stream(Some(arg.clone()))
+@@ -874,9 +872,9 @@ fn gen_new(&self, tb: &mut TokenBuilder) -> Result<(), TokenStream> {
+                             .add(",");
+                     }
+                     tb.add("}=>{");
+-                    tb.add("    let proto = Self::script_enum_lookup_variant(vm,id!(")
+-                        .ident(&item.name)
+-                        .add("));");
++                    tb.add("    let proto = Self::script_enum_lookup_variant(vm,")
++                        .live_id(&item.name)
++                        .add(");");
+                     tb.add("    let named = vm.bx.heap.new_with_proto(proto);");
+                     for (i, field) in fields.iter().enumerate() {
+                         tb.add("let value = <")
+@@ -884,9 +882,9 @@ fn gen_new(&self, tb: &mut TokenBuilder) -> Result<(), TokenStream> {
+                             .add(" as ScriptApply>::script_to_value(")
+                             .ident(&format!("v{i}"))
+                             .add(", vm);");
+-                        tb.add("vm.bx.heap.set_value(named, id!(")
+-                            .ident(&field.name)
+-                            .add(").into(), value, vm.bx.threads.cur().trap.pass());");
++                        tb.add("vm.bx.heap.set_value(named, ")
++                            .live_id(&field.name)
++                            .add(".into(), value, vm.bx.threads.cur().trap.pass());");
+                     }
+                     tb.add("    named.into()");
+                     tb.add("}");
+diff --git a/platform/script/src/object.rs b/platform/script/src/object.rs
+index bfed733af..4775f2f69 100644
+--- a/platform/script/src/object.rs
++++ b/platform/script/src/object.rs
+@@ -188,37 +188,45 @@ impl ScriptObjectTag {
+     pub const STORAGE_VEC2: u64 = 1 << Self::STORAGE_SHIFT;
+     pub const STORAGE_MAP: u64 = 2 << Self::STORAGE_SHIFT;
+ 
++    #[inline]
+     pub fn proto_fwd(&self) -> u64 {
+         self.0 & Self::PROTO_FWD
+     }
+ 
++    #[inline]
+     pub fn set_proto_fwd(&mut self, fwd: u64) {
+         self.0 = (self.0 & !Self::PROTO_FWD) | (fwd & Self::PROTO_FWD)
+     }
+ 
+     // STORAGE
+ 
++    #[inline]
+     pub fn is_auto(&self) -> bool {
+         self.0 & Self::STORAGE_MASK == Self::STORAGE_AUTO
+     }
+ 
++    #[inline]
+     pub fn is_vec2(&self) -> bool {
+         self.0 & Self::STORAGE_MASK == Self::STORAGE_VEC2
+     }
+ 
++    #[inline]
+     pub fn is_map(&self) -> bool {
+         self.0 & Self::STORAGE_MASK == Self::STORAGE_MAP
+     }
+ 
++    #[inline]
+     pub fn set_vec2(&mut self) {
+         self.0 &= !Self::STORAGE_MASK;
+         self.0 |= Self::STORAGE_VEC2;
+     }
+ 
++    #[inline]
+     pub fn set_auto(&mut self) {
+         self.0 &= !Self::STORAGE_MASK;
+     }
+ 
++    #[inline]
+     pub fn set_map(&mut self) {
+         self.0 &= !Self::STORAGE_MASK;
+         self.0 |= Self::STORAGE_MAP;
+@@ -226,27 +234,33 @@ pub fn set_map(&mut self) {
+ 
+     // FLAGS
+ 
++    #[inline]
+     pub fn set_first_applied_and_clean(&mut self) {
+         self.0 &= !Self::DIRTY;
+         self.0 |= Self::FIRST_APPLIED;
+     }
+ 
++    #[inline]
+     pub fn is_first_applied(&self) -> bool {
+         self.0 & Self::FIRST_APPLIED != 0
+     }
+ 
++    #[inline]
+     pub fn set_tracked(&mut self) {
+         self.0 |= Self::TRACKED
+     }
+ 
++    #[inline]
+     pub fn is_tracked(&self) -> bool {
+         self.0 & Self::TRACKED != 0
+     }
+ 
++    #[inline]
+     pub fn set_dirty(&mut self) {
+         self.0 |= Self::DIRTY
+     }
+ 
++    #[inline]
+     pub fn check_and_clear_dirty(&mut self) -> bool {
+         if self.0 & Self::DIRTY != 0 {
+             self.0 &= !Self::DIRTY;
+@@ -256,38 +270,47 @@ pub fn check_and_clear_dirty(&mut self) -> bool {
+         }
+     }
+ 
++    #[inline]
+     pub fn set_string_keys(&mut self) {
+         self.0 |= Self::STRING_KEYS
+     }
+ 
++    #[inline]
+     pub fn is_string_keys(&self) -> bool {
+         self.0 & Self::STRING_KEYS != 0
+     }
+ 
++    #[inline]
+     pub fn set_from_eval(&mut self) {
+         self.0 |= Self::FROM_EVAL
+     }
+ 
++    #[inline]
+     pub fn is_from_eval(&self) -> bool {
+         self.0 & Self::FROM_EVAL != 0
+     }
+ 
++    #[inline]
+     pub fn set_static(&mut self) {
+         self.0 |= Self::STATIC
+     }
+ 
++    #[inline]
+     pub fn is_static(&self) -> bool {
+         self.0 & Self::STATIC != 0
+     }
+ 
++    #[inline]
+     pub fn is_notproto(&self) -> bool {
+         self.0 & Self::NOTPROTO != 0
+     }
+ 
++    #[inline]
+     pub fn set_notproto(&mut self) {
+         self.0 |= Self::NOTPROTO
+     }
+ 
++    #[inline]
+     pub fn is_frozen(&self) -> bool {
+         self.0 & Self::FROZEN != 0
+     }
+@@ -299,111 +322,135 @@ pub fn is_immutable(&self) -> bool {
+         self.0 & (Self::FROZEN | Self::STATIC) != 0
+     }
+ 
++    #[inline]
+     pub fn is_validated(&self) -> bool {
+         self.0 & Self::VALIDATED != 0
+     }
+ 
++    #[inline]
+     pub fn is_map_add(&self) -> bool {
+         self.0 & Self::MAP_ADD != 0
+     }
+ 
++    #[inline]
+     pub fn set_reffed(&mut self) {
+         self.0 |= Self::REFFED
+     }
+ 
++    #[inline]
+     pub fn is_reffed(&self) -> bool {
+         self.0 & Self::REFFED != 0
+     }
+ 
++    #[inline]
+     pub fn set_deep(&mut self) {
+         self.0 |= Self::DEEP
+     }
+ 
++    #[inline]
+     pub fn clear_deep(&mut self) {
+         self.0 &= !Self::DEEP
+     }
+ 
++    #[inline]
+     pub fn is_deep(&self) -> bool {
+         self.0 & Self::DEEP != 0
+     }
+ 
++    #[inline]
+     pub fn is_alloced(&self) -> bool {
+         return self.0 & Self::ALLOCED != 0;
+     }
+ 
++    #[inline]
+     pub fn set_alloced(&mut self) {
+         self.0 |= Self::ALLOCED
+     }
+ 
++    #[inline]
+     pub fn clear(&mut self) {
+         self.0 = 0;
+     }
+ 
++    #[inline]
+     pub fn is_marked(&self) -> bool {
+         self.0 & Self::MARK != 0
+     }
+ 
++    #[inline]
+     pub fn set_mark(&mut self) {
+         self.0 |= Self::MARK
+     }
+ 
++    #[inline]
+     pub fn clear_mark(&mut self) {
+         self.0 &= !Self::MARK
+     }
+ 
+     // FREEZE
+ 
++    #[inline]
+     pub fn freeze(&mut self) {
+         self.0 &= !(Self::FREEZE_MASK);
+         self.0 |= Self::FROZEN
+     }
+ 
++    #[inline]
+     pub fn freeze_type(&mut self) {
+         self.0 &= !(Self::FREEZE_MASK);
+         self.0 |= Self::FROZEN | Self::VEC_FROZEN
+     }
+ 
++    #[inline]
+     pub fn freeze_api(&mut self) {
+         self.0 &= !(Self::FREEZE_MASK);
+         self.0 |= Self::FROZEN | Self::VALIDATED | Self::VEC_FROZEN
+     }
+ 
++    #[inline]
+     pub fn freeze_module(&mut self) {
+         self.0 &= !(Self::FREEZE_MASK);
+         self.0 |= Self::MAP_ADD | Self::VEC_FROZEN | Self::NOTPROTO
+     }
+ 
++    #[inline]
+     pub fn freeze_component(&mut self) {
+         self.0 &= !(Self::FREEZE_MASK);
+         self.0 |= Self::FROZEN | Self::VALIDATED
+     }
+ 
++    #[inline]
+     pub fn freeze_shader(&mut self) {
+         self.0 &= !(Self::FREEZE_MASK);
+         self.0 |= Self::FROZEN | Self::VALIDATED | Self::MAP_ADD | Self::VEC_FROZEN
+     }
+ 
++    #[inline]
+     pub fn freeze_ext(&mut self) {
+         self.0 &= !(Self::FREEZE_MASK);
+         self.0 |= Self::FROZEN | Self::VALIDATED | Self::MAP_ADD
+     }
+ 
++    #[inline]
+     pub fn needs_checking(&self) -> bool {
+         self.0 & (Self::NEED_CHECK_MASK) != 0
+     }
+ 
++    #[inline]
+     pub fn is_vec_frozen(&self) -> bool {
+         self.0 & (Self::VEC_FROZEN | Self::FROZEN | Self::STATIC) != 0
+     }
+ 
+     // REF
+ 
++    #[inline]
+     pub fn set_type_index(&mut self, ty: ScriptTypeIndex) {
+         self.0 &= !(Self::REF_DATA_MASK);
+         self.0 &= !(Self::REF_KIND_MASK);
+         self.0 |= ty.0 as u64 | Self::REF_KIND_TYPE_INDEX | Self::TYPE_CHECKED;
+     }
+ 
++    #[inline]
+     pub fn as_type_index(&self) -> Option<ScriptTypeIndex> {
+         if self.is_type_index() {
+             Some(ScriptTypeIndex(self.0 as u32))
+@@ -412,16 +459,19 @@ pub fn as_type_index(&self) -> Option<ScriptTypeIndex> {
+         }
+     }
+ 
++    #[inline]
+     pub fn is_type_index(&self) -> bool {
+         self.0 & Self::REF_KIND_MASK == Self::REF_KIND_TYPE_INDEX
+     }
+ 
++    #[inline]
+     pub fn set_apply_transform(&mut self, ni: NativeId) {
+         self.0 &= !(Self::REF_DATA_MASK);
+         self.0 &= !(Self::REF_KIND_MASK);
+         self.0 |= (ni.index as u64) | Self::REF_KIND_APPLY_TRANSFORM;
+     }
+ 
++    #[inline]
+     pub fn as_apply_transform(&self) -> Option<NativeId> {
+         if self.0 & Self::REF_KIND_MASK == Self::REF_KIND_APPLY_TRANSFORM {
+             Some(NativeId {
+@@ -432,10 +482,12 @@ pub fn as_apply_transform(&self) -> Option<NativeId> {
+         }
+     }
+ 
++    #[inline]
+     pub fn is_apply_transform(&self) -> bool {
+         self.0 & Self::REF_KIND_MASK == Self::REF_KIND_APPLY_TRANSFORM
+     }
+ 
++    #[inline]
+     pub fn set_fn(&mut self, ptr: ScriptFnPtr) {
+         self.0 &= !(Self::REF_DATA_MASK);
+         self.0 &= !(Self::REF_KIND_MASK);
+@@ -445,6 +497,7 @@ pub fn set_fn(&mut self, ptr: ScriptFnPtr) {
+         }
+     }
+ 
++    #[inline]
+     pub fn as_fn(&self) -> Option<ScriptFnPtr> {
+         if self.0 & Self::REF_KIND_MASK == Self::REF_KIND_SCRIPT_FN {
+             Some(ScriptFnPtr::Script(ScriptIp::from_u40(self.0)))
+@@ -457,24 +510,29 @@ pub fn as_fn(&self) -> Option<ScriptFnPtr> {
+         }
+     }
+ 
++    #[inline]
+     pub fn is_script_fn(&self) -> bool {
+         self.0 & Self::REF_KIND_MASK == Self::REF_KIND_SCRIPT_FN
+     }
+ 
++    #[inline]
+     pub fn is_native_fn(&self) -> bool {
+         self.0 & Self::REF_KIND_MASK == Self::REF_KIND_NATIVE_FN
+     }
+ 
++    #[inline]
+     pub fn is_fn(&self) -> bool {
+         self.is_script_fn() || self.is_native_fn()
+     }
+ 
++    #[inline]
+     pub fn set_pod_type(&mut self, ty: ScriptPodType) {
+         self.0 &= !(Self::REF_DATA_MASK);
+         self.0 &= !(Self::REF_KIND_MASK);
+         self.0 |= ty.index as u64 | Self::REF_KIND_POD_TYPE
+     }
+ 
++    #[inline]
+     pub fn as_pod_type(&self) -> Option<ScriptPodType> {
+         if self.is_pod_type() {
+             Some(ScriptPodType {
+@@ -485,16 +543,19 @@ pub fn as_pod_type(&self) -> Option<ScriptPodType> {
+         }
+     }
+ 
++    #[inline]
+     pub fn is_pod_type(&self) -> bool {
+         self.0 & Self::REF_KIND_MASK == Self::REF_KIND_POD_TYPE
+     }
+ 
++    #[inline]
+     pub fn set_shader_io(&mut self, ty: ShaderIoType) {
+         self.0 &= !(Self::REF_DATA_MASK);
+         self.0 &= !(Self::REF_KIND_MASK);
+         self.0 |= ty.0 as u64 | Self::REF_KIND_SHADER_IO
+     }
+ 
++    #[inline]
+     pub fn as_shader_io(&self) -> Option<ShaderIoType> {
+         if self.is_shader_io() {
+             Some(ShaderIoType(self.0 as u32))
+@@ -503,6 +564,7 @@ pub fn as_shader_io(&self) -> Option<ShaderIoType> {
+         }
+     }
+ 
++    #[inline]
+     pub fn is_shader_io(&self) -> bool {
+         self.0 & Self::REF_KIND_MASK == Self::REF_KIND_SHADER_IO
+     }
+@@ -577,33 +639,40 @@ impl ScriptMapTag {
+     const DIRTY: u64 = 1 << 32;
+ 
+     #[allow(dead_code)]
++    #[inline]
+     fn dirty() -> Self {
+         Self(Self::DIRTY)
+     }
+ 
++    #[inline]
+     fn dirty_with_order(order: u32) -> Self {
+         Self(Self::DIRTY | (order as u64))
+     }
+ 
++    #[inline]
+     fn get_and_clear_dirty(&mut self) -> bool {
+         let ret = self.0 & Self::DIRTY != 0;
+         self.0 &= !Self::DIRTY;
+         ret
+     }
+ 
++    #[inline]
+     fn set_dirty(&mut self) {
+         self.0 |= Self::DIRTY;
+     }
+ 
++    #[inline]
+     pub fn order(&self) -> u32 {
+         (self.0 & Self::ORDER_MASK) as u32
+     }
+ 
+     #[allow(dead_code)]
++    #[inline]
+     fn set_order(&mut self, order: u32) {
+         self.0 = (self.0 & !Self::ORDER_MASK) | (order as u64);
+     }
+ 
++    #[inline]
+     fn with_order_offset(self, offset: u32) -> Self {
+         let new_order = self.order() + offset;
+         Self((self.0 & !Self::ORDER_MASK) | (new_order as u64))
+@@ -1015,6 +1084,7 @@ pub fn map_set_if_exist(&mut self, key: ScriptValue, value: ScriptValue) -> bool
+         }
+     }
+ 
++    #[inline]
+     pub fn map_get(&self, key: &ScriptValue) -> Option<ScriptValue> {
+         if let Some(val) = self.map.get(key) {
+             Some(val.value)
+@@ -1023,6 +1093,7 @@ pub fn map_get(&self, key: &ScriptValue) -> Option<ScriptValue> {
+         }
+     }
+ 
++    #[inline]
+     pub fn map_get_if_dirty(&mut self, key: &ScriptValue) -> Option<ScriptValue> {
+         if self.tag.is_tracked() {
+             if let Some(val) = self.map.get_mut(key) {
+@@ -1035,14 +1106,17 @@ pub fn map_get_if_dirty(&mut self, key: &ScriptValue) -> Option<ScriptValue> {
+         self.map_get(key)
+     }
+ 
++    #[inline]
+     pub fn map_delete(&mut self, key: &ScriptValue) -> Option<ScriptValue> {
+         self.map.remove(key).map(|v| v.value)
+     }
+ 
++    #[inline]
+     pub fn map_len(&self) -> usize {
+         self.map.len()
+     }
+ 
++    #[inline]
+     pub fn map_iter_ret<T, F: FnMut(ScriptValue, ScriptValue) -> Option<T>>(
+         &self,
+         mut f: F,
+@@ -1056,12 +1130,14 @@ pub fn map_iter_ret<T, F: FnMut(ScriptValue, ScriptValue) -> Option<T>>(
+         None
+     }
+ 
++    #[inline]
+     pub fn map_iter<F: FnMut(ScriptValue, ScriptValue)>(&self, mut f: F) {
+         for (key, val) in self.map.iter() {
+             f(*key, val.value);
+         }
+     }
+ 
++    #[inline]
+     pub fn map_iter_ordered<F: FnMut(ScriptValue, ScriptValue)>(&self, mut f: F) {
+         let mut ordered: Vec<_> = self.map.iter().collect();
+         ordered.sort_by_key(|(_, val)| val.tag.order());
+@@ -1070,6 +1146,7 @@ pub fn map_iter_ordered<F: FnMut(ScriptValue, ScriptValue)>(&self, mut f: F) {
+         }
+     }
+ 
++    #[inline]
+     pub fn merge_map_from_other(&mut self, other: &ScriptObjectData) {
+         let offset = self.map.len() as u32;
+         for (k, v) in other.map.iter() {
+@@ -1085,6 +1162,7 @@ pub fn merge_map_from_other(&mut self, other: &ScriptObjectData) {
+ 
+     /// Merge map entries from other, but only if the key doesn't already exist in self.
+     /// Used by the splat operator to not overwrite existing values.
++    #[inline]
+     pub fn merge_map_from_other_no_overwrite(&mut self, other: &ScriptObjectData) {
+         let offset = self.map.len() as u32;
+         for (k, v) in other.map.iter() {
+@@ -1100,11 +1178,13 @@ pub fn merge_map_from_other_no_overwrite(&mut self, other: &ScriptObjectData) {
+         }
+     }
+ 
++    #[inline]
+     pub fn push_vec_from_other(&mut self, other: &ScriptObjectData) {
+         self.vec.extend_from_slice(&other.vec);
+     }
+ 
+     //const DONT_RECYCLE_WHEN: usize = 1000;
++    #[inline]
+     pub fn with_proto(proto: ScriptValue) -> Self {
+         Self {
+             proto,
+@@ -1112,6 +1192,7 @@ pub fn with_proto(proto: ScriptValue) -> Self {
+         }
+     }
+ 
++    #[inline]
+     pub fn clear(&mut self) {
+         self.proto = NIL;
+         self.tag.clear();
+diff --git a/platform/script/src/opcode.rs b/platform/script/src/opcode.rs
+index cef82ef8d..b9caedbf8 100644
+--- a/platform/script/src/opcode.rs
++++ b/platform/script/src/opcode.rs
+@@ -15,22 +15,27 @@ impl OpcodeArgs {
+     pub const NONE: Self = Self(0);
+     pub const NIL: Self = Self(Self::TYPE_NIL);
+ 
++    #[inline]
+     pub fn raw(&self) -> u32 {
+         self.0
+     }
+ 
++    #[inline]
+     pub fn from_u32(jump_to_next: u32) -> Self {
+         Self(Self::TYPE_NUMBER | (jump_to_next & 0x0fff_ffff))
+     }
+ 
++    #[inline]
+     pub fn set_need_nil(self) -> Self {
+         Self(self.0 | Self::NEED_NIL_FLAG)
+     }
+ 
++    #[inline]
+     pub fn to_u32(&self) -> u32 {
+         self.0 & 0x1fff_ffff
+     }
+ 
++    #[inline]
+     pub fn arg_type(&self) -> u32 {
+         self.0 & Self::TYPE_MASK
+     }
+@@ -39,18 +44,22 @@ pub fn arg_type(&self) -> u32 {
+     //     self.0 & Self::STATEMENT_FLAG != 0
+     // }
+ 
++    #[inline]
+     pub fn is_need_nil(&self) -> bool {
+         self.0 & Self::NEED_NIL_FLAG != 0
+     }
+ 
++    #[inline]
+     pub fn is_pop_to_me(&self) -> bool {
+         self.0 & Self::POP_TO_ME_FLAG != 0
+     }
+ 
++    #[inline]
+     pub fn is_nil(&self) -> bool {
+         self.0 & Self::TYPE_MASK == Self::TYPE_NIL
+     }
+ 
++    #[inline]
+     pub fn is_u32(&self) -> bool {
+         self.0 & Self::TYPE_MASK == Self::TYPE_NUMBER
+     }
+@@ -59,6 +68,7 @@ pub fn is_u32(&self) -> bool {
+ #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+ pub struct Opcode(pub u8);
+ impl Opcode {
++    #[inline]
+     pub fn raw(&self) -> u8 {
+         self.0
+     }
+@@ -91,6 +101,7 @@ pub fn raw(&self) -> u8 {
+     pub const SHALLOW_EQ: Self = Self(23);
+     pub const SHALLOW_NEQ: Self = Self(24);
+ 
++    #[inline]
+     pub const fn is_assign(self) -> bool {
+         self.0 >= Opcode::ASSIGN_ME.0 && self.0 <= Opcode::ASSIGN_INDEX_IFNIL.0
+     }
+diff --git a/platform/script/src/shader_vars.rs b/platform/script/src/shader_vars.rs
+index 749810895..cc83ac631 100644
+--- a/platform/script/src/shader_vars.rs
++++ b/platform/script/src/shader_vars.rs
+@@ -577,8 +577,11 @@ pub(crate) fn get_io_self_field_value(
+             return (io_obj.into(), Some(io_type));
+         }
+ 
+-        // No shader IO marker found - get the normal value (for RustInstance fields)
+-        let value = vm.bx.heap.value(io_self, field_id.into(), trap);
++        // No shader IO marker found - get the normal value (for RustInstance
++        // fields). A miss is expected (the caller falls back to the instance
++        // fields), so it is looked up without the trap: its error, with a
++        // "did you mean" scan of the object, was built only to be cleared.
++        let value = vm.bx.heap.value(io_self, field_id.into(), NoTrap);
+         (value, None)
+     }
+ 
+diff --git a/platform/script/src/thread.rs b/platform/script/src/thread.rs
+index 908287413..09f7b171b 100644
+--- a/platform/script/src/thread.rs
++++ b/platform/script/src/thread.rs
+@@ -183,14 +183,17 @@ pub fn pause(&mut self) -> ScriptThreadId {
+         self.thread_id
+     }
+ 
++    #[inline]
+     pub fn is_paused(&self) -> bool {
+         self.is_paused
+     }
+ 
++    #[inline]
+     pub fn thread_id(&self) -> ScriptThreadId {
+         self.thread_id
+     }
+ 
++    #[inline]
+     pub fn truncate_bases(&mut self, bases: StackBases, heap: &mut ScriptHeap) {
+         self.tries.truncate(bases.tries);
+         self.loops.truncate(bases.loops);
+@@ -204,6 +207,7 @@ pub fn truncate_bases(&mut self, bases: StackBases, heap: &mut ScriptHeap) {
+     /// values and call-builder (`mes`) state. The loop frame itself and the
+     /// scopes are left to the loop's own iteration-scope reset so a plain
+     /// `loop` keeps its iteration scope and `for` can reuse its scope object.
++    #[inline]
+     pub fn truncate_loop_iteration_bases(&mut self, bases: StackBases) {
+         self.tries.truncate(bases.tries);
+         self.stack.truncate(bases.stack);
+@@ -230,6 +234,7 @@ pub fn set_slot(&mut self, index: u32, value: ScriptValue) {
+         }
+     }
+ 
++    #[inline]
+     pub fn free_unreffed_scopes(&mut self, bases: &StackBases, heap: &mut ScriptHeap) {
+         while self.scopes.len() > bases.scope {
+             let scope = self.scopes.pop().unwrap();
+@@ -257,6 +262,7 @@ pub fn pop_stack_resolved(&mut self, heap: &ScriptHeap) -> ScriptValue {
+         }
+     }
+ 
++    #[inline]
+     pub fn peek_stack_resolved(&mut self, heap: &ScriptHeap) -> ScriptValue {
+         if let Some(val) = self.stack.last() {
+             if let Some(id) = val.as_id() {
+@@ -271,6 +277,7 @@ pub fn peek_stack_resolved(&mut self, heap: &ScriptHeap) -> ScriptValue {
+         }
+     }
+ 
++    #[inline]
+     pub fn peek_stack_value(&mut self) -> ScriptValue {
+         if let Some(value) = self.stack.last() {
+             return *value;
+@@ -279,6 +286,7 @@ pub fn peek_stack_value(&mut self) -> ScriptValue {
+         }
+     }
+ 
++    #[inline]
+     pub fn peek_stack_value_at(&mut self, offset: usize) -> ScriptValue {
+         let len = self.stack.len();
+         if offset < len {
+@@ -293,6 +301,7 @@ pub fn peek_stack_value_at(&mut self, offset: usize) -> ScriptValue {
+         }
+     }
+ 
++    #[inline]
+     pub fn pop_stack_value(&mut self) -> ScriptValue {
+         if let Some(value) = self.stack.pop() {
+             return value;
+@@ -301,6 +310,7 @@ pub fn pop_stack_value(&mut self) -> ScriptValue {
+         }
+     }
+ 
++    #[inline]
+     pub fn push_stack_value(&mut self, value: ScriptValue) {
+         self.push_stack_unchecked(value);
+     }
+@@ -317,6 +327,7 @@ pub fn push_stack_unchecked(&mut self, value: ScriptValue) {
+         self.stack.push(value);
+     }
+ 
++    #[inline]
+     pub(crate) fn push_call_frame(&mut self, call: CallFrame) -> bool {
+         if self
+             .call_frame_limit
+@@ -329,6 +340,7 @@ pub(crate) fn push_call_frame(&mut self, call: CallFrame) -> bool {
+         true
+     }
+ 
++    #[inline]
+     pub(crate) fn take_stack_limit_exceeded(&mut self) -> bool {
+         std::mem::take(&mut self.stack_limit_exceeded)
+     }
+@@ -348,14 +360,17 @@ pub(crate) fn consume_instruction(&mut self) -> bool {
+         true
+     }
+ 
++    #[inline]
+     pub(crate) fn take_call_frame_limit_exceeded(&mut self) -> bool {
+         std::mem::take(&mut self.call_frame_limit_exceeded)
+     }
+ 
++    #[inline]
+     pub(crate) fn has_execution_limit_exceeded(&self) -> bool {
+         self.stack_limit_exceeded || self.call_frame_limit_exceeded
+     }
+ 
++    #[inline]
+     pub fn call_has_me(&self) -> bool {
+         self.calls
+             .last()
+@@ -363,6 +378,7 @@ pub fn call_has_me(&self) -> bool {
+             .unwrap_or(false)
+     }
+ 
++    #[inline]
+     pub fn call_has_try(&self) -> bool {
+         self.calls
+             .last()
+@@ -372,6 +388,7 @@ pub fn call_has_try(&self) -> bool {
+ 
+     /// Whether any active call frame (not just the innermost) owns a try
+     /// frame, so an error in a nested script call can unwind to it.
++    #[inline]
+     pub(crate) fn call_stack_has_try(&self) -> bool {
+         self.calls
+             .iter()
+@@ -380,10 +397,12 @@ pub(crate) fn call_stack_has_try(&self) -> bool {
+     }
+ 
+     // lets resolve an id to a ScriptValue
++    #[inline]
+     pub fn scope_value(&mut self, heap: &ScriptHeap, id: LiveId) -> ScriptValue {
+         heap.scope_value(*self.scopes.last().unwrap(), id.into(), self.trap.pass())
+     }
+ 
++    #[inline]
+     pub fn set_scope_value(
+         &mut self,
+         heap: &mut ScriptHeap,
+@@ -398,6 +417,7 @@ pub fn set_scope_value(
+         )
+     }
+ 
++    #[inline]
+     pub fn def_scope_value(&mut self, heap: &mut ScriptHeap, id: LiveId, value: ScriptValue) {
+         // alright if we are shadowing a value, we need to make a new scope
+         if let Some(new_scope) = heap.def_scope_value(*self.scopes.last().unwrap(), id, value) {
+diff --git a/platform/script/src/value.rs b/platform/script/src/value.rs
+index a91e0e56d..cc2beed63 100644
+--- a/platform/script/src/value.rs
++++ b/platform/script/src/value.rs
+@@ -32,16 +32,19 @@ impl ScriptIp {
+         index: u32::MAX,
+     };
+ 
++    #[inline]
+     pub const fn is_unknown(&self) -> bool {
+         self.body == u16::MAX && self.index == u32::MAX
+     }
+ 
++    #[inline]
+     pub const fn from_u40(value: u64) -> Self {
+         Self {
+             body: ((value >> 28) & 0xFFF) as u16,
+             index: ((value) & 0xFFF_FFFF) as u32,
+         }
+     }
++    #[inline]
+     pub const fn to_u40(&self) -> u64 {
+         ((self.body as u64) << 28) | self.index as u64
+     }
+@@ -70,27 +73,33 @@ pub struct ScriptPod {
+ 
+ impl ScriptPod {
+     #[cfg(feature = "check_gen")]
++    #[inline]
+     pub const fn new(index: u32, generation: Generation) -> Self {
+         Self { index, generation }
+     }
+     #[cfg(not(feature = "check_gen"))]
++    #[inline]
+     pub const fn new(index: u32, _generation: Generation) -> Self {
+         Self { index }
+     }
++    #[inline]
+     pub fn index(&self) -> u32 {
+         self.index
+     }
+     #[cfg(feature = "check_gen")]
++    #[inline]
+     pub fn generation(&self) -> Generation {
+         self.generation
+     }
+     #[cfg(not(feature = "check_gen"))]
++    #[inline]
+     pub fn generation(&self) -> Generation {
+         ()
+     }
+ }
+ 
+ impl From<ScriptPod> for ScriptValue {
++    #[inline]
+     fn from(v: ScriptPod) -> Self {
+         ScriptValue::from_pod(v)
+     }
+@@ -128,21 +137,26 @@ impl ScriptObject {
+     #[cfg(not(feature = "check_gen"))]
+     pub const ZERO: ScriptObject = ScriptObject { index: 0 };
+     #[cfg(feature = "check_gen")]
++    #[inline]
+     pub const fn new(index: u32, generation: Generation) -> Self {
+         Self { index, generation }
+     }
+     #[cfg(not(feature = "check_gen"))]
++    #[inline]
+     pub const fn new(index: u32, _generation: Generation) -> Self {
+         Self { index }
+     }
++    #[inline]
+     pub fn index(&self) -> u32 {
+         self.index
+     }
+     #[cfg(feature = "check_gen")]
++    #[inline]
+     pub fn generation(&self) -> Generation {
+         self.generation
+     }
+     #[cfg(not(feature = "check_gen"))]
++    #[inline]
+     pub fn generation(&self) -> Generation {
+         ()
+     }
+@@ -150,21 +164,26 @@ pub fn generation(&self) -> Generation {
+ 
+ impl ScriptArray {
+     #[cfg(feature = "check_gen")]
++    #[inline]
+     pub const fn new(index: u32, generation: Generation) -> Self {
+         Self { index, generation }
+     }
+     #[cfg(not(feature = "check_gen"))]
++    #[inline]
+     pub const fn new(index: u32, _generation: Generation) -> Self {
+         Self { index }
+     }
++    #[inline]
+     pub fn index(&self) -> u32 {
+         self.index
+     }
+     #[cfg(feature = "check_gen")]
++    #[inline]
+     pub fn generation(&self) -> Generation {
+         self.generation
+     }
+     #[cfg(not(feature = "check_gen"))]
++    #[inline]
+     pub fn generation(&self) -> Generation {
+         ()
+     }
+@@ -220,6 +239,7 @@ fn new(index: u32, generation: Generation) -> Self {
+ pub struct ScriptHandleType(pub(crate) u8);
+ 
+ impl ScriptHandleType {
++    #[inline]
+     pub fn to_redux(&self) -> ScriptTypeRedux {
+         ScriptTypeRedux(ScriptValueType::REDUX_HANDLE_FIRST.0 + self.0)
+     }
+@@ -229,6 +249,7 @@ pub fn to_redux(&self) -> ScriptTypeRedux {
+ pub struct ScriptTypeRedux(u8);
+ 
+ impl ScriptTypeRedux {
++    #[inline]
+     pub(crate) fn to_index(&self) -> usize {
+         self.0 as usize
+     }
+@@ -293,6 +314,7 @@ impl ScriptHandle {
+         index: 0,
+     };
+     #[cfg(feature = "check_gen")]
++    #[inline]
+     pub const fn new(ty: ScriptHandleType, index: u32, generation: Generation) -> Self {
+         Self {
+             ty,
+@@ -301,17 +323,21 @@ pub const fn new(ty: ScriptHandleType, index: u32, generation: Generation) -> Se
+         }
+     }
+     #[cfg(not(feature = "check_gen"))]
++    #[inline]
+     pub const fn new(ty: ScriptHandleType, index: u32, _generation: Generation) -> Self {
+         Self { ty, index }
+     }
++    #[inline]
+     pub fn index(&self) -> u32 {
+         self.index
+     }
+     #[cfg(feature = "check_gen")]
++    #[inline]
+     pub fn generation(&self) -> Generation {
+         self.generation
+     }
+     #[cfg(not(feature = "check_gen"))]
++    #[inline]
+     pub fn generation(&self) -> Generation {
+         ()
+     }
+@@ -348,18 +374,21 @@ fn new(index: u32, _generation: Generation) -> Self {
+ }
+ 
+ impl From<ScriptObject> for ScriptValue {
++    #[inline]
+     fn from(v: ScriptObject) -> Self {
+         ScriptValue::from_object(v)
+     }
+ }
+ 
+ impl From<ScriptArray> for ScriptValue {
++    #[inline]
+     fn from(v: ScriptArray) -> Self {
+         ScriptValue::from_array(v)
+     }
+ }
+ 
+ impl From<ScriptValue> for ScriptObject {
++    #[inline]
+     fn from(v: ScriptValue) -> Self {
+         if let Some(obj) = v.as_object() {
+             obj
+@@ -370,18 +399,21 @@ fn from(v: ScriptValue) -> Self {
+ }
+ 
+ impl From<ScriptHandle> for ScriptValue {
++    #[inline]
+     fn from(v: ScriptHandle) -> Self {
+         ScriptValue::from_handle(v)
+     }
+ }
+ 
+ impl From<ScriptPodType> for ScriptValue {
++    #[inline]
+     fn from(v: ScriptPodType) -> Self {
+         ScriptValue::from_pod_type(v)
+     }
+ }
+ 
+ impl From<ScriptValue> for ScriptHandle {
++    #[inline]
+     fn from(v: ScriptValue) -> Self {
+         if let Some(obj) = v.as_handle() {
+             obj
+@@ -400,21 +432,26 @@ pub struct ScriptRegex {
+ 
+ impl ScriptRegex {
+     #[cfg(feature = "check_gen")]
++    #[inline]
+     pub const fn new(index: u32, generation: Generation) -> Self {
+         Self { index, generation }
+     }
+     #[cfg(not(feature = "check_gen"))]
++    #[inline]
+     pub const fn new(index: u32, _generation: Generation) -> Self {
+         Self { index }
+     }
++    #[inline]
+     pub fn index(&self) -> u32 {
+         self.index
+     }
+     #[cfg(feature = "check_gen")]
++    #[inline]
+     pub fn generation(&self) -> Generation {
+         self.generation
+     }
+     #[cfg(not(feature = "check_gen"))]
++    #[inline]
+     pub fn generation(&self) -> Generation {
+         ()
+     }
+@@ -436,6 +473,7 @@ fn new(index: u32, generation: Generation) -> Self {
+ }
+ 
+ impl From<ScriptRegex> for ScriptValue {
++    #[inline]
+     fn from(v: ScriptRegex) -> Self {
+         ScriptValue::from_regex(v)
+     }
+@@ -450,18 +488,22 @@ pub struct ScriptString {
+ 
+ impl ScriptString {
+     #[cfg(feature = "check_gen")]
++    #[inline]
+     pub const fn new(index: u32, generation: Generation) -> Self {
+         Self { index, generation }
+     }
+     #[cfg(not(feature = "check_gen"))]
++    #[inline]
+     pub const fn new(index: u32, _generation: Generation) -> Self {
+         Self { index }
+     }
+     #[cfg(feature = "check_gen")]
++    #[inline]
+     pub fn generation(&self) -> Generation {
+         self.generation
+     }
+     #[cfg(not(feature = "check_gen"))]
++    #[inline]
+     pub fn generation(&self) -> Generation {
+         ()
+     }
+@@ -483,114 +525,133 @@ fn new(index: u32, generation: Generation) -> Self {
+ }
+ 
+ impl From<ScriptString> for ScriptValue {
++    #[inline]
+     fn from(v: ScriptString) -> Self {
+         ScriptValue::from_string(v)
+     }
+ }
+ 
+ impl From<f64> for ScriptValue {
++    #[inline]
+     fn from(v: f64) -> Self {
+         ScriptValue::from_f64(v)
+     }
+ }
+ 
+ impl From<ScriptValue> for f64 {
++    #[inline]
+     fn from(v: ScriptValue) -> Self {
+         v.as_f64().unwrap_or(0.0) as _
+     }
+ }
+ 
+ impl From<u32> for ScriptValue {
++    #[inline]
+     fn from(v: u32) -> Self {
+         ScriptValue::from_f64(v as f64)
+     }
+ }
+ 
+ impl From<ScriptValue> for u32 {
++    #[inline]
+     fn from(v: ScriptValue) -> Self {
+         v.as_f64().unwrap_or(0.0) as _
+     }
+ }
+ 
+ impl From<i32> for ScriptValue {
++    #[inline]
+     fn from(v: i32) -> Self {
+         ScriptValue::from_f64(v as f64)
+     }
+ }
+ 
+ impl From<ScriptValue> for i32 {
++    #[inline]
+     fn from(v: ScriptValue) -> Self {
+         v.as_f64().unwrap_or(0.0) as _
+     }
+ }
+ 
+ impl From<u16> for ScriptValue {
++    #[inline]
+     fn from(v: u16) -> Self {
+         ScriptValue::from_f64(v as f64)
+     }
+ }
+ 
+ impl From<ScriptValue> for u16 {
++    #[inline]
+     fn from(v: ScriptValue) -> Self {
+         v.as_f64().unwrap_or(0.0) as _
+     }
+ }
+ 
+ impl From<u8> for ScriptValue {
++    #[inline]
+     fn from(v: u8) -> Self {
+         ScriptValue::from_f64(v as f64)
+     }
+ }
+ 
+ impl From<ScriptValue> for u8 {
++    #[inline]
+     fn from(v: ScriptValue) -> Self {
+         v.as_f64().unwrap_or(0.0) as _
+     }
+ }
+ 
+ impl From<f32> for ScriptValue {
++    #[inline]
+     fn from(v: f32) -> Self {
+         ScriptValue::from_f64(v as f64)
+     }
+ }
+ 
+ impl From<ScriptValue> for f32 {
++    #[inline]
+     fn from(v: ScriptValue) -> Self {
+         v.as_f64().unwrap_or(0.0) as _
+     }
+ }
+ 
+ impl From<usize> for ScriptValue {
++    #[inline]
+     fn from(v: usize) -> Self {
+         ScriptValue::from_f64(v as f64)
+     }
+ }
+ 
+ impl From<ScriptValue> for usize {
++    #[inline]
+     fn from(v: ScriptValue) -> Self {
+         v.as_f64().unwrap_or(0.0) as _
+     }
+ }
+ 
+ impl From<bool> for ScriptValue {
++    #[inline]
+     fn from(v: bool) -> Self {
+         ScriptValue::from_bool(v)
+     }
+ }
+ 
+ impl From<LiveId> for ScriptValue {
++    #[inline]
+     fn from(v: LiveId) -> Self {
+         ScriptValue::from_id(v)
+     }
+ }
+ 
+ impl From<&LiveId> for ScriptValue {
++    #[inline]
+     fn from(v: &LiveId) -> Self {
+         ScriptValue::from_id(*v)
+     }
+ }
+ 
+ impl From<Opcode> for ScriptValue {
++    #[inline]
+     fn from(v: Opcode) -> Self {
+         ScriptValue::from_opcode(v)
+     }
+@@ -680,9 +741,11 @@ impl ScriptValueType {
+     pub const REDUX_ID: ScriptTypeRedux = ScriptTypeRedux(18);
+     pub const REDUX_HANDLE_FIRST: ScriptTypeRedux = ScriptTypeRedux(19);
+ 
++    #[inline]
+     pub const fn to_u64(&self) -> u64 {
+         ((self.0 as u64) << 40) | 0xFFFF_0000_0000_0000
+     }
++    #[inline]
+     pub const fn from_u64(val: u64) -> Self {
+         let val = ((val >> 40) & 0xff) as u8;
+         if val > Self::ID.0 {
+@@ -782,6 +845,7 @@ pub trait IdExt {
+ }
+ 
+ impl IdExt for LiveId {
++    #[inline]
+     fn escape(&self) -> ScriptValue {
+         ScriptValue::from_escaped_id(*self)
+     }
+@@ -839,6 +903,7 @@ impl ScriptValue {
+ 
+     pub const ESCAPED_ID: u64 = 0x0000_4000_0000_0000;
+ 
++    #[inline]
+     pub const fn value_type(&self) -> ScriptValueType {
+         if self.is_non_nan_number() {
+             return ScriptValueType::F64;
+@@ -869,15 +934,18 @@ pub const fn value_type(&self) -> ScriptValueType {
+     err_fn!(script_err_io, ERR_IO); // file system, child process
+     err_fn!(script_err_limit, ERR_LIMIT); // resource limits
+ 
++    #[inline]
+     pub const fn raw(&self) -> u64 {
+         self.0
+     }
+ 
++    #[inline]
+     pub const fn is_err(&self) -> bool {
+         (self.0 & Self::TYPE_MASK) >= ScriptValueType::ERR_FIRST.to_u64()
+             && (self.0 & Self::TYPE_MASK) <= ScriptValueType::ERR_LAST.to_u64()
+     }
+ 
++    #[inline]
+     pub const fn as_err(&self) -> Option<ValueError> {
+         if self.is_err() {
+             Some(ValueError {
+@@ -893,6 +961,7 @@ pub const fn as_err(&self) -> Option<ValueError> {
+ 
+     pub const TYPE_OPCODE: u64 = ScriptValueType::OPCODE.to_u64();
+ 
++    #[inline]
+     pub const fn from_opcode(op: Opcode) -> Self {
+         Self(Self::TYPE_OPCODE | (op.0 as u64) << 32)
+     }
+@@ -902,6 +971,7 @@ pub const fn is_opcode(&self) -> bool {
+         (self.0 & Self::TYPE_MASK) == Self::TYPE_OPCODE
+     }
+ 
++    #[inline]
+     pub const fn from_opcode_args(op: Opcode, args: OpcodeArgs) -> Self {
+         Self(Self::TYPE_OPCODE | (op.0 as u64) << 32 | (args.0 as u64))
+     }
+@@ -916,24 +986,28 @@ pub const fn as_opcode(&self) -> Option<(Opcode, OpcodeArgs)> {
+         None
+     }
+ 
++    #[inline]
+     pub const fn set_opcode_args(&mut self, args: OpcodeArgs) {
+         if self.is_opcode() {
+             self.0 = (self.0 & 0xffff_ffff_0000_0000) | (args.0 as u64);
+         }
+     }
+ 
++    #[inline]
+     pub const fn set_opcode_args_pop_to_me(&mut self) {
+         if self.is_opcode() {
+             self.0 |= OpcodeArgs::POP_TO_ME_FLAG as u64;
+         }
+     }
+ 
++    #[inline]
+     pub const fn clear_opcode_args_pop_to_me(&mut self) {
+         if self.is_opcode() {
+             self.0 &= !(OpcodeArgs::POP_TO_ME_FLAG as u64);
+         }
+     }
+ 
++    #[inline]
+     pub const fn has_opcode_args_pop_to_me(&self) -> bool {
+         if self.is_opcode() {
+             self.0 & (OpcodeArgs::POP_TO_ME_FLAG as u64) != 0
+@@ -942,6 +1016,7 @@ pub const fn has_opcode_args_pop_to_me(&self) -> bool {
+         }
+     }
+ 
++    #[inline]
+     pub const fn is_assign_opcode(&self) -> bool {
+         if self.is_opcode() {
+             let code = Opcode(((self.0 >> 32) & 0xff) as u8);
+@@ -950,6 +1025,7 @@ pub const fn is_assign_opcode(&self) -> bool {
+         false
+     }
+ 
++    #[inline]
+     pub const fn is_let_opcode(&self) -> bool {
+         if self.is_opcode() {
+             let code = Opcode(((self.0 >> 32) & 0xff) as u8);
+@@ -963,12 +1039,14 @@ pub const fn is_let_opcode(&self) -> bool {
+ 
+     // NIL
+ 
++    #[inline]
+     pub const fn is_nil(&self) -> bool {
+         (self.0 & Self::TYPE_MASK) == Self::TYPE_NIL
+     }
+ 
+     // number
+ 
++    #[inline]
+     pub const fn is_number(&self) -> bool {
+         self.0 <= Self::TYPE_NUMBER_MAX
+     }
+@@ -997,14 +1075,17 @@ pub const fn as_number(&self) -> Option<f64> {
+ 
+     // f32
+ 
++    #[inline]
+     pub const fn from_f32(v: f32) -> Self {
+         Self(v.to_bits() as u64 | Self::TYPE_F32)
+     }
+ 
++    #[inline]
+     pub const fn is_f32(&self) -> bool {
+         (self.0 & Self::TYPE_MASK) == Self::TYPE_F32
+     }
+ 
++    #[inline]
+     pub const fn as_f32(&self) -> Option<f32> {
+         if self.is_f32() {
+             return Some(f32::from_bits(self.0 as u32));
+@@ -1014,14 +1095,17 @@ pub const fn as_f32(&self) -> Option<f32> {
+ 
+     // f16
+ 
++    #[inline]
+     pub const fn from_f16(v: f32) -> Self {
+         Self(v.to_bits() as u64 | Self::TYPE_F16)
+     }
+ 
++    #[inline]
+     pub const fn is_f16(&self) -> bool {
+         (self.0 & Self::TYPE_MASK) == Self::TYPE_F16
+     }
+ 
++    #[inline]
+     pub const fn as_f16(&self) -> Option<f32> {
+         if self.is_f16() {
+             return Some(f32::from_bits(self.0 as u32));
+@@ -1033,14 +1117,17 @@ pub const fn as_f16(&self) -> Option<f32> {
+ 
+     // f32
+ 
++    #[inline]
+     pub const fn from_u40(v: u64) -> Self {
+         Self((v & 0xFF_FFFF_FFFF) as u64 | Self::TYPE_U40)
+     }
+ 
++    #[inline]
+     pub const fn is_u40(&self) -> bool {
+         (self.0 & Self::TYPE_MASK) == Self::TYPE_U40
+     }
+ 
++    #[inline]
+     pub const fn as_u40(&self) -> Option<u64> {
+         if self.is_u40() {
+             return Some(self.0 & 0xFF_FFFF_FFFF);
+@@ -1048,14 +1135,17 @@ pub const fn as_u40(&self) -> Option<u64> {
+         None
+     }
+ 
++    #[inline]
+     pub const fn from_u32(v: u32) -> Self {
+         Self(v as u64 | Self::TYPE_U32)
+     }
+ 
++    #[inline]
+     pub const fn is_u32(&self) -> bool {
+         (self.0 & Self::TYPE_MASK) == Self::TYPE_U32
+     }
+ 
++    #[inline]
+     pub const fn as_u32(&self) -> Option<u32> {
+         if self.is_u32() {
+             return Some(self.0 as u32);
+@@ -1063,14 +1153,17 @@ pub const fn as_u32(&self) -> Option<u32> {
+         None
+     }
+ 
++    #[inline]
+     pub const fn from_i32(v: i32) -> Self {
+         Self(v as u64 | Self::TYPE_I32)
+     }
+ 
++    #[inline]
+     pub const fn is_i32(&self) -> bool {
+         (self.0 & Self::TYPE_MASK) == Self::TYPE_I32
+     }
+ 
++    #[inline]
+     pub const fn as_i32(&self) -> Option<i32> {
+         if self.is_i32() {
+             return Some(self.0 as i32);
+@@ -1097,6 +1190,7 @@ pub const fn as_f64(&self) -> Option<f64> {
+         None
+     }
+ 
++    #[inline]
+     pub const fn as_f64_traced_nan(&self) -> Option<ScriptIp> {
+         if self.is_nan() {
+             Some(ScriptIp::from_u40(self.0))
+@@ -1124,12 +1218,14 @@ pub const fn is_f64(&self) -> bool {
+         self.0 <= Self::TYPE_TRACED_NAN_MAX
+     }
+ 
++    #[inline]
+     pub const fn is_non_nan_number(&self) -> bool {
+         self.0 < Self::TYPE_NAN
+     }
+ 
+     /// Checked index for language reads and writes; unlike `as_index`, this
+     /// cannot truncate, saturate, or turn a non-number into item zero.
++    #[inline]
+     pub fn checked_index(&self) -> Option<usize> {
+         let value = self.as_number()?;
+         (value.is_finite() && value >= 0.0 && value.fract() == 0.0 && value < usize::MAX as f64)
+@@ -1161,10 +1257,12 @@ pub const fn as_index(&self) -> usize {
+         0
+     }
+ 
++    #[inline]
+     pub const fn is_index(&self) -> bool {
+         self.0 <= Self::TYPE_NIL
+     }
+ 
++    #[inline]
+     pub const fn is_nan(&self) -> bool {
+         (self.0 & Self::TYPE_MASK) == Self::TYPE_NAN
+     }
+@@ -1173,19 +1271,23 @@ pub const fn is_nan(&self) -> bool {
+     // Layout: bits 0-31 = index, bits 32-39 = generation (when check_gen enabled)
+ 
+     #[cfg(feature = "check_gen")]
++    #[inline]
+     pub const fn from_object(ptr: ScriptObject) -> Self {
+         Self(ptr.index as u64 | ((ptr.generation as u64) << 32) | Self::TYPE_OBJECT)
+     }
+     #[cfg(not(feature = "check_gen"))]
++    #[inline]
+     pub const fn from_object(ptr: ScriptObject) -> Self {
+         Self(ptr.index as u64 | Self::TYPE_OBJECT)
+     }
+ 
++    #[inline]
+     pub const fn is_object(&self) -> bool {
+         (self.0 & Self::TYPE_MASK) == Self::TYPE_OBJECT
+     }
+ 
+     #[cfg(feature = "check_gen")]
++    #[inline]
+     pub const fn as_object(&self) -> Option<ScriptObject> {
+         if self.is_object() {
+             return Some(ScriptObject {
+@@ -1196,6 +1298,7 @@ pub const fn as_object(&self) -> Option<ScriptObject> {
+         None
+     }
+     #[cfg(not(feature = "check_gen"))]
++    #[inline]
+     pub const fn as_object(&self) -> Option<ScriptObject> {
+         if self.is_object() {
+             return Some(ScriptObject {
+@@ -1207,14 +1310,17 @@ pub const fn as_object(&self) -> Option<ScriptObject> {
+ 
+     // PodType
+ 
++    #[inline]
+     pub const fn from_pod_type(ptr: ScriptPodType) -> Self {
+         Self(ptr.index as u64 | Self::TYPE_POD_TYPE)
+     }
+ 
++    #[inline]
+     pub const fn is_pod_type(&self) -> bool {
+         (self.0 & Self::TYPE_MASK) == Self::TYPE_POD_TYPE
+     }
+ 
++    #[inline]
+     pub const fn as_pod_type(&self) -> Option<ScriptPodType> {
+         if self.is_pod_type() {
+             return Some(ScriptPodType {
+@@ -1228,19 +1334,23 @@ pub const fn as_pod_type(&self) -> Option<ScriptPodType> {
+     // Layout: bits 0-31 = index, bits 32-39 = generation (when check_gen enabled)
+ 
+     #[cfg(feature = "check_gen")]
++    #[inline]
+     pub const fn from_pod(ptr: ScriptPod) -> Self {
+         Self(ptr.index as u64 | ((ptr.generation as u64) << 32) | Self::TYPE_POD)
+     }
+     #[cfg(not(feature = "check_gen"))]
++    #[inline]
+     pub const fn from_pod(ptr: ScriptPod) -> Self {
+         Self(ptr.index as u64 | Self::TYPE_POD)
+     }
+ 
++    #[inline]
+     pub const fn is_pod(&self) -> bool {
+         (self.0 & Self::TYPE_MASK) == Self::TYPE_POD
+     }
+ 
+     #[cfg(feature = "check_gen")]
++    #[inline]
+     pub const fn as_pod(&self) -> Option<ScriptPod> {
+         if self.is_pod() {
+             return Some(ScriptPod {
+@@ -1251,6 +1361,7 @@ pub const fn as_pod(&self) -> Option<ScriptPod> {
+         None
+     }
+     #[cfg(not(feature = "check_gen"))]
++    #[inline]
+     pub const fn as_pod(&self) -> Option<ScriptPod> {
+         if self.is_pod() {
+             return Some(ScriptPod {
+@@ -1265,6 +1376,7 @@ pub const fn as_pod(&self) -> Option<ScriptPod> {
+     // Handle type is encoded in the TYPE_MASK (different type tags per handle type)
+ 
+     #[cfg(feature = "check_gen")]
++    #[inline]
+     pub const fn from_handle(ptr: ScriptHandle) -> Self {
+         Self(
+             ptr.index as u64
+@@ -1273,16 +1385,19 @@ pub const fn from_handle(ptr: ScriptHandle) -> Self {
+         )
+     }
+     #[cfg(not(feature = "check_gen"))]
++    #[inline]
+     pub const fn from_handle(ptr: ScriptHandle) -> Self {
+         Self(ptr.index as u64 | (Self::TYPE_HANDLE_FIRST + ((ptr.ty.0 as u64) << 40)))
+     }
+ 
++    #[inline]
+     pub const fn is_handle(&self) -> bool {
+         let ty = self.0 & Self::TYPE_MASK;
+         ty >= Self::TYPE_HANDLE_FIRST && ty <= Self::TYPE_HANDLE_LAST
+     }
+ 
+     #[cfg(feature = "check_gen")]
++    #[inline]
+     pub const fn as_handle(&self) -> Option<ScriptHandle> {
+         if self.is_handle() {
+             return Some(ScriptHandle {
+@@ -1296,6 +1411,7 @@ pub const fn as_handle(&self) -> Option<ScriptHandle> {
+         None
+     }
+     #[cfg(not(feature = "check_gen"))]
++    #[inline]
+     pub const fn as_handle(&self) -> Option<ScriptHandle> {
+         if self.is_handle() {
+             return Some(ScriptHandle {
+@@ -1310,6 +1426,7 @@ pub const fn as_handle(&self) -> Option<ScriptHandle> {
+ 
+     // bool
+ 
++    #[inline]
+     pub const fn from_bool(val: bool) -> Self {
+         if val {
+             Self::TRUE
+@@ -1318,6 +1435,7 @@ pub const fn from_bool(val: bool) -> Self {
+         }
+     }
+ 
++    #[inline]
+     pub const fn as_bool(&self) -> Option<bool> {
+         if self.is_bool() {
+             return Some(self.0 == Self::TRUE.0);
+@@ -1325,16 +1443,19 @@ pub const fn as_bool(&self) -> Option<bool> {
+         None
+     }
+ 
++    #[inline]
+     pub const fn is_bool(&self) -> bool {
+         (self.0 & Self::TYPE_MASK) == Self::TYPE_BOOL
+     }
+ 
+     // color
+ 
++    #[inline]
+     pub const fn from_color(val: u32) -> Self {
+         Self(val as u64 | Self::TYPE_COLOR)
+     }
+ 
++    #[inline]
+     pub const fn as_color(&self) -> Option<u32> {
+         if self.is_color() {
+             return Some((self.0 & 0xffff_ffff) as u32);
+@@ -1342,6 +1463,7 @@ pub const fn as_color(&self) -> Option<u32> {
+         None
+     }
+ 
++    #[inline]
+     pub const fn is_color(&self) -> bool {
+         (self.0 & Self::TYPE_MASK) == Self::TYPE_COLOR
+     }
+@@ -1350,19 +1472,23 @@ pub const fn is_color(&self) -> bool {
+     // Layout: bits 0-31 = index, bits 32-39 = generation (when check_gen enabled)
+ 
+     #[cfg(feature = "check_gen")]
++    #[inline]
+     pub const fn from_array(val: ScriptArray) -> Self {
+         Self((val.index as u64) | ((val.generation as u64) << 32) | Self::TYPE_ARRAY)
+     }
+     #[cfg(not(feature = "check_gen"))]
++    #[inline]
+     pub const fn from_array(val: ScriptArray) -> Self {
+         Self((val.index as u64) | Self::TYPE_ARRAY)
+     }
+ 
++    #[inline]
+     pub const fn is_array(&self) -> bool {
+         (self.0 & Self::TYPE_MASK) == Self::TYPE_ARRAY
+     }
+ 
+     #[cfg(feature = "check_gen")]
++    #[inline]
+     pub const fn as_array(&self) -> Option<ScriptArray> {
+         if self.is_array() {
+             Some(ScriptArray {
+@@ -1374,6 +1500,7 @@ pub const fn as_array(&self) -> Option<ScriptArray> {
+         }
+     }
+     #[cfg(not(feature = "check_gen"))]
++    #[inline]
+     pub const fn as_array(&self) -> Option<ScriptArray> {
+         if self.is_array() {
+             Some(ScriptArray {
+@@ -1386,18 +1513,22 @@ pub const fn as_array(&self) -> Option<ScriptArray> {
+ 
+     // id
+ 
++    #[inline]
+     pub const fn from_id(val: LiveId) -> Self {
+         Self(val.0 | Self::TYPE_ID)
+     }
+ 
++    #[inline]
+     pub const fn is_id(&self) -> bool {
+         self.0 >= Self::TYPE_ID
+     }
+ 
++    #[inline]
+     pub const fn from_escaped_id(val: LiveId) -> Self {
+         Self(val.0 | Self::TYPE_ID | Self::ESCAPED_ID)
+     }
+ 
++    #[inline]
+     pub const fn as_id(&self) -> Option<LiveId> {
+         if self.is_id() {
+             return Some(LiveId(self.0 & 0x0000_3fff_ffff_ffff));
+@@ -1405,6 +1536,7 @@ pub const fn as_id(&self) -> Option<LiveId> {
+         None
+     }
+ 
++    #[inline]
+     pub const fn is_escaped_id(&self) -> bool {
+         self.0 >= Self::TYPE_ID | Self::ESCAPED_ID
+     }
+@@ -1413,15 +1545,18 @@ pub const fn is_escaped_id(&self) -> bool {
+     // Layout: bits 0-31 = index, bits 32-39 = generation (when check_gen enabled)
+ 
+     #[cfg(feature = "check_gen")]
++    #[inline]
+     pub const fn from_regex(ptr: ScriptRegex) -> Self {
+         Self(ptr.index as u64 | ((ptr.generation as u64) << 32) | Self::TYPE_REGEX)
+     }
+     #[cfg(not(feature = "check_gen"))]
++    #[inline]
+     pub const fn from_regex(ptr: ScriptRegex) -> Self {
+         Self(ptr.index as u64 | Self::TYPE_REGEX)
+     }
+ 
+     #[cfg(feature = "check_gen")]
++    #[inline]
+     pub const fn as_regex(&self) -> Option<ScriptRegex> {
+         if self.is_regex() {
+             return Some(ScriptRegex {
+@@ -1432,6 +1567,7 @@ pub const fn as_regex(&self) -> Option<ScriptRegex> {
+         None
+     }
+     #[cfg(not(feature = "check_gen"))]
++    #[inline]
+     pub const fn as_regex(&self) -> Option<ScriptRegex> {
+         if self.is_regex() {
+             return Some(ScriptRegex {
+@@ -1441,6 +1577,7 @@ pub const fn as_regex(&self) -> Option<ScriptRegex> {
+         None
+     }
+ 
++    #[inline]
+     pub const fn is_regex(&self) -> bool {
+         (self.0 & Self::TYPE_MASK) == Self::TYPE_REGEX
+     }
+@@ -1449,15 +1586,18 @@ pub const fn is_regex(&self) -> bool {
+     // Layout: bits 0-31 = index, bits 32-39 = generation (when check_gen enabled)
+ 
+     #[cfg(feature = "check_gen")]
++    #[inline]
+     pub const fn from_string(ptr: ScriptString) -> Self {
+         Self(ptr.index as u64 | ((ptr.generation as u64) << 32) | Self::TYPE_STRING)
+     }
+     #[cfg(not(feature = "check_gen"))]
++    #[inline]
+     pub const fn from_string(ptr: ScriptString) -> Self {
+         Self(ptr.index as u64 | Self::TYPE_STRING)
+     }
+ 
+     #[cfg(feature = "check_gen")]
++    #[inline]
+     pub const fn as_string(&self) -> Option<ScriptString> {
+         if self.is_string() {
+             return Some(ScriptString {
+@@ -1468,6 +1608,7 @@ pub const fn as_string(&self) -> Option<ScriptString> {
+         None
+     }
+     #[cfg(not(feature = "check_gen"))]
++    #[inline]
+     pub const fn as_string(&self) -> Option<ScriptString> {
+         if self.is_string() {
+             return Some(ScriptString {
+@@ -1477,10 +1618,12 @@ pub const fn as_string(&self) -> Option<ScriptString> {
+         None
+     }
+ 
++    #[inline]
+     pub const fn is_string(&self) -> bool {
+         (self.0 & Self::TYPE_MASK) == Self::TYPE_STRING
+     }
+ 
++    #[inline]
+     pub const fn is_string_like(&self) -> bool {
+         let ty = self.0 & Self::TYPE_MASK;
+         ty >= Self::TYPE_STRING && ty < Self::TYPE_INLINE_STRING_END
+@@ -1573,10 +1716,12 @@ pub fn as_inline_string<R, F: FnOnce(&str) -> R>(&self, f: F) -> Option<R> {
+         }
+     }
+ 
++    #[inline]
+     pub const fn inline_string_not_empty(&self) -> bool {
+         self.0 >= Self::TYPE_INLINE_STRING_1 && self.0 <= Self::TYPE_INLINE_STRING_END
+     }
+ 
++    #[inline]
+     pub const fn is_inline_string(&self) -> bool {
+         self.0 >= Self::TYPE_INLINE_STRING_0 && self.0 < Self::TYPE_INLINE_STRING_END
+     }
+diff --git a/platform/src/os/apple/ios/ios.rs b/platform/src/os/apple/ios/ios.rs
+index e13b6b6a1..b0fe67d31 100644
+--- a/platform/src/os/apple/ios/ios.rs
++++ b/platform/src/os/apple/ios/ios.rs
+@@ -961,6 +961,7 @@ fn ios_event_callback(&mut self, event: IosEvent, metal_cx: &mut MetalCx) -> Eve
+                 }
+                 // ok here we send out to all our childprocesses
+                 self.handle_repaint(metal_cx);
++                metal_cx.submit_frame();
+ 
+                 // Run script-VM garbage collection at a safe point after paint, matching
+                 // the macOS backend, so the script object heap doesn't grow without bound:
+diff --git a/platform/src/os/apple/macos/macos.rs b/platform/src/os/apple/macos/macos.rs
+index c9250405b..c99f251e1 100644
+--- a/platform/src/os/apple/macos/macos.rs
++++ b/platform/src/os/apple/macos/macos.rs
+@@ -526,6 +526,7 @@ fn present_remote_window(
+         }
+         self.request_remote_window_present(window_id);
+         self.handle_repaint(metal_windows, metal_cx);
++        metal_cx.submit_frame();
+         self.os.remote_present_window = None;
+         crate::trace!(
+             "remote.grab",
+@@ -1517,6 +1518,7 @@ fn cocoa_event_callback(
+ 
+                 // ok here we send out to all our childprocesses
+                 self.handle_repaint(metal_windows, metal_cx);
++                metal_cx.submit_frame();
+             }
+             MacosEvent::MouseDown(mut e, trusted) => {
+                 if !self.windows.is_valid(e.window_id) || !self.windows[e.window_id].is_created {
+diff --git a/platform/src/os/apple/macos/macos_stdin.rs b/platform/src/os/apple/macos/macos_stdin.rs
+index c46b64e85..3efb2776d 100644
+--- a/platform/src/os/apple/macos/macos_stdin.rs
++++ b/platform/src/os/apple/macos/macos_stdin.rs
+@@ -404,6 +404,7 @@ fn stdin_handle_host_to_stdin(
+                     stdin_windows,
+                     self.os.stdin_timers.time_now() as f32,
+                 );
++                metal_cx.submit_frame();
+                 if drew {
+                     stdin_trace(&format!(
+                         "repaint {:.1}",
+diff --git a/platform/src/os/apple/metal.rs b/platform/src/os/apple/metal.rs
+index ca14c535a..990fcfe59 100644
+--- a/platform/src/os/apple/metal.rs
++++ b/platform/src/os/apple/metal.rs
+@@ -1389,11 +1389,16 @@ pub fn draw_pass(
+             }
+         }
+ 
+-        // Frame batching: offscreen texture passes share one retained
+-        // command buffer; window modes flush it. Profiling mode keeps the
+-        // one-buffer-per-pass behavior so per-pass GPU spans stay real.
+-        // Every draw item's instances are copied, or their allocations
+-        // requested, before this pass owns any GPU object.
++        // Reserve this pass's queue position before relocating retained
++        // instances. Copies precede its draws and follow earlier readers.
++        // The pass joins the frame's command buffer (`FrameBatch`); a pass
++        // the atlas diagnostics sample, or one timed on a device without
++        // timestamp sampling, gets a buffer of its own.
++        let pan_diagnostics = std::env::var_os("MAKEPAD_ATLAS_DIAGNOSTICS").is_some();
++        let timed = self.passes[draw_pass_id].gpu_time_query.is_some()
++            || Self::gpu_profile_enabled()
++            || crate::makepad_error_log::trace_enabled("gpu.pass");
++        let (command_buffer, alone, pass_time) = metal_cx.frame_buffer(pan_diagnostics, timed);
+         let upload_cpu_start = Instant::now();
+         if self.upload_instance_buffers(draw_list_id, metal_cx) {
+             // Continue copying retained buffers without invalidating every
+@@ -1423,10 +1428,6 @@ pub fn draw_pass(
+         if let Some(trace) = &metal_cx.present_trace {
+             self.trace_unresident_draws(draw_list_id, trace, metal_cx);
+         }
+-        let pan_diagnostics = std::env::var_os("MAKEPAD_ATLAS_DIAGNOSTICS").is_some();
+-        // One command buffer per pass (frame batching was an opt-in that
+-        // regressed at large window sizes and was never measured: gone, L-F).
+-        let command_buffer: ObjcId = metal_cx.new_command_buffer();
+         if mode.is_drawable().is_some() {
+             if let Some(trace) = &metal_cx.present_trace {
+                 trace.command(metal_cx.current_cb_seq);
+@@ -1463,7 +1464,11 @@ pub fn draw_pass(
+         let pass_width = dpi_factor * pass_rect.size.x;
+         let pass_height = dpi_factor * pass_rect.size.y;
+         let viewport = MTLViewport {originX:0.0,originY:0.0,width:dpi_factor*pass_rect.size.x,height:dpi_factor*pass_rect.size.y,znear:0.0,zfar:1.0};
+-        let mut encoders = PanEncoder::new(command_buffer, render_pass_descriptor, viewport, pan_frame);
++        let clock = match &pass_time {
++            Some(PassTime::Counters(samples, index)) => samples.buffer.as_ref().map(|b| (b.as_id(), *index, samples.clock.stage)),
++            _ => None,
++        };
++        let mut encoders = PanEncoder::new(command_buffer, render_pass_descriptor, viewport, pan_frame, clock);
+         let mut zbias = 0.0;
+         let zbias_step = self.passes[draw_pass_id].zbias_step;
+ 
+@@ -1539,13 +1544,14 @@ pub fn draw_pass(
+             } else {
+                 self.passes[draw_pass_id].debug_name.clone()
+             };
++            let time = pass_time.clone();
+             let () = unsafe {
+                 msg_send![
+                     command_buffer,
+                     addCompletedHandler: &objc_block!(move | command_buffer: ObjcId | {
+-                        let start: f64 = unsafe { msg_send![command_buffer, GPUStartTime] };
+-                        let end: f64 = unsafe { msg_send![command_buffer, GPUEndTime] };
+-                        crate::trace!("gpu.pass", "{} {:.3}ms", name, (end - start) * 1000.0);
++                        if let Some((start, end)) = time.as_ref().and_then(|t| t.span(command_buffer)) {
++                            crate::trace!("gpu.pass", "{} {:.3}ms", name, (end - start) * 1000.0);
++                        }
+                     })
+                 ]
+             };
+@@ -1555,14 +1561,15 @@ pub fn draw_pass(
+             // it now — by completion time the owner may have retagged the
+             // pass for a later frame.
+             let tag = query.current_tag();
++            let time = pass_time.clone();
+             let () = unsafe {
+                 msg_send![
+                     command_buffer,
+                     addCompletedHandler: &objc_block!(move |command_buffer: ObjcId| {
+-                        let start: f64 = unsafe { msg_send![command_buffer, GPUStartTime] };
+-                        let end: f64 = unsafe { msg_send![command_buffer, GPUEndTime] };
+-                        present_gpu_time(end - start);
+-                        query.record_seconds_tagged(tag, end - start);
++                        if let Some((start, end)) = time.as_ref().and_then(|t| t.span(command_buffer)) {
++                            present_gpu_time(end - start);
++                            query.record_seconds_tagged(tag, end - start);
++                        }
+                     })
+                 ]
+             };
+@@ -1588,43 +1595,46 @@ pub fn draw_pass(
+                     None,
+                     pass_window_id,
+                 );
+-                metal_cx.submit_encoded_receipts();
+                 self.commit_command_buffer(
+                     metal_cx,
++                    alone,
+                     screenshot,
+                     None,
+                     gpu_frame_group_key,
+                     true,
+                     gpu_counters,
+                     gpu_profile_label.clone(),
++                    pass_time.clone(),
+                     command_buffer,
+                     Some((drawable, None)),
+                 );
+             }
+             DrawPassMode::Texture => {
+-                metal_cx.submit_encoded_receipts();
+                 self.commit_command_buffer(
+                     metal_cx,
++                    alone,
+                     None,
+                     None,
+                     gpu_frame_group_key,
+                     false,
+                     gpu_counters,
+                     gpu_profile_label.clone(),
++                    pass_time.clone(),
+                     command_buffer,
+                     None,
+                 );
+             }
+             DrawPassMode::StdinTexture => {
+-                metal_cx.submit_encoded_receipts();
+                 self.commit_command_buffer(
+                     metal_cx,
++                    alone,
+                     None,
+                     None,
+                     gpu_frame_group_key,
+                     false,
+                     gpu_counters,
+                     gpu_profile_label.clone(),
++                    pass_time.clone(),
+                     command_buffer,
+                     None,
+                 );
+@@ -1648,12 +1658,14 @@ pub fn draw_pass(
+                 };
+                 self.commit_command_buffer(
+                     metal_cx,
++                    alone,
+                     screenshot,
+                     Some(stdin_frame),
+                     gpu_frame_group_key,
+                     true,
+                     gpu_counters,
+                     gpu_profile_label.clone(),
++                    pass_time.clone(),
+                     command_buffer,
+                     None,
+                 );
+@@ -1689,12 +1701,14 @@ pub fn draw_pass(
+                 }
+                 self.commit_command_buffer(
+                     metal_cx,
++                    alone,
+                     screenshot,
+                     None,
+                     gpu_frame_group_key,
+                     true,
+                     gpu_counters,
+                     gpu_profile_label.clone(),
++                    pass_time.clone(),
+                     command_buffer,
+                     present,
+                 );
+@@ -1713,12 +1727,14 @@ pub fn draw_pass(
+                 );
+                 self.commit_command_buffer(
+                     metal_cx,
++                    alone,
+                     screenshot,
+                     None,
+                     gpu_frame_group_key,
+                     true,
+                     gpu_counters,
+                     gpu_profile_label.clone(),
++                    pass_time.clone(),
+                     command_buffer,
+                     (metal_cx.aborted_repaint != Some(self.repaint_id)).then_some((drawable, None)),
+                 );
+@@ -1839,15 +1855,19 @@ fn gpu_profile_enabled() -> bool {
+         crate::makepad_error_log::trace_enabled("gpu.profile")
+     }
+ 
++    /// The pass's completion work on its command buffer, then `end_pass`:
++    /// a presenting pass (`flush_gpu_frame_group`) or a lone one submits it.
+     fn commit_command_buffer(
+         &self,
+-        metal_cx: &MetalCx,
++        metal_cx: &mut MetalCx,
++        alone: bool,
+         screenshot_info: Option<ScreenshotInfo>,
+         stdin_frame: Option<PresentableDraw>,
+         gpu_frame_group_key: Option<u64>,
+         flush_gpu_frame_group: bool,
+         gpu_counters: GpuSampleCounters,
+         gpu_profile_label: Option<String>,
++        pass_time: Option<PassTime>,
+         command_buffer: ObjcId,
+         drawable: Option<(ObjcId, Option<f64>)>,
+     ) {
+@@ -1916,11 +1936,15 @@ fn commit_command_buffer(
+                         }
+                     }
+ 
+-                    let raw_start: f64 = unsafe { msg_send![command_buffer, GPUStartTime] };
+-                    let raw_end: f64 = unsafe { msg_send![command_buffer, GPUEndTime] };
+-                    if let Some(label) = &gpu_profile_label {
+-                        gpu_profile_accumulate(label, raw_end - raw_start, &gpu_counters);
++                    // The pass's own span; the buffer's when it is not timed
++                    // (the frame's range below is the same either way).
++                    let pass_span = pass_time.as_ref().and_then(|t| t.span(command_buffer));
++                    if let (Some(label), Some((start, end))) = (&gpu_profile_label, pass_span) {
++                        gpu_profile_accumulate(label, end - start, &gpu_counters);
+                     }
++                    let (raw_start, raw_end) = pass_span.unwrap_or_else(|| unsafe {
++                        (msg_send![command_buffer, GPUStartTime], msg_send![command_buffer, GPUEndTime])
++                    });
+                     if let Some(_stdin_frame) = stdin_frame {
+                         #[cfg(target_os = "macos")]
+                         Self::stdin_send_draw_complete(_stdin_frame);
+@@ -2012,7 +2036,7 @@ fn commit_command_buffer(
+                 })
+             ]
+         };
+-        metal_cx.submit_command_buffer(command_buffer, drawable);
++        metal_cx.end_pass(drawable, alone || flush_gpu_frame_group);
+     }
+ 
+     fn retry_metal_pipelines(&mut self, metal_cx: &MetalCx) {
+@@ -2211,6 +2235,11 @@ pub struct MetalCx {
+     encoding: RefCell<HashMap<usize, InFlightCb>>,
+     /// Encoded work the saturated submitter could not take yet, in order.
+     submit_retry: RefCell<VecDeque<MetalSubmission>>,
++    /// The command buffer this repaint's passes are encoding into.
++    frame: Option<FrameBatch>,
++    /// Per-pass timestamps in a shared buffer; probed at the first timed
++    /// pass (`Some(None)`: the device has no timestamp sampling).
++    pass_clock: Option<Option<Arc<PassClock>>>,
+     /// The submit thread's channel and handle; `None` only while dropping.
+     submitter: Option<std::sync::mpsc::SyncSender<MetalSubmission>>,
+     submitter_thread: Option<std::thread::JoinHandle<()>>,
+@@ -2381,7 +2410,8 @@ fn describe_passes(passes: &[InFlightPass]) -> String {
+ 
+ struct MetalSubmission {
+     buffer: RcObjcId,
+-    drawable: Option<(RcObjcId, Option<f64>)>,
++    /// Every drawable the buffer's passes present (one per window pass).
++    drawables: Vec<(RcObjcId, Option<f64>)>,
+     entry: Option<InFlightCb>,
+ }
+ 
+@@ -2408,7 +2438,7 @@ fn spawn_submitter(
+                 }
+                 let buffer = submission.buffer.as_id();
+                 if let Some(trace) = &trace { trace.mark(PresentStage::Commit); }
+-                if let Some((drawable, time)) = &submission.drawable {
++                for (drawable, time) in &submission.drawables {
+                     if let Some(time) = time {
+                         let _: () = unsafe {
+                             msg_send![buffer, presentDrawable: drawable.as_id() atTime: *time]
+@@ -2452,24 +2482,301 @@ pub(crate) fn flush_submissions(&self) -> bool {
+         }
+         true
+     }
+-    pub(crate) fn submit_command_buffer(&self, buffer: ObjcId, drawable: Option<(ObjcId, Option<f64>)>) {
+-        let entry = self.encoding.borrow_mut().remove(&(buffer as usize));
++    fn submit_command_buffer(&self, buffer: RcObjcId, drawables: Vec<(RcObjcId, Option<f64>)>) {
++        let entry = self.encoding.borrow_mut().remove(&(buffer.as_id() as usize));
+         if let Some(trace) = entry.as_ref().and_then(|e| e.present_trace.as_ref()) { trace.mark(PresentStage::Queued); }
+-        let submission = MetalSubmission {
+-            buffer: RcObjcId::from_unowned(NonNull::new(buffer).unwrap()),
+-            drawable: drawable.map(|(drawable, time)| {
+-                (
+-                    RcObjcId::from_unowned(NonNull::new(drawable).unwrap()),
+-                    time,
+-                )
+-            }),
+-            entry,
+-        };
++        let submission = MetalSubmission { buffer, drawables, entry };
+         self.submit_retry.borrow_mut().push_back(submission);
+         self.flush_submissions();
+     }
+ }
+ 
++/// A repaint's passes share one command buffer. Metal pays a fixed cost per
++/// command buffer (scheduling, commit, completion: about 0.26 ms on an idle
++/// Apple GPU, around 1 ms under load) whatever the pass's size, so a 1/128
++/// bloom level cost as much as a whole frame when every pass had its own.
++/// Passes encode into it in dependency order; one queue and Metal's hazard
++/// tracking order each read after the writes encoded before it, as separate
++/// buffers did. It is submitted, with every drawable its window passes
++/// present, when a pass presents, when a pass must be timed alone, once the
++/// CPU has encoded into it for `FRAME_ENCODE_SLICE`, and at the end of every
++/// repaint (`MetalCx::submit_frame`): an enqueued buffer never outlives the
++/// repaint that opened it, so no later buffer (a readback) waits on it.
++struct FrameBatch {
++    buffer: RcObjcId,
++    opened: Instant,
++    presents: Vec<(RcObjcId, Option<f64>)>,
++    samples: Option<Arc<PassSamples>>,
++}
++
++/// heuristic: how long the CPU encodes into one frame buffer before the
++/// next pass submits it and starts another, so the GPU never waits longer
++/// than this behind the encoder: at most one extra buffer per 2 ms encoded.
++const FRAME_ENCODE_SLICE: Duration = Duration::from_millis(2);
++
++extern "C" {
++    static MTLCommonCounterSetTimestamp: ObjcId;
++}
++
++/// Per-pass GPU time inside a shared command buffer: a timestamp where the
++/// pass's render encoder starts and one where it ends, in a counter sample
++/// buffer (stage boundaries on Apple GPUs, encoder samples elsewhere). A
++/// device with neither times each timed pass in a buffer of its own.
++struct PassClock {
++    device: RcObjcId,
++    descriptor: RcObjcId,
++    stage: bool,
++    pool: Mutex<Vec<RcObjcId>>,
++    /// (host seconds, GPU timestamp) sampled together at creation: with a
++    /// second pair at resolve time, the GPU clock's rate and offset.
++    anchor: (f64, u64),
++}
++
++/// hardware: timestamps in one frame's sample buffer; a frame with more
++/// timed passes starts another command buffer.
++const PASS_CLOCK_SAMPLES: usize = 1024;
++/// Timestamps per pass: vertex start and end, fragment start and end.
++const PASS_CLOCK_STRIDE: usize = 4;
++
++impl PassClock {
++    fn new(device: ObjcId) -> Option<Arc<Self>> {
++        unsafe {
++            let available: bool = msg_send![device, respondsToSelector: sel!(supportsCounterSampling:)];
++            if !available {
++                return None;
++            }
++            // MTLCounterSamplingPointAtStageBoundary = 0, AtDrawBoundary = 1
++            let stage: bool = msg_send![device, supportsCounterSampling: 0u64];
++            let draw: bool = msg_send![device, supportsCounterSampling: 1u64];
++            if !stage && !draw {
++                return None;
++            }
++            let sets: ObjcId = msg_send![device, counterSets];
++            let count: u64 = if sets == nil { 0 } else { msg_send![sets, count] };
++            let set = (0..count)
++                .map(|i| -> ObjcId { msg_send![sets, objectAtIndex: i] })
++                .find(|set| {
++                    let name: ObjcId = msg_send![*set, name];
++                    msg_send![name, isEqualToString: MTLCommonCounterSetTimestamp]
++                })?;
++            let descriptor = RcObjcId::from_owned(NonNull::new(msg_send![class!(MTLCounterSampleBufferDescriptor), new])?);
++            let () = msg_send![descriptor.as_id(), setCounterSet: set];
++            let () = msg_send![descriptor.as_id(), setStorageMode: MTLStorageMode::Shared];
++            let () = msg_send![descriptor.as_id(), setSampleCount: PASS_CLOCK_SAMPLES as u64];
++            Some(Arc::new(Self {
++                device: RcObjcId::from_unowned(NonNull::new(device)?),
++                descriptor,
++                stage,
++                pool: Mutex::new(Vec::new()),
++                anchor: Self::now(device),
++            }))
++        }
++    }
++
++    fn now(device: ObjcId) -> (f64, u64) {
++        let (mut cpu, mut gpu) = (0u64, 0u64);
++        unsafe {
++            let () = msg_send![device, sampleTimestamps: &mut cpu gpuTimestamp: &mut gpu];
++            (CACurrentMediaTime(), gpu)
++        }
++    }
++
++    fn take(&self) -> Option<RcObjcId> {
++        if let Some(buffer) = self.pool.try_lock().ok().and_then(|mut pool| pool.pop()) {
++            return Some(buffer);
++        }
++        let mut error: ObjcId = nil;
++        let buffer: ObjcId = unsafe {
++            msg_send![self.device.as_id(), newCounterSampleBufferWithDescriptor: self.descriptor.as_id() error: &mut error]
++        };
++        NonNull::new(buffer).map(RcObjcId::from_owned)
++    }
++}
++
++/// One frame buffer's timestamps. Its passes' completion handlers read them
++/// (resolved once, by the first); the sample buffer goes back to the pool
++/// when the last handler lets go.
++struct PassSamples {
++    clock: Arc<PassClock>,
++    buffer: Option<RcObjcId>,
++    /// Samples reserved (UI thread only; atomic to share with handlers).
++    used: AtomicUsize,
++    spans: std::sync::OnceLock<Vec<Option<(f64, f64)>>>,
++}
++
++impl PassSamples {
++    fn reserve(&self) -> Option<usize> {
++        let at = self.used.load(Ordering::Relaxed);
++        (at + PASS_CLOCK_STRIDE <= PASS_CLOCK_SAMPLES).then(|| {
++            self.used.store(at + PASS_CLOCK_STRIDE, Ordering::Relaxed);
++            at
++        })
++    }
++
++    fn full(&self) -> bool {
++        self.used.load(Ordering::Relaxed) + PASS_CLOCK_STRIDE > PASS_CLOCK_SAMPLES
++    }
++
++    fn span(&self, command_buffer: ObjcId, index: usize) -> Option<(f64, f64)> {
++        self.spans.get_or_init(|| self.resolve(command_buffer)).get(index / PASS_CLOCK_STRIDE).copied().flatten()
++    }
++
++    /// Every pass's (start, end) in host seconds, the clock of the buffer's
++    /// own `GPUStartTime`; `None` for a pass whose fragment stage left no
++    /// time inside the buffer's span.
++    fn resolve(&self, command_buffer: ObjcId) -> Vec<Option<(f64, f64)>> {
++        let used = self.used.load(Ordering::Acquire);
++        let Some(buffer) = &self.buffer else { return Vec::new() };
++        let (host0, gpu0) = self.clock.anchor;
++        let (host1, gpu1) = PassClock::now(self.clock.device.as_id());
++        if gpu1 <= gpu0 || host1 <= host0 {
++            return Vec::new();
++        }
++        let rate = (host1 - host0) / (gpu1 - gpu0) as f64;
++        let (start, end): (f64, f64) = unsafe {
++            (msg_send![command_buffer, GPUStartTime], msg_send![command_buffer, GPUEndTime])
++        };
++        // the buffer's own span, widened by the calibration's error
++        let (lo, hi) = (start - 1e-4, end + 1e-4);
++        let data: ObjcId = unsafe {
++            msg_send![buffer.as_id(), resolveCounterRange: NSRange { location: 0, length: used as _ }]
++        };
++        if data == nil {
++            return Vec::new();
++        }
++        let bytes: u64 = unsafe { msg_send![data, length] };
++        let ptr: *const u64 = unsafe { msg_send![data, bytes] };
++        let count = if ptr.is_null() { 0 } else { (bytes as usize / 8).min(used) };
++        // A stage that never ran leaves its slot as it was: zero, the
++        // "not sampled" marker, or a stale time from an earlier frame.
++        let host = |tick: u64| {
++            let t = host1 - (gpu1 as f64 - tick as f64) * rate;
++            (tick != 0 && tick != u64::MAX && t >= lo && t <= hi).then_some(t)
++        };
++        (0..count / PASS_CLOCK_STRIDE)
++            .map(|pass| {
++                let [v0, v1, f0, f1] = std::array::from_fn(|i| host(unsafe { *ptr.add(pass * PASS_CLOCK_STRIDE + i) }));
++                if !self.clock.stage {
++                    // encoder samples: first and last
++                    return v0.zip(f1).filter(|(a, b)| b >= a);
++                }
++                // Apple GPUs run a pass's vertex stage early, alongside the
++                // fragment work of passes before it (its tiles wait for
++                // them): start..end would count that wait. The pass's own
++                // time is its vertex stage plus its fragment stage, ending
++                // where its fragment stage ends.
++                // A pass that shades no pixel has its vertex stage alone.
++                let vertex = v0.zip(v1).filter(|(a, b)| b >= a);
++                match f0.zip(f1).filter(|(a, b)| b >= a) {
++                    Some((f0, f1)) => Some((f0 - vertex.map_or(0.0, |(a, b)| b - a), f1)),
++                    None => vertex,
++                }
++            })
++            .collect()
++    }
++}
++
++impl Drop for PassSamples {
++    fn drop(&mut self) {
++        if let (Some(buffer), Ok(mut pool)) = (self.buffer.take(), self.clock.pool.try_lock()) {
++            pool.push(buffer);
++        }
++    }
++}
++
++/// Where a pass's GPU start and end come from.
++#[derive(Clone)]
++enum PassTime {
++    /// The pass has its command buffer to itself.
++    Buffer,
++    /// Its timestamps in the frame buffer's samples (start index).
++    Counters(Arc<PassSamples>, usize),
++}
++
++impl PassTime {
++    /// The pass's GPU (start, end) in host seconds; `None` when the
++    /// timestamps did not resolve.
++    fn span(&self, command_buffer: ObjcId) -> Option<(f64, f64)> {
++        match self {
++            Self::Buffer => {
++                let start: f64 = unsafe { msg_send![command_buffer, GPUStartTime] };
++                let end: f64 = unsafe { msg_send![command_buffer, GPUEndTime] };
++                Some((start, end))
++            }
++            Self::Counters(samples, index) => samples.span(command_buffer, *index),
++        }
++    }
++}
++
++impl MetalCx {
++    /// The command buffer the next pass encodes into (`FrameBatch`), and
++    /// where its GPU time comes from when `timed`. `alone`: the pass gets a
++    /// buffer of its own (`end_pass` submits it).
++    fn frame_buffer(&mut self, alone: bool, timed: bool) -> (ObjcId, bool, Option<PassTime>) {
++        let clock = if timed && !alone {
++            if self.pass_clock.is_none() {
++                self.pass_clock = Some(PassClock::new(self.device));
++            }
++            self.pass_clock.clone().flatten()
++        } else {
++            None
++        };
++        let alone = alone || (timed && clock.is_none());
++        let full = clock.is_some()
++            && self.frame.as_ref().and_then(|f| f.samples.as_ref()).is_some_and(|s| s.full());
++        if alone || full || self.frame.as_ref().is_some_and(|f| f.opened.elapsed() >= FRAME_ENCODE_SLICE) {
++            self.submit_frame();
++        }
++        if self.frame.is_none() {
++            let buffer = self.new_command_buffer();
++            self.frame = Some(FrameBatch {
++                buffer: RcObjcId::from_unowned(NonNull::new(buffer).unwrap()),
++                opened: Instant::now(),
++                presents: Vec::new(),
++                samples: None,
++            });
++        }
++        let frame = self.frame.as_mut().unwrap();
++        let time = match clock {
++            _ if !timed => None,
++            None => Some(PassTime::Buffer),
++            Some(clock) => {
++                if frame.samples.is_none() {
++                    frame.samples = clock.take().map(|buffer| Arc::new(PassSamples {
++                        clock: clock.clone(),
++                        buffer: Some(buffer),
++                        used: AtomicUsize::new(0),
++                        spans: std::sync::OnceLock::new(),
++                    }));
++                }
++                frame.samples.as_ref().and_then(|samples| {
++                    samples.reserve().map(|index| PassTime::Counters(samples.clone(), index))
++                })
++            }
++        };
++        (frame.buffer.as_id(), alone, time)
++    }
++
++    /// A pass is encoded: its drawable (if it presents) joins the buffer's,
++    /// and a presenting or lone pass submits the buffer.
++    fn end_pass(&mut self, present: Option<(ObjcId, Option<f64>)>, submit: bool) {
++        if let (Some(frame), Some((drawable, time))) = (self.frame.as_mut(), present) {
++            frame.presents.push((RcObjcId::from_unowned(NonNull::new(drawable).unwrap()), time));
++        }
++        if submit {
++            self.submit_frame();
++        }
++    }
++
++    /// Commit the open frame buffer, if any, with its presents. Called at
++    /// the end of every repaint (and at its start, in case one was left).
++    pub(crate) fn submit_frame(&mut self) {
++        let Some(frame) = self.frame.take() else { return };
++        self.submit_encoded_receipts();
++        self.submit_command_buffer(frame.buffer, frame.presents);
++    }
++}
++
+ /// diagnostic: a command buffer older than this without completing is
+ /// reported by the hang watchdog (never acted on — L-E: the watchdog is a
+ /// diagnostic, not a policy). Five seconds is far beyond any frame and short
+@@ -2871,6 +3178,7 @@ fn new_command_buffer(&mut self) -> ObjcId {
+     /// has not finished.
+     #[allow(dead_code)] // called by the macos present gate
+     pub(crate) fn begin_repaint(&mut self) {
++        self.submit_frame();
+         self.flush_submissions();
+         // a chunk whose allocation failed leaves once per repaint, not on
+         // every uniform bind (thousands per frame during a bake)
+@@ -3154,6 +3462,8 @@ pub(crate) fn new() -> MetalCx {
+             in_flight,
+             encoding: RefCell::new(HashMap::new()),
+             submit_retry: RefCell::new(VecDeque::new()),
++            frame: None,
++            pass_clock: None,
+             submitter: Some(submitter),
+             submitter_thread: Some(submitter_thread),
+             allocator: Some(allocator),
+@@ -3210,7 +3520,11 @@ impl Drop for MetalCx {
+     fn drop(&mut self) {
+         // The threads this context owns end with it: the channels close
+         // (their loops end at the next receive), the watchdog is told to
+-        // stop, and all three are joined.
++        // stop, and all three are joined. An open frame buffer is enqueued:
++        // it is committed, or the queue would wait on it forever.
++        if let Some(frame) = self.frame.take() {
++            let () = unsafe { msg_send![frame.buffer.as_id(), commit] };
++        }
+         self.submit_retry.borrow_mut().clear();
+         drop(self.submitter.take());
+         if let Some(thread) = self.submitter_thread.take() {
+diff --git a/platform/src/os/apple/metal_pan_timing.rs b/platform/src/os/apple/metal_pan_timing.rs
+index 3cf8c0d2b..787697c9d 100644
+--- a/platform/src/os/apple/metal_pan_timing.rs
++++ b/platform/src/os/apple/metal_pan_timing.rs
+@@ -236,9 +236,15 @@ pub(super) struct PanEncoder {
+     pub(super) encoder:ObjcId,
+     command:ObjcId,descriptor:ObjcId,viewport:MTLViewport,
+     pub(super) frame:Option<PanFrame>,
++    /// The pass clock's timestamps (`PassClock`): sample buffer, index of
++    /// the pass's first of four (vertex start/end, fragment start/end at
++    /// stage boundaries; else the encoder samples the first and last
++    /// itself), stage boundaries. Never together with a sampled frame.
++    clock:Option<(ObjcId,usize,bool)>,
+ }
+ impl PanEncoder {
+-    pub(super) fn new(command:ObjcId,descriptor:ObjcId,viewport:MTLViewport,frame:Option<PanFrame>)->Self {
++    pub(super) fn new(command:ObjcId,descriptor:ObjcId,viewport:MTLViewport,frame:Option<PanFrame>,clock:Option<(ObjcId,usize,bool)>)->Self {
++        let clock=if frame.is_some() {None} else {clock};
+         unsafe {
+             // The descriptor is reused: never leave a previous frame's buffer attached.
+             let available:bool=msg_send![descriptor,respondsToSelector:sel!(sampleBufferAttachments)];
+@@ -246,12 +252,22 @@ pub(super) fn new(command:ObjcId,descriptor:ObjcId,viewport:MTLViewport,frame:Op
+                 let attachments:ObjcId=msg_send![descriptor,sampleBufferAttachments];
+                 let a:ObjcId=msg_send![attachments,objectAtIndexedSubscript:0u64];
+                 let _:()=msg_send![a,setSampleBuffer:nil];
++                if let Some((buffer,index,true))=clock {
++                    let _:()=msg_send![a,setSampleBuffer:buffer];
++                    let _:()=msg_send![a,setStartOfVertexSampleIndex:index as u64];
++                    let _:()=msg_send![a,setEndOfVertexSampleIndex:(index+1) as u64];
++                    let _:()=msg_send![a,setStartOfFragmentSampleIndex:(index+2) as u64];
++                    let _:()=msg_send![a,setEndOfFragmentSampleIndex:(index+3) as u64];
++                }
+             }
+         }
+         if let Some(f)=&frame {if f.stage(){f.attach(descriptor,0);}}
+         let encoder:ObjcId=unsafe {msg_send![command,renderCommandEncoderWithDescriptor:descriptor]};
+         unsafe {let _:()=msg_send![encoder,setViewport:viewport];}
+-        Self {encoder,command,descriptor,viewport,frame}
++        if let Some((buffer,index,false))=clock {
++            unsafe {let _:()=msg_send![encoder,sampleCountersInBuffer:buffer atSampleIndex:index as u64 withBarrier:true];}
++        }
++        Self {encoder,command,descriptor,viewport,frame,clock}
+     }
+     pub(super) fn group(&mut self,shader:usize,sh:&CxDrawShader)->ObjcId {
+         let Some(f)=&mut self.frame else{return self.encoder;};
+@@ -284,6 +300,9 @@ pub(super) fn group(&mut self,shader:usize,sh:&CxDrawShader)->ObjcId {
+     }
+     pub(super) fn end(self) {
+         if let Some(f)=&self.frame {if !f.stage() && f.len>0 {f.sample(self.encoder,3+(f.len-1)*2);}}
++        if let Some((buffer,index,false))=self.clock {
++            unsafe {let _:()=msg_send![self.encoder,sampleCountersInBuffer:buffer atSampleIndex:(index+3) as u64 withBarrier:true];}
++        }
+         unsafe {let _:()=msg_send![self.encoder,endEncoding];}
+         if let Some(f)=self.frame {f.complete(self.command);}
+     }
+diff --git a/platform/src/os/apple/tvos/tvos.rs b/platform/src/os/apple/tvos/tvos.rs
+index 6477224d2..06bf03a5e 100644
+--- a/platform/src/os/apple/tvos/tvos.rs
++++ b/platform/src/os/apple/tvos/tvos.rs
+@@ -191,6 +191,7 @@ fn tvos_event_callback(&mut self, event: TvosEvent, metal_cx: &mut MetalCx) -> E
+                 }
+                 // ok here we send out to all our childprocesses
+                 self.handle_repaint(metal_cx);
++                metal_cx.submit_frame();
+             }
+             TvosEvent::Timer(e) => {
+                 if e.timer_id != 0 {
+diff --git a/platform/src/os/cx_shared.rs b/platform/src/os/cx_shared.rs
+index 0ca4dfa38..f469190d0 100644
+--- a/platform/src/os/cx_shared.rs
++++ b/platform/src/os/cx_shared.rs
+@@ -135,6 +135,27 @@ fn pass_live_for_time_repaint(&self, pass_id: DrawPassId) -> bool {
+     pub(crate) fn compute_pass_repaint_order(&mut self, passes_todo: &mut Vec<DrawPassId>) {
+         passes_todo.clear();
+ 
++        #[cfg(all(not(gpusim), any(target_os = "macos", target_os = "ios", target_os = "tvos")))]
++        self.retire_replaced_texture_allocations();
++
++        // A pass whose last handle was dropped lets go of its attachments
++        // and its place in the tree now, on every backend: its slot is only
++        // reset when it is reused, and until then it kept its colour and
++        // depth textures (full-frame targets) alive.
++        for draw_pass_id in self.passes.id_iter() {
++            if self.passes.0.is_free(draw_pass_id.0) {
++                let pass = &mut self.passes[draw_pass_id];
++                if !pass.color_textures.is_empty() || pass.depth_texture.is_some() {
++                    pass.color_textures.clear();
++                    pass.depth_texture = None;
++                    pass.main_draw_list_id = None;
++                    pass.parent = crate::draw_pass::CxDrawPassParent::None;
++                    pass.attached_by = None;
++                    pass.paint_dirty = false;
++                }
++            }
++        }
++
+         // Resolve attachment liveness through the whole consumer chain before
+         // propagating dirtiness. A descendant's own attachment can still be
+         // current inside an orphaned capture; it must not revive that capture.
+diff --git a/platform/src/os/linux/opengl.rs b/platform/src/os/linux/opengl.rs
+index 4bdaa109b..19ecb0ec9 100644
+--- a/platform/src/os/linux/opengl.rs
++++ b/platform/src/os/linux/opengl.rs
+@@ -3339,9 +3339,12 @@ fn gl_unpack_alignment(bytes_per_pixel: usize) -> i32 {
+             // excluding the atlas from partial updates entirely.
+             const ATLAS_INPLACE_UPDATES: bool =
+                 cfg!(not(any(target_env = "ohos", target_os = "android")));
+-            let is_append_atlas = matches!(self.format, TextureFormat::VecRGBAf32 { .. });
++            let is_float_rgba = matches!(self.format, TextureFormat::VecRGBAf32 { .. });
+             let allow_partial_texture_updates =
+-                DO_PARTIAL_TEXTURE_UPDATES && (!is_append_atlas || ATLAS_INPLACE_UPDATES);
++                DO_PARTIAL_TEXTURE_UPDATES && (!is_float_rgba || ATLAS_INPLACE_UPDATES);
++            // Only an append-rows texture keeps headroom; every other one is
++            // allocated at exactly its size, so size() is what was uploaded.
++            let is_append_atlas = is_float_rgba && self.append_rows;
+             let unpack_alignment = gl_unpack_alignment(bytes_per_pixel);
+ 
+             match updated {
+diff --git a/platform/src/os/windows/d3d11.rs b/platform/src/os/windows/d3d11.rs
+index 1fdf234af..98b1cad60 100644
+--- a/platform/src/os/windows/d3d11.rs
++++ b/platform/src/os/windows/d3d11.rs
+@@ -3154,7 +3154,10 @@ pub fn update_vec_texture(&mut self, d3d11_cx: &D3d11Cx) {
+             let can_reuse = self.os.texture.is_some()
+                 && self.os.vec_alloc_width == width
+                 && self.os.vec_alloc_dxgi == dxgi_format.0
+-                && self.os.vec_alloc_height >= height
++                // Only an append-rows texture keeps spare rows; every other
++                // texture stays exactly its size, so size() is what was uploaded.
++                && (self.os.vec_alloc_height == height
++                    || (self.append_rows && self.os.vec_alloc_height > height))
+                 && safe_to_reuse;
+ 
+             if can_reuse {
+@@ -3186,10 +3189,11 @@ pub fn update_vec_texture(&mut self, d3d11_cx: &D3d11Cx) {
+                 return;
+             }
+ 
+-            // (Re)allocate. For the append-only glyph atlases (RGBAf32), add ~1.5x height headroom
+-            // (rounded up) so subsequent growth reuses the texture instead of recreating it. Other
+-            // formats (images/data) are sampled by normalized UV, so they MUST be exact-sized.
+-            let cap_height = if matches!(dxgi_format, DXGI_FORMAT_R32G32B32A32_FLOAT) {
++            // (Re)allocate. An append-rows texture (the SLUG glyph atlas) gets height headroom so
++            // subsequent growth reuses the texture instead of recreating it. Every other texture
++            // (images, data textures, other RGBA f32 tables) is sampled by normalized UV or by
++            // size(), so it MUST be exact-sized.
++            let cap_height = if self.append_rows {
+                 // Generous headroom for the append-only glyph atlas: 3x the needed height with a
+                 // sizable minimum, rounded up. This makes the texture large enough to hold a
+                 // typical room's full glyph set after the first allocation, so growth-driven
+diff --git a/platform/src/texture.rs b/platform/src/texture.rs
+index baefe67c0..cc26be298 100644
+--- a/platform/src/texture.rs
++++ b/platform/src/texture.rs
+@@ -1479,6 +1479,12 @@ pub fn set_retained_render_target(&self, cx: &mut Cx, retained: bool) {
+         cx.textures[self.texture_id()].retained_render_target = retained;
+     }
+ 
++    /// Mark an append-only data texture that grows by rows (see
++    /// `CxTexture::append_rows`). Off by default.
++    pub fn set_append_rows(&self, cx: &mut Cx, append_rows: bool) {
++        cx.textures[self.texture_id()].append_rows = append_rows;
++    }
++
+     pub fn animation<'a>(&self, cx: &'a mut Cx) -> &'a Option<TextureAnimation> {
+         &cx.textures[self.texture_id()].animation
+     }
+@@ -1662,6 +1668,12 @@ pub struct CxTexture {
+     /// never releases its framebuffer for idleness or budget while the
+     /// handle lives (GPU backends keep every target anyway).
+     pub(crate) retained_render_target: bool,
++    /// An append-only data texture that grows by rows (the SLUG glyph
++    /// atlas): a backend that updates rows in place may allocate spare rows
++    /// below the uploaded ones so growth reuses the allocation. Its shaders
++    /// address texels absolutely and never by `size()`. Every other texture
++    /// is allocated at exactly its size, so `size()` is the size uploaded.
++    pub(crate) append_rows: bool,
+     pub os: CxOsTexture,
+     pub previous_platform_resource: Option<CxOsTexture>,
+ }
+@@ -1747,6 +1759,29 @@ pub(crate) fn texture_allocation_bytes(&self, id: TextureId) -> Option<u64> {
+         texture.os.allocated_bytes(self)
+     }
+ 
++    /// Metal: a texture slot reused for a new texture parked the old
++    /// texture's allocation in `previous_platform_resource`, and a slot whose
++    /// last handle was dropped kept its allocation, until something released
++    /// them explicitly; both go to the retired list now (freed when the GPU
++    /// is past the frames that used them). Every repaint
++    /// (`compute_pass_repaint_order`).
++    #[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos"))]
++    pub(crate) fn retire_replaced_texture_allocations(&mut self) {
++        let serial = self.frame_submission_serial().max(self.textures.1.serials.encoded.load(Ordering::Acquire));
++        for slot in 0..self.textures.0.pool.len() {
++            if let Some(os) = self.textures.0.pool[slot].item.previous_platform_resource.take() {
++                let bytes = os.allocated_bytes(self).unwrap_or(0);
++                self.textures.1.retired.push(RetiredTexture { serial, bytes, os });
++            }
++            // A texture whose last handle was dropped gives its storage back
++            // now, not when its slot is next reused.
++            if self.textures.0.is_free(slot) && self.textures.0.pool[slot].item.alloc.is_some() {
++                let generation = self.textures.0.pool[slot].generation;
++                self.release_texture_allocation(TextureId(slot, generation));
++            }
++        }
++    }
++
+     pub(crate) fn release_texture_allocation(&mut self, id: TextureId) {
+         if !(self.textures[id].format.is_render()
+             || self.textures[id].format.is_vec()

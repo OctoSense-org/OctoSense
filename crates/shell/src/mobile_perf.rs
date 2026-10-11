@@ -362,7 +362,14 @@ pub fn tick(cx: &mut Cx) {
         c.last_report = Some(Instant::now());
         Some(line)
     });
-    if let Some(line) = line { log!("{}", line); }
+    if let Some(line) = line {
+        log!("{}", line);
+        for work in cx.perf_monitor.work().iter().filter(|work| work.component == "PhoneSurface") {
+            log!("[perf.work] operation={} calls={} total_ms={:.3} self_ms={:.3} max_ms={:.3}",
+                work.operation, work.calls, work.total_ns as f64 / 1e6,
+                work.self_ns as f64 / 1e6, work.max_ns as f64 / 1e6);
+        }
+    }
 }
 
 /// Every pass: its name (with its slot, and `-` when detached), the repaint
