@@ -2137,7 +2137,15 @@ impl App {
             log!("wm: home tile {} lost client {}", app, client);
         }
         self.state_mut().layout.remove(client);
-        self.state_mut().clients.remove(&client);
+        if let Some(closed) = self.state_mut().clients.remove(&client) {
+            // Native agents belong to their windows. Contained apps may
+            // have background peers, whose prompts are not window-owned.
+            let still_open = self.state_mut().clients.values()
+                .any(|slot| slot.app == closed.app);
+            if closed.card_app.is_none() && !still_open {
+                approvals::with(|a| a.consent.cancel_prompt(&closed.app));
+            }
+        }
         hub::revoke_launch_token(client);
         // A dying warm viewer (or its requester) clears the cache's
         // reference to it — "if a viewer process dies clear its slot, so

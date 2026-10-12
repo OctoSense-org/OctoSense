@@ -436,7 +436,6 @@ pub struct ModuleHost {
     pub extra_windows: bool,
     instances: HashMap<ClientId, AppInstance>,
     next_scope: u64,
-    per_app: HashMap<String, u64>,
     style: Option<desktop_style::StyleSheet>,
     /// Closes an instance refused while it asks the person (makepad#65).
     close_gate: CloseGate,
@@ -599,6 +598,14 @@ fn sync_prelude_theme(vm: &mut ScriptVm) {
 }
 
 impl ModuleHost {
+    /// Persistent storage slots are reused after close; runtime scope ids
+    /// remain monotonic so a late reply can never target a reopened instance.
+    /// Keep simultaneous instances separate, and retain the existing `app.1`
+    /// namespace so the first window reopens its data without migration.
+    fn storage_slot(&self, app: &str) -> u64 {
+        (1..).find(|slot| !self.instances.values().any(|i| i.module.id() == app && i.instance_no == *slot)).unwrap()
+    }
+
     /// Build one instance of `module` for the client id the WM gave it.
     /// `viewport` is the tile size the layout will give it.
     pub fn create(
@@ -618,11 +625,7 @@ impl ModuleHost {
         }
         self.next_scope += 1;
         let scope = InstanceScope::new(client, self.next_scope);
-        let instance_no = {
-            let n = self.per_app.entry(module.id().to_string()).or_insert(0);
-            *n += 1;
-            *n
-        };
+        let instance_no = self.storage_slot(module.id());
         // The storage jail: a namespace of the Cx storage API, one per
         // instance (§3b's mount and the web's IndexedDB sit under it).
         let storage = cx.storage(&format!("{}.{}", module.id(), instance_no));
@@ -1371,6 +1374,7 @@ mod assistant_tests {
     use std::sync::atomic::{AtomicBool, Ordering};
 
     static CLAIMED: AtomicBool = AtomicBool::new(false);
+    static PROBE_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
     /// A module that declares the assistant and records whether it got one.
     struct Probe(&'static str, &'static [&'static str]);
@@ -1414,7 +1418,34 @@ mod assistant_tests {
     static UNGRANTED_PROBE: Probe = Probe("ungranted-probe", &["octos.turn.start"]);
 
     #[test]
+    fn reopen_reuses_storage_but_never_a_live_slot_or_runtime_scope() {
+        let _guard = PROBE_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let mut cx = Cx::new(Box::new(|_, _| {}));
+        cx.with_vm(makepad_widgets::script_mod);
+        let mut host = crate::module_host::ModuleHost::default();
+        let open = |host: &mut crate::module_host::ModuleHost, cx: &mut Cx, client| {
+            host.create(cx, client, &PLAIN_PROBE, PLAIN_PROBE.open_schema().empty_open().unwrap(), dvec2(400.0, 700.0)).unwrap();
+        };
+        open(&mut host, &mut cx, 1);
+        open(&mut host, &mut cx, 2);
+        assert_eq!(host.get(1).unwrap().instance_no, 1);
+        assert_eq!(host.get(2).unwrap().instance_no, 2);
+        let scope = host.get(1).unwrap().scope;
+        host.teardown(&mut cx, 1);
+        open(&mut host, &mut cx, 3);
+        assert_eq!(host.get(3).unwrap().instance_no, 1, "existing primary data stays reachable");
+        assert_ne!(host.get(3).unwrap().scope, scope, "late replies cannot reach the reopened instance");
+        assert_eq!(host.get(2).unwrap().instance_no, 2, "a live secondary window keeps its own jail");
+        host.teardown(&mut cx, 2);
+        host.teardown(&mut cx, 3);
+        open(&mut host, &mut cx, 4);
+        assert_eq!(host.get(4).unwrap().instance_no, 1);
+        host.teardown(&mut cx, 4);
+    }
+
+    #[test]
     fn a_granted_module_gets_its_service_at_creation_and_others_get_none() {
+        let _guard = PROBE_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         octosense_ai_host::grant("assistant-probe", ["octos.session.open", "octos.turn.start"]);
         let mut cx = Cx::new(Box::new(|_, _| {}));
         cx.with_vm(makepad_widgets::script_mod);
