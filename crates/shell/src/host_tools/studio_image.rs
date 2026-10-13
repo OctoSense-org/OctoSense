@@ -332,19 +332,16 @@ fn decode(reply: Result<String, String>) -> State {
     }
 }
 
-/// Records a job's outcome, once. An answer after developer mode ended is
-/// dropped, so nothing is written later.
-fn finish(id: &str, outcome: State, still_authorized: bool) {
-    with_jobs(|jobs| {
-        if let Some(job) = jobs.get_mut(id).filter(|job| job.finished.is_none()) {
-            job.state = if still_authorized {
-                outcome
-            } else {
-                State::Failed(REVOKED.into())
-            };
+/// Records a job's outcome, once; false when the job is already gone.
+fn finish(id: &str, outcome: State) -> bool {
+    with_jobs(|jobs| match jobs.get_mut(id).filter(|job| job.finished.is_none()) {
+        Some(job) => {
+            job.state = outcome;
             job.finished = Some(Instant::now());
+            true
         }
-    });
+        None => false,
+    })
 }
 
 /// Whether developer mode moved since `seen` and no longer covers the job.
@@ -359,20 +356,24 @@ fn revoked(app: &str, tag: &DevTag, seen: &mut u64) -> bool {
 
 /// Waits for the service's answer on a thread of the job's own, records
 /// it, then holds the job until it is collected, abandoned, revoked or
-/// expired. Started before the call is queued: a request nobody waits for
-/// is never sent.
+/// expired. Started before the call is queued, so a request nobody waits
+/// for is never sent; `generation` is the developer-mode generation the
+/// queued call carries too, so a move in between fails one or the other.
+/// An answer after developer mode ended is dropped with the job: nothing
+/// is written later, and no thread waits on.
 fn watch(
     id: String,
     app: String,
     tag: DevTag,
     key: usize,
+    generation: u64,
     answer: Receiver<Result<String, String>>,
 ) -> Result<(), String> {
     std::thread::Builder::new()
         .name("studio-image".into())
         .spawn(move || {
             let deadline = Instant::now() + SERVICE_WAIT;
-            let mut seen = generation();
+            let mut seen = generation;
             let outcome = loop {
                 match answer.recv_timeout(WATCH_TICK) {
                     Ok(reply) => break decode(reply),
@@ -390,8 +391,14 @@ fn watch(
                     }
                 }
             };
-            finish(&id, outcome, authorized(&app, &tag));
-            hold(&id, &app, &tag, seen);
+            let revoked = matches!(&outcome, State::Failed(why) if why == REVOKED) || !authorized(&app, &tag);
+            if revoked {
+                with_jobs(|jobs| {
+                    jobs.remove(&id);
+                });
+            } else if finish(&id, outcome) {
+                hold(&id, &app, &tag, seen);
+            }
         })
         .map(|_| ())
         .map_err(|e| format!("the studio could not start a thread to wait for the image: {e}"))
@@ -604,7 +611,8 @@ pub fn execute(
                     )
                 })?;
                 let (done, answer) = channel();
-                if let Err(why) = watch(id.clone(), app.to_string(), tag.clone(), key, answer) {
+                let generation = generation();
+                if let Err(why) = watch(id.clone(), app.to_string(), tag.clone(), key, generation, answer) {
                     with_jobs(|jobs| {
                         jobs.remove(&id);
                     });
@@ -613,7 +621,7 @@ pub fn execute(
                 QUEUE.lock().unwrap_or_else(|e| e.into_inner()).push(Queued {
                     key,
                     call: service_call,
-                    generation: generation(),
+                    generation,
                     deadline: Instant::now() + SERVICE_WAIT,
                     done,
                 });
@@ -945,10 +953,11 @@ mod tests {
         assert!(replier.is_pending());
         DEV_ON.store(false, Ordering::SeqCst);
         move_generation();
-        // Within a watch tick the job fails and the UI thread cancels the
-        // request at App Hub; no poll was needed.
+        // Within a watch tick the watcher drops the job and the UI thread
+        // cancels the request at App Hub; no poll was needed, and no
+        // thread waits on.
         pump_for(Duration::from_millis(700));
-        assert_eq!(state_of(&job).as_deref(), Some(format!("failed: {REVOKED}").as_str()));
+        assert_eq!(state_of(&job), None, "dropped at once");
         assert!(!replier.is_pending(), "cancelled at App Hub");
         pump_for(Duration::from_millis(2600));
         assert_eq!(files_in(&workspace), 0, "nothing written");
@@ -1033,7 +1042,7 @@ mod tests {
 
     #[test]
     fn an_app_agent_naming_the_tool_is_refused_before_any_service_call() {
-        if in_child_with_developer_mode("an_app_agent_naming_the_tool_is_refused_before_any_service_call") {
+        if !studio::SUPPORTED || in_child_with_developer_mode("an_app_agent_naming_the_tool_is_refused_before_any_service_call") {
             return;
         }
         let root = real_setup("app");
@@ -1067,7 +1076,7 @@ mod tests {
 
     #[test]
     fn turning_developer_mode_off_ends_a_job_in_flight_without_a_poll() {
-        if in_child_with_developer_mode("turning_developer_mode_off_ends_a_job_in_flight_without_a_poll") {
+        if !studio::SUPPORTED || in_child_with_developer_mode("turning_developer_mode_off_ends_a_job_in_flight_without_a_poll") {
             return;
         }
         let root = real_setup("off");
@@ -1084,7 +1093,7 @@ mod tests {
         crate::dev_mode::turn_off("studio.image test");
         assert!(!crate::apps::model_grant(SYSTEM, &root.join("apps/.host")), "the model service refuses the system agent now");
         std::thread::sleep(Duration::from_millis(700));
-        assert_eq!(state_of(&job).as_deref(), Some(format!("failed: {REVOKED}").as_str()));
+        assert_eq!(state_of(&job), None, "the watcher dropped it at once");
         assert!(!replier.is_pending(), "the watcher had it cancelled at App Hub");
         std::thread::sleep(Duration::from_millis(3000));
         assert_eq!(files_in(&workspace), 0, "nothing written");
