@@ -116,11 +116,12 @@ fn permission(family: &str) -> Option<Permission> {
         _ => None,
     }
 }
-fn permission_supported() -> bool {
+fn permission_supported(family: &str) -> bool {
     cfg!(any(target_os = "android", target_os = "macos"))
+        || (cfg!(target_os = "windows") && family == "microphone")
 }
-fn prompt_supported() -> bool {
-    cfg!(any(target_os = "android", target_os = "macos"))
+fn prompt_supported(family: &str) -> bool {
+    permission_supported(family)
 }
 fn status_name(status: PermissionStatus) -> &'static str {
     match status {
@@ -131,10 +132,10 @@ fn status_name(status: PermissionStatus) -> &'static str {
     }
 }
 fn status(work: &Work, os: &str) -> Value {
-    json!({"capability": work.family, "supported": permission_supported(), "app_policy_granted": work.policy_allows(),
+    json!({"capability": work.family, "supported": permission_supported(work.family), "app_policy_granted": work.policy_allows(),
         "app_consent": work.current_grant().map(|g| g.allowed).unwrap_or(false), "os_permission": os,
         "location_read_supported": work.family == "location" && cfg!(target_os = "android"),
-        "location_sample_supported": work.family == "location" && permission_supported(),
+        "location_sample_supported": work.family == "location" && permission_supported(work.family),
         "scope": "host_api_v1_device_access", "background_permission": false})
 }
 fn queue(work: Work) {
@@ -180,7 +181,7 @@ impl HostService for DeviceService {
                 json!({"type":"object","required":["abi","defaults","options","library_export_supported","library_export_requires_foreground","microphone_consent_required"]}))
                 .with_agent_access(AgentAccess::Allowed)]
         } else { vec![] };
-        if !permission_supported() {
+        if !permission_supported(self.family) {
             return capture_intent;
         }
         let input = json!({"type":"object","additionalProperties":false});
@@ -197,7 +198,7 @@ impl HostService for DeviceService {
                 input.clone(),
                 output.clone(),
             )
-            .with_platforms(&["android", "macos"])
+            .with_platforms(if self.family == "microphone" { &["android", "macos", "windows"] } else { &["android", "macos"] })
             .with_agent_access(AgentAccess::Allowed),
             HostApiMethod::new(
                 format!("{}.permission.request", self.family),
@@ -207,7 +208,7 @@ impl HostService for DeviceService {
                 input.clone(),
                 output.clone(),
             )
-            .with_platforms(&["android", "macos"])
+            .with_platforms(if self.family == "microphone" { &["android", "macos", "windows"] } else { &["android", "macos"] })
             .with_agent_access(AgentAccess::ForegroundOnly),
             HostApiMethod::new(
                 format!("{}.permission.revoke", self.family),
@@ -218,7 +219,7 @@ impl HostService for DeviceService {
                 json!({"type":"object","required":["app_consent","os_permission_unchanged","scope"],"properties":{
                     "app_consent":{"const":false},"os_permission_unchanged":{"const":true},"scope":{"const":"host_api_v1_device_access"}}}),
             )
-            .with_platforms(&["android", "macos"])
+            .with_platforms(if self.family == "microphone" { &["android", "macos", "windows"] } else { &["android", "macos"] })
             .with_agent_access(AgentAccess::Allowed),
         ];
         methods.extend(capture_intent);
@@ -311,7 +312,7 @@ impl HostService for DeviceService {
             return;
         }
         if self.family == "location" && call.method() == "sample.cancel" {
-            if !permission_supported() {
+            if !permission_supported(self.family) {
                 reply.send(Err(
                     "unsupported_platform: Location sampling is unavailable".into(),
                 ));
@@ -363,7 +364,7 @@ impl HostService for DeviceService {
             requesting: false,
             sample: sample_options.map(|options| location::Sample { options, fix: None }),
         };
-        if !permission_supported() {
+        if !permission_supported(self.family) {
             if operation == Operation::Status {
                 work.reply.clone().send(Ok(status(&work, "unsupported")));
             } else {
@@ -405,7 +406,7 @@ impl HostService for DeviceService {
                 );
                 return;
             }
-            if !prompt_supported() {
+            if !prompt_supported(self.family) {
                 work.fail(
                     "unsupported_platform",
                     "Trusted device consent is unavailable on this platform",

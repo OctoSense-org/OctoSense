@@ -131,6 +131,9 @@ fn parse(family: &str, method: &str, args: &Value) -> Result<Operation, String> 
     }
 }
 fn supported() -> bool {
+    cfg!(any(target_os = "macos", target_os = "android", target_os = "windows"))
+}
+fn playback_supported() -> bool {
     cfg!(any(target_os = "macos", target_os = "android"))
 }
 fn descriptor(name: &str, family: &str, description: &str, input: Value) -> HostApiMethod {
@@ -147,7 +150,11 @@ fn descriptor(name: &str, family: &str, description: &str, input: Value) -> Host
             "error":{"type":["string","null"]},"frames":{"type":"integer","minimum":0,"description":"Device frames received or rendered; not delivery or audibility confirmation"},
             "format":{"enum":["wav",null]}}}),
     )
-    .with_platforms(&["macos", "android"])
+    .with_platforms(if family == "microphone" {
+        &["macos", "android", "windows"]
+    } else {
+        &["macos", "android"]
+    })
     .with_agent_access(AgentAccess::ForegroundOnly)
 }
 fn session_schema() -> Value {
@@ -184,7 +191,7 @@ impl HostService for AudioService {
         "audio"
     }
     fn api_methods(&self) -> Vec<HostApiMethod> {
-        if !supported() {
+        if !playback_supported() {
             return vec![];
         }
         vec![
@@ -208,9 +215,12 @@ pub(crate) fn call(call: ServiceCall, reply: Replier) {
     let result = (|| {
         if !supported() {
             return Err(
-                "unsupported_platform: Native audio sessions currently support macOS and Android"
+                "unsupported_platform: Native audio sessions currently support macOS, Android and Windows"
                     .into(),
             );
+        }
+        if call.service.starts_with("audio.") && !playback_supported() {
+            return Err("unsupported_platform: Audio playback is not available on this host".into());
         }
         if !call.may_prompt || call.from_sheet {
             return Err("foreground_required: Open the installed app to use audio".into());
@@ -376,7 +386,7 @@ impl Default for State {
             background: false,
             // A desktop launch may start behind another application's window.
             // Only the native focus event can authorize this window initially.
-            window_unfocused: cfg!(target_os = "macos"),
+            window_unfocused: cfg!(any(target_os = "macos", target_os = "windows")),
             input: None,
             output: None,
             timer: Timer::default(),

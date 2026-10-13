@@ -319,6 +319,7 @@ mod tests {
         assert!(!valid_account(""));
     }
 
+    #[cfg(unix)]
     #[test]
     fn a_secrets_dir_keeps_keys_owner_only() {
         let dir = std::env::temp_dir().join(format!("llm-vault-{}", std::process::id()));
@@ -355,6 +356,11 @@ mod tests {
     fn profile_json(core: &Path) -> serde_json::Value {
         serde_json::from_slice(&std::fs::read(octosense_llm_config::profile::profile_path(core)).unwrap()).unwrap()
     }
+    fn seed_secret(core: &Path, account: &str, value: &str) {
+        let dir = core.join("secrets");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join(account), value).unwrap();
+    }
 
     /// HarmonyOS: a key an earlier build kept in the secrets folder, which
     /// the embedded kernel never reads, moves into the profile; the folder,
@@ -362,15 +368,25 @@ mod tests {
     #[test]
     fn keys_in_the_secrets_folder_move_into_the_profile() {
         let core = core_dir("move");
-        write_profile(&core, serde_json::json!({"DEEPSEEK_API_KEY": "keychain:", "GROQ_API_KEY": "keychain:GROQ_API_KEY::_main"}));
-        let folder = SecretsDir::new(core.join("secrets"));
-        folder.put("DEEPSEEK_API_KEY", "sk-test-move-0001").unwrap();
-        folder.put("GROQ_API_KEY::_main", "gsk-test-move-0002").unwrap();
-        folder.put("MOONSHOT_API_KEY", "sk-test-left-0003").unwrap();
-        assert_eq!(move_secrets_into_profile(&core).unwrap(), 2);
+        let env = if cfg!(unix) {
+            serde_json::json!({"DEEPSEEK_API_KEY": "keychain:", "GROQ_API_KEY": "keychain:GROQ_API_KEY::_main"})
+        } else {
+            serde_json::json!({"DEEPSEEK_API_KEY": "keychain:"})
+        };
+        write_profile(&core, env);
+        seed_secret(&core, "DEEPSEEK_API_KEY", "sk-test-move-0001");
+        // Windows cannot create a file with ':' in its name; the unscoped
+        // migration remains covered there, while Unix covers scoped keys too.
+        if cfg!(unix) {
+            seed_secret(&core, "GROQ_API_KEY::_main", "gsk-test-move-0002");
+        }
+        seed_secret(&core, "MOONSHOT_API_KEY", "sk-test-left-0003");
+        assert_eq!(move_secrets_into_profile(&core).unwrap(), if cfg!(unix) { 2 } else { 1 });
         let profile = profile_json(&core);
         assert_eq!(profile["config"]["env_vars"]["DEEPSEEK_API_KEY"], "sk-test-move-0001");
-        assert_eq!(profile["config"]["env_vars"]["GROQ_API_KEY"], "gsk-test-move-0002");
+        if cfg!(unix) {
+            assert_eq!(profile["config"]["env_vars"]["GROQ_API_KEY"], "gsk-test-move-0002");
+        }
         assert_eq!(profile["config"]["llm"]["primary"]["context_window"], 1048576, "the selection is kept as it was");
         assert!(!core.join("secrets").exists(), "the folder and the leftover key are gone");
         #[cfg(unix)]
@@ -389,7 +405,7 @@ mod tests {
         let path = octosense_llm_config::profile::profile_path(&core);
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         std::fs::write(&path, b"{ not json").unwrap();
-        SecretsDir::new(core.join("secrets")).put("DEEPSEEK_API_KEY", "sk-test-keep-0001").unwrap();
+        seed_secret(&core, "DEEPSEEK_API_KEY", "sk-test-keep-0001");
         assert!(move_secrets_into_profile(&core).is_err());
         assert_eq!(SecretsDir::new(core.join("secrets")).get("DEEPSEEK_API_KEY").unwrap().as_deref(), Some("sk-test-keep-0001"));
         let _ = std::fs::remove_dir_all(&core);

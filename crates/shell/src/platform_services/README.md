@@ -8,7 +8,7 @@ An installed script app can ask a compatible OctoSense host for camera, micropho
 - **App consent.** The person allows this app on a native host sheet. Consent covers this app on all of its accounts, and no other app.
 - **OS permission.** The operating system grants it to OctoSense as a whole, so on its own it authorizes no installed app.
 
-This module's device service (`DeviceService`) implements permission status, request and revoke on Android and macOS, bounded fresh location sampling on Android and macOS, and reading the legacy last-known location on Android. On other platforms, API discovery (`runtime.list` and `runtime.describe`) does not list these methods: `status` answers `os_permission: "unsupported"`, and `request` and `location.get` fail with `unsupported_platform`. A permission adds no calendar, file picker, camera capture or background location service. To show the camera, use the existing `CameraPreview` widget.
+This module's device service (`DeviceService`) implements camera and location permission status, request and revoke on Android and macOS, and microphone permission status, request and revoke on Android, macOS and Windows. Fresh location sampling is available on Android/macOS and the legacy last-known location on Android. Discovery omits unsupported methods on other platforms. Windows microphone status reports the host consent state, but the pinned Windows adapter cannot query the OS privacy setting; capture may still fail when the OS blocks the device. A permission adds no calendar, file picker, camera capture or background location service. To show the camera, use the existing `CameraPreview` widget.
 
 ## Declare what the app uses
 
