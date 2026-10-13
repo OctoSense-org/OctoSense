@@ -32,9 +32,11 @@
 //! address, can be reused); when its storage scope changes or goes (makepad's
 //! `splash_storage::storage_for_heap` for that key, checked by every call's
 //! [`sweep`]); and, for a caller with no isolate (a component's host call, a
-//! test), after [`IDLE`] without a call. Its renders go with it, and any a
-//! released document left behind go when the caller next opens a document
-//! ([`cache::prune`]).
+//! test), after [`IDLE`] without a call. Its renders go with it, and so do
+//! the clips it handed out for playback that no other document open in the
+//! same storage uses ([`media::forget`]); any a released document left
+//! behind go when the caller next opens a document ([`cache::prune`],
+//! [`media::prune`]).
 
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
@@ -56,6 +58,7 @@ use crate::cache;
 use crate::codes::{fail, invalid, too_large, Code};
 use crate::gate::{self, HeldCache, Plan};
 use crate::guard::Format;
+use crate::media;
 use crate::Ctx;
 
 /// The most documents one caller (app and storage scope) keeps open.
@@ -120,6 +123,9 @@ pub(crate) struct OpenDoc {
     /// What the session holds, as the door's ceilings count it, kept per
     /// slide between calls ([`gate`]).
     pub held: HeldCache,
+    /// The clips `deck.media` handed out for this document: storage-relative
+    /// files in the media cache ([`media`]).
+    pub clips: Vec<String>,
 }
 
 impl OpenDoc {
@@ -184,10 +190,17 @@ impl OpenDoc {
         matches!(&self.binding, Binding::Isolate { heap, .. } if closed.contains(heap))
     }
 
-    /// The document goes: its engine session, and its renders in the
-    /// service's cache.
+    /// The document goes: its engine session, its renders in the service's
+    /// cache, and the clips it handed out that no document still open in the
+    /// same storage uses.
     fn release(self) {
-        cache::forget(&Area::new(self.owner.clone(), None, false), &self.handle);
+        let area = Area::new(self.owner.clone(), None, false);
+        cache::forget(&area, &self.handle);
+        if !self.clips.is_empty() {
+            if let Some(used) = clips_in_use(&self.owner) {
+                media::forget(&area, &self.clips, &used);
+            }
+        }
     }
 }
 
@@ -244,6 +257,13 @@ pub(crate) fn isolate_closed(heap: usize) {
             closed.set(keys);
         }),
     }
+}
+
+/// The clips the documents open in the storage `owner` use, whichever app
+/// opened them; `None` while a call holds the table (the clips then stay,
+/// within the media cache's bounds, until a later open prunes them).
+pub(crate) fn clips_in_use(owner: &Path) -> Option<Vec<String>> {
+    DOCS.with(|docs| docs.try_borrow().ok().map(|docs| docs.open.iter().filter(|d| d.owner == owner).flat_map(|d| d.clips.iter().cloned()).collect()))
 }
 
 /// Whose documents a call reaches: its area's root as the file system
@@ -365,8 +385,8 @@ fn room_for_one(cx: &Ctx, owner: &Path) -> Result<(), String> {
     })
 }
 
-/// Add `doc` to the table, and clear the renders of documents no longer
-/// open in its storage.
+/// Add `doc` to the table, and clear the renders and clips of documents no
+/// longer open in its storage.
 fn admit(doc: OpenDoc, area: &Area) {
     let (app, owner) = (doc.app.clone(), doc.owner.clone());
     let open: Vec<String> = DOCS.with(|docs| {
@@ -375,6 +395,9 @@ fn admit(doc: OpenDoc, area: &Area) {
         docs.open.iter().filter(|d| d.app == app && d.owner == owner).map(|d| d.handle.clone()).collect()
     });
     cache::prune(area, &open);
+    if let Some(used) = clips_in_use(&owner) {
+        media::prune(area, &used);
+    }
 }
 
 /// A fresh open document around `session` (which holds its deck).
@@ -392,6 +415,7 @@ fn new_doc(cx: &Ctx, owner: PathBuf, session: Session, file: Option<String>) -> 
         deck_rev: 0,
         renders: HashMap::new(),
         held: HeldCache::default(),
+        clips: Vec::new(),
     };
     // The service keeps the undo steps itself (crate::gate).
     doc.st_mut()?.history.limit = usize::MAX;

@@ -177,7 +177,7 @@ fn shape_json(ctx: Option<&Ctx>, summary: &Json, sh: &Shape) -> Json {
         "box": summary["box"],
         "rotation": summary["rotation"],
     });
-    for (from, to) in [("placeholder", "placeholder"), ("preset", "preset"), ("text", "text"), ("fill", "fill"), ("table", "table"), ("chart", "chart"), ("altText", "alt_text")] {
+    for (from, to) in [("placeholder", "placeholder"), ("preset", "preset"), ("text", "text"), ("fill", "fill"), ("table", "table"), ("chart", "chart"), ("altText", "alt_text"), ("media", "media")] {
         if !summary[from].is_null() {
             out[to] = summary[from].clone();
         }

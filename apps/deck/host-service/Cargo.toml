@@ -48,6 +48,9 @@ zip = { version = "3", default-features = false, features = ["deflate"] }
 # of the engine's `open_presentation`), since the engine's own sniff misses
 # a package whose content-type list comes late, as LibreOffice writes them.
 deckcraft-pptx = { workspace = true }
+# Names a clip in the media cache by a hash of its bytes (src/media.rs);
+# the workspace's sha2, as Mail's and the shell's.
+sha2 = "0.10"
 
 [dev-dependencies]
 # Generates and checks the skill's references (tests/skill.rs).

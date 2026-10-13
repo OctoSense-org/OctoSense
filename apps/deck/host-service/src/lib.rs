@@ -11,11 +11,13 @@
 //!   name as `doc`; `close`, `state`, `save`, `slides`, `slide`, `hit`,
 //!   `view`, `layouts`, `text`, `format_state`, `slides_op`, `notes`,
 //!   `transition`, `insert`, `set_text`, `format`, `shape`, `picture`,
-//!   `table`, `chart`, `design`, `undo`, `redo`, `show` and `export` work on
-//!   it, and `themes`, `fonts`, `shapes` and `cover` need none. Who holds an
-//!   open document, on which thread, and what releases it: [`docs`]. How a
-//!   method's engine commands reach it, through the same door as `deck.run`,
-//!   as one undo step: [`gate`].
+//!   `table`, `chart`, `design`, `undo`, `redo`, `show`, `export` and
+//!   `media` work on it, and `themes`, `fonts`, `shapes` and `cover` need
+//!   none. Who holds an open document, on which thread, and what releases
+//!   it: [`docs`]. How a method's engine commands reach it, through the same
+//!   door as `deck.run`, as one undo step: [`gate`]. `media` runs no engine
+//!   command: it writes a clip's bytes, as the deck stores them, for the
+//!   app's player ([`media`]).
 //!
 //! The service does all file I/O itself and feeds the engine bytes, so the
 //! engine never touches a path, and a link written inside a presentation
@@ -70,6 +72,7 @@ mod covers;
 mod docs;
 mod gate;
 mod guard;
+mod media;
 mod objects;
 mod pictures;
 mod reading;
@@ -515,6 +518,7 @@ fn dispatch_in(method: &str, args: &Json, cx: &Ctx) -> Result<Json, String> {
         "redo" => slides::history(args, cx, true),
         "show" => reading::show(args, cx),
         "export" => writing::export(args, cx),
+        "media" => media::media(args, cx),
         other => Err(format!("deck.{other} is not a method of the deck service")),
     }
 }
@@ -604,6 +608,23 @@ thread_local! {
     /// How many files this thread's calls handed the engine to read (tests:
     /// a refusal of the import guard comes before any).
     static ENGINE_READS: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+    /// How many staging folders this thread's calls made for the service's
+    /// own writes (tests: a write that can't fit stages nothing).
+    static STAGES: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+}
+
+/// A staging folder in `area` for one of the service's own writes
+/// ([`Area::stage`]).
+pub(crate) fn stage(area: &Area) -> Result<octosense_engine_area::Stage<'_>, String> {
+    #[cfg(test)]
+    STAGES.with(|n| n.set(n.get() + 1));
+    area.stage().map_err(codes::area)
+}
+
+/// How many staging folders this thread's calls made (tests).
+#[cfg(test)]
+pub(crate) fn stages() -> u32 {
+    STAGES.with(std::cell::Cell::get)
 }
 
 /// How many files this thread's calls handed the engine (tests).

@@ -464,3 +464,71 @@ document's model (read-only, no engine command):
   banded_columns}`, the keys `deck.table {op: "options"}` takes.
 - An Office document that isn't a presentation (a `.docx` or `.xlsx`) is
   `unsupported:`.
+
+## Playback (maintainer approved, 13 Oct 2026)
+
+Quick Deck plays a deck's video and audio with the runtime's `Video` widget,
+which hands the file to the operating system's own player (AVFoundation on
+macOS and iOS, the platform player on Android). The deck engine's decoders
+stay unused: the service never decodes, probes or transcodes a clip, and
+`media.info`, `media.posterFrame`, `insert.audio` and `insert.video` stay
+held (#448).
+
+| Method | Arguments | Answer | Engine |
+| --- | --- | --- | --- |
+| `deck.media` | `{doc, slide, id}` | `{path, kind, ext, bytes, autoplay, loop, poster}` | none: the clip's bytes from the open document's model, written as they are |
+
+- `id` is the shape id of a video or audio object; `deck.slide` reports such
+  a shape with `media: {id, video, autoplay, loop}`. Any other shape is
+  `unknown_id:`.
+- `path` is a storage-relative file under `.cache/media/`, named by a hash of
+  the clip's bytes, holding exactly the bytes the deck stores. `ext` is the
+  deck's own extension for the clip, else one inferred from its declared
+  content type (`mp4`, `m4v`, `mov`, `mp3`, `m4a`, `aac`, `wav`); a clip
+  with neither answers `unsupported:`. `kind` is `video` or `audio`;
+  `autoplay` and `loop` are the clip's own settings; `poster` says whether
+  the clip has a poster image.
+- A clip already written is reused (the same hash). The media cache holds at
+  most 32 MiB and 8 files per app, oldest first; a document's clips are
+  removed when it closes. If a clip doesn't fit, the render cache and then the
+  media cache are cleared before the write, and a clip that still doesn't fit
+  is `storage_full:` ("There isn't room in Quick Deck's storage to play this
+  clip.").
+- Writes are staged and never replace a file the call didn't create, with
+  one exception: a stale entry at a clip's own name (a file that doesn't
+  hold the clip's bytes, or a link, which is never followed) is removed and
+  the clip written there anew.
+- **Where it plays:** the app overlays a `Video` widget on the clip's box,
+  with the file as its storage source, in the editor (a play control on a
+  chosen clip) and in Present (autoplay clips start when their slide shows;
+  a tap plays or pauses; moving on or Exit stops). Where the `Video` widget
+  has no player (today: Linux and Windows desktops), the app keeps the poster
+  and says "Playback isn't available on this system".
+
+As built in #515 (coordinator, 13 Oct 2026); where these differ from the
+bullets above, they win:
+
+- `deck.slide`'s `media.id` is the clip's media item id in the deck (two
+  shapes that play one item share it); `deck.media` takes the shape's own
+  `id`.
+- A clip larger than the whole media cache (32 MiB) is `storage_full:` at
+  once, with nothing cleared.
+- A clip the deck holds no bytes for (linked to a file elsewhere, which the
+  service never follows, or with a missing or empty item) is
+  `unsupported:`.
+- "Oldest first" means used longest ago: a clip handed out again counts as
+  just used (its file's modification time is set to now), so a slide's
+  other clip can't push it out before it plays. Clips no open document uses
+  go before any that one does.
+- Anything else at a clip's file name (a file cut short, or a link) is a
+  stale entry: it goes, and the clip is written anew, create-only. A folder
+  there is `invalid:`.
+- Clips no open document uses (an earlier run's, or a released document's)
+  go when a document next opens in that storage.
+- `deck.media` finds a clip inside a group too; `deck.slide` lists only
+  top-level shapes.
+- From a `.pptx`: deckcraft at `d0e57d7e` doesn't read a clip's autoplay or
+  loop from a package, so such a clip answers `autoplay: false` and
+  `loop: false` (a native deck keeps both). And deckcraft's `.pptx` writer
+  gives a clip without a poster a placeholder picture, so after a round
+  trip through a `.pptx` every clip answers `poster: true`.

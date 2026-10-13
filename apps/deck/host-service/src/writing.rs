@@ -44,22 +44,28 @@ const PAPER: (f64, f64) = (612.0, 792.0);
 
 /// Move `bytes` into place at `dest` (inside `area`, already checked)
 /// through a staging folder: all or nothing, within the storage's room,
-/// the render cache cleared first when it would not fit. `area`'s
-/// `may_replace` decides whether an existing file may be replaced.
+/// the render cache cleared first when it would not fit, and what still
+/// doesn't fit refused before anything is staged. `area`'s `may_replace`
+/// decides whether an existing file may be replaced.
 fn place(area: &Area, files: &[(PathBuf, &[u8])], m: &str) -> Result<(), String> {
     let total: u64 = files.iter().map(|(_, b)| b.len() as u64).sum();
     if files.iter().any(|(_, b)| b.len() as u64 > MAX_WRITE) {
         return Err(too_large(format!("{m}: the result is larger than the {} MB the service writes", MAX_WRITE >> 20)));
     }
-    let stage = area.stage().map_err(codes::area)?;
+    let freed: u64 = if area.may_replace { files.iter().map(|(d, _)| cache::regular_len(d)).sum() } else { 0 };
+    let need = total.saturating_sub(freed);
+    cache::make_room(area, need);
+    // The commit's own refusal, before anything is staged.
+    if let Some(room) = area.room().filter(|room| need > *room) {
+        return Err(codes::area(format!("the results are {total} bytes, more than the {room} {}", octosense_engine_area::NO_ROOM)));
+    }
+    let stage = crate::stage(area)?;
     let mut moves = Vec::with_capacity(files.len());
     for (k, (dest, bytes)) in files.iter().enumerate() {
         let staged = stage.path(format!("{k}"));
         std::fs::write(&staged, bytes).map_err(|e| codes::io(m, &e))?;
         moves.push((staged, dest.clone()));
     }
-    let freed: u64 = if area.may_replace { files.iter().map(|(d, _)| cache::regular_len(d)).sum() } else { 0 };
-    cache::make_room(area, total.saturating_sub(freed));
     stage.commit(&moves).map_err(codes::area)
 }
 

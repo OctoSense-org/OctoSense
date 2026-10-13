@@ -90,6 +90,9 @@ jobs:
         run: |
           # macOS replacement, recovery and the real helper's private-pipe protocol.
           cargo test --locked -p octosense-updater -p octosense-updater-ui
+          # The release helper, as packaged: its half of the unsigned-fixture
+          # test proves the setting is not compiled into release builds.
+          cargo test --locked --release -p octosense-updater --test macos_helper
           cargo check --locked -p octosense-updater-ui --example updates
       - name: One Makepad, App Hub, octos and Rinx in the locked graph
         run: python3 tools/setup.py --check --cargo

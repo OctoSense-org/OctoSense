@@ -8,6 +8,12 @@ pub struct DesktopWindow {
     pub rect: LRect,
     pub minimized: bool,
     pub maximized: bool,
+    /// Full screen, as macOS's green button makes a window: it covers the
+    /// whole desk, the top bar and a floating dock hide until the pointer
+    /// comes to their edge (`desktop::front_fullscreen`), and its title bar
+    /// shows only when the pointer comes to the top. Independent of
+    /// `maximized`, which leaving full screen returns to.
+    pub fullscreen: bool,
     pub snap: Option<crate::snap::Zone>,
 }
 #[derive(Clone, Debug, Default)]
@@ -88,6 +94,7 @@ impl DesktopWindows {
             rect,
             minimized: false,
             maximized: false,
+            fullscreen: false,
             snap: None,
         });
     }
@@ -106,18 +113,19 @@ impl DesktopWindows {
             self.windows.push(w);
         }
     }
-    /// Where each of `clients` draws on `area`. A maximized or snapped window
-    /// fills (its part of) the [`room`] above a dock that floats over the
-    /// desk, so it ends at the dock's top edge instead of behind the dock; its
-    /// own rect, which restoring returns to, is untouched. Any other window
-    /// keeps its rect, kept reachable ([`fit`]).
+    /// Where each of `clients` draws on `area`. A full-screen window covers
+    /// all of `area`. A maximized or snapped window fills (its part of) the
+    /// [`room`] above a dock that floats over the desk, so it ends at the
+    /// dock's top edge instead of behind the dock. A window's own rect, which
+    /// restoring returns to, is untouched. Any other window keeps its rect,
+    /// kept reachable ([`fit`]).
     pub fn rects(&self, clients: &[ClientId], area: LRect) -> Vec<(ClientId, LRect)> {
         let room = room(area, self.dock);
         self.windows
             .iter()
             .filter(|w| clients.contains(&w.client) && !w.minimized)
             .map(|w| {
-                let r = if w.maximized { room } else if let Some(zone)=w.snap {zone.bounds(room)} else { fit(w.rect, area) };
+                let r = if w.fullscreen { area } else if w.maximized { room } else if let Some(zone)=w.snap {zone.bounds(room)} else { fit(w.rect, area) };
                 (w.client, r)
             })
             .collect()
@@ -155,6 +163,29 @@ mod tests {
         d.raise(1);
         assert_eq!(d.rects(&[1, 2], area).last(), Some(&(1, original)));
     }
+    #[test]
+    fn a_full_screen_window_covers_the_whole_desk_and_restores_its_rect() {
+        let area = LRect::new(0.0, 0.0, 1400.0, 900.0);
+        let mut d = DesktopWindows { enabled: true, dock: 78.0, ..Default::default() };
+        d.ensure(1, area);
+        let own = d.get(1).unwrap().rect;
+        // Maximized, it ends above the floating dock...
+        d.get_mut(1).unwrap().maximized = true;
+        assert_eq!(d.rects(&[1], area)[0].1, room(area, 78.0));
+        // ...full screen, it covers the desk, the dock's strip too.
+        d.get_mut(1).unwrap().fullscreen = true;
+        assert_eq!(d.rects(&[1], area)[0].1, area);
+        // Leaving full screen returns to maximized, then to its own rect.
+        d.get_mut(1).unwrap().fullscreen = false;
+        assert_eq!(d.rects(&[1], area)[0].1, room(area, 78.0));
+        d.get_mut(1).unwrap().maximized = false;
+        assert_eq!(d.rects(&[1], area)[0].1, own);
+        // Minimized, it draws nowhere, full screen or not.
+        d.get_mut(1).unwrap().fullscreen = true;
+        d.get_mut(1).unwrap().minimized = true;
+        assert!(d.rects(&[1], area).is_empty());
+    }
+
     #[test]
     fn shrinking_the_workarea_keeps_windows_reachable() {
         assert_eq!(

@@ -340,6 +340,7 @@ fn an_unknown_or_foreign_handle_is_unknown() {
         ("redo", json!({ "doc": doc })),
         ("show", json!({ "doc": doc })),
         ("export", json!({ "doc": doc, "kind": "outline", "out": "x.txt" })),
+        ("media", json!({ "doc": doc, "slide": s, "id": 1 })),
     ] {
         coded(&other.err(method, args.clone()), "unknown_doc");
         coded(&w.call_full("os.notes", method, args, true, 0).unwrap_err(), "unknown_doc");
@@ -1002,6 +1003,491 @@ fn a_deck_past_the_media_ceiling_is_too_large_before_the_engine_reads() {
     coded(&e, "too_large");
     assert!(e.contains("bytes of media"), "{e}");
     assert_eq!(media_ceiling(&deck(over - 1)), Ok(()));
+}
+
+// ------------------------------------------------------------ playback (deck.media)
+
+/// A deck whose first slide holds one clip per `(name, content type, bytes,
+/// video)`, side by side, after the sample deck's title slide's own shapes.
+fn with_items(items: &[(&str, &str, Vec<u8>, bool)]) -> Presentation {
+    use deckcraft_model::{MediaClip, MediaId, MediaItem, Shape, ShapeKind, Xfrm};
+    let mut p = sample(1);
+    for (k, (name, content_type, data, video)) in items.iter().enumerate() {
+        let media = MediaId(p.alloc_id());
+        p.media.push(MediaItem { id: media, name: (*name).into(), content_type: (*content_type).into(), data: Arc::new(data.clone()), link: None });
+        let clip = MediaClip { media, video: *video, volume: 1.0, ..Default::default() };
+        let shape = Shape {
+            id: ShapeId(p.alloc_id()),
+            name: format!("Clip {}", k + 1),
+            xfrm: Some(Xfrm::new(20.0 + 60.0 * k as f64, 20.0, 50.0, 40.0)),
+            kind: ShapeKind::Media(clip),
+            ..Default::default()
+        };
+        Arc::make_mut(&mut p.slides[0]).shapes.push(shape);
+    }
+    p
+}
+
+/// Change the first clip on slide `index` of `p`.
+fn set_clip(p: &mut Presentation, index: usize, f: impl FnOnce(&mut deckcraft_model::MediaClip)) {
+    let slide = Arc::make_mut(&mut p.slides[index]);
+    let clip = slide.shapes.iter_mut().find_map(|sh| match &mut sh.kind {
+        deckcraft_model::ShapeKind::Media(m) => Some(m),
+        _ => None,
+    });
+    f(clip.expect("a clip on the slide"));
+}
+
+/// `len` bytes that differ from clip to clip (`k`), and that the native
+/// format stores as they are for a `video/` type.
+fn clip_of(k: usize, len: usize) -> Vec<u8> {
+    let mut b = vec![k as u8; len];
+    b[..8].copy_from_slice(&(k as u64).to_le_bytes());
+    b
+}
+
+/// The file's identity on its file system: equal before and after, it was
+/// not written again.
+fn inode(path: &Path) -> u64 {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        std::fs::metadata(path).unwrap().ino()
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = path;
+        0
+    }
+}
+
+impl World {
+    /// The ids of slide `slide`'s video and audio shapes, in order: the
+    /// shapes `deck.slide` reports with `media`.
+    fn clip_ids(&self, doc: &str, slide: u64) -> Vec<u64> {
+        self.shapes(doc, slide).iter().filter(|s| s["media"].is_object()).map(|s| s["id"].as_u64().unwrap()).collect()
+    }
+
+    /// `deck.media` for shape `id` on slide `slide`: the path it answered.
+    #[track_caller]
+    fn play(&self, doc: &str, slide: u64, id: u64) -> String {
+        self.ok("media", json!({ "doc": doc, "slide": slide, "id": id }))["path"].as_str().unwrap().to_string()
+    }
+}
+
+/// `deck.media` writes a clip's bytes from the open document's model, as the
+/// deck stores them, to `.cache/media/<SHA-256>.<ext>`, for a video (`.mp4`)
+/// and a sound (`.m4a`), from a package and from a native deck. `kind`,
+/// `autoplay`, `loop` and `poster` are the model's own, and `deck.slide`
+/// reports each clip's `media`. The engine reads no file for it.
+#[test]
+fn deck_media_writes_the_clips_bytes_as_the_deck_stores_them() {
+    use sha2::Digest as _;
+    let w = World::new();
+    let video = b"\0\0\0\x18ftypisom\0\0\x02\0isomiso2mp41 a small movie".to_vec();
+    let sound = b"\0\0\0\x18ftypM4A \0\0\0\0M4A isom a small sound".to_vec();
+    let mut deck = with_clips(&video, &sound, true);
+    // The sound plays by itself, over and over.
+    set_clip(&mut deck, 2, |m| {
+        m.autoplay = true;
+        m.loop_play = true;
+    });
+    w.put("clips.deckcraft", &native(&deck));
+    w.put("clips.pptx", &pptx(&deck));
+    for path in ["clips.deckcraft", "clips.pptx"] {
+        let doc = w.open(path);
+        let ids = w.slide_ids(&doc);
+        let film = w.shape_where(&doc, ids[0], "kind", "video");
+        let tone = w.shape_where(&doc, ids[2], "kind", "audio");
+        let reported = |slide: u64, id: u64| w.shapes(&doc, slide).into_iter().find(|s| s["id"] == id).unwrap()["media"].clone();
+        let (film_media, tone_media) = (reported(ids[0], film), reported(ids[2], tone));
+        assert_eq!((film_media["video"].clone(), film_media["autoplay"].clone(), film_media["loop"].clone()), (json!(true), json!(false), json!(false)), "{path}: {film_media}");
+        assert_eq!(tone_media["video"], false, "{path}: {tone_media}");
+        assert!(film_media["id"].is_u64() && tone_media["id"].is_u64(), "{path}: the clip's media item");
+        // Whether the model holds a poster picture for the clip: a package's
+        // writer gives every clip a picture, so the sound has one once it
+        // went through a .pptx.
+        let poster = |id: u64| {
+            let deck = held_deck(&doc);
+            let clip = deck.slides.iter().find_map(|s| s.shape(ShapeId(id as u32))).and_then(|sh| match &sh.kind {
+                deckcraft_model::ShapeKind::Media(m) => m.poster,
+                _ => None,
+            });
+            clip.and_then(|p| deck.media(p)).is_some_and(|item| !item.data.is_empty())
+        };
+        let before = engine_reads();
+        let a = w.ok("media", json!({ "doc": doc, "slide": ids[0], "id": film }));
+        let want = format!(".cache/media/{:x}.mp4", sha2::Sha256::digest(&video));
+        assert!(poster(film), "{path}: the video's red poster");
+        assert_eq!(a, json!({ "path": want, "kind": "video", "ext": "mp4", "bytes": video.len(), "autoplay": false, "loop": false, "poster": true }), "{path}");
+        assert_eq!(std::fs::read(w.root.join(&want)).unwrap(), video, "{path}: the deck's bytes, as they are");
+        let b = w.ok("media", json!({ "doc": doc, "slide": ids[2], "id": tone }));
+        let want = format!(".cache/media/{:x}.m4a", sha2::Sha256::digest(&sound));
+        let (autoplay, looped) = (tone_media["autoplay"].clone(), tone_media["loop"].clone());
+        assert_eq!(b, json!({ "path": want, "kind": "audio", "ext": "m4a", "bytes": sound.len(), "autoplay": autoplay, "loop": looped, "poster": poster(tone) }), "{path}");
+        if path.ends_with(".deckcraft") {
+            assert_eq!((autoplay, looped, poster(tone)), (json!(true), json!(true), false), "the clip's own settings, and no poster");
+        }
+        assert_eq!(std::fs::read(w.root.join(&want)).unwrap(), sound, "{path}");
+        assert_eq!(engine_reads(), before, "{path}: the engine read no file for it");
+        w.ok("close", json!({ "doc": doc }));
+    }
+}
+
+/// A clip already in the media cache is handed out again, not written twice:
+/// the same answer, one file, the same file, for the same document and for
+/// another one open on the same deck. Something else at the clip's name (a
+/// file cut short) is a stale entry: the clip is written anew.
+#[test]
+fn deck_media_hands_out_a_clip_already_written_again() {
+    let w = World::new();
+    let video = b"\0\0\0\x18ftypisom\0\0\x02\0isomiso2mp41 written once".to_vec();
+    w.put("clips.deckcraft", &native(&with_clips(&video, b"a sound", false)));
+    let (one, two) = (w.open("clips.deckcraft"), w.open("clips.deckcraft"));
+    let ask = |doc: &str| {
+        let s = w.slide_ids(doc)[0];
+        let id = w.shape_where(doc, s, "kind", "video");
+        w.ok("media", json!({ "doc": doc, "slide": s, "id": id }))
+    };
+    let first = ask(&one);
+    let rel = first["path"].as_str().unwrap().to_string();
+    let file = w.root.join(&rel);
+    let written = inode(&file);
+    for doc in [&one, &one, &two] {
+        assert_eq!(ask(doc), first);
+        assert_eq!(w.files(".cache/media"), vec![rel.clone()], "one file");
+        assert_eq!(inode(&file), written, "the same file, not written again");
+    }
+    std::fs::write(&file, &video[..4]).unwrap();
+    assert_eq!(ask(&two), first);
+    assert_eq!(std::fs::read(&file).unwrap(), video, "written anew, whole");
+    assert_eq!(w.files(".cache/media"), vec![rel]);
+}
+
+/// Any shape but a video or audio clip is `unknown_id:`, as a shape or slide
+/// the deck doesn't have; a clip neither whose name nor whose declared type
+/// is one the contract lists, or whose bytes the deck doesn't hold (a link),
+/// is `unsupported:`. The deck's own extension comes first, then the
+/// declared type's.
+#[test]
+fn deck_media_answers_unknown_id_for_another_shape_and_unsupported_for_an_unknown_kind() {
+    use deckcraft_model::{MediaClip, MediaId, MediaItem, Shape, ShapeKind, Xfrm};
+    let w = World::new();
+    let items = [
+        ("clip.bin", "application/octet-stream", b"neither its name nor its type".to_vec(), true),
+        ("clip", "video/quicktime", b"a movie by its type".to_vec(), true),
+        ("Film.M4V", "video/mp4", b"its own name first".to_vec(), true),
+        ("theme.wma", "audio/mpeg", b"a name it doesn't play, a type it does".to_vec(), false),
+        ("ring", "Audio/X-WAV; rate=44100", b"a sound by its type".to_vec(), false),
+        ("talk.aac", "", b"by its name alone".to_vec(), false),
+    ];
+    let mut deck = with_items(&items);
+    // A clip linked to a file elsewhere: no bytes in the deck.
+    let media = MediaId(deck.alloc_id());
+    deck.media.push(MediaItem { id: media, name: "talk.mp4".into(), content_type: "video/mp4".into(), data: Arc::new(vec![]), link: Some("https://example.com/talk.mp4".into()) });
+    let shape = Shape { id: ShapeId(deck.alloc_id()), name: "Linked".into(), xfrm: Some(Xfrm::new(600.0, 300.0, 80.0, 60.0)), kind: ShapeKind::Media(MediaClip { media, video: true, volume: 1.0, ..Default::default() }), ..Default::default() };
+    Arc::make_mut(&mut deck.slides[0]).shapes.push(shape);
+    w.put("kinds.deckcraft", &native(&deck));
+    let doc = w.open("kinds.deckcraft");
+    let s = w.slide_ids(&doc)[0];
+    let clips = w.clip_ids(&doc, s);
+    assert_eq!(clips.len(), 7);
+    let e = w.err("media", json!({ "doc": doc, "slide": s, "id": clips[0] }));
+    coded(&e, "unsupported");
+    assert!(e.contains("mp4, m4v, mov, mp3, m4a, aac, wav"), "{e}");
+    for (k, ext) in [(1, "mov"), (2, "m4v"), (3, "mp3"), (4, "wav"), (5, "aac")] {
+        let a = w.ok("media", json!({ "doc": doc, "slide": s, "id": clips[k] }));
+        assert_eq!(a["ext"], ext, "{a}");
+        let path = a["path"].as_str().unwrap();
+        assert!(path.ends_with(&format!(".{ext}")), "{a}");
+        assert_eq!(std::fs::read(w.root.join(path)).unwrap(), items[k].2);
+    }
+    let e = w.err("media", json!({ "doc": doc, "slide": s, "id": clips[6] }));
+    coded(&e, "unsupported");
+    assert!(e.contains("linked"), "{e}");
+    let other = w.shapes(&doc, s).into_iter().find(|sh| sh["media"].is_null()).unwrap()["id"].clone();
+    coded(&w.err("media", json!({ "doc": doc, "slide": s, "id": other })), "unknown_id");
+    coded(&w.err("media", json!({ "doc": doc, "slide": s, "id": 999_999 })), "unknown_id");
+    coded(&w.err("media", json!({ "doc": doc, "slide": 999_999, "id": clips[1] })), "unknown_id");
+    assert_eq!(w.files(".cache/media").len(), 5, "nothing written for a refusal");
+}
+
+/// The media cache holds at most 32 MiB and 8 clips: the clip used longest
+/// ago goes first, and a clip handed out again counts as just used.
+#[test]
+fn the_media_cache_holds_32_mib_and_8_clips_the_oldest_going_first() {
+    let w = World::new();
+    let names: Vec<String> = (0..9).map(|k| format!("clip{k}.mp4")).collect();
+    let items: Vec<(&str, &str, Vec<u8>, bool)> = names.iter().enumerate().map(|(k, n)| (n.as_str(), "video/mp4", clip_of(k, 4096), true)).collect();
+    w.put("nine.deckcraft", &native(&with_items(&items)));
+    let doc = w.open("nine.deckcraft");
+    let s = w.slide_ids(&doc)[0];
+    let ids = w.clip_ids(&doc, s);
+    // Apart in time, so "oldest" is plain whatever the file system's clock.
+    let play = |k: usize| {
+        std::thread::sleep(Duration::from_millis(25));
+        w.play(&doc, s, ids[k])
+    };
+    let paths: Vec<String> = (0..9).map(play).collect();
+    let cached = || w.files(".cache/media");
+    assert_eq!(cached().len(), media::MAX_FILES);
+    assert!(!cached().contains(&paths[0]), "the oldest went");
+    assert!(paths[1..].iter().all(|p| cached().contains(p)));
+    // Clip 1 handed out again is just used: written again, clip 0 puts out
+    // clip 2, the oldest of the rest, and not clip 1.
+    assert_eq!(play(1), paths[1]);
+    assert_eq!(play(0), paths[0]);
+    let now = cached();
+    assert!(now.contains(&paths[0]) && now.contains(&paths[1]) && !now.contains(&paths[2]), "{now:?}");
+    assert_eq!(now.len(), media::MAX_FILES);
+    // 32 MiB: of three clips of 12 MiB, the last two stay.
+    let big = World::new();
+    let names: Vec<String> = (0..3).map(|k| format!("big{k}.mp4")).collect();
+    let items: Vec<(&str, &str, Vec<u8>, bool)> = names.iter().enumerate().map(|(k, n)| (n.as_str(), "video/mp4", clip_of(100 + k, 12 << 20), true)).collect();
+    big.put("big.deckcraft", &native(&with_items(&items)));
+    let doc = big.open("big.deckcraft");
+    let s = big.slide_ids(&doc)[0];
+    let ids = big.clip_ids(&doc, s);
+    let paths: Vec<String> = ids
+        .iter()
+        .map(|id| {
+            std::thread::sleep(Duration::from_millis(25));
+            big.play(&doc, s, *id)
+        })
+        .collect();
+    assert_eq!(big.files(".cache/media"), {
+        let mut kept = paths[1..].to_vec();
+        kept.sort();
+        kept
+    });
+    let held: u64 = big.files(".cache/media").iter().map(|f| std::fs::metadata(big.root.join(f)).unwrap().len()).sum();
+    assert!(held <= media::MAX_BYTES, "{held} bytes");
+}
+
+/// A document's clips go when it closes, except one another document open in
+/// the same storage still uses; a document released while idle takes its
+/// clips too; and a clip no open document uses (an earlier run's) goes when
+/// a document next opens.
+#[test]
+fn a_documents_clips_go_when_it_closes() {
+    let w = World::new();
+    w.put("clips.deckcraft", &native(&with_clips(b"\0\0\0\x18ftypisom movie", b"\0\0\0\x18ftypM4A sound", false)));
+    let clip = |doc: &str, slide: usize, kind: &str| {
+        let s = w.slide_ids(doc)[slide];
+        let id = w.shape_where(doc, s, "kind", kind);
+        w.play(doc, s, id)
+    };
+    let (one, two) = (w.open("clips.deckcraft"), w.open("clips.deckcraft"));
+    let film = clip(&one, 0, "video");
+    let tone = clip(&one, 2, "audio");
+    assert_eq!(clip(&two, 0, "video"), film);
+    assert_eq!(w.files(".cache/media").len(), 2);
+    w.ok("close", json!({ "doc": one }));
+    assert_eq!(w.files(".cache/media"), vec![film.clone()], "the sound went with its document; the video stays for the other");
+    assert!(!w.root.join(&tone).exists());
+    w.ok("close", json!({ "doc": two }));
+    assert!(w.files(".cache/media").is_empty(), "the last document took the video");
+    let three = w.open("clips.deckcraft");
+    clip(&three, 0, "video");
+    docs::sweep_at(Instant::now() + docs::IDLE + Duration::from_secs(1));
+    assert!(w.files(".cache/media").is_empty(), "released while idle, with its clips");
+    w.put(".cache/media/left-behind.mp4", b"an earlier run's clip");
+    w.open("clips.deckcraft");
+    assert!(w.files(".cache/media").is_empty(), "pruned when a document opened");
+}
+
+/// An isolate closing takes its documents' clips with their renders.
+#[test]
+fn a_closed_isolates_clips_go_with_its_renders() {
+    use makepad_widgets::*;
+    crate::register();
+    let w = World::new();
+    w.put("clips.deckcraft", &native(&with_clips(b"\0\0\0\x18ftypisom movie", b"\0\0\0\x18ftypM4A sound", false)));
+    let mut cx = Cx::new(Box::new(|_, _| {}));
+    let mut card = cx.with_vm(|vm| {
+        makepad_widgets::script_mod(vm);
+        let value = vm.eval(script! {use mod.widgets.* Splash{}});
+        Splash::script_from_value(vm, value)
+    });
+    card.set_host_tag(&mut cx, Some(APP.into()));
+    card.set_sandbox_dir(&mut cx, Some(w.root.clone()));
+    card.set_text(&mut cx, "View {}");
+    let heap = card.isolate_heap_key(&mut cx).unwrap();
+    let from = |method: &str, args: Json| w.call_full(APP, method, args, true, heap).unwrap();
+    let doc = from("open", json!({ "path": "clips.deckcraft" }))["doc"].clone();
+    let s = from("slides", json!({ "doc": doc }))["slides"][0]["id"].clone();
+    let shapes = from("slide", json!({ "doc": doc, "slide": s }))["shapes"].clone();
+    let id = shapes.as_array().unwrap().iter().find(|sh| sh["kind"] == "video").unwrap()["id"].clone();
+    let clip = from("media", json!({ "doc": doc, "slide": s, "id": id }))["path"].as_str().unwrap().to_string();
+    from("view", json!({ "doc": doc, "slide": s, "width": 96 }));
+    let renders = w.root.join(format!(".cache/slides/{}", doc.as_str().unwrap()));
+    assert!(w.root.join(&clip).is_file() && renders.is_dir());
+    octosense_appstore::services::cancel_heap(heap);
+    assert!(!w.root.join(&clip).exists(), "the clip went with its document");
+    assert!(!renders.exists(), "and so did its renders");
+}
+
+/// Before a clip would not fit the storage, the render cache and then the
+/// media cache are cleared; a clip that still doesn't fit is `storage_full:`
+/// in the contract's words, with nothing of it staged or written. A clip
+/// larger than the whole media cache is `storage_full:` at once, with
+/// nothing cleared or staged.
+#[test]
+fn the_render_cache_then_the_media_cache_are_cleared_before_storage_full() {
+    let roomy = World::new();
+    let items = [
+        ("a.mp4", "video/mp4", clip_of(1, 20_000), true),
+        ("b.mp4", "video/mp4", clip_of(2, 30_000), true),
+        ("c.mp4", "video/mp4", clip_of(3, 40_000), true),
+        ("d.mp4", "video/mp4", clip_of(4, 90_000), true),
+        ("huge.mp4", "video/mp4", clip_of(5, media::MAX_BYTES as usize + 1), true),
+    ];
+    roomy.put("clips.deckcraft", &native(&with_items(&items)));
+    let doc = roomy.open("clips.deckcraft");
+    let s = roomy.slide_ids(&doc)[0];
+    let ids = roomy.clip_ids(&doc, s);
+    roomy.ok("view", json!({ "doc": doc, "slide": s, "width": 1920 }));
+    let a = roomy.play(&doc, s, ids[0]);
+    let renders = roomy.files(".cache/slides");
+    assert!(!renders.is_empty());
+    let full = format!("storage_full: {}", media::FULL);
+    // Larger than the whole media cache: refused at once, nothing cleared.
+    let staged = stages();
+    assert_eq!(roomy.err("media", json!({ "doc": doc, "slide": s, "id": ids[4] })), full);
+    assert_eq!(stages(), staged, "nothing staged");
+    assert_eq!(roomy.files(".cache/slides"), renders);
+    assert_eq!(roomy.files(".cache/media"), vec![a.clone()]);
+    let tight = |quota: u64| World { _dir: tempfile::tempdir().unwrap(), root: roomy.root.clone(), areas: roomy.tight(quota) };
+    let sorted = |mut v: Vec<String>| {
+        v.sort();
+        v
+    };
+    // B fits once the render cache is cleared; A stays.
+    let t = tight(30_000 - 1);
+    let staged = stages();
+    let b = t.play(&doc, s, ids[1]);
+    assert_eq!(stages(), staged + 1, "a clip that fits is staged once");
+    assert!(t.files(".cache/slides").is_empty(), "the render cache was cleared: {:?}", t.files(".cache/slides"));
+    assert_eq!(t.files(".cache/media"), sorted(vec![a.clone(), b.clone()]));
+    // C fits only once the media cache is cleared too.
+    let t = tight(40_000 - 1);
+    let c = t.play(&doc, s, ids[2]);
+    assert_eq!(t.files(".cache/media"), vec![c.clone()], "the media cache was cleared");
+    // D doesn't fit even then: refused before anything is staged.
+    let t = tight(0);
+    let staged = stages();
+    assert_eq!(t.err("media", json!({ "doc": doc, "slide": s, "id": ids[3] })), full);
+    assert_eq!(stages(), staged, "nothing staged");
+    assert!(t.files(".cache/media").is_empty(), "cleared trying");
+    let staging = std::fs::read_dir(&roomy.root).unwrap().flatten().filter(|e| e.file_name().to_string_lossy().starts_with(octosense_engine_area::STAGING_PREFIX)).count();
+    assert_eq!(staging, 0, "nothing staged is left");
+}
+
+/// A link at a clip's own name is a stale entry like any other, even one to
+/// a file outside the storage, and even one to a file holding the clip's
+/// very bytes: it goes (the link itself, never followed), the clip is
+/// written there as a plain file, and the file it pointed to is untouched.
+#[cfg(unix)]
+#[test]
+fn a_link_at_a_clips_name_goes_and_is_never_followed() {
+    use sha2::Digest as _;
+    let w = World::new();
+    let video = b"\0\0\0\x18ftypisom\0\0\x02\0isomiso2mp41 behind a link".to_vec();
+    w.put("clips.deckcraft", &native(&with_clips(&video, b"a sound", false)));
+    let name = w.root.join(format!(".cache/media/{:x}.mp4", sha2::Sha256::digest(&video)));
+    std::fs::create_dir_all(name.parent().unwrap()).unwrap();
+    let outside = w.root.parent().unwrap();
+    for (k, held) in [b"outside the storage".to_vec(), video.clone()].into_iter().enumerate() {
+        let target = outside.join(format!("outside{k}.mp4"));
+        std::fs::write(&target, &held).unwrap();
+        let written = std::fs::metadata(&target).unwrap().modified().unwrap();
+        std::os::unix::fs::symlink(&target, &name).unwrap();
+        let doc = w.open("clips.deckcraft");
+        let s = w.slide_ids(&doc)[0];
+        let id = w.shape_where(&doc, s, "kind", "video");
+        let path = w.play(&doc, s, id);
+        assert_eq!(w.root.join(&path), name);
+        let entry = std::fs::symlink_metadata(&name).unwrap();
+        assert!(entry.is_file(), "case {k}: a plain file now, not a link");
+        assert_eq!(std::fs::read(&name).unwrap(), video, "case {k}: the clip's bytes");
+        assert_eq!(std::fs::read(&target).unwrap(), held, "case {k}: the file outside is untouched");
+        assert_eq!(std::fs::metadata(&target).unwrap().modified().unwrap(), written, "case {k}: not even its time");
+        w.ok("close", json!({ "doc": doc }));
+        assert!(std::fs::symlink_metadata(&name).is_err(), "case {k}: the clip went with its document");
+    }
+}
+
+/// When the media cache needs room, clips no open document uses go first,
+/// even newer ones, and a clip an open document uses goes only when that is
+/// not enough, the one used longest ago first.
+#[test]
+fn eviction_takes_clips_no_open_document_uses_first() {
+    let w = World::new();
+    let names: Vec<String> = (0..9).map(|k| format!("clip{k}.mp4")).collect();
+    let items: Vec<(&str, &str, Vec<u8>, bool)> = names.iter().enumerate().map(|(k, n)| (n.as_str(), "video/mp4", clip_of(k, 4096), true)).collect();
+    w.put("nine.deckcraft", &native(&with_items(&items)));
+    let doc = w.open("nine.deckcraft");
+    let s = w.slide_ids(&doc)[0];
+    let ids = w.clip_ids(&doc, s);
+    let play = |k: usize| {
+        std::thread::sleep(Duration::from_millis(25));
+        w.play(&doc, s, ids[k])
+    };
+    let paths: Vec<String> = (0..7).map(play).collect();
+    // A clip no open document uses (one a document released while the table
+    // was busy left), the newest of all.
+    std::thread::sleep(Duration::from_millis(25));
+    w.put(".cache/media/stray.mp4", &clip_of(99, 4096));
+    assert_eq!(w.files(".cache/media").len(), media::MAX_FILES);
+    let seventh = play(7);
+    let now = w.files(".cache/media");
+    assert!(!now.contains(&".cache/media/stray.mp4".to_string()), "the clip no document uses went first: {now:?}");
+    assert!(now.contains(&paths[0]) && now.contains(&seventh), "the open document's clips stayed: {now:?}");
+    assert_eq!(now.len(), media::MAX_FILES);
+    // Only the open document's clips are left: the one used longest ago goes.
+    let eighth = play(8);
+    let now = w.files(".cache/media");
+    assert!(!now.contains(&paths[0]) && now.contains(&paths[1]) && now.contains(&eighth), "{now:?}");
+    assert_eq!(now.len(), media::MAX_FILES);
+}
+
+/// A hostile "video" (bytes that would trip a decoder, `hostile_movie`) and
+/// a hostile sound are written byte for byte, and nothing decodes them: the
+/// engine reads no file for `deck.media`, the session holds the same media
+/// before and after (the media ceiling counts the same), the method's module
+/// calls nothing of the engine's (its code names neither the engine nor its
+/// decoders), and the four commands that would decode stay held.
+#[test]
+fn a_hostile_clip_is_written_byte_for_byte_and_never_decoded() {
+    let w = World::new();
+    let (movie, noise) = (hostile_movie(), hostile_sound());
+    let deck = with_clips(&movie, &noise, false);
+    w.put("hostile.pptx", &pptx(&deck));
+    w.put("hostile.deckcraft", &native(&deck));
+    for path in ["hostile.pptx", "hostile.deckcraft"] {
+        let doc = w.open(path);
+        let ids = w.slide_ids(&doc);
+        let film = w.shape_where(&doc, ids[0], "kind", "video");
+        let tone = w.shape_where(&doc, ids[2], "kind", "audio");
+        let held = || docs::with_open(&doc, |d| Held::of(&d.session).media).unwrap();
+        let (reads, media_held) = (engine_reads(), held());
+        let a = w.ok("media", json!({ "doc": doc, "slide": ids[0], "id": film }));
+        let b = w.ok("media", json!({ "doc": doc, "slide": ids[2], "id": tone }));
+        assert_eq!(std::fs::read(w.root.join(a["path"].as_str().unwrap())).unwrap(), movie, "{path}: the movie, byte for byte");
+        assert_eq!(std::fs::read(w.root.join(b["path"].as_str().unwrap())).unwrap(), noise, "{path}: the sound, byte for byte");
+        assert_eq!((a["bytes"].clone(), b["bytes"].clone()), (json!(movie.len()), json!(noise.len())));
+        assert_eq!(engine_reads(), reads, "{path}: the engine read no file");
+        assert_eq!(held(), media_held, "{path}: the session's media is unchanged");
+        assert!(media_over(media_held).is_none());
+        w.ok("close", json!({ "doc": doc }));
+    }
+    let code: String = include_str!("media.rs").lines().filter(|l| !l.trim_start().starts_with("//")).collect::<Vec<_>>().join("\n");
+    for name in ["deckcraft_engine", "deckcraft_media", "deckcraft_render", "deckcraft_pptx", "gate::", "Session", "execute("] {
+        assert!(!code.contains(name), "media.rs calls into the engine: {name}");
+    }
+    for id in ["media.info", "media.posterFrame", "insert.audio", "insert.video"] {
+        assert!(HELD_BACK.iter().any(|h| h.id == id), "{id} stays held");
+    }
 }
 
 /// The import guard passes what the engine itself writes, at the sizes the
@@ -2109,8 +2595,11 @@ fn the_cache_is_cleared_before_storage_full() {
     let len = out["bytes"].as_u64().unwrap();
     assert!(len > outline_len && len <= outline_len + cached, "the export needed the cache's room: {len} bytes");
     assert!(tight.files(".cache").is_empty(), "the cache was cleared: {:?}", tight.files(".cache"));
+    let staged = stages();
     let e = tight.err("export", json!({ "doc": doc, "kind": "pptx", "out": "again.pptx" }));
     coded(&e, "storage_full");
+    assert!(e.ends_with(octosense_engine_area::NO_ROOM), "the commit's own words: {e}");
+    assert_eq!(stages(), staged, "refused before anything was staged");
     coded(&tight.err("save", json!({ "doc": doc, "path": "copy.deckcraft" })), "storage_full");
     coded(&tight.err("view", json!({ "doc": doc, "slide": s, "width": 1920 })), "storage_full");
     assert!(!tight.root.join("again.pptx").exists());
@@ -2155,6 +2644,7 @@ fn every_v2_method_refuses_arguments_it_does_not_take() {
         ("redo", json!({ "doc": doc, "steps": 2 })),
         ("show", json!({ "doc": doc, "presenter": true })),
         ("export", json!({ "doc": doc, "kind": "pdf", "out": "x.pdf", "password": "x" })),
+        ("media", json!({ "doc": doc, "slide": s, "id": 1, "out": "x.mp4" })),
     ] {
         let e = w.err(method, args.clone());
         coded(&e, "invalid");

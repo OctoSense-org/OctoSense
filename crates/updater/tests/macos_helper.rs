@@ -9,8 +9,24 @@ use std::{
     time::{Duration, Instant},
 };
 
+/// The installer lock's folder for one test: a debug helper uses it instead
+/// of the folder under the person's home (`OCTOSENSE_UPDATE_LOCK_DIR`, not in
+/// release builds, whose helper locks in the real folder as it would ship).
+struct Locks(tempfile::TempDir);
+impl Locks {
+    fn new() -> Self {
+        let folder = tempfile::tempdir().unwrap();
+        fs::set_permissions(folder.path(), fs::Permissions::from_mode(0o700)).unwrap();
+        Self(folder)
+    }
+    fn apply(&self, command: &mut Command) {
+        command.env("OCTOSENSE_UPDATE_LOCK_DIR", self.0.path());
+    }
+}
+
 struct Fixture {
     _temp: tempfile::TempDir,
+    locks: Locks,
     root: PathBuf,
     job: PathBuf,
     target: PathBuf,
@@ -34,6 +50,7 @@ fn fixture() -> Fixture {
     fs::set_permissions(&job, fs::Permissions::from_mode(0o600)).unwrap();
     Fixture {
         _temp: temp,
+        locks: Locks::new(),
         root,
         job,
         target,
@@ -41,7 +58,9 @@ fn fixture() -> Fixture {
     }
 }
 fn start(f: &Fixture) -> Child {
-    Command::new(env!("CARGO_BIN_EXE_octosense-update-helper"))
+    let mut command = Command::new(env!("CARGO_BIN_EXE_octosense-update-helper"));
+    f.locks.apply(&mut command);
+    command
         .arg(&f.job)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -102,7 +121,8 @@ fn closing_commit_pipe_cancels_and_removes_only_the_staging_folder() {
         assert!(wait(&mut child).success());
         assert!(!f.root.exists());
         assert_eq!(fs::read(f.target.join("untouched")).unwrap(), b"original");
-        // Its lock was the folder itself: nothing is left beside the app.
+        // Its lock lives in the lock folder, not here: nothing is left beside
+        // the app.
         assert_eq!(names(f.target.parent().unwrap()), ["OctoSense.app"]);
     }
 }
@@ -112,6 +132,7 @@ fn closing_commit_pipe_cancels_and_removes_only_the_staging_folder() {
 /// exited, and commits. The installed app here is unsigned too.
 struct Planted {
     _temp: tempfile::TempDir,
+    locks: Locks,
     parent: PathBuf,
     job: PathBuf,
     target: PathBuf,
@@ -164,6 +185,7 @@ fn planted() -> Planted {
     fs::set_permissions(&job, fs::Permissions::from_mode(0o600)).unwrap();
     Planted {
         _temp: temp,
+        locks: Locks::new(),
         parent,
         job,
         target,
@@ -176,6 +198,7 @@ fn planted() -> Planted {
 /// Runs the real helper on a planted job through its commit; returns its stderr.
 fn commit_planted(p: &Planted, fixtures_seam: bool) -> String {
     let mut command = Command::new(env!("CARGO_BIN_EXE_octosense-update-helper"));
+    p.locks.apply(&mut command);
     command
         .arg(&p.job)
         .env_remove("OCTOSENSE_UPDATE_UNSIGNED_FIXTURES")
@@ -201,8 +224,9 @@ fn commit_planted(p: &Planted, fixtures_seam: bool) -> String {
     assert!(!output.status.success());
     String::from_utf8_lossy(&output.stderr).into_owned()
 }
+/// Generous, for a loaded machine: it returns as soon as the file appears.
 fn wait_for(path: &Path) -> Option<String> {
-    let until = Instant::now() + Duration::from_secs(5);
+    let until = Instant::now() + Duration::from_secs(30);
     while Instant::now() < until {
         if let Ok(text) = fs::read_to_string(path) {
             return Some(text);

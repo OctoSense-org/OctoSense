@@ -52,6 +52,13 @@ const MAX_FILES: usize = 50_000;
 /// that reads it (`Trust::of_installed`).
 #[cfg(debug_assertions)]
 const UNSIGNED_FIXTURES_ENV: &str = "OCTOSENSE_UPDATE_UNSIGNED_FIXTURES";
+/// The installer lock's folder under the person's home (`lock_dir`).
+const LOCK_DIR: &str = "Library/Caches/org.octosense.desktop/updater";
+/// Debug builds only: a folder for the installer lock instead of the home's,
+/// so tests of the real helper stay inside temporary folders. Release builds
+/// contain neither this name nor code that reads it.
+#[cfg(debug_assertions)]
+const LOCK_DIR_ENV: &str = "OCTOSENSE_UPDATE_LOCK_DIR";
 
 #[derive(Debug, Serialize, Deserialize)]
 struct Ticket {
@@ -119,35 +126,117 @@ impl Trust {
         }
         codesign::Identity::installed(bundle).map(Self::Signed)
     }
+    /// Admits `bundle` and returns its `CFBundleShortVersionString`: as its
+    /// validated signature sealed it, or, for fixtures, as read from disk.
     /// An error is a phrase that follows the bundle's name.
-    fn admit(&self, bundle: &Path) -> Result<()> {
+    fn admit(&self, bundle: &Path) -> Result<String> {
         match self {
             Self::Signed(identity) => identity.admit(bundle),
             #[cfg(any(test, debug_assertions))]
-            Self::Fixtures => Ok(()),
+            Self::Fixtures => plist_field(bundle, "CFBundleShortVersionString")
+                .map_err(|_| "has invalid bundle metadata".into()),
+        }
+    }
+    /// The installed app's version, as its signature sealed it when this
+    /// trust was taken (fixtures: read from `bundle` now).
+    #[cfg_attr(not(any(test, debug_assertions)), allow(unused_variables))]
+    fn installed_version(&self, bundle: &Path) -> Result<String> {
+        match self {
+            Self::Signed(identity) => Ok(identity.version().to_owned()),
+            #[cfg(any(test, debug_assertions))]
+            Self::Fixtures => plist_field(bundle, "CFBundleShortVersionString"),
         }
     }
 }
 
-/// Serializes installers for one installation folder with an exclusive lock
-/// on the folder itself, so nothing is created beside the app. Released when
-/// dropped or when the helper exits, however it exits; never inherited by
-/// the apps it launches (std opens files close-on-exec).
+/// This user's home folder from the user database (`getpwuid_r` for the
+/// effective user), never `$HOME`: the helper's environment is cleared, and a
+/// process can set its own `HOME`.
+fn user_home() -> Result<PathBuf> {
+    let mut entry: libc::passwd = unsafe { std::mem::zeroed() };
+    let mut found: *mut libc::passwd = std::ptr::null_mut();
+    let mut buffer = vec![0u8; 16 * 1024];
+    let status = unsafe {
+        libc::getpwuid_r(
+            libc::geteuid(),
+            &mut entry,
+            buffer.as_mut_ptr().cast(),
+            buffer.len(),
+            &mut found,
+        )
+    };
+    if status != 0 || found.is_null() || entry.pw_dir.is_null() {
+        return Err("Could not find this user's home folder for the update lock.".into());
+    }
+    let home = unsafe { std::ffi::CStr::from_ptr(entry.pw_dir) };
+    let home = PathBuf::from(std::ffi::OsStr::from_bytes(home.to_bytes()));
+    if !home.is_absolute() {
+        return Err("This user's home folder is not an absolute path.".into());
+    }
+    Ok(home)
+}
+
+/// The installer lock's folder: `LOCK_DIR` under the person's home, which the
+/// macOS process-app sandbox closes, so no sandboxed app can create or hold
+/// the lock there; owner-only, and the same for the shell and the helper,
+/// which both resolve it from the user database.
+fn lock_dir() -> Result<PathBuf> {
+    #[cfg(debug_assertions)]
+    if let Some(folder) = std::env::var_os(LOCK_DIR_ENV) {
+        return private_folder(Path::new(&folder));
+    }
+    private_folder(&user_home()?.join(LOCK_DIR))
+}
+
+/// Creates `folder` owner-only if it is missing (and any missing parent the
+/// same way), then requires that it is a private folder of this user.
+fn private_folder(folder: &Path) -> Result<PathBuf> {
+    fs::DirBuilder::new()
+        .recursive(true)
+        .mode(0o700)
+        .create(folder)
+        .map_err(|e| format!("Could not create the update lock folder: {e}"))?;
+    private_dir(folder)?;
+    Ok(folder.to_path_buf())
+}
+
+/// Serializes this user's installers of one installation, from any profile,
+/// with an exclusive lock on a file in `lock_dir`, named after the app's
+/// path. Nothing is created beside the app, and only this user's unsandboxed
+/// processes can open the file, so nobody else can hold it to block updates
+/// (anyone may lock a folder they can read). Another macOS user's installer
+/// of the same app is caught after the exchange instead (`swap_in`). Released
+/// when dropped or when the helper exits, however it exits; never inherited
+/// by the apps it launches (std opens files close-on-exec).
 struct InstallLock {
-    _folder: File,
+    _file: File,
 }
 impl InstallLock {
     fn acquire(target: &Path) -> Result<Self> {
-        let folder = target.parent().ok_or("No installation folder.")?;
-        let folder = OpenOptions::new()
+        Self::acquire_in(&lock_dir()?, target)
+    }
+
+    fn acquire_in(folder: &Path, target: &Path) -> Result<Self> {
+        private_dir(folder)?;
+        let hash = format!("{:x}", Sha256::digest(target.as_os_str().as_bytes()));
+        let path = folder.join(format!("octosense-install-{}.lock", &hash[..16]));
+        let file = OpenOptions::new()
             .read(true)
-            .custom_flags(libc::O_DIRECTORY | libc::O_NOFOLLOW)
-            .open(folder)
-            .map_err(|e| format!("Could not lock the installation folder: {e}"))?;
-        if unsafe { libc::flock(folder.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0 {
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .mode(0o600)
+            .custom_flags(libc::O_NOFOLLOW)
+            .open(path)
+            .map_err(|e| format!("Could not lock the update: {e}"))?;
+        let meta = file.metadata().map_err(|e| e.to_string())?;
+        if !meta.is_file() || meta.uid() != unsafe { libc::geteuid() } || meta.mode() & 0o077 != 0 {
+            return Err("Invalid update lock file.".into());
+        }
+        if unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0 {
             return Err("Another update is already installing.".into());
         }
-        Ok(Self { _folder: folder })
+        Ok(Self { _file: file })
     }
 }
 
@@ -213,6 +302,19 @@ fn validate_bundle(bundle: &Path, version: Option<&str>) -> Result<()> {
     refuse_privileged_modes(bundle)
 }
 
+/// An update must be newer than the installed app, compared as semantic
+/// versions. An older release is signed just as validly, so a downgrade would
+/// pass every other check; `--restore` is the one deliberate step back.
+fn require_newer(installed: &str, version: &str) -> Result<()> {
+    let parse = |text: &str| {
+        semver::Version::parse(text).map_err(|e| format!("Invalid release version {text}: {e}"))
+    };
+    if parse(version)? <= parse(installed)? {
+        return Err("The update must be newer than the installed app.".into());
+    }
+    Ok(())
+}
+
 /// A setuid or setgid file would run as this user for anyone who opens it
 /// from a shared folder such as /Applications. No OctoSense release has one.
 fn refuse_privileged_modes(bundle: &Path) -> Result<()> {
@@ -238,7 +340,10 @@ fn refuse_privileged_modes(bundle: &Path) -> Result<()> {
 }
 
 fn private_dir(path: &Path) -> Result<()> {
-    let m = fs::symlink_metadata(path).map_err(|e| e.to_string())?;
+    // Without trailing slashes, a link at the last component is inspected
+    // rather than followed: "folder/" would resolve it.
+    let path: PathBuf = path.components().collect();
+    let m = fs::symlink_metadata(&path).map_err(|e| e.to_string())?;
     if !m.is_dir() || m.uid() != unsafe { libc::geteuid() } || m.mode() & 0o077 != 0 {
         return Err("The update staging folder is not private.".into());
     }
@@ -480,9 +585,11 @@ fn wait_until_stopped(bundle: &Path, budget: Duration) -> Result<()> {
 }
 
 /// Idempotent recovery, including a helper interrupted on either side of the
-/// atomic exchange. It never guesses from the journal alone, and it puts back
-/// only code with the installed identity: a planted job cannot turn a
-/// recovery into an installation.
+/// atomic exchange. It never guesses from the journal alone. Both bundles must
+/// be OctoSense app bundles, and it swaps back only the exact previous bundle
+/// this installation replaced (the job's recorded fingerprint), with the
+/// installed identity: a planted job cannot turn a recovery into an
+/// installation.
 fn restore_previous(
     ticket: &Ticket,
     job: &Path,
@@ -490,6 +597,14 @@ fn restore_previous(
     trust: &Trust,
     message: &str,
 ) -> Result<()> {
+    for (bundle, which) in [
+        (ticket.target.as_path(), "installed"),
+        (candidate, "retained"),
+    ] {
+        validate_bundle(bundle, None).map_err(|error| {
+            format!("Recovery stopped: the {which} app is not an OctoSense app bundle ({error}) Both bundles were preserved.")
+        })?;
+    }
     let installed = digest_tree(&ticket.target)?;
     let staged = digest_tree(candidate)?;
     if installed == ticket.new_digest && staged == ticket.old_digest {
@@ -650,15 +765,37 @@ fn install_committed(
             return Err(message);
         }
     };
-    if let Err(error) = exchange_verified(ticket, root, candidate, &trust, stop_wait) {
-        let message =
-            format!("The update was not installed. {error} The installed app was not changed.");
-        let _ = phase(root, "not_installed");
-        let _ = status(ticket, "failed", &message);
-        launch_verified(ticket, None, &trust).map_err(|e| format!("{message} {e}"))?;
-        return Err(message);
+    if let Err(error) = verify_before_exchange(ticket, candidate, &trust, stop_wait) {
+        return reopen_installed(
+            ticket,
+            root,
+            &trust,
+            &format!("The update was not installed. {error} The installed app was not changed."),
+        );
+    }
+    if let Err(error) = swap_in(ticket, root, candidate) {
+        return reopen_installed(
+            ticket,
+            root,
+            &trust,
+            &format!("The update was not installed. {error}"),
+        );
     }
     finish_exchanged(ticket, job, candidate, &trust, stop_wait)
+}
+
+/// Nothing of this update stayed installed. Record why, then reopen the app
+/// that is installed, with the rollback signal. The receipt is written first,
+/// so the reopened app reads it, and says so if it could not be reopened.
+fn reopen_installed(ticket: &Ticket, root: &Path, trust: &Trust, message: &str) -> Result<()> {
+    let _ = phase(root, "not_installed");
+    let _ = status(ticket, "failed", message);
+    if let Err(error) = launch_verified(ticket, None, trust) {
+        let message = format!("{message} OctoSense could not be reopened: {error}");
+        let _ = status(ticket, "failed", &message);
+        return Err(message);
+    }
+    Err(message.to_owned())
 }
 
 /// After the exchange, the former app lives at candidate.app. Start the new
@@ -671,7 +808,13 @@ fn finish_exchanged(
     stop_wait: Duration,
 ) -> Result<()> {
     let root = job.parent().ok_or("Missing staging folder.")?;
-    if let Err(error) = start_new(ticket, job, root, trust) {
+    // Checked again right before launch: code that fails never starts.
+    let child =
+        match phase(root, "starting").and_then(|()| launch_verified(ticket, Some(job), trust)) {
+            Ok(child) => child,
+            Err(error) => return roll_back(ticket, job, candidate, trust, &error, stop_wait),
+        };
+    if let Err(error) = wait_for_startup(ticket, root, child) {
         return roll_back(ticket, job, candidate, trust, &error, stop_wait);
     }
     write_json(
@@ -690,9 +833,8 @@ fn finish_exchanged(
 }
 
 /// Every check before the one atomic exchange; nothing changes until all pass.
-fn exchange_verified(
+fn verify_before_exchange(
     ticket: &Ticket,
-    root: &Path,
     candidate: &Path,
     trust: &Trust,
     stop_wait: Duration,
@@ -703,19 +845,44 @@ fn exchange_verified(
     {
         return Err("The installed app or staged update changed after it was prepared.".into());
     }
-    validate_bundle(candidate, ticket.new_tag.strip_prefix("desktop-v"))?;
-    trust
+    // The staged app's version is the job's release, and newer than what is
+    // installed: the job cannot skip the comparison by omitting its tag.
+    let version = ticket
+        .new_tag
+        .strip_prefix("desktop-v")
+        .ok_or("The update job has no release tag.")?;
+    validate_bundle(candidate, Some(version))?;
+    // Both versions as the signatures sealed them, not as the files read
+    // after the wait above.
+    let sealed = trust
         .admit(candidate)
         .map_err(|reason| format!("The update {reason}."))?;
-    phase(root, "swapping")?;
-    exchange(&ticket.target, candidate)
+    if sealed != version {
+        return Err("The update's signed version is not the release it was downloaded as.".into());
+    }
+    require_newer(&trust.installed_version(&ticket.target)?, &sealed)
 }
 
-/// Starts the exchanged app, checked again first, and waits for its first
-/// frame (or, for an older release, for it to stay alive).
-fn start_new(ticket: &Ticket, job: &Path, root: &Path, trust: &Trust) -> Result<()> {
-    phase(root, "starting")?;
-    let mut child = launch_verified(ticket, Some(job), trust)?;
+/// The one atomic exchange. Another macOS user's installer of this app,
+/// which the lock does not cover, may have swapped first: then what came out
+/// is not the app this job recorded. That installer's update is put back at
+/// once, so every staging folder holds what its job says, and the sweep keeps
+/// the right backup.
+fn swap_in(ticket: &Ticket, root: &Path, candidate: &Path) -> Result<()> {
+    phase(root, "swapping")?;
+    exchange(&ticket.target, candidate)?;
+    if digest_tree(candidate).is_ok_and(|out| out == ticket.old_digest) {
+        return Ok(());
+    }
+    exchange(&ticket.target, candidate).map_err(|error| {
+        format!("Another installation replaced the app at the same moment, and its version could not be put back: {error}")
+    })?;
+    Err("Another installation of this app installed an update at the same moment; its version was kept.".into())
+}
+
+/// Waits for the new app's first frame (or, for an older release, for it to
+/// stay alive).
+fn wait_for_startup(ticket: &Ticket, root: &Path, mut child: Child) -> Result<()> {
     let deadline = Instant::now()
         + if ticket.startup_ack {
             STARTUP_WAIT
@@ -743,12 +910,14 @@ fn start_new(ticket: &Ticket, job: &Path, root: &Path, trust: &Trust) -> Result<
     }
 }
 
-/// The new app did not start, or failed its check before launch: put the
-/// previous app back and reopen it. Only the previous app must be exactly as
-/// it was; whatever is installed goes back into the staging folder even if it
-/// changed after its checks, so unverified code never stays installed. Nothing
-/// is opened only when the previous app changed or the bundle stays in use;
-/// the receipt then explains, and both bundles are kept.
+/// Puts the previous app back at once and reopens it. A rename does not
+/// disturb running processes, so nothing that still runs from the new bundle,
+/// whether it failed its check before launch or started and failed, can keep
+/// it installed. Only the previous app must be exactly as it was (the job's
+/// recorded fingerprint); whatever is installed goes back into the staging
+/// folder even if it changed after its checks. Nothing is opened only when
+/// the previous app changed; the receipt then explains, and both bundles are
+/// kept.
 fn roll_back(
     ticket: &Ticket,
     job: &Path,
@@ -758,7 +927,7 @@ fn roll_back(
     stop_wait: Duration,
 ) -> Result<()> {
     let root = job.parent().ok_or("Missing staging folder.")?;
-    let restored = wait_until_stopped(&ticket.target, stop_wait).and_then(|()| {
+    let restored = (|| {
         if digest_tree(candidate)? != ticket.old_digest {
             return Err(
                 "Automatic recovery stopped because the retained previous app changed.".into(),
@@ -768,7 +937,7 @@ fn roll_back(
             format!("Automatic recovery stopped: the retained previous app {reason}.")
         })?;
         exchange(&ticket.target, candidate)
-    });
+    })();
     if let Err(stopped) = restored {
         let message = format!(
             "{error} {stopped} Both bundles are kept in {}; with OctoSense closed, the helper there can restore the previous app with --restore.",
@@ -779,12 +948,31 @@ fn roll_back(
         return Err(message);
     }
     let _ = phase(root, "rolled_back");
+    // The receipt says what is true at each step: restored but not reopened
+    // while it waits, rolled back once the previous app is started.
+    let restored = format!("{error} The previous version was restored.");
+    let _ = status(
+        ticket,
+        "failed",
+        &format!("{restored} OctoSense has not been reopened yet."),
+    );
+    // Whatever still runs from the failed bundle now runs from the staging
+    // folder. Give it time to exit (a kernel there may hold the profile's
+    // data lock) before the previous app reopens, but reopen it regardless.
+    let _ = wait_until_stopped(candidate, stop_wait);
+    // Written just before the start, so the reopened app reads it at once,
+    // and replaced if the start fails.
     let _ = status(
         ticket,
         "rolled_back",
-        &format!("{error} The previous version was restored. Your app data was not replaced."),
+        &format!("{restored} Your app data was not replaced."),
     );
-    launch_verified(ticket, None, trust).map(drop)
+    if let Err(reopen) = launch_verified(ticket, None, trust) {
+        let message = format!("{restored} It could not be reopened: {reopen}");
+        let _ = status(ticket, "failed", &message);
+        return Err(message);
+    }
+    Ok(())
 }
 
 /// Called after the shell draws its first frame. Receipt IO runs off the UI
@@ -895,10 +1083,18 @@ pub fn sweep_backups() -> usize {
     sweep_retained(&target, &lock, SystemTime::now())
 }
 
-/// Keeps the newest retained update that may hold the previous app (the one
-/// `--restore` needs) and removes older ones; an attempt that never replaced
-/// anything goes once it is `DISPOSABLE_AFTER` old. Only private
-/// `.octosense-update-<uuid>` folders with a valid job for this exact
+struct Retained {
+    written: SystemTime,
+    holds_previous: bool,
+    new_digest: String,
+    root: PathBuf,
+}
+
+/// Keeps one retained update that may hold the previous app: the one whose
+/// update is what is installed now (what `--restore` needs), else the newest.
+/// Other updates that may hold a previous app are removed, and an attempt that
+/// never replaced anything goes once it is `DISPOSABLE_AFTER` old. Only
+/// private `.octosense-update-<uuid>` folders with a valid job for this exact
 /// installation are considered.
 fn sweep_retained(target: &Path, _lock: &InstallLock, now: SystemTime) -> usize {
     let Some(folder) = target.parent() else {
@@ -920,24 +1116,41 @@ fn sweep_retained(target: &Path, _lock: &InstallLock, now: SystemTime) -> usize 
         let job = root.join("job.json");
         // read_ticket requires a private folder owned by this user, named
         // for its own job. A folder still being prepared has no job yet.
-        if uuid::Uuid::parse_str(id).is_err()
-            || read_ticket(&job).map(|ticket| ticket.target) != Ok(target.to_path_buf())
-        {
+        if uuid::Uuid::parse_str(id).is_err() {
             continue;
         }
+        let Ok(ticket) = read_ticket(&job) else {
+            continue;
+        };
         let Ok(written) = fs::symlink_metadata(&job).and_then(|m| m.modified()) else {
             continue;
         };
-        retained.push((written, may_hold_previous_app(&root), root));
+        if ticket.target == target {
+            retained.push(Retained {
+                written,
+                holds_previous: may_hold_previous_app(&root),
+                new_digest: ticket.new_digest,
+                root,
+            });
+        }
     }
-    retained.sort_by_key(|(written, _, _)| std::cmp::Reverse(*written));
-    let keep = retained.iter().position(|(_, holds, _)| *holds);
+    retained.sort_by_key(|r| std::cmp::Reverse(r.written));
+    // The installed app's fingerprint names the backup `--restore` needs, so
+    // a clock set back cannot make the sweep prefer another one. Hashing the
+    // app is needed only when there is more than one to choose from.
+    let installed = (retained.iter().filter(|r| r.holds_previous).count() > 1)
+        .then(|| digest_tree(target).ok())
+        .flatten();
+    let keep = retained
+        .iter()
+        .position(|r| r.holds_previous && Some(&r.new_digest) == installed.as_ref())
+        .or_else(|| retained.iter().position(|r| r.holds_previous));
     let mut removed = 0;
-    for (index, (written, holds, root)) in retained.iter().enumerate() {
+    for (index, r) in retained.iter().enumerate() {
         let settled = now
-            .duration_since(*written)
+            .duration_since(r.written)
             .is_ok_and(|age| age >= DISPOSABLE_AFTER);
-        if Some(index) != keep && (*holds || settled) && remove_retained(root) {
+        if Some(index) != keep && (r.holds_previous || settled) && remove_retained(&r.root) {
             removed += 1;
         }
     }

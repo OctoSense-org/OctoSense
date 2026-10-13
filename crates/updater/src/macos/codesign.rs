@@ -46,12 +46,14 @@ extern "C" {
     fn CFStringGetLength(string: CFTypeRef) -> isize;
     fn CFStringGetMaximumSizeForEncoding(length: isize, encoding: u32) -> isize;
     fn CFStringGetCString(string: CFTypeRef, buffer: *mut u8, size: isize, encoding: u32) -> u8;
+    fn CFDictionaryGetTypeID() -> usize;
     fn CFDictionaryGetValue(dictionary: CFTypeRef, key: CFTypeRef) -> CFTypeRef;
 }
 
 #[link(name = "Security", kind = "framework")]
 extern "C" {
     static kSecCodeInfoIdentifier: CFTypeRef;
+    static kSecCodeInfoPList: CFTypeRef;
     static kSecCodeInfoTeamIdentifier: CFTypeRef;
     fn SecStaticCodeCreateWithPath(path: CFTypeRef, flags: u32, code: *mut CFTypeRef) -> OSStatus;
     fn SecStaticCodeCheckValidity(code: CFTypeRef, flags: u32, requirement: CFTypeRef) -> OSStatus;
@@ -95,9 +97,24 @@ pub(super) struct Identity {
     requirement: Owned,
     team: Option<String>,
     identifier: String,
+    version: String,
+}
+
+/// What a validated signature seals: its Team ID and signing identifier,
+/// and the release version in the Info.plist it validated.
+struct Signer {
+    team: Option<String>,
+    identifier: Option<String>,
+    version: Option<String>,
 }
 
 impl Identity {
+    /// The installed app's `CFBundleShortVersionString`, as its validated
+    /// signature sealed it, rather than as the file reads later.
+    pub(super) fn version(&self) -> &str {
+        &self.version
+    }
+
     /// The installed app's identity, after strict validation of the installed
     /// bundle itself (an unvalidated signature's requirement means nothing).
     /// An unsigned or ad-hoc signed installation, which is every source or
@@ -115,13 +132,18 @@ impl Identity {
                 ))
             }
         }
-        let (team, identifier) = signer(&code).map_err(unreadable)?;
-        let identifier = identifier
+        let signer = signer(&code).map_err(unreadable)?;
+        let identifier = signer
+            .identifier
             .filter(|id| plain_identifier(id))
             .ok_or(UNSIGNED_INSTALLATION)?;
-        let team = team
+        let team = signer
+            .team
             .filter(|team| team_id(team))
             .ok_or(UNSIGNED_INSTALLATION)?;
+        let version = signer
+            .version
+            .ok_or("The installed app's signed Info.plist has no version.")?;
         let designated = designated(&code)?;
         let requirement = compile(&format!(
             "({designated}) and anchor apple generic and certificate leaf[subject.OU] = \"{team}\" and identifier \"{identifier}\""
@@ -136,6 +158,7 @@ impl Identity {
             requirement,
             team: Some(team),
             identifier,
+            version,
         })
     }
 
@@ -148,18 +171,20 @@ impl Identity {
         if validate(&code, ptr::null()) != 0 {
             return Err("fixture is not validly signed".into());
         }
-        let (team, identifier) = signer(&code)?;
+        let signer = signer(&code)?;
         Ok(Self {
             requirement: compile(&designated(&code)?)?,
-            team,
-            identifier: identifier.ok_or("fixture is unsigned")?,
+            team: signer.team,
+            identifier: signer.identifier.ok_or("fixture is unsigned")?,
+            version: signer.version.ok_or("fixture has no version")?,
         })
     }
 
     /// Strictly validates `bundle`, every architecture and nested code
-    /// included, against this identity. An error is a phrase that follows
-    /// the bundle's name: "The update" + " is not signed".
-    pub(super) fn admit(&self, bundle: &Path) -> Result<()> {
+    /// included, against this identity, and returns its
+    /// `CFBundleShortVersionString` as the signature sealed it. An error is a
+    /// phrase that follows the bundle's name: "The update" + " is not signed".
+    pub(super) fn admit(&self, bundle: &Path) -> Result<String> {
         let code = static_code(bundle)?;
         match validate(&code, self.requirement.0) {
             0 => {}
@@ -169,11 +194,15 @@ impl Identity {
             }
             status => return Err(format!("has an invalid code signature ({status})")),
         }
-        let (team, identifier) = signer(&code)?;
-        if team != self.team || identifier.as_deref() != Some(self.identifier.as_str()) {
+        let signer = signer(&code)?;
+        if signer.team != self.team
+            || signer.identifier.as_deref() != Some(self.identifier.as_str())
+        {
             return Err("is not signed by the installed app's developer".into());
         }
-        Ok(())
+        signer
+            .version
+            .ok_or_else(|| "has no version in its signed Info.plist".into())
     }
 }
 
@@ -200,8 +229,10 @@ fn validate(code: &Owned, requirement: CFTypeRef) -> OSStatus {
     unsafe { SecStaticCodeCheckValidity(code.0, VALIDATE, requirement) }
 }
 
-/// The Team ID and signing identifier sealed into a validated signature.
-fn signer(code: &Owned) -> Result<(Option<String>, Option<String>)> {
+/// What a signature sealed, read from the code object it was just validated
+/// on: the Security framework keeps the Info.plist it checked, so the
+/// version cannot differ from the validated one (`kSecCodeInfoPList`).
+fn signer(code: &Owned) -> Result<Signer> {
     let mut information = ptr::null();
     let status =
         unsafe { SecCodeCopySigningInformation(code.0, SIGNING_INFORMATION, &mut information) };
@@ -209,12 +240,19 @@ fn signer(code: &Owned) -> Result<(Option<String>, Option<String>)> {
     if status != 0 || information.0.is_null() {
         return Err(format!("has unreadable signing information ({status})"));
     }
-    let value = |key: CFTypeRef| string(unsafe { CFDictionaryGetValue(information.0, key) });
-    Ok(unsafe {
-        (
-            value(kSecCodeInfoTeamIdentifier),
-            value(kSecCodeInfoIdentifier),
-        )
+    let get =
+        |dictionary: CFTypeRef, key: CFTypeRef| unsafe { CFDictionaryGetValue(dictionary, key) };
+    let plist = get(information.0, unsafe { kSecCodeInfoPList });
+    let version = if !plist.is_null() && unsafe { CFGetTypeID(plist) == CFDictionaryGetTypeID() } {
+        let key = cf_string("CFBundleShortVersionString")?;
+        string(get(plist, key.0))
+    } else {
+        None
+    };
+    Ok(Signer {
+        team: string(get(information.0, unsafe { kSecCodeInfoTeamIdentifier })),
+        identifier: string(get(information.0, unsafe { kSecCodeInfoIdentifier })),
+        version,
     })
 }
 
@@ -238,13 +276,18 @@ fn designated(code: &Owned) -> Result<String> {
     string(text.0).ok_or_else(|| "The installed app's designated requirement is unreadable.".into())
 }
 
-fn compile(text: &str) -> Result<Owned> {
-    let text = Owned(unsafe {
+fn cf_string(text: &str) -> Result<Owned> {
+    let value = Owned(unsafe {
         CFStringCreateWithBytes(ptr::null(), text.as_ptr(), text.len() as isize, UTF8, 0)
     });
-    if text.0.is_null() {
-        return Err("Could not build the signing requirement.".into());
+    if value.0.is_null() {
+        return Err("Could not build a string for the Security framework.".into());
     }
+    Ok(value)
+}
+
+fn compile(text: &str) -> Result<Owned> {
+    let text = cf_string(text)?;
     let mut requirement = ptr::null();
     let status = unsafe { SecRequirementCreateWithString(text.0, 0, &mut requirement) };
     let requirement = Owned(requirement);

@@ -634,6 +634,22 @@ mod tests {
     }
 
     #[test]
+    fn the_top_edge_calls_a_full_screen_windows_top_and_leaving_it_sends_it_back() {
+        let screen = rect(0.0, 0.0, 1440.0, 900.0);
+        let depth = 32.0;
+        // In: only the top edge calls it.
+        assert!(top_pointer_wants(dvec2(700.0, 0.0), screen, depth, false));
+        assert!(top_pointer_wants(dvec2(5.0, 1.5), screen, depth, false));
+        assert!(!top_pointer_wants(dvec2(700.0, 20.0), screen, depth, false), "where it would be");
+        // Out: the strip it takes, and a little below, keep it.
+        assert!(top_pointer_wants(dvec2(700.0, 20.0), screen, depth, true));
+        assert!(top_pointer_wants(dvec2(700.0, depth + 7.0), screen, depth, true));
+        assert!(!top_pointer_wants(dvec2(700.0, depth + 9.0), screen, depth, true));
+        // Off the screen's sides, nothing.
+        assert!(!top_pointer_wants(dvec2(1500.0, 0.0), screen, depth, false));
+    }
+
+    #[test]
     fn the_bottom_edge_calls_a_hidden_dock_and_leaving_it_sends_it_down() {
         let screen = rect(0.0, 0.0, 1440.0, 900.0);
         let dock = shelf_geometry(screen, &settled(DesktopStyle::OctoSense), 8);
@@ -654,6 +670,7 @@ mod tests {
 }
 
 use crate::desk::WmState;
+use crate::edge_reveal::EdgeReveal;
 use crate::hub::ClientId;
 use crate::shell::{
     alpha, rgb, MaterialTokens,
@@ -861,19 +878,9 @@ pub struct DesktopShelf {
     /// The dock hides ([`dock_auto_hides`]), as last drawn.
     #[rust]
     auto_hide: bool,
-    /// Where the dock is going: up in place, or down below the bottom edge.
+    /// The dock coming up from the bottom edge and going back down.
     #[rust]
-    reveal_up: bool,
-    /// Where `reveal_timer` sends the dock when it fires; None when nothing
-    /// is waiting.
-    #[rust]
-    reveal_pending: Option<bool>,
-    #[rust]
-    reveal_timer: Timer,
-    #[rust]
-    reveal_frame: NextFrame,
-    #[rust]
-    reveal_time: f64,
+    edge: EdgeReveal,
     /// Something the dock opened (the launcher) holds it up.
     #[rust]
     held: bool,
@@ -915,31 +922,16 @@ impl DesktopShelf {
     }
     /// A hiding dock's part of every pointer event: the pointer at `p`
     /// (None: it left the window), and whether something the dock opened
-    /// still `held` it up. Resting on the bottom edge brings the dock up
-    /// after [`DOCK_SHOW_DELAY`]; leaving it sends it down after
-    /// [`DOCK_HIDE_DELAY`].
+    /// still `held` it up. Resting on the bottom edge brings the dock up;
+    /// leaving it sends it down (`edge_reveal`'s delays).
     pub fn auto_hide_pointer(&mut self, cx: &mut Cx, p: Option<Vec2d>, held: bool) {
         self.held = held;
         if !self.auto_hide {
             return;
         }
         let wants = held
-            || p.is_some_and(|p| dock_pointer_wants(p, self.screen, self.dock_rect, self.reveal_up));
-        if wants == self.reveal_up {
-            if self.reveal_pending.take().is_some() {
-                cx.stop_timer(self.reveal_timer);
-            }
-        } else if self.reveal_pending != Some(wants) {
-            cx.stop_timer(self.reveal_timer);
-            self.reveal_pending = Some(wants);
-            self.reveal_timer = cx.start_timeout(if wants { DOCK_SHOW_DELAY } else { DOCK_HIDE_DELAY });
-        }
-    }
-    /// Start the dock sliding up or down ([`DOCK_SLIDE`]).
-    fn slide(&mut self, cx: &mut Cx, up: bool) {
-        self.reveal_up = up;
-        self.reveal_time = 0.0;
-        self.reveal_frame = cx.new_next_frame();
+            || p.is_some_and(|p| dock_pointer_wants(p, self.screen, self.dock_rect, self.edge.out));
+        self.edge.want(cx, wants);
     }
     fn button(
         &mut self,
@@ -1206,27 +1198,42 @@ pub fn dock_bounds(state: &WmState, size: Vec2d) -> Rect {
 }
 
 /// The pointer this close to the bottom edge calls a hidden dock up.
-pub const DOCK_EDGE: f64 = 2.0;
-/// How long the pointer rests on the edge before the dock comes up, so a
-/// pass along the bottom of a full-screen window does not raise it.
-pub const DOCK_SHOW_DELAY: f64 = 0.15;
-/// How long after the pointer leaves the dock it goes back down.
-pub const DOCK_HIDE_DELAY: f64 = 0.45;
-/// How long the dock takes to slide up or down.
-pub const DOCK_SLIDE: f64 = 0.22;
+pub const DOCK_EDGE: f64 = crate::edge_reveal::EDGE;
 /// Above a dock that is up, the room its tooltips and grown icons take: the
 /// pointer may cross it without the dock going down.
 pub const DOCK_HOVER_ROOM: f64 = 44.0;
 
-/// Whether `style`'s dock hides while the shell's own window is full
-/// screen: the floating docks, macOS's and OctoSense's, as macOS's Dock does
-/// beside a full-screen app. In a window, a dock always shows; a shelf that
-/// reserves its strip (Windows') or sits elsewhere never hides.
-pub fn dock_auto_hides_for(style: DesktopStyle, host_fullscreen: bool) -> bool {
-    host_fullscreen && matches!(style, DesktopStyle::Macos | DesktopStyle::OctoSense)
+/// Whether `style`'s dock hides beside something full screen: the shell's
+/// own window on its host, or the window in front on the desk
+/// ([`front_fullscreen`]). Only the floating docks, macOS's and OctoSense's,
+/// hide, as macOS's Dock does beside a full-screen app; a shelf that
+/// reserves its strip (Windows') or sits elsewhere never does.
+pub fn dock_auto_hides_for(style: DesktopStyle, fullscreen: bool) -> bool {
+    fullscreen && matches!(style, DesktopStyle::Macos | DesktopStyle::OctoSense)
 }
 pub fn dock_auto_hides(state: &WmState) -> bool {
-    dock_auto_hides_for(state.style.target, state.host_fullscreen)
+    dock_auto_hides_for(state.style.target, state.host_fullscreen || front_fullscreen(state))
+}
+/// Whether the window in front on a floating desk is full screen
+/// (`DesktopWindow::fullscreen`), as macOS's green button makes one: it
+/// covers the desk, the top bar hides and a floating dock hides, each until
+/// the pointer comes to its edge.
+pub fn front_fullscreen(state: &WmState) -> bool {
+    let layout = &state.layout;
+    layout.desktop.enabled
+        && layout
+            .focused_client()
+            .and_then(|client| layout.desktop.get(client))
+            .is_some_and(|w| w.fullscreen && !w.minimized)
+}
+/// Whether the pointer at `p` wants the top of a full-screen window out (the
+/// top bar and the window's title bar): on the screen's top edge, or, while
+/// it is out (`out`), within the `depth` it takes from the top.
+pub fn top_pointer_wants(p: Vec2d, screen: Rect, depth: f64, out: bool) -> bool {
+    let inside = p.x >= screen.pos.x && p.x <= screen.pos.x + screen.size.x;
+    let on_edge = p.y <= screen.pos.y + crate::edge_reveal::EDGE;
+    let over = out && p.y <= screen.pos.y + depth + 8.0;
+    inside && (on_edge || over)
 }
 /// Whether any of the dock is on screen this frame: one that does not hide,
 /// or one not all the way down.
@@ -1236,9 +1243,7 @@ pub fn dock_showing(state: &WmState) -> bool {
 /// How far below its place a dock `reveal` of the way up is drawn: just past
 /// the bottom edge at 0, in place at 1, eased between.
 pub fn dock_slide(dock: Rect, screen_bottom: f64, reveal: f64) -> f64 {
-    let t = reveal.clamp(0.0, 1.0);
-    let eased = t * t * (3.0 - 2.0 * t);
-    (1.0 - eased) * (screen_bottom - dock.pos.y + DOCK_EDGE).max(0.0)
+    (1.0 - crate::edge_reveal::ease(reveal)) * (screen_bottom - dock.pos.y + DOCK_EDGE).max(0.0)
 }
 /// Whether the pointer at `p` wants a hiding dock up: on the screen's bottom
 /// edge, or, while the dock is up (`up`), over it or the room above it its
@@ -1351,9 +1356,7 @@ impl Widget for DesktopShelf {
                 if auto_hide != self.auto_hide {
                     // Full screen sends the dock down; a window brings it back.
                     self.auto_hide = auto_hide;
-                    cx.stop_timer(self.reveal_timer);
-                    self.reveal_pending = None;
-                    self.slide(cx, !auto_hide);
+                    self.edge.set(cx, !auto_hide);
                 }
             }
             if opacity > 0.001 && !style.mobile() && dock_showing(state) {
@@ -1564,32 +1567,15 @@ impl Widget for DesktopShelf {
         DrawStep::done()
     }
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        if self.reveal_timer.is_event(event).is_some() {
-            if let Some(up) = self.reveal_pending.take() {
-                self.slide(cx, up);
-            }
-        }
         if let Event::MouseLeave(_) = event {
             let held = self.held;
             self.auto_hide_pointer(cx, None, held);
         }
-        if let Some(ne) = self.reveal_frame.is_event(event) {
-            let dt = if self.reveal_time == 0.0 { 1.0 / 60.0 } else { (ne.time - self.reveal_time).min(0.05) };
-            self.reveal_time = ne.time;
-            if let Some(state) = scope.data.get_mut::<WmState>() {
-                let target = if self.reveal_up { 1.0 } else { 0.0 };
-                let step = dt / DOCK_SLIDE;
-                state.dock_reveal = if target > state.dock_reveal {
-                    (state.dock_reveal + step).min(target)
-                } else {
-                    (state.dock_reveal - step).max(target)
-                };
-                if state.dock_reveal != target {
-                    self.reveal_frame = cx.new_next_frame();
-                }
+        if let Some(state) = scope.data.get_mut::<WmState>() {
+            if self.edge.handle_event(cx, event, &mut state.dock_reveal) {
+                // The desk's backdrop follows the dock (`dock_bounds`).
+                cx.redraw_all();
             }
-            // The desk's backdrop follows the dock (`dock_bounds`).
-            cx.redraw_all();
         }
         if let Some(ne) = self.hover_frame.is_event(event) {
             if let Some(hit) = &self.hover {

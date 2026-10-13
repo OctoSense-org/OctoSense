@@ -405,7 +405,8 @@ cargo makepad android run -p octosense --release
 ## 桌面样式与设置
 
 - 八种桌面样式。桌面构建启动时使用 **OctoSense** 样式，带 Liquid Glass 窗框，顶栏有 **Light / Dark** 切换；其余样式为 Omarchy、macOS、Windows、Windows 2000、NeXTSTEP、iOS 和 Android。主题源文件在 `../crates/shell/resources/themes/`，壁纸来源见 [crates/shell/resources/wallpapers/README.md](../crates/shell/resources/wallpapers/README.md)。
-- **全屏时的程序坞。** OctoSense 窗口全屏时（在 macOS 上点绿色按钮或按 ⌃⌘F），OctoSense 和 macOS 样式会把程序坞藏到屏幕底边以下，就像 macOS 在全屏应用旁隐藏 Dock 一样。把指针停在屏幕底边，程序坞就会升起；指针离开后不久它会再次收起，而它打开的启动器显示期间会保持升起；此时新窗口可以占用全部高度。窗口模式下程序坞始终显示。在 Wayland 下，最大化的窗口也算全屏；makepad 在 Windows 和 X11 上不报告全屏，所以那里的程序坞始终显示。隐藏窗口运行的 shell 可用 `MAKEPAD_HIDE_WINDOWS=1 MAKEPAD_REMOTE=127.0.0.1:8931 target/debug/octosense --test-action host-fullscreen` 获得全屏行为。在真实显示器上进入全屏尚**未经验证**。
+- **全屏。** 点窗口的绿色按钮或按 ⌘F，窗口会像在 macOS 上一样进入全屏：它覆盖整个屏幕，顶栏、它自己的标题栏和程序坞都会隐藏。把指针停在屏幕顶边，顶栏和窗口标题栏就会出现（标题栏上的绿色按钮可退出全屏）；停在底边，程序坞就会升起。指针离开后不久它们会再次收起，而它们打开的菜单显示期间会保持出现。若想改为最大化（停在程序坞之上），可按住 Option 点绿色按钮、按 ⌘⌥F 或双击标题栏。
+- **全屏时的程序坞。** OctoSense 窗口本身全屏时（在 macOS 上点绿色按钮或按 ⌃⌘F），OctoSense 和 macOS 样式也会这样隐藏程序坞，就像 macOS 在全屏应用旁隐藏 Dock 一样；此时新窗口可以占用全部高度。没有任何全屏时，程序坞始终显示。在 Wayland 下，最大化的窗口也算全屏；makepad 在 Windows 和 X11 上不报告全屏，所以在那里只有 OctoSense 内的全屏窗口会让程序坞隐藏。隐藏窗口运行的 shell 可用 `MAKEPAD_HIDE_WINDOWS=1 MAKEPAD_REMOTE=127.0.0.1:8932 target/debug/octosense --test-action launch-calculator --test-action fullscreen`（窗口全屏）或 `--test-action host-fullscreen`（OctoSense 窗口全屏）获得这些行为。在真实显示器上，两者都尚**未经验证**。
 - 快捷键：**⌘Space** 菜单，**⌘W** 关闭 tile，**⌘F** tile 全屏，**⌘1…0** 切换工作区，**⌘Shift1…0** 移动 tile。在 macOS 上，**⌘A** 交给当前应用执行全选；**Ctrl+Alt+A** 仍用于窗口管理器的备用修饰层前缀。**Learn → Keybindings** 列出全部快捷键；见 [KEYBINDINGS.md](KEYBINDINGS.md)。
 - 状态保存在 `~/.octosense`（`OCTOSENSE_HOME`）；被托管的应用通过 `MAKEPAD_HOME` 获得它。
 - AI 面板（**F10**）的本地模型：[docs/local-ai.md](docs/local-ai.md)。没有模型桌面也能正常工作。

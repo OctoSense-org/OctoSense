@@ -52,6 +52,8 @@ pub mod android_integration;
 pub mod android_accessibility;
 pub mod scene;
 pub mod dock_warp;
+pub mod edge_reveal;
+use edge_reveal::EdgeReveal;
 pub mod host;
 pub mod host_tools;
 pub mod hub;
@@ -151,6 +153,9 @@ use makepad_widgets::*;
 /// desktop styles. build.rs sets the `mobile_only` cfg for Android builds
 /// and for `--features mobile-only`; this is its one Rust-side name.
 pub const MOBILE_ONLY: bool = cfg!(mobile_only);
+/// The scene's top margin before the first draw: under the bar's DSL height,
+/// or none where there is no bar (`App::place_bar` keeps it after that).
+const SCENE_TOP: f64 = if MOBILE_ONLY { 0.0 } else { 26.0 };
 
 use std::collections::HashMap;
 
@@ -213,30 +218,18 @@ script_mod! {
                 // its buttons) so the window still drags.
                 show_caption_bar: false
                 body +: {
-                    flow: Down
+                    // The bar lies over the top of the scene: the scene starts
+                    // below it while it is docked (`App::place_bar` keeps the
+                    // margin), and at the top when it is hidden or slides over
+                    // a full-screen window.
+                    flow: Overlay
                     // Keep hosted editors and their navigation visible above
                     // the native IME instead of panning the whole shell.
                     keyboard_resize: #(crate::mobile_navigation::ENABLED)
                     // The wallpaper layer: the theme's image (crop-to-fill)
                     // over the theme's deep background.
-                        // The desk bar: the shell bar on a desktop style, the
-                        // phone's style/appearance/rotate strip on a phone
-                        // style. The standalone shell has neither.
-                        bar := SolidView{
-                            width: Fill
-                            height: 26
-                            visible: #(!MOBILE_ONLY)
-                            flow: Overlay
-                            draw_bg +: {
-                                color: mod.wm_theme.background
-                            }
-                            desktop_controls := View{
-                                width: Fill height: Fill
-                                shell_bar := ShellBar{width: Fill height: Fill}
-                            }
-                            phone_controls := PhoneSurface{visible: false}
-                        }
                     scene := WmScene{
+                    margin: Inset{top: #(SCENE_TOP)}
                     wallpaper := CachedView{width: Fill height: Fill flow: Overlay
                     bg_fill := RectView{
                         width: Fill
@@ -301,6 +294,23 @@ script_mod! {
                         // everything, drawn only while the mode is on.
                         shell_dev_banner := ShellDevBanner{}
                     }
+                    }
+                    // The desk bar: the shell bar on a desktop style, the
+                    // phone's style/appearance/rotate strip on a phone
+                    // style. The standalone shell has neither.
+                    bar := SolidView{
+                        width: Fill
+                        height: 26
+                        visible: #(!MOBILE_ONLY)
+                        flow: Overlay
+                        draw_bg +: {
+                            color: mod.wm_theme.background
+                        }
+                        desktop_controls := View{
+                            width: Fill height: Fill
+                            shell_bar := ShellBar{width: Fill height: Fill}
+                        }
+                        phone_controls := PhoneSurface{visible: false}
                     }
                     // `wm --gallery`: every ported omarchy surface with
                     // fixture data, over the desktop (see shell/gallery.rs).
@@ -571,6 +581,12 @@ pub struct App {
     #[rust]
     pub test_page: Option<(Timer, i64)>,
     #[rust] pub test_glance_fixtures: Option<(Timer, String)>,
+    /// The top of a full-screen window (the top bar and its title bar)
+    /// coming out from the top edge and going back (`WmState::top_reveal`).
+    #[rust] top_edge: EdgeReveal,
+    /// The window in front was full screen at the last draw
+    /// (`desktop::front_fullscreen`).
+    #[rust] front_fullscreen: bool,
     /// `--test-action host-fullscreen`: behave as if the window were full
     /// screen on its host, which a hidden run cannot enter.
     #[rust] test_host_fullscreen: bool,
@@ -1438,7 +1454,12 @@ impl App {
             }
             WmRequest::SetFullscreen { fullscreen } => {
                 self.focus_client(cx, client);
-                let on = self.state_mut().layout.fullscreen_mode() != FullscreenMode::None;
+                let layout = &self.state_mut().layout;
+                let on = if layout.desktop.enabled {
+                    layout.is_fullscreen(client)
+                } else {
+                    layout.fullscreen_mode() != FullscreenMode::None
+                };
                 if on != *fullscreen {
                     self.do_action(cx, WmAction::Fullscreen(FullscreenMode::Fullscreen));
                 }
@@ -4755,12 +4776,81 @@ impl App {
 
     /// SUPER+F hides the bar with the window; anything that leaves
     /// fullscreen puts it back, unless SUPER+SHIFT+SPACE hid it.
+    /// The bar lies over the top of the scene (the root's body overlays
+    /// them). The scene starts below a docked bar, and at the window's top
+    /// when the bar is hidden or slides over a full-screen window: then it
+    /// shows only while the top is out (`WmState::top_reveal`), coming down
+    /// from above the top edge with the window's title bar, which the desk
+    /// draws under it (`WmState::top_bar`).
+    fn place_bar(&mut self, cx: &mut Cx) {
+        let reveal = self.state.as_ref().map_or(0.0, |s| s.top_reveal);
+        // Only a bar full screen hid comes out; one the person hid stays hidden.
+        let floating = self.front_fullscreen && self.bar_hidden_by_fullscreen;
+        let bar = self.ui.widget(cx, ids!(bar));
+        if floating && bar.visible() != (reveal > 0.001) {
+            bar.set_visible(cx, reveal > 0.001);
+        }
+        #[cfg(not(mobile_only))]
+        let height = self.bar_metrics.map_or(SCENE_TOP, |(h, _)| h);
+        #[cfg(mobile_only)]
+        let height = SCENE_TOP;
+        let title = self.state.as_ref().map_or(0.0, |s| s.style.target.title_height());
+        let scene_top = if bar.visible() && !floating { height } else { 0.0 };
+        let bar_top = if floating { -(height + title) * (1.0 - edge_reveal::ease(reveal)) } else { 0.0 };
+        if let Some(state) = self.state.as_mut() {
+            state.top_bar = if floating { height } else { 0.0 };
+        }
+        let mut moved = false;
+        if let Some(mut scene) = self.ui.widget(cx, ids!(scene)).borrow_mut::<scene::WmScene>() {
+            if scene.walk.margin.top != scene_top {
+                scene.walk.margin.top = scene_top;
+                moved = true;
+            }
+        }
+        if let Some(mut view) = bar.borrow_mut::<View>() {
+            if view.walk.margin.top != bar_top {
+                view.walk.margin.top = bar_top;
+                moved = true;
+            }
+        }
+        if moved {
+            self.redraw_all(cx);
+        }
+    }
+
+    /// While the bar slides over a full-screen window, the pointer over it
+    /// is the bar's alone, as the AI pane's is: never the window under it.
+    fn floating_bar_pointer(&mut self, cx: &mut Cx, event: &Event) -> bool {
+        if !(self.front_fullscreen && self.bar_hidden_by_fullscreen) || self.drag.is_some() {
+            return false;
+        }
+        let abs = match event {
+            Event::MouseMove(e) => e.abs,
+            Event::MouseDown(e) => e.abs,
+            Event::MouseUp(e) => e.abs,
+            Event::Scroll(e) => e.abs,
+            _ => return false,
+        };
+        let bar = self.ui.widget(cx, ids!(bar));
+        if !bar.visible() || !bar.area().rect(cx).contains(abs) {
+            return false;
+        }
+        match self.state.as_mut() {
+            Some(state) => bar.handle_event(cx, event, &mut Scope::with_data(state)),
+            None => bar.handle_event(cx, event, &mut Scope::empty()),
+        }
+        true
+    }
+
     fn sync_bar_for_fullscreen(&mut self, cx: &mut Cx) {
         let fullscreen = {
-            let layout = &self.state_mut().layout;
+            let state = self.state_mut();
+            let layout = &state.layout;
             let ws = layout.focus_ws();
-            layout.workspaces[ws].fullscreen.is_some()
-                && layout.workspaces[ws].fullscreen_mode == FullscreenMode::Fullscreen
+            (!layout.desktop.enabled
+                && layout.workspaces[ws].fullscreen.is_some()
+                && layout.workspaces[ws].fullscreen_mode == FullscreenMode::Fullscreen)
+                || desktop::front_fullscreen(state)
         };
         let bar = self.ui.widget(cx, ids!(bar));
         if fullscreen && bar.visible() {
@@ -4993,6 +5083,11 @@ impl App {
         resize: bool,
         armed: bool,
     ) -> bool {
+        // A full-screen window on a floating desk has no place to move to
+        // or size to; it leaves full screen first.
+        if self.state_mut().layout.desktop.enabled && self.state_mut().layout.is_fullscreen(client) {
+            return false;
+        }
         self.sync_geometry(cx);
         let area = self.desk_area(cx);
         let gap = self.state_mut().gap;
@@ -6013,6 +6108,8 @@ mod app_hub_lifecycle_tests {
             pane_sliding: false,
             host_fullscreen: false,
             dock_reveal: 1.0,
+            top_reveal: 0.0,
+            top_bar: 0.0,
         });
         // Real module isolates exercise shutdown and client removal without
         // requiring a downloaded Card or changing the machine's catalog.
@@ -6159,6 +6256,8 @@ impl MatchEvent for App {
             pane_sliding: false,
             host_fullscreen: false,
             dock_reveal: 1.0,
+            top_reveal: 0.0,
+            top_bar: 0.0,
             style: Default::default(),
             material,
             roles,
@@ -6670,6 +6769,18 @@ impl App {
     }
 
     fn shell_handle_event_inner(&mut self, cx: &mut Cx, event: &Event) {
+        // The top of a full-screen window sliding out or back: every event,
+        // before anything below can return early.
+        if let Some(state) = self.state.as_mut() {
+            if self.top_edge.handle_event(cx, event, &mut state.top_reveal) {
+                self.redraw_all(cx);
+            }
+        }
+        if let Event::MouseLeave(_) = event {
+            if self.front_fullscreen {
+                self.top_edge.want(cx, false);
+            }
+        }
         if cfg!(dev_mode) {
             #[cfg(all(unix, any(feature = "app-hub", native_mobile)))]
             studio::apps::tick(cx, event);
@@ -6855,6 +6966,7 @@ impl App {
         if self.phone_search_event(cx,event) {return;}
         if self.state.is_some() && self.phone_pointer(cx,event) {return;}
         if self.state.is_some() && self.snap_event(cx,event) {return;}
+        if self.state.is_some() && self.floating_bar_pointer(cx,event) {return;}
         if self.state.is_some() && self.desktop_pointer(cx,event) {return;}
         // The AI pane owns the pointer inside its rect while it is open:
         // the event goes to the pane alone, so neither the WM's own drag
@@ -6872,6 +6984,15 @@ impl App {
                 let area = self.desk_area(cx);
                 let dock = self.dock_overlay(cx, area);
                 self.state_mut().layout.desktop.dock = dock;
+                // A window in front going full screen, or another window
+                // coming to the front: the top bar and its edge follow.
+                let fullscreen = desktop::front_fullscreen(self.state_mut());
+                if fullscreen != self.front_fullscreen {
+                    self.front_fullscreen = fullscreen;
+                    self.top_edge.set(cx, false);
+                    self.sync_bar_for_fullscreen(cx);
+                }
+                self.place_bar(cx);
             }
         }
         // SUPER + mouse:272 / mouse:273 — move and resize (tiling.lua).

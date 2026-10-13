@@ -69,12 +69,7 @@ pub fn prepare(artifact: &VerifiedArtifact, cancellation: &Cancellation) -> Resu
         .tag()
         .strip_prefix("desktop-v")
         .ok_or("Invalid release tag.")?;
-    if semver::Version::parse(version).map_err(|e| e.to_string())?
-        <= semver::Version::parse(&plist_field(&target, "CFBundleShortVersionString")?)
-            .map_err(|e| e.to_string())?
-    {
-        return Err("The update must be newer than the installed app.".into());
-    }
+    require_newer(&trust.installed_version(&target)?, version)?;
     let parent = target.parent().ok_or("No installation folder.")?;
     let nonce = uuid::Uuid::new_v4().to_string();
     let root = parent.join(format!(".octosense-update-{nonce}"));
@@ -109,9 +104,12 @@ pub fn prepare(artifact: &VerifiedArtifact, cancellation: &Cancellation) -> Resu
     if digest_tree(&candidate)? != new_digest {
         return Err("The staged app differs from the verified disk image.".into());
     }
-    trust.admit(&candidate).map_err(|reason| {
+    let sealed = trust.admit(&candidate).map_err(|reason| {
         format!("The downloaded app {reason}, so Install & Restart refused it. Use Open installer manually.")
     })?;
+    if sealed != version {
+        return Err("The downloaded app's signed version is not the release it was downloaded as. Use Open installer manually.".into());
+    }
     run(
         Command::new("/usr/bin/hdiutil").arg("detach").arg(&mount),
         cancellation,
@@ -163,9 +161,13 @@ pub fn prepare(artifact: &VerifiedArtifact, cancellation: &Cancellation) -> Resu
         .map_err(|e| e.to_string())?;
     let mut command = Command::new(&helper);
     command.arg(&job).env_clear().env("PATH", "/usr/bin:/bin");
+    // Debug builds pass their test settings on, so the shell and the helper
+    // agree (the lock folder above all). Release builds have neither.
     #[cfg(debug_assertions)]
-    if let Some(value) = std::env::var_os(UNSIGNED_FIXTURES_ENV) {
-        command.env(UNSIGNED_FIXTURES_ENV, value);
+    for setting in [UNSIGNED_FIXTURES_ENV, LOCK_DIR_ENV] {
+        if let Some(value) = std::env::var_os(setting) {
+            command.env(setting, value);
+        }
     }
     let mut child = command
         .stdin(Stdio::piped())
