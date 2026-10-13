@@ -134,16 +134,23 @@ MAKEPAD_APP_CONFIG='{"mail_demo":true}' cargo run --locked --release -p octosens
 （[`app_fullscreen.rs`](../../crates/shell/src/app_fullscreen.rs)）。Shell 的 `window`
 宿主服务把请求排入队列。事件处理完后，`App::serve_window_requests` 查找由该应用的 Card
 运行器运行发出请求的那个 isolate 的窗口（`App::window_of`），所以应用只能改动自己的窗口。
-用户在最近五秒内没有在这个窗口里按下过时，请求被拒绝（`Activation`）：makepad 无法分辨
-`host.request` 来自哪个处理函数，所以 Shell 像浏览器一样保留一个短暂的激活状态。随后
+用户在最近五秒内没有在这个窗口里按过应用时，请求被拒绝（`Activation`）：makepad 无法分辨
+`host.request` 来自哪个处理函数，所以 Shell 像浏览器一样保留一个短暂的激活状态。只有
+`MpRunViewAction::Pressed` 才算数：`MpModuleView` 在按下落在模块的活动根部件上、且上方没有
+宿主服务面板时发出它；分组标签、已停止应用的关闭画面和进程窗口只发出用于切换焦点的 `Clicked`。
+演示全屏以应用自己的 `{on: false}` 以外的方式结束时，窗口的按下记录随之作废
+（`Presenter::finish`），所以应用不能在钩子里立刻弹回全屏。来自 Agent 工具调用的
+`{on: true}` 也会被拒绝：App Hub 的 Card 运行器在应用的工具调用进行期间收回请求的界面权限
+（`ServiceCall::may_prompt`），而且从不因为某个能力而收回。随后
 `WmLayout::set_fullscreen` 让这个窗口进入全屏，`WmState::presentation` 让任何屏幕边缘都
 不再唤出顶栏、标题栏或程序坞（`desktop::dock_shows`、`App::desktop_pointer`），就像幻灯片的
 放映模式。Shell 自己的窗口如果还不在宿主全屏中，就进入全屏（`HostFullscreen`，使用栏上窗口
 控制按钮的同一个调用：macOS 上是原生全屏，其他平台是 makepad 的最大化；makepad 的
 `Window::fullscreen` 在 macOS 上目前不起作用），OSD 显示 "Press Esc to exit full screen"
-三秒。以下任一情况结束演示全屏：Esc、`{on: false}`、⌘F、窗口关闭或失去焦点、切换风格、用户
-离开宿主全屏。`App::sync_presentation` 在每个事件之后检查；只有这次演示全屏让宿主窗口进入了
-全屏时，宿主窗口才退出全屏。回答是 `{applied, fullscreen, fills_screen}`，应用可选的
+三秒。以下任一情况结束演示全屏：Esc、`{on: false}`、⌘F、窗口关闭或失去焦点、应用模块出错、
+切换风格、用户离开宿主全屏。`App::sync_presentation` 在每个事件之后检查；只有这次演示全屏让
+宿主窗口进入了全屏时，宿主窗口才退出全屏，即使它在演示结束之后才进入全屏。回答是
+`{applied, fullscreen, fills_screen}`，应用可选的
 `on_app_fullscreen(on)` 钩子在开始和结束时都会收到通知。在手机上，这个请求不改变任何东西
 （`fills_screen: true`）。隐藏窗口运行的 Shell（`MAKEPAD_HIDE_WINDOWS`）从不让宿主窗口进入
 全屏，所以在真实显示器上进入 macOS 全屏**尚未验证**；Windows 和 Linux 上的最大化同样未验证。

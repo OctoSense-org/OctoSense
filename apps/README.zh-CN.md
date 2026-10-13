@@ -434,11 +434,15 @@ Shell 自己为应用窗口提供的服务。用户点按或点击应用窗口�
 阅读器的 Read 模式），`window.fullscreen {on: true}` 让应用自己的窗口进入演示全屏，
 `{on: false}` 让它退出。在桌面上，窗口随即铺满整个桌面且没有标题栏，Shell 的栏和程序坞
 隐藏（演示期间屏幕边缘也不会把它们唤出），OctoSense 窗口如果还不在全屏中也会进入全屏。按 **Esc** 结束（这是 Shell 的按键：
-脚本应用收不到按键），`{on: false}`、⌘F 以及窗口失去焦点也会结束它；Shell 会显示
+脚本应用收不到按键），`{on: false}`、⌘F、窗口失去焦点以及应用出错也会结束它；Shell 会显示
 "Press Esc to exit full screen" 三秒。回答是 `{applied, fullscreen, fills_screen}`。
-拒绝以下列前缀开头：`gesture_required:`（最近 5 秒内没有在这个窗口里按下过）、
-`foreground_required:`（后台界面，或窗口不在最前）、`not_a_window:`（glance 卡片、面板
-或其他应用的窗口）、`invalid_arguments:`。应用可以定义 `fn on_app_fullscreen(on)`，
+拒绝以下列前缀开头：`gesture_required:`（最近 5 秒内没有在这个窗口里按过应用本身；在应用上方
+的宿主面板里按下不算）、`foreground_required:`（窗口不在最前：焦点在别处，或窗口在另一个
+工作区、已最小化）、`agent_call:`（请求来自 Agent 的工具调用或它的回调）、`not_a_window:`
+（glance 卡片、面板或其他应用的窗口）、`invalid_arguments:`。`{on: false}` 不会因为前三种
+原因被拒绝。不需要任何能力：`prompt` 和其他声明一样，既不授予也不拒绝这个方法。演示全屏以
+应用自己的 `{on: false}` 以外的方式结束后（Esc、⌘F、焦点离开），再次进入全屏需要新的一次
+按下，所以应用在 `on_app_fullscreen(false)` 里再次请求会被拒绝。应用可以定义 `fn on_app_fullscreen(on)`，
 全屏开始和结束时 Shell 都会在应用的 isolate 中调用它。在手机上，每个应用本来就占满屏幕，
 所以什么都不会改变：`{applied: false, fullscreen: false, fills_screen: true}`。这个服务
 属于 Shell（`crates/shell/src/app_fullscreen.rs`），不属于 App Hub，`runtime.list` 目前还

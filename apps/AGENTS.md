@@ -45,10 +45,13 @@ app's own agent and `tools.json`, the system toolbox, `glance.publish` and
 - Presentation full screen (a deck's Present, a reader's Read mode): call
   `host.request("window.fullscreen", {on: true}, fn(r){…})` from the tap or
   click handler that starts it, and `{on: false}` to leave. The shell refuses
-  a request with no press in the app's window in the last 5 seconds
-  (`gesture_required:`), one from a background surface or a window not in front
-  (`foreground_required:`), and one from anything but the app's own window
-  (`not_a_window:`). While it presents, no screen edge brings the shell's bar,
+  a request with no press on the app in its window in the last 5 seconds
+  (`gesture_required:`; a press on a host sheet does not count, and after Esc
+  or any ending but the app's own `{on: false}` it takes a new press), one
+  while the window is not in front (`foreground_required:`), one from an
+  agent's tool call or a callback of one (`agent_call:`), and one from
+  anything but the app's own window (`not_a_window:`). No capability is
+  needed. While it presents, no screen edge brings the shell's bar,
   the title bar or the dock out. Esc is the shell's key there, and ⌘F or the
   window losing the focus also ends it. Define `fn on_app_fullscreen(on)` to follow both ends,
   so the app leaves its Present or Read layout when the person presses Esc. A

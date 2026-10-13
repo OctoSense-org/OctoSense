@@ -489,6 +489,18 @@ impl Widget for MpModuleView {
                 // The WM moves focus here (and back to us through
                 // `focus_keyboard`), exactly as for a process tile.
                 cx.widget_action(self.uid, MpRunViewAction::Clicked { client });
+                // A press on the app's own content: for a few seconds the app
+                // may take its window full screen (app_fullscreen.rs). One on
+                // a host service's sheet over the app is the host's. Asked
+                // before the app sees the press, which may close the sheet.
+                match contain(cx, self.vm_id, "its sheet", |cx| crate::app_fullscreen::host_sheet_up(cx, &root)) {
+                    Some(false) => cx.widget_action(self.uid, MpRunViewAction::Pressed { client }),
+                    Some(true) => {}
+                    None => {
+                        self.stop(cx);
+                        return;
+                    }
+                }
             }
         }
         // A redraw an asleep app asks for (a timer, a network reply) is held

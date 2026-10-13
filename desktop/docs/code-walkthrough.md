@@ -170,10 +170,19 @@ of the person's tap or click ([`app_fullscreen.rs`](../../crates/shell/src/app_f
 The shell's `window` host service queues the request. After the event,
 `App::serve_window_requests` looks for the window whose Card runner runs the
 isolate that asked, for that app (`App::window_of`), so an app reaches only
-its own window. It refuses a request when the person has not pressed in that
-window in the last five seconds (`Activation`): makepad cannot tell which
-handler made a `host.request`, so the shell keeps a transient activation, as
-a browser does. `WmLayout::set_fullscreen` then makes that window full
+its own window. It refuses a request when the person has not pressed the app
+in that window in the last five seconds (`Activation`): makepad cannot tell
+which handler made a `host.request`, so the shell keeps a transient
+activation, as a browser does. Only `MpRunViewAction::Pressed` counts, which
+`MpModuleView` sends for a press on the module's live root with no host
+service's sheet up over it; a group tab, a stopped app's face and a process
+tile send only `Clicked`, which focuses. A presentation that ends any other
+way than the app's own `{on: false}` drops the window's press
+(`Presenter::finish`), so the app cannot bounce back from its hook. It
+refuses `{on: true}` from an agent's tool call too: App Hub's Card runner
+takes a request's surface authority (`ServiceCall::may_prompt`) away while
+one of the app's tool calls runs, and never because of a capability.
+`WmLayout::set_fullscreen` then makes that window full
 screen, and `WmState::presentation` keeps every edge from bringing the bar,
 the title bar or the dock out (`desktop::dock_shows`, `App::desktop_pointer`),
 as in a slideshow's play mode. The shell's own window enters the host's full
@@ -182,9 +191,10 @@ bar's own window control makes: macOS's native full screen, makepad's
 maximize elsewhere; makepad's `Window::fullscreen` does nothing on macOS
 yet), and the OSD says "Press Esc to exit full screen" for three seconds.
 These end it: Esc, `{on: false}`, ⌘F, the window closing or losing the
-focus, a style switch, or the person leaving the host's full screen.
-`App::sync_presentation` checks after every event, and the host window leaves
-full screen only if the presentation entered it. The answer is
+focus, the app's module failing, a style switch, or the person leaving the
+host's full screen. `App::sync_presentation` checks after every event, and
+the host window leaves full screen only if the presentation entered it, even
+when it gets there after the presentation ended. The answer is
 `{applied, fullscreen, fills_screen}`, and the app's optional
 `on_app_fullscreen(on)` hook hears both ends. On a phone the request changes
 nothing (`fills_screen: true`). A hidden shell (`MAKEPAD_HIDE_WINDOWS`) never

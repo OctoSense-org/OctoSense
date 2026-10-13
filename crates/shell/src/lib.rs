@@ -6567,12 +6567,10 @@ impl MatchEvent for App {
                         }
                     }
                 }
-                MpRunViewAction::Clicked { client } => {
-                    // A press the person made in this window: for a few
-                    // seconds the app may take it full screen (app_fullscreen.rs).
-                    self.note_window_press(client);
-                    self.focus_client(cx, client);
-                }
+                MpRunViewAction::Clicked { client } => self.focus_client(cx, client),
+                // A press on the app's own content in this window: for a few
+                // seconds the app may take it full screen (app_fullscreen.rs).
+                MpRunViewAction::Pressed { client } => self.note_window_press(client),
                 MpRunViewAction::Restart { client } => self.restart_failed_module(cx, client),
                 MpRunViewAction::None => {}
             }
@@ -6879,7 +6877,7 @@ impl App {
             // An app's presentation follows the window's real full screen
             // (app_fullscreen.rs): one it asked for arrived, or the person left.
             if self.state.is_some() {
-                self.host_window_reported(cx, ev.new_geom.is_fullscreen);
+                self.host_window_reported(cx, ev.window_id, ev.new_geom.is_fullscreen);
             }
             // A warm instance is configured with the desktop's own dpi, so
             // what it warms up is what its tile will use.

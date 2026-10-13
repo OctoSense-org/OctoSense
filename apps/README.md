@@ -531,14 +531,22 @@ clicks something in it (a deck's Present, a reader's Read mode), and
 with no title bar, the shell's bar and dock hide (no screen edge brings them
 out while it presents), and the OctoSense window enters full screen unless it
 is already there. **Esc** ends it (the shell's
-key: a script app gets no keys), as do `{on: false}`, ⌘F and the window
-losing the focus, and the shell shows "Press Esc to exit full screen" for
-three seconds. The answer is `{applied, fullscreen, fills_screen}`. A refusal
-starts with `gesture_required:` (no press in the window in the last 5
-seconds), `foreground_required:` (a background surface or a window not in
-front), `not_a_window:` (a glance card, a sheet or another app's window) or
-`invalid_arguments:`. An app may define `fn on_app_fullscreen(on)`, which the
-shell calls in the app's isolate when full screen starts and when it ends. On
+key: a script app gets no keys), as do `{on: false}`, ⌘F, the window losing
+the focus and the app failing, and the shell shows "Press Esc to exit full
+screen" for three seconds. The answer is `{applied, fullscreen, fills_screen}`.
+A refusal starts with `gesture_required:` (no press on the app in its window
+in the last 5 seconds; a press on a host sheet over the app does not count),
+`foreground_required:` (the window is not in front: the focus is elsewhere,
+or it is on another workspace or minimized), `agent_call:` (the request came
+from an agent's tool call or from a callback of one), `not_a_window:` (a
+glance card, a sheet or another app's window) or `invalid_arguments:`.
+`{on: false}` is never refused for the first three. No capability is needed:
+`prompt`, like every declaration, neither grants nor denies the method. After
+a presentation ends any other way than the app's own `{on: false}` (Esc, ⌘F,
+the focus leaving), going full screen again needs a new press, so an app
+that asks again from `on_app_fullscreen(false)` is refused. An app may define
+`fn on_app_fullscreen(on)`, which the shell calls in the app's isolate when
+full screen starts and when it ends. On
 a phone, where every app fills the screen, nothing changes:
 `{applied: false, fullscreen: false, fills_screen: true}`. The service is the
 shell's (`crates/shell/src/app_fullscreen.rs`), not App Hub's, and
