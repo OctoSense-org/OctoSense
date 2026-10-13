@@ -42,7 +42,7 @@ Inbox Assistant and Google Calendar have not run there.
 | Platform | Provider authorization | Credential storage | Gmail send approval |
 | --- | --- | --- | --- |
 | macOS | GitHub device flow; Google browser/PKCE loopback | Mail's platform Keychain adapter, separate OAuth namespace | Native pointer provenance; remote clicks refused; physical acceptance unverified |
-| Windows | Same desktop flows; platform execution unverified | Windows Credential Manager; unverified on Windows | Physical pointer provenance is available to native review; real Gmail send remains unverified |
+| Windows | Same desktop flows; platform execution unverified | Windows Credential Manager; unverified on Windows | Native review accepts OS hardware-class pointer messages, including UIAccess injection; real Gmail send remains unverified |
 | Linux | Protocol tests and host compilation passed on Linux; browser login and GUI unverified | Secret Service; unlocked service required, no plaintext fallback; native vault test refused the locked/unavailable build-host store | Unsupported: fails closed |
 | Android | GitHub flow present but unverified; **Google connection refused until its native adapter is implemented** | Mail's Android platform vault, separate namespace | Existing physical-touch provenance; this sample unverified |
 
