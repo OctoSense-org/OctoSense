@@ -33,7 +33,7 @@ OctoSense-System-Apps 仓库（已归档）。
 - **`model` 媒体 API** 使用宿主持有的供应商配置，执行有上限的图片、语音、向量和异步
   视频请求。应用声明 `model` 和精确宿主 API 版本；调用时检查供应商权益。见
   [媒体契约与验证范围](ai-providers/host-service/MEDIA.zh-CN.md)。
-- **`deck` 宿主服务**（`deck/host-service`，ADR 0013）把 deckcraft 演示文稿引擎放在 `deck.*` 之后：检查幻灯片、提取大纲文本、渲染 PNG、按标题和要点新建演示文稿，以及格式转换（pptx、原生格式、大纲、PDF），全部限制在调用方自己的文件夹内。它的应用是 Quick Deck（`quickdeck/bundle`），其调用在 Quick Deck 自己的存储中运行。
+- **`deck` 宿主服务**（`deck/host-service`，ADR 0013）把 deckcraft 演示文稿引擎放在 `deck.*` 之后：检查幻灯片、提取大纲文本、渲染 PNG、按标题和要点新建演示文稿，以及格式转换（pptx、原生格式、大纲、PDF），全部限制在调用方自己的文件夹内。它的应用是 Quick Deck（`quickdeck/bundle`），其调用在 Quick Deck 自己的存储中运行。它还为 Quick Deck v2 保持打开的文档（`apps/quickdeck/design/SERVICE.md`）：`deck.open` 和 `deck.create` 返回一个句柄，作用于它的方法（幻灯片、对象、文本、格式、设计、备注、切换效果、撤销与重做、把幻灯片绘制到渲染缓存、放映的顺序与动画步骤、保存与导出）都通过与系统代理的 `deck.run` 相同的入口运行经过审查的引擎命令，每次调用合为一个撤销步骤。服务打开的每个文件都先通过它自己的导入检查：在引擎读取之前，拒绝超出界限的 zip、加密的 `.pptx` 以及旧版 `.ppt`。演示文稿中的音频和视频会原样保留：显示其海报图，保存和导出时不作改动，并且从不解码或播放。
 - **`cad` 引擎服务**（`cad/host-service`）：cadcraft 制图引擎，提供 `cad.*` 方法（ADR 0013，暂无 bundle）——在调用方自己的文件夹内检查、查询、测量、渲染和转换 DXF/DWG 图纸。
 - **`light` 引擎服务**（`light/host-service`）把 lightcraft 的 RAW 显影引擎
   放在 `light.*` 方法之后（ADR 0013）：EXIF/XMP 元数据、显影控制目录、单张与
@@ -76,7 +76,7 @@ OctoSense-System-Apps 仓库（已归档）。
 
 ### 共用外观
 
-新闻、相册、邮件、日历、地图、AI providers、YouTube、PDF Tools 和 Writer 共用
+新闻、相册、邮件、日历、地图、AI providers、YouTube、Quick Deck、PDF Tools 和 Writer 共用
 [`interface.splash`](interface.splash)：页面、卡片和输入框跟随主题，
 辅助文字保持可读，操作按钮高 44 点，输入框高 48 点。桌面内容限制最大宽度，
 窄窗口保留相同操作。相机和媒体查看器保留深色观看背景。应用大厅的原生模块
@@ -108,16 +108,17 @@ OctoSense-System-Apps 仓库（已归档）。
 | [AI providers](ai-providers/bundle) | `os.ai-providers` | 助手的大模型服务商：一个主用与若干备用，每项都有来自 octos 模型目录的型号下拉菜单和“测试连接”；添加向导（系列、型号、线路、密钥、测试）；“为手机显示二维码”，以及通过相机、图片或粘贴导入 | `storage`、`llm` | 无（由服务联网，而不是应用） | [`llm`](ai-providers/host-service) |
 | [YouTube](youtube/bundle) | `os.youtube` | YouTube 搜索（运行时无需密钥的 `sys.video`，读取 YouTube 自己的搜索结果页），带缩略图和直播或时长角标的结果列表、话题标签，在 `WebReader` 中播放 YouTube 移动版观看页，以及本机播放记录 | `storage`、`net`、`glance` | `www.youtube.com`、`m.youtube.com`、`i.ytimg.com` | Shell 通知服务的 `youtube.notify` |
 | [Calendar](calendar/bundle) | `os.calendar` | 月历、按日列表、日程详情与编辑器；Glance 使用应用自有卡片，并能打开已保存日程 | `calendar`、`glance` | 无 | [`calendar`](calendar/host-service)（日历持有执行器；跨应用工具需授权） |
-| [Quick Deck](quickdeck/bundle) | `os.quickdeck`（桌面） | 分四步把大纲变成演示文稿：写幻灯片（每张一个标题和若干要点）、生成、逐张检查（缩略图网格，以及带缩略图条的单张视图）、导出 PowerPoint 或 PDF；保留自己的演示文稿列表 | `storage`、`deck` | 无 | [`deck`](deck/host-service)：`new`、`info`、`render`、`convert`，在 Quick Deck 自己的存储中运行 |
+| [Quick Deck](quickdeck/bundle) | `os.quickdeck`（桌面） | 演示文稿编辑器：带封面的演示文稿库，带幻灯片导航栏、画布和检查器（Format、Layout、Theme、Notes）的编辑器，原地编辑文本，图片、形状、表格和带数据的图表，带分节的幻灯片浏览视图，从大纲新建（手动输入，或由用户自己的 AI 提供方起草），放映和导出（.pptx、PDF、图片）；从本设备打开演示文稿。见[它的 README](quickdeck/README.zh-CN.md)，其中有测试它的各次运行 | `storage`、`files`、`deck`、`model` | 无 | [`deck`](deck/host-service) 引擎服务中 [design/SERVICE.md](quickdeck/design/SERVICE.md) 规定的打开文档方法，在应用自己的存储中运行；Shell 的 `files.status` 和 `files.import`；Draft with AI 使用 `model.complete` |
 | [PDF Tools](pdftools/bundle) | `os.pdftools`（桌面） | 管理自己存储中的 PDF：带首页预览的资料库，带页面缩略图、可查找的文字和信息的文档视图；单页视图；三步合并（选择、排序、完成），以及按固定页数或在指定页面处拆分；从设备打开 PDF（最大 64 MiB）和移除 PDF。见[它的 README](pdftools/README.zh-CN.md)，其中介绍了测试它的隐藏 Shell 流程 | `storage`、`files`、`pdf` | 无 | 在应用自己的存储中工作的 [`pdf`](pdf/host-service) 引擎服务：`pdf.info`、`pdf.render`、`pdf.text`、`pdf.merge`、`pdf.split`；Shell 的 `files.status` 和 `files.import` |
 | [Writer](writer/bundle) | `os.writer`（桌面端） | 白纸上的安静编辑器（以 `#` 开头的行是标题，`-` 是列表项，`>` 是引用）、文档列表、保存为 Word 文档、预览已保存的文档并按其标题生成大纲，以及导出为 PDF、Markdown、HTML 或 OpenDocument；草稿自动保存在应用自己的存储中 | `storage`、`word` | 无 | [`word`](word/host-service)（`word.convert`、`word.info`、`word.inspect`），在 Writer 自己的存储中 |
 | [AppCard](appcard) | 原生，需显式启用 | AppCard 助手：路由大脑选择或组合一个应用 Agent，由它生成实时的 Splash 或 webview 卡片。Shell 只在启用 `app-appcard` 时链接它；默认不发布 | 不适用（不是 bundle） | 不适用 | Shell 的 octos 内核 |
 
-每项权限的含义由共享的 `octosense-app-contract` 1.x crate 定义（App Hub 的 `crates/app-contract/src/manifest.rs`
-中的 `KNOWN_CAPABILITIES`）：`images` 可显示任意公网 https 主机的图片，`web`
-在系统 WebView 中打开网页，`library` 把拍摄内容提供给系统相册，`mail` 访问
-宿主的邮件服务，`llm` 访问宿主的大模型服务商服务，`news` 读取宿主的新闻服务，
-`glance` 向速览屏发布卡片，`model` 请求有界的单次模型调用。`net` 只能访问 manifest 列出的主机。
+能力名称由共享的 `octosense-app-contract` 1.x crate 定义（App Hub 的
+`crates/app-contract/src/manifest.rs` 中的 `KNOWN_CAPABILITIES`），用于描述图片、
+WebView 页面、图库导出、邮件、新闻、Glance 或单次模型调用等用途。`net` 和
+`network.hosts` 披露联网用途，不限制公开 API 的执行。声明不会授予设备同意、账户访问
+或跨应用工具权限；拍摄/导出意图必须明确指定，`llm` 服务商管理仍仅限系统应用。
+见[能力与执行边界](../docs/capabilities.zh-CN.md)。
 
 ### 状态与已知问题
 
@@ -174,15 +175,13 @@ OctoSense-System-Apps 仓库（已归档）。
 - **日历**（2026-10-01，桌面端，隐藏窗口的 `--remote` 运行，接真实模型）：系统 Agent
   请日历的 Agent 放一张卡片；首次使用面板弹出，Agent 添加了一个日程，它的卡片打开了
   glance 面板。手机上没有打包。它的宿主服务测试还不在 `apps.yml` 中。
-- **Quick Deck**（2026-10-09，macOS，隐藏窗口，浅色与深色）：在用其分支构建的桌面
-  Shell 中端到端运行。输入的大纲通过 `deck.new`、`deck.info` 和每张幻灯片一次
-  `deck.render` 变成演示文稿，全部写入 Quick Deck 自己的存储（`decks/<id>/g<n>/`）；
-  检查网格和单张视图显示引擎生成的 PNG，PowerPoint 和 PDF 导出也保存在旁边。
-  拒绝都会在应用中显示：存储几乎已满、引擎无法读取的演示文稿文件、存储之外的路径。
-  切换浅色或深色时，应用停留在用户所在的页面。`deck` 服务运行在 Shell 的 UI 线程上
-  （#399），所以它工作时 Shell 会停顿：五张幻灯片约 3 秒，会话中的第一次调用 16 秒。
-  每个页面和状态（包括各种拒绝）也由 `quickdeck/tests/ui.py` 用下方的开发夹具在
-  `card-host` 中覆盖。
+- **Quick Deck 第 2 版**（2026-10-11）：见[它的 README](quickdeck/README.zh-CN.md#状态)。
+  在 App Hub 的 `card-host` 中（浅色与深色）：开发夹具上每个设计过的页面和状态，以及没有
+  引擎时随 Shell 发布的 bundle。在 Linux 上隐藏运行的桌面 Shell 中（无头 weston），使用
+  #503 的真实 `deck` 引擎：从大纲生成演示文稿、原地编辑文本、格式、图表、主题、备注、浏览视图、保存、导出和放映，先浅色后深色，然后重启。模型测试通过（`cargo test --locked
+  -p octosense-shell --lib quickdeck_model`）。检查器的状态（#507：文本框的垂直对齐和自动调整、
+  图表的元素、表格的选项、配色方案、字体搭配和页脚，以及它们跟随改动和撤销）于同日在
+  `card-host` 中和真实引擎上验证。
 - **Writer**（2026-10-09）。在用本仓库构建的隐藏桌面 Shell 中（`MAKEPAD_WM_TEST_APP=writer`，
   隐藏窗口的 `--remote` 运行，浅色与深色），使用在 Writer 自己存储中工作的真实 `word` 引擎：
   通过 instrument 输入的文档被保存为 Word 文档（`word.convert` 转换 Writer 写到 `work/` 的
@@ -221,7 +220,7 @@ OctoSense-System-Apps 仓库（已归档）。
    path 依赖；photo 引擎的 `octosense-photo-service` 随仅限桌面的 `craft-engines` 引入，
    按引擎权衡见 [ADR 0013](../docs/adr/0013-craft-engines-as-pinned-services.zh-CN.md)），并在启动时注册
    （`crates/shell/src/apps.rs` 的 `register_host_services`）：Mail 服务在真实账户下用
-   `register()`，Shell 的应用配置中 `mail_demo: true` 时用 `register_demo()`。
+   `register()`，Shell 的应用配置中 `mail_demo: true` 时（桌面端读取；手机端仅限开发版）用 `register_demo()`。
    Mail、News 以及（带 photo 引擎时）Photos 安装 `on_notify` 回调，调用 Shell 共用通知渲染器；Calendar 安装卡片发布器。
    Shell 为其余系统应用命名空间注册 `NoticeService`；`llm` 服务使用 octos 内核的 core 目录以及
    Shell 的二维码扫描器和图片选择器（见 [`llm` 服务](#llm-服务)）。App Hub 只在根目录
@@ -247,6 +246,7 @@ calendar/host-service/       octosense-calendar-service，`calendar` 宿主服�
 news/host-service/           octosense-news-service，`news` 宿主服务（新闻的数据服务）
 pdf/host-service/            octosense-pdf-service，`pdf` 宿主服务（pdfcraft 引擎，ADR 0013）；examples/pdftools_fixture.rs 为 PDF Tools 的测试写出示例 PDF
 pdftools/                    PDF Tools：bundle/、tests/ui.py（在隐藏的 Shell 中运行的流程）、README.md
+quickdeck/                   Quick Deck：bundle/、design/（需求、设计图、像素映射、SERVICE.md）、dev-fixture/、tests/ui.py、README.md
 <name>/bundle/tools.json     新闻、邮件、日历、相册、地图、YouTube、相机的 Agent 工具
 <family>/host-service/tools.json  craft 引擎（word、deck、cad、light、sound、design、film、effect、vector、pdf）的工具，供系统 Agent 使用（ADR 0013）
 ../crates/shell/src/glance_notice.rs   共用通知服务；../crates/shell/resources/glance/notice.card
@@ -276,7 +276,8 @@ appcard/                     原生 AppCard 助手
 
 ```
 apps/<name>/bundle/
-  manifest.json     id、version、name、capabilities、network.hosts、integrity
+  manifest.json     id、version、name、capabilities、network.hosts、integrity；
+                    可选的 window：桌面窗口的尺寸（schema_minor 1）
   main.splash       程序
   icon.png|svg      可选的启动器图案；外形由 Shell 统一控制
   thumbs/ ...       应用加载的其他文件，路径为 {{assets}}/<path>
@@ -296,7 +297,7 @@ bundle 的源地址（Photos：`let assets = "{{assets}}"`，然后
 | 上限 | `HostLimits::system()`：64 MB 存储、128 MB 内存、更大的指令预算，因为应用在打开期间一直存活 | `HostLimits::default()`：按卡片规模设定 |
 | 额外文件 | Shell 可以把目录挂载到 `{{assets}}` | 只有 bundle 内的文件 |
 
-其余完全一致：同样的 isolate、同样的权限检查、同样的网络白名单。如何编写这类应用（语言、API、`octo` 命令行）见 [App Flow](https://github.com/OctoSense-org/OctoSense-App-Flow)（`docs/QUICKSTART.md`、`docs/SCRIPT-API.md`）。
+两者使用同一 isolate 和公开 API 策略：声明说明用途，仍检查已验证应用身份、存储隔离、实际同意和服务自身的规则。如何编写这类应用（语言、API、`octo` 命令行）见 [App Flow](https://github.com/OctoSense-org/OctoSense-App-Flow)（`docs/QUICKSTART.md`、`docs/SCRIPT-API.md`）。
 
 ## 启动器图标规范
 
@@ -377,25 +378,14 @@ MAKEPAD_APP_CONFIG='{"mail_demo":true}' cargo run --release -p octosense
 MAKEPAD_APP_CONFIG='{"mail_demo":true}' cargo run --release -p octosense-home --features mobile-only
 ```
 
-演示邮箱的密码存放在文件中，因此不会弹出钥匙串提示。
+演示邮箱的密码存放在文件中，因此不会弹出钥匙串提示。这些都是桌面构建，会把 `MAKEPAD_APP_CONFIG` 当作本机命令行设置读取；在真实手机上，演示邮箱需要开发版测试构建（`rom/scripts/build-home.py --dev-mode`）。
 
-**Quick Deck 的开发夹具。** `card-host` 没有 `deck` 服务，而随 Shell 发布的
-bundle 中没有任何夹具代码。Quick Deck 的 UI 测试使用 bundle 之外的
-`quickdeck/dev-fixture/`：`engine.splash` 是引擎的替身，它把每次调用要求的内容
-写到调用给出的路径；`fixture.json` 是它的设置；图片是固定版本的 deckcraft
-（d0e57d7e）根据 `outline.txt` 生成的真实渲染图。`quickdeck/tests/ui.py` 会复制一份
-临时 bundle，用 `engine.splash` 替换其中的 `deck_call()`，把夹具复制到应用存储的
-`dev/` 中，然后在隐藏的 `card-host` 中以浅色和深色外观走遍每个页面和状态。第一轮
-直接使用随 Shell 发布的 bundle，展示没有引擎应答时的样子。
-
-```sh
-python3 apps/quickdeck/tests/ui.py --card-host <App Hub>/target/release/card-host --output target/quickdeck-ui
-```
-
-截图和每种外观的回执保存在 `target/quickdeck-ui/light` 与
-`target/quickdeck-ui/dark`。`fixture.json` 中，`delay` 是每次调用耗费的秒数，
-`fail` 指定失败的调用（`new`、`info`、`render`、`convert` 或 `all`），
-`unreadable: true` 让 `render` 正常应答但不留下图片，于是每张幻灯片显示其文字。
+**Quick Deck 的测试。** 发布的应用包只有一条引擎路径 `host.request("deck.*")`，不含夹具代码。
+它的规则是纯函数，由 `../crates/shell/src/quickdeck_model_tests.rs` 在脚本虚拟机中运行；
+`quickdeck/tests/ui.py` 在 `card-host` 中用开发夹具（`quickdeck/dev-fixture/`：引擎的替身
+`engine.splash`，以及生成设计图示例演示文稿的 `make_fixture.py`）走遍每个设计过的页面和状态，
+并在隐藏的桌面 Shell 中用真实引擎运行完整流程。命令和每次运行覆盖的内容见
+[quickdeck/README.zh-CN.md](quickdeck/README.zh-CN.md#测试)。
 
 **Writer 的测试。** 发布的应用包只有一条引擎路径 `host.request("word.*")`，不含 fixture 代码。
 它的文本规则（列表为草稿显示什么、交给引擎的 Markdown、文件名、大纲、相对时间以及拒绝时的提示）
@@ -420,10 +410,11 @@ python3 apps/writer/tests/ui.py --card-host <App Hub>/target/release/card-host -
 
 ## 宿主服务与面板
 
-有些工作需要隔离运行的应用绝不能持有的东西：socket、凭据、设备。**宿主服务**
-在 Shell 中用 Rust 完成这些工作。应用通过
-`host.request("<family>.<method>", args, fn(r){…})` 调用；除非 manifest 授予了
-对应的 family（`mail`），isolate 会拒绝调用；服务返回数据，而不是能力本身。
+某些操作需要宿主持有的凭据或设备权限。**宿主服务**在 Shell 中用 Rust 完成这些工作；
+应用在宿主的身份与同意规则下调用公开 API。应用通过
+`host.request("<family>.<method>", args, fn(r){…})` 调用，以已准入应用的真实身份
+执行；服务检查实际账户作用域、同意和操作规则。`mail` 等服务族声明只描述用途，
+不授予或拒绝调用。服务返回数据，不返回凭据或审批权。
 运行时部分在 App Hub（`crates/appstore/src/services.rs`）。
 
 当需要用户操作时（输入密码、批准账户），服务会弹出一个**面板**：由宿主自有、
@@ -465,8 +456,8 @@ Android 的密码文件由该安装包的 Keystore 密钥加密；从测试包�
 `octosense-calendar-service`（`apps/calendar/host-service/src/lib.rs`）以日历
 （`os.calendar`）身份执行。Mail 与系统 Agent 均显式获授可共享的
 `calendar.events`、`calendar.add_event`、`calendar.notify`；Shell 中转检查调用者，
-再交给日历执行器。日历自身 UI 另行请求 `calendar` 能力，服务校验 `os.calendar`
-身份。删除、更新、UI 查看方法及议程工具不在这些跨应用授权中。
+再交给日历执行器。日历自身 UI 以已准入的 `os.calendar` 身份调用，`calendar` 声明只描述用途，
+服务仍校验该身份。删除、更新、UI 查看方法及议程工具不在这些跨应用授权中。
 
 | 方法 | 参数 | 返回 |
 | --- | --- | --- |
@@ -601,8 +592,8 @@ Peer 的工作目录不会挂载 Mail 的宿主数据库或凭据保险库。Cal
   `card_id` 会替换该应用之前的通知。邮件、新闻以及链接了照片引擎时（桌面）照片的服务把 `notify` 交给 Shell（照片的 `photos` 服务还在照片引擎上应答
   `photos.info`）；地图、YouTube
   和相机没有自己的服务，手机上的照片也没有，由 Shell 的通知服务应答（此时 `photos.info` 回答本设备不可用）。`calendar.notify` 和 `calendar.agenda` 填充日历
-  自己的日程卡片和议程卡片。每张卡片都以应用的身份、带 `notify` 通过 Shell 的 `glance` 服务发布
-  （应用需要 `glance` 权限）。这些固定模板工具由模型提供文字；`mail.publish_card`
+  自己的日程卡片和议程卡片。每张卡片都以应用的身份、带 `notify` 通过 Shell 的 `glance`
+  服务发布，保留已准入发布者及其账户身份。这些固定模板工具由模型提供文字；`mail.publish_card`
   另接收经宿主校验的模型 L0 源码。
 - **试一试**（桌面端）：打开助手（F8），请系统 Agent 让某个应用的 Agent（邮件、日历、新闻、照片、
   地图或 YouTube）在 glance 屏幕上放一张卡片；在弹出的面板上允许该 Agent。邮件需要一个已登录的账户（下文的演示邮箱即可）。
@@ -689,8 +680,8 @@ crate 的 clippy（这一步会编译整个应用）、AppCard 的 transport 与
 ## 修改应用
 
 1. 编辑 `apps/<name>/bundle/`。只使用 App Flow 的 `docs/SCRIPT-API.md` 中有文档的 API，或本仓库其他应用已经在用的 API；用其他东西之前先查运行时源码。
-2. 只申请应用实际用到的权限。新的网络主机写进 `network.hosts`；新的权限必须
-   已存在于 App Hub 的 `KNOWN_CAPABILITIES` 中。
+2. 用 `capabilities` 和 `network.hosts` 描述实际用途，能力名称取自 App Hub 的
+   `KNOWN_CAPABILITIES`。这些是披露，不是授权；必需 API 的版本写入 `host_api.required`。
 3. 绝不添加密码或验证码输入框。应用需要密钥时，由宿主服务及其面板处理。
 4. 用 `card-host --system` 运行（Mail：在 Shell 中用演示邮箱）。在手机上用
    以独立测试包构建的 Home 测试，绝不替换设备上已安装的 Home。

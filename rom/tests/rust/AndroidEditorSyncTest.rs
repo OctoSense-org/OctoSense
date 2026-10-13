@@ -17,6 +17,8 @@ impl Cx {
 struct Background(Area);
 impl Background {fn area(&self)->Area {self.0} fn redraw(&mut self,_cx:&mut Cx){}}
 struct History;
+// The real `set_text` ends with `check_text_is_empty(cx, Animate::Yes)`.
+#[allow(dead_code)] #[derive(Clone, Copy)] enum Animate { Yes, No }
 impl History {fn clear(&mut self){} fn force_new_edit_group(&mut self){}}
 fn floor_grapheme_boundary(text:&str,mut index:usize)->usize {index=index.min(text.len());while !text.is_char_boundary(index) {index-=1;}index}
 struct TextInput {
@@ -26,7 +28,7 @@ struct TextInput {
 }
 impl TextInput {
     fn filter_input(&self,text:&str,_programmatic:bool)->String {text.into()}
-    fn check_text_is_empty(&mut self,_cx:&mut Cx){}
+    fn check_text_is_empty(&mut self,_cx:&mut Cx,_animate:Animate){}
     /* REAL_EDITOR_METHODS */
 }
 fn main() {

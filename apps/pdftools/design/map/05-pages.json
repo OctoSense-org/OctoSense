@@ -1,0 +1,1348 @@
+{
+ "schema": 1,
+ "screen": "05-pages",
+ "state": "Pages mode, pages 5 and 6 selected, dragging 9",
+ "image": "source/05-pages.png",
+ "image_sha256": "8c20451b5e17f7cbf663e89c94971dcb90cf3ef0e91b81f473247ebea99b0e31",
+ "measured": "source/05-pages.measured.json",
+ "measured_sha256": "af3bffefa0658ac0bea513a33c0bd86a61b64f749d7bf8de6b345416ca9e4a1b",
+ "units": "1 image pixel = 1 layout point (the designs are a 1536 x 1024 window)",
+ "built_in": "apps/pdftools/bundle/main.splash (v2)",
+ "runtime": "OctoSense-org/makepad d653bc44 with runtime-patches.lock.json, as tools/setup.py prepares .sources/makepad",
+ "type_rule": "size in theme units: the ink height for runs without descenders, ink / 1.23 with them (calibrated in card-host on the runtime's own text); the build may round",
+ "colours": "light from this screen (or the light screens), dark from 09-dark-reading; tokens below, selected by the shared interface's ui_light",
+ "tokens": {
+  "pt_accent": {
+   "light": "#116cdc",
+   "dark": "#2f75d8",
+   "from": "02 s19 Save fill #116cdc; 09 s16 Save #246acf, s08 outline selection #2970d7"
+  },
+  "pt_link": {
+   "light": "#1c6ce0",
+   "dark": "#4d91e3",
+   "from": "02 t00 'Read' ink #3c7ae8 (anti-aliased); 09 t00 #468bd8"
+  },
+  "pt_tabs": {
+   "light": "#f4f4f5",
+   "dark": "#191e21",
+   "from": "02 s04 tab row #f4f4f5; 09 tab row sample (1350,30) #191e21"
+  },
+  "pt_tab_on": {
+   "light": "#ffffff",
+   "dark": "#232a2e",
+   "from": "02 active tab; 09 active tab ground #22282c"
+  },
+  "pt_bar": {
+   "light": "#ffffff",
+   "dark": "#232a2e",
+   "from": "02 mode bar #fefefe; 09 t07 ground #22292d"
+  },
+  "pt_rail": {
+   "light": "#ffffff",
+   "dark": "#1e252a",
+   "from": "02 rail #fefefe; 09 s02 #1e252a"
+  },
+  "pt_panel": {
+   "light": "#ffffff",
+   "dark": "#192025",
+   "from": "02 s02 #fefefe; 09 s01 #192025"
+  },
+  "pt_desk": {
+   "light": "#eceded",
+   "dark": "#191f24",
+   "from": "02 s00 #eceded; 09 desk sample (420,500) #191f24"
+  },
+  "pt_home": {
+   "light": "#f7f8f9",
+   "dark": "#191f24",
+   "from": "01 s00 #f7f8f9; dark Home not designed: 09's desk"
+  },
+  "pt_status": {
+   "light": "#ffffff",
+   "dark": "#1b2226",
+   "from": "02 status #fefefe; 09 status sample (700,1000) #1b2226"
+  },
+  "pt_pill": {
+   "light": "#ffffff",
+   "dark": "#282d32",
+   "from": "02 pill #fefefe; 09 s04 #282d32"
+  },
+  "pt_card": {
+   "light": "#ffffff",
+   "dark": "#232a2e",
+   "from": "04/06/08 cards #fefefe; dark: 09 bar colour (cards not in 09)"
+  },
+  "pt_line": {
+   "light": "#e1e2e3",
+   "dark": "#383d41",
+   "from": "02 d00 #e1e2e3; 09 d24 #383d41"
+  },
+  "pt_line_soft": {
+   "light": "#ececee",
+   "dark": "#2c3236",
+   "from": "02 d02 #ecedee; 09 d07 #303437"
+  },
+  "pt_thumb_line": {
+   "light": "#d3d5d9",
+   "dark": "#464b50",
+   "from": "02 thumbnails' border (s15 #e0e1f0 on the page edge, darker at 1x); dark derived"
+  },
+  "pt_tint": {
+   "light": "#e9f2fe",
+   "dark": "#275294",
+   "from": "02 s16 rail selection #e9f2fe; 09 s14 #275293"
+  },
+  "pt_tint_line": {
+   "light": "#cfe0fa",
+   "dark": "#34619f",
+   "from": "04 s27 Highlight tool border #dfebfc; dark derived from pt_tint"
+  },
+  "pt_tint_ink": {
+   "light": "#2f6fd0",
+   "dark": "#bac7dd",
+   "from": "02 t01 rail 'Pages' ink #5973a6 (anti-aliased blue); 09 t03 #bac7dd"
+  },
+  "pt_select": {
+   "light": "#eff5fc",
+   "dark": "#22344d",
+   "from": "03 s06 result group fill #eff5fc; dark derived"
+  },
+  "pt_field": {
+   "light": "#ffffff",
+   "dark": "#1e2429",
+   "from": "02 s06 search #fefefe; 09 s10 #1e2429"
+  },
+  "pt_field_line": {
+   "light": "#dcdcde",
+   "dark": "#3c4043",
+   "from": "02 d01 #dcdcde; 09 d02 #3c4043"
+  },
+  "pt_hover": {
+   "light": "#f1f2f3",
+   "dark": "#2b3237",
+   "from": "hover: derived"
+  },
+  "pt_ink": {
+   "light": "#37393c",
+   "dark": "#d5d7d8",
+   "from": "02 t16 'Pages' title #38393b, t05 tab #414142; 09 t06 tab #d1d3d4, t09 #d7d9da"
+  },
+  "pt_ink2": {
+   "light": "#55575b",
+   "dark": "#b0b2b4",
+   "from": "02 mode labels #5c5d5e-#6d6d6e; 09 mode labels #a9abad-#b3b4b4"
+  },
+  "pt_muted": {
+   "light": "#76787c",
+   "dark": "#9a9da0",
+   "from": "02 t57 'Saved' #79797b, t58 #6d6d6e; 09 t59 #929698, t60 #9b9d9f"
+  },
+  "pt_faint": {
+   "light": "#9c9da0",
+   "dark": "#7d8184",
+   "from": "02 t15 placeholder #9c9d9f; 09 dimmer than t25 #9fa2a5"
+  },
+  "pt_icon": {
+   "light": "#5b5d61",
+   "dark": "#a9acae",
+   "from": "02 icons; 09 icons"
+  },
+  "pt_green": {
+   "light": "#49b039",
+   "dark": "#38a540",
+   "from": "02 'Saved' dot sample #49b039; 09 #38a540"
+  },
+  "pt_orange": {
+   "light": "#f2a20d",
+   "dark": "#e39a1c",
+   "from": "08 'Edited' dot (31,984)"
+  },
+  "pt_red": {
+   "light": "#e5534f",
+   "dark": "#f06a66",
+   "from": "07 t74 'Monthly rent *' #e85652, t75 #ed4f4a"
+  },
+  "pt_shadow": {
+   "light": "#00000022",
+   "dark": "#00000070",
+   "from": "page and pill shadows: soft, from 02 page edge #e9eaeb"
+  }
+ },
+ "regions": [
+  {
+   "id": "pill",
+   "role": "canvas controls: page n / N, previous, next, zoom out, zoom %, zoom in, fit width, fit page",
+   "widget": "View pill (overlay, bottom centre; on_render pill_view): RoundedShadowView radius 26.5 with IconBtn chevron-left, Label 'p / N' (78 wide), IconBtn chevron-right, SolidView 1x28, IconBtn minus, Label zoom % (66 wide), IconBtn plus, SolidView, IconBtn fit-width, IconBtn fit-page",
+   "cite": [
+    "makepad widgets/src/view_ui.rs:227 (RoundedShadowView)",
+    "makepad widgets/src/button.rs:20 (ButtonFlat), draw_icon/icon_walk button.rs:470-477",
+    "makepad widgets/src/label.rs:11 (Label), max_lines label.rs:258, text_overflow draw_text.rs:1295 (Ellipsis)",
+    "makepad widgets/src/view_ui.rs:85 (SolidView); App Flow docs/SCRIPT-API.md 'Backgrounds'"
+   ],
+   "geometry": {
+    "height": 53,
+    "radius": 26.5,
+    "bottom": 12,
+    "padding": 14
+   },
+   "colors": {
+    "light": {
+     "pill": "#ffffff",
+     "line": "#e1e2e3",
+     "text": "#55575b",
+     "icon": "#5b5d61",
+     "shadow": "#00000022"
+    },
+    "dark": {
+     "pill": "#282d32",
+     "line": "#383d41",
+     "text": "#b0b2b4",
+     "icon": "#a9acae",
+     "shadow": "#00000070"
+    }
+   },
+   "font": "theme.font_regular",
+   "size": 12,
+   "decision": null,
+   "notes": "in Pages mode the zoom sizes the tiles; fit width and fit page are left out (no page is fitted)",
+   "image_rect": [
+    620,
+    918,
+    402,
+    47
+   ],
+   "status": "built",
+   "source": {
+    "text": [
+     {
+      "i": 167,
+      "text": "<",
+      "ocr_height": 15.6,
+      "ink": "#565a62",
+      "ground": "#fafafa",
+      "ink_px": 13,
+      "size": 13.0
+     },
+     {
+      "i": 168,
+      "text": "3 / 24",
+      "ocr_height": 13.4,
+      "ink": "#84878d",
+      "ground": "#fafafa",
+      "ink_px": 10,
+      "size": 10.0
+     },
+     {
+      "i": 169,
+      "text": ">",
+      "ocr_height": 17.8,
+      "ink": "#545861",
+      "ground": "#fbfbfb",
+      "ink_px": 14,
+      "size": 14.0
+     },
+     {
+      "i": 170,
+      "text": "-",
+      "ocr_height": 11.2,
+      "ink": "#70747b",
+      "ground": "#fbfbfb",
+      "ink_px": 2,
+      "size": 2.0
+     },
+     {
+      "i": 171,
+      "text": "100%",
+      "ocr_height": 11.2,
+      "ink": "#7c7f84",
+      "ground": "#f5f5f6",
+      "ink_px": 8,
+      "size": 8.0
+     },
+     {
+      "i": 172,
+      "text": "+",
+      "ocr_height": 20.1,
+      "ink": "#6d7177",
+      "ground": "#fbfbfb",
+      "ink_px": 12,
+      "size": 12.0
+     }
+    ],
+    "surfaces": [
+     {
+      "i": 20,
+      "bounds": [
+       623,
+       921,
+       396,
+       41
+      ],
+      "fill": "#fdfdfd",
+      "radius": 4
+     }
+    ],
+    "dividers": [
+     3,
+     4,
+     5
+    ]
+   }
+  },
+  {
+   "id": "tabs",
+   "role": "document tabs",
+   "widget": "SolidView tabs (on_render tabs_view): Tab = RoundedView per open PDF (Svg file-pdf 16, Label title with ellipsis, IconBtn close 13), Outline button 'Open' (Svg plus) after the last tab; Home tab only on Home",
+   "cite": [
+    "makepad widgets/src/view_ui.rs:85 (SolidView); App Flow docs/SCRIPT-API.md 'Backgrounds'",
+    "makepad widgets/src/view_ui.rs:308 (RoundedView)",
+    "makepad widgets/src/label.rs:11 (Label), max_lines label.rs:258, text_overflow draw_text.rs:1295 (Ellipsis)",
+    "makepad widgets/src/button.rs:20 (ButtonFlat), draw_icon/icon_walk button.rs:470-477",
+    "makepad widgets/src/svg.rs:10 (Svg), draw_svg.svg from http_resource: draw/src/shader/draw_svg.rs:481-518; App Flow examples/health/cards/health-02/rounds/001/layout.json.native.splash:23",
+    "makepad widgets/src/gesture_view.rs:44 (GestureView), on_tap/on_double_tap/on_pan gesture_view.rs:182-196, cumulative pan deltas gesture_view.rs:256"
+   ],
+   "geometry": {
+    "height": 53,
+    "x": 0,
+    "width": "Fill",
+    "tab": "Fit, 48 tall from y 11; the row clips 6 so the open tab joins the mode bar",
+    "tab_padding": [
+     16,
+     8
+    ],
+    "gap": 2,
+    "open": "Outline 36 tall, 6 after the last tab"
+   },
+   "colors": {
+    "light": {
+     "row": "#f4f4f5",
+     "tab_on": "#ffffff",
+     "border": "#e1e2e3",
+     "text_on": "#37393c",
+     "text": "#76787c"
+    },
+    "dark": {
+     "row": "#191e21",
+     "tab_on": "#232a2e",
+     "border": "#383d41",
+     "text_on": "#d5d7d8",
+     "text": "#9a9da0"
+    }
+   },
+   "font": "theme.font_regular",
+   "size": 12,
+   "decision": null,
+   "notes": "",
+   "image_rect": [
+    0,
+    0,
+    1536,
+    44
+   ],
+   "status": "built",
+   "source": {
+    "text": [
+     {
+      "i": 0,
+      "text": "Q3 2026 Board Report.pdf",
+      "ocr_height": 15.6,
+      "ink": "#58595c",
+      "ground": "#f6f6f6",
+      "ink_px": 12,
+      "size": 10.0
+     },
+     {
+      "i": 1,
+      "text": "Riverside Lease 2026.pdf",
+      "ocr_height": 15.6,
+      "ink": "#898b8f",
+      "ground": "#f2f2f3",
+      "ink_px": 11,
+      "size": 9.0
+     },
+     {
+      "i": 2,
+      "text": "Field Guide to Garden Birds.pdf",
+      "ocr_height": 13.5,
+      "ink": "#878a8e",
+      "ground": "#f1f1f2",
+      "ink_px": 12,
+      "size": 10.0
+     },
+     {
+      "i": 3,
+      "text": "X",
+      "ocr_height": 11.2,
+      "ink": "#73757c",
+      "ground": "#f1f1f2",
+      "ink_px": 8,
+      "size": 8.0
+     },
+     {
+      "i": 4,
+      "text": "Invoice INV-2041.pdf",
+      "ocr_height": 15.6,
+      "ink": "#83868a",
+      "ground": "#f1f1f2",
+      "ink_px": 12,
+      "size": 10.0
+     },
+     {
+      "i": 173,
+      "text": "Site Survey Photos.pdf",
+      "ocr_height": 15.6,
+      "ink": "#84878c",
+      "ground": "#f1f1f2",
+      "ink_px": 12,
+      "size": 10.0
+     },
+     {
+      "i": 174,
+      "text": "+ Open",
+      "ocr_height": 15.6,
+      "ink": "#75797f",
+      "ground": "#f2f2f3",
+      "ink_px": 12,
+      "size": 10.0
+     }
+    ],
+    "surfaces": [
+     {
+      "i": 25,
+      "bounds": [
+       262,
+       5,
+       232,
+       40
+      ],
+      "fill": "#f3f3f4",
+      "radius": 0
+     },
+     {
+      "i": 27,
+      "bounds": [
+       960,
+       5,
+       219,
+       40
+      ],
+      "fill": "#f3f3f3",
+      "radius": 0
+     },
+     {
+      "i": 28,
+      "bounds": [
+       10,
+       8,
+       246,
+       35
+      ],
+      "fill": "#fdfdfd",
+      "radius": 0
+     },
+     {
+      "i": 29,
+      "bounds": [
+       501,
+       8,
+       231,
+       37
+      ],
+      "fill": "#f3f3f3",
+      "radius": 0
+     },
+     {
+      "i": 30,
+      "bounds": [
+       741,
+       8,
+       214,
+       37
+      ],
+      "fill": "#f3f3f3",
+      "radius": 0
+     },
+     {
+      "i": 33,
+      "bounds": [
+       962,
+       8,
+       215,
+       34
+      ],
+      "fill": "#f3f3f3",
+      "radius": 0
+     },
+     {
+      "i": 36,
+      "bounds": [
+       1185,
+       10,
+       76,
+       30
+      ],
+      "fill": "#f4f3f4",
+      "radius": 0
+     },
+     {
+      "i": 38,
+      "bounds": [
+       1189,
+       13,
+       69,
+       24
+      ],
+      "fill": "#f4f3f4",
+      "radius": 0
+     }
+    ],
+    "dividers": [
+     0
+    ]
+   }
+  },
+  {
+   "id": "modebar",
+   "role": "mode bar: Read · Comment · Fill & Sign · Pages · Combine · Edit, search field, Undo, Redo, Save",
+   "widget": "SolidView modebar (on_render modebar_view): per mode a fixed-width column (Flat text button + 3 pt SolidView underline, accent when current); RoundedView search box with Svg search and TextInput (on_return find), IconBtn undo/redo (faint when unavailable), SolidView 1x26 divider, Primary 'Save' with Svg save",
+   "cite": [
+    "makepad widgets/src/view_ui.rs:85 (SolidView); App Flow docs/SCRIPT-API.md 'Backgrounds'",
+    "makepad widgets/src/button.rs:20 (ButtonFlat), draw_icon/icon_walk button.rs:470-477",
+    "makepad widgets/src/text_input.rs:468 (TextInput), on_change/on_return text_input.rs:675-677, is_multiline text_input.rs:576, empty_text text_input.rs:604",
+    "makepad widgets/src/svg.rs:10 (Svg), draw_svg.svg from http_resource: draw/src/shader/draw_svg.rs:481-518; App Flow examples/health/cards/health-02/rounds/001/layout.json.native.splash:23",
+    "makepad widgets/src/view_ui.rs:308 (RoundedView)"
+   ],
+   "geometry": {
+    "height": 54,
+    "padding": [
+     15,
+     19
+    ],
+    "mode_columns": [
+     69,
+     101,
+     100,
+     78,
+     99,
+     61
+    ],
+    "underline": "3 pt, inset 16, 1 pt above the bar's line",
+    "search": "Fill, at most 344, right-aligned, x 35, radius 5",
+    "undo_redo": "34 x 34, icons 20",
+    "save": "128 x 33, radius 5"
+   },
+   "colors": {
+    "light": {
+     "bar": "#ffffff",
+     "mode": "#55575b",
+     "current": "#1c6ce0",
+     "underline": "#116cdc",
+     "field": "#ffffff",
+     "field_line": "#dcdcde",
+     "placeholder": "#9c9da0",
+     "save": "#116cdc"
+    },
+    "dark": {
+     "bar": "#232a2e",
+     "mode": "#b0b2b4",
+     "current": "#4d91e3",
+     "underline": "#2f75d8",
+     "field": "#1e2429",
+     "field_line": "#3c4043",
+     "placeholder": "#7d8184",
+     "save": "#2f75d8"
+    }
+   },
+   "font": "theme.font_regular",
+   "size": 12.5,
+   "current_mode": "pages",
+   "notes": "",
+   "image_rect": [
+    0,
+    44,
+    1536,
+    57
+   ],
+   "status": "built",
+   "decision": null,
+   "source": {
+    "text": [
+     {
+      "i": 5,
+      "text": "Read",
+      "ocr_height": 13.4,
+      "ink": "#585c63",
+      "ground": "#f1f1f2",
+      "ink_px": 11,
+      "size": 11.0
+     },
+     {
+      "i": 6,
+      "text": "Comment",
+      "ocr_height": 15.6,
+      "ink": "#6a6e74",
+      "ground": "#f8f8f9",
+      "ink_px": 11,
+      "size": 11.0
+     },
+     {
+      "i": 7,
+      "text": "Fill & Sign",
+      "ocr_height": 16.0,
+      "ink": "#65696f",
+      "ground": "#f6f6f7",
+      "ink_px": 15,
+      "size": 12.0
+     },
+     {
+      "i": 8,
+      "text": "Pages",
+      "ocr_height": 17.8,
+      "ink": "#3a80de",
+      "ground": "#f4f8fc",
+      "ink_px": 15,
+      "size": 12.0
+     },
+     {
+      "i": 9,
+      "text": "Combine",
+      "ocr_height": 15.6,
+      "ink": "#6b6f75",
+      "ground": "#f7f7f8",
+      "ink_px": 11,
+      "size": 11.0
+     },
+     {
+      "i": 10,
+      "text": "Edit",
+      "ocr_height": 13.4,
+      "ink": "#5f6268",
+      "ground": "#f4f4f5",
+      "ink_px": 11,
+      "size": 11.0
+     },
+     {
+      "i": 175,
+      "text": "• Search in document",
+      "ocr_height": 14,
+      "ink": "#888b90",
+      "ground": "#f7f8f8",
+      "ink_px": 15,
+      "size": 15.0
+     },
+     {
+      "i": 202,
+      "text": "Save",
+      "ocr_height": 15.6,
+      "ink": "#c3def7",
+      "ground": "#086adb",
+      "ink_px": 12,
+      "size": 12.0
+     }
+    ],
+    "surfaces": [
+     {
+      "i": 2,
+      "bounds": [
+       8,
+       44,
+       1521,
+       109
+      ],
+      "fill": "#fdfdfd",
+      "radius": 3
+     },
+     {
+      "i": 24,
+      "bounds": [
+       1039,
+       58,
+       253,
+       37
+      ],
+      "fill": "#fdfdfd",
+      "radius": 0
+     },
+     {
+      "i": 32,
+      "bounds": [
+       1042,
+       61,
+       246,
+       30
+      ],
+      "fill": "#fdfdfd",
+      "radius": 1
+     },
+     {
+      "i": 35,
+      "bounds": [
+       1437,
+       59,
+       80,
+       34
+      ],
+      "fill": "#0468db",
+      "radius": 4
+     }
+    ],
+    "dividers": [
+     1,
+     2
+    ]
+   }
+  },
+  {
+   "id": "rail",
+   "role": "left rail: Pages, Outline, Comments, Search",
+   "widget": "SolidView rail (on_render rail_view): GestureView 69 x 77 per item holding a RoundedView (tint when selected), Svg 26 and Label",
+   "cite": [
+    "makepad widgets/src/view_ui.rs:85 (SolidView); App Flow docs/SCRIPT-API.md 'Backgrounds'",
+    "makepad widgets/src/gesture_view.rs:44 (GestureView), on_tap/on_double_tap/on_pan gesture_view.rs:182-196, cumulative pan deltas gesture_view.rs:256",
+    "makepad widgets/src/view_ui.rs:308 (RoundedView)",
+    "makepad widgets/src/svg.rs:10 (Svg), draw_svg.svg from http_resource: draw/src/shader/draw_svg.rs:481-518; App Flow examples/health/cards/health-02/rounds/001/layout.json.native.splash:23",
+    "makepad widgets/src/label.rs:11 (Label), max_lines label.rs:258, text_overflow draw_text.rs:1295 (Ellipsis)"
+   ],
+   "geometry": {
+    "width": 84,
+    "item": [
+     69,
+     77
+    ],
+    "first_top": 13,
+    "pitch": 85,
+    "radius": 6
+   },
+   "colors": {
+    "light": {
+     "rail": "#ffffff",
+     "selected": "#e9f2fe",
+     "selected_ink": "#2f6fd0",
+     "icon": "#5b5d61",
+     "label": "#76787c",
+     "line": "#e1e2e3"
+    },
+    "dark": {
+     "rail": "#1e252a",
+     "selected": "#275294",
+     "selected_ink": "#bac7dd",
+     "icon": "#a9acae",
+     "label": "#9a9da0",
+     "line": "#383d41"
+    }
+   },
+   "font": "theme.font_regular",
+   "size": 10.5,
+   "selected": "pages",
+   "notes": "",
+   "image_rect": [
+    0,
+    101,
+    88,
+    877
+   ],
+   "status": "built",
+   "decision": null,
+   "source": {
+    "text": [
+     {
+      "i": 14,
+      "text": "Pages",
+      "ocr_height": 13.4,
+      "ink": "#4882e2",
+      "ground": "#e1eefb",
+      "ink_px": 11,
+      "size": 9.0
+     },
+     {
+      "i": 15,
+      "text": "Outline",
+      "ocr_height": 11.2,
+      "ink": "#818489",
+      "ground": "#f6f6f7",
+      "ink_px": 9,
+      "size": 9.0
+     },
+     {
+      "i": 16,
+      "text": "Comments",
+      "ocr_height": 11.2,
+      "ink": "#808287",
+      "ground": "#f7f7f8",
+      "ink_px": 9,
+      "size": 9.0
+     },
+     {
+      "i": 17,
+      "text": "Search",
+      "ocr_height": 11.2,
+      "ink": "#818388",
+      "ground": "#f7f7f7",
+      "ink_px": 9,
+      "size": 9.0
+     }
+    ],
+    "surfaces": [
+     {
+      "i": 3,
+      "bounds": [
+       8,
+       103,
+       78,
+       875
+      ],
+      "fill": "#fdfdfd",
+      "radius": 0
+     },
+     {
+      "i": 34,
+      "bounds": [
+       19,
+       117,
+       55,
+       68
+      ],
+      "fill": "#e7f1fb",
+      "radius": 3
+     }
+    ],
+    "dividers": [
+     7,
+     8
+    ]
+   }
+  },
+  {
+   "id": "actions",
+   "role": "Pages actions: n selected, Rotate left, Rotate right, Delete, Extract, Insert from file, hint",
+   "widget": "SolidView 52 tall (toolrow, pages_actions): Label 'n selected' (bold, accent), Flat with Svg per action, SolidView divider, Label 'Drag pages to reorder'; Insert from file opens a strip of the library's other PDFs",
+   "cite": [
+    "makepad widgets/src/view_ui.rs:85 (SolidView); App Flow docs/SCRIPT-API.md 'Backgrounds'",
+    "makepad widgets/src/button.rs:20 (ButtonFlat), draw_icon/icon_walk button.rs:470-477",
+    "makepad widgets/src/label.rs:11 (Label), max_lines label.rs:258, text_overflow draw_text.rs:1295 (Ellipsis)",
+    "makepad widgets/src/svg.rs:10 (Svg), draw_svg.svg from http_resource: draw/src/shader/draw_svg.rs:481-518; App Flow examples/health/cards/health-02/rounds/001/layout.json.native.splash:23"
+   ],
+   "geometry": {
+    "height": 52,
+    "padding": 26,
+    "gap": 14
+   },
+   "colors": {
+    "light": {
+     "bar": "#ffffff",
+     "count": "#1c6ce0",
+     "action": "#55575b",
+     "hint": "#76787c"
+    },
+    "dark": {
+     "bar": "#232a2e",
+     "count": "#4d91e3",
+     "action": "#b0b2b4",
+     "hint": "#9a9da0"
+    }
+   },
+   "font": "theme.font_regular",
+   "size": 12,
+   "image_rect": [
+    88,
+    101,
+    1441,
+    54
+   ],
+   "status": "built",
+   "decision": null,
+   "source": {
+    "text": [
+     {
+      "i": 11,
+      "text": "2 selected",
+      "ocr_height": 13.8,
+      "ink": "#337ce0",
+      "ground": "#f2f7fc",
+      "ink_px": 12,
+      "size": 12.0
+     },
+     {
+      "i": 12,
+      "text": "Rotate left",
+      "ocr_height": 13.6,
+      "ink": "#828488",
+      "ground": "#f7f7f7",
+      "ink_px": 11,
+      "size": 11.0
+     },
+     {
+      "i": 13,
+      "text": "Rotate right",
+      "ocr_height": 14.1,
+      "ink": "#828488",
+      "ground": "#f7f7f8",
+      "ink_px": 13,
+      "size": 10.5
+     },
+     {
+      "i": 91,
+      "text": "Delete",
+      "ocr_height": 11.2,
+      "ink": "#7f8287",
+      "ground": "#f5f5f6",
+      "ink_px": 10,
+      "size": 10.0
+     },
+     {
+      "i": 92,
+      "text": "Extract",
+      "ocr_height": 11.2,
+      "ink": "#73767b",
+      "ground": "#f4f4f5",
+      "ink_px": 11,
+      "size": 11.0
+     },
+     {
+      "i": 138,
+      "text": "Insert from file",
+      "ocr_height": 13.4,
+      "ink": "#7b7d81",
+      "ground": "#f5f6f6",
+      "ink_px": 11,
+      "size": 11.0
+     },
+     {
+      "i": 203,
+      "text": "Drag pages to reorder",
+      "ocr_height": 13.4,
+      "ink": "#87898d",
+      "ground": "#f7f7f8",
+      "ink_px": 13,
+      "size": 10.5
+     }
+    ],
+    "surfaces": [],
+    "dividers": []
+   }
+  },
+  {
+   "id": "grid",
+   "role": "every page as a large thumbnail: selection, page numbers, drop marker",
+   "page_content": true,
+   "widget": "ScrollYView grid (static; grid_view): rows of GestureView tiles (on_tap toggle_select, on_pan tile_pan: cumulative offset in tiles decides the drop) holding a RoundedView frame (accent 2 pt when chosen), RectShadowView with Image (pdf.page at 48 dpi), RoundedView 22 check badge with Svg check, Label page number; a dashed SolidView marker before the drop target",
+   "cite": [
+    "makepad widgets/src/view_ui.rs:805 (ScrollYView); a view keeps its scroll position across its own render(): view.rs:296-306",
+    "makepad widgets/src/gesture_view.rs:44 (GestureView), on_tap/on_double_tap/on_pan gesture_view.rs:182-196, cumulative pan deltas gesture_view.rs:256",
+    "makepad widgets/src/view_ui.rs:308 (RoundedView)",
+    "makepad widgets/src/view_ui.rs:150 (RectShadowView: shadow_color, shadow_radius, shadow_offset)",
+    "makepad widgets/src/image.rs:71 (Image), ImageFit image_cache.rs:4; binary_resource platform/src/script/res.rs:1398; used by apps/quickdeck and v1 apps/pdftools",
+    "makepad widgets/src/svg.rs:10 (Svg), draw_svg.svg from http_resource: draw/src/shader/draw_svg.rs:481-518; App Flow examples/health/cards/health-02/rounds/001/layout.json.native.splash:23"
+   ],
+   "geometry": {
+    "tile": "190 wide at 100% (x 0.6-1.6), page aspect",
+    "column_gap": 30,
+    "row_gap": 26,
+    "padding": 20
+   },
+   "colors": {
+    "light": {
+     "frame_on": "#116cdc",
+     "badge": "#116cdc",
+     "number": "#55575b",
+     "marker": "#116cdc"
+    },
+    "dark": {
+     "frame_on": "#2f75d8",
+     "badge": "#2f75d8",
+     "number": "#b0b2b4",
+     "marker": "#2f75d8"
+    }
+   },
+   "font": "theme.font_regular",
+   "size": 12.5,
+   "decision": "Page contents are sample art: every tile is the engine's render (pdf.page).",
+   "image_rect": [
+    88,
+    155,
+    1441,
+    823
+   ],
+   "status": "built",
+   "source": {
+    "text": [
+     18,
+     19,
+     20,
+     21,
+     22,
+     23,
+     24,
+     25,
+     26,
+     27,
+     28,
+     29,
+     30,
+     31,
+     32,
+     33,
+     34,
+     35,
+     36,
+     37,
+     38,
+     39,
+     40,
+     41,
+     42,
+     43,
+     44,
+     45,
+     46,
+     47,
+     48,
+     49,
+     50,
+     51,
+     52,
+     53,
+     54,
+     55,
+     56,
+     57,
+     58,
+     59,
+     60,
+     61,
+     62,
+     63,
+     64,
+     65,
+     66,
+     67,
+     68,
+     69,
+     70,
+     71,
+     72,
+     73,
+     74,
+     75,
+     76,
+     77,
+     78,
+     79,
+     80,
+     81,
+     82,
+     83,
+     84,
+     85,
+     86,
+     87,
+     88,
+     89,
+     90,
+     93,
+     94,
+     95,
+     96,
+     97,
+     98,
+     99,
+     100,
+     101,
+     102,
+     103,
+     104,
+     105,
+     106,
+     107,
+     108,
+     109,
+     110,
+     111,
+     112,
+     113,
+     114,
+     115,
+     116,
+     117,
+     118,
+     119,
+     120,
+     121,
+     122,
+     123,
+     124,
+     125,
+     126,
+     127,
+     128,
+     129,
+     130,
+     131,
+     132,
+     133,
+     134,
+     135,
+     136,
+     137,
+     139,
+     140,
+     141,
+     142,
+     143,
+     144,
+     145,
+     146,
+     147,
+     148,
+     149,
+     150,
+     151,
+     152,
+     153,
+     154,
+     155,
+     156,
+     157,
+     158,
+     159,
+     160,
+     161,
+     162,
+     163,
+     164,
+     165,
+     166,
+     176,
+     177,
+     178,
+     179,
+     180,
+     181,
+     182,
+     183,
+     184,
+     185,
+     186,
+     187,
+     188,
+     189,
+     190,
+     191,
+     192,
+     193,
+     194,
+     195,
+     196,
+     197,
+     198,
+     199,
+     200,
+     204,
+     205,
+     206,
+     207,
+     208,
+     209,
+     210,
+     211,
+     212,
+     213,
+     214,
+     215,
+     216,
+     217,
+     218,
+     219,
+     220,
+     221,
+     222,
+     223,
+     224
+    ],
+    "surfaces": [
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12,
+     13,
+     14,
+     15,
+     16,
+     17,
+     18,
+     19,
+     21,
+     22,
+     23,
+     26,
+     31,
+     37
+    ],
+    "dividers": [
+     9,
+     10,
+     11,
+     12,
+     13,
+     14,
+     15,
+     16,
+     17,
+     18,
+     19,
+     20,
+     21,
+     22,
+     23,
+     24,
+     25,
+     26,
+     27,
+     28,
+     29,
+     30,
+     31,
+     32,
+     33,
+     34,
+     35,
+     36,
+     37,
+     38,
+     39,
+     40,
+     41,
+     42,
+     43,
+     44,
+     45,
+     46,
+     47,
+     48,
+     49,
+     50,
+     51,
+     52,
+     53,
+     54
+    ],
+    "note": "sample art inside the page: not rebuilt"
+   }
+  },
+  {
+   "id": "status",
+   "role": "status line: save state, storage used",
+   "widget": "SolidView status (on_render status_view): RoundedView 12 dot (green Saved, orange Edited/Saving), Label state, Label '<x> of 64 MB used' (the library's PDFs against the 64 MiB storage); on Home the label and a RoundedView bar",
+   "cite": [
+    "makepad widgets/src/view_ui.rs:85 (SolidView); App Flow docs/SCRIPT-API.md 'Backgrounds'",
+    "makepad widgets/src/view_ui.rs:308 (RoundedView)",
+    "makepad widgets/src/label.rs:11 (Label), max_lines label.rs:258, text_overflow draw_text.rs:1295 (Ellipsis)"
+   ],
+   "geometry": {
+    "height": 44,
+    "padding": [
+     33,
+     29
+    ],
+    "dot": 12,
+    "gap": 11
+   },
+   "colors": {
+    "light": {
+     "status": "#ffffff",
+     "text": "#76787c",
+     "saved": "#49b039",
+     "edited": "#f2a20d"
+    },
+    "dark": {
+     "status": "#1b2226",
+     "text": "#9a9da0",
+     "saved": "#38a540",
+     "edited": "#e39a1c"
+    }
+   },
+   "font": "theme.font_regular",
+   "size": 11.5,
+   "state": "Saved",
+   "notes": "",
+   "image_rect": [
+    0,
+    978,
+    1536,
+    46
+   ],
+   "status": "built",
+   "decision": null,
+   "source": {
+    "text": [
+     {
+      "i": 201,
+      "text": "Saved",
+      "ocr_height": 11.2,
+      "ink": "#7c7f84",
+      "ground": "#f7f8f8",
+      "ink_px": 9,
+      "size": 9.0
+     },
+     {
+      "i": 225,
+      "text": "14.6 of 64 MB used",
+      "ocr_height": 13.4,
+      "ink": "#7c7e83",
+      "ground": "#f8f8f8",
+      "ink_px": 10,
+      "size": 10.0
+     }
+    ],
+    "surfaces": [
+     {
+      "i": 0,
+      "bounds": [
+       5,
+       2,
+       1527,
+       1021
+      ],
+      "fill": "#fbfbfc",
+      "radius": 0
+     },
+     {
+      "i": 1,
+      "bounds": [
+       88,
+       155,
+       1441,
+       823
+      ],
+      "fill": "#f8f8f9",
+      "radius": 0
+     },
+     {
+      "i": 4,
+      "bounds": [
+       8,
+       980,
+       1521,
+       39
+      ],
+      "fill": "#fdfdfd",
+      "radius": 0
+     }
+    ],
+    "dividers": [
+     6
+    ]
+   }
+  }
+ ],
+ "coverage": {
+  "text": 226,
+  "surfaces": 39,
+  "dividers": 55,
+  "unmapped": 0
+ }
+}

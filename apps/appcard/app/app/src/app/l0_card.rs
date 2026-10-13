@@ -319,8 +319,7 @@ fn kit_for(source: &str) -> String {
     // Measurement only. Nothing sets this in normal operation, and an unreadable
     // path is ignored rather than fatal — a missing override should render the
     // shipped look, not a blank screen.
-    let axis = std::env::var("MAKEPAD_L0_PALETTE_OVERRIDE")
-        .ok()
+    let axis = crate::launch_var("MAKEPAD_L0_PALETTE_OVERRIDE")
         .and_then(|p| std::fs::read_to_string(p).ok())
         .unwrap_or_default();
     // Axes BEFORE the env override, so a measurement run still wins over what
@@ -1856,7 +1855,7 @@ fn render_capturing(
     // was chased through six layers on the evidence of a screenshot, which can
     // only ever say "not there" and never says which layer dropped it. Every
     // other layer already has a probe; this was the gap.
-    if let Ok(path) = std::env::var("MAKEPAD_DUMP_DSL") {
+    if let Some(path) = crate::launch_var("MAKEPAD_DUMP_DSL") {
         let _ = std::fs::write(&path, &dsl);
     }
     let captured = LAST_CAPTURED

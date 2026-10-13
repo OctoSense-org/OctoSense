@@ -2,9 +2,14 @@
 
 English | [简体中文](capabilities.zh-CN.md)
 
-This describes the declaration-only capability implementation in this source
-tree. It does not claim that a downloaded release contains these changes.
-Desktop 0.1.0-rc.2 predates the component model and this policy.
+Capabilities describe an app's intended use. Public calls run under the
+app's verified identity, private storage boundary, account scope and actual
+user consent; the manifest's family and destination lists are disclosures.
+
+This policy ships in [desktop RC4](https://github.com/OctoSense-org/OctoSense/releases/tag/desktop-v0.1.0-rc.4),
+built from `9266b008`. [Source and archive acceptance](../tools/fixtures/wasm-phone-lab/README.md#rc4-release-evidence)
+are recorded separately. RC2 and Home beta.2 predate this policy; isolated
+phone tests do not upgrade installed Home.
 
 ## Declarations describe usage
 
@@ -53,6 +58,15 @@ The acceptance matrix pairs declared and undeclared calls, then separately
 tests denied consent, a foreign profile, stale accounts, unapproved writes,
 storage escape and quota exhaustion. Component acceptance also checks actual
 store resolution, alias calls, isolated state and withdrawal.
+
+At source `8b09e05d`, the full desktop's App Hub/component rehearsal passed
+11/11 checks, and native Host API Lab passed 31/31. On the assigned OnePlus 6,
+shared components passed 28/28 native assertions plus 13/13 driver checks;
+Host API Lab passed 31/31 native assertions and all 45 driver checks. See the
+[component evidence](../tools/fixtures/wasm-phone-lab/README.md#final-source-acceptance)
+and [Host API evidence](../tools/fixtures/host-api-lab/README.md#final-source-acceptance).
+The phone used isolated test packages and left installed Home unchanged.
+Live-model behavior and OpenHarmony device execution remain **unverified**.
 
 Record unit tests, simulated connectors, platform tests, physical-device tests
 and released artifacts separately. A successful build or a merged PR is not a

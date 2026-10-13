@@ -5,6 +5,11 @@ edition = "2021"
 license = "Apache-2.0"
 publish = false
 
+[features]
+# A development build: the app reads its launch-time test and provisioning
+# hooks (octos-app's `dev_mode`). The shell's `dev-mode` turns it on.
+dev-mode = ["octos-app/dev-mode"]
+
 [dependencies]
 makepad-widgets = { workspace = true, features = ["appcard", "maps"] }
 makepad-app-module = { workspace = true }

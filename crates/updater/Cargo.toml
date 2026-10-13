@@ -1,0 +1,26 @@
+[package]
+name = "octosense-updater"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+sha2 = "0.10"
+semver = "1"
+uuid.workspace = true
+# GitHub's signature on a desktop release's SHA256SUMS, verified as App Hub
+# verifies its catalog: the same exact Sigstore crates, already in the lock.
+sigstore-verify = { version = "=0.14.0", default-features = false }
+sigstore-trust-root = { version = "=0.14.0", default-features = false }
+sigstore-types = "=0.14.0"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+libc = "0.2"
+
+[dev-dependencies]
+base64 = "0.22"
+tempfile = "3"

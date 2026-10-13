@@ -56,8 +56,11 @@ def main():
     def build_app(command):
         log = evidence / f'build-{build}-{command}.log'
         with log.open('w') as out:
+            # A development build: the launch parameters below (Studio,
+            # REAPPROVE_CARDS, AUTO_PROMPT, PROVISION_CONFIG) reach only a
+            # build with `dev-mode` (`launch_var` in app/app/src/lib.rs).
             p = subprocess.run([str(tool), 'ohos', '--deveco-home=' + os.environ['DEVECO_HOME'],
-                                command, '-p', 'octos-app', '--release'],
+                                command, '-p', 'octos-app', '--release', '--features', 'dev-mode'],
                                cwd=root / 'app', stdout=out, stderr=subprocess.STDOUT)
         if p.returncode:
             raise SystemExit(f'Release build failed; private build log: {log}')

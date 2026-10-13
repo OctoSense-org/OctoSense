@@ -264,6 +264,44 @@ flowchart LR
 
 `Broker::bind`、`Broker::host_request` 和 `OctosAppService::prepare` 会阻塞调用方最多一分钟，所以不要在 UI 线程上调用它们。
 
+### 从 Agent 调用跟到 App Studio 中可运行的应用
+
+开发者模式覆盖当前调用方时，App Studio 会向已有的系统或应用 Agent 提供 Shell 所有的工具。[工具声明与执行器](../crates/shell/src/host_tools/studio.rs)沿用宿主工具的 relay、审计与取消路径。系统调用使用 `session/open` 确认的 workspace；应用调用使用 broker 确认的 peer workspace，人类对话进一步限定到自己的 `contexts/<id>/`。工具参数不能替换调用身份，也不能选择任意输出目录。
+
+Agent 可先用普通文件工具从头编写 `manifest.json` 和 `main.splash`，再执行以下步骤：
+
+| 工具 | 行为 |
+| --- | --- |
+| `studio.bundle_check {bundle_path}` | 从当前对话 workspace 复制大小受限的文件，计算摘要，对宿主私有副本做开发者准入；作者的文件不变。 |
+| `studio.open {bundle_path}` | 打开可见预览，使用可丢弃的应用状态，返回 `instance_id`。 |
+| `studio.inspect {instance_id, offset?}` | 返回 PNG `path`、一页精简的控件 selector 与检查摘要，以及完整诊断 JSON 的 `snapshot_path`。 |
+| `studio.input {instance_id, widget_id, action, …}` | 向检查到的控件发送真实 `tap`、`text` 或 `scroll` 事件。输入文字用 `text`，滚动用 `delta_y`。 |
+| `studio.close {instance_id}` | 关闭应用，丢弃预览状态。 |
+| `studio.install {bundle_path}` | 登记本地开发者安装，在 Home 中显示。随后可用 `studio.open {app_id}` 或启动器图块打开；应用自己的状态在关闭、重开后保留。 |
+| `studio.uninstall {app_id}` | 删除调用方自己的一个开发者安装：收据、快照、应用数据和所有者记录。该应用仍有实例打开时拒绝。 |
+
+首个完整应用路径接受 `dev.studio.*` 命名空间下的离线、仅存储权限 `main.splash` 包。应用本身没有 Agent、账户访问和 `net` 模块，每个 `host.request` 都会被拒绝；准入的指令预算只是声明，真正强制的是存储 jail、配额和内存上限。准入还会拒绝文本中含有 URL 或 `{{assets}}` 路径的 `main.splash`。这只是一道静态检查，因为 Splash 可以在运行时拼接出字符串；真正的离线保证来自隔离环境本身：它没有任何网络主机，也没有任何宿主能力，运行时发起的 URL 加载会被直接拒绝。包中可携带原创启动器图标，但暂不支持屏幕内的资源加载路径。[studio_bundles.rs](../crates/shell/src/host_tools/studio_bundles.rs)把包限制为 128 个文件/目录、八层目录、总计 2 MiB；单文件最多 512 KiB，`main.splash` 最多 64 KiB。解析后的策略最多允许 1 MiB 私有应用存储、五百万脚本指令和 16 MiB 堆；清单中更低的限制仍然生效。
+
+开发者安装独立于 App Hub 的签名目录。宿主私有收据把准入后的字节绑定到作者所属的应用、账户、session、context 与 `DevTag`。该标记记录开发者 profile 和授予权限的那次启用。打开已安装应用时会重新检查收据和摘要；授权结束后，应用从启动器可用列表移除，运行中的实例停止。另一个对话不能检查、操控或替换它。同一已安装应用只允许一个实例运行，避免同时写入其状态。
+
+再沿着 Rust 的执行边界阅读：
+
+1. 宿主执行器在工作线程读取受限文件并做准入，然后将 `OpenSpec` 或检查请求入队。它通过回复 channel 等待结果，不阻塞 Makepad UI 线程。
+2. Shell 把启动队列中的请求变成普通窗口管理器 client。[StudioModule](../crates/shell/src/studio/module.rs)创建 [StudioApp](../crates/shell/src/studio/apps.rs) 控件并负责关闭。Splash 在私有 jail 与准入限制设置完毕后才求值源码。预览写入可丢弃的 jail；安装后的写入保存在该应用自己的持久 jail。
+3. UI 线程以该应用为根构建 Makepad `WidgetTree`。检查读取真实矩形与控件状态；输入先定位可见、启用的控件，再走事件路径。重名控件有唯一的 `selector` 值。GPU 读回复用 Shell 的 ticket 路由，PNG 压缩运行在重型工作线程池；结果回到原来的 Agent 工具调用。
+
+`studio.inspect` 返回给模型的内容最多为 3,800 个 UTF-8 字节。`snapshot.widgets` 列出可见的非 Splash 控件及其准确 `selector`；把该值传给 `studio.input.widget_id`，不要猜测按钮显示文字就是控件 ID。较长的 text/value 会附带 `text_truncated` 或 `value_truncated` 标记。若 `next_offset` 是整数，用该值作为 `offset` 再调用 inspect 获取下一页。每次调用都观察当前 UI，因此翻页时应保持应用状态稳定。`snapshot.checks` 汇总是否通过以及发现项和错误数量。
+
+`snapshot_path` 指向完整原始结果文件，包含所有控件、矩形、geometry、tree、检查详情和 PNG 路径。该 JSON 按行缩进，最多 1 MiB，与 PNG 一起存入调用方的对话 workspace；可用 `read_file` 按有限行数读取。这样既保留完整诊断，也避免重要 selector 被内核对模型工具结果的 4 KiB 截断隐藏。
+
+当前 pin 在 Android 上没有 HTTP 远程 instrument。Studio 直接在进程内调用底层 Makepad 控件 API，范围限定为自身应用。现有检查能发现空几何信息、文字裁切与过小按钮，不能据此证明功能或整体 UX。应用检查返回 `settled: false`：它捕获当前帧，不声称任意交互脚本已经停止变化。Agent 可用 `view_image` 查看返回的 PNG，再发送输入测试实际行为。
+
+`studio.render` 仍是独立的 L0 glance 路径：参数为相对 `source_path`、可选 `data_path` 和 `dark`，源码/数据上限为 16/32 KiB。它使用真实 glance 宽度与 72–440 点高度范围，临时 jail 配额为零，没有网络或宿主能力。着色器就绪且连续三次读回一致后返回 `settled: true`；聊天与图像资源明确返回不支持。两条截图路径都把 PNG 限制为 5 MiB，并检查取消、前台状态与开发者授权。UI 请求期限为 20 秒，处于宿主 25 秒等待和内核默认 30 秒工具期限之内。
+
+这些操作不会创建 Agent peer，也不是每个应用对应一个 Tokio task。已有 Agent 调用宿主工具，Rust 工作线程负责文件与编码，UI 线程持有控件并提交 GPU 工作。
+
+DeepSeek V4 Flash 从头编写的 Task Planner 已在**真实 OnePlus 6 上通过 129 次工具调用**，覆盖任务输入、完成与筛选、预览状态丢弃、独立安装状态、关闭重开、进程重启、准确的中文输入及滚动。测试工具没有直接修改应用源码或存储。竖屏应用与键盘视觉评审已通过；间距较宽，Shell 浮层和状态栏另有观察记录。损坏存储与保存失败的故障注入仍待完成，详见[验收报告](studio/oneplus6-validation.md)。见 [ADR 0006](adr/0006-app-studio-on-the-phone.md) 和[新应用需求](studio/task-planner-brief.md)。本次实现不包含 `mod.studio` 工具箱适配器、图像生成/比较、更完整的资源路径或公开发布。合并 `main` 之后，一个由 Claude 从头编写的 Task Planner 在一部普通小米手机上通过了同样的验收流程（在最终代码上共 134 次工具调用）；另一项由请求队列驱动的检查则覆盖了应用数据的所有权、`studio.uninstall` 和开发者授权结束后的行为（见[再次验证](studio/xiaomi-revalidation.md)）。
+
 ## 11. 测试
 
 [crates/app-peers/tests/broker.rs](../crates/app-peers/tests/broker.rs) 让代理对接一个脚本化的内核，它的测试名本身就写明了协议的规则。可以先看 `a_persons_message_runs_while_the_system_agents_input_runs`、`a_lane_stop_leaves_the_other_lane_running`、`a_kernel_without_shared_history_is_refused_for_the_conversation` 和 `removing_an_account_purges_its_recorded_peer_and_drops_the_record`。[host_tools/scenario_tests.rs](../crates/shell/src/host_tools/scenario_tests.rs) 用锁定版本的 octos 和一个脚本化的模型，用一个测试用的新闻应用端到端地跑完同样的两条通道场景；运行方法写在它的文件头部。

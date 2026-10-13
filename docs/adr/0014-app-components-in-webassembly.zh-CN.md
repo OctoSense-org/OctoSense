@@ -15,8 +15,19 @@ App Hub（#186、#188、#189、#190）和 App Flow（#180、#181）。第 1 阶�
 桌面 rc.2 和 Home beta.2 仅包含核心模块。
 [共享组件验收](../../tools/fixtures/wasm-phone-lab/README.zh-CN.md#真实-github-共享组件验收)
 现已记录真实发布者证明、带管理员证明的私有试运行目录，以及 macOS 和 OnePlus 6 上的实际商店安装和 Splash 工具执行。
-在干净源码 `c5f0c5c1` 上，两端原生断言均为 28/28 通过，驱动分别为 12/12 和 13/13 通过。
-公开目录保持不变。组件及新策略的发行验收仍待完成；不声称真实模型、性能或 OpenHarmony 设备已经通过。当前行为见 [OctoSense 中的 WebAssembly](../wasm.zh-CN.md)及
+较早的 `c5f0c5c1` 回执记录两端原生断言均为 28/28 通过，驱动分别为 12/12 和 13/13。
+最终源码 `8b09e05d`（以相同树合并为 `40ca21da`）的完整 macOS 桌面通过 11/11 项
+App Hub 检查；OnePlus 6 通过 28/28 项组件断言和 13/13 项驱动检查。独立 Host API Lab
+在 macOS 和 OnePlus 6 上均通过 31/31 项原生检查，手机驱动全部 45 项也通过。详见
+[最终组件证据](../../tools/fixtures/wasm-phone-lab/README.zh-CN.md#最终源码验收)和
+[Host API 证据](../../tools/fixtures/host-api-lab/README.zh-CN.md#最终源码验收)。
+公开目录和已安装的 Home 保持不变。[桌面 RC4](https://github.com/OctoSense-org/OctoSense/releases/tag/desktop-v0.1.0-rc.4)
+已从 `9266b008` 发布，Mac 归档包通过 11/11 项检查，
+[验收已绑定最终文件](../../tools/fixtures/wasm-phone-lab/README.zh-CN.md#rc4-发布证据)。开发二进制和独立手机测试不证明发行 Home 升级、真实模型行为、性能或
+OpenHarmony 设备执行。后续 [Windows 验证](../../tools/fixtures/wasm-phone-lab/README.zh-CN.md#windows-缓存验证)
+在 `a8e170d4` 通过 42/42 项测试及 Shell 编译检查，以 `af205d9c` 合并。
+该修复仅改测试，生产源码不变；它不属于 RC4 tag，也不证明 RC4 归档包验收。
+当前行为见 [OctoSense 中的 WebAssembly](../wasm.zh-CN.md)及
 [应用能力与执行边界](../capabilities.zh-CN.md)。
 
 ## 背景
@@ -79,8 +90,14 @@ crates.io 上的大多数 crate 要么需要上述缺失能力中的某些（时
    - **`octosense:host`（第 3 阶段）：** `request(service, args)` 像应用脚本的 `host.request` 一样调用
      宿主服务，在 UI 线程上分派；自 makepad#118（OctoSense #450）起不检查清单声明的服务族。
      各服务保留实际的应用／账户、同意、审阅与资源检查，但不打开面板、不询问用户（只能调用后台界面可以调用的方法），并且绝不调用 `wasm.*`。
-   - **从不提供：** `wasi:sockets`，以及上述包以外的任何导入。请求这些导入的组件在加载时被拒绝
-     （`LoadError::Import`），App Hub 的审核闸门也会拒绝。
+   - **普通套接字（尚未发布的后续实现）：** `wasi:sockets` 提供 TCP、UDP 和 DNS。
+     应用必须声明 `host_api.required: {"wasm.sockets": 1}` 和 `host-api-v1`，旧宿主仍能
+     读取目录，但不能安装该应用。不增加权限闸门或网络白名单。应用的所有组件共享 32 个活跃
+     套接字/DNS 句柄，每个组件有 512 个宿主资源槽。阻塞等待检查期限与取消；最后一个所属
+     应用隔离实例关闭时释放工作线程及其套接字。限制及发布状态见 [Wasm 指南](../wasm.zh-CN.md)。
+     RC5 仍然拒绝套接字。
+   - **从不提供：** 上述包之外的导入，包括本地系统调用和特权原始 IP 套接字。
+     加载器和 App Hub 检查都会拒绝不受支持的导入。
 5. **无需编写 WIT。**
    - **Guest SDK（第 2 阶段）：** guest crate `octosense-component` 提供
      `#[octosense_component::export]` 属性，从普通的 Rust 签名推导 WIT world。支持的类型包括数字、
@@ -101,7 +118,7 @@ crates.io 上的大多数 crate 要么需要上述缺失能力中的某些（时
 
 | 阶段 | 范围 |
 | --- | --- |
-| 1. 运行时验证原型（本 PR） | `crates/wasm-host::component`：加载、检查导入、列出导出及其 WIT 签名、长期存活的实例、JSON 调用、上述 WASI 子集与存储预打开、超时、内存上限和日志。测试运行一个用普通 cargo 构建的、未作修改的 crate（`pulldown-cmark`），并拒绝导入 `wasi:sockets` 的组件。 |
+| 1. 运行时验证原型（本 PR） | `crates/wasm-host::component`：加载、检查导入、列出导出及其 WIT 签名、长期存活的实例、JSON 调用、上述 WASI 子集与存储预打开、超时、内存上限和日志。测试运行一个用普通 cargo 构建的、未作修改的 crate（`pulldown-cmark`），原始验证原型拒绝导入 `wasi:sockets` 的组件（已由上述后续实现替代）。 |
 | 2. 开发者可用 | shell 的 `wasm` 服务：从 `fns/` 加载组件、`wasm.<function>` 调用、按应用的实例、应用可用的存储目录，以及组件写入的存储配额计量。提高组件的输入上限。guest SDK 及其宏；`octo wasm new/build/doctor`；App Hub 闸门检查与合约版本；文档与示例应用。 |
 | 3. 访问能力与平台 | 可访问任何主机的 `wasi:http` 出站（以 `net` 声明，不在运行时强制）；`octosense:host` 导入，以与 `host.request` 相同的检查调用主机服务；安装时编译，让手机跳过首次编译；OpenHarmony 在其 JIT 策略明确前使用 Pulley（Wasmtime 的解释器）；Windows 运行时测试在 CI 中运行。iOS 不在当前计划内。 |
 | 4. 共享组件 | App Hub 目录中经过审核、带版本的组件，应用可以像 npm 包一样依赖它们。安装器负责校验，每个应用仍有自己的实例、账户和存储边界。 |

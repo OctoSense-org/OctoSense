@@ -4,7 +4,7 @@
     "base_revision": "d653bc4493619ab979ccff165cf48c0c63b77d19",
     "patch": "tools/runtime-patches/makepad-settings.patch",
     "sha256": "3a79cddddc89dc4d064a9f0bdd17dc8111dcab9c796a334d95f61ecb9d5011aa",
-    "tree": "286598c629540456ea1ba52727ac3299f85f39f0",
+    "tree": "c733afbdc4e18104c759203497dd5a02370d94c7",
     "product_fixes": [
       "Settings integration: Android IME synchronization, accessibility and reduced motion, GLES program-cache validation, obscured-gesture cancellation and scroll-position observation.",
       "Contained-app isolation and secret-input restrictions come from the pinned upstream runtime; the Settings overlay preserves those gates.",
@@ -14,7 +14,7 @@
       "Windows frame completion: backport Makepad work c508ab0c8 GPU completion polls around native and hosted repaint so upload buffers can retire.",
       "Android application extensions honor the manifest's explicit class name, keeping Back and platform integration active under custom test package ids.",
       "Android physical touchscreen input has scoped host approval provenance; default and nested synthetic input are untrusted. Compromised OS/root impersonation is outside this app-level boundary; the subsequent desktop patch adds macOS pointer provenance.",
-      "macOS AppKit pointer metadata enables native approval for HID events without a posting process. Synthetic and remote dispatch remain untrusted, including nested callbacks; the Windows patch adds pointer provenance while Linux physical approval remains unsupported.",
+      "macOS AppKit pointer metadata enables native approval for HID events without a posting process. Synthetic and remote dispatch remain untrusted, including nested callbacks; Windows/Linux physical approval is unsupported.",
       "Android multiline Enter key events finish the active composition before inserting a newline, retaining the last word; ordinary IME composition commits keep replacement semantics.",
       "Host-owned backend authentication reuses native WebViews with isolated sessions, exact callback interception, same-origin navigation and no page tool bridge; Android uses an ephemeral private process and profile.",
       "Android Camera waits for one permission answer and refreshes an empty camera list after grant. Video pause/resume preserves an unprepared player so first-use authorization cannot prevent its initial source assignment.",
@@ -48,6 +48,8 @@
       "A native host may stage up to 64 MiB into an app's jail (MAX_IMPORT_BYTES; prepare_import and commit_import), so files.import can take documents above the 1 MiB script write limit. Staged bytes never enter the script heap; the jail's byte quota and entry cap still apply, and script writes, photo picks and exports keep 1 MiB.",
       "An OS resume restarts only the Video playback its pause stopped, including a start it cancelled; a player paused by the person, or paused or stopped by its app during the pause, stays paused (#406).",
       "Camera capture and recording use explicit per-call boolean audio/library options, defaulting to silent app-local output. Permission availability never opts into recording audio or exporting captures; async microphone checks retain capture intent and background provenance. Unsupported library export fails before capture.",
+      "A hidden Android native composer remembers animated IME insets without requesting a root layout every frame; showing it applies the latest inset before its first visible frame.",
+      "Launch-input hardening: the Studio connection and the OCTOS_PROXY app HTTP proxy, which Makepad itself acts on from an Android Intent extra, are honoured only when the build opts into launch-time development input (debuggable, or the manifest meta-data dev.makepad.LAUNCH_STUDIO). A shipped build ignores them and drops any Studio host a development build saved. The exported activity would otherwise let another installed app point it at a host or a proxy.",
       "Windows user32 hardware-class pointer messages carry scoped input provenance to host review sheets. Posted and ordinary injected messages remain untrusted; UIAccess injection can be classified as hardware, and remote-desktop behavior is unverified. Approval eligibility changes across host services, not only camera consent."
     ],
     "stacked": [
@@ -186,6 +188,14 @@
       {
         "patch": "tools/runtime-patches/makepad-camera-capture-intent.patch",
         "sha256": "d056b76d2eb6b55aa9c96447a49fc90d32a9a235b6bc9a1ff125902a73c28208"
+      },
+      {
+        "patch": "tools/runtime-patches/makepad-hidden-composer-insets.patch",
+        "sha256": "75935d129cfe4adf09555d3a94b0a7ad387f2ea97cf357f9d60c728d87239037"
+      },
+      {
+        "patch": "tools/runtime-patches/makepad-launch-input-hardening.patch",
+        "sha256": "8eaafef3ef0591bec2a25c05d5187564d5dfb87a32e6b937b6d9c4e9f6fa5b84"
       },
       {
         "patch": "tools/runtime-patches/makepad-windows-trusted-input.patch",

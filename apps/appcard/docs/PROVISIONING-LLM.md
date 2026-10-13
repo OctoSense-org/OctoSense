@@ -50,7 +50,10 @@ names (`octosense_llm_config::registry`).
 ## Provisioning without the camera (dev / headless)
 
 The same JSON payload can be applied via the launch intent (no scanning), which is
-how the flow is tested:
+how the flow is tested. Any app on the phone can start this one with extras, so
+only a development build (`DEV_MODE=1 tools/build-android.sh`, i.e.
+`--features dev-mode`) reads it; a release build ignores it and provisions only
+through the scan and its PIN:
 ```bash
 adb shell am start -S -n dev.makepad.octos_app/.MakepadApp \
     --es makepad.PROVISION_CONFIG '{"llm_family":"zai","llm_model":"glm-5.2","llm_key":"sk-XXXX"}'

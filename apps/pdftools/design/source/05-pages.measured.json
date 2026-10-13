@@ -1,0 +1,3546 @@
+{
+ "schema_version": 1,
+ "image": "05-pages.png",
+ "image_sha256": "8c20451b5e17f7cbf663e89c94971dcb90cf3ef0e91b81f473247ebea99b0e31",
+ "script_sha256": "ea860507e32482b955d3ac577ab3cf9fc559f59ecc916c89175293932b54e0b7",
+ "size": [
+  1536,
+  1024
+ ],
+ "ocr_engine": "Apple Vision VNRecognizeTextRequest accurate, en-US (App Flow ocr.swift)",
+ "text": [
+  {
+   "text": "Q3 2026 Board Report.pdf",
+   "bounds": [
+    46.9,
+    17.8,
+    151.8,
+    15.6
+   ],
+   "confidence": 1,
+   "ink": "#58595c",
+   "ground": "#f6f6f6"
+  },
+  {
+   "text": "Riverside Lease 2026.pdf",
+   "bounds": [
+    296.9,
+    17.8,
+    138.4,
+    15.6
+   ],
+   "confidence": 1,
+   "ink": "#898b8f",
+   "ground": "#f2f2f3"
+  },
+  {
+   "text": "Field Guide to Garden Birds.pdf",
+   "bounds": [
+    533.6,
+    20.0,
+    178.6,
+    13.5
+   ],
+   "confidence": 1,
+   "ink": "#878a8e",
+   "ground": "#f1f1f2"
+  },
+  {
+   "text": "X",
+   "bounds": [
+    712.2,
+    20.1,
+    13.4,
+    11.2
+   ],
+   "confidence": 1,
+   "ink": "#73757c",
+   "ground": "#f1f1f2"
+  },
+  {
+   "text": "Invoice INV-2041.pdf",
+   "bounds": [
+    772.5,
+    17.8,
+    118.3,
+    15.6
+   ],
+   "confidence": 1,
+   "ink": "#83868a",
+   "ground": "#f1f1f2"
+  },
+  {
+   "text": "Read",
+   "bounds": [
+    35.7,
+    69.2,
+    35.7,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#585c63",
+   "ground": "#f1f1f2"
+  },
+  {
+   "text": "Comment",
+   "bounds": [
+    122.6,
+    68.1,
+    62.9,
+    15.6
+   ],
+   "confidence": 1,
+   "ink": "#6a6e74",
+   "ground": "#f8f8f9"
+  },
+  {
+   "text": "Fill & Sign",
+   "bounds": [
+    236.7,
+    69.0,
+    64.7,
+    16.0
+   ],
+   "confidence": 1,
+   "ink": "#65696f",
+   "ground": "#f6f6f7"
+  },
+  {
+   "text": "Pages",
+   "bounds": [
+    352.7,
+    69.2,
+    40.2,
+    17.8
+   ],
+   "confidence": 1,
+   "ink": "#3a80de",
+   "ground": "#f4f8fc"
+  },
+  {
+   "text": "Combine",
+   "bounds": [
+    451.0,
+    69.2,
+    55.8,
+    15.6
+   ],
+   "confidence": 1,
+   "ink": "#6b6f75",
+   "ground": "#f7f7f8"
+  },
+  {
+   "text": "Edit",
+   "bounds": [
+    560.4,
+    69.2,
+    29.0,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#5f6268",
+   "ground": "#f4f4f5"
+  },
+  {
+   "text": "2 selected",
+   "bounds": [
+    113.8,
+    122.5,
+    67.1,
+    13.8
+   ],
+   "confidence": 1,
+   "ink": "#337ce0",
+   "ground": "#f2f7fc"
+  },
+  {
+   "text": "Rotate left",
+   "bounds": [
+    294.7,
+    122.6,
+    58.1,
+    13.6
+   ],
+   "confidence": 1,
+   "ink": "#828488",
+   "ground": "#f7f7f7"
+  },
+  {
+   "text": "Rotate right",
+   "bounds": [
+    433.0,
+    124.6,
+    67.1,
+    14.1
+   ],
+   "confidence": 1,
+   "ink": "#828488",
+   "ground": "#f7f7f8"
+  },
+  {
+   "text": "Pages",
+   "bounds": [
+    31.3,
+    162.9,
+    29.0,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#4882e2",
+   "ground": "#e1eefb"
+  },
+  {
+   "text": "Outline",
+   "bounds": [
+    29.0,
+    247.6,
+    35.7,
+    11.2
+   ],
+   "confidence": 1,
+   "ink": "#818489",
+   "ground": "#f6f6f7"
+  },
+  {
+   "text": "Comments",
+   "bounds": [
+    20.1,
+    330.2,
+    51.3,
+    11.2
+   ],
+   "confidence": 1,
+   "ink": "#808287",
+   "ground": "#f7f7f8"
+  },
+  {
+   "text": "Search",
+   "bounds": [
+    29.0,
+    408.3,
+    33.5,
+    11.2
+   ],
+   "confidence": 1,
+   "ink": "#818388",
+   "ground": "#f7f7f7"
+  },
+  {
+   "text": "NORTHWIND",
+   "bounds": [
+    136.2,
+    198.6,
+    80.4,
+    11.2
+   ],
+   "confidence": 1,
+   "ink": "#444649",
+   "ground": "#eeefef"
+  },
+  {
+   "text": "COOPERATIVE",
+   "bounds": [
+    136.2,
+    207.5,
+    60.3,
+    11.2
+   ],
+   "confidence": 1,
+   "ink": "#828385",
+   "ground": "#f4f4f5"
+  },
+  {
+   "text": "Q3 2026",
+   "bounds": [
+    138.4,
+    236.0,
+    60.3,
+    16.1
+   ],
+   "confidence": 1,
+   "ink": "#484b4f",
+   "ground": "#f3f3f4"
+  },
+  {
+   "text": "BOARD REPORT",
+   "bounds": [
+    138.4,
+    256.6,
+    113.9,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#46494e",
+   "ground": "#efeff0"
+  },
+  {
+   "text": "Bulding stronger communities",
+   "bounds": [
+    136.2,
+    278.9,
+    100.5,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#a1a2a5",
+   "ground": "#f8f8f9"
+  },
+  {
+   "text": "trouch sustanable growt",
+   "bounds": [
+    136.2,
+    294.0,
+    89.3,
+    5
+   ],
+   "confidence": 1,
+   "ink": "#9b9c9f",
+   "ground": "#f1f2f2"
+  },
+  {
+   "text": "Prnwet te the suam e hnwte",
+   "bounds": [
+    136.2,
+    392.6,
+    89.3,
+    4.5
+   ],
+   "confidence": 0.3,
+   "ink": "#a7a8aa",
+   "ground": "#f3f4f4"
+  },
+  {
+   "text": "Oxicber 20,2006",
+   "bounds": [
+    136.2,
+    399.0,
+    51.3,
+    11.5
+   ],
+   "confidence": 1,
+   "ink": "#a9aaad",
+   "ground": "#f8f8f9"
+  },
+  {
+   "text": "SUMMARY (CONT.)",
+   "bounds": [
+    138.4,
+    486.0,
+    89.3,
+    11.5
+   ],
+   "confidence": 1,
+   "ink": "#5d5e60",
+   "ground": "#f3f3f3"
+  },
+  {
+   "text": "Cur hnandal posibon remains strong.",
+   "bounds": [
+    138.4,
+    513.0,
+    127.3,
+    7
+   ],
+   "confidence": 1,
+   "ink": "#9c9d9f",
+   "ground": "#f4f5f5"
+  },
+  {
+   "text": "with consteyative lewerace and",
+   "bounds": [
+    140.7,
+    524.0,
+    104.9,
+    5
+   ],
+   "confidence": 1,
+   "ink": "#9c9d9f",
+   "ground": "#f2f2f3"
+  },
+  {
+   "text": "healthy bquidity.",
+   "bounds": [
+    138.4,
+    535.0,
+    58.0,
+    7.1
+   ],
+   "confidence": 1,
+   "ink": "#a2a2a4",
+   "ground": "#f4f4f4"
+  },
+  {
+   "text": "We thank our members. enoloymed",
+   "bounds": [
+    138.4,
+    555.5,
+    120.6,
+    6.7
+   ],
+   "confidence": 1,
+   "ink": "#99999c",
+   "ground": "#f5f6f6"
+  },
+  {
+   "text": "Sod nirinkeiir lhat fontanune Inkt",
+   "bounds": [
+    138.4,
+    568.9,
+    127.3,
+    4.5
+   ],
+   "confidence": 0.3,
+   "ink": "#99999b",
+   "ground": "#eeeeef"
+  },
+  {
+   "text": "and support.",
+   "bounds": [
+    138.4,
+    577.8,
+    46.9,
+    11.2
+   ],
+   "confidence": 1,
+   "ink": "#a4a4a8",
+   "ground": "#f9f9fa"
+  },
+  {
+   "text": "208",
+   "bounds": [
+    158.5,
+    613.5,
+    84.8,
+    37.9
+   ],
+   "confidence": 0.3,
+   "ink": "#588eda",
+   "ground": "#f9fafd"
+  },
+  {
+   "text": "NORTHATIO COOPORATME",
+   "bounds": [
+    134.0,
+    669.0,
+    64.7,
+    11.4
+   ],
+   "confidence": 1,
+   "ink": "#b4b4b6",
+   "ground": "#f6f6f6"
+  },
+  {
+   "text": "03 368 BOAAO BCPORT",
+   "bounds": [
+    230.0,
+    669.0,
+    55.8,
+    11.4
+   ],
+   "confidence": 0.5,
+   "ink": "#b4b4b7",
+   "ground": "#f6f6f6"
+  },
+  {
+   "text": "METRO REGION",
+   "bounds": [
+    140.7,
+    738.0,
+    71.4,
+    12
+   ],
+   "confidence": 1,
+   "ink": "#5b5c5e",
+   "ground": "#f3f3f4"
+  },
+  {
+   "text": "The Metro region remains cestient",
+   "bounds": [
+    140.7,
+    758.5,
+    109.4,
+    11.5
+   ],
+   "confidence": 1,
+   "ink": "#aaabae",
+   "ground": "#f8f8f8"
+  },
+  {
+   "text": "with steady performance.",
+   "bounds": [
+    140.7,
+    771.9,
+    80.4,
+    7.1
+   ],
+   "confidence": 1,
+   "ink": "#a3a3a6",
+   "ground": "#f4f4f5"
+  },
+  {
+   "text": "Key metrics",
+   "bounds": [
+    142.9,
+    789.8,
+    38.0,
+    11.2
+   ],
+   "confidence": 1,
+   "ink": "#898b8d",
+   "ground": "#eeeff0"
+  },
+  {
+   "text": "QJ 2026",
+   "bounds": [
+    232.2,
+    789.8,
+    26.8,
+    11.2
+   ],
+   "confidence": 1,
+   "ink": "#808286",
+   "ground": "#efeff0"
+  },
+  {
+   "text": "Reverue (USO miliona)",
+   "bounds": [
+    142.9,
+    803.0,
+    71.4,
+    11.3
+   ],
+   "confidence": 1,
+   "ink": "#a9a9ac",
+   "ground": "#f5f6f6"
+  },
+  {
+   "text": "153",
+   "bounds": [
+    241.1,
+    803.1,
+    17.9,
+    11.2
+   ],
+   "confidence": 1,
+   "ink": "#97989b",
+   "ground": "#f5f5f6"
+  },
+  {
+   "text": "Moribers",
+   "bounds": [
+    142.9,
+    816.5,
+    29.0,
+    11.2
+   ],
+   "confidence": 1,
+   "ink": "#9fa0a2",
+   "ground": "#f5f5f5"
+  },
+  {
+   "text": "8,101",
+   "bounds": [
+    236.7,
+    816.5,
+    22.3,
+    11.2
+   ],
+   "confidence": 1,
+   "ink": "#949497",
+   "ground": "#f6f7f7"
+  },
+  {
+   "text": "Gronth Nun)",
+   "bounds": [
+    140.6,
+    829.7,
+    44.8,
+    11.6
+   ],
+   "confidence": 1,
+   "ink": "#aeaeb0",
+   "ground": "#f4f5f5"
+  },
+  {
+   "text": "We will contieue to focus on service",
+   "bounds": [
+    140.7,
+    852.0,
+    107.2,
+    11.4
+   ],
+   "confidence": 1,
+   "ink": "#acacaf",
+   "ground": "#f9f9f9"
+  },
+  {
+   "text": "outty mo coe oni etceme",
+   "bounds": [
+    138.4,
+    865.6,
+    102.7,
+    4.5
+   ],
+   "confidence": 0.3,
+   "ink": "#a7a7aa",
+   "ground": "#f1f1f1"
+  },
+  {
+   "text": "MwA\u043e\u0447\u0438\u043c",
+   "bounds": [
+    131.7,
+    901.3,
+    62.5,
+    4.5
+   ],
+   "confidence": 0.3,
+   "ink": "#acadaf",
+   "ground": "#f5f6f6"
+  },
+  {
+   "text": "01 30N MAG MAOH",
+   "bounds": [
+    227.7,
+    901.0,
+    51.3,
+    5
+   ],
+   "confidence": 0.3,
+   "ink": "#afb0b4",
+   "ground": "#f4f4f4"
+  },
+  {
+   "text": "13",
+   "bounds": [
+    192.0,
+    925.8,
+    17.9,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#67696e",
+   "ground": "#f2f2f3"
+  },
+  {
+   "text": "SUMMARY",
+   "bounds": [
+    377.3,
+    191.9,
+    49.1,
+    11.2
+   ],
+   "confidence": 1,
+   "ink": "#5f6063",
+   "ground": "#f4f4f4"
+  },
+  {
+   "text": "Northwind Cooperative delivered another",
+   "bounds": [
+    377.3,
+    214.0,
+    136.2,
+    11.3
+   ],
+   "confidence": 1,
+   "ink": "#98989a",
+   "ground": "#f8f8f8"
+  },
+  {
+   "text": "strong quarter, with sclid growth across",
+   "bounds": [
+    375.1,
+    223.0,
+    134.0,
+    13.5
+   ],
+   "confidence": 1,
+   "ink": "#9f9fa1",
+   "ground": "#f9f9f9"
+  },
+  {
+   "text": "all key metrics and continued progress",
+   "bounds": [
+    377.3,
+    236.0,
+    125.0,
+    12
+   ],
+   "confidence": 1,
+   "ink": "#9c9c9e",
+   "ground": "#f7f7f8"
+  },
+  {
+   "text": "on our strategic priorities.",
+   "bounds": [
+    375.1,
+    247.6,
+    87.1,
+    11.4
+   ],
+   "confidence": 1,
+   "ink": "#9a9b9c",
+   "ground": "#f8f8f8"
+  },
+  {
+   "text": "\u2022 Revenue increased 12% year ovse year",
+   "bounds": [
+    377.3,
+    265.0,
+    134.0,
+    14
+   ],
+   "confidence": 1,
+   "ink": "#a0a1a3",
+   "ground": "#f9fafa"
+  },
+  {
+   "text": "\u2022 Operacingiocome up 9%",
+   "bounds": [
+    377.3,
+    281.0,
+    89.3,
+    11.3
+   ],
+   "confidence": 1,
+   "ink": "#a4a4a6",
+   "ground": "#f8f8f9"
+  },
+  {
+   "text": "\u2022 Membership grew to 48,732",
+   "bounds": [
+    377.3,
+    294.0,
+    102.7,
+    12
+   ],
+   "confidence": 1,
+   "ink": "#929395",
+   "ground": "#f8f8f8"
+  },
+  {
+   "text": "\u2022Strong balance sheet and cash position",
+   "bounds": [
+    375.1,
+    310.0,
+    138.4,
+    11.3
+   ],
+   "confidence": 1,
+   "ink": "#a0a1a3",
+   "ground": "#f8f8f8"
+  },
+  {
+   "text": "ve reman lotinn on couro",
+   "bounds": [
+    375.1,
+    334.6,
+    111.6,
+    4.5
+   ],
+   "confidence": 0.3,
+   "ink": "#a1a2a4",
+   "ground": "#eeeeef"
+  },
+  {
+   "text": "ethellnca. mimiwrwilln.and",
+   "bounds": [
+    375.1,
+    345.8,
+    100.5,
+    4.5
+   ],
+   "confidence": 0.3,
+   "ink": "#9b9c9e",
+   "ground": "#ececed"
+  },
+  {
+   "text": "respons ble growth",
+   "bounds": [
+    375.1,
+    356.9,
+    64.7,
+    7.1
+   ],
+   "confidence": 1,
+   "ink": "#9c9c9e",
+   "ground": "#f5f5f5"
+  },
+  {
+   "text": "MoTwMAntoNYETM",
+   "bounds": [
+    366.1,
+    403.8,
+    64.7,
+    4.5
+   ],
+   "confidence": 0.3,
+   "ink": "#afafb2",
+   "ground": "#f5f5f5"
+  },
+  {
+   "text": "QI 300S BOMAO BERORT",
+   "bounds": [
+    466.6,
+    401.6,
+    58.0,
+    11.4
+   ],
+   "confidence": 0.3,
+   "ink": "#b0b0b2",
+   "ground": "#fafafa"
+  },
+  {
+   "text": "FINANCIAL HIGHLIGHTS",
+   "bounds": [
+    366.1,
+    486.0,
+    111.6,
+    11.5
+   ],
+   "confidence": 1,
+   "ink": "#5d5f62",
+   "ground": "#f3f4f4"
+  },
+  {
+   "text": "Revenue",
+   "bounds": [
+    363.9,
+    528.7,
+    33.5,
+    8.9
+   ],
+   "confidence": 1,
+   "ink": "#9c9c9f",
+   "ground": "#f8f8f8"
+  },
+  {
+   "text": "Operating income",
+   "bounds": [
+    366.1,
+    546.6,
+    60.3,
+    11.4
+   ],
+   "confidence": 1,
+   "ink": "#a7a7aa",
+   "ground": "#f9f9f9"
+  },
+  {
+   "text": "Net income",
+   "bounds": [
+    366.1,
+    566.7,
+    40.2,
+    11.3
+   ],
+   "confidence": 1,
+   "ink": "#979799",
+   "ground": "#f8f8f9"
+  },
+  {
+   "text": "Operating margin",
+   "bounds": [
+    363.9,
+    586.7,
+    62.5,
+    11.3
+   ],
+   "confidence": 1,
+   "ink": "#a5a5a8",
+   "ground": "#f8f8f9"
+  },
+  {
+   "text": "Members",
+   "bounds": [
+    363.9,
+    604.6,
+    35.7,
+    11.2
+   ],
+   "confidence": 1,
+   "ink": "#959597",
+   "ground": "#f7f8f8"
+  },
+  {
+   "text": "Equity ratio",
+   "bounds": [
+    363.9,
+    624.7,
+    42.4,
+    11.3
+   ],
+   "confidence": 1,
+   "ink": "#a1a1a4",
+   "ground": "#f8f8f8"
+  },
+  {
+   "text": "$84.SM",
+   "bounds": [
+    464.4,
+    526.5,
+    31.3,
+    11.2
+   ],
+   "confidence": 1,
+   "ink": "#8a8b8e",
+   "ground": "#f7f7f7"
+  },
+  {
+   "text": "SIS.SM",
+   "bounds": [
+    464.4,
+    546.6,
+    31.3,
+    11.2
+   ],
+   "confidence": 1,
+   "ink": "#9a9b9d",
+   "ground": "#f9f9f9"
+  },
+  {
+   "text": "$11.3M",
+   "bounds": [
+    464.4,
+    566.7,
+    31.3,
+    8.9
+   ],
+   "confidence": 1,
+   "ink": "#8e8f92",
+   "ground": "#f7f7f7"
+  },
+  {
+   "text": "48,732",
+   "bounds": [
+    466.6,
+    604.6,
+    26.8,
+    11.2
+   ],
+   "confidence": 1,
+   "ink": "#949598",
+   "ground": "#f8f8f8"
+  },
+  {
+   "text": "42.3%",
+   "bounds": [
+    468.8,
+    624.7,
+    26.8,
+    8.9
+   ],
+   "confidence": 1,
+   "ink": "#8a8a8e",
+   "ground": "#f6f7f7"
+  },
+  {
+   "text": "0120% BONO NEROEE",
+   "bounds": [
+    448.7,
+    669.0,
+    55.8,
+    11.4
+   ],
+   "confidence": 0.3,
+   "ink": "#b8b8ba",
+   "ground": "#f7f7f7"
+  },
+  {
+   "text": "BALANCE SHEET",
+   "bounds": [
+    361.7,
+    740.7,
+    80.4,
+    11.3
+   ],
+   "confidence": 1,
+   "ink": "#616265",
+   "ground": "#f4f4f4"
+  },
+  {
+   "text": "As of Sep 30, 2025 (USD milions",
+   "bounds": [
+    361.7,
+    760.7,
+    102.7,
+    6.7
+   ],
+   "confidence": 1,
+   "ink": "#a2a2a6",
+   "ground": "#f5f5f5"
+  },
+  {
+   "text": "Total assets (",
+   "bounds": [
+    361.7,
+    776.0,
+    38.6,
+    9.3
+   ],
+   "confidence": 1,
+   "ink": "#a9a9ab",
+   "ground": "#f8f8f9"
+  },
+  {
+   "text": "Tocal Rabildies",
+   "bounds": [
+    361.7,
+    792.0,
+    46.9,
+    11.2
+   ],
+   "confidence": 1,
+   "ink": "#adadaf",
+   "ground": "#f8f8f9"
+  },
+  {
+   "text": "Tocal equity",
+   "bounds": [
+    361.7,
+    809.8,
+    38.0,
+    11.2
+   ],
+   "confidence": 1,
+   "ink": "#a8a8ab",
+   "ground": "#f8f8f8"
+  },
+  {
+   "text": "Equity ratio",
+   "bounds": [
+    361.7,
+    825.0,
+    38.0,
+    12
+   ],
+   "confidence": 1,
+   "ink": "#a8a8ab",
+   "ground": "#f8f8f8"
+  },
+  {
+   "text": "Cosh and equivalents",
+   "bounds": [
+    361.7,
+    841.0,
+    67.0,
+    11.2
+   ],
+   "confidence": 1,
+   "ink": "#b0b0b4",
+   "ground": "#f9f9fa"
+  },
+  {
+   "text": "Our bslance sheet remains strong",
+   "bounds": [
+    361.7,
+    861.0,
+    104.9,
+    7
+   ],
+   "confidence": 1,
+   "ink": "#a6a7aa",
+   "ground": "#f5f5f6"
+  },
+  {
+   "text": "with ample liquidity.",
+   "bounds": [
+    361.7,
+    867.8,
+    67.0,
+    11.2
+   ],
+   "confidence": 1,
+   "ink": "#a7a8aa",
+   "ground": "#f8f8f9"
+  },
+  {
+   "text": "180.3",
+   "bounds": [
+    468.8,
+    792.0,
+    24.6,
+    11.2
+   ],
+   "confidence": 1,
+   "ink": "#929397",
+   "ground": "#f9f9f9"
+  },
+  {
+   "text": "132.3",
+   "bounds": [
+    468.8,
+    807.6,
+    24.6,
+    11.2
+   ],
+   "confidence": 1,
+   "ink": "#9b9b9f",
+   "ground": "#f8f8f8"
+  },
+  {
+   "text": "42,3%",
+   "bounds": [
+    468.8,
+    825.4,
+    22.3,
+    8.9
+   ],
+   "confidence": 1,
+   "ink": "#a4a5aa",
+   "ground": "#f6f6f6"
+  },
+  {
+   "text": "38.7",
+   "bounds": [
+    471.1,
+    841.1,
+    20.1,
+    8.9
+   ],
+   "confidence": 1,
+   "ink": "#a9aaae",
+   "ground": "#fafbfb"
+  },
+  {
+   "text": "Delete",
+   "bounds": [
+    598.3,
+    124.9,
+    35.7,
+    11.2
+   ],
+   "confidence": 1,
+   "ink": "#7f8287",
+   "ground": "#f5f5f6"
+  },
+  {
+   "text": "Extract",
+   "bounds": [
+    710.0,
+    124.9,
+    42.4,
+    11.2
+   ],
+   "confidence": 1,
+   "ink": "#73767b",
+   "ground": "#f4f4f5"
+  },
+  {
+   "text": "REVENUE",
+   "bounds": [
+    605.0,
+    191.9,
+    46.9,
+    8.9
+   ],
+   "confidence": 1,
+   "ink": "#505153",
+   "ground": "#efeff0"
+  },
+  {
+   "text": "Revenue grew 12% year over year, led by",
+   "bounds": [
+    602.8,
+    211.9,
+    149.6,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#8d8757",
+   "ground": "#f9f4b1"
+  },
+  {
+   "text": "the rortnwest fesion,",
+   "bounds": [
+    605.0,
+    227.6,
+    75.9,
+    6.7
+   ],
+   "confidence": 1,
+   "ink": "#9c9da0",
+   "ground": "#f4f5f5"
+  },
+  {
+   "text": "Revenue by region, Q3 2026",
+   "bounds": [
+    602.8,
+    243.0,
+    122.8,
+    11.3
+   ],
+   "confidence": 1,
+   "ink": "#727376",
+   "ground": "#f6f6f6"
+  },
+  {
+   "text": "18.7",
+   "bounds": [
+    689.9,
+    287.8,
+    17.9,
+    8.9
+   ],
+   "confidence": 1,
+   "ink": "#8f8f92",
+   "ground": "#f8f8f8"
+  },
+  {
+   "text": "15.3",
+   "bounds": [
+    727.8,
+    294.5,
+    20.1,
+    11.2
+   ],
+   "confidence": 1,
+   "ink": "#818289",
+   "ground": "#f7f7f8"
+  },
+  {
+   "text": "Northnest",
+   "bounds": [
+    602.8,
+    336.9,
+    38.0,
+    11.2
+   ],
+   "confidence": 1,
+   "ink": "#9c9da0",
+   "ground": "#f7f8f8"
+  },
+  {
+   "text": "Coast",
+   "bounds": [
+    649.7,
+    336.9,
+    22.3,
+    11.2
+   ],
+   "confidence": 1,
+   "ink": "#a1a2a5",
+   "ground": "#fafafa"
+  },
+  {
+   "text": "vaiey",
+   "bounds": [
+    687.6,
+    341.3,
+    20.1,
+    4.5
+   ],
+   "confidence": 0.3,
+   "ink": "#a7a8ac",
+   "ground": "#f4f5f5"
+  },
+  {
+   "text": "browth was brosd-based, with Strong",
+   "bounds": [
+    602.8,
+    359.0,
+    129.5,
+    7
+   ],
+   "confidence": 1,
+   "ink": "#98989a",
+   "ground": "#f3f3f4"
+  },
+  {
+   "text": "contoutsons trom core busiesses and",
+   "bounds": [
+    602.8,
+    370.0,
+    134.0,
+    5
+   ],
+   "confidence": 1,
+   "ink": "#a0a0a2",
+   "ground": "#f0f1f1"
+  },
+  {
+   "text": "new member sdootion",
+   "bounds": [
+    602.8,
+    381.0,
+    80.4,
+    5
+   ],
+   "confidence": 1,
+   "ink": "#98989b",
+   "ground": "#f4f4f4"
+  },
+  {
+   "text": "Metro",
+   "bounds": [
+    725.6,
+    336.9,
+    24.6,
+    11.2
+   ],
+   "confidence": 1,
+   "ink": "#a0a2a6",
+   "ground": "#f9f9fa"
+  },
+  {
+   "text": "MMTNAATNNAINI",
+   "bounds": [
+    596.1,
+    403.8,
+    67.0,
+    4.5
+   ],
+   "confidence": 0.3,
+   "ink": "#b1b2b5",
+   "ground": "#f5f4f5"
+  },
+  {
+   "text": "Q1 2005 BOMO ICPON!",
+   "bounds": [
+    703.3,
+    403.8,
+    58.0,
+    6.7
+   ],
+   "confidence": 1,
+   "ink": "#b0b0b3",
+   "ground": "#f7f7f7"
+  },
+  {
+   "text": "3",
+   "bounds": [
+    674.2,
+    435.0,
+    11.2,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#616369",
+   "ground": "#f3f3f4"
+  },
+  {
+   "text": "REVENUE TRENDS",
+   "bounds": [
+    576.0,
+    486.0,
+    89.3,
+    11.5
+   ],
+   "confidence": 1,
+   "ink": "#5b5d60",
+   "ground": "#f3f3f3"
+  },
+  {
+   "text": "Revenue (USO matiers)",
+   "bounds": [
+    576.0,
+    508.7,
+    75.9,
+    9.3
+   ],
+   "confidence": 1,
+   "ink": "#9d9ea1",
+   "ground": "#f7f7f8"
+  },
+  {
+   "text": "75.4",
+   "bounds": [
+    663.1,
+    526.5,
+    17.9,
+    11.2
+   ],
+   "confidence": 1,
+   "ink": "#8d8f96",
+   "ground": "#f9f9fa"
+  },
+  {
+   "text": "62.1",
+   "bounds": [
+    584.9,
+    542.1,
+    20.1,
+    11.2
+   ],
+   "confidence": 1,
+   "ink": "#8e8e93",
+   "ground": "#fafafa"
+  },
+  {
+   "text": "q4 2025",
+   "bounds": [
+    580.5,
+    589.0,
+    29.0,
+    11.2
+   ],
+   "confidence": 1,
+   "ink": "#a1a1a4",
+   "ground": "#f6f6f6"
+  },
+  {
+   "text": "012009",
+   "bounds": [
+    620.7,
+    593.4,
+    24.6,
+    4.5
+   ],
+   "confidence": 1,
+   "ink": "#a3a4a7",
+   "ground": "#f5f5f5"
+  },
+  {
+   "text": "022026",
+   "bounds": [
+    658.6,
+    593.4,
+    29.0,
+    4.5
+   ],
+   "confidence": 1,
+   "ink": "#97989b",
+   "ground": "#f2f2f2"
+  },
+  {
+   "text": "0 2035",
+   "bounds": [
+    692.1,
+    593.0,
+    29.0,
+    5
+   ],
+   "confidence": 0.5,
+   "ink": "#979799",
+   "ground": "#f3f4f4"
+  },
+  {
+   "text": "Revenue has grown steadily over the",
+   "bounds": [
+    576.0,
+    611.0,
+    131.7,
+    11.4
+   ],
+   "confidence": 1,
+   "ink": "#999a9d",
+   "ground": "#f8f8f8"
+  },
+  {
+   "text": "past four quartors, reflecting strong",
+   "bounds": [
+    576.0,
+    622.0,
+    129.5,
+    12
+   ],
+   "confidence": 1,
+   "ink": "#98999b",
+   "ground": "#f7f7f8"
+  },
+  {
+   "text": "membor demano and ofta tonal",
+   "bounds": [
+    576.0,
+    638.0,
+    118.3,
+    5
+   ],
+   "confidence": 1,
+   "ink": "#a3a3a6",
+   "ground": "#f2f3f3"
+  },
+  {
+   "text": "execution",
+   "bounds": [
+    576.0,
+    649.2,
+    35.7,
+    4.5
+   ],
+   "confidence": 1,
+   "ink": "#97979a",
+   "ground": "#ececed"
+  },
+  {
+   "text": "CASH FLOW",
+   "bounds": [
+    573.7,
+    740.4,
+    55.9,
+    11.8
+   ],
+   "confidence": 1,
+   "ink": "#67696b",
+   "ground": "#f5f5f6"
+  },
+  {
+   "text": "Operating activties",
+   "bounds": [
+    571.5,
+    776.0,
+    62.5,
+    12
+   ],
+   "confidence": 1,
+   "ink": "#aaaaac",
+   "ground": "#f9f9f9"
+  },
+  {
+   "text": "14.2",
+   "bounds": [
+    683.2,
+    776.4,
+    20.1,
+    11.2
+   ],
+   "confidence": 1,
+   "ink": "#8f9196",
+   "ground": "#f8f8f9"
+  },
+  {
+   "text": "Investing activities",
+   "bounds": [
+    571.5,
+    794.0,
+    60.3,
+    11.4
+   ],
+   "confidence": 1,
+   "ink": "#b2b2b5",
+   "ground": "#f8f9f9"
+  },
+  {
+   "text": "Financing activities",
+   "bounds": [
+    571.5,
+    809.8,
+    62.5,
+    11.2
+   ],
+   "confidence": 1,
+   "ink": "#b1b1b4",
+   "ground": "#f8f8f9"
+  },
+  {
+   "text": "(3.2)",
+   "bounds": [
+    683.2,
+    809.8,
+    20.1,
+    11.2
+   ],
+   "confidence": 1,
+   "ink": "#bba1a7",
+   "ground": "#faf9f9"
+  },
+  {
+   "text": "intreste in ca",
+   "bounds": [
+    571.5,
+    829.9,
+    62.5,
+    4.5
+   ],
+   "confidence": 0.3,
+   "ink": "#ababaf",
+   "ground": "#f3f3f4"
+  },
+  {
+   "text": "4,9",
+   "bounds": [
+    685.4,
+    825.4,
+    15.6,
+    11.2
+   ],
+   "confidence": 1,
+   "ink": "#95969b",
+   "ground": "#f8f8f8"
+  },
+  {
+   "text": "Cath at end of period",
+   "bounds": [
+    571.5,
+    841.0,
+    69.2,
+    11.2
+   ],
+   "confidence": 1,
+   "ink": "#a9aaae",
+   "ground": "#f8f8f9"
+  },
+  {
+   "text": "38.7",
+   "bounds": [
+    683.2,
+    841.1,
+    20.1,
+    11.2
+   ],
+   "confidence": 1,
+   "ink": "#939599",
+   "ground": "#fafafa"
+  },
+  {
+   "text": "Soong cash generation supports our",
+   "bounds": [
+    571.5,
+    858.9,
+    118.3,
+    11.2
+   ],
+   "confidence": 1,
+   "ink": "#b0b0b4",
+   "ground": "#f8f9f9"
+  },
+  {
+   "text": "investment and member commitments.",
+   "bounds": [
+    571.5,
+    870.0,
+    127.3,
+    9
+   ],
+   "confidence": 1,
+   "ink": "#a2a2a6",
+   "ground": "#f7f7f8"
+  },
+  {
+   "text": "\u041c\u0418\u0422\u0423\u041b\u0417\u041e\u0421\u0425A\u0422M",
+   "bounds": [
+    355.0,
+    901.3,
+    60.3,
+    4.5
+   ],
+   "confidence": 0.3,
+   "ink": "#b3b3b7",
+   "ground": "#f7f7f7"
+  },
+  {
+   "text": "14",
+   "bounds": [
+    413.0,
+    925.8,
+    17.9,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#7f8287",
+   "ground": "#f7f7f8"
+  },
+  {
+   "text": "NO\u0438\u0442 C\u043e\u0435CR\u0438\u043c",
+   "bounds": [
+    564.8,
+    896.8,
+    64.7,
+    9.2
+   ],
+   "confidence": 0.3,
+   "ink": "#b5b6ba",
+   "ground": "#f6f7f7"
+  },
+  {
+   "text": "15",
+   "bounds": [
+    558.1,
+    925.8,
+    22.3,
+    15.6
+   ],
+   "confidence": 1,
+   "ink": "#7e8187",
+   "ground": "#f6f6f7"
+  },
+  {
+   "text": "01300% BOMO ACAORT",
+   "bounds": [
+    656.4,
+    896.8,
+    58.0,
+    9.2
+   ],
+   "confidence": 1,
+   "ink": "#b3b4b7",
+   "ground": "#f7f7f7"
+  },
+  {
+   "text": "Insert from file",
+   "bounds": [
+    828.3,
+    122.7,
+    80.4,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#7b7d81",
+   "ground": "#f5f6f6"
+  },
+  {
+   "text": "OPERATIONS",
+   "bounds": [
+    848.4,
+    191.9,
+    62.5,
+    11.2
+   ],
+   "confidence": 1,
+   "ink": "#5b5c5f",
+   "ground": "#f3f3f3"
+  },
+  {
+   "text": "We continued to improve operational",
+   "bounds": [
+    850.6,
+    214.0,
+    122.8,
+    11.3
+   ],
+   "confidence": 1,
+   "ink": "#949598",
+   "ground": "#f8f8f8"
+  },
+  {
+   "text": "etficiency and service reEability.",
+   "bounds": [
+    848.4,
+    225.0,
+    107.2,
+    11.5
+   ],
+   "confidence": 1,
+   "ink": "#9f9fa1",
+   "ground": "#f7f7f8"
+  },
+  {
+   "text": "\u2022 Reliablity: 99.2% system uptime",
+   "bounds": [
+    848.4,
+    243.0,
+    122.8,
+    11.3
+   ],
+   "confidence": 1,
+   "ink": "#a3a4a6",
+   "ground": "#f8f9f9"
+  },
+  {
+   "text": "Average responte time improved 8%",
+   "bounds": [
+    859.5,
+    258.8,
+    127.3,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#a3a4a6",
+   "ground": "#f9f9fa"
+  },
+  {
+   "text": "\u2022 Completed 12 infrastructure upgrades",
+   "bounds": [
+    848.4,
+    274.0,
+    142.9,
+    14
+   ],
+   "confidence": 1,
+   "ink": "#9d9d9f",
+   "ground": "#f9f9f9"
+  },
+  {
+   "text": "\u2022 Safety incident rate declined 15%",
+   "bounds": [
+    848.4,
+    290.0,
+    129.5,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#a5a5a8",
+   "ground": "#fafafa"
+  },
+  {
+   "text": "Our teams remain comeitted to delivering",
+   "bounds": [
+    848.4,
+    316.8,
+    140.7,
+    11.2
+   ],
+   "confidence": 1,
+   "ink": "#a5a6a9",
+   "ground": "#f8f8f9"
+  },
+  {
+   "text": "sale, rellable service wtule managing",
+   "bounds": [
+    848.4,
+    332.0,
+    120.6,
+    7.1
+   ],
+   "confidence": 1,
+   "ink": "#a0a0a3",
+   "ground": "#f5f5f6"
+  },
+  {
+   "text": "NORTAMINO COCFERATME",
+   "bounds": [
+    839.4,
+    401.6,
+    69.2,
+    11.4
+   ],
+   "confidence": 1,
+   "ink": "#b2b2b6",
+   "ground": "#f9fafa"
+  },
+  {
+   "text": "0)30% BOMIO BUGAT",
+   "bounds": [
+    946.6,
+    399.0,
+    60.3,
+    14
+   ],
+   "confidence": 0.5,
+   "ink": "#bdbdbf",
+   "ground": "#fbfbfb"
+  },
+  {
+   "text": "NORTHWEST REGION",
+   "bounds": [
+    835.0,
+    486.0,
+    104.9,
+    11.5
+   ],
+   "confidence": 1,
+   "ink": "#5f6062",
+   "ground": "#f5f5f6"
+  },
+  {
+   "text": "The Northwest region led growth.",
+   "bounds": [
+    837.2,
+    508.7,
+    113.9,
+    11.3
+   ],
+   "confidence": 1,
+   "ink": "#9a999d",
+   "ground": "#f7f7f8"
+  },
+  {
+   "text": "driven by new members and",
+   "bounds": [
+    835.0,
+    519.8,
+    100.5,
+    11.2
+   ],
+   "confidence": 1,
+   "ink": "#a4a4a6",
+   "ground": "#f7f7f8"
+  },
+  {
+   "text": "increased utace",
+   "bounds": [
+    835.0,
+    535.0,
+    58.0,
+    5
+   ],
+   "confidence": 1,
+   "ink": "#98989a",
+   "ground": "#f1f2f1"
+  },
+  {
+   "text": "hcy metn",
+   "bounds": [
+    839.4,
+    555.5,
+    40.2,
+    4.5
+   ],
+   "confidence": 0.3,
+   "ink": "#78797b",
+   "ground": "#e3e4e5"
+  },
+  {
+   "text": "Revenue (USD miliona)",
+   "bounds": [
+    841.7,
+    568.9,
+    73.7,
+    11.2
+   ],
+   "confidence": 1,
+   "ink": "#a7a6a8",
+   "ground": "#f8f8f8"
+  },
+  {
+   "text": "Menbers",
+   "bounds": [
+    839.4,
+    584.5,
+    33.5,
+    11.2
+   ],
+   "confidence": 1,
+   "ink": "#aaaaac",
+   "ground": "#f6f6f7"
+  },
+  {
+   "text": "onathiYay",
+   "bounds": [
+    839.4,
+    604.6,
+    44.7,
+    4.5
+   ],
+   "confidence": 0.3,
+   "ink": "#a4a4a7",
+   "ground": "#f2f3f3"
+  },
+  {
+   "text": "Q3 2026",
+   "bounds": [
+    937.7,
+    551.0,
+    29.0,
+    11.2
+   ],
+   "confidence": 1,
+   "ink": "#797c82",
+   "ground": "#eff0f1"
+  },
+  {
+   "text": "28.4",
+   "bounds": [
+    948.8,
+    568.9,
+    20.1,
+    8.9
+   ],
+   "confidence": 1,
+   "ink": "#8b8b8e",
+   "ground": "#f8f8f8"
+  },
+  {
+   "text": "16,842",
+   "bounds": [
+    939.9,
+    584.5,
+    26.8,
+    11.2
+   ],
+   "confidence": 1,
+   "ink": "#909093",
+   "ground": "#f6f6f6"
+  },
+  {
+   "text": "149",
+   "bounds": [
+    948.8,
+    600.1,
+    17.9,
+    11.2
+   ],
+   "confidence": 1,
+   "ink": "#9d9da0",
+   "ground": "#f6f6f6"
+  },
+  {
+   "text": "Knntinuin inuwetment in in tasinichire",
+   "bounds": [
+    835.0,
+    626.9,
+    131.7,
+    4.5
+   ],
+   "confidence": 1,
+   "ink": "#98989b",
+   "ground": "#f1f1f1"
+  },
+  {
+   "text": "and member procrams wh supoor",
+   "bounds": [
+    835.0,
+    638.0,
+    118.3,
+    5
+   ],
+   "confidence": 1,
+   "ink": "#9d9ea1",
+   "ground": "#f3f3f4"
+  },
+  {
+   "text": "sustained growth.",
+   "bounds": [
+    835.0,
+    647.0,
+    64.7,
+    11.2
+   ],
+   "confidence": 1,
+   "ink": "#a6a6a9",
+   "ground": "#f8f8f8"
+  },
+  {
+   "text": "THANO COOHRAY",
+   "bounds": [
+    828.3,
+    673.7,
+    64.7,
+    4.5
+   ],
+   "confidence": 0.3,
+   "ink": "#b1b2b4",
+   "ground": "#f3f3f4"
+  },
+  {
+   "text": "10",
+   "bounds": [
+    897.5,
+    700.5,
+    17.9,
+    11.2
+   ],
+   "confidence": 1,
+   "ink": "#75787c",
+   "ground": "#f6f6f7"
+  },
+  {
+   "text": "<",
+   "bounds": [
+    638.5,
+    932.5,
+    13.4,
+    15.6
+   ],
+   "confidence": 1,
+   "ink": "#565a62",
+   "ground": "#fafafa"
+  },
+  {
+   "text": "3 / 24",
+   "bounds": [
+    676.5,
+    934.8,
+    40.2,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#84878d",
+   "ground": "#fafafa"
+  },
+  {
+   "text": ">",
+   "bounds": [
+    745.7,
+    932.5,
+    15.6,
+    17.8
+   ],
+   "confidence": 1,
+   "ink": "#545861",
+   "ground": "#fbfbfb"
+  },
+  {
+   "text": "-",
+   "bounds": [
+    808.2,
+    934.8,
+    17.9,
+    11.2
+   ],
+   "confidence": 1,
+   "ink": "#70747b",
+   "ground": "#fbfbfb"
+  },
+  {
+   "text": "100%",
+   "bounds": [
+    850.6,
+    937.0,
+    31.3,
+    11.2
+   ],
+   "confidence": 1,
+   "ink": "#7c7f84",
+   "ground": "#f5f5f6"
+  },
+  {
+   "text": "+",
+   "bounds": [
+    897.5,
+    932.5,
+    20.1,
+    20.1
+   ],
+   "confidence": 1,
+   "ink": "#6d7177",
+   "ground": "#fbfbfb"
+  },
+  {
+   "text": "Site Survey Photos.pdf",
+   "bounds": [
+    993.5,
+    17.8,
+    125.0,
+    15.6
+   ],
+   "confidence": 1,
+   "ink": "#84878c",
+   "ground": "#f1f1f2"
+  },
+  {
+   "text": "+ Open",
+   "bounds": [
+    1196.7,
+    17.8,
+    51.3,
+    15.6
+   ],
+   "confidence": 1,
+   "ink": "#75797f",
+   "ground": "#f2f2f3"
+  },
+  {
+   "text": "\u2022 Search in document",
+   "bounds": [
+    1049.3,
+    69.0,
+    136.2,
+    14
+   ],
+   "confidence": 1,
+   "ink": "#888b90",
+   "ground": "#f7f8f8"
+  },
+  {
+   "text": "OUTLOOK",
+   "bounds": [
+    1089.5,
+    191.9,
+    49.1,
+    11.2
+   ],
+   "confidence": 1,
+   "ink": "#696b6e",
+   "ground": "#f7f7f7"
+  },
+  {
+   "text": "We are optmistic about the remainde",
+   "bounds": [
+    1089.5,
+    216.0,
+    125.0,
+    7.1
+   ],
+   "confidence": 1,
+   "ink": "#939497",
+   "ground": "#f4f4f5"
+  },
+  {
+   "text": "of 2026 and boyond.",
+   "bounds": [
+    1089.5,
+    225.0,
+    71.4,
+    11.5
+   ],
+   "confidence": 1,
+   "ink": "#9e9ea0",
+   "ground": "#f8f8f8"
+  },
+  {
+   "text": "\u2022Corinued fevenue growi",
+   "bounds": [
+    1089.5,
+    247.6,
+    100.5,
+    6.7
+   ],
+   "confidence": 1,
+   "ink": "#8f8f92",
+   "ground": "#f5f5f5"
+  },
+  {
+   "text": "\u2022 Investments in grid modemization",
+   "bounds": [
+    1089.5,
+    261.0,
+    127.3,
+    11.2
+   ],
+   "confidence": 1,
+   "ink": "#a2a2a4",
+   "ground": "#f8f8f9"
+  },
+  {
+   "text": "\u2022 Expansion of member programs",
+   "bounds": [
+    1089.5,
+    276.6,
+    120.6,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#9c9c9e",
+   "ground": "#f9f9f9"
+  },
+  {
+   "text": "\u2022rocus on sustainability",
+   "bounds": [
+    1089.5,
+    296.7,
+    89.3,
+    6.7
+   ],
+   "confidence": 1,
+   "ink": "#9f9fa1",
+   "ground": "#f6f6f6"
+  },
+  {
+   "text": "These priorities position us well to",
+   "bounds": [
+    1089.5,
+    319.0,
+    116.1,
+    9
+   ],
+   "confidence": 1,
+   "ink": "#a2a2a5",
+   "ground": "#f6f7f7"
+  },
+  {
+   "text": "create long-1erm value for our",
+   "bounds": [
+    1089.5,
+    327.9,
+    102.7,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#a1a1a3",
+   "ground": "#f7f7f8"
+  },
+  {
+   "text": "members and comenunities",
+   "bounds": [
+    1089.5,
+    341.0,
+    93.8,
+    9.3
+   ],
+   "confidence": 1,
+   "ink": "#9a9a9c",
+   "ground": "#f6f6f6"
+  },
+  {
+   "text": "\u043ctw\u043cno\u0441hoNent",
+   "bounds": [
+    1080.6,
+    406.0,
+    67.0,
+    4.5
+   ],
+   "confidence": 0.3,
+   "ink": "#aeaeb1",
+   "ground": "#f0f1f1"
+  },
+  {
+   "text": "ot yseosi MM",
+   "bounds": [
+    1187.7,
+    406.0,
+    58.0,
+    4.5
+   ],
+   "confidence": 0.3,
+   "ink": "#aeaeb1",
+   "ground": "#f1f1f2"
+  },
+  {
+   "text": "COAST REGION",
+   "bounds": [
+    1062.7,
+    486.0,
+    73.7,
+    11.5
+   ],
+   "confidence": 1,
+   "ink": "#5d5e61",
+   "ground": "#f3f4f4"
+  },
+  {
+   "text": "The Coast region delivered solid",
+   "bounds": [
+    1062.7,
+    508.7,
+    109.4,
+    11.3
+   ],
+   "confidence": 1,
+   "ink": "#9fa0a1",
+   "ground": "#f8f8f8"
+  },
+  {
+   "text": "results with improved efficiency.",
+   "bounds": [
+    1062.7,
+    519.8,
+    109.4,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#a6a6a8",
+   "ground": "#f8f8f9"
+  },
+  {
+   "text": "Key metrics",
+   "bounds": [
+    1067.2,
+    546.6,
+    42.4,
+    11.4
+   ],
+   "confidence": 1,
+   "ink": "#797a7e",
+   "ground": "#efeff0"
+  },
+  {
+   "text": "Revenue (USO mitions)",
+   "bounds": [
+    1067.2,
+    562.0,
+    78.1,
+    11.4
+   ],
+   "confidence": 1,
+   "ink": "#a5a6a9",
+   "ground": "#f7f7f7"
+  },
+  {
+   "text": "Mamhes",
+   "bounds": [
+    1067.2,
+    582.3,
+    31.3,
+    4.5
+   ],
+   "confidence": 1,
+   "ink": "#96979b",
+   "ground": "#f1f2f2"
+  },
+  {
+   "text": "Growth (YoY)",
+   "bounds": [
+    1067.1,
+    595.2,
+    47.1,
+    12.1
+   ],
+   "confidence": 1,
+   "ink": "#9c9c9f",
+   "ground": "#f8f8f8"
+  },
+  {
+   "text": "22.1",
+   "bounds": [
+    1172.1,
+    562.2,
+    20.1,
+    11.2
+   ],
+   "confidence": 1,
+   "ink": "#97999d",
+   "ground": "#f7f7f8"
+  },
+  {
+   "text": "13,105",
+   "bounds": [
+    1163.2,
+    580.0,
+    29.0,
+    8.9
+   ],
+   "confidence": 1,
+   "ink": "#8e9094",
+   "ground": "#f7f7f7"
+  },
+  {
+   "text": "9%",
+   "bounds": [
+    1174.3,
+    595.7,
+    15.6,
+    11.2
+   ],
+   "confidence": 1,
+   "ink": "#9fa0a4",
+   "ground": "#f8f8f8"
+  },
+  {
+   "text": "We continue to enhance reliabiity",
+   "bounds": [
+    1062.7,
+    626.9,
+    116.1,
+    7.1
+   ],
+   "confidence": 1,
+   "ink": "#a8a9ac",
+   "ground": "#f5f5f6"
+  },
+  {
+   "text": "andd member eroenence",
+   "bounds": [
+    1062.7,
+    638.0,
+    84.8,
+    5
+   ],
+   "confidence": 1,
+   "ink": "#a2a2a5",
+   "ground": "#f1f2f2"
+  },
+  {
+   "text": "NOTHi\u043eCORNN1",
+   "bounds": [
+    1056.0,
+    673.7,
+    67.0,
+    4.5
+   ],
+   "confidence": 0.3,
+   "ink": "#b4b4b7",
+   "ground": "#f2f3f3"
+  },
+  {
+   "text": "Saved",
+   "bounds": [
+    38.0,
+    990.5,
+    33.5,
+    11.2
+   ],
+   "confidence": 1,
+   "ink": "#7c7f84",
+   "ground": "#f7f8f8"
+  },
+  {
+   "text": "Save",
+   "bounds": [
+    1460.1,
+    69.2,
+    33.5,
+    15.6
+   ],
+   "confidence": 1,
+   "ink": "#c3def7",
+   "ground": "#086adb"
+  },
+  {
+   "text": "Drag pages to reorder",
+   "bounds": [
+    1328.4,
+    124.9,
+    113.9,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#87898d",
+   "ground": "#f7f7f8"
+  },
+  {
+   "text": "APPENDIX",
+   "bounds": [
+    1319.2,
+    190.5,
+    49.5,
+    11.6
+   ],
+   "confidence": 1,
+   "ink": "#4f5052",
+   "ground": "#f3f3f3"
+  },
+  {
+   "text": "A. Financial Statements",
+   "bounds": [
+    1319.4,
+    214.0,
+    80.4,
+    11.3
+   ],
+   "confidence": 1,
+   "ink": "#949597",
+   "ground": "#f7f7f7"
+  },
+  {
+   "text": "B. Key Metrics",
+   "bounds": [
+    1319.4,
+    229.8,
+    53.6,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#98999c",
+   "ground": "#f8f8f9"
+  },
+  {
+   "text": "C. Glossary",
+   "bounds": [
+    1319.4,
+    252.0,
+    40.2,
+    7
+   ],
+   "confidence": 1,
+   "ink": "#9c9ca0",
+   "ground": "#f6f6f6"
+  },
+  {
+   "text": "D. Notes",
+   "bounds": [
+    1319.4,
+    267.7,
+    33.5,
+    11.3
+   ],
+   "confidence": 1,
+   "ink": "#9b9ca0",
+   "ground": "#f8f8f9"
+  },
+  {
+   "text": "VALLEY REGION",
+   "bounds": [
+    1297.1,
+    486.0,
+    78.1,
+    11.5
+   ],
+   "confidence": 1,
+   "ink": "#616366",
+   "ground": "#f3f4f4"
+  },
+  {
+   "text": "The Vailey region saw strong",
+   "bounds": [
+    1299.3,
+    508.7,
+    98.2,
+    11.3
+   ],
+   "confidence": 1,
+   "ink": "#9d9ea0",
+   "ground": "#f7f8f8"
+  },
+  {
+   "text": "member growth and engagement.",
+   "bounds": [
+    1299.3,
+    519.8,
+    113.9,
+    11.2
+   ],
+   "confidence": 1,
+   "ink": "#a4a4a6",
+   "ground": "#f7f7f8"
+  },
+  {
+   "text": "Key metrics",
+   "bounds": [
+    1301.6,
+    546.6,
+    42.4,
+    9.4
+   ],
+   "confidence": 1,
+   "ink": "#87888b",
+   "ground": "#f1f2f3"
+  },
+  {
+   "text": "Reverue (USD milions)",
+   "bounds": [
+    1301.6,
+    562.0,
+    75.9,
+    11.4
+   ],
+   "confidence": 1,
+   "ink": "#a5a5a7",
+   "ground": "#f7f7f7"
+  },
+  {
+   "text": "Membord",
+   "bounds": [
+    1301.6,
+    582.3,
+    31.3,
+    4.5
+   ],
+   "confidence": 1,
+   "ink": "#9a9b9f",
+   "ground": "#f1f1f2"
+  },
+  {
+   "text": "Growth (YoY)",
+   "bounds": [
+    1301.5,
+    595.4,
+    47.0,
+    11.7
+   ],
+   "confidence": 1,
+   "ink": "#9f9fa2",
+   "ground": "#f7f7f8"
+  },
+  {
+   "text": "Q32026",
+   "bounds": [
+    1397.6,
+    544.3,
+    31.3,
+    11.2
+   ],
+   "confidence": 1,
+   "ink": "#7f8186",
+   "ground": "#f0f1f2"
+  },
+  {
+   "text": "18.7",
+   "bounds": [
+    1408.7,
+    562.2,
+    20.1,
+    11.2
+   ],
+   "confidence": 1,
+   "ink": "#9d9da0",
+   "ground": "#f9f9f9"
+  },
+  {
+   "text": "10.68S",
+   "bounds": [
+    1399.8,
+    582.3,
+    26.8,
+    4.5
+   ],
+   "confidence": 0.3,
+   "ink": "#8f9094",
+   "ground": "#f2f3f3"
+  },
+  {
+   "text": "11%",
+   "bounds": [
+    1406.5,
+    595.7,
+    20.1,
+    11.2
+   ],
+   "confidence": 1,
+   "ink": "#9a9b9f",
+   "ground": "#f9f9f9"
+  },
+  {
+   "text": "Investments in technology and",
+   "bounds": [
+    1297.1,
+    624.7,
+    109.4,
+    11.3
+   ],
+   "confidence": 1,
+   "ink": "#a2a2a4",
+   "ground": "#f7f7f8"
+  },
+  {
+   "text": "community programs are driving",
+   "bounds": [
+    1297.1,
+    635.8,
+    113.9,
+    11.2
+   ],
+   "confidence": 1,
+   "ink": "#a5a5a8",
+   "ground": "#f8f8f8"
+  },
+  {
+   "text": "positive outcomes.",
+   "bounds": [
+    1297.1,
+    647.0,
+    67.0,
+    11.2
+   ],
+   "confidence": 1,
+   "ink": "#a4a5a7",
+   "ground": "#f8f8f8"
+  },
+  {
+   "text": "\u041c\u043eTH\u043e COORATN",
+   "bounds": [
+    1288.2,
+    673.7,
+    67.0,
+    4.5
+   ],
+   "confidence": 0.3,
+   "ink": "#aeaeb1",
+   "ground": "#f1f1f2"
+  },
+  {
+   "text": "12",
+   "bounds": [
+    1357.4,
+    698.3,
+    22.3,
+    17.8
+   ],
+   "confidence": 1,
+   "ink": "#5d6268",
+   "ground": "#f3f3f4"
+  },
+  {
+   "text": "14.6 of 64 MB used",
+   "bounds": [
+    1402.0,
+    992.8,
+    104.9,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#7c7e83",
+   "ground": "#f8f8f8"
+  }
+ ],
+ "surfaces": [
+  {
+   "bounds": [
+    5,
+    2,
+    1527,
+    1021
+   ],
+   "fill": "#fbfbfc",
+   "border": "#f7f7f8",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    88,
+    155,
+    1441,
+    823
+   ],
+   "fill": "#f8f8f9",
+   "border": "#f8f8f9",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    8,
+    44,
+    1521,
+    109
+   ],
+   "fill": "#fdfdfd",
+   "border": "#fbfbfb",
+   "radius": 3
+  },
+  {
+   "bounds": [
+    8,
+    103,
+    78,
+    875
+   ],
+   "fill": "#fdfdfd",
+   "border": "#fdfdfd",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    8,
+    980,
+    1521,
+    39
+   ],
+   "fill": "#fdfdfd",
+   "border": "#fafafa",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    1064,
+    168,
+    205,
+    262
+   ],
+   "fill": "#fdfdfd",
+   "border": "#eeebed",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    580,
+    167,
+    201,
+    264
+   ],
+   "fill": "#fdfcfd",
+   "border": "#f7f7f8",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    824,
+    167,
+    199,
+    264
+   ],
+   "fill": "#fdfdfd",
+   "border": "#f7f7f8",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    1297,
+    167,
+    194,
+    263
+   ],
+   "fill": "#fdfdfd",
+   "border": "#f7f7f6",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    350,
+    167,
+    191,
+    264
+   ],
+   "fill": "#fdfdfd",
+   "border": "#f7f7f8",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    1272,
+    462,
+    199,
+    238
+   ],
+   "fill": "#fcfcfc",
+   "border": "#f7f7f7",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    1039,
+    462,
+    195,
+    238
+   ],
+   "fill": "#fcfcfc",
+   "border": "#f7f7f7",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    811,
+    462,
+    192,
+    238
+   ],
+   "fill": "#fcfcfc",
+   "border": "#f7f7f8",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    554,
+    462,
+    188,
+    238
+   ],
+   "fill": "#fdfdfd",
+   "border": "#f6f6f6",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    116,
+    462,
+    187,
+    238
+   ],
+   "fill": "#fdfdfd",
+   "border": "#f7f7f8",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    338,
+    462,
+    182,
+    238
+   ],
+   "fill": "#fdfdfd",
+   "border": "#f7f7f8",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    116,
+    724,
+    181,
+    202
+   ],
+   "fill": "#fdfcfd",
+   "border": "#f7f7f8",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    339,
+    724,
+    178,
+    202
+   ],
+   "fill": "#fdfdfd",
+   "border": "#f7f7f8",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    555,
+    727,
+    173,
+    195
+   ],
+   "fill": "#fcfcfc",
+   "border": "#fefefe",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    116,
+    309,
+    195,
+    122
+   ],
+   "fill": "#e3ecf1",
+   "border": "#f6f6f7",
+   "radius": 4
+  },
+  {
+   "bounds": [
+    623,
+    921,
+    396,
+    41
+   ],
+   "fill": "#fdfdfd",
+   "border": "#fefefe",
+   "radius": 4
+  },
+  {
+   "bounds": [
+    831,
+    547,
+    155,
+    71
+   ],
+   "fill": "#fafafb",
+   "border": "#fdfdfd",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    1299,
+    541,
+    142,
+    72
+   ],
+   "fill": "#fafafb",
+   "border": "#fcfcfc",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    1064,
+    541,
+    139,
+    73
+   ],
+   "fill": "#fafafa",
+   "border": "#fdfdfd",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    1039,
+    58,
+    253,
+    37
+   ],
+   "fill": "#fdfdfd",
+   "border": "#fdfdfd",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    262,
+    5,
+    232,
+    40
+   ],
+   "fill": "#f3f3f4",
+   "border": "#f3f3f3",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    120,
+    380,
+    188,
+    48
+   ],
+   "fill": "#fdfdfd",
+   "border": "#e4e4e4",
+   "radius": 1
+  },
+  {
+   "bounds": [
+    960,
+    5,
+    219,
+    40
+   ],
+   "fill": "#f3f3f3",
+   "border": "#ededee",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    10,
+    8,
+    246,
+    35
+   ],
+   "fill": "#fdfdfd",
+   "border": "#fcfcfc",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    501,
+    8,
+    231,
+    37
+   ],
+   "fill": "#f3f3f3",
+   "border": "#f5f5f5",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    741,
+    8,
+    214,
+    37
+   ],
+   "fill": "#f3f3f3",
+   "border": "#f4f4f4",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    139,
+    787,
+    133,
+    59
+   ],
+   "fill": "#fafafa",
+   "border": "#fcfcfd",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    1042,
+    61,
+    246,
+    30
+   ],
+   "fill": "#fdfdfd",
+   "border": "#fefefe",
+   "radius": 1
+  },
+  {
+   "bounds": [
+    962,
+    8,
+    215,
+    34
+   ],
+   "fill": "#f3f3f3",
+   "border": "#f4f4f4",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    19,
+    117,
+    55,
+    68
+   ],
+   "fill": "#e7f1fb",
+   "border": "#fdfdfd",
+   "radius": 3
+  },
+  {
+   "bounds": [
+    1437,
+    59,
+    80,
+    34
+   ],
+   "fill": "#0468db",
+   "border": "#f2f8fd",
+   "radius": 4
+  },
+  {
+   "bounds": [
+    1185,
+    10,
+    76,
+    30
+   ],
+   "fill": "#f4f3f4",
+   "border": "#f2f2f3",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    1302,
+    560,
+    136,
+    16
+   ],
+   "fill": "#f9f9f9",
+   "border": "#f8f8f8",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    1189,
+    13,
+    69,
+    24
+   ],
+   "fill": "#f4f3f4",
+   "border": "#efeff0",
+   "radius": 0
+  }
+ ],
+ "dividers": [
+  {
+   "axis": "h",
+   "at": 43,
+   "from": 1179,
+   "to": 1525,
+   "color": "#e3e3e4"
+  },
+  {
+   "axis": "h",
+   "at": 100,
+   "from": 412,
+   "to": 1529,
+   "color": "#f6f6f7"
+  },
+  {
+   "axis": "h",
+   "at": 101,
+   "from": 8,
+   "to": 1529,
+   "color": "#ebeced"
+  },
+  {
+   "axis": "h",
+   "at": 919,
+   "from": 627,
+   "to": 1011,
+   "color": "#d9d8d9"
+  },
+  {
+   "axis": "h",
+   "at": 962,
+   "from": 680,
+   "to": 1013,
+   "color": "#d9d8d8"
+  },
+  {
+   "axis": "h",
+   "at": 963,
+   "from": 680,
+   "to": 1011,
+   "color": "#e4e2e3"
+  },
+  {
+   "axis": "h",
+   "at": 1019,
+   "from": 12,
+   "to": 1524,
+   "color": "#ededee"
+  },
+  {
+   "axis": "v",
+   "at": 6,
+   "from": 102,
+   "to": 978,
+   "color": "#ebebec"
+  },
+  {
+   "axis": "v",
+   "at": 7,
+   "from": 102,
+   "to": 978,
+   "color": "#f4f4f5"
+  },
+  {
+   "axis": "v",
+   "at": 86,
+   "from": 154,
+   "to": 979,
+   "color": "#ebebec"
+  },
+  {
+   "axis": "v",
+   "at": 118,
+   "from": 725,
+   "to": 924,
+   "color": "#dadada"
+  },
+  {
+   "axis": "v",
+   "at": 119,
+   "from": 726,
+   "to": 922,
+   "color": "#f4f4f4"
+  },
+  {
+   "axis": "v",
+   "at": 293,
+   "from": 725,
+   "to": 922,
+   "color": "#dbdbdb"
+  },
+  {
+   "axis": "v",
+   "at": 294,
+   "from": 726,
+   "to": 923,
+   "color": "#e8e8e9"
+  },
+  {
+   "axis": "v",
+   "at": 339,
+   "from": 464,
+   "to": 697,
+   "color": "#e6e6e6"
+  },
+  {
+   "axis": "v",
+   "at": 340,
+   "from": 465,
+   "to": 696,
+   "color": "#d7d8d9"
+  },
+  {
+   "axis": "v",
+   "at": 341,
+   "from": 727,
+   "to": 922,
+   "color": "#f0f0f0"
+  },
+  {
+   "axis": "v",
+   "at": 513,
+   "from": 726,
+   "to": 922,
+   "color": "#f0f0f0"
+  },
+  {
+   "axis": "v",
+   "at": 514,
+   "from": 725,
+   "to": 923,
+   "color": "#d9d9da"
+  },
+  {
+   "axis": "v",
+   "at": 515,
+   "from": 728,
+   "to": 915,
+   "color": "#f0f0f1"
+  },
+  {
+   "axis": "v",
+   "at": 516,
+   "from": 465,
+   "to": 696,
+   "color": "#dadbdb"
+  },
+  {
+   "axis": "v",
+   "at": 517,
+   "from": 464,
+   "to": 697,
+   "color": "#e4e5e5"
+  },
+  {
+   "axis": "v",
+   "at": 553,
+   "from": 727,
+   "to": 921,
+   "color": "#dededf"
+  },
+  {
+   "axis": "v",
+   "at": 554,
+   "from": 727,
+   "to": 921,
+   "color": "#ededee"
+  },
+  {
+   "axis": "v",
+   "at": 555,
+   "from": 466,
+   "to": 698,
+   "color": "#dadada"
+  },
+  {
+   "axis": "v",
+   "at": 556,
+   "from": 466,
+   "to": 696,
+   "color": "#e9e9e9"
+  },
+  {
+   "axis": "v",
+   "at": 738,
+   "from": 465,
+   "to": 672,
+   "color": "#f5f5f5"
+  },
+  {
+   "axis": "v",
+   "at": 739,
+   "from": 464,
+   "to": 696,
+   "color": "#d2d1d2"
+  },
+  {
+   "axis": "v",
+   "at": 740,
+   "from": 465,
+   "to": 697,
+   "color": "#e9e9ea"
+  },
+  {
+   "axis": "v",
+   "at": 812,
+   "from": 464,
+   "to": 697,
+   "color": "#e7e7e8"
+  },
+  {
+   "axis": "v",
+   "at": 813,
+   "from": 465,
+   "to": 698,
+   "color": "#d9dadb"
+  },
+  {
+   "axis": "v",
+   "at": 825,
+   "from": 169,
+   "to": 429,
+   "color": "#dadada"
+  },
+  {
+   "axis": "v",
+   "at": 826,
+   "from": 170,
+   "to": 427,
+   "color": "#eceded"
+  },
+  {
+   "axis": "v",
+   "at": 1019,
+   "from": 170,
+   "to": 427,
+   "color": "#d8d8d9"
+  },
+  {
+   "axis": "v",
+   "at": 1020,
+   "from": 170,
+   "to": 428,
+   "color": "#e8e8e8"
+  },
+  {
+   "axis": "v",
+   "at": 1064,
+   "from": 172,
+   "to": 428,
+   "color": "#bac9e6"
+  },
+  {
+   "axis": "v",
+   "at": 1065,
+   "from": 170,
+   "to": 429,
+   "color": "#0858d4"
+  },
+  {
+   "axis": "v",
+   "at": 1066,
+   "from": 169,
+   "to": 429,
+   "color": "#ddebfa"
+  },
+  {
+   "axis": "v",
+   "at": 1230,
+   "from": 465,
+   "to": 696,
+   "color": "#f3f3f3"
+  },
+  {
+   "axis": "v",
+   "at": 1231,
+   "from": 464,
+   "to": 696,
+   "color": "#d6d6d7"
+  },
+  {
+   "axis": "v",
+   "at": 1232,
+   "from": 466,
+   "to": 697,
+   "color": "#eeeeee"
+  },
+  {
+   "axis": "v",
+   "at": 1265,
+   "from": 170,
+   "to": 428,
+   "color": "#1976dc"
+  },
+  {
+   "axis": "v",
+   "at": 1266,
+   "from": 171,
+   "to": 426,
+   "color": "#619fe3"
+  },
+  {
+   "axis": "v",
+   "at": 1273,
+   "from": 464,
+   "to": 696,
+   "color": "#dadadb"
+  },
+  {
+   "axis": "v",
+   "at": 1274,
+   "from": 465,
+   "to": 696,
+   "color": "#eaeaea"
+  },
+  {
+   "axis": "v",
+   "at": 1297,
+   "from": 172,
+   "to": 428,
+   "color": "#b8c5e0"
+  },
+  {
+   "axis": "v",
+   "at": 1298,
+   "from": 169,
+   "to": 428,
+   "color": "#0954e5"
+  },
+  {
+   "axis": "v",
+   "at": 1299,
+   "from": 169,
+   "to": 428,
+   "color": "#d4e7fd"
+  },
+  {
+   "axis": "v",
+   "at": 1467,
+   "from": 465,
+   "to": 696,
+   "color": "#e9e9e9"
+  },
+  {
+   "axis": "v",
+   "at": 1468,
+   "from": 464,
+   "to": 696,
+   "color": "#d9d9da"
+  },
+  {
+   "axis": "v",
+   "at": 1469,
+   "from": 466,
+   "to": 697,
+   "color": "#f0f0f1"
+  },
+  {
+   "axis": "v",
+   "at": 1487,
+   "from": 181,
+   "to": 418,
+   "color": "#f0f5fc"
+  },
+  {
+   "axis": "v",
+   "at": 1488,
+   "from": 170,
+   "to": 427,
+   "color": "#1568eb"
+  },
+  {
+   "axis": "v",
+   "at": 1489,
+   "from": 171,
+   "to": 427,
+   "color": "#a8c0e4"
+  },
+  {
+   "axis": "v",
+   "at": 1529,
+   "from": 154,
+   "to": 978,
+   "color": "#e9e9ea"
+  }
+ ],
+ "limits": [
+  "Evidence for review: roles and widgets are assigned in the semantic map, not here."
+ ]
+}

@@ -743,8 +743,20 @@ pub fn now() -> u64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
 }
 
+/// The controller's generation, mirrored after every access so the UI thread
+/// can key its caches without taking the lock an executor thread may hold.
+static GENERATION_MIRROR: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 fn with<R>(f: impl FnOnce(&mut Controller) -> R) -> Option<R> {
-    GLOBAL.lock().unwrap_or_else(|e| e.into_inner()).as_mut().map(f)
+    let mut guard = GLOBAL.lock().unwrap_or_else(|e| e.into_inner());
+    let c = guard.as_mut()?;
+    let result = f(c);
+    GENERATION_MIRROR.store(c.generation(), std::sync::atomic::Ordering::Release);
+    Some(result)
+}
+/// [`generation`] without the lock: the value after the last access from any
+/// thread, for caches on the UI thread.
+pub fn generation_relaxed() -> u64 {
+    GENERATION_MIRROR.load(std::sync::atomic::Ordering::Acquire)
 }
 
 /// At startup, once: this home and this process's launch.
@@ -755,6 +767,7 @@ pub fn init(home: &Path) {
     if let Some(a) = c.active(now()) {
         eprintln!("dev-mode: ON ({:?}, from {}); audit: {}", a.scope, a.origin.as_str(), c.audit.path().display());
     }
+    GENERATION_MIRROR.store(c.generation(), std::sync::atomic::Ordering::Release);
     *GLOBAL.lock().unwrap_or_else(|e| e.into_inner()) = Some(c);
 }
 

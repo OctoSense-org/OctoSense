@@ -14,6 +14,11 @@ authors     = ["octos-app contributors"]
 description = "The OctoSense shell's octos kernel: one per process, shared by every consumer over UI Protocol frames"
 publish     = false
 
+[features]
+# A development build (build.rs sets `dev_mode`; debug builds are development
+# builds without it): only then does an Android kernel take the launch extra
+# `makepad.OCTOS_PROXY`. The shells' and AppCard's `dev-mode` turn it on.
+dev-mode = []
 
 [dependencies]
 tokio      = { version = "1", features = ["rt-multi-thread", "sync", "io-util", "process", "time", "macros"] }

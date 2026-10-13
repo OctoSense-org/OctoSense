@@ -1,0 +1,1315 @@
+{
+ "schema_version": 1,
+ "image": "01-home.png",
+ "image_sha256": "1ec1d9108e57673181e15a6d72b083268960331a9a0f853b8d9dbed478d94920",
+ "script_sha256": "ea860507e32482b955d3ac577ab3cf9fc559f59ecc916c89175293932b54e0b7",
+ "size": [
+  1536,
+  1024
+ ],
+ "ocr_engine": "Apple Vision VNRecognizeTextRequest accurate, en-US (App Flow ocr.swift)",
+ "text": [
+  {
+   "text": "n Home",
+   "bounds": [
+    22.1,
+    16.7,
+    74.1,
+    17.9
+   ],
+   "confidence": 1,
+   "ink": "#3c3c3d",
+   "ground": "#f6f7f7"
+  },
+  {
+   "text": "Q3 2026 Board Update X+ New",
+   "bounds": [
+    167.4,
+    15.6,
+    281.3,
+    20.4
+   ],
+   "confidence": 1,
+   "ink": "#525253",
+   "ground": "#f2f2f3"
+  },
+  {
+   "text": "Quick Deck",
+   "bounds": [
+    144.9,
+    117.1,
+    167.8,
+    31.3
+   ],
+   "confidence": 1,
+   "ink": "#343537",
+   "ground": "#edeff0"
+  },
+  {
+   "text": "Start a new deck",
+   "bounds": [
+    71.4,
+    191.9,
+    147.3,
+    20.1
+   ],
+   "confidence": 1,
+   "ink": "#37383a",
+   "ground": "#edeff0"
+  },
+  {
+   "text": "Title",
+   "bounds": [
+    118.3,
+    256.6,
+    67.0,
+    29.0
+   ],
+   "confidence": 1,
+   "ink": "#202121",
+   "ground": "#f6f5f6"
+  },
+  {
+   "text": "Title",
+   "bounds": [
+    301.4,
+    256.6,
+    75.9,
+    29.0
+   ],
+   "confidence": 1,
+   "ink": "#1d2b3d",
+   "ground": "#f3f4f5"
+  },
+  {
+   "text": "Default",
+   "bounds": [
+    127.3,
+    343.6,
+    53.6,
+    15.6
+   ],
+   "confidence": 1,
+   "ink": "#5e6062",
+   "ground": "#eceeef"
+  },
+  {
+   "text": "Harbor",
+   "bounds": [
+    312.5,
+    343.4,
+    51.4,
+    15.9
+   ],
+   "confidence": 1,
+   "ink": "#5d5f61",
+   "ground": "#eceeef"
+  },
+  {
+   "text": "Recent",
+   "bounds": [
+    73.5,
+    394.2,
+    62.9,
+    19.2
+   ],
+   "confidence": 1,
+   "ink": "#313336",
+   "ground": "#eceef0"
+  },
+  {
+   "text": "Q3 2026",
+   "bounds": [
+    107.1,
+    450.5,
+    145.2,
+    36.0
+   ],
+   "confidence": 1,
+   "ink": "#172131",
+   "ground": "#f5f5f6"
+  },
+  {
+   "text": "Board Update",
+   "bounds": [
+    107.1,
+    488.2,
+    218.9,
+    38.7
+   ],
+   "confidence": 1,
+   "ink": "#192435",
+   "ground": "#f6f6f6"
+  },
+  {
+   "text": "Northwind Cooperative",
+   "bounds": [
+    109.4,
+    548.8,
+    129.5,
+    11.2
+   ],
+   "confidence": 1,
+   "ink": "#525b6c",
+   "ground": "#f1f2f4"
+  },
+  {
+   "text": "21 October 2026",
+   "bounds": [
+    109.4,
+    564.0,
+    87.1,
+    12
+   ],
+   "confidence": 1,
+   "ink": "#6b7686",
+   "ground": "#f5f6f7"
+  },
+  {
+   "text": "Q3 2026 Board Update",
+   "bounds": [
+    84.8,
+    620.0,
+    174.1,
+    18.0
+   ],
+   "confidence": 1,
+   "ink": "#303133",
+   "ground": "#f1f2f2"
+  },
+  {
+   "text": "12 slides \u2022 3.4 MB",
+   "bounds": [
+    82.6,
+    644.7,
+    116.1,
+    15.6
+   ],
+   "confidence": 1,
+   "ink": "#95969a",
+   "ground": "#f9f9fa"
+  },
+  {
+   "text": "Edited today",
+   "bounds": [
+    372.8,
+    644.5,
+    69.3,
+    16.1
+   ],
+   "confidence": 1,
+   "ink": "#959698",
+   "ground": "#f8f8f8"
+  },
+  {
+   "text": "Welcome",
+   "bounds": [
+    100.2,
+    719.3,
+    165.7,
+    38.3
+   ],
+   "confidence": 1,
+   "ink": "#f0604e",
+   "ground": "#fdf8f7"
+  },
+  {
+   "text": "to the Team",
+   "bounds": [
+    100.4,
+    760.5,
+    207.7,
+    36.3
+   ],
+   "confidence": 1,
+   "ink": "#f1604c",
+   "ground": "#fdf8f8"
+  },
+  {
+   "text": "We're glad you're here.",
+   "bounds": [
+    104.9,
+    816.5,
+    129.5,
+    15.6
+   ],
+   "confidence": 1,
+   "ink": "#69696a",
+   "ground": "#f7f7f7"
+  },
+  {
+   "text": "Welcome to the Team",
+   "bounds": [
+    84.8,
+    872.0,
+    160.7,
+    16
+   ],
+   "confidence": 1,
+   "ink": "#353739",
+   "ground": "#f2f2f3"
+  },
+  {
+   "text": "9 slides \u2022 1.9 MB",
+   "bounds": [
+    84.8,
+    896.8,
+    109.4,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#95979a",
+   "ground": "#f8f8f9"
+  },
+  {
+   "text": "Edited 3 Oct",
+   "bounds": [
+    370.6,
+    896.5,
+    71.5,
+    14.0
+   ],
+   "confidence": 1,
+   "ink": "#8f9193",
+   "ground": "#f7f7f7"
+  },
+  {
+   "text": "24.8 of 64 MB used",
+   "bounds": [
+    38.0,
+    986.0,
+    136.2,
+    13.5
+   ],
+   "confidence": 1,
+   "ink": "#838688",
+   "ground": "#f6f6f6"
+  },
+  {
+   "text": "Title",
+   "bounds": [
+    477.8,
+    256.6,
+    73.7,
+    29.0
+   ],
+   "confidence": 1,
+   "ink": "#4b301d",
+   "ground": "#f6eddf"
+  },
+  {
+   "text": "Ember",
+   "bounds": [
+    491.2,
+    343.6,
+    49.1,
+    15.6
+   ],
+   "confidence": 1,
+   "ink": "#5b5d5f",
+   "ground": "#ecedef"
+  },
+  {
+   "text": "Title",
+   "bounds": [
+    647.4,
+    256.6,
+    75.9,
+    31.2
+   ],
+   "confidence": 1,
+   "ink": "#345535",
+   "ground": "#f7f8f7"
+  },
+  {
+   "text": "Meadow",
+   "bounds": [
+    656.4,
+    343.5,
+    62.5,
+    15.8
+   ],
+   "confidence": 1,
+   "ink": "#636567",
+   "ground": "#eef0f1"
+  },
+  {
+   "text": "Title",
+   "bounds": [
+    821.6,
+    256.6,
+    75.9,
+    31.2
+   ],
+   "confidence": 1,
+   "ink": "#e0e1e4",
+   "ground": "#081d2d"
+  },
+  {
+   "text": "Nocturne",
+   "bounds": [
+    826.0,
+    343.4,
+    64.8,
+    15.9
+   ],
+   "confidence": 1,
+   "ink": "#616365",
+   "ground": "#eef0f1"
+  },
+  {
+   "text": "Northern Lights",
+   "bounds": [
+    578.1,
+    479.0,
+    216.8,
+    37.0
+   ],
+   "confidence": 1,
+   "ink": "#b0cdc0",
+   "ground": "#112337"
+  },
+  {
+   "text": "Field Trip",
+   "bounds": [
+    580.5,
+    513.0,
+    140.7,
+    36
+   ],
+   "confidence": 1,
+   "ink": "#e1e3e6",
+   "ground": "#0e2036"
+  },
+  {
+   "text": "10-15 February 2026",
+   "bounds": [
+    584.9,
+    560.0,
+    127.3,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#b6bac6",
+   "ground": "#13223d"
+  },
+  {
+   "text": "Northern Lights Field Trip",
+   "bounds": [
+    555.9,
+    620.0,
+    187.5,
+    18.0
+   ],
+   "confidence": 1,
+   "ink": "#353639",
+   "ground": "#f3f3f3"
+  },
+  {
+   "text": "8 slides \u2022 6.2 MB",
+   "bounds": [
+    553.7,
+    644.7,
+    104.9,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#8f9295",
+   "ground": "#f8f8f8"
+  },
+  {
+   "text": "Edited yesterday",
+   "bounds": [
+    761.3,
+    644.7,
+    93.8,
+    15.6
+   ],
+   "confidence": 1,
+   "ink": "#939497",
+   "ground": "#f7f8f8"
+  },
+  {
+   "text": "Spring",
+   "bounds": [
+    569.3,
+    716.1,
+    118.3,
+    44.6
+   ],
+   "confidence": 1,
+   "ink": "#ed6a1a",
+   "ground": "#fcf2e3"
+  },
+  {
+   "text": "Fundraiser Pitch",
+   "bounds": [
+    571.5,
+    754.0,
+    265.7,
+    38
+   ],
+   "confidence": 1,
+   "ink": "#ea6b1d",
+   "ground": "#fcf2e4"
+  },
+  {
+   "text": "Support. Grow. Thrive.",
+   "bounds": [
+    573.8,
+    809.8,
+    142.9,
+    18.2
+   ],
+   "confidence": 1,
+   "ink": "#535452",
+   "ground": "#f6f2e8"
+  },
+  {
+   "text": "Spring Fundraiser Pitch",
+   "bounds": [
+    555.9,
+    872.0,
+    174.1,
+    18.1
+   ],
+   "confidence": 1,
+   "ink": "#343638",
+   "ground": "#f3f3f4"
+  },
+  {
+   "text": "6 slides . 840 KB",
+   "bounds": [
+    555.9,
+    896.8,
+    109.4,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#8e9094",
+   "ground": "#f7f7f7"
+  },
+  {
+   "text": "Edited 28 Sep",
+   "bounds": [
+    760.9,
+    896.5,
+    81.1,
+    16.5
+   ],
+   "confidence": 1,
+   "ink": "#8f9092",
+   "ground": "#f8f8f8"
+  },
+  {
+   "text": "E New from an outline",
+   "bounds": [
+    980.1,
+    122.7,
+    167.4,
+    20.3
+   ],
+   "confidence": 1,
+   "ink": "#3c3e3f",
+   "ground": "#eeeff1"
+  },
+  {
+   "text": "Title",
+   "bounds": [
+    989.0,
+    254.3,
+    80.4,
+    31.2
+   ],
+   "confidence": 1,
+   "ink": "#616161",
+   "ground": "#f8f8f8"
+  },
+  {
+   "text": "Paper",
+   "bounds": [
+    1013.6,
+    343.6,
+    42.4,
+    17.8
+   ],
+   "confidence": 1,
+   "ink": "#646667",
+   "ground": "#eeeff1"
+  },
+  {
+   "text": "Title",
+   "bounds": [
+    1165.4,
+    256.6,
+    78.1,
+    29.0
+   ],
+   "confidence": 1,
+   "ink": "#1c6d79",
+   "ground": "#f4f8f8"
+  },
+  {
+   "text": "Coral Reef",
+   "bounds": [
+    1172.0,
+    342.9,
+    73.9,
+    17.0
+   ],
+   "confidence": 1,
+   "ink": "#5c5e61",
+   "ground": "#edeff0"
+  },
+  {
+   "text": "Open a presentation from this device",
+   "bounds": [
+    1219.0,
+    124.9,
+    245.6,
+    18.1
+   ],
+   "confidence": 1,
+   "ink": "#424344",
+   "ground": "#eef0f1"
+  },
+  {
+   "text": ".pptx, up to 64 MB",
+   "bounds": [
+    1219.0,
+    162.9,
+    120.6,
+    15.6
+   ],
+   "confidence": 1,
+   "ink": "#95989b",
+   "ground": "#f0f2f3"
+  },
+  {
+   "text": "Title",
+   "bounds": [
+    1339.5,
+    254.3,
+    78.1,
+    31.2
+   ],
+   "confidence": 1,
+   "ink": "#373d42",
+   "ground": "#f6f6f6"
+  },
+  {
+   "text": "Slate",
+   "bounds": [
+    1361.9,
+    343.6,
+    35.7,
+    15.6
+   ],
+   "confidence": 1,
+   "ink": "#646769",
+   "ground": "#edeff0"
+  },
+  {
+   "text": "Riverside",
+   "bounds": [
+    1024.7,
+    473.0,
+    138.4,
+    22.3
+   ],
+   "confidence": 1,
+   "ink": "#304f36",
+   "ground": "#f3f4f3"
+  },
+  {
+   "text": "Community Garden",
+   "bounds": [
+    1024.7,
+    504.0,
+    254.5,
+    27
+   ],
+   "confidence": 1,
+   "ink": "#304f35",
+   "ground": "#f4f5f4"
+  },
+  {
+   "text": "Growing together",
+   "bounds": [
+    1024.7,
+    544.2,
+    109.4,
+    18.2
+   ],
+   "confidence": 1,
+   "ink": "#56655b",
+   "ground": "#f5f7f6"
+  },
+  {
+   "text": "Riverside Community Garden",
+   "bounds": [
+    1009.1,
+    620.0,
+    218.8,
+    18.0
+   ],
+   "confidence": 1,
+   "ink": "#313236",
+   "ground": "#f2f3f3"
+  },
+  {
+   "text": "10 slides \u2022 2.7 MB",
+   "bounds": [
+    1006.9,
+    644.7,
+    118.3,
+    15.6
+   ],
+   "confidence": 1,
+   "ink": "#888a8d",
+   "ground": "#f8f8f8"
+  },
+  {
+   "text": "Edited 6 Oct",
+   "bounds": [
+    1248.0,
+    644.7,
+    75.9,
+    15.8
+   ],
+   "confidence": 1,
+   "ink": "#929598",
+   "ground": "#f8f8f9"
+  },
+  {
+   "text": "Coastal Survey",
+   "bounds": [
+    1227.8,
+    717.8,
+    205.6,
+    36.9
+   ],
+   "confidence": 1,
+   "ink": "#20318a",
+   "ground": "#f6f6f9"
+  },
+  {
+   "text": "Findings",
+   "bounds": [
+    1227.7,
+    753.3,
+    129.9,
+    39.5
+   ],
+   "confidence": 1,
+   "ink": "#20318d",
+   "ground": "#f5f6f9"
+  },
+  {
+   "text": "September 2026",
+   "bounds": [
+    1230.1,
+    800.9,
+    87.1,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#67738d",
+   "ground": "#f4f5f7"
+  },
+  {
+   "text": "Coastal Survey Findings",
+   "bounds": [
+    1009.1,
+    872.0,
+    176.4,
+    18.1
+   ],
+   "confidence": 1,
+   "ink": "#303235",
+   "ground": "#f2f2f2"
+  },
+  {
+   "text": "14 slides \u2022 8.8 MB",
+   "bounds": [
+    1006.9,
+    896.8,
+    118.3,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#999b9e",
+   "ground": "#f8f8f8"
+  },
+  {
+   "text": "Edited 22 Sep",
+   "bounds": [
+    1248.0,
+    896.7,
+    80.4,
+    15.9
+   ],
+   "confidence": 1,
+   "ink": "#96989a",
+   "ground": "#f8f8f8"
+  }
+ ],
+ "surfaces": [
+  {
+   "bounds": [
+    2,
+    77,
+    1533,
+    890
+   ],
+   "fill": "#f2f4f5",
+   "border": "#f2f4f6",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    996,
+    424,
+    464,
+    247
+   ],
+   "fill": "#fbfbfb",
+   "border": "#f1f3f5",
+   "radius": 3
+  },
+  {
+   "bounds": [
+    72,
+    423,
+    453,
+    247
+   ],
+   "fill": "#fcfcfc",
+   "border": "#f3f5f7",
+   "radius": 6
+  },
+  {
+   "bounds": [
+    994,
+    684,
+    466,
+    239
+   ],
+   "fill": "#fafafb",
+   "border": "#f2f4f6",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    542,
+    423,
+    438,
+    248
+   ],
+   "fill": "#3a4368",
+   "border": "#f2f4f6",
+   "radius": 82
+  },
+  {
+   "bounds": [
+    72,
+    683,
+    450,
+    240
+   ],
+   "fill": "#fcfcfc",
+   "border": "#f3f5f7",
+   "radius": 7
+  },
+  {
+   "bounds": [
+    542,
+    683,
+    434,
+    240
+   ],
+   "fill": "#fcf5e7",
+   "border": "#f3f5f7",
+   "radius": 11
+  },
+  {
+   "bounds": [
+    75,
+    427,
+    444,
+    183
+   ],
+   "fill": "#fcfcfc",
+   "border": "#fcfcfc",
+   "radius": 1
+  },
+  {
+   "bounds": [
+    2,
+    970,
+    1533,
+    53
+   ],
+   "fill": "#fcfcfc",
+   "border": "#fdfcfc",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    75,
+    687,
+    444,
+    177
+   ],
+   "fill": "#fcfcfc",
+   "border": "#fdfdfd",
+   "radius": 1
+  },
+  {
+   "bounds": [
+    550,
+    431,
+    419,
+    180
+   ],
+   "fill": "#21284d",
+   "border": "#abafb4",
+   "radius": 60
+  },
+  {
+   "bounds": [
+    374,
+    2,
+    1161,
+    45
+   ],
+   "fill": "#f4f5f6",
+   "border": "#f5f6f7",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    75,
+    862,
+    444,
+    58
+   ],
+   "fill": "#fcfcfc",
+   "border": "#f2f2f2",
+   "radius": 1
+  },
+  {
+   "bounds": [
+    1313,
+    430,
+    140,
+    183
+   ],
+   "fill": "#566e1e",
+   "border": "#f8f9f9",
+   "radius": 46
+  },
+  {
+   "bounds": [
+    75,
+    612,
+    444,
+    55
+   ],
+   "fill": "#fcfcfc",
+   "border": "#fdfcfc",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    72,
+    221,
+    167,
+    116
+   ],
+   "fill": "#fdfdfd",
+   "border": "#f2f4f6",
+   "radius": 7
+  },
+  {
+   "bounds": [
+    1299,
+    221,
+    161,
+    117
+   ],
+   "fill": "#fdfdfc",
+   "border": "#f1f4f5",
+   "radius": 6
+  },
+  {
+   "bounds": [
+    1127,
+    221,
+    161,
+    117
+   ],
+   "fill": "#fdfdfd",
+   "border": "#f2f4f5",
+   "radius": 6
+  },
+  {
+   "bounds": [
+    953,
+    221,
+    160,
+    117
+   ],
+   "fill": "#fdfcfc",
+   "border": "#f1f3f5",
+   "radius": 6
+  },
+  {
+   "bounds": [
+    257,
+    222,
+    162,
+    115
+   ],
+   "fill": "#fdfdfd",
+   "border": "#f2f4f6",
+   "radius": 7
+  },
+  {
+   "bounds": [
+    608,
+    222,
+    160,
+    116
+   ],
+   "fill": "#fdfdfd",
+   "border": "#f1f3f5",
+   "radius": 6
+  },
+  {
+   "bounds": [
+    437,
+    222,
+    158,
+    115
+   ],
+   "fill": "#fcf2e1",
+   "border": "#f2f4f6",
+   "radius": 6
+  },
+  {
+   "bounds": [
+    780,
+    223,
+    159,
+    113
+   ],
+   "fill": "#031b2c",
+   "border": "#e7eaee",
+   "radius": 4
+  },
+  {
+   "bounds": [
+    1160,
+    108,
+    318,
+    51
+   ],
+   "fill": "#f1f3f4",
+   "border": "#edeff1",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    1176,
+    111,
+    299,
+    44
+   ],
+   "fill": "#f1f3f4",
+   "border": "#eff1f2",
+   "radius": 1
+  },
+  {
+   "bounds": [
+    120,
+    2,
+    254,
+    45
+   ],
+   "fill": "#f4f4f5",
+   "border": "#f5f6f6",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    962,
+    108,
+    197,
+    51
+   ],
+   "fill": "#f1f3f4",
+   "border": "#eeeff1",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    965,
+    111,
+    191,
+    44
+   ],
+   "fill": "#f1f3f5",
+   "border": "#f1f3f4",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    437,
+    795,
+    78,
+    68
+   ],
+   "fill": "#f3755a",
+   "border": "#f9e9ea",
+   "radius": 18
+  },
+  {
+   "bounds": [
+    374,
+    2,
+    92,
+    45
+   ],
+   "fill": "#f4f5f6",
+   "border": "#f6f7f8",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    73,
+    112,
+    50,
+    40
+   ],
+   "fill": "#f0f3f5",
+   "border": "#f0f2f4",
+   "radius": 0
+  }
+ ],
+ "dividers": [
+  {
+   "axis": "h",
+   "at": 44,
+   "from": 468,
+   "to": 1535,
+   "color": "#ecedee"
+  },
+  {
+   "axis": "h",
+   "at": 45,
+   "from": 468,
+   "to": 1536,
+   "color": "#dddee0"
+  },
+  {
+   "axis": "h",
+   "at": 74,
+   "from": 1,
+   "to": 1535,
+   "color": "#f5f5f5"
+  },
+  {
+   "axis": "h",
+   "at": 75,
+   "from": 0,
+   "to": 1536,
+   "color": "#d9dbdc"
+  },
+  {
+   "axis": "h",
+   "at": 107,
+   "from": 1178,
+   "to": 1472,
+   "color": "#fcfdfd"
+  },
+  {
+   "axis": "h",
+   "at": 108,
+   "from": 1178,
+   "to": 1472,
+   "color": "#bcbebf"
+  },
+  {
+   "axis": "h",
+   "at": 109,
+   "from": 1175,
+   "to": 1475,
+   "color": "#828587"
+  },
+  {
+   "axis": "h",
+   "at": 110,
+   "from": 1174,
+   "to": 1476,
+   "color": "#fbfcfd"
+  },
+  {
+   "axis": "h",
+   "at": 154,
+   "from": 1178,
+   "to": 1476,
+   "color": "#fbfcfc"
+  },
+  {
+   "axis": "h",
+   "at": 155,
+   "from": 1176,
+   "to": 1471,
+   "color": "#b5b6b8"
+  },
+  {
+   "axis": "h",
+   "at": 156,
+   "from": 1176,
+   "to": 1471,
+   "color": "#949698"
+  },
+  {
+   "axis": "h",
+   "at": 157,
+   "from": 1177,
+   "to": 1473,
+   "color": "#fbfcfc"
+  },
+  {
+   "axis": "h",
+   "at": 424,
+   "from": 79,
+   "to": 515,
+   "color": "#e7e9ea"
+  },
+  {
+   "axis": "h",
+   "at": 425,
+   "from": 1002,
+   "to": 1454,
+   "color": "#dddedf"
+  },
+  {
+   "axis": "h",
+   "at": 430,
+   "from": 551,
+   "to": 966,
+   "color": "#c1c6cf"
+  },
+  {
+   "axis": "h",
+   "at": 431,
+   "from": 555,
+   "to": 967,
+   "color": "#090e35"
+  },
+  {
+   "axis": "h",
+   "at": 610,
+   "from": 553,
+   "to": 969,
+   "color": "#b8bec2"
+  },
+  {
+   "axis": "h",
+   "at": 667,
+   "from": 78,
+   "to": 516,
+   "color": "#e0e1e2"
+  },
+  {
+   "axis": "h",
+   "at": 668,
+   "from": 586,
+   "to": 968,
+   "color": "#e2e4e5"
+  },
+  {
+   "axis": "h",
+   "at": 685,
+   "from": 1001,
+   "to": 1452,
+   "color": "#e3e5e6"
+  },
+  {
+   "axis": "h",
+   "at": 686,
+   "from": 1001,
+   "to": 1452,
+   "color": "#f6f6f6"
+  },
+  {
+   "axis": "h",
+   "at": 689,
+   "from": 552,
+   "to": 965,
+   "color": "#fdfaf4"
+  },
+  {
+   "axis": "h",
+   "at": 861,
+   "from": 80,
+   "to": 515,
+   "color": "#f3f4f4"
+  },
+  {
+   "axis": "h",
+   "at": 862,
+   "from": 75,
+   "to": 518,
+   "color": "#e2e3e4"
+  },
+  {
+   "axis": "h",
+   "at": 920,
+   "from": 1002,
+   "to": 1454,
+   "color": "#e4e5e6"
+  },
+  {
+   "axis": "v",
+   "at": 519,
+   "from": 429,
+   "to": 663,
+   "color": "#e0e2e4"
+  },
+  {
+   "axis": "v",
+   "at": 997,
+   "from": 430,
+   "to": 663,
+   "color": "#e9ebed"
+  },
+  {
+   "axis": "v",
+   "at": 998,
+   "from": 429,
+   "to": 666,
+   "color": "#e3e3e4"
+  },
+  {
+   "axis": "v",
+   "at": 1456,
+   "from": 428,
+   "to": 660,
+   "color": "#dedfe0"
+  },
+  {
+   "axis": "v",
+   "at": 1457,
+   "from": 468,
+   "to": 660,
+   "color": "#eaeced"
+  }
+ ],
+ "limits": [
+  "Evidence for review: roles and widgets are assigned in the semantic map, not here."
+ ]
+}

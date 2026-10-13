@@ -1,8 +1,10 @@
 {
   "schema": 1,
+  "schema_minor": 1,
   "id": "os.quickdeck",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "name": "Quick Deck",
   "integrity": { "bundle_blake3": "" },
-  "capabilities": ["storage", "deck"]
+  "capabilities": ["storage", "files", "deck", "model"],
+  "window": { "width": 1536, "height": 1024 }
 }

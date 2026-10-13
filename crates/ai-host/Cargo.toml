@@ -42,6 +42,9 @@ license.workspace = true
 default = []
 octos-core = ["dep:octosense-kernel", "octosense-app-peers/octos-core", "octosense-llm-service?/octos-core"]
 llm = ["dep:octosense-llm-service"]
+# A development build: the kernel then takes launch-time test settings
+# (crates/kernel/build.rs `dev_mode`). The shell's `dev-mode` turns it on.
+dev-mode = ["octosense-kernel?/dev-mode"]
 # The system toolbox for app agents (ADR 0002 section 6, ADR 0004 section
 # 12): `toolbox_peers`, over the octos research engine and the `model`
 # service's host.

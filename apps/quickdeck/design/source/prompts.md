@@ -1,0 +1,370 @@
+# Quick Deck v2: image prompts
+
+These prompts are App Flow step 2, the exact text to submit. They feed step
+3, image generation, which is a **HUMAN** checkpoint for a paid generator.
+They are built from `../BRIEF.md`. Nothing has been generated from them yet:
+the maintainer approves generation separately.
+
+They follow PDF Tools v2's adaptation of App Flow's atlas route
+(`apps/pdftools/design/source/prompts.md`):
+
+- **One image per screen.** Each screen is its own image at the generator's
+  largest landscape size, 1536 × 1024, so that its text stays sharp enough to
+  measure.
+- **Consistency** comes from the identical shared block in every prompt.
+  Screen 1 is generated first and approved as the style reference before the
+  rest.
+- **The same family as PDF Tools.** Quick Deck uses its chrome conventions:
+  the 53 px tab row, the 54 px toolbar row, the light grey desk (#eceded), the
+  accent #116cdc, IBM Plex-like interface type, the floating canvas pill and
+  the 44 px status line. The two apps read as one family.
+
+Each submitted prompt is the shared block followed by one screen block:
+
+- The exact text sent for screen N is saved as `NN-<name>.prompt.txt`, beside
+  its untouched output `NN-<name>.png`.
+- The generator, model and requested size go in `generation.json`.
+- The script that generated PDF Tools v2's screens reads this file's
+  structure unchanged. The first `text` block is the shared block, and each
+  later one is a screen, named by its `### NN Title (`NN-name`)` heading. Its
+  count check (9 screens) becomes 10.
+
+The fixture matches PDF Tools' board report, the same fictional Northwind
+Cooperative and quarter. Revenue of $28.7 million splits by region as 12.4,
+7.1, 5.6 and 3.6, so a deck made from that report agrees with it. The deck
+theme, Harbor, is one of the engine's eight built-in themes (colours from
+deckcraft's `builtin_themes`), so the engine can draw what the designs show.
+The theme cards use the engine's theme names, except its first, which is
+shown as "Default".
+
+## Shared block (identical in every prompt)
+
+```text
+Create ONE original image: a single, complete desktop application screen for
+"Quick Deck", a presentation app inside the OctoSense desktop.
+
+Requested image size: 1536 × 1024 pixels, landscape. Requested quality: high.
+Show only the application's own window content, edge to edge, flat and
+straight on. No operating-system menu bar, no dock, no window title bar or
+traffic lights, no device frame, no perspective, no drop shadow around the
+screen, no captions or annotations outside the interface.
+
+Visual language: an original, precise desktop presentation editor, a sibling
+of OctoSense's PDF Tools. The slide is the brightest thing on screen; the
+chrome is quiet, thin and well aligned. Palette: a cool light grey desk
+(#eceded) behind the slide, white panels, graphite text, mid-grey secondary
+text, thin 1-pixel dividers in pale grey, and ONE interface accent colour, the
+medium blue #116cdc, used only for the current view, the selected item, focus
+and the one primary button. Green means saved or done, amber means edited, red
+means an error, all used sparingly. Corner radius about 8 px on panels,
+buttons and fields; slides have square corners and a soft shadow. Icons are
+simple outline glyphs with one consistent stroke weight. Typography: a neutral
+grotesque sans-serif in the style of IBM Plex Sans for the interface, small
+and crisp (about 13–14 px), medium weight for panel titles. Slide content uses
+the deck's own theme (below), never the interface accent. Do not imitate any
+other presentation app's layout, icons, colours or branding, and show no logos
+of real companies or products.
+
+Window layout of the editing screens (a screen that differs says so):
+- Top row, about 53 px: document tabs. The first tab has a house glyph and
+  "Home"; then one tab per open deck with a small slide glyph, the deck name
+  and a close cross; the active tab is white, the others light grey; a
+  "+ New" button follows the last tab.
+- Second row, about 54 px, the toolbar: on the left the view tabs "Slides"
+  and "Sorter" as text tabs, the current one in the accent colour with a short
+  underline; in the middle five insert buttons, each a small outline icon with
+  a tiny label under it: "Text", "Picture", "Shape", "Table", "Chart"; on the
+  right icon buttons for Undo and Redo, then "Save" and "Export" as quiet
+  outlined buttons, and "Present" with a play triangle as the one filled
+  accent button.
+- Left: the slide navigator, about 220 px wide, white: a full-width outlined
+  "+ New slide" button at the top, then a column of 16:9 slide thumbnails with
+  their numbers to their left, small grey section names between groups, the
+  current slide outlined in the accent colour.
+- Centre: the canvas, the light grey desk with the current slide centred and
+  large, white with a soft shadow.
+- Bottom centre of the canvas: a floating white rounded pill with "‹",
+  "4 / 12", "›", a divider, "−", "92%", "+", a divider and a small "Fit"
+  button.
+- Right: the inspector, about 320 px wide, white, with a segmented control at
+  its top: "Format", "Layout", "Theme", "Notes"; the current segment is white
+  with accent text on a pale grey track. Section titles are small and medium
+  weight; sections are separated by thin dividers.
+- Bottom edge, about 44 px: a thin status line with "Saved" and a small green
+  dot on the left, "Slide 4 of 12 · 16:9" in the middle and "24.8 of 64 MB
+  used" on the right.
+
+Use this exact fixture wherever it appears:
+- The open deck "Q3 2026 Board Update" (12 slides, 3.4 MB, edited today) of
+  the fictional "Northwind Cooperative", in its deck theme "Harbor": white
+  slides, deep navy text (#0b1f2a), teal-blue (#1b7fa6) and teal (#36b3a8)
+  accents, warm yellow (#f2c14e) and coral (#f78154) for highlights; slide
+  titles in a sturdy serif, body text in a clean sans-serif, a thin teal-blue
+  rule under each title, and a small footer "Northwind Cooperative" with the
+  slide number.
+- Its slides: 1 "Q3 2026 Board Update" (title slide, subtitle "Northwind
+  Cooperative · 21 October 2026"); 2 "Agenda" (Highlights, Revenue,
+  Membership, Operations, Outlook, Questions); 3 "Quarter at a glance" (three
+  rounded number cards: "$28.7M revenue, +12%", "18,400 members, +6%", "96%
+  on-time delivery"); 4 "Revenue by region" (a column chart "Revenue by
+  region, Q3 2026 (USD millions)": Northwest 12.4, Coast 7.1, Valley 5.6,
+  Metro 3.6); 5 "Revenue grew 12% year over year" (bullets "Northwest led
+  with $12.4 million", "Prices held steady in every region", "Online orders
+  rose 18%" on the left, a line chart on the right: Q4 2025 24.1, Q1 2026
+  25.0, Q2 2026 26.9, Q3 2026 28.7); 6 "Membership by region" (a table with
+  the columns Region, Members, Change and the rows Northwest 6,200 +8%, Coast
+  4,900 +5%, Valley 4,100 +4%, Metro 3,200 +7%, Total 18,400 +6%); 7
+  "Operations" (a photo of a cold-storage warehouse with solar panels on its
+  roof, caption "The Valley cold-storage hub opened on 2 September."); 8
+  "Outlook" (a section header slide); 9 "Q4 priorities" (Open the Metro
+  pickup point; Cut delivery emissions by 10%; Launch the member app); 10
+  "Risks and mitigations" (two columns); 11 "Budget request" (a doughnut
+  chart: Operations 45%, Technology 25%, Marketing 20%, Reserve 10%; hidden
+  from the show); 12 "Questions". Sections: "Highlights" (slides 1–7) and
+  "Outlook" (slides 8–12).
+- The other decks in the library: "Northern Lights Field Trip" (8 slides,
+  6.2 MB, edited yesterday), "Riverside Community Garden" (10 slides, 2.7 MB,
+  6 Oct), "Welcome to the Team" (9 slides, 1.9 MB, 3 Oct), "Spring Fundraiser
+  Pitch" (6 slides, 840 KB, 28 Sep), "Coastal Survey Findings" (14 slides,
+  8.8 MB, 22 Sep).
+- People: Maya Chen (the user), Jun Park and Ana Ruiz.
+
+Render every piece of interface text and every control sharply enough to be
+read and measured later. Labels, buttons, fields and panels will be rebuilt as
+native components from this image; slide contents are sample deck art that
+the deck engine draws.
+```
+
+## Screen blocks
+
+### 01 Home (`01-home`)
+
+```text
+This screen: the Home tab is active (the first tab, a house glyph and the word
+"Home"; a second tab "Q3 2026 Board Update" is open behind it). No toolbar, no
+navigator, no inspector and no canvas pill on this screen. Instead, a centred
+content area about 1180 px wide on the light grey desk:
+- At the top, the title "Quick Deck" beside a small original glyph of three
+  stacked slides; on the right, two outlined buttons, "New from an outline"
+  (a list glyph) and "Open a presentation from this device" (a folder glyph)
+  with the caption ".pptx, up to 64 MB" under it.
+- The heading "Start a new deck", then one row of eight theme cards, each a
+  small 16:9 title slide in its theme showing the word "Title" in its heading
+  font above a short accent bar, with the theme's name under the card:
+  "Default" (white, black text, blue bar), "Harbor" (white, navy text,
+  teal-blue rule), "Ember" (warm cream, dark brown text, orange bar), "Meadow"
+  (white, dark green text, green bar), "Nocturne" (dark navy background, white
+  text, violet and teal bar), "Paper" (white, grey text, an elegant serif),
+  "Coral Reef" (white, deep teal text, coral bar), "Slate" (white, charcoal
+  text, indigo bar).
+- The heading "Recent", then a grid of six deck cards in two rows of three,
+  one per fixture deck, each with its first slide as a 16:9 cover, the deck
+  name, "12 slides · 3.4 MB" and "Edited today" (with each deck's own
+  numbers). The covers: the board update's title slide in Harbor; "Northern
+  Lights Field Trip" a dark navy slide with a green and violet aurora band;
+  "Riverside Community Garden" white with a photo of green leaves; "Welcome to
+  the Team" white with coral circles; "Spring Fundraiser Pitch" warm cream
+  with a large orange headline; "Coastal Survey Findings" white with a
+  coastline photo and an indigo title.
+The status line shows only "24.8 of 64 MB used" with a thin storage bar.
+```
+
+### 02 Edit text (`02-edit-text`)
+
+```text
+This screen: view "Slides". Tab "Q3 2026 Board Update" active. The navigator
+shows the section name "Highlights" and thumbnails 1 to 6, thumbnail 5
+outlined in the accent colour. The canvas shows slide 5, "Revenue grew 12%
+year over year": three bullets on the left ("Northwest led with $12.4
+million", "Prices held steady in every region", "Online orders rose 18%") and
+on the right the line chart "Quarterly revenue (USD millions)" rising from
+24.1 to 28.7, with point labels. The bullet text box is being edited in place:
+an accent-blue frame with eight small square handles and a round rotate handle
+above it, and a thin text cursor after "18%". The inspector's "Format" segment
+is selected:
+- "Text": a font field "Open Sans" with a chevron; a size field "20 pt" with
+  − and +; four toggle buttons B, I, U, S (none on); "Colour" with seven round
+  theme swatches (navy selected, teal-blue, teal, yellow, coral, grey, white)
+  and a "+" swatch; "Alignment" with four buttons (left selected); "Lists"
+  with bullets (selected), numbers, decrease indent and increase indent;
+  "Line spacing" "1.2".
+- "Box": a toggle "Shrink text when it overflows" (on), and vertical
+  alignment top (selected), middle and bottom.
+- "Arrange": fields X "60 pt", Y "132 pt", W "400 pt" and H "300 pt" in a two
+  by two grid, "Rotation 0°", and the buttons "Bring to front" and "Send to
+  back".
+The pill reads "5 / 12". The status line shows "Edited" with an amber dot and
+"Slide 5 of 12 · 16:9".
+```
+
+### 03 Insert a chart (`03-chart`)
+
+```text
+This screen: view "Slides"; the toolbar's "Chart" button has a pale accent
+square behind it. Under the toolbar, a slim insert strip: the label "Chart",
+then small icon-and-label buttons "Column" (selected), "Bar", "Line", "Area",
+"Pie", "Doughnut" and "Scatter", and at its right end an outlined "Insert
+chart" button and a close cross. The navigator shows thumbnails 1 to 6 with
+thumbnail 4 outlined. The canvas shows slide 4, "Revenue by region", whose
+column chart is selected (an accent frame with handles): four teal-blue
+columns, Northwest 12.4, Coast 7.1, Valley 5.6 and Metro 3.6, with data labels
+and light gridlines. The inspector's "Format" segment shows "Chart":
+- "Type": a row of seven small chart icons, the column chart selected.
+- "Data": a compact grid with the header row "Region" and "Q3 2026" and the
+  rows Northwest 12.4, Coast 7.1, Valley 5.6 and Metro 3.6, the cell "7.1"
+  focused; under it the text buttons "+ Row" and "+ Series".
+- "Elements": toggles "Title" (on), "Legend" (off), "Data labels" (on) and
+  "Gridlines" (on).
+- "Colours": four small palette strips, the theme's own selected.
+- "Arrange", collapsed to one row: "X 96  Y 120  W 768  H 360".
+The pill reads "4 / 12".
+```
+
+### 04 Layout (`04-layout`)
+
+```text
+This screen: view "Slides". The navigator shows thumbnails 3 to 8, with the
+section name "Outlook" above thumbnail 8 and thumbnail 7 outlined. The canvas
+shows slide 7, "Operations", in the "Picture with Caption" layout: a large
+photo of a cold-storage warehouse with solar panels on its roof fills the left
+two thirds; the title "Operations" and the caption "The Valley cold-storage
+hub opened on 2 September." are on the right. Nothing is selected. The
+inspector's "Layout" segment is selected:
+- "Slide layout": a two-column grid of eleven small layout thumbnails (grey
+  placeholder blocks on white) with their names under them: "Title Slide",
+  "Title and Content", "Section Header", "Two Content", "Comparison", "Title
+  Only", "Blank", "Content with Caption", "Picture with Caption" (selected,
+  accent outline), "Title and Vertical Text", "Vertical Title and Text".
+- "Background": chips "Theme" (selected), "Colour" and "Gradient".
+- "Transition": chips "None", "Fade" (selected), "Push", "Wipe", "Reveal" and
+  "Morph", a duration field "0.7 s", and the link "Apply to all slides".
+- A toggle "Skip this slide in the show" (off) and a quiet button "Reset
+  slide".
+The pill reads "7 / 12" and the status line "Slide 7 of 12 · 16:9".
+```
+
+### 05 Theme (`05-theme`)
+
+```text
+This screen: view "Slides". The navigator shows thumbnails 1 to 6 with
+thumbnail 1 outlined. The canvas shows slide 1, the title slide "Q3 2026 Board
+Update" with the subtitle "Northwind Cooperative · 21 October 2026" in the
+Harbor theme: a navy serif title, a teal-blue rule, and a band of teal and
+teal-blue shapes along the bottom edge. The inspector's "Theme" segment is
+selected:
+- "Themes": a two-column grid of eight theme cards, each a tiny title slide in
+  its colours with its name under it ("Default", "Harbor", "Ember", "Meadow",
+  "Nocturne", "Paper", "Coral Reef", "Slate", coloured as on the Home screen);
+  "Harbor" selected with an accent outline and a small check.
+- "Colours": six palette strips of five dots each, named "Harbor" (selected),
+  "Ocean", "Sunset", "Forest", "Berry" and "Grayscale".
+- "Fonts": three rows, each a heading and body pair: "Classic · Merriweather /
+  Open Sans" (selected), "Geometric · Montserrat / Lato", "Neutral · Roboto /
+  Roboto".
+- "Slide size": a segmented control "16:9" (selected) and "4:3".
+- "Footer": toggles "Slide numbers" (on) and "Date" (off).
+The pill reads "1 / 12" and the status line "Slide 1 of 12 · 16:9".
+```
+
+### 06 Slide sorter (`06-sorter`)
+
+```text
+This screen: view "Sorter" (accent, underlined). No navigator, no inspector
+and no canvas pill. Under the toolbar, a slim action strip: "2 selected", then
+"New slide", "Duplicate", "Delete", "Hide", "Move earlier" and "Move later",
+and on the right "Drag slides to reorder". The desk shows every slide as a
+large 16:9 thumbnail, five per row, each with its number under its left corner
+and its transition in tiny grey text under its right corner ("Fade", "Push" or
+"None"): the heading "Highlights · 7 slides", then slides 1 to 5 in one row
+and slides 6 and 7 in the next; the heading "Outlook · 5 slides", then slides
+8 to 12. Slides 5 and 6 are selected, each with an accent outline and a check
+badge. Slide 11 is dimmed, with a small eye-off glyph (hidden). A thin
+vertical accent insertion marker stands between slides 9 and 10, where a
+semi-transparent copy of slide 3 is being dragged. The status line shows
+"Saved", "12 slides · 2 selected" and the storage used.
+```
+
+### 07 New from an outline (`07-outline`)
+
+```text
+This screen: a tab "New deck" (with a list glyph) is active, the tab "Q3 2026
+Board Update" behind it. No toolbar, no navigator, no inspector and no canvas
+pill. A centred content area about 1240 px wide on the light grey desk, titled
+"New from an outline", with the caption "One card per slide: a title, then its
+points, one per line." Two columns:
+- Left, about 820 px: first a white card "Draft with AI": a text field holding
+  "Quarterly update for the board: revenue by region, members, operations and
+  our Q4 plans", a stepper "10 slides", an outlined button "Draft outline"
+  with a small wand glyph, and the muted note "Uses the AI provider from
+  Settings. Edit anything before you make the deck." Then a row with the
+  heading "Outline" and a text button "+ Add slide" on its right. Then the
+  numbered outline cards, each with a drag handle, a number badge, a title
+  field, a points field and a remove cross: 1 "Q3 2026 Board Update" with
+  "Northwind Cooperative · 21 October 2026"; 2 "Agenda" with "Highlights",
+  "Revenue", "Membership", "Operations" and "Outlook" on separate lines;
+  3 "Quarter at a glance" with "$28.7M revenue, up 12%", "18,400 members, up
+  6%" and "96% on-time delivery"; 4 "Revenue by region" with "Northwest led
+  with $12.4 million", the card cut off by the bottom of the window.
+- Right, about 380 px: a white card "Theme" with a two by four grid of small
+  theme swatch cards ("Harbor" selected), "Slide size" with "16:9" (selected)
+  and "4:3", the summary line "10 slides · 31 points", and a full-width filled
+  accent button "Make deck".
+The status line shows only "24.8 of 64 MB used".
+```
+
+### 08 Present (`08-present`)
+
+```text
+This screen: Present. The app's own chrome is hidden: no tabs, no toolbar, no
+navigator, no inspector and no status line. The whole window is a near-black
+stage (#0e1013) with slide 4, "Revenue by region", centred at the largest
+16:9 size that fits the width (about 1536 × 864 px), with black bands above
+and below it. In the band at the bottom centre floats a dark translucent
+rounded pill with light text: "‹", "4 / 12", "›", a divider, a "Notes" toggle
+with a small notes glyph, a timer "06:42", a divider, and "Exit" with a cross.
+In the top right corner, a small round translucent button with a cross.
+Nothing else is on screen.
+```
+
+### 09 Export (`09-export`)
+
+```text
+This screen: view "Slides", with the toolbar's "Export" button pressed (a pale
+accent fill and accent text). No navigator, no inspector and no canvas pill.
+On the light grey desk, a centred white card about 760 px wide titled "Export
+“Q3 2026 Board Update”":
+- "Format": three option cards in a row, each with a plain document glyph:
+  "Presentation", ".pptx", "Opens in most presentation apps"; "PDF", ".pdf",
+  "Looks the same everywhere" (selected, with an accent border and a filled
+  radio); "Images", ".png", "One picture per slide".
+- "Pages": a segmented control "Slides" (selected), "Notes pages" and
+  "Handouts", then a greyed field "3 per page".
+- "Slides": radio buttons "All 12 slides" (selected), "Current slide" and
+  "Custom" with a small field "2–6".
+- A checkbox "Include hidden slides (1)", unchecked.
+- "Name": a field "Q3 2026 Board Update" followed by ".pdf".
+- At the bottom of the card, the muted note "Saved in Quick Deck's storage"
+  and a filled accent button "Export PDF".
+Under the card, the heading "Exported" and two rows, each with a green check:
+"Q3 2026 Board Update.pptx · 2.1 MB · Today 10:42" and "Q3 2026 Board
+Update.pdf · 4.8 MB · Today 10:44".
+```
+
+### 10 Dark notes (`10-dark-notes`)
+
+```text
+This screen: the same structure as the editing screens (view "Slides"), in the
+dark appearance: near-black graphite chrome, a dark desk, the accent blue
+lighter for contrast, light grey text. The slides themselves keep their white
+background and Harbor theme. The navigator shows thumbnails 3 to 8, with the
+section name "Outlook" above thumbnail 8 and thumbnail 6 outlined. The canvas
+shows slide 6, "Membership by region", with its table: a teal-blue header row
+with white text, light banded rows and a bold Total row; nothing is selected.
+The inspector's "Notes" segment is selected: the title "Speaker notes"; a
+large dark text area holding "Total membership passed 18,000 for the first
+time. Northwest added 460 members, most through the referral program. Ask Jun
+Park to say a word about the Metro waitlist."; under it "28 words · about 10
+seconds"; and a toggle "Show notes while presenting" (on). The pill reads
+"6 / 12". The status line shows "Saved" with a green dot and "Slide 6 of 12 ·
+16:9".
+```

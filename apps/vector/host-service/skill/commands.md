@@ -1,6 +1,6 @@
 # vector engine commands
 
-The vectorcraft engine's command catalog at revision 85dcb28e411d: 679 commands, one per line as `id` label: params.
+The vectorcraft engine's command catalog at revision 2cd3a1ca8fbc: 679 commands, one per line as `id` label: params.
 Generated from the engine by `OCTOSENSE_SKILL_REGEN=1 cargo test --locked -p octosense-vector-service --test skill`; do not edit.
 
 A tag after the id marks a command that reaches past the open document (safety.json has every id's class): [file] reads or writes a path, [code] installs or runs code or other commands, [network] uses the network, [device] uses hardware, [host] changes windows, views, preferences, the clipboard or other app state. An untagged command works on the open document only.

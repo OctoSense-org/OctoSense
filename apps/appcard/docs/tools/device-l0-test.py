@@ -14,6 +14,10 @@ compares pixels against a golden image.
     device-l0-test.py capture <case>   # record a golden (review it by eye first)
     device-l0-test.py run [case…]      # check against goldens; exit 1 on failure
 
+The installed app must be a development build (`DEV_MODE=1
+tools/build-android.sh`): a release build ignores the launch-time
+`makepad.SEED_*` extras these tools seed cards with.
+
 Goldens live in docs/tools/golden/. Regenerate deliberately, never to make a
 failure go away — a golden updated without looking is a test that asserts
 whatever the code currently does.

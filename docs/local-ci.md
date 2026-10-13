@@ -14,7 +14,7 @@ tools/ci-local.sh --check-drift            # the local mapping still fits the wo
 
 **The same commands as GitHub.** `tools/ci_local.py` reads `.github/workflows/` and runs each job's `run:` steps verbatim, with the step's working directory and `env:`, in GitHub's `bash --noprofile --norc -eo pipefail`. Nothing is copied, so nothing drifts. GitHub's actions map to local stand-ins: the working tree, this clone's `target/`, a shared kernel cache and the tools on `PATH`. `--check-drift`, every run and `tools/test_ci_local.py` check that mapping: a workflow that starts using something the runner does not model, such as a new action or a matrix, fails until `tools/ci_local.py` learns it.
 
-**One workflow is left out:** `release-desktop.yml`, a release workflow with a matrix, environments and secrets (`NOT_LOCAL` gives the reason). The desktop job runs its packaging scripts' tests. GitHub still runs its `plan` and `package` jobs on pull requests that change the packaging; the merge script ignores them.
+**Release workflows are left out:** `release-desktop.yml`, a release workflow with a matrix, environments and secrets, and `sign-desktop-release.yml`, which GitHub runs on `main` to sign a release (`NOT_LOCAL` gives each reason, and the other workflows it lists). The desktop job runs the packaging scripts' tests, and apps runs the updater's, which check what the signing workflow signs. GitHub still runs release-desktop's `plan` and `package` jobs on pull requests that change the packaging; the merge script ignores them.
 
 **Output.** Each step prints PASS, FAIL, SKIPPED or NOT RUN (after a failure, without `--keep-going`), then a summary table with times. The full log goes to `target/ci-local/<timestamp>.log`, and `target/ci-local/last.json` records the commit, whether the tree was dirty, the workflows run and each step's result. Any FAIL makes the exit status non-zero.
 
@@ -93,7 +93,7 @@ tools/ci-local-merge.sh <PR number>          # --dry-run to preview
 
 - ran on the PR's exact head commit, with a clean tree;
 - comes from a head that contains the current `origin/main`;
-- covers each workflow GitHub would run for the PR's files (their `pull_request` `paths`), with no FAIL, NOT RUN or SKIPPED step in them or in the drift check. Other workflows don't count, so `--only desktop,phone` is enough for a PR that triggers only those two;
+- covers each workflow GitHub would run for the PR's files (their `pull_request` `paths`), with no FAIL, NOT RUN or SKIPPED step in them or in the drift check. Other workflows don't count, so `--only desktop,phone` is enough for a PR that triggers only those two. The files come from GitHub's paginated files listing, a renamed file's old path included, so a PR whose diff is too large for `gh pr diff` (generated images, evidence frames) merges the same way; a PR GitHub lists only partly (over 3,000 files) is refused;
 - binds every `--linux-host` step to that same commit; a remote result for another commit is stale. The `linux-host / sandbox` checks count like the workflows they cover when present, but a run without them is not refused.
 
 It also refuses while the newest finished push run of a workflow on `main` has failed (cancelled runs don't count). Pass `--fixes-main` only for the PR that fixes it. Then it posts the summary table as a PR comment ("Local CI passed on `<sha>` …") and runs `gh pr merge <n> --admin --merge --match-head-commit <sha>`, with the subject `Merge pull request #<n> from <owner>/<branch>`. `--dry-run` prints the comment instead of posting it, and merges nothing.

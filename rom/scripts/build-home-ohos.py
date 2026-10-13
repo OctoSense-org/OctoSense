@@ -22,6 +22,26 @@ def read_json5(path):
     return json.loads(token.sub(lambda m: m.group() if m.group().startswith('"') else '', path.read_text()))
 
 
+# The one line of phone/ohos/EntryAbility.ets that decides whether launch
+# parameters reach Makepad's environment. Only a development build turns it on.
+FORWARD_LAUNCH_PARAMETERS = 'const FORWARD_LAUNCH_PARAMETERS: boolean = false;'
+
+
+def stage_entry_ability(project, home, dev_mode):
+    """Copy the product's EntryAbility over the template's. Any app can start
+    the exported ability with parameters, and Makepad turns each `makepad.*`
+    one into environment variables, so a release build forwards none; a
+    development build (`--dev-mode`) forwards them for test hooks."""
+    source = (home / 'ohos/EntryAbility.ets').read_text()
+    if source.count(FORWARD_LAUNCH_PARAMETERS) != 1:
+        raise RuntimeError('EntryAbility.ets must declare FORWARD_LAUNCH_PARAMETERS false exactly once')
+    if dev_mode:
+        source = source.replace(FORWARD_LAUNCH_PARAMETERS, FORWARD_LAUNCH_PARAMETERS.replace('false', 'true'))
+    target = project / 'entry/src/main/ets/entryability/EntryAbility.ets'
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(source)
+
+
 def stage_app_icons(project, home):
     """Replace the pinned template's application, ability and launch icons."""
     source = home / 'ohos/icons'
@@ -44,6 +64,9 @@ def main():
     p.add_argument('--packager', required=True, type=Path)
     p.add_argument('--compatible-sdk', default='6.0.1(21)')
     p.add_argument('--remote-port', type=int, help='Validation only: app-owned loopback inspection')
+    p.add_argument('--dev-mode', action='store_true',
+                   help='Development test build: --features dev-mode, and launch parameters reach the app '
+                        '(test hooks). Needs a separate --bundle-id')
     p.add_argument('--offline', action='store_true')
     args = p.parse_args()
     for name in ('deveco_home', 'signing_config', 'packager'):
@@ -52,6 +75,8 @@ def main():
         p.error('--remote-port must be between 1024 and 65535')
     if not re.fullmatch(r'[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*)+', args.bundle_id):
         p.error('Invalid bundle ID')
+    if args.dev_mode and args.bundle_id == 'dev.makepad.octosense':
+        p.error('A --dev-mode build takes launch-time test hooks; give it a separate --bundle-id')
     if args.signing_config.is_relative_to(ROOT):
         p.error('Keep signing configuration outside the checkout')
     configs = json.loads(args.signing_config.read_text())
@@ -84,6 +109,8 @@ def main():
     if args.remote_port:
         env['MAKEPAD_REMOTE'] = str(args.remote_port)
     cargo_args = ['-p', 'octosense-home', '--release', '--locked']
+    if args.dev_mode:
+        cargo_args += ['--features', 'dev-mode']
     if args.offline:
         cargo_args.append('--offline')
     command = [str(args.packager), 'makepad', 'ohos', '--deveco-home=' + str(args.deveco_home), '--arch=aarch64']
@@ -95,9 +122,9 @@ def main():
     shutil.copytree(REPO / '.sources/makepad/tools/open_harmony/deveco', project, dirs_exist_ok=True)
     stage_app_icons(project, home)
     # Product-owned window policy: keep native system navigation visible and
-    # keep the floating controls inside its safe area.
-    shutil.copy2(home / 'ohos/EntryAbility.ets',
-                 project / 'entry/src/main/ets/entryability/EntryAbility.ets')
+    # keep the floating controls inside its safe area. A release build passes
+    # no launch parameters on.
+    stage_entry_ability(project, home, args.dev_mode)
     subprocess.run(['patch', '--batch', '--forward', '-p1', '-i',
                     str(home / 'ohos/keyboard.patch')], cwd=project, check=True)
     app_path = project / 'AppScope/app.json5'
@@ -130,12 +157,13 @@ def main():
         build['app']['signingConfigs'] = []
         build_path.write_text(json.dumps(build, indent=2) + '\n')
     hap = project / 'entry/build/default/outputs/default/makepad-default-signed.hap'
-    output = ROOT / 'out/home' / ('ohos-validation' if args.remote_port else 'ohos')
+    output = ROOT / 'out/home' / (('ohos-validation' if args.remote_port else 'ohos') + ('-dev' if args.dev_mode else ''))
     output.mkdir(parents=True, exist_ok=True)
     shutil.copy2(hap, output / 'OctoSenseHome.hap')
     receipt = {
         'schema_version': 1, 'variant': 'ohos', 'bundle_id': args.bundle_id,
         'validation_remote': bool(args.remote_port),
+        'dev_mode': args.dev_mode,
         'source_revision': subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip(),
         'source_dirty': bool(subprocess.check_output(['git', 'status', '--porcelain'], cwd=ROOT, text=True)),
         'packager': str(args.packager),

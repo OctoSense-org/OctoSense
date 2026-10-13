@@ -58,7 +58,7 @@ pub struct Limits {
     /// How long one call may run.
     pub deadline: Duration,
     /// How long one call may run when it may wait for the network (a
-    /// component that imports `wasi:http`).
+    /// component that imports `wasi:http` or `wasi:sockets`).
     pub network_deadline: Duration,
     /// The most linear memory an instance may have.
     pub memory_bytes: usize,
@@ -182,6 +182,9 @@ impl Program {
 struct State {
     limits: StoreLimits,
     logs: Vec<String>,
+    /// The deadline of an unguarded instance's running call (or of its
+    /// instantiation), read every epoch.
+    until: Instant,
 }
 
 struct InvocationGuard {
@@ -202,7 +205,7 @@ pub struct Instance {
     alloc: TypedFunc<i32, i32>,
     free: TypedFunc<(i32, i32), ()>,
     functions: HashMap<String, TypedFunc<(i32, i32), i64>>,
-    deadline_ticks: u64,
+    deadline: Duration,
     io_bytes: usize,
     /// A call trapped or ran past its deadline. The module's own state may
     /// be half-updated then (a Rust guest's stack pointer and allocator live
@@ -400,31 +403,31 @@ impl Runtime {
             State {
                 limits,
                 logs: Vec::new(),
+                // Instantiation runs the start function and data
+                // initialisers: a deadline covers it too.
+                until: Instant::now() + self.limits.deadline,
             },
         );
         store.limiter(|state| &mut state.limits);
         let guard =
             guard.map(|(deadline, pending)| Arc::new(InvocationGuard { deadline, pending }));
-        if let Some(guard) = guard.clone() {
-            store.epoch_deadline_callback(move |_| {
-                Ok(if !guard.live() {
-                    wasmtime::UpdateDeadline::Interrupt
-                } else {
-                    wasmtime::UpdateDeadline::Continue(1)
-                })
-            });
-        } else {
-            store.epoch_deadline_trap();
-        }
-        // Instantiation runs the start function and data initialisers: a
-        // deadline covers it too.
-        let deadline_ticks = self
-            .limits
-            .deadline
-            .as_millis()
-            .div_ceil(TICK.as_millis())
-            .max(1) as u64;
-        store.set_epoch_deadline(if guard.is_some() { 1 } else { deadline_ticks });
+        // Every epoch, the clock decides. A count of epochs would end a call
+        // early: by the part of a tick that had passed when it started, and
+        // by any tick that was due but not yet counted then (the ticker
+        // counts when it wakes, then catches up with the clock).
+        let check = guard.clone();
+        store.epoch_deadline_callback(move |ctx| {
+            let live = match &check {
+                Some(guard) => guard.live(),
+                None => Instant::now() < ctx.data().until,
+            };
+            Ok(if live {
+                wasmtime::UpdateDeadline::Continue(1)
+            } else {
+                wasmtime::UpdateDeadline::Interrupt
+            })
+        });
+        store.set_epoch_deadline(1);
         let mut linker = Linker::new(&self.engine);
         linker
             .func_wrap(
@@ -471,7 +474,7 @@ impl Runtime {
             alloc,
             free,
             functions,
-            deadline_ticks,
+            deadline: self.limits.deadline,
             io_bytes: self.limits.io_bytes,
             spent: false,
             guard,
@@ -600,11 +603,10 @@ impl Instance {
     }
 
     fn run(&mut self, f: TypedFunc<(i32, i32), i64>, input: &[u8]) -> Result<Vec<u8>, CallError> {
-        self.store.set_epoch_deadline(if self.guard.is_some() {
-            1
-        } else {
-            self.deadline_ticks
-        });
+        if self.guard.is_none() {
+            self.store.data_mut().until = Instant::now() + self.deadline;
+        }
+        self.store.set_epoch_deadline(1);
         let len = input.len() as i32;
         let ptr = self.alloc.call(&mut self.store, len).map_err(trap)?;
         self.memory
