@@ -264,6 +264,7 @@ pub(crate) fn model_grant(app: &str, host_dir: &std::path::Path) -> bool {
 /// The budget scope of a `model` call: the app's contained account, and
 /// the device for the system agent's studio calls, in a build that has the
 /// studio.
+#[cfg(any(feature = "app-hub", native_mobile))]
 pub(crate) fn model_scope(app: &str) -> Option<String> {
     if crate::host_tools::studio::SUPPORTED && app == crate::host_tools::SYSTEM {
         return Some("device".into());
@@ -272,6 +273,7 @@ pub(crate) fn model_scope(app: &str) -> Option<String> {
         .map(|account| crate::app_storage::account_hash(&account))
 }
 
+#[cfg(any(feature = "app-hub", native_mobile))]
 pub fn register_host_services() {
     register_mail_services();
     static ONCE: std::sync::Once = std::sync::Once::new();

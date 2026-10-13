@@ -753,8 +753,9 @@ fn a_peer_is_offered_exactly_its_granted_toolbox_tools_marked_with_their_owner_a
     let mut every = shareable_native_tools();
     every.push(super::relay::DEV_RUN.to_string());
     if super::studio::SUPPORTED { every.push(super::studio::RENDER.to_string()); }
+    // `studio.image` is the system agent's alone.
     #[cfg(all(unix, any(feature="app-hub", native_mobile)))]
-    every.extend(super::studio::APP_TOOLS.iter().map(|name| name.to_string()));
+    every.extend(super::studio::APP_TOOLS.iter().filter(|name| **name != "studio.image").map(|name| name.to_string()));
     every.sort();
     assert_eq!(offered_names(&relay, "calendar", true, true), every);
 }
