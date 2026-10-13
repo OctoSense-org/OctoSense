@@ -59,6 +59,8 @@ Android 内核从 profile 的 `env_vars` 读取密钥，因此不能直接使用
 
 `model.complete` 接受任务、输入、JSON Schema，以及可选的 `fast`/`strong` 模型类别和 URL 输出选项。宿主选择供应商，校验返回 JSON，不合格时重试一次。应用不指定供应商或密钥，不建立工具调用、浏览、记忆或持久对话。
 
+Windows 宿主的 `model.complete@2` 还可接收一个 `image: {app_path}`，路径必须位于已准入应用自己的存储目录内。宿主最多读取 10 MiB 的 JPEG、PNG 或 WebP，并按用户配置顺序调用 OpenAI 兼容的聊天接口。接口可能拒绝图片；能力发现只表示宿主支持，不表示提供方已经可用。其他平台仍公布不带图片输入的 `model.complete@1`。应用可将版本 2 声明为可选，通过 `runtime.describe({method:"model.complete"})` 检查，不支持时提供手动流程。图片由宿主在准入后读取，不计入 JSON `input` 的 32 KiB 上限。桌面 `files.import` 最多可导入 64 MiB，`files.pick_photo` 上限为 1 MiB；调用模型前还须检查图片不超过 10 MiB。密钥与模型名称仍由宿主管理。
+
 主要限制包括：任务 4 KiB、应用输入 32 KiB、结构化输出 16 KiB；默认每个应用每分钟 6 次、每天 100 次和 100,000 tokens。账本保存在 `<host dir>/model/ledger.json`。`model.budget` 返回调用应用的预算。工具箱的模型调用也共用这条预算路径。
 
 `capabilities` 是使用说明，省略 `model` 不阻止调用。授权仍由宿主完成：

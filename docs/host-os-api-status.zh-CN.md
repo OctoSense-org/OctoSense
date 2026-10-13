@@ -26,12 +26,14 @@
 
 未实现拍照或录像的后端返回 `CameraCaptureResult::Failed`，不再静默忽略请求。当前集成还新增有界的 [Windows 静态拍摄工作线程](windows-camera-capture.zh-CN.md)：九项真实源码工作线程测试和 Windows 目标类型检查已通过，但没有操作 Windows 相机硬件。拍摄参数现在明确表达意图：`capture()` 只存本地；`capture({library: true})` 请求图库导出，在 Windows 上会被拒绝。清单声明不会自动开启导出。Windows 图库导出和录像仍不支持，共享拍摄存储配额预留也未补齐。这些检查不能验证原生设备回调、权限界面或隐私指示灯。
 
+本源码分支为 `CameraPreview` 增加 Windows Media Foundation 视频源，并在 `camera.permission.status/request/revoke@1` 中列出 Windows。用户报告在隔离宿主中用 OBS 虚拟摄像头完成预览和拍照；这属于前台人工证据，不等于自动化硬件验收。同一分支在 Windows 公布 `model.complete@2`：可读取一张应用存储内不超过 10 MiB 的 JPEG、PNG 或 WebP；其他平台保留不含图片输入的 `@1`。应用应通过 `runtime.describe` 检查，并处理提供方拒绝图片的情况。桌面 `files.import` 可把最多 64 MiB 的文件导入应用存储（仍受应用配额限制），而 `files.pick_photo` 上限仍是 1 MiB。图片由宿主在准入后读取，不计入 JSON `input` 的 32 KiB 上限。
+
 ## 已有能力与剩余 OS 工作
 
 | 领域 | 已有实现 | 仍需区分或补齐的部分 |
 | --- | --- | --- |
 | 日历 | 系统 `calendar.*`、连接账户的 `gcalendar.*` 和新增面向 OS 的 `device_calendar.*` 保持各自身份和存储。 | 第三方 `calendar` 授权仍不能打开系统应用服务。自定义 OS 日历调用需迁移到 `device_calendar`；真实权限、选择和事件写入验收待完成。此版本中的重复事件及参会者只读。 |
-| 相机、麦克风 | 逐应用授权和 OS 权限仍相互独立。`CameraPreview` 提供相机入口，独立麦克风会话现在由自己的服务提供。 | Android 拒绝相机录像，macOS 没有相机录像器；OpenHarmony 录像器属于独立路径。Windows 静态拍摄只有源码／类型检查证据。音频会话不会补齐这些录像缺口。 |
+| 相机、麦克风 | 逐应用授权和 OS 权限仍相互独立。`CameraPreview` 提供相机入口，独立麦克风会话现在由自己的服务提供。Windows 源码增加 Media Foundation 预览与拍照，用户报告 OBS 前台验收通过。 | Android 拒绝相机录像，macOS 没有相机录像器；OpenHarmony 录像器属于独立路径。Windows 实体摄像头尚未验证，录像仍不支持。音频会话不会补齐这些录像缺口。 |
 | 音频与生成媒体 | Makepad 已有原生音频输入、输出，语音输入链路及 `Video` 播放控件。`model.audio` 已能请求生成语音；`model.image`、视频任务、embeddings 也已实现。 | 服务商生成与 OS 录制、播放是不同环节。有这些方法不代表已通过真实服务商调用或设备播放验证。 |
 | 嵌入页面、身份认证 | `WebReader::open_on_platform` 已有 macOS、iOS、Android、Linux、Windows 适配器；宿主持有的 `auth` 服务及服务商、应用后端登录流程也已存在。 | 外部链接修复不会代替嵌入式浏览或身份认证。WebView 可用性、服务商注册、跳转策略及各平台登录验收仍分别成立；应用始终拿不到宿主凭据。 |
 | 通知、后台工作 | `glance.publish` 可请求卡片通知；`App::glance_notify` 显示 Shell toast 和 Home 通知栏通知。Mail、已连接 Gmail 有特定后台执行及持久事件、通知发件箱路径。 | 这些不是通用 OS 闹钟、推送 token 或任意关闭应用的脚本调度器。后台任务还需要明确的事件契约、应用权限和 OS 生命周期支持，通知本身不提供这些能力。 |

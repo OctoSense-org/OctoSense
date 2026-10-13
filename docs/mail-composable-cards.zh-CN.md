@@ -4,7 +4,7 @@
 
 原生 **Email / Chat** 工作区共用一份已保存草稿。在隔离的 OnePlus 6 手机测试中，实际的 `deepseek-v4-flash` 与 `MiniMax-M3.1-Flash-Preview` 都通过聊天修改了预约时间，Reply 和最终审阅界面显示完全相同的已保存正文。在较早的受控物流演示中，用户已亲手点按批准发送，真实的线程回复也已通过验证。这是不同验证阶段：本次新工作区测试没有发送真实邮件。
 
-发送需要用户在宿主的审阅界面上亲手点按：Android 上触摸屏幕，macOS 上用鼠标或触控板点击；合成输入和远程输入都会被拒绝。macOS 路径**未验证**：还没有在 macOS 上实际发送过邮件。Windows、Linux 和无障碍输入的审批，以及完整手机 UI 矩阵，仍然暂缓。
+发送需要宿主审阅界面上的可信按下：Android 上触摸屏幕，macOS 上用鼠标或触控板点击。Windows 宿主接受系统标为 `IMO_HARDWARE` 的指针消息，但 Mail 仍没有 Windows 发信适配器。具有 UIAccess 权限的应用注入输入也会被这样归类，远程桌面输入尚未验证。macOS 路径**未验证**：还没有在 macOS 上实际发送过邮件。Linux 审批及完整手机 UI 矩阵仍然暂缓。
 
 生成的卡片描述展示。Rust 宿主代码拥有账户、原邮件、已保存草稿、修订号和发送操作。编辑字段会更新持久化草稿；生成的 Review reply 按钮只打开宿主审阅界面。模型和卡片本地的 `sent` 状态都不能授权 SMTP。
 
@@ -108,9 +108,9 @@ Lab **0468** 还验证了拒绝首次助手同意：Enable assistant 按钮消�
 
 下文的历史真机运行对应 **0416**（`abf06d8f`），当时使用 Octoscript `9ca9545b` 和 Octoscript-Makepad `a950f7fb`。当前固定版本仅对同一份 L0 实现应用 rustfmt，并将该修订同步到包装层。较新的 0427–0432 工作区版本使用当前固定版本，其验证单独记录在上方。
 
-[Makepad 补丁](../tools/runtime-patches/makepad-trusted-user-input.patch)默认令 `trusted_user_input()` 为 false。Android JNI 检查正数且非虚拟的设备 ID、触摸屏来源、未遮挡标志及非取消输入；空对象或 Java 异常不会入队可信输入。[第二个补丁](../tools/runtime-patches/makepad-desktop-trusted-input.patch)只在 AppKit 提供来自 HID 源、且不是由其他进程投递（post）的 CGEvent 时，才信任 macOS 指针的按下或释放。
+[Makepad 补丁](../tools/runtime-patches/makepad-trusted-user-input.patch)默认令 `trusted_user_input()` 为 false。Android JNI 检查正数且非虚拟的设备 ID、触摸屏来源、未遮挡标志及非取消输入；空对象或 Java 异常不会入队可信输入。[第二个补丁](../tools/runtime-patches/makepad-desktop-trusted-input.patch)只在 AppKit 提供来自 HID 源、且不是由其他进程投递（post）的 CGEvent 时，才信任 macOS 指针的按下或释放。[Windows 补丁](../tools/runtime-patches/makepad-windows-trusted-input.patch)信任 user32 报告为 `IMO_HARDWARE` 的鼠标、触摸、笔或触控板消息；投递、`IMO_INJECTED` 和 `IMO_SYSTEM` 消息不可信。[微软文档](https://learn.microsoft.com/en-us/windows/win32/api/winuser/ne-winuser-input_message_origin_id)也将 UIAccess 应用注入的输入归为 `IMO_HARDWARE`，所以此标志不是物理设备证明。这项来源判断也作用于已连接账户与设备授权审阅界面。
 
-作用域 guard 只在可信触摸（`TouchUpdate`）或点击的原生处理器运行期间生效。远程和合成分发（包括嵌套在其中的原生回调）、延后的 action 和脚本任务都不能继承这个 guard。宿主审阅界面要求相匹配的可信按下与释放。`with_untrusted_input` 只能移除信任。键盘/输入法、长按、无障碍输入，以及 Windows 和 Linux 上的任何输入，都不能批准发送。受攻击的 OS/root 进程冒充硬件，不在这一应用级边界内；这不是硬件认证。
+作用域 guard 只在可信触摸（`TouchUpdate`）或点击的原生处理器运行期间生效。不可信的合成分发（包括嵌套在其中的原生回调）、延后的 action 和脚本任务都不能继承这个 guard。宿主审阅界面要求相匹配的可信按下与释放。`with_untrusted_input` 只能移除信任。键盘/输入法、长按和 Linux 输入不能批准发送；Windows 上具有 UIAccess 权限的应用注入输入可能满足来源条件，远程桌面输入尚未验证。Windows 仍没有 Mail 发信适配器。受攻击的 OS/root 进程冒充硬件，不在这一应用级边界内；这不是硬件认证。
 
 <a id="验证检查点"></a>
 
@@ -131,7 +131,7 @@ Lab **0468** 还验证了拒绝首次助手同意：Enable assistant 按钮消�
 | 剩余手机 UI 矩阵 | 完整输入法组合输入、光标/选择、Unicode、主题、触摸目标尺寸、冲突、账户切换、到期与重试覆盖仍不完整。相关本地测试不能替代这些检查。 |
 | 通知浮层触摸路由 | 四项新增回归测试通过。在 0415 上，可见通知经注入的 Android 点击打开准确绑定的卡片，保留修订版 44。这证明导航有效，不是发送授权。 |
 | 亲手点按批准与真实线程回复 | 没有执行真实 SMTP 发送。用户亲手点按批准、提供商接受，以及卡片与审阅界面的回执是否一致，仍未验证。 |
-| 桌面/无障碍审批 | 在该检查点暂缓；当时的输入来源边界拒绝这些路径。后来的构建也把 macOS 上用鼠标或触控板的点击视为亲手点按（**未验证**）；Windows 和 Linux 上的任何输入以及无障碍输入仍不能批准。见[运行时契约与输入来源](#运行时契约与输入来源)。 |
+| 桌面/无障碍审批 | 在该历史检查点暂缓。后来的构建接受 macOS（**未验证**）的物理指针输入，以及 Windows 系统归类为硬件来源的输入（包括 UIAccess 注入）；Windows Mail 仍没有发信适配器。Linux 输入不能批准。见[运行时契约与输入来源](#运行时契约与输入来源)。 |
 
 ### 按提供商记录的工程审查
 
