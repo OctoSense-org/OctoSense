@@ -11,7 +11,7 @@ Rust 授权协议、连接器、原生审阅、账户生命周期和示例界面
 | 平台 | 提供商授权 | 凭据保存 | Gmail 发信审批 |
 | --- | --- | --- | --- |
 | macOS | GitHub 设备授权；Google 浏览器/PKCE/回环回调 | 复用 Mail 的 Keychain 适配器，独立 OAuth 命名空间 | 原生鼠标来源校验；宿主拒绝远程点击，亲手点按未验证 |
-| Windows | 同样的桌面流程，平台运行未验证 | Windows Credential Manager；未在 Windows 验证 | 不支持，明确拒绝 |
+| Windows | 同样的桌面流程，平台运行未验证 | Windows Credential Manager；未在 Windows 验证 | 原生审阅可识别物理指针输入；真实 Gmail 发信仍未验证 |
 | Linux | 已在 Linux 通过协议测试和主机编译；浏览器登录和 GUI 未验证 | 需要解锁 Secret Service，不回退到明文；构建主机的凭据库未解锁或不可用，原生测试遭到拒绝 | 不支持，明确拒绝 |
 | Android | GitHub 流程存在但未验证；**Google 原生适配器完成前拒绝连接** | Mail 的 Android 凭据库，独立命名空间 | 现有的亲手点按来源校验；本示例未验证 |
 

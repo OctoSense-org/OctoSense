@@ -362,9 +362,9 @@ flowchart TB
 4. **常设规则**，按（所属应用，工具）匹配，不论调用方是谁。由收到的内容或未知来源触发的运行会跳过规则，除非某条规则明确纳入。
 5. 否则由 **Shell 绘制的面板**列出所属应用、工具、确切参数和调用方应用（如有）。系统 Agent 为同一请求发起的审批可以合并到一个面板中。
 
-**发送邮件**从不经过审批路由。邮件自己的写信界面（`mail.review_send`）和它的回复卡片，最终都进入同一个由宿主拥有的确切邮件审阅界面，由 Shell 绘制在卡片内（`crates/shell/src/mail_review.rs`）；邮件的 Agent 只能提议发送（`mail.propose_send`）。只有对审阅界面上 Approve & Send 控件的一次可信按下和释放才会发送，而且只有亲手点按才可信：Android 上触摸屏幕，macOS 上用鼠标或触控板点击。开发者模式和常设规则都不能授权发送，`mail.send` 只会回答 `approval_required`。流程见[组合式邮件卡片](mail-composable-cards.zh-CN.md)。
+**发送邮件**从不经过审批路由。邮件自己的写信界面（`mail.review_send`）和它的回复卡片，最终都进入同一个由宿主拥有的确切邮件审阅界面，由 Shell 绘制在卡片内（`crates/shell/src/mail_review.rs`）；邮件的 Agent 只能提议发送（`mail.propose_send`）。只有对审阅界面上 Approve & Send 控件的一次可信按下和释放才会发送，而且只有亲手点按才可信：Android 上触摸屏幕，macOS 或 Windows 上点击。Windows 仍没有 Mail 发信适配器。开发者模式和常设规则都不能授权发送，`mail.send` 只会回答 `approval_required`。流程见[组合式邮件卡片](mail-composable-cards.zh-CN.md)。
 
-这种信任来自两个经审查的 Makepad 补丁（`tools/runtime-patches/`）：`makepad-trusted-user-input.patch` 针对 Android 触摸屏，`makepad-desktop-trusted-input.patch` 针对来自 HID 源、且不是由其他进程投递（post）的 macOS 指针事件。合成输入和远程输入都会被拒绝，在其分发过程中运行的原生回调也不例外。Windows 和 Linux 上的任何输入以及无障碍输入，都不能批准发送。macOS 路径**未验证**：还没有在 macOS 上实际发送过邮件。
+这种信任来自三个经审查的 Makepad 补丁（`tools/runtime-patches/`）：`makepad-trusted-user-input.patch` 针对 Android 触摸屏，`makepad-desktop-trusted-input.patch` 针对来自 HID 源、且不是由其他进程投递的 macOS 指针事件，`makepad-windows-trusted-input.patch` 针对 Windows 的物理鼠标、触摸、笔和触控板消息。Windows 的输入来源判断作用于所有使用 `trusted_user_input()` 的宿主审阅界面，包括已连接账户的保存与发送以及设备授权。注入、投递、远程输入及其分发期间嵌套的回调、无障碍输入和 Linux 输入仍不可信。macOS Mail 路径**未验证**：还没有实际发送过邮件。Windows 输入来源判断本身不提供 Mail 发信适配器，也不证明已连接账户的真实写入。
 
 **已连接账户的写入和发送**也不经过审批路由。GitHub 提交（`github.review_save`）或 Google Calendar 写入（`gcalendar.review_save`）会打开宿主对确切改动的审阅界面，只有其中的 Approve & Save 控件才能保存。Gmail 发信（`gmail.draft.review`）会打开宿主对确切回复的审阅界面，只有其中的 Approve & Send 控件才能发送。在 `main` 上，这三种审阅界面都是原生的（`crates/shell/src/connected_review.rs`），只接受可信的亲手点按（按下和释放都必须可信），每次批准只能用一次（`crates/oauth-service/src/host_api.rs`、`host_inbox.rs`）。`desktop-v0.1.0-beta.2` 只在 Gmail 发信时检查是否亲手点按；它的 GitHub 和 Calendar 保存使用宿主面板，不检查 Approve & Save 是怎样按下的。Agent 打不开其中任何一个界面：它的工具调用以 `may_prompt: false` 到达服务（`host_tools/script_apps.rs`）。哪些平台支持亲手点按、哪些已经验证，见 [OAuth 服务 README](../crates/oauth-service/README.zh-CN.md#当前交付边界) 中的平台表。
 
