@@ -609,6 +609,7 @@ if st == nil {
         busy_at: 0            // when the background render went out
         heartbeat: nil        // the interval below, made once
         index_dirty: false    // library.json waits for the heartbeat
+        screen_full: false    // the shell has the window in full screen for Read mode (on_app_fullscreen)
     }
     mod.pdftools = st
 }
@@ -1362,15 +1363,34 @@ fn refit(t){
 fn reading_on(t){ t != nil && optional(t, "reading", false) && t.state == "ready" }
 // From the floating bar's full-screen button: the same page, and the zoom
 // the person chose, or the fit, worked out for the whole window (kept_zoom).
+// The tap also asks the shell to put the window in full screen
+// (window.fullscreen). Where it can't (no tap it counts, a host with no
+// window service, such as card-host), Read mode fills the window as before,
+// and the answer is not shown.
 fn enter_reading(t){
     if t == nil || t.state != "ready" || t.mode == "pages" || t.mode == "combine" { return }
     t.reading = true
     reading_zoom(t)
     show()
     go_page(t, t.page)
+    host.request("window.fullscreen", {on: true}, fn(r){})
 }
-// From the bar's Exit read mode or the corner control (a script gets no key
-// events, so there is no Esc): the page and zoom it left Read mode with.
+// The shell's word that the window's full screen started or ended: when
+// Esc, ⌘F or another window ends it, Read mode ends too. One that starts
+// after Read mode already ended goes straight back.
+fn on_app_fullscreen(on){
+    st.screen_full = on
+    if on { screen_back() } else { leave_reading(cur_tab()) }
+}
+// The full screen Read mode asked for goes back once Read mode is over,
+// however it ended (show() asks after every change).
+fn screen_back(){
+    if !optional(st, "screen_full", false) || reading_on(cur_tab()) { return }
+    st.screen_full = false
+    host.request("window.fullscreen", {on: false}, fn(r){})
+}
+// From the bar's Exit read mode or the corner control, or the shell's Esc
+// (on_app_fullscreen): the page and zoom it left Read mode with.
 fn leave_reading(t){
     if t == nil || !optional(t, "reading", false) { return }
     t.reading = false
@@ -2506,6 +2526,7 @@ fn show(){
     let t = cur_tab()
     let doc = t != nil
     let c = chrome_for(reading_on(t))
+    screen_back()
     ui.home.set_visible(!doc)
     ui.doc.set_visible(doc)
     ui.tabs_box.set_visible(c.tabs)
