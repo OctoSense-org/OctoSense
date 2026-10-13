@@ -53,6 +53,22 @@ def gh_json(argv):
     return json.loads(run(["gh", *argv]).stdout)
 
 
+def pr_files(pr):
+    """The paths pull request `pr` changes, as its workflows' `pull_request`
+    path filters see them (each file's path, and a renamed file's old path
+    too), and how many files GitHub listed. From the paginated files
+    listing: `gh pr diff --name-only` refuses a diff over 20,000 lines, as a
+    PR that adds generated designs or evidence frames has."""
+    out = run(["gh", "api", "--paginate", f"repos/{{owner}}/{{repo}}/pulls/{pr}/files?per_page=100",
+               "--jq", '.[] | [.filename, (.previous_filename // "")] | @tsv']).stdout
+    paths, files = [], 0
+    for line in out.splitlines():
+        if line:
+            files += 1
+            paths.extend(path for path in line.split("\t") if path)
+    return paths, files
+
+
 def evidence_problems(last, head, changed_files):
     """Why `last` (target/ci-local/last.json) is not evidence for merging
     `head` touching `changed_files`; [] when it is."""
@@ -164,7 +180,7 @@ def main(argv=None):
     args = parser.parse_args(argv)
     try:
         info = gh_json(["pr", "view", str(args.pr), "--json",
-                        "number,state,isDraft,baseRefName,headRefName,headRefOid,headRepositoryOwner,url"])
+                        "number,state,isDraft,baseRefName,headRefName,headRefOid,headRepositoryOwner,url,changedFiles"])
         if info["state"] != "OPEN":
             raise Refused(f"PR #{args.pr} is {info['state']}")
         if info["isDraft"]:
@@ -184,7 +200,10 @@ def main(argv=None):
         if run(["git", "merge-base", "--is-ancestor", main_sha, head], check=False).returncode != 0:
             raise Refused(f"the head {head[:12]} does not contain origin/main {main_sha[:12]}: rebase or merge "
                           f"main into the branch, push, run tools/ci-local.sh again, then retry")
-        changed = run(["gh", "pr", "diff", str(args.pr), "--name-only"]).stdout.split()
+        changed, listed = pr_files(args.pr)
+        if listed < info.get("changedFiles", 0):
+            raise Refused(f"GitHub listed {listed} of the {info['changedFiles']} files PR #{args.pr} changes (its "
+                          f"files listing stops at 3,000), so the workflows it triggers are unknown: split the PR")
         problems, required = evidence_problems(last, head, changed)
         if problems:
             raise Refused("the local run is not evidence for this merge:\n  - " + "\n  - ".join(problems))

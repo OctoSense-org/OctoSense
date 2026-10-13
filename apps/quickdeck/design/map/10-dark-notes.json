@@ -1,0 +1,1612 @@
+{
+ "schema": 1,
+ "screen": "10-dark-notes",
+ "state": "Dark: editing, the Notes segment open on slide 6 and its table",
+ "image": "source/10-dark-notes.png",
+ "image_sha256": "3cd71d833e38c776dcc025afe1439ff8032be5b90c7654e5ec7ffe0bf6f8af87",
+ "measured": "source/10-dark-notes.measured.json",
+ "measured_sha256": "cf06a9dce8372465938536e602af899f7d27db51b3b999f571a6042fffa0bafd",
+ "units": "1 image pixel = 1 layout point (the designs are a 1536 x 1024 window)",
+ "built_in": "apps/quickdeck/bundle/main.splash (v2)",
+ "runtime": "OctoSense-org/makepad d653bc44 with runtime-patches.lock.json, as tools/setup.py prepares .sources/makepad",
+ "type_rule": "size in theme units: the ink height for runs without descenders, ink / 1.23 with them (PDF Tools' rule, calibrated in card-host on the runtime's own text); the build rounds to the region's size",
+ "colours": "light from this screen (or the light screens), dark from 10-dark-notes; tokens below, selected by the shared interface's ui_light",
+ "tokens": {
+  "qd_accent": {
+   "light": "#116cdc",
+   "dark": "#0f6de6",
+   "from": "BRIEF's accent #116cdc; 02 s037 Present #0b69d9, 03 s046 #0163e3; 10 s032 Present #076ce8"
+  },
+  "qd_link": {
+   "light": "#1c6ce0",
+   "dark": "#3a8ee0",
+   "from": "02 t007 'Slides' #2e6ad8, t009 '+ New slide' #4e85dd, t093 'Format' #3973dc (anti-aliased); 10 t004 'Slides' #227eca, t035 'Notes' #2684cd"
+  },
+  "qd_tabs": {
+   "light": "#f4f5f6",
+   "dark": "#141719",
+   "from": "02 s019 tab row #f4f5f6; 10 sample (1300,40) #141719"
+  },
+  "qd_tab_on": {
+   "light": "#ffffff",
+   "dark": "#1c2023",
+   "from": "02 open tab (220,40) #fefdfe; 10 open tab (200,25) #111316 inside an outline, lifted for contrast"
+  },
+  "qd_tab_line": {
+   "light": "#dedfe1",
+   "dark": "#3a3e41",
+   "from": "02 open tab's border; 10 tab outlines"
+  },
+  "qd_bar": {
+   "light": "#ffffff",
+   "dark": "#15191b",
+   "from": "02 toolbar (300,80) #fefefe; 10 (300,80) #15191b"
+  },
+  "qd_nav": {
+   "light": "#ffffff",
+   "dark": "#151a1d",
+   "from": "02 s002 #fefefe; 10 (280,300) #151a1d"
+  },
+  "qd_desk": {
+   "light": "#f2f4f5",
+   "dark": "#1b1e22",
+   "from": "01 s000 #f2f4f5, 02 (700,180) #f3f4f6, 04 #f1f2f4, 05 #f2f4f5; 10 (700,180) #1b1e22. The brief named #eceded; the approved images are lighter"
+  },
+  "qd_insp": {
+   "light": "#ffffff",
+   "dark": "#161b1f",
+   "from": "02 s003 #fefefe; 10 (1350,600) #161b1f"
+  },
+  "qd_status": {
+   "light": "#ffffff",
+   "dark": "#151b1d",
+   "from": "02 s005 #fefefe; 10 s006 #151b1d"
+  },
+  "qd_pill": {
+   "light": "#ffffff",
+   "dark": "#f4f4f5",
+   "from": "02 s010 #fefefe; 10 s018 #f7f7f7: the dark design keeps the canvas pill light"
+  },
+  "qd_pill_ink": {
+   "light": "#55575b",
+   "dark": "#3b3e42",
+   "from": "02 t078 '5 / 12' #717173, t081 '92%' #6e6f71; 10 dark text on the light pill"
+  },
+  "qd_pill_icon": {
+   "light": "#5b5d61",
+   "dark": "#45484c",
+   "from": "02 t077 '<' #616263; 10 derived for the light pill"
+  },
+  "qd_pill_line": {
+   "light": "#e2e3e5",
+   "dark": "#d2d4d6",
+   "from": "02 d016 #e3e4e6; 10 d029 edge"
+  },
+  "qd_home": {
+   "light": "#f2f4f5",
+   "dark": "#1b1e22",
+   "from": "01 s000 #f2f4f5; 07 page (40,500) #f2f4f6; dark Home is not designed: 10's desk"
+  },
+  "qd_card": {
+   "light": "#ffffff",
+   "dark": "#22272b",
+   "from": "01 cards #fcfcfc, 07 s001 #fefefe, 09 s001 #fdfdfd; dark cards are not designed: a step above 10's inspector"
+  },
+  "qd_line": {
+   "light": "#e2e3e5",
+   "dark": "#33383b",
+   "from": "02 d021 #e4e4e6, d002 #dedee1, d026 #e5e5e7; 10 d002 #3c4042, d039 #2c3134"
+  },
+  "qd_line_soft": {
+   "light": "#ececee",
+   "dark": "#2a2e31",
+   "from": "02 d003 #e5e5e5, d009 #eaeaeb; 10 d004/d005 #656869/#2c3032"
+  },
+  "qd_thumb_line": {
+   "light": "#d3d5d9",
+   "dark": "#3a3f43",
+   "from": "the thumbnails' edge (02 (44,250) #f1f2f2 at 1x, darker for the page edge); dark derived"
+  },
+  "qd_tint": {
+   "light": "#eaf2fd",
+   "dark": "#17304d",
+   "from": "02 s077-s079 chosen segments #eff3fd/#eff4fd, 03 s051 chosen chip #e7f2fe, s045 Chart button #e9f3fd; dark derived (10 draws none)"
+  },
+  "qd_tint_line": {
+   "light": "#b9d3f7",
+   "dark": "#2c5a92",
+   "from": "03 the Column chip's border (386,146) #bfdafc; dark derived"
+  },
+  "qd_select": {
+   "light": "#2f6fdf",
+   "dark": "#3b82f0",
+   "from": "02 the selection frame (349,470) #74a0ea anti-aliased, t072 handle ink #2268d9; 03 d019 #0d6bf0"
+  },
+  "qd_field": {
+   "light": "#ffffff",
+   "dark": "#161c1f",
+   "from": "02 s026 the font box #fefefe; 10 the notes box (1300,500) #161c1f"
+  },
+  "qd_field_line": {
+   "light": "#dcdde0",
+   "dark": "#383d40",
+   "from": "02 the fields' borders; 10 the notes box's border (1208,500) #31363a"
+  },
+  "qd_hover": {
+   "light": "#f1f2f3",
+   "dark": "#22272b",
+   "from": "derived"
+  },
+  "qd_ink": {
+   "light": "#36393d",
+   "dark": "#c9cbcd",
+   "from": "02 t096 'Text' #363d45, t104 'Box' #393f48; 10 t036 'Speaker notes' #bcbec0, t037 #cacccd"
+  },
+  "qd_ink2": {
+   "light": "#55585c",
+   "dark": "#b0b2b4",
+   "from": "02 t105 #606367, t097 'Open Sans' #67686b; 10 t005 'Sorter' #b1b2b4, t027 'Save' #b5b6b8"
+  },
+  "qd_muted": {
+   "light": "#76787c",
+   "dark": "#868a8d",
+   "from": "02 t084 #7a7b7d, t125 #797b7e; 10 t090 #878b8d, t096 #868b8d"
+  },
+  "qd_faint": {
+   "light": "#9c9da0",
+   "dark": "#63676a",
+   "from": "03 t051 'Redo' unavailable #9fa1a5; 10 t031 'Redo' #5f6364"
+  },
+  "qd_icon": {
+   "light": "#5b5d61",
+   "dark": "#a3a6a9",
+   "from": "02 the toolbar's icons; 10 (576,76) #96999c"
+  },
+  "qd_green": {
+   "light": "#3fa95a",
+   "dark": "#20b376",
+   "from": "03 the 'Saved' dot (78,999) #43a955; 10 (84,991) #20b376"
+  },
+  "qd_orange": {
+   "light": "#f2a20d",
+   "dark": "#e39a1c",
+   "from": "02 the 'Edited' dot (89,997) #f4a30f"
+  },
+  "qd_red": {
+   "light": "#e5534f",
+   "dark": "#f06a66",
+   "from": "PDF Tools' red: no Quick Deck design draws a refusal"
+  },
+  "qd_toggle_on": {
+   "light": "#0f68d8",
+   "dark": "#1678e7",
+   "from": "02 the Shrink toggle (1465,626) #0968d7; 10 s046 #0d72ed"
+  },
+  "qd_toggle_off": {
+   "light": "#c5c9cc",
+   "dark": "#3b4043",
+   "from": "03 the Legend toggle, off (1498,637) #c5c9cc"
+  },
+  "qd_track": {
+   "light": "#d2d2d3",
+   "dark": "#34393c",
+   "from": "01 the storage bar's track (330,993) #d2d2d3"
+  },
+  "qd_shadow": {
+   "light": "#00000022",
+   "dark": "#00000070",
+   "from": "the slide's soft shadow (02 (1162,500) #dadbdc beside the slide)"
+  },
+  "qd_stage": {
+   "light": "#08090b",
+   "dark": "#08090b",
+   "from": "08 the stage (50,500) #08090b, the same in both"
+  },
+  "qd_stage_pill": {
+   "light": "#14181a",
+   "dark": "#14181a",
+   "from": "08 s001 #14181a"
+  },
+  "qd_stage_line": {
+   "light": "#34383b",
+   "dark": "#34383b",
+   "from": "08 d011 #37393a"
+  },
+  "qd_stage_ink": {
+   "light": "#d4d5d6",
+   "dark": "#d4d5d6",
+   "from": "08 t017 '4 / 12' #d4d5d6"
+  }
+ },
+ "regions": [
+  {
+   "id": "thumbs",
+   "role": "navigator thumbnails: the engine's renders",
+   "page_content": true,
+   "widget": "Image (binary_resource of deck.view at 400 px) inside each thumbnail's frame; a numbered grey card until it lands",
+   "cite": [
+    "makepad widgets/src/image.rs:71 (Image), ImageFit image_cache.rs:4; binary_resource platform/src/script/res.rs:1398; fs.read_bytes splash_storage.rs:446"
+   ],
+   "colors": {},
+   "decision": "Thumbnails are sample content: each is the engine's render (deck.view), filled in one PNG read per timer tick.",
+   "image_rect": [
+    47,
+    180,
+    225,
+    760
+   ],
+   "status": "built",
+   "source": {
+    "text": [
+     7,
+     8,
+     9,
+     10,
+     11,
+     12,
+     13,
+     15,
+     16,
+     17,
+     44,
+     45,
+     46,
+     47,
+     48,
+     49,
+     50,
+     51,
+     52,
+     53,
+     54,
+     55,
+     56,
+     57,
+     58,
+     59,
+     60,
+     61,
+     62,
+     63,
+     65
+    ],
+    "surfaces": [
+     12,
+     13,
+     14,
+     15,
+     16,
+     17,
+     19,
+     20,
+     21,
+     29,
+     30,
+     33,
+     34,
+     35,
+     39,
+     40,
+     41,
+     45
+    ],
+    "dividers": [],
+    "note": "sample art inside the slide: not rebuilt"
+   }
+  },
+  {
+   "id": "slide",
+   "role": "slide: the engine's render",
+   "page_content": true,
+   "widget": "RectShadowView (white, shadow 7) sized slide x zoom with Image (binary_resource of deck.view's PNG at slide width x zoom x 2 pixels, editor view), LoadingSpinner + 'Drawing slide n…' until it lands, a small spinner while a newer render is out; a GestureView over it takes taps (deck.hit), double taps (edit text) and long presses (add to the choice)",
+   "cite": [
+    "makepad widgets/src/view_ui.rs:150 (RectShadowView: shadow_color, shadow_radius, shadow_offset)",
+    "makepad widgets/src/image.rs:71 (Image), ImageFit image_cache.rs:4; binary_resource platform/src/script/res.rs:1398; fs.read_bytes splash_storage.rs:446",
+    "makepad widgets/src/loading_spinner.rs:7 (LoadingSpinner); App Flow docs/SCRIPT-API.md 'Widgets available to an app'",
+    "makepad widgets/src/gesture_view.rs:44 (GestureView), on_tap/on_double_tap/on_long_press/on_swipe/on_pan gesture_view.rs:186-196, pan deltas from the press gesture_view.rs:250-275",
+    "makepad widgets/src/splash_host.rs:292 (host.request); App Flow docs/SCRIPT-API.md 'Host services: host.request'; apps/quickdeck/design/SERVICE.md"
+   ],
+   "geometry": {
+    "size": "the deck's slide size x zoom (100% = 1 pt per layout point)"
+   },
+   "colors": {
+    "light": {
+     "qd_shadow": "#00000022"
+    },
+    "dark": {
+     "qd_shadow": "#00000070"
+    }
+   },
+   "decision": "Slide art is sample content: the slide is the engine's own render (deck.view); the build rebuilds only the chrome around it.",
+   "image_rect": [
+    313,
+    244,
+    863,
+    559
+   ],
+   "status": "built",
+   "source": {
+    "text": [
+     67,
+     68,
+     69,
+     70,
+     71,
+     72,
+     73,
+     74,
+     75,
+     76,
+     77,
+     78,
+     79,
+     80,
+     81,
+     82,
+     83,
+     84,
+     85,
+     86,
+     87
+    ],
+    "surfaces": [
+     1,
+     4,
+     7,
+     8,
+     9,
+     10,
+     11
+    ],
+    "dividers": [
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12,
+     13,
+     14,
+     15,
+     16,
+     17,
+     18,
+     19,
+     20,
+     21,
+     22,
+     23,
+     24,
+     42,
+     43,
+     44,
+     45,
+     46,
+     47
+    ],
+    "note": "sample art inside the slide: not rebuilt"
+   }
+  },
+  {
+   "id": "pill",
+   "role": "canvas pill: previous, 'n / N', next, zoom out, the zoom, zoom in, Fit",
+   "widget": "View pill (overlay, bottom centre, PILL_BOTTOM 36; on_render pill_view): RoundedShadowView radius 26.5 with IconBtn chevron-left, Label 'n / N' (72 wide), IconBtn chevron-right, SolidView 1 x 28, IconBtn minus, Label zoom (60 wide), IconBtn plus, SolidView, Flat 'Fit' (tinted while the slide fits)",
+   "cite": [
+    "makepad widgets/src/view_ui.rs:227 (RoundedShadowView)",
+    "makepad widgets/src/button.rs:20 (ButtonFlat: text, icon_walk, draw_icon, draw_bg, draw_text, on_click)",
+    "makepad widgets/src/label.rs:11 (Label), max_lines label.rs:258, text_overflow Ellipsis (draw_text.rs)",
+    "makepad widgets/src/view_ui.rs:85 (SolidView); App Flow docs/SCRIPT-API.md 'Backgrounds' (a plain View paints nothing in the contained host)"
+   ],
+   "geometry": {
+    "height": 53,
+    "radius": 26.5,
+    "bottom": 36,
+    "padding": 12
+   },
+   "colors": {
+    "light": {
+     "qd_pill": "#ffffff",
+     "qd_pill_ink": "#55575b",
+     "qd_pill_icon": "#5b5d61",
+     "qd_pill_line": "#e2e3e5",
+     "qd_shadow": "#00000022"
+    },
+    "dark": {
+     "qd_pill": "#f4f4f5",
+     "qd_pill_ink": "#3b3e42",
+     "qd_pill_icon": "#45484c",
+     "qd_pill_line": "#d2d4d6",
+     "qd_shadow": "#00000070"
+    }
+   },
+   "font": "theme.font_regular",
+   "size": 12,
+   "decision": null,
+   "notes": "10 keeps the pill light on the dark desk (s018 #f7f7f7), so its colours do not follow the appearance.",
+   "image_rect": [
+    580,
+    870,
+    364,
+    51
+   ],
+   "status": "built",
+   "source": {
+    "text": [
+     {
+      "i": 88,
+      "text": "6 /12",
+      "ocr_height": 13.4,
+      "ink": "#363b40",
+      "ground": "#eff0f0",
+      "ink_px": 12,
+      "size": 10.0
+     },
+     {
+      "i": 89,
+      "text": ">",
+      "ocr_height": 17.8,
+      "ink": "#414346",
+      "ground": "#f5f5f5",
+      "ink_px": 13,
+      "size": 13.0
+     },
+     {
+      "i": 91,
+      "text": "- 92%",
+      "ocr_height": 13.4,
+      "ink": "#525659",
+      "ground": "#f4f4f4",
+      "ink_px": 12,
+      "size": 12.0
+     },
+     {
+      "i": 92,
+      "text": "+",
+      "ocr_height": 26.8,
+      "ink": "#4f5357",
+      "ground": "#f5f5f5",
+      "ink_px": 2,
+      "size": 2.0
+     },
+     {
+      "i": 93,
+      "text": "Fit",
+      "ocr_height": 15.6,
+      "ink": "#4b5056",
+      "ground": "#f6f6f7",
+      "ink_px": 11,
+      "size": 11.0
+     }
+    ],
+    "surfaces": [
+     {
+      "i": 18,
+      "bounds": [
+       580,
+       870,
+       364,
+       51
+      ],
+      "fill": "#f7f7f7",
+      "border": "#1a1e21",
+      "radius": 8
+     },
+     {
+      "i": 44,
+      "bounds": [
+       885,
+       879,
+       49,
+       33
+      ],
+      "fill": "#fbfbfc",
+      "border": "#f6f6f6",
+      "radius": 0
+     },
+     {
+      "i": 47,
+      "bounds": [
+       895,
+       882,
+       35,
+       27
+      ],
+      "fill": "#fcfcfc",
+      "border": "#fbfbfb",
+      "radius": 0
+     }
+    ],
+    "dividers": [
+     30,
+     32,
+     33,
+     34
+    ]
+   }
+  },
+  {
+   "id": "tabs",
+   "role": "document tabs: Home, one tab per open deck (and the outline page), New",
+   "widget": "SolidView tabs (TAB_H 53, on_render tabs_view): home_tab and doc_tab are GestureViews holding a Tab (RoundedView radius 6; the open one qd_tab_on with a border) with Svg home/deck/outline 16, Label title 11 (tab_title_cap: an ellipsis once the row is full), IconBtn close 13; Flat 'New' (Svg plus) after the last tab, which goes Home",
+   "cite": [
+    "makepad widgets/src/view_ui.rs:85 (SolidView); App Flow docs/SCRIPT-API.md 'Backgrounds' (a plain View paints nothing in the contained host)",
+    "makepad widgets/src/gesture_view.rs:44 (GestureView), on_tap/on_double_tap/on_long_press/on_swipe/on_pan gesture_view.rs:186-196, pan deltas from the press gesture_view.rs:250-275",
+    "makepad widgets/src/view_ui.rs:308 (RoundedView: border_size, border_color, border_radius)",
+    "makepad widgets/src/svg.rs:10 (Svg), draw_svg.svg from http_resource('{{assets}}/icons/…'): App Flow docs/SCRIPT-API.md 'Shape of a program'; apps/pdftools/bundle/main.splash icon()",
+    "makepad widgets/src/label.rs:11 (Label), max_lines label.rs:258, text_overflow Ellipsis (draw_text.rs)",
+    "makepad widgets/src/button.rs:20 (ButtonFlat: text, icon_walk, draw_icon, draw_bg, draw_text, on_click)",
+    "makepad widgets/src/view.rs:904 (render() re-runs a region's on_render); an on_render result is built fresh, view.rs:248"
+   ],
+   "geometry": {
+    "height": 53,
+    "tab": "Fit, 48 tall from y 11; the row clips its last 6 so the open tab joins the toolbar (PDF Tools' shared chrome)",
+    "gap": 2,
+    "title_room": "each title takes what it needs (about 8.2 points a character at 11) while the row has room: the window less 232 and 80 a tab; past that the longest titles are cut to one common width, filled from the shortest up"
+   },
+   "colors": {
+    "light": {
+     "qd_tabs": "#f4f5f6",
+     "qd_tab_on": "#ffffff",
+     "qd_tab_line": "#dedfe1",
+     "qd_ink": "#36393d",
+     "qd_muted": "#76787c"
+    },
+    "dark": {
+     "qd_tabs": "#141719",
+     "qd_tab_on": "#1c2023",
+     "qd_tab_line": "#3a3e41",
+     "qd_ink": "#c9cbcd",
+     "qd_muted": "#868a8d"
+    }
+   },
+   "font": "theme.font_regular",
+   "size": 11,
+   "decision": null,
+   "notes": "The images draw the tab row 44-48 tall; the build keeps PDF Tools' 53 (the brief's shared chrome). The runtime's UI font is wider than the designs' (about 8.2 points a character at 11, the images 6.6 at their 10-10.5), so with the six decks of the designs open the titles are cut to fit; with fewer they show whole.",
+   "image_rect": [
+    0,
+    0,
+    1536,
+    48
+   ],
+   "status": "built",
+   "source": {
+    "text": [
+     {
+      "i": 1,
+      "text": "Home",
+      "ocr_height": 13.5,
+      "ink": "#999b9e",
+      "ground": "#16191b",
+      "ink_px": 10,
+      "size": 10.0
+     },
+     {
+      "i": 2,
+      "text": "Q3 2026 Board Update",
+      "ocr_height": 16,
+      "ink": "#d0d1d2",
+      "ground": "#1a1d1f",
+      "ink_px": 14,
+      "size": 11.5
+     },
+     {
+      "i": 3,
+      "text": "Northern Lights Field Trip x",
+      "ocr_height": 18,
+      "ink": "#999c9d",
+      "ground": "#171a1c",
+      "ink_px": 14,
+      "size": 11.5
+     },
+     {
+      "i": 14,
+      "text": "Riverside Community Garden X",
+      "ocr_height": 16,
+      "ink": "#96989a",
+      "ground": "#161a1b",
+      "ink_px": 14,
+      "size": 11.5
+     },
+     {
+      "i": 23,
+      "text": "Welcome to the Team",
+      "ocr_height": 13.5,
+      "ink": "#97999b",
+      "ground": "#171a1b",
+      "ink_px": 11,
+      "size": 11.0
+     },
+     {
+      "i": 24,
+      "text": "Spring Fundraiser Pitch",
+      "ocr_height": 16,
+      "ink": "#999b9d",
+      "ground": "#161a1b",
+      "ink_px": 18,
+      "size": 14.5
+     },
+     {
+      "i": 25,
+      "text": "Coastal Survey Findings X",
+      "ocr_height": 16,
+      "ink": "#999c9e",
+      "ground": "#161a1c",
+      "ink_px": 14,
+      "size": 11.5
+     },
+     {
+      "i": 26,
+      "text": "+ New",
+      "ocr_height": 13.9,
+      "ink": "#939698",
+      "ground": "#171a1c",
+      "ink_px": 9,
+      "size": 9.0
+     }
+    ],
+    "surfaces": [
+     {
+      "i": 22,
+      "bounds": [
+       578,
+       3,
+       249,
+       44
+      ],
+      "fill": "#141819",
+      "border": "#15181a",
+      "radius": 0
+     },
+     {
+      "i": 23,
+      "bounds": [
+       345,
+       3,
+       227,
+       44
+      ],
+      "fill": "#141819",
+      "border": "#121617",
+      "radius": 0
+     },
+     {
+      "i": 25,
+      "bounds": [
+       1047,
+       5,
+       219,
+       42
+      ],
+      "fill": "#141819",
+      "border": "#111517",
+      "radius": 1
+     },
+     {
+      "i": 26,
+      "bounds": [
+       833,
+       3,
+       208,
+       44
+      ],
+      "fill": "#141819",
+      "border": "#131718",
+      "radius": 3
+     },
+     {
+      "i": 27,
+      "bounds": [
+       1272,
+       5,
+       217,
+       42
+      ],
+      "fill": "#141819",
+      "border": "#111517",
+      "radius": 1
+     },
+     {
+      "i": 31,
+      "bounds": [
+       5,
+       3,
+       106,
+       44
+      ],
+      "fill": "#141819",
+      "border": "#101415",
+      "radius": 3
+     },
+     {
+      "i": 43,
+      "bounds": [
+       1493,
+       5,
+       42,
+       46
+      ],
+      "fill": "#15181a",
+      "border": "#14181a",
+      "radius": 0
+     }
+    ],
+    "dividers": [
+     0
+    ]
+   }
+  },
+  {
+   "id": "toolbar",
+   "role": "toolbar: Slides and Sorter; Text, Picture, Shape, Table, Chart; Undo, Redo; Save, Export and Present (the one filled button)",
+   "widget": "SolidView bar (BAR_H 54, on_render bar_view): view_tab per view (Flat 12.5 + 3 pt SolidView underline, accent when current); insert_btn per kind (GestureView 64 x 50: Svg 22 over Label 10.5, tinted while its strip is open); tool_btn Undo/Redo (Svg 20 over Label 10.5, faint when unavailable); SolidView 1 x 28; Outline Save (Svg save) and Export (Svg export, tinted in Export); Primary Present (Svg play)",
+   "cite": [
+    "makepad widgets/src/view_ui.rs:85 (SolidView); App Flow docs/SCRIPT-API.md 'Backgrounds' (a plain View paints nothing in the contained host)",
+    "makepad widgets/src/button.rs:20 (ButtonFlat: text, icon_walk, draw_icon, draw_bg, draw_text, on_click)",
+    "makepad widgets/src/gesture_view.rs:44 (GestureView), on_tap/on_double_tap/on_long_press/on_swipe/on_pan gesture_view.rs:186-196, pan deltas from the press gesture_view.rs:250-275",
+    "makepad widgets/src/svg.rs:10 (Svg), draw_svg.svg from http_resource('{{assets}}/icons/…'): App Flow docs/SCRIPT-API.md 'Shape of a program'; apps/pdftools/bundle/main.splash icon()",
+    "makepad widgets/src/label.rs:11 (Label), max_lines label.rs:258, text_overflow Ellipsis (draw_text.rs)",
+    "makepad widgets/src/view.rs:904 (render() re-runs a region's on_render); an on_render result is built fresh, view.rs:248"
+   ],
+   "geometry": {
+    "height": 54,
+    "padding": [
+     14,
+     16
+    ],
+    "view_columns": 76,
+    "underline": "3 pt, inset 12",
+    "insert_button": [
+     64,
+     50
+    ],
+    "icon": 22,
+    "save_export_present": "34 tall",
+    "groups": "view tabs left, insert buttons centred between two Fill gaps, history and actions right"
+   },
+   "colors": {
+    "light": {
+     "qd_bar": "#ffffff",
+     "qd_link": "#1c6ce0",
+     "qd_ink2": "#55585c",
+     "qd_icon": "#5b5d61",
+     "qd_faint": "#9c9da0",
+     "qd_accent": "#116cdc",
+     "qd_tint": "#eaf2fd",
+     "qd_field_line": "#dcdde0",
+     "qd_card": "#ffffff"
+    },
+    "dark": {
+     "qd_bar": "#15191b",
+     "qd_link": "#3a8ee0",
+     "qd_ink2": "#b0b2b4",
+     "qd_icon": "#a3a6a9",
+     "qd_faint": "#63676a",
+     "qd_accent": "#0f6de6",
+     "qd_tint": "#17304d",
+     "qd_field_line": "#383d40",
+     "qd_card": "#22272b"
+    }
+   },
+   "font": "theme.font_regular",
+   "size": 12,
+   "decision": "Shortcuts are buttons (script apps receive no key events): Undo, Redo, Save, Export and Present are the toolbar's own buttons.",
+   "notes": "The images draw the toolbar 58-78 tall; the build keeps PDF Tools' 54 (shared chrome). In a window under 1180 points an Inspector button joins the right end.",
+   "image_rect": [
+    0,
+    48,
+    1536,
+    69
+   ],
+   "status": "built",
+   "source": {
+    "text": [
+     {
+      "i": 4,
+      "text": "Slides",
+      "ocr_height": 13.4,
+      "ink": "#227eca",
+      "ground": "#131a25",
+      "ink_px": 12,
+      "size": 12.0
+     },
+     {
+      "i": 5,
+      "text": "Sorter",
+      "ocr_height": 13.4,
+      "ink": "#b1b2b4",
+      "ground": "#181b1d",
+      "ink_px": 12,
+      "size": 12.0
+     },
+     {
+      "i": 18,
+      "text": "Text",
+      "ocr_height": 13.4,
+      "ink": "#9da0a2",
+      "ground": "#181b1d",
+      "ink_px": 10,
+      "size": 10.0
+     },
+     {
+      "i": 19,
+      "text": "Picture",
+      "ocr_height": 13.4,
+      "ink": "#9b9c9e",
+      "ground": "#181b1d",
+      "ink_px": 10,
+      "size": 10.0
+     },
+     {
+      "i": 20,
+      "text": "Shape",
+      "ocr_height": 13.4,
+      "ink": "#aaadaf",
+      "ground": "#1a1e20",
+      "ink_px": 10,
+      "size": 8.0
+     },
+     {
+      "i": 21,
+      "text": "Table",
+      "ocr_height": 13.4,
+      "ink": "#9c9fa1",
+      "ground": "#181b1e",
+      "ink_px": 10,
+      "size": 10.0
+     },
+     {
+      "i": 22,
+      "text": "Chart",
+      "ocr_height": 11.2,
+      "ink": "#9b9e9f",
+      "ground": "#171b1c",
+      "ink_px": 10,
+      "size": 10.0
+     },
+     {
+      "i": 27,
+      "text": "Save",
+      "ocr_height": 13.4,
+      "ink": "#b5b6b8",
+      "ground": "#1a1e20",
+      "ink_px": 11,
+      "size": 11.0
+     },
+     {
+      "i": 28,
+      "text": "Export",
+      "ocr_height": 13.5,
+      "ink": "#b2b4b6",
+      "ground": "#191c1e",
+      "ink_px": 11,
+      "size": 9.0
+     },
+     {
+      "i": 29,
+      "text": "Present",
+      "ocr_height": 13.4,
+      "ink": "#adcff7",
+      "ground": "#0b6ce7",
+      "ink_px": 10,
+      "size": 10.0
+     },
+     {
+      "i": 30,
+      "text": "Undo",
+      "ocr_height": 13.4,
+      "ink": "#7e8182",
+      "ground": "#171a1c",
+      "ink_px": 9,
+      "size": 9.0
+     },
+     {
+      "i": 31,
+      "text": "Redo",
+      "ocr_height": 11.2,
+      "ink": "#5f6364",
+      "ground": "#161a1c",
+      "ink_px": 9,
+      "size": 9.0
+     }
+    ],
+    "surfaces": [
+     {
+      "i": 32,
+      "bounds": [
+       1405,
+       64,
+       104,
+       40
+      ],
+      "fill": "#076ce8",
+      "border": "#151b1d",
+      "radius": 3
+     },
+     {
+      "i": 36,
+      "bounds": [
+       1303,
+       64,
+       92,
+       40
+      ],
+      "fill": "#161a1c",
+      "border": "#14181a",
+      "radius": 0
+     },
+     {
+      "i": 37,
+      "bounds": [
+       1209,
+       64,
+       86,
+       40
+      ],
+      "fill": "#151a1c",
+      "border": "#171b1d",
+      "radius": 0
+     },
+     {
+      "i": 38,
+      "bounds": [
+       1307,
+       67,
+       85,
+       34
+      ],
+      "fill": "#161a1c",
+      "border": "#222526",
+      "radius": 0
+     },
+     {
+      "i": 42,
+      "bounds": [
+       1212,
+       67,
+       80,
+       34
+      ],
+      "fill": "#161a1c",
+      "border": "#15191c",
+      "radius": 1
+     }
+    ],
+    "dividers": [
+     1,
+     2
+    ]
+   }
+  },
+  {
+   "id": "navigator",
+   "role": "slide navigator: New slide, section names, numbered thumbnails (the current one outlined, a hidden one dimmed)",
+   "widget": "View nav (on_render nav_view): SolidView NAV_W 280 with Flat 'New slide' (accent outline, Svg plus) and thumbs := ScrollYView (on_render thumbs_view): per section a GestureView row (Svg chevron, Label name; taps fold it), per slide a GestureView (Label number 22 wide, accent when current; RoundedView frame 2 pt accent when current; RoundedView thumbnail 200 wide with Image, SolidView veil + Svg eye-off when hidden); '‹ Slides 1–n' and 'Slides n–N ›' LinkBtns at the window's ends",
+   "cite": [
+    "makepad widgets/src/view_ui.rs:5 (View); flow: Overlay children placed by margin from the parent's origin (draw/src/turtle.rs)",
+    "makepad widgets/src/view_ui.rs:85 (SolidView); App Flow docs/SCRIPT-API.md 'Backgrounds' (a plain View paints nothing in the contained host)",
+    "makepad widgets/src/view_ui.rs:805 (ScrollYView); a view keeps its scroll position across its own render(): view.rs:296-306",
+    "makepad widgets/src/gesture_view.rs:44 (GestureView), on_tap/on_double_tap/on_long_press/on_swipe/on_pan gesture_view.rs:186-196, pan deltas from the press gesture_view.rs:250-275",
+    "makepad widgets/src/label.rs:11 (Label), max_lines label.rs:258, text_overflow Ellipsis (draw_text.rs)",
+    "makepad widgets/src/view_ui.rs:308 (RoundedView: border_size, border_color, border_radius)",
+    "makepad widgets/src/image.rs:71 (Image), ImageFit image_cache.rs:4; binary_resource platform/src/script/res.rs:1398; fs.read_bytes splash_storage.rs:446",
+    "makepad widgets/src/svg.rs:10 (Svg), draw_svg.svg from http_resource('{{assets}}/icons/…'): App Flow docs/SCRIPT-API.md 'Shape of a program'; apps/pdftools/bundle/main.splash icon()",
+    "makepad widgets/src/button.rs:20 (ButtonFlat: text, icon_walk, draw_icon, draw_bg, draw_text, on_click)",
+    "makepad widgets/src/view.rs:904 (render() re-runs a region's on_render); an on_render result is built fresh, view.rs:248"
+   ],
+   "geometry": {
+    "width": 280,
+    "new_slide": "Fill x 34, padding 16/14, 12 from the top",
+    "thumbnail": [
+     200,
+     112.5
+    ],
+    "number": 22,
+    "row_pitch": "thumbnail + 12",
+    "window": "40 slides from a little before the current one (nav_start)"
+   },
+   "colors": {
+    "light": {
+     "qd_nav": "#ffffff",
+     "qd_link": "#1c6ce0",
+     "qd_accent": "#116cdc",
+     "qd_muted": "#76787c",
+     "qd_ink2": "#55585c",
+     "qd_thumb_line": "#d3d5d9",
+     "qd_line_soft": "#ececee"
+    },
+    "dark": {
+     "qd_nav": "#151a1d",
+     "qd_link": "#3a8ee0",
+     "qd_accent": "#0f6de6",
+     "qd_muted": "#868a8d",
+     "qd_ink2": "#b0b2b4",
+     "qd_thumb_line": "#3a3f43",
+     "qd_line_soft": "#2a2e31"
+    }
+   },
+   "font": "theme.font_regular",
+   "size": 12,
+   "decision": null,
+   "notes": "No scroll position for script apps: the list starts a little before the current slide once it would fall below the fold (04 and 10 start at slide 3), with '‹ Slides 1–n' to go back. The images draw the navigator 258-297 wide; the build takes 280. First slide drawn here: 3.",
+   "image_rect": [
+    2,
+    117,
+    288,
+    847
+   ],
+   "status": "built",
+   "source": {
+    "text": [
+     {
+      "i": 0,
+      "text": "3",
+      "ocr_height": 15.6,
+      "ink": "#b4b7b8",
+      "ground": "#171b1e",
+      "ink_px": 12,
+      "size": 12.0
+     },
+     {
+      "i": 6,
+      "text": "+ New slide",
+      "ocr_height": 18.8,
+      "ink": "#2276bc",
+      "ground": "#141a20",
+      "ink_px": 13,
+      "size": 13.0
+     },
+     {
+      "i": 42,
+      "text": "5",
+      "ocr_height": 15.6,
+      "ink": "#b2b4b7",
+      "ground": "#181e21",
+      "ink_px": 12,
+      "size": 12.0
+     },
+     {
+      "i": 43,
+      "text": "7",
+      "ocr_height": 15.6,
+      "ink": "#b2b4b6",
+      "ground": "#171c1f",
+      "ink_px": 12,
+      "size": 12.0
+     },
+     {
+      "i": 64,
+      "text": "Outlook",
+      "ocr_height": 13.8,
+      "ink": "#a5a7ab",
+      "ground": "#1a1f22",
+      "ink_px": 10,
+      "size": 10.0
+     }
+    ],
+    "surfaces": [
+     {
+      "i": 3,
+      "bounds": [
+       5,
+       118,
+       285,
+       845
+      ],
+      "fill": "#bdcad8",
+      "border": "#161c1f",
+      "radius": 95
+     },
+     {
+      "i": 24,
+      "bounds": [
+       24,
+       129,
+       246,
+       40
+      ],
+      "fill": "#15191b",
+      "border": "#121619",
+      "radius": 0
+     },
+     {
+      "i": 28,
+      "bounds": [
+       28,
+       133,
+       239,
+       33
+      ],
+      "fill": "#15191b",
+      "border": "#25272a",
+      "radius": 0
+     }
+    ],
+    "dividers": [
+     39
+    ]
+   }
+  },
+  {
+   "id": "segments",
+   "role": "inspector segments: Format · Layout · Theme · Notes",
+   "widget": "View insp_tabs (SEG_H 50, on_render insp_tabs_view) in insp_side: per segment a Flat (12) over a 3 pt SolidView underline, accent when current; a soft line below",
+   "cite": [
+    "makepad widgets/src/view_ui.rs:5 (View); flow: Overlay children placed by margin from the parent's origin (draw/src/turtle.rs)",
+    "makepad widgets/src/button.rs:20 (ButtonFlat: text, icon_walk, draw_icon, draw_bg, draw_text, on_click)",
+    "makepad widgets/src/view_ui.rs:85 (SolidView); App Flow docs/SCRIPT-API.md 'Backgrounds' (a plain View paints nothing in the contained host)",
+    "makepad widgets/src/view.rs:904 (render() re-runs a region's on_render); an on_render result is built fresh, view.rs:248"
+   ],
+   "geometry": {
+    "height": 50,
+    "padding": 8,
+    "underline": "3 pt, inset 14"
+   },
+   "colors": {
+    "light": {
+     "qd_insp": "#ffffff",
+     "qd_link": "#1c6ce0",
+     "qd_ink2": "#55585c",
+     "qd_accent": "#116cdc",
+     "qd_line_soft": "#ececee"
+    },
+    "dark": {
+     "qd_insp": "#161b1f",
+     "qd_link": "#3a8ee0",
+     "qd_ink2": "#b0b2b4",
+     "qd_accent": "#0f6de6",
+     "qd_line_soft": "#2a2e31"
+    }
+   },
+   "font": "theme.font_regular",
+   "size": 12,
+   "current": "notes",
+   "decision": null,
+   "notes": "10-dark-notes draws the current segment as an outlined tab; the build underlines it in both appearances, as the light screens do.",
+   "image_rect": [
+    1189,
+    117,
+    346,
+    47
+   ],
+   "status": "built",
+   "source": {
+    "text": [
+     {
+      "i": 32,
+      "text": "Format",
+      "ocr_height": 13.4,
+      "ink": "#b8bbbd",
+      "ground": "#191d1f",
+      "ink_px": 11,
+      "size": 11.0
+     },
+     {
+      "i": 33,
+      "text": "Layout",
+      "ocr_height": 15.6,
+      "ink": "#b4b7b9",
+      "ground": "#181b1e",
+      "ink_px": 14,
+      "size": 11.5
+     },
+     {
+      "i": 34,
+      "text": "Theme",
+      "ocr_height": 13.4,
+      "ink": "#babdbe",
+      "ground": "#1b1f21",
+      "ink_px": 11,
+      "size": 11.0
+     },
+     {
+      "i": 35,
+      "text": "Notes",
+      "ocr_height": 13.4,
+      "ink": "#2684cd",
+      "ground": "#141d29",
+      "ink_px": 11,
+      "size": 11.0
+     }
+    ],
+    "surfaces": [],
+    "dividers": []
+   }
+  },
+  {
+   "id": "notes",
+   "role": "Notes: the slide's speaker notes, their length, Show notes while presenting",
+   "widget": "notes_panel: Label 'Speaker notes'; RoundedView (height: the window less its chrome) with a multiline TextInput of the slide's whole notes (deck.slide; 'Reading the notes…' until they come), on_change: deck.notes after a pause, the field never drawn again while the person types, and notes_meta := Label '28 words · about 10 seconds' (set_text as the person types); toggle_row 'Show notes while presenting' (library.json)",
+   "cite": [
+    "makepad widgets/src/view_ui.rs:805 (ScrollYView); a view keeps its scroll position across its own render(): view.rs:296-306",
+    "makepad widgets/src/view_ui.rs:5 (View); flow: Overlay children placed by margin from the parent's origin (draw/src/turtle.rs)",
+    "makepad widgets/src/label.rs:11 (Label), max_lines label.rs:258, text_overflow Ellipsis (draw_text.rs)",
+    "makepad widgets/src/button.rs:20 (ButtonFlat: text, icon_walk, draw_icon, draw_bg, draw_text, on_click)",
+    "makepad widgets/src/gesture_view.rs:44 (GestureView), on_tap/on_double_tap/on_long_press/on_swipe/on_pan gesture_view.rs:186-196, pan deltas from the press gesture_view.rs:250-275",
+    "makepad widgets/src/view_ui.rs:308 (RoundedView: border_size, border_color, border_radius)",
+    "makepad widgets/src/check_box.rs:354 (Toggle), on_click: |active|: App Flow docs/SCRIPT-API.md 'Events'; styled as apps/pdftools/bundle/main.splash form_banner",
+    "makepad widgets/src/text_input.rs:468 (TextInput), is_multiline text_input.rs:576, empty_text :604, on_change/on_return :675-677",
+    "makepad widgets/src/svg.rs:10 (Svg), draw_svg.svg from http_resource('{{assets}}/icons/…'): App Flow docs/SCRIPT-API.md 'Shape of a program'; apps/pdftools/bundle/main.splash icon()",
+    "makepad widgets/src/view.rs:904 (render() re-runs a region's on_render); an on_render result is built fresh, view.rs:248"
+   ],
+   "geometry": {
+    "padding": [
+     16,
+     16,
+     18,
+     18
+    ],
+    "box": "the window's height less 341",
+    "meta": "inside the box, bottom left"
+   },
+   "colors": {
+    "light": {
+     "qd_insp": "#ffffff",
+     "qd_ink": "#36393d",
+     "qd_ink2": "#55585c",
+     "qd_muted": "#76787c",
+     "qd_field": "#ffffff",
+     "qd_field_line": "#dcdde0",
+     "qd_tint": "#eaf2fd",
+     "qd_accent": "#116cdc",
+     "qd_link": "#1c6ce0",
+     "qd_toggle_on": "#0f68d8",
+     "qd_toggle_off": "#c5c9cc"
+    },
+    "dark": {
+     "qd_insp": "#161b1f",
+     "qd_ink": "#c9cbcd",
+     "qd_ink2": "#b0b2b4",
+     "qd_muted": "#868a8d",
+     "qd_field": "#161c1f",
+     "qd_field_line": "#383d40",
+     "qd_tint": "#17304d",
+     "qd_accent": "#0f6de6",
+     "qd_link": "#3a8ee0",
+     "qd_toggle_on": "#1678e7",
+     "qd_toggle_off": "#3b4043"
+    }
+   },
+   "font": "theme.font_regular",
+   "size": 11.5,
+   "decision": null,
+   "notes": "The length is the build's own count (about 2.8 words a second); 28 words reads 'about 10 seconds', as the design says.",
+   "image_rect": [
+    1189,
+    165,
+    346,
+    798
+   ],
+   "status": "built",
+   "source": {
+    "text": [
+     {
+      "i": 36,
+      "text": "Speaker notes",
+      "ocr_height": 15.6,
+      "ink": "#bcbec0",
+      "ground": "#191d1f",
+      "ink_px": 12,
+      "size": 10.0
+     },
+     {
+      "i": 37,
+      "text": "Total membership passed 18,000 for the",
+      "ocr_height": 18,
+      "ink": "#cacccd",
+      "ground": "#1a1e20",
+      "ink_px": 15,
+      "size": 12.0
+     },
+     {
+      "i": 38,
+      "text": "first time. Northwest added 460",
+      "ocr_height": 15.6,
+      "ink": "#c7c9ca",
+      "ground": "#1c1f22",
+      "ink_px": 13,
+      "size": 13.0
+     },
+     {
+      "i": 39,
+      "text": "members, most through the referral",
+      "ocr_height": 16.0,
+      "ink": "#c1c3c4",
+      "ground": "#1a1e21",
+      "ink_px": 16,
+      "size": 13.0
+     },
+     {
+      "i": 40,
+      "text": "program. Ask Jun Park to say a word",
+      "ocr_height": 18.1,
+      "ink": "#c6c8ca",
+      "ground": "#191e21",
+      "ink_px": 16,
+      "size": 13.0
+     },
+     {
+      "i": 41,
+      "text": "about the Metro waitlist.",
+      "ocr_height": 16.0,
+      "ink": "#c6c8ca",
+      "ground": "#1b1f22",
+      "ink_px": 12,
+      "size": 12.0
+     },
+     {
+      "i": 94,
+      "text": "28 words • about 10 seconds",
+      "ocr_height": 14,
+      "ink": "#7f8486",
+      "ground": "#161c1f",
+      "ink_px": 10,
+      "size": 10.0
+     },
+     {
+      "i": 95,
+      "text": "Show notes while presenting",
+      "ocr_height": 18.2,
+      "ink": "#bdbfc1",
+      "ground": "#181e21",
+      "ink_px": 15,
+      "size": 12.0
+     }
+    ],
+    "surfaces": [
+     {
+      "i": 5,
+      "bounds": [
+       1202,
+       211,
+       308,
+       629
+      ],
+      "fill": "#151b1e",
+      "border": "#141a1c",
+      "radius": 0
+     },
+     {
+      "i": 46,
+      "bounds": [
+       1470,
+       892,
+       38,
+       25
+      ],
+      "fill": "#0d72ed",
+      "border": "#121c1f",
+      "radius": 7
+     }
+    ],
+    "dividers": [
+     4,
+     5,
+     25,
+     26,
+     27,
+     28,
+     31,
+     52,
+     53,
+     54,
+     55,
+     56,
+     57
+    ]
+   }
+  },
+  {
+   "id": "canvas",
+   "role": "canvas: the light desk behind the slide",
+   "widget": "ScrollXYView canvas (on_render canvas_view) in a canvas_box; the slide centred with DESK_SIDE 32, DESK_TOP 24 and DESK_BOTTOM 105 (the pill's band) around it",
+   "cite": [
+    "makepad widgets/src/view_ui.rs:790 (ScrollXYView)",
+    "makepad widgets/src/view.rs:904 (render() re-runs a region's on_render); an on_render result is built fresh, view.rs:248"
+   ],
+   "geometry": {
+    "width": "Fill: the window less the navigator (280) and the inspector (344), each with its line",
+    "fit": "min((w - 64) / slide_w, (h - 129) / slide_h)"
+   },
+   "colors": {
+    "light": {
+     "qd_desk": "#f2f4f5"
+    },
+    "dark": {
+     "qd_desk": "#1b1e22"
+    }
+   },
+   "decision": null,
+   "notes": "",
+   "image_rect": [
+    290,
+    117,
+    897,
+    846
+   ],
+   "status": "built",
+   "source": {
+    "text": [],
+    "surfaces": [
+     {
+      "i": 0,
+      "bounds": [
+       292,
+       116,
+       895,
+       847
+      ],
+      "fill": "#f3f6f9",
+      "border": "#363b3c",
+      "radius": 184
+     }
+    ],
+    "dividers": [
+     29,
+     35,
+     40,
+     41,
+     48,
+     49
+    ]
+   }
+  },
+  {
+   "id": "status",
+   "role": "status line: Saved or Edited with its dot, the slide and size (or the sorter's count), storage used",
+   "widget": "SolidView status (STATUS_H 44, on_render status_view): Label state + RoundedView 11 dot (green Saved, amber Edited/Saving), centred Label 'Slide 5 of 12 · 16:9', Label '<x> of 64 MB used' from files.status; on Home the label and a RoundedView bar; red ground and words when the storage is full",
+   "cite": [
+    "makepad widgets/src/view_ui.rs:85 (SolidView); App Flow docs/SCRIPT-API.md 'Backgrounds' (a plain View paints nothing in the contained host)",
+    "makepad widgets/src/view_ui.rs:308 (RoundedView: border_size, border_color, border_radius)",
+    "makepad widgets/src/label.rs:11 (Label), max_lines label.rs:258, text_overflow Ellipsis (draw_text.rs)",
+    "OctoSense crates/shell/src/files_service/mod.rs (files.status, files.import {path}); used as in apps/pdftools/bundle/main.splash open_from_device"
+   ],
+   "geometry": {
+    "height": 44,
+    "padding": [
+     26,
+     34
+    ],
+    "dot": 11
+   },
+   "colors": {
+    "light": {
+     "qd_status": "#ffffff",
+     "qd_muted": "#76787c",
+     "qd_green": "#3fa95a",
+     "qd_orange": "#f2a20d",
+     "qd_red": "#e5534f",
+     "qd_track": "#d2d2d3",
+     "qd_accent": "#116cdc"
+    },
+    "dark": {
+     "qd_status": "#151b1d",
+     "qd_muted": "#868a8d",
+     "qd_green": "#20b376",
+     "qd_orange": "#e39a1c",
+     "qd_red": "#f06a66",
+     "qd_track": "#34393c",
+     "qd_accent": "#0f6de6"
+    }
+   },
+   "font": "theme.font_regular",
+   "size": 12,
+   "decision": null,
+   "notes": "The images draw the dot after the word, as the build does. Their status line is 49-69 tall; the build keeps PDF Tools' 44.",
+   "image_rect": [
+    0,
+    963,
+    1536,
+    61
+   ],
+   "status": "built",
+   "source": {
+    "text": [
+     {
+      "i": 66,
+      "text": "Saved",
+      "ocr_height": 14.0,
+      "ink": "#84898c",
+      "ground": "#161b1e",
+      "ink_px": 12,
+      "size": 12.0
+     },
+     {
+      "i": 90,
+      "text": "Slide 6 of 12 • 16:9",
+      "ocr_height": 13.4,
+      "ink": "#878b8d",
+      "ground": "#171d20",
+      "ink_px": 12,
+      "size": 12.0
+     },
+     {
+      "i": 96,
+      "text": "24.8 of 64 MB used",
+      "ocr_height": 13.4,
+      "ink": "#868b8d",
+      "ground": "#171d20",
+      "ink_px": 12,
+      "size": 12.0
+     }
+    ],
+    "surfaces": [
+     {
+      "i": 6,
+      "bounds": [
+       5,
+       965,
+       1530,
+       55
+      ],
+      "fill": "#151b1e",
+      "border": "#0e1417",
+      "radius": 0
+     }
+    ],
+    "dividers": [
+     36,
+     37,
+     38
+    ]
+   }
+  },
+  {
+   "id": "window",
+   "role": "window ground",
+   "widget": "SolidView root (flow Overlay, qd_desk) and the region's own ground",
+   "cite": [
+    "makepad widgets/src/view_ui.rs:85 (SolidView); App Flow docs/SCRIPT-API.md 'Backgrounds' (a plain View paints nothing in the contained host)"
+   ],
+   "geometry": {
+    "size": "the app's window"
+   },
+   "colors": {
+    "light": {
+     "qd_desk": "#f2f4f5"
+    },
+    "dark": {
+     "qd_desk": "#1b1e22"
+    }
+   },
+   "decision": null,
+   "notes": "",
+   "image_rect": [
+    0,
+    0,
+    1536,
+    1024
+   ],
+   "status": "built",
+   "source": {
+    "text": [],
+    "surfaces": [
+     {
+      "i": 2,
+      "bounds": [
+       1189,
+       126,
+       346,
+       837
+      ],
+      "fill": "#151b1e",
+      "border": "#101618",
+      "radius": 0
+     }
+    ],
+    "dividers": [
+     3,
+     50,
+     51
+    ]
+   }
+  }
+ ],
+ "coverage": {
+  "text": 97,
+  "surfaces": 48,
+  "dividers": 58,
+  "unmapped": 0
+ }
+}

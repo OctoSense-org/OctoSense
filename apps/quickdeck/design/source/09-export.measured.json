@@ -1,0 +1,1100 @@
+{
+ "schema_version": 1,
+ "image": "09-export.png",
+ "image_sha256": "891fe00ade7ec8a7619eb9dc983d61fc32b2d53e30b4572e8e0d1812c868eb99",
+ "script_sha256": "ea860507e32482b955d3ac577ab3cf9fc559f59ecc916c89175293932b54e0b7",
+ "size": [
+  1536,
+  1024
+ ],
+ "ocr_engine": "Apple Vision VNRecognizeTextRequest accurate, en-US (App Flow ocr.swift)",
+ "text": [
+  {
+   "text": "Home",
+   "bounds": [
+    49.1,
+    20.1,
+    40.2,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#525558",
+   "ground": "#f4f4f4"
+  },
+  {
+   "text": "Slides",
+   "bounds": [
+    38.0,
+    78.1,
+    46.9,
+    17.8
+   ],
+   "confidence": 1,
+   "ink": "#387ee2",
+   "ground": "#f5f8fc"
+  },
+  {
+   "text": "Q3 2026 Board Update X",
+   "bounds": [
+    151.8,
+    17.8,
+    171.9,
+    18.2
+   ],
+   "confidence": 1,
+   "ink": "#484a4d",
+   "ground": "#f7f7f7"
+  },
+  {
+   "text": "Northern Lights Field Trip X",
+   "bounds": [
+    370.6,
+    17.8,
+    185.3,
+    20.2
+   ],
+   "confidence": 1,
+   "ink": "#5c5e60",
+   "ground": "#f4f4f5"
+  },
+  {
+   "text": "Sorter",
+   "bounds": [
+    120.6,
+    78.1,
+    46.9,
+    15.6
+   ],
+   "confidence": 1,
+   "ink": "#474b50",
+   "ground": "#f5f5f5"
+  },
+  {
+   "text": "T",
+   "bounds": [
+    515.7,
+    64.7,
+    24.6,
+    26.8
+   ],
+   "confidence": 1,
+   "ink": "#707276",
+   "ground": "#fcfcfc"
+  },
+  {
+   "text": "Text",
+   "bounds": [
+    513.5,
+    98.2,
+    29.0,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#77797c",
+   "ground": "#f8f8f8"
+  },
+  {
+   "text": "Riverside Community Garden X",
+   "bounds": [
+    605.0,
+    17.8,
+    198.7,
+    18.2
+   ],
+   "confidence": 1,
+   "ink": "#585a5c",
+   "ground": "#f3f3f3"
+  },
+  {
+   "text": "\u2022 Welcome to the Team X",
+   "bounds": [
+    830.5,
+    17.8,
+    180.8,
+    18.2
+   ],
+   "confidence": 1,
+   "ink": "#585a5d",
+   "ground": "#f3f3f4"
+  },
+  {
+   "text": "Spring Fundraiser Pitch X",
+   "bounds": [
+    1060.5,
+    20.0,
+    163.0,
+    16
+   ],
+   "confidence": 1,
+   "ink": "#595b5d",
+   "ground": "#f2f3f3"
+  },
+  {
+   "text": "Save",
+   "bounds": [
+    1190.0,
+    82.5,
+    35.7,
+    15.6
+   ],
+   "confidence": 1,
+   "ink": "#4f5256",
+   "ground": "#f6f6f6"
+  },
+  {
+   "text": "Coastal Survey Findings X",
+   "bounds": [
+    1274.8,
+    17.8,
+    163.0,
+    18.2
+   ],
+   "confidence": 1,
+   "ink": "#616366",
+   "ground": "#f3f4f4"
+  },
+  {
+   "text": "+ New",
+   "bounds": [
+    1464.6,
+    17.8,
+    53.6,
+    20.2
+   ],
+   "confidence": 1,
+   "ink": "#58595c",
+   "ground": "#f4f4f4"
+  },
+  {
+   "text": "Export",
+   "bounds": [
+    1303.6,
+    81.8,
+    49.6,
+    19.3
+   ],
+   "confidence": 1,
+   "ink": "#3d80df",
+   "ground": "#e6f0fc"
+  },
+  {
+   "text": "Present",
+   "bounds": [
+    1431.1,
+    82.5,
+    58.0,
+    15.6
+   ],
+   "confidence": 1,
+   "ink": "#d1e4f8",
+   "ground": "#1672e0"
+  },
+  {
+   "text": "Picture",
+   "bounds": [
+    591.6,
+    98.2,
+    42.4,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#7b7c7f",
+   "ground": "#f8f8f8"
+  },
+  {
+   "text": "Shape",
+   "bounds": [
+    674.2,
+    98.2,
+    40.2,
+    15.6
+   ],
+   "confidence": 1,
+   "ink": "#777a7d",
+   "ground": "#f9f9f9"
+  },
+  {
+   "text": "Export \"Q3 2026 Board Update\"",
+   "bounds": [
+    444.3,
+    169.6,
+    292.5,
+    26.8
+   ],
+   "confidence": 1,
+   "ink": "#3a3e43",
+   "ground": "#f7f7f7"
+  },
+  {
+   "text": "Format",
+   "bounds": [
+    446.5,
+    218.6,
+    60.3,
+    17.8
+   ],
+   "confidence": 1,
+   "ink": "#36393e",
+   "ground": "#f5f5f5"
+  },
+  {
+   "text": "Table",
+   "bounds": [
+    761.3,
+    98.2,
+    33.5,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#737579",
+   "ground": "#f6f6f6"
+  },
+  {
+   "text": "Chart",
+   "bounds": [
+    839.4,
+    98.2,
+    38.0,
+    17.8
+   ],
+   "confidence": 1,
+   "ink": "#6f7174",
+   "ground": "#f9f9f9"
+  },
+  {
+   "text": "Undo",
+   "bounds": [
+    1011.3,
+    98.2,
+    33.5,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#6d6f74",
+   "ground": "#f6f6f7"
+  },
+  {
+   "text": "Redo",
+   "bounds": [
+    1069.4,
+    98.2,
+    31.3,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#74767b",
+   "ground": "#f5f5f6"
+  },
+  {
+   "text": "Presentation",
+   "bounds": [
+    513.5,
+    265.5,
+    91.5,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#37393d",
+   "ground": "#edeeee"
+  },
+  {
+   "text": "\u2022pptx",
+   "bounds": [
+    511.3,
+    292.3,
+    38.0,
+    17.8
+   ],
+   "confidence": 1,
+   "ink": "#717479",
+   "ground": "#f7f7f8"
+  },
+  {
+   "text": "Opens in most",
+   "bounds": [
+    459.9,
+    323.0,
+    96,
+    18.3
+   ],
+   "confidence": 1,
+   "ink": "#5e6062",
+   "ground": "#f7f8f8"
+  },
+  {
+   "text": "presentation apps",
+   "bounds": [
+    459.9,
+    341.0,
+    118.3,
+    20.4
+   ],
+   "confidence": 1,
+   "ink": "#65676b",
+   "ground": "#f8f8f8"
+  },
+  {
+   "text": "Pages",
+   "bounds": [
+    446.5,
+    417.2,
+    46.9,
+    17.8
+   ],
+   "confidence": 1,
+   "ink": "#34383d",
+   "ground": "#f2f3f3"
+  },
+  {
+   "text": "Slides",
+   "bounds": [
+    493.4,
+    455.1,
+    46.9,
+    17.8
+   ],
+   "confidence": 1,
+   "ink": "#3279de",
+   "ground": "#f2f6fb"
+  },
+  {
+   "text": "Slides",
+   "bounds": [
+    444.3,
+    506.4,
+    51.3,
+    20.1
+   ],
+   "confidence": 1,
+   "ink": "#34373b",
+   "ground": "#f5f5f5"
+  },
+  {
+   "text": "\u2022 All 12 slides",
+   "bounds": [
+    444.0,
+    536.3,
+    114.4,
+    25.0
+   ],
+   "confidence": 1,
+   "ink": "#44658f",
+   "ground": "#f8f9fa"
+  },
+  {
+   "text": "Current slide",
+   "bounds": [
+    448.7,
+    571.0,
+    113.9,
+    18
+   ],
+   "confidence": 1,
+   "ink": "#595c60",
+   "ground": "#f6f6f7"
+  },
+  {
+   "text": "Custom",
+   "bounds": [
+    475.5,
+    606.8,
+    53.6,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#53575b",
+   "ground": "#f4f5f5"
+  },
+  {
+   "text": "2-6",
+   "bounds": [
+    576.0,
+    604.6,
+    29.0,
+    15.6
+   ],
+   "confidence": 1,
+   "ink": "#c3c4c7",
+   "ground": "#fcfcfc"
+  },
+  {
+   "text": "Include hidden slides (1)",
+   "bounds": [
+    448.7,
+    644.7,
+    189.8,
+    18.3
+   ],
+   "confidence": 1,
+   "ink": "#74777b",
+   "ground": "#f7f7f8"
+  },
+  {
+   "text": "Name",
+   "bounds": [
+    446.5,
+    684.9,
+    46.9,
+    17.8
+   ],
+   "confidence": 1,
+   "ink": "#3e4246",
+   "ground": "#f5f5f6"
+  },
+  {
+   "text": "Q3 2026 Board Update",
+   "bounds": [
+    459.9,
+    722.8,
+    171.9,
+    20.2
+   ],
+   "confidence": 1,
+   "ink": "#424549",
+   "ground": "#f5f6f6"
+  },
+  {
+   "text": "Saved in Quick Deck's storage",
+   "bounds": [
+    444.3,
+    778.6,
+    189.8,
+    15.6
+   ],
+   "confidence": 1,
+   "ink": "#7a7d81",
+   "ground": "#f7f7f8"
+  },
+  {
+   "text": "PDF",
+   "bounds": [
+    727.6,
+    262.9,
+    33.8,
+    18.5
+   ],
+   "confidence": 1,
+   "ink": "#373b40",
+   "ground": "#f6f6f6"
+  },
+  {
+   "text": "\u2022pdf",
+   "bounds": [
+    725.6,
+    290.0,
+    35.7,
+    20.1
+   ],
+   "confidence": 1,
+   "ink": "#6d7076",
+   "ground": "#f8f8f9"
+  },
+  {
+   "text": "Looks the same",
+   "bounds": [
+    678.7,
+    323.0,
+    102.7,
+    18.3
+   ],
+   "confidence": 1,
+   "ink": "#56585c",
+   "ground": "#f6f6f7"
+  },
+  {
+   "text": "everywhere",
+   "bounds": [
+    680.8,
+    340.8,
+    76.2,
+    21.0
+   ],
+   "confidence": 1,
+   "ink": "#595c60",
+   "ground": "#f7f7f8"
+  },
+  {
+   "text": "Images",
+   "bounds": [
+    957.8,
+    265.5,
+    55.8,
+    17.8
+   ],
+   "confidence": 1,
+   "ink": "#36393d",
+   "ground": "#f3f3f4"
+  },
+  {
+   "text": ".png",
+   "bounds": [
+    960.0,
+    294.5,
+    31.3,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#6e7075",
+   "ground": "#f3f4f4"
+  },
+  {
+   "text": "One picture per slide",
+   "bounds": [
+    906.4,
+    323.0,
+    131.7,
+    16.1
+   ],
+   "confidence": 1,
+   "ink": "#5c5f63",
+   "ground": "#f6f6f7"
+  },
+  {
+   "text": "O",
+   "bounds": [
+    832.7,
+    359.2,
+    20.1,
+    20.1
+   ],
+   "confidence": 1,
+   "ink": "#ecf4fb",
+   "ground": "#1974e0"
+  },
+  {
+   "text": "Notes pages",
+   "bounds": [
+    620.7,
+    455.0,
+    91.5,
+    20.2
+   ],
+   "confidence": 1,
+   "ink": "#4d5157",
+   "ground": "#f2f3f5"
+  },
+  {
+   "text": "Handouts",
+   "bounds": [
+    770.2,
+    455.0,
+    71.5,
+    20.2
+   ],
+   "confidence": 1,
+   "ink": "#52575d",
+   "ground": "#f3f3f5"
+  },
+  {
+   "text": "3 per page v",
+   "bounds": [
+    928.7,
+    455.0,
+    111.6,
+    18
+   ],
+   "confidence": 1,
+   "ink": "#aeb1b5",
+   "ground": "#f7f7f7"
+  },
+  {
+   "text": ".pdf",
+   "bounds": [
+    1031.4,
+    722.8,
+    35.7,
+    20.1
+   ],
+   "confidence": 1,
+   "ink": "#404549",
+   "ground": "#f7f7f7"
+  },
+  {
+   "text": "Export PDF",
+   "bounds": [
+    975.6,
+    780.5,
+    85.0,
+    18.4
+   ],
+   "confidence": 1,
+   "ink": "#d3e5f7",
+   "ground": "#1572df"
+  },
+  {
+   "text": "Saved \u2022",
+   "bounds": [
+    31.3,
+    988.0,
+    60.3,
+    14
+   ],
+   "confidence": 1,
+   "ink": "#4f8c6d",
+   "ground": "#f6f8f7"
+  },
+  {
+   "text": "Exported",
+   "bounds": [
+    446.5,
+    845.4,
+    69.3,
+    18.2
+   ],
+   "confidence": 1,
+   "ink": "#393c40",
+   "ground": "#e9eaeb"
+  },
+  {
+   "text": "V Q3 2026 Board Update.pptx \u2022 2.1 MB \u2022 Today 10:42",
+   "bounds": [
+    448.7,
+    876.7,
+    393.1,
+    20.5
+   ],
+   "confidence": 1,
+   "ink": "#476257",
+   "ground": "#edeeef"
+  },
+  {
+   "text": "Q3 2026 Board Update.pdf \u2022 4.8 MB \u2022 Today 10:44",
+   "bounds": [
+    480.0,
+    916.9,
+    357.2,
+    18.1
+   ],
+   "confidence": 1,
+   "ink": "#4c4f53",
+   "ground": "#eeeeef"
+  },
+  {
+   "text": "Slide 4 of 12 \u2022 16:9",
+   "bounds": [
+    707.7,
+    988.0,
+    129.5,
+    14
+   ],
+   "confidence": 1,
+   "ink": "#727478",
+   "ground": "#f8f8f8"
+  },
+  {
+   "text": "24.8 of 64 MB used",
+   "bounds": [
+    1373.0,
+    986.0,
+    129.5,
+    16
+   ],
+   "confidence": 1,
+   "ink": "#6c6f74",
+   "ground": "#f7f7f7"
+  }
+ ],
+ "surfaces": [
+  {
+   "bounds": [
+    2,
+    125,
+    1533,
+    845
+   ],
+   "fill": "#f0f1f1",
+   "border": "#f0f0f1",
+   "radius": 1
+  },
+  {
+   "bounds": [
+    418,
+    145,
+    703,
+    686
+   ],
+   "fill": "#fdfdfd",
+   "border": "#ededee",
+   "radius": 7
+  },
+  {
+   "bounds": [
+    2,
+    969,
+    1533,
+    54
+   ],
+   "fill": "#fdfdfd",
+   "border": "#fefefe",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    2,
+    2,
+    1533,
+    49
+   ],
+   "fill": "#f8f7f7",
+   "border": "#f9f9f8",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    666,
+    241,
+    204,
+    154
+   ],
+   "fill": "#fdfdfd",
+   "border": "#fcfdfe",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    445,
+    241,
+    202,
+    154
+   ],
+   "fill": "#fdfdfd",
+   "border": "#fefefe",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    889,
+    242,
+    203,
+    153
+   ],
+   "fill": "#fdfdfd",
+   "border": "#fdfdfd",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    445,
+    711,
+    584,
+    41
+   ],
+   "fill": "#fdfdfd",
+   "border": "#fdfdfd",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    449,
+    714,
+    577,
+    35
+   ],
+   "fill": "#fdfdfd",
+   "border": "#fdfdfd",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    445,
+    439,
+    426,
+    45
+   ],
+   "fill": "#f8f9fa",
+   "border": "#fdfdfd",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    950,
+    767,
+    141,
+    41
+   ],
+   "fill": "#136ede",
+   "border": "#f8fafc",
+   "radius": 4
+  },
+  {
+   "bounds": [
+    915,
+    443,
+    140,
+    41
+   ],
+   "fill": "#f8f8f8",
+   "border": "#fcfcfc",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    1380,
+    68,
+    130,
+    43
+   ],
+   "fill": "#136fdf",
+   "border": "#f7fafc",
+   "radius": 3
+  },
+  {
+   "bounds": [
+    1254,
+    68,
+    123,
+    44
+   ],
+   "fill": "#e8f1fd",
+   "border": "#fafbfd",
+   "radius": 6
+  },
+  {
+   "bounds": [
+    449,
+    446,
+    144,
+    34
+   ],
+   "fill": "#fdfdfd",
+   "border": "#fefefe",
+   "radius": 1
+  },
+  {
+   "bounds": [
+    1141,
+    67,
+    108,
+    45
+   ],
+   "fill": "#fdfdfd",
+   "border": "#fdfdfd",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    596,
+    446,
+    141,
+    34
+   ],
+   "fill": "#f7f7f9",
+   "border": "#fbfcfd",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    919,
+    446,
+    132,
+    34
+   ],
+   "fill": "#f8f8f8",
+   "border": "#f9f9f9",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    739,
+    446,
+    128,
+    34
+   ],
+   "fill": "#f7f7f9",
+   "border": "#fbfcfd",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    1257,
+    71,
+    114,
+    38
+   ],
+   "fill": "#e8f1fc",
+   "border": "#b1d0f6",
+   "radius": 1
+  },
+  {
+   "bounds": [
+    565,
+    595,
+    120,
+    34
+   ],
+   "fill": "#fdfdfd",
+   "border": "#fefefe",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    1144,
+    71,
+    101,
+    38
+   ],
+   "fill": "#fdfcfd",
+   "border": "#fdfcfc",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    568,
+    598,
+    113,
+    28
+   ],
+   "fill": "#fdfdfd",
+   "border": "#fdfdfd",
+   "radius": 1
+  },
+  {
+   "bounds": [
+    908,
+    263,
+    34,
+    46
+   ],
+   "fill": "#fcfbfc",
+   "border": "#fafbfb",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    684,
+    263,
+    33,
+    46
+   ],
+   "fill": "#fcfcfc",
+   "border": "#fcfcfc",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    463,
+    263,
+    33,
+    46
+   ],
+   "fill": "#fcfcfc",
+   "border": "#fcfcfc",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    912,
+    267,
+    27,
+    38
+   ],
+   "fill": "#fcfcfc",
+   "border": "#f8f8f8",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    688,
+    267,
+    26,
+    38
+   ],
+   "fill": "#fdfdfd",
+   "border": "#f9f9f9",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    467,
+    267,
+    26,
+    38
+   ],
+   "fill": "#fcfcfc",
+   "border": "#fbfbfb",
+   "radius": 0
+  }
+ ],
+ "dividers": [
+  {
+   "axis": "h",
+   "at": 124,
+   "from": 1,
+   "to": 1536,
+   "color": "#eff0f2"
+  },
+  {
+   "axis": "h",
+   "at": 125,
+   "from": 1,
+   "to": 1536,
+   "color": "#e2e4e8"
+  },
+  {
+   "axis": "h",
+   "at": 147,
+   "from": 425,
+   "to": 1112,
+   "color": "#d9dadd"
+  },
+  {
+   "axis": "h",
+   "at": 711,
+   "from": 450,
+   "to": 1023,
+   "color": "#f2f3f4"
+  },
+  {
+   "axis": "h",
+   "at": 712,
+   "from": 450,
+   "to": 1025,
+   "color": "#dbdde1"
+  },
+  {
+   "axis": "h",
+   "at": 749,
+   "from": 449,
+   "to": 1025,
+   "color": "#d8dbdf"
+  },
+  {
+   "axis": "h",
+   "at": 750,
+   "from": 451,
+   "to": 1022,
+   "color": "#f3f4f4"
+  },
+  {
+   "axis": "h",
+   "at": 823,
+   "from": 423,
+   "to": 1112,
+   "color": "#ebedee"
+  },
+  {
+   "axis": "h",
+   "at": 824,
+   "from": 425,
+   "to": 1111,
+   "color": "#d7d9db"
+  },
+  {
+   "axis": "v",
+   "at": 1114,
+   "from": 150,
+   "to": 821,
+   "color": "#f5f5f6"
+  },
+  {
+   "axis": "v",
+   "at": 1115,
+   "from": 151,
+   "to": 820,
+   "color": "#d7d9db"
+  }
+ ],
+ "limits": [
+  "Evidence for review: roles and widgets are assigned in the semantic map, not here."
+ ]
+}

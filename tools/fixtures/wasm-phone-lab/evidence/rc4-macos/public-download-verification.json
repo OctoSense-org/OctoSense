@@ -1,0 +1,57 @@
+{
+  "schema": 1,
+  "tag": "desktop-v0.1.0-rc.4",
+  "published_at": "2026-10-10T18:25:40Z",
+  "release_url": "https://github.com/OctoSense-org/OctoSense/releases/tag/desktop-v0.1.0-rc.4",
+  "anonymous_requests": true,
+  "draft": false,
+  "prerelease": true,
+  "assets": [
+    {
+      "name": "OctoSense_0.1.0-rc.4_aarch64.dmg",
+      "url": "https://github.com/OctoSense-org/OctoSense/releases/download/desktop-v0.1.0-rc.4/OctoSense_0.1.0-rc.4_aarch64.dmg",
+      "verification": "anonymous first-byte download"
+    },
+    {
+      "name": "octosense_0.1.0-rc.4_amd64.deb",
+      "url": "https://github.com/OctoSense-org/OctoSense/releases/download/desktop-v0.1.0-rc.4/octosense_0.1.0-rc.4_amd64.deb",
+      "verification": "anonymous first-byte download"
+    },
+    {
+      "name": "OctoSense_0.1.0-rc.4_linux-x64.receipt.json",
+      "url": "https://github.com/OctoSense-org/OctoSense/releases/download/desktop-v0.1.0-rc.4/OctoSense_0.1.0-rc.4_linux-x64.receipt.json",
+      "verification": "anonymous first-byte download"
+    },
+    {
+      "name": "OctoSense_0.1.0-rc.4_macos-arm64.receipt.json",
+      "url": "https://github.com/OctoSense-org/OctoSense/releases/download/desktop-v0.1.0-rc.4/OctoSense_0.1.0-rc.4_macos-arm64.receipt.json",
+      "verification": "anonymous first-byte download"
+    },
+    {
+      "name": "OctoSense_0.1.0-rc.4_macos_aarch64.app.zip",
+      "url": "https://github.com/OctoSense-org/OctoSense/releases/download/desktop-v0.1.0-rc.4/OctoSense_0.1.0-rc.4_macos_aarch64.app.zip",
+      "verification": "anonymous first-byte download"
+    },
+    {
+      "name": "OctoSense_0.1.0-rc.4_windows-x64.receipt.json",
+      "url": "https://github.com/OctoSense-org/OctoSense/releases/download/desktop-v0.1.0-rc.4/OctoSense_0.1.0-rc.4_windows-x64.receipt.json",
+      "verification": "anonymous first-byte download"
+    },
+    {
+      "name": "octosense_0.1.0-rc.4_x64-setup.exe",
+      "url": "https://github.com/OctoSense-org/OctoSense/releases/download/desktop-v0.1.0-rc.4/octosense_0.1.0-rc.4_x64-setup.exe",
+      "verification": "anonymous first-byte download"
+    },
+    {
+      "name": "octosense_0.1.0-rc.4_x86_64.AppImage",
+      "url": "https://github.com/OctoSense-org/OctoSense/releases/download/desktop-v0.1.0-rc.4/octosense_0.1.0-rc.4_x86_64.AppImage",
+      "verification": "anonymous first-byte download"
+    },
+    {
+      "name": "SHA256SUMS",
+      "url": "https://github.com/OctoSense-org/OctoSense/releases/download/desktop-v0.1.0-rc.4/SHA256SUMS",
+      "verification": "anonymous full checksum-manifest download"
+    }
+  ],
+  "full_package_checksums": "verified separately before publication; public package checks request only the first byte"
+}

@@ -13,16 +13,27 @@
 //!
 //! The thread never goes through App Hub's service registry, so it holds no
 //! lock a call takes on the way in; it reads font files only and uses no
-//! network. A call that arrives while it runs shares only the font
-//! database: before the catalog scan starts, the call scans and the thread
-//! then finds it done; during the scan, the call waits for that one scan
-//! (the database catalogs once per process) instead of starting another,
-//! which never takes longer than scanning itself.
+//! network. A call that arrives while it runs waits for it to finish
+//! ([`ready`]) before the engine does any work. The font database is not
+//! safe to load one family from two threads at once: a lookup that finds
+//! none of a family's faces yet loads its files, finds every face already
+//! added by the other thread, and falls back to the last-resort face, so a
+//! slide's title was drawn in Ubuntu Light once (the deck service's tests
+//! caught it), a drawing the render cache and a cover would keep. The wait
+//! is never longer than the warm-up, most of which (the catalog scan, the
+//! default families' files) the call would otherwise pay itself, and
+//! there is nothing to wait for once it is done. Without a warm-up (a
+//! service registered alone, as in tests), the first call draws the slide
+//! itself, on its own thread, and every other caller waits for that.
 
+use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::OnceLock;
 use std::thread::JoinHandle;
 
 static STARTED: AtomicBool = AtomicBool::new(false);
+/// Set once the warm-up's slide is drawn (or the engine failed to draw it).
+static DONE: OnceLock<()> = OnceLock::new();
 
 /// Start warming the engine on a background thread, once per process:
 /// `Some(thread)` the first time, `None` after that. If the thread cannot
@@ -31,7 +42,16 @@ pub fn warm() -> Option<JoinHandle<()>> {
     if STARTED.swap(true, Ordering::SeqCst) {
         return None;
     }
-    std::thread::Builder::new().name("deck-warm".into()).spawn(draw_one_slide).ok()
+    std::thread::Builder::new().name("deck-warm".into()).spawn(ready).ok()
+}
+
+/// The warm-up, done: drawn here if no thread has started it, or waited
+/// for while one draws it (module doc). Every call runs it first.
+pub(crate) fn ready() {
+    DONE.get_or_init(|| {
+        // A failure to draw leaves the first real call to fail as it would.
+        let _ = catch_unwind(AssertUnwindSafe(draw_one_slide));
+    });
 }
 
 /// A slide of the deck `new` makes, drawn small and thrown away.

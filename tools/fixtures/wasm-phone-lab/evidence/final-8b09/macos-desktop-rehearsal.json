@@ -1,0 +1,56 @@
+{
+  "schema": 1,
+  "release_archive_tested": false,
+  "tag": null,
+  "archive_sha256": null,
+  "catalog_sha256": "7066fab468aa7b352c806c6871d6dea76e8d0ee64c3f3edd5a75879bd8aadb7a",
+  "checks": {
+    "apphub_agent_refused_in_ui": true,
+    "org.ymote.componentdemo.first.installed_through_hub": true,
+    "org.ymote.componentdemo.second.installed_through_hub": true,
+    "org.ymote.componentdemo.first.turn_1": true,
+    "org.ymote.componentdemo.first.private_note_1": true,
+    "org.ymote.componentdemo.first.turn_2": true,
+    "org.ymote.componentdemo.first.private_note_2": true,
+    "org.ymote.componentdemo.second.turn_1": true,
+    "org.ymote.componentdemo.second.private_note_1": true,
+    "org.ymote.componentdemo.second.turn_2": true,
+    "org.ymote.componentdemo.second.private_note_2": true
+  },
+  "process_cleanup": [
+    {
+      "run": "hub-install",
+      "observed_descendants": 11,
+      "forced_cleanup": false,
+      "remaining_descendants": 0
+    },
+    {
+      "run": "org.ymote.componentdemo.first",
+      "observed_descendants": 1,
+      "forced_cleanup": false,
+      "remaining_descendants": 0
+    },
+    {
+      "run": "org.ymote.componentdemo.second",
+      "observed_descendants": 0,
+      "forced_cleanup": false,
+      "remaining_descendants": 0
+    }
+  ],
+  "personal_accounts_used": false,
+  "live_model_tested": false,
+  "public_catalog_modified": false,
+  "binary_sha256": "e5c982aac60fe7cc3e88de441a038d1eff97759c9e6a9f070df5633f4a34eabc",
+  "agent_refusal": {
+    "action": "Don't allow",
+    "point": {
+      "x": 526,
+      "y": 620
+    },
+    "window": [
+      1400,
+      899
+    ]
+  },
+  "passed": true
+}

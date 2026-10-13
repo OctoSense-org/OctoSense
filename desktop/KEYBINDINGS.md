@@ -89,7 +89,7 @@ drop it on), ⌘ + right-drag resizes it from the corner nearest your grab.
 
 | Chord     | Does                                                              |
 |-----------|-------------------------------------------------------------------|
-| ⌘ **F**   | Full screen (the window covers the desk, bar hidden)              |
+| ⌘ **F**   | Full screen (the window covers the desk, bar hidden; on a floating desk the bar, its title bar and the dock come out at the screen's edges, as the green button does) |
 | ⌘⌥ **F**  | Full width (maximized inside the gaps, bar stays)                 |
 | ⌘⌃ **F**  | Tiled full screen (the app is told it is fullscreen, tile stays)  |
 | ⌘ **T**   | Toggle floating / tiled                                           |

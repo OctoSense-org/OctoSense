@@ -1,0 +1,1230 @@
+[I] .sources/makepad/platform/src/web_socket.rs:330:13 - studio websocket disabled: empty studio_http
+[makepad-remote] listening on 127.0.0.1:8915 pid=85794 app=octosense grabs=<tmp>/makepad-remote/octosense-85794
+[I] .sources/makepad/platform/src/remote.rs:550:9 - [makepad-remote] listening on 127.0.0.1:8915 pid=85794 app=octosense grabs=<tmp>/makepad-remote/octosense-85794
+[I] .sources/makepad/platform/src/os/apple/metal.rs:3100:9 - retained-upload budgets: recommended_working_set_bytes=115448725504 physical_memory_bytes=137438953472 unified=true allocation_limit=17179869184 fraction=1/4 pool_fraction=1/16 residency_high_fraction=3/4 residency_low_fraction=5/8 source=physicalMemory/2
+[I] .sources/makepad/platform/src/cx.rs:689:9 - memory budget: 65536 MiB (ProcessInfo.processInfo.physicalMemory)
+[I] .sources/makepad/platform/src/thread.rs:928:9 - UI thread priority UserInteractive: Applied
+[I] crates/ai-host/src/lib.rs:395:13 - llm: provider profile under <tmp>/pdftools-shell-hqw08mg5/home/octos-home/.octos
+[I] crates/ai-host/src/lib.rs:429:5 - model: service registered (one-shot calls; admitted apps only)
+[I] crates/shell/src/octosense/paths.rs:86:13 - rinx: data folder <tmp>/pdftools-shell-hqw08mg5/home/apps/rinx/data (under OCTOSENSE_HOME)
+[I] crates/shell/src/lib.rs:6051:9 - wm: modules linked: ["apphub", "card"]
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 1672
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 941
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/options.rs:30:5 - Encountered unknown chunk "caBX"
+[I] .sources/makepad/libs/zune/zune-png/src/options.rs:31:5 - Length of chunk 23617
+[I] .sources/makepad/libs/zune/zune-png/src/options.rs:32:5 - Skipping 23621 bytes
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 1672
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 941
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/options.rs:30:5 - Encountered unknown chunk "caBX"
+[I] .sources/makepad/libs/zune/zune-png/src/options.rs:31:5 - Length of chunk 23617
+[I] .sources/makepad/libs/zune/zune-png/src/options.rs:32:5 - Skipping 23621 bytes
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:625:9 - Input Colorspace: RGB 
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:626:9 - Output Colorspace: RGB 
+[I] crates/shell/src/desktop_app.rs:207:9 - wm: desktop style octosense applied to 0 clients and 0 modules
+[I] crates/shell/src/lib.rs:6083:13 - octosense: background app prewarming disabled
+[I] crates/shell/src/apps.rs:467:13 - news: service registered, host dir <tmp>/pdftools-shell-hqw08mg5/home/apps/.host
+[I] crates/shell/src/apps.rs:396:9 - glance: the notice service answers ["os.maps", "os.ai-providers", "os.youtube", "os.quickdeck", "os.pdftools", "os.writer"] (no service of their own)
+[I] <cargo home>/git/checkouts/rinx-cf0dcd4e7b4d3fa8/4b89097/crates/article-makepad/src/apple_fonts.rs:85:5 - Apple typography: PingFang SC Regular/Semibold for English and Chinese; bundled fallback retained
+[I] crates/shell/src/module_host.rs:697:9 - wm: module instance card.1 for client 1 in isolate SplashVmId(1) (scope i1g1)
+[I] crates/shell/src/lib.rs:2654:13 - wm: pdftools asks for a 1536x1024 window; it opens at 1296x698 (the dock covers 78 points of the desk)
+[I] crates/shell/src/lib.rs:2673:9 - wm: launched pdftools as client 1 (in-process, card)
+[I] <cargo home>/git/checkouts/octosense-app-hub-3222614192ecfbf8/d86101d/crates/appstore/src/cardapp.rs:134:9 - card: os.pdftools running under 3 capability(ies), 1 host(s), 67108864 bytes of storage, 4000000000 instructions, 134217728 bytes of heap
+[I] <cargo home>/git/checkouts/rinx-cf0dcd4e7b4d3fa8/4b89097/crates/article-makepad/src/apple_fonts.rs:85:5 - Apple typography: PingFang SC Regular/Semibold for English and Chinese; bundled fallback retained
+[I] <cargo home>/git/checkouts/rinx-cf0dcd4e7b4d3fa8/4b89097/crates/article-makepad/src/apple_fonts.rs:85:5 - Apple typography: PingFang SC Regular/Semibold for English and Chinese; bundled fallback retained
+[I] .sources/makepad/widgets/src/splash.rs:420:9 - [SPLASH] eval: 187046 bytes preserve=false view=true animating=false tick=false epoch=0
+[I] .sources/makepad/platform/src/thread/ui_hang/native.rs:88:46 - [ui-hang] 1482 ms · phase=Startup detail=0 · samples=18 · ticks=18/expected=20 · top frames: 8x Startup: __open+0x8 (libsystem_kernel.dylib) ← std::sys::fs::unix::File::open_c+0x10c (octosense) ← std::fs::read_to_string::inner+0xc0 (octosense) ← std::fs::read_to_string::<std::path::PathBuf>+0x1c (octosense) ← octosense_appstore::system::admit_directory+0x54 (octosense) ← octosense_appstore::system::prepare+0x7e8 (octosense) ← octosense_shell::host_tools::script_apps::admitted_bundle+0xf8 (octosense) ← octosense_shell::host_tools::script_apps::guidance+0x1c (octosense) | 4x Startup: __open+0x8 (libsystem_kernel.dylib) ← std::sys::fs::unix::File::open_c+0x10c (octosense) ← std::fs::read::inner+0xbc (octosense) ← std::fs::read::<std::path::PathBuf>+0x1c (octosense) ← octosense_app_contract::bundle::digest_dir+0x2ac (octosense) ← octosense_appstore::system::admit_directory+0x104 (octosense) ← octosense_appstore::system::prepare+0x7e8 (octosense) ← octosense_shell::apps::window_hint+0x194 (octosense) | 1x Startup: mkdir+0x8 (libsystem_kernel.dylib) ← octosense_shell::app_storage::ensure_private_dir+0x1ac (octosense) ← octosense_shell::mail_background::directory+0xe0 (octosense) ← octosense_shell::mail_background::active+0x50 (octosense) ← octosense_shell::mail_background::restore_publications+0xd0 (octosense) ← octosense_shell::glance::expire_now+0x2c (octosense) ← octosense_shell::glance::listed+0x24 (octosense) ← octosense_shell::App::update_bar+0xb44 (octosense) | 1x Startup: __open+0x8 (libsystem_kernel.dylib) ← std::sys::fs::unix::File::open_c+0x10c (octosense) ← std::fs::read_to_string::inner+0xc0 (octosense) ← std::fs::read_to_string::<std::path::PathBuf>+0x1c (octosense) ← makepad_widgets::desktop_style::StyleSheet::load_with_appearance::{closure:#0}+0x88 (octosense) ← makepad_widgets::desktop_style::StyleSheet::load_with_appearance+0x1d4 (octosense) ← makepad_widgets::desktop_style::current+0x124 (octosense) ← makepad_widgets::desktop_style::apply_theme+0x1c (octosense)
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 32
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 32
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:625:9 - Input Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:626:9 - Output Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 64
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 64
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:625:9 - Input Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:626:9 - Output Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 128
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 128
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:625:9 - Input Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:626:9 - Output Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 256
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 256
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:625:9 - Input Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:626:9 - Output Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 512
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 512
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:625:9 - Input Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:626:9 - Output Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 1024
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 1024
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:625:9 - Input Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:626:9 - Output Colorspace: RGBA 
+[I] <cargo home>/git/checkouts/rinx-cf0dcd4e7b4d3fa8/4b89097/crates/article-makepad/src/apple_fonts.rs:85:5 - Apple typography: PingFang SC Regular/Semibold for English and Chinese; bundled fallback retained
+[I] <cargo home>/git/checkouts/rinx-cf0dcd4e7b4d3fa8/4b89097/crates/article-makepad/src/apple_fonts.rs:85:5 - Apple typography: PingFang SC Regular/Semibold for English and Chinese; bundled fallback retained
+[I] .sources/makepad/widgets/src/splash.rs:420:9 - [SPLASH] eval: 809 bytes preserve=false view=true animating=false tick=false epoch=0
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 216
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 216
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:625:9 - Input Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:626:9 - Output Colorspace: RGBA 
+[I] <cargo home>/git/checkouts/rinx-cf0dcd4e7b4d3fa8/4b89097/crates/article-makepad/src/apple_fonts.rs:85:5 - Apple typography: PingFang SC Regular/Semibold for English and Chinese; bundled fallback retained
+[I] .sources/makepad/platform/src/thread/ui_hang/native.rs:88:46 - [ui-hang] 269 ms · phase=native-event detail=0 · samples=0 · ticks=0/expected=0 · top frames: <event ended before stack sample>
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 397
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 562
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 397
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 562
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:625:9 - Input Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:626:9 - Output Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 397
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 562
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 397
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 562
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:625:9 - Input Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:626:9 - Output Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 397
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 562
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 397
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 562
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:625:9 - Input Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:626:9 - Output Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 397
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 562
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 397
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 562
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:625:9 - Input Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:626:9 - Output Colorspace: RGBA 
+[I] crates/shell/src/apps.rs:455:13 - news: fetched 185 new, 185 kept, 7 sources (0 failed)
+[I] .sources/makepad/platform/src/thread.rs:1363:13 - pool: 6 workers (2 light-only, 6 started), 6 jobs, peak queue light 1 / heavy 1; light 5: wait avg 0.02 ms max 0.06 ms, run avg 5.0 ms max 20.8 ms; heavy 1: wait avg 0.13 ms max 0.13 ms, run avg 0.1 ms max 0.1 ms; priority applied 6/6 (light UserInitiated / heavy Utility); light >2ms 1 offenders=[makepad_platform::thread::TaskQueue<std::path::PathBuf>::pump::{{closure}} count=1 max=20.82ms] overflow=0; heavy >250ms offenders=[]
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 1190
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 1684
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/platform/src/thread.rs:1363:13 - pool: 6 workers (2 light-only, 6 started), 7 jobs, peak queue light 1 / heavy 1; light 5: wait avg 0.02 ms max 0.06 ms, run avg 5.0 ms max 20.8 ms; heavy 1: wait avg 0.13 ms max 0.13 ms, run avg 0.1 ms max 0.1 ms; priority applied 6/6 (light UserInitiated / heavy Utility); light >2ms 1 offenders=[makepad_platform::thread::TaskQueue<std::path::PathBuf>::pump::{{closure}} count=1 max=20.82ms] overflow=0; heavy >250ms offenders=[]
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 1190
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 1684
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:625:9 - Input Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:626:9 - Output Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 1190
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 1684
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 1190
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 1684
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:625:9 - Input Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:626:9 - Output Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 1190
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 1684
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 1190
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 1684
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:625:9 - Input Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:626:9 - Output Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 199
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 281
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 199
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 281
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:625:9 - Input Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:626:9 - Output Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 199
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 281
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 199
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 281
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:625:9 - Input Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:626:9 - Output Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 199
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 281
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 199
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 281
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:625:9 - Input Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:626:9 - Output Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 199
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 281
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 199
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 281
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:625:9 - Input Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:626:9 - Output Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 1190
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 1684
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 1190
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 1684
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:625:9 - Input Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:626:9 - Output Colorspace: RGBA 
+[I] .sources/makepad/platform/src/thread.rs:1363:13 - pool: 6 workers (2 light-only, 6 started), 14 jobs, peak queue light 1 / heavy 1; light 13: wait avg 0.02 ms max 0.06 ms, run avg 4.5 ms max 20.8 ms; heavy 1: wait avg 0.13 ms max 0.13 ms, run avg 0.1 ms max 0.1 ms; priority applied 6/6 (light UserInitiated / heavy Utility); light >2ms 5 offenders=[makepad_platform::thread::TaskQueue<std::path::PathBuf>::pump::{{closure}} count=5 max=20.82ms] overflow=0; heavy >250ms offenders=[]
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 1488
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 2105
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 1488
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 2105
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:625:9 - Input Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:626:9 - Output Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 1488
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 2105
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 1488
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 2105
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:625:9 - Input Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:626:9 - Output Colorspace: RGBA 
+[I] .sources/makepad/platform/src/thread.rs:1363:13 - pool: 6 workers (2 light-only, 6 started), 16 jobs, peak queue light 1 / heavy 1; light 15: wait avg 0.02 ms max 0.06 ms, run avg 5.6 ms max 20.8 ms; heavy 1: wait avg 0.13 ms max 0.13 ms, run avg 0.1 ms max 0.1 ms; priority applied 6/6 (light UserInitiated / heavy Utility); light >2ms 7 offenders=[makepad_platform::thread::TaskQueue<std::path::PathBuf>::pump::{{closure}} count=7 max=20.82ms] overflow=0; heavy >250ms offenders=[]
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 1190
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 1684
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 1190
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 1684
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:625:9 - Input Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:626:9 - Output Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 1190
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 1684
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 1190
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 1684
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:625:9 - Input Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:626:9 - Output Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 1190
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 1684
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 1190
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 1684
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:625:9 - Input Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:626:9 - Output Colorspace: RGBA 
+[I] .sources/makepad/platform/src/thread.rs:1363:13 - pool: 6 workers (2 light-only, 6 started), 19 jobs, peak queue light 1 / heavy 1; light 18: wait avg 0.02 ms max 0.06 ms, run avg 6.1 ms max 20.8 ms; heavy 1: wait avg 0.13 ms max 0.13 ms, run avg 0.1 ms max 0.1 ms; priority applied 6/6 (light UserInitiated / heavy Utility); light >2ms 10 offenders=[makepad_platform::thread::TaskQueue<std::path::PathBuf>::pump::{{closure}} count=10 max=20.82ms] overflow=0; heavy >250ms offenders=[]
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 1190
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 1684
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/platform/src/thread.rs:1363:13 - pool: 6 workers (2 light-only, 6 started), 20 jobs, peak queue light 1 / heavy 1; light 18: wait avg 0.02 ms max 0.06 ms, run avg 6.1 ms max 20.8 ms; heavy 1: wait avg 0.13 ms max 0.13 ms, run avg 0.1 ms max 0.1 ms; priority applied 6/6 (light UserInitiated / heavy Utility); light >2ms 10 offenders=[makepad_platform::thread::TaskQueue<std::path::PathBuf>::pump::{{closure}} count=10 max=20.82ms] overflow=0; heavy >250ms offenders=[]
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 1190
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 1684
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:625:9 - Input Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:626:9 - Output Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 397
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 562
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 397
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 562
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:625:9 - Input Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:626:9 - Output Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 397
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 562
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 397
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 562
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:625:9 - Input Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:626:9 - Output Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 397
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 562
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 397
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 562
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:625:9 - Input Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:626:9 - Output Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 397
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 562
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 397
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 562
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:625:9 - Input Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:626:9 - Output Colorspace: RGBA 
+[I] .sources/makepad/platform/src/thread.rs:1363:13 - pool: 6 workers (2 light-only, 6 started), 24 jobs, peak queue light 1 / heavy 1; light 23: wait avg 0.02 ms max 0.06 ms, run avg 5.3 ms max 20.8 ms; heavy 1: wait avg 0.13 ms max 0.13 ms, run avg 0.1 ms max 0.1 ms; priority applied 6/6 (light UserInitiated / heavy Utility); light >2ms 11 offenders=[makepad_platform::thread::TaskQueue<std::path::PathBuf>::pump::{{closure}} count=11 max=20.82ms] overflow=0; heavy >250ms offenders=[]
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 562
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 397
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 562
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 397
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:625:9 - Input Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:626:9 - Output Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 397
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 562
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 397
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 562
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:625:9 - Input Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:626:9 - Output Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 397
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 562
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/platform/src/thread.rs:1363:13 - pool: 6 workers (2 light-only, 6 started), 27 jobs, peak queue light 1 / heavy 1; light 25: wait avg 0.02 ms max 0.06 ms, run avg 5.0 ms max 20.8 ms; heavy 1: wait avg 0.13 ms max 0.13 ms, run avg 0.1 ms max 0.1 ms; priority applied 6/6 (light UserInitiated / heavy Utility); light >2ms 11 offenders=[makepad_platform::thread::TaskQueue<std::path::PathBuf>::pump::{{closure}} count=11 max=20.82ms] overflow=0; heavy >250ms offenders=[]
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 397
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 562
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:625:9 - Input Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:626:9 - Output Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 397
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 562
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 397
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 562
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:625:9 - Input Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:626:9 - Output Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 397
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 562
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 397
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 562
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:625:9 - Input Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:626:9 - Output Colorspace: RGBA 
+[I] .sources/makepad/platform/src/thread.rs:1363:13 - pool: 6 workers (2 light-only, 6 started), 29 jobs, peak queue light 1 / heavy 1; light 28: wait avg 0.02 ms max 0.06 ms, run avg 4.6 ms max 20.8 ms; heavy 1: wait avg 0.13 ms max 0.13 ms, run avg 0.1 ms max 0.1 ms; priority applied 6/6 (light UserInitiated / heavy Utility); light >2ms 11 offenders=[makepad_platform::thread::TaskQueue<std::path::PathBuf>::pump::{{closure}} count=11 max=20.82ms] overflow=0; heavy >250ms offenders=[]
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 1190
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 1684
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 1190
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 1684
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:625:9 - Input Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:626:9 - Output Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 1190
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 1684
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 1190
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 1684
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:625:9 - Input Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:626:9 - Output Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 1190
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 1684
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 1190
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 1684
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:625:9 - Input Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:626:9 - Output Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 199
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 281
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 199
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 281
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:625:9 - Input Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:626:9 - Output Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 199
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 281
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 199
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 281
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:625:9 - Input Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:626:9 - Output Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 199
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 281
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 199
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 281
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:625:9 - Input Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:626:9 - Output Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 199
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 281
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 199
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 281
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:625:9 - Input Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:626:9 - Output Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 199
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 281
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 199
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 281
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:625:9 - Input Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:626:9 - Output Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 1190
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 1684
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 1190
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 1684
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:625:9 - Input Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:626:9 - Output Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 1190
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 1684
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 1190
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 1684
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:625:9 - Input Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:626:9 - Output Colorspace: RGBA 
+[I] .sources/makepad/platform/src/thread.rs:1363:13 - pool: 6 workers (2 light-only, 6 started), 39 jobs, peak queue light 1 / heavy 1; light 38: wait avg 0.02 ms max 0.06 ms, run avg 4.7 ms max 20.8 ms; heavy 1: wait avg 0.13 ms max 0.13 ms, run avg 0.1 ms max 0.1 ms; priority applied 6/6 (light UserInitiated / heavy Utility); light >2ms 16 offenders=[makepad_platform::thread::TaskQueue<std::path::PathBuf>::pump::{{closure}} count=16 max=20.82ms] overflow=0; heavy >250ms offenders=[]
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 397
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 562
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 397
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 562
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:625:9 - Input Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:626:9 - Output Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 1190
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 1684
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 1190
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 1684
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:625:9 - Input Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:626:9 - Output Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 1190
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 1684
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 1190
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 1684
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:625:9 - Input Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:626:9 - Output Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 199
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 281
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 199
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 281
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:625:9 - Input Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:626:9 - Output Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 199
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 281
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 199
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 281
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:625:9 - Input Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:626:9 - Output Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 1182
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 1673
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 1182
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 1673
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:625:9 - Input Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:626:9 - Output Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 1182
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 1673
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 1182
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 1673
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:625:9 - Input Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:626:9 - Output Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 1182
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 1673
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 1182
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 1673
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:625:9 - Input Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:626:9 - Output Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 199
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 281
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 199
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 281
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:625:9 - Input Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:626:9 - Output Colorspace: RGBA 
+[I] .sources/makepad/platform/src/thread.rs:1363:13 - pool: 6 workers (2 light-only, 6 started), 48 jobs, peak queue light 1 / heavy 1; light 47: wait avg 0.02 ms max 0.06 ms, run avg 4.9 ms max 20.8 ms; heavy 1: wait avg 0.13 ms max 0.13 ms, run avg 0.1 ms max 0.1 ms; priority applied 6/6 (light UserInitiated / heavy Utility); light >2ms 21 offenders=[makepad_platform::thread::TaskQueue<std::path::PathBuf>::pump::{{closure}} count=21 max=20.82ms] overflow=0; heavy >250ms offenders=[]
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 1190
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 1684
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 1190
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 1684
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:625:9 - Input Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:626:9 - Output Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 1190
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 1684
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 1190
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 1684
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:625:9 - Input Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:626:9 - Output Colorspace: RGBA 
+[I] .sources/makepad/platform/src/thread.rs:1363:13 - pool: 6 workers (2 light-only, 6 started), 50 jobs, peak queue light 1 / heavy 1; light 49: wait avg 0.02 ms max 0.06 ms, run avg 5.2 ms max 20.8 ms; heavy 1: wait avg 0.13 ms max 0.13 ms, run avg 0.1 ms max 0.1 ms; priority applied 6/6 (light UserInitiated / heavy Utility); light >2ms 23 offenders=[makepad_platform::thread::TaskQueue<std::path::PathBuf>::pump::{{closure}} count=23 max=20.82ms] overflow=0; heavy >250ms offenders=[]
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 1190
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 1684
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 1190
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 1684
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:625:9 - Input Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:626:9 - Output Colorspace: RGBA 
+[I] .sources/makepad/platform/src/thread.rs:1363:13 - pool: 6 workers (2 light-only, 6 started), 51 jobs, peak queue light 1 / heavy 1; light 50: wait avg 0.02 ms max 0.06 ms, run avg 5.3 ms max 20.8 ms; heavy 1: wait avg 0.13 ms max 0.13 ms, run avg 0.1 ms max 0.1 ms; priority applied 6/6 (light UserInitiated / heavy Utility); light >2ms 24 offenders=[makepad_platform::thread::TaskQueue<std::path::PathBuf>::pump::{{closure}} count=24 max=20.82ms] overflow=0; heavy >250ms offenders=[]
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 397
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 562
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 397
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 562
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:625:9 - Input Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:626:9 - Output Colorspace: RGBA 
+[I] .sources/makepad/platform/src/thread.rs:1363:13 - pool: 6 workers (2 light-only, 6 started), 52 jobs, peak queue light 1 / heavy 1; light 51: wait avg 0.02 ms max 0.06 ms, run avg 5.2 ms max 20.8 ms; heavy 1: wait avg 0.13 ms max 0.13 ms, run avg 0.1 ms max 0.1 ms; priority applied 6/6 (light UserInitiated / heavy Utility); light >2ms 24 offenders=[makepad_platform::thread::TaskQueue<std::path::PathBuf>::pump::{{closure}} count=24 max=20.82ms] overflow=0; heavy >250ms offenders=[]
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 1672
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 941
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/options.rs:30:5 - Encountered unknown chunk "caBX"
+[I] .sources/makepad/libs/zune/zune-png/src/options.rs:31:5 - Length of chunk 21844
+[I] .sources/makepad/libs/zune/zune-png/src/options.rs:32:5 - Skipping 21848 bytes
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 1672
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 941
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/options.rs:30:5 - Encountered unknown chunk "caBX"
+[I] .sources/makepad/libs/zune/zune-png/src/options.rs:31:5 - Length of chunk 21844
+[I] .sources/makepad/libs/zune/zune-png/src/options.rs:32:5 - Skipping 21848 bytes
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:625:9 - Input Colorspace: RGB 
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:626:9 - Output Colorspace: RGB 
+[I] crates/shell/src/desktop_app.rs:207:9 - wm: desktop style octosense-dark applied to 1 clients and 1 modules
+[I] <cargo home>/git/checkouts/rinx-cf0dcd4e7b4d3fa8/4b89097/crates/article-makepad/src/apple_fonts.rs:85:5 - Apple typography: PingFang SC Regular/Semibold for English and Chinese; bundled fallback retained
+[I] .sources/makepad/widgets/src/splash.rs:420:9 - [SPLASH] eval: 187046 bytes preserve=true view=false animating=false tick=false epoch=0
+[I] <cargo home>/git/checkouts/rinx-cf0dcd4e7b4d3fa8/4b89097/crates/article-makepad/src/apple_fonts.rs:85:5 - Apple typography: PingFang SC Regular/Semibold for English and Chinese; bundled fallback retained
+[I] .sources/makepad/platform/src/thread.rs:1363:13 - pool: 6 workers (2 light-only, 6 started), 53 jobs, peak queue light 1 / heavy 1; light 52: wait avg 0.02 ms max 0.06 ms, run avg 5.4 ms max 20.8 ms; heavy 1: wait avg 0.13 ms max 0.13 ms, run avg 0.1 ms max 0.1 ms; priority applied 6/6 (light UserInitiated / heavy Utility); light >2ms 25 offenders=[makepad_platform::thread::TaskQueue<std::path::PathBuf>::pump::{{closure}} count=25 max=20.82ms] overflow=0; heavy >250ms offenders=[]
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 1190
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 1684
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/platform/src/thread.rs:1363:13 - pool: 6 workers (2 light-only, 6 started), 54 jobs, peak queue light 1 / heavy 1; light 52: wait avg 0.02 ms max 0.06 ms, run avg 5.4 ms max 20.8 ms; heavy 1: wait avg 0.13 ms max 0.13 ms, run avg 0.1 ms max 0.1 ms; priority applied 6/6 (light UserInitiated / heavy Utility); light >2ms 25 offenders=[makepad_platform::thread::TaskQueue<std::path::PathBuf>::pump::{{closure}} count=25 max=20.82ms] overflow=0; heavy >250ms offenders=[]
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 1190
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 1684
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:625:9 - Input Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:626:9 - Output Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 1190
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 1684
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 1190
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 1684
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:625:9 - Input Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:626:9 - Output Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 1190
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 1684
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 1190
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 1684
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:625:9 - Input Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:626:9 - Output Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 199
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 281
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 199
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 281
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:625:9 - Input Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:626:9 - Output Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 199
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 281
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 199
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 281
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:625:9 - Input Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:626:9 - Output Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 199
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 281
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 199
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 281
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:625:9 - Input Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:626:9 - Output Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 199
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 281
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 199
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 281
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:625:9 - Input Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:626:9 - Output Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 1190
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 1684
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 1190
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 1684
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:625:9 - Input Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:626:9 - Output Colorspace: RGBA 
+[I] .sources/makepad/platform/src/thread.rs:1363:13 - pool: 6 workers (2 light-only, 6 started), 61 jobs, peak queue light 1 / heavy 1; light 60: wait avg 0.02 ms max 0.06 ms, run avg 5.4 ms max 20.8 ms; heavy 1: wait avg 0.13 ms max 0.13 ms, run avg 0.1 ms max 0.1 ms; priority applied 6/6 (light UserInitiated / heavy Utility); light >2ms 29 offenders=[makepad_platform::thread::TaskQueue<std::path::PathBuf>::pump::{{closure}} count=29 max=20.82ms] overflow=0; heavy >250ms offenders=[]
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 1488
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 2105
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 1488
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 2105
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:625:9 - Input Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:626:9 - Output Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 1488
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 2105
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 1488
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 2105
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:625:9 - Input Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:626:9 - Output Colorspace: RGBA 
+[I] .sources/makepad/platform/src/thread.rs:1363:13 - pool: 6 workers (2 light-only, 6 started), 63 jobs, peak queue light 1 / heavy 1; light 62: wait avg 0.02 ms max 0.06 ms, run avg 5.7 ms max 20.8 ms; heavy 1: wait avg 0.13 ms max 0.13 ms, run avg 0.1 ms max 0.1 ms; priority applied 6/6 (light UserInitiated / heavy Utility); light >2ms 31 offenders=[makepad_platform::thread::TaskQueue<std::path::PathBuf>::pump::{{closure}} count=31 max=20.82ms] overflow=0; heavy >250ms offenders=[]
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 1190
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 1684
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 1190
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 1684
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:625:9 - Input Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:626:9 - Output Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 1190
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 1684
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 1190
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 1684
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:625:9 - Input Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:626:9 - Output Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 1190
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 1684
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 1190
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 1684
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:625:9 - Input Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:626:9 - Output Colorspace: RGBA 
+[I] .sources/makepad/platform/src/thread.rs:1363:13 - pool: 6 workers (2 light-only, 6 started), 66 jobs, peak queue light 1 / heavy 1; light 65: wait avg 0.02 ms max 0.12 ms, run avg 6.0 ms max 20.8 ms; heavy 1: wait avg 0.13 ms max 0.13 ms, run avg 0.1 ms max 0.1 ms; priority applied 6/6 (light UserInitiated / heavy Utility); light >2ms 34 offenders=[makepad_platform::thread::TaskQueue<std::path::PathBuf>::pump::{{closure}} count=34 max=20.82ms] overflow=0; heavy >250ms offenders=[]
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 1190
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 1684
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/platform/src/thread.rs:1363:13 - pool: 6 workers (2 light-only, 6 started), 67 jobs, peak queue light 1 / heavy 1; light 65: wait avg 0.02 ms max 0.12 ms, run avg 6.0 ms max 20.8 ms; heavy 1: wait avg 0.13 ms max 0.13 ms, run avg 0.1 ms max 0.1 ms; priority applied 6/6 (light UserInitiated / heavy Utility); light >2ms 34 offenders=[makepad_platform::thread::TaskQueue<std::path::PathBuf>::pump::{{closure}} count=34 max=20.82ms] overflow=0; heavy >250ms offenders=[]
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 1190
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 1684
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:625:9 - Input Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:626:9 - Output Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 397
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 562
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 397
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 562
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:625:9 - Input Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:626:9 - Output Colorspace: RGBA 
+[I] .sources/makepad/platform/src/thread.rs:1363:13 - pool: 6 workers (2 light-only, 6 started), 68 jobs, peak queue light 1 / heavy 1; light 67: wait avg 0.06 ms max 3.05 ms, run avg 6.0 ms max 20.8 ms; heavy 1: wait avg 0.13 ms max 0.13 ms, run avg 0.1 ms max 0.1 ms; priority applied 6/6 (light UserInitiated / heavy Utility); light >2ms 35 offenders=[makepad_platform::thread::TaskQueue<std::path::PathBuf>::pump::{{closure}} count=35 max=20.82ms] overflow=0; heavy >250ms offenders=[]
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 562
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 397
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 562
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 397
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:625:9 - Input Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:626:9 - Output Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 397
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 562
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 397
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 562
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:625:9 - Input Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:626:9 - Output Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 397
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 562
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 397
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 562
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:625:9 - Input Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:626:9 - Output Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 397
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 562
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 397
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 562
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:625:9 - Input Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:626:9 - Output Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 397
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 562
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 397
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 562
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:625:9 - Input Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:626:9 - Output Colorspace: RGBA 
+[I] .sources/makepad/platform/src/thread.rs:1363:13 - pool: 6 workers (2 light-only, 6 started), 73 jobs, peak queue light 1 / heavy 1; light 72: wait avg 0.07 ms max 3.05 ms, run avg 5.7 ms max 20.8 ms; heavy 1: wait avg 0.13 ms max 0.13 ms, run avg 0.1 ms max 0.1 ms; priority applied 6/6 (light UserInitiated / heavy Utility); light >2ms 37 offenders=[makepad_platform::thread::TaskQueue<std::path::PathBuf>::pump::{{closure}} count=37 max=20.82ms] overflow=0; heavy >250ms offenders=[]
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 1190
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 1684
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/platform/src/thread.rs:1363:13 - pool: 6 workers (2 light-only, 6 started), 74 jobs, peak queue light 1 / heavy 1; light 72: wait avg 0.07 ms max 3.05 ms, run avg 5.7 ms max 20.8 ms; heavy 1: wait avg 0.13 ms max 0.13 ms, run avg 0.1 ms max 0.1 ms; priority applied 6/6 (light UserInitiated / heavy Utility); light >2ms 37 offenders=[makepad_platform::thread::TaskQueue<std::path::PathBuf>::pump::{{closure}} count=37 max=20.82ms] overflow=0; heavy >250ms offenders=[]
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 1190
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 1684
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:625:9 - Input Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:626:9 - Output Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 1190
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 1684
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 1190
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 1684
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:625:9 - Input Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:626:9 - Output Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 1190
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 1684
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 1190
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 1684
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:625:9 - Input Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:626:9 - Output Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 199
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 281
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 199
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 281
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:625:9 - Input Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:626:9 - Output Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 199
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 281
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 199
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 281
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:625:9 - Input Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:626:9 - Output Colorspace: RGBA 
+[I] .sources/makepad/platform/src/thread/ui_hang/native.rs:88:46 - [ui-hang] 262 ms · phase=Timer detail=0 · samples=1 · ticks=1/expected=0 · top frames: 1x Timer: __rename+0x8 (libsystem_kernel.dylib) ← std::sys::fs::rename+0xcc (octosense) ← octosense_engine_area::Area::write+0x5f4 (octosense) ← octosense_pdf_service::cache::store+0x31c (octosense) ← std::thread::local::LocalKey::<core::cell::RefCell::<octosense_pdf_service::docs::Docs>>::with::<octosense_pdf_service::docs::with_doc::<serde_json::value::Value, octosense_pdf_service::reading::page::{closure:#0}>::{closure:#0}, core::result::Result::<serde_json::value::Value, alloc::string::String>>+0x9ac (octosense) ← octosense_pdf_service::docs::with_doc::<serde_json::value::Value, octosense_pdf_service::reading::page::{closure:#0}>+0xfc (octosense) ← octosense_pdf_service::reading::page+0x1f8 (octosense) ← <octosense_pdf_service::PdfService as octosense_appstore::services::HostService>::call+0x1e4 (octosense)
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 199
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 281
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 199
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 281
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:625:9 - Input Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:626:9 - Output Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 199
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 281
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 199
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 281
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:625:9 - Input Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:626:9 - Output Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 199
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 281
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 199
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 281
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:625:9 - Input Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:626:9 - Output Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 1190
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 1684
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 1190
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 1684
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:625:9 - Input Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:626:9 - Output Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 1190
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 1684
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 1190
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 1684
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:625:9 - Input Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:626:9 - Output Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 397
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 562
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 397
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 562
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:625:9 - Input Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:626:9 - Output Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 1182
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 1673
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/platform/src/thread.rs:1363:13 - pool: 6 workers (2 light-only, 6 started), 85 jobs, peak queue light 1 / heavy 1; light 83: wait avg 0.07 ms max 3.05 ms, run avg 5.9 ms max 20.8 ms; heavy 1: wait avg 0.13 ms max 0.13 ms, run avg 0.1 ms max 0.1 ms; priority applied 6/6 (light UserInitiated / heavy Utility); light >2ms 42 offenders=[makepad_platform::thread::TaskQueue<std::path::PathBuf>::pump::{{closure}} count=42 max=20.82ms] overflow=0; heavy >250ms offenders=[]
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 1182
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 1673
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:625:9 - Input Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:626:9 - Output Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 1182
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 1673
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 1182
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 1673
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:625:9 - Input Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:626:9 - Output Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 199
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 281
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 199
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 281
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:625:9 - Input Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:626:9 - Output Colorspace: RGBA 
+[E] splash:36369862144:1174:10 - script time budget exceeded (.sources/makepad/platform/script/src/vm.rs:1230)
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 1182
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 1673
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 1182
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 1673
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:625:9 - Input Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:626:9 - Output Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 199
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 281
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 199
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 281
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:625:9 - Input Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:626:9 - Output Colorspace: RGBA 
+[I] .sources/makepad/platform/src/thread.rs:1363:13 - pool: 6 workers (2 light-only, 6 started), 89 jobs, peak queue light 1 / heavy 1; light 88: wait avg 0.10 ms max 3.05 ms, run avg 6.0 ms max 20.8 ms; heavy 1: wait avg 0.13 ms max 0.13 ms, run avg 0.1 ms max 0.1 ms; priority applied 6/6 (light UserInitiated / heavy Utility); light >2ms 45 offenders=[makepad_platform::thread::TaskQueue<std::path::PathBuf>::pump::{{closure}} count=45 max=20.82ms] overflow=0; heavy >250ms offenders=[]
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 1190
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 1684
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 1190
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 1684
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:625:9 - Input Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:626:9 - Output Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 1190
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 1684
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 1190
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 1684
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:625:9 - Input Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:626:9 - Output Colorspace: RGBA 
+[I] .sources/makepad/platform/src/thread.rs:1363:13 - pool: 6 workers (2 light-only, 6 started), 91 jobs, peak queue light 1 / heavy 1; light 90: wait avg 0.10 ms max 3.05 ms, run avg 6.1 ms max 20.8 ms; heavy 1: wait avg 0.13 ms max 0.13 ms, run avg 0.1 ms max 0.1 ms; priority applied 6/6 (light UserInitiated / heavy Utility); light >2ms 47 offenders=[makepad_platform::thread::TaskQueue<std::path::PathBuf>::pump::{{closure}} count=47 max=20.82ms] overflow=0; heavy >250ms offenders=[]
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 1190
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 1684
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 1190
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 1684
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:625:9 - Input Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:626:9 - Output Colorspace: RGBA 
+[I] .sources/makepad/platform/src/thread.rs:1363:13 - pool: 6 workers (2 light-only, 6 started), 92 jobs, peak queue light 1 / heavy 1; light 91: wait avg 0.10 ms max 3.05 ms, run avg 6.2 ms max 20.8 ms; heavy 1: wait avg 0.13 ms max 0.13 ms, run avg 0.1 ms max 0.1 ms; priority applied 6/6 (light UserInitiated / heavy Utility); light >2ms 48 offenders=[makepad_platform::thread::TaskQueue<std::path::PathBuf>::pump::{{closure}} count=48 max=20.82ms] overflow=0; heavy >250ms offenders=[]
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 397
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 562
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:110:9 - Width: 397
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:111:9 - Height: 562
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:112:9 - Filter type:None
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:113:9 - Depth: 8
+[I] .sources/makepad/libs/zune/zune-png/src/headers/readers.rs:114:9 - Interlace :Standard
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:625:9 - Input Colorspace: RGBA 
+[I] .sources/makepad/libs/zune/zune-png/src/decoder.rs:626:9 - Output Colorspace: RGBA 
+[I] .sources/makepad/platform/src/thread.rs:1363:13 - pool: 6 workers (2 light-only, 6 started), 93 jobs, peak queue light 1 / heavy 1; light 92: wait avg 0.10 ms max 3.05 ms, run avg 6.2 ms max 20.8 ms; heavy 1: wait avg 0.13 ms max 0.13 ms, run avg 0.1 ms max 0.1 ms; priority applied 6/6 (light UserInitiated / heavy Utility); light >2ms 48 offenders=[makepad_platform::thread::TaskQueue<std::path::PathBuf>::pump::{{closure}} count=48 max=20.82ms] overflow=0; heavy >250ms offenders=[]
+[makepad-remote] remote quit
+[I] .sources/makepad/platform/src/thread.rs:942:13 - pool: 6 workers (2 light-only, 6 started), 93 jobs, peak queue light 1 / heavy 1; light 92: wait avg 0.10 ms max 3.05 ms, run avg 6.2 ms max 20.8 ms; heavy 1: wait avg 0.13 ms max 0.13 ms, run avg 0.1 ms max 0.1 ms; priority applied 6/6 (light UserInitiated / heavy Utility); light >2ms 48 offenders=[makepad_platform::thread::TaskQueue<std::path::PathBuf>::pump::{{closure}} count=48 max=20.82ms] overflow=0; heavy >250ms offenders=[]

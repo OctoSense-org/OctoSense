@@ -174,7 +174,15 @@ declined that finger by the time the tile sees it.
 
 ## Provisioning the LLM key
 
-The quoting-safe way is `scripts/provision-appcard-llm.sh <family> <model> <key>`: it builds the JSON, ships it through both shells intact, restarts OctoSense with the extra, and waits for the app to log `provisioned LLM`. GLM keys come in two families: `zhipu` for a bigmodel.cn key (OpenAI-style endpoint) and `zai` for a z.ai key (Anthropic-style endpoint); using the wrong one yields HTTP 401 even with a valid key.
+In a release build, providers come from **AI providers** (the desktop's QR
+code and its PIN, or typed on the host's own sheet). Any app on the phone can
+start Home with intent extras, so only a development build that links AppCard
+(`--features app-appcard,dev-mode`), installed as its own test package (see
+[phone/README.md](../../phone/README.md#build-and-run)), reads the launch-time
+provisioning below; a release build ignores it (**unverified** on a device
+since that change).
+
+The quoting-safe way is `PACKAGE=dev.makepad.octosense.<suffix> scripts/provision-appcard-llm.sh <family> <model> <key>`: it builds the JSON, ships it through both shells intact, restarts that test package with the extra, and waits for the app to log `provisioned LLM`. GLM keys come in two families: `zhipu` for a bigmodel.cn key (OpenAI-style endpoint) and `zai` for a z.ai key (Anthropic-style endpoint); using the wrong one yields HTTP 401 even with a valid key.
 
 
 The kernel needs an LLM profile before a request can run. The buildtool
@@ -183,7 +191,7 @@ environment, and the app reads `MAKEPAD_PROVISION_CONFIG` on startup and
 writes the profile into the kernel's config:
 
 ```sh
-"$ADB" shell "am start -S -n dev.makepad.octosense/.MakepadApp \
+"$ADB" shell "am start -S -n dev.makepad.octosense.<suffix>/.MakepadApp \
   --es makepad.PROVISION_CONFIG '{\"llm_family\":\"zai\",\"llm_model\":\"glm-5.2\",\"llm_key\":\"<key>\"}'"
 "$ADB" logcat -d -s Makepad | grep -iE 'provision|turn/start|turn FAILED'
 ```

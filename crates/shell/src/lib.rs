@@ -11,6 +11,7 @@
 
 pub mod agents;
 pub mod runtime_host;
+mod update_restart;
 #[cfg(any(feature = "app-hub", native_mobile))]
 pub mod mail_background;
 #[cfg(any(feature = "app-hub", native_mobile))]
@@ -19,10 +20,12 @@ pub mod ai_bus;
 pub mod app_chat;
 pub mod app_storage;
 pub mod dev_mode;
+pub mod launch_input;
 pub mod approvals;
 pub mod apps;
 pub mod binds;
 pub mod clients;
+pub mod charts;
 pub mod demo_home;
 pub mod desk;
 pub mod desktop_layout;
@@ -39,6 +42,7 @@ pub mod mobile_back;
 pub mod mobile_tiles;
 pub mod mobile_shade;
 pub mod mobile_pages;
+mod mobile_motion;
 pub mod mobile_island;
 pub mod mobile_octopus;
 pub mod mobile_groups;
@@ -48,6 +52,8 @@ pub mod android_integration;
 pub mod android_accessibility;
 pub mod scene;
 pub mod dock_warp;
+pub mod edge_reveal;
+use edge_reveal::EdgeReveal;
 pub mod host;
 pub mod host_tools;
 pub mod hub;
@@ -74,6 +80,8 @@ mod maps_model_tests;
 #[cfg(test)]
 mod pdftools_model_tests;
 #[cfg(test)]
+mod quickdeck_model_tests;
+#[cfg(test)]
 mod system_app_theme_tests;
 #[cfg(test)]
 mod writer_model_tests;
@@ -93,6 +101,8 @@ pub mod wm_reply;
 pub mod ext;
 pub mod glance;
 pub mod glance_card;
+pub mod studio;
+use studio::Renderer as StudioRenderer;
 mod glance_style;
 pub mod glance_chat;
 pub mod mail_card;
@@ -143,6 +153,9 @@ use makepad_widgets::*;
 /// desktop styles. build.rs sets the `mobile_only` cfg for Android builds
 /// and for `--features mobile-only`; this is its one Rust-side name.
 pub const MOBILE_ONLY: bool = cfg!(mobile_only);
+/// The scene's top margin before the first draw: under the bar's DSL height,
+/// or none where there is no bar (`App::place_bar` keeps it after that).
+const SCENE_TOP: f64 = if MOBILE_ONLY { 0.0 } else { 26.0 };
 
 use std::collections::HashMap;
 
@@ -205,30 +218,18 @@ script_mod! {
                 // its buttons) so the window still drags.
                 show_caption_bar: false
                 body +: {
-                    flow: Down
+                    // The bar lies over the top of the scene: the scene starts
+                    // below it while it is docked (`App::place_bar` keeps the
+                    // margin), and at the top when it is hidden or slides over
+                    // a full-screen window.
+                    flow: Overlay
                     // Keep hosted editors and their navigation visible above
                     // the native IME instead of panning the whole shell.
                     keyboard_resize: #(crate::mobile_navigation::ENABLED)
                     // The wallpaper layer: the theme's image (crop-to-fill)
                     // over the theme's deep background.
-                        // The desk bar: the shell bar on a desktop style, the
-                        // phone's style/appearance/rotate strip on a phone
-                        // style. The standalone shell has neither.
-                        bar := SolidView{
-                            width: Fill
-                            height: 26
-                            visible: #(!MOBILE_ONLY)
-                            flow: Overlay
-                            draw_bg +: {
-                                color: mod.wm_theme.background
-                            }
-                            desktop_controls := View{
-                                width: Fill height: Fill
-                                shell_bar := ShellBar{width: Fill height: Fill}
-                            }
-                            phone_controls := PhoneSurface{visible: false}
-                        }
                     scene := WmScene{
+                    margin: Inset{top: #(SCENE_TOP)}
                     wallpaper := CachedView{width: Fill height: Fill flow: Overlay
                     bg_fill := RectView{
                         width: Fill
@@ -293,6 +294,23 @@ script_mod! {
                         // everything, drawn only while the mode is on.
                         shell_dev_banner := ShellDevBanner{}
                     }
+                    }
+                    // The desk bar: the shell bar on a desktop style, the
+                    // phone's style/appearance/rotate strip on a phone
+                    // style. The standalone shell has neither.
+                    bar := SolidView{
+                        width: Fill
+                        height: 26
+                        visible: #(!MOBILE_ONLY)
+                        flow: Overlay
+                        draw_bg +: {
+                            color: mod.wm_theme.background
+                        }
+                        desktop_controls := View{
+                            width: Fill height: Fill
+                            shell_bar := ShellBar{width: Fill height: Fill}
+                        }
+                        phone_controls := PhoneSurface{visible: false}
                     }
                     // `wm --gallery`: every ported omarchy surface with
                     // fixture data, over the desktop (see shell/gallery.rs).
@@ -466,6 +484,8 @@ pub struct App {
     /// the last refusal), so it expires (process_close `quit_expired`).
     #[rust]
     pub quit_waiting_since: Option<f64>,
+    #[rust]
+    update_restart_waiting: bool,
     /// The notifications cards asked for (`glance.publish` with `notify`):
     /// the desktop toasts' ids and the card each opens, and the phone
     /// shade's ids and the exact card each opens.
@@ -551,6 +571,9 @@ pub struct App {
     /// at without a screen (the GPU readback does not need one).
     #[rust]
     pub test_capture: Option<(Timer, std::path::PathBuf)>,
+    #[rust] pub studio: StudioRenderer,
+    #[rust] pub studio_clients: HashMap<String, ClientId>,
+    #[rust] pub studio_registry_generation: u64,
     #[rust] pub test_capture_ticket: Option<ReadbackTicket>,
     #[rust] pub test_recording: bool,
     /// `--test-action page:<n>`: the home page to jump to, once the phone
@@ -558,6 +581,15 @@ pub struct App {
     #[rust]
     pub test_page: Option<(Timer, i64)>,
     #[rust] pub test_glance_fixtures: Option<(Timer, String)>,
+    /// The top of a full-screen window (the top bar and its title bar)
+    /// coming out from the top edge and going back (`WmState::top_reveal`).
+    #[rust] top_edge: EdgeReveal,
+    /// The window in front was full screen at the last draw
+    /// (`desktop::front_fullscreen`).
+    #[rust] front_fullscreen: bool,
+    /// `--test-action host-fullscreen`: behave as if the window were full
+    /// screen on its host, which a hidden run cannot enter.
+    #[rust] test_host_fullscreen: bool,
     /// The hidden WebView that renders pages for the octos reader where
     /// there is no Chrome (the phone): serves `webview_render::renderer`.
     #[rust]
@@ -709,6 +741,34 @@ pub struct DividerDrag {
 }
 
 impl App {
+    #[cfg(all(unix, any(feature = "app-hub", native_mobile)))]
+    fn drain_studio(&mut self, cx: &mut Cx) {
+        for instance in studio::apps::take_closes() {
+            if let Some(client) = self.studio_clients.remove(&instance) {
+                self.close_client(cx, client, false);
+            }
+        }
+        for instance in studio::apps::take_launches() {
+            let Some((app_id, title)) = studio::apps::launch_info(&instance) else { continue };
+            let app = apps::studio_row(app_id.unwrap_or_else(|| format!("studio-instance:{instance}")),
+                title, vec![format!("--studio-instance={instance}")]);
+            let client = self.next_id;
+            self.launch_module_as(cx, &studio::module::STUDIO_MODULE, &app);
+            if self.state.as_ref().is_some_and(|state| state.clients.contains_key(&client)) {
+                self.studio_clients.insert(instance, client);
+            } else {
+                studio::apps::shutdown(cx, &instance);
+            }
+        }
+        let generation = host_tools::studio_bundles::generation();
+        if generation != self.studio_registry_generation {
+            self.studio_registry_generation = generation;
+            shell::launcher::invalidate_apps();
+            self.redraw_all(cx);
+        }
+    }
+
+
     fn desk(&self, cx: &mut Cx) -> WidgetRef {
         self.ui.widget(cx, ids!(desk))
     }
@@ -732,6 +792,18 @@ impl App {
 
     pub fn state_mut(&mut self) -> &mut WmState {
         self.state.as_mut().expect("state after startup")
+    }
+
+    /// How many points of the work area `area`'s bottom the dock covers
+    /// (`desktop::dock_overlay`): a window that asks for its own size ends
+    /// above it. Before the desk's first draw, on `desk_area`'s fallback
+    /// desk, 860 points tall from the window's top.
+    fn dock_overlay(&self, cx: &mut Cx, area: LRect) -> f64 {
+        let rect = self.desk(cx).borrow_mut::<WmDesk>().map(|d| d.desk_rect).unwrap_or_default();
+        let desk_bottom = if rect.size.x > 1.0 { rect.pos.y + rect.size.y } else { 860.0 };
+        // A dock that hides covers nothing a window keeps clear of.
+        self.state.as_ref().filter(|s| !desktop::dock_auto_hides(s))
+            .map_or(0.0, |s| desktop::dock_overlay(&s.style, desk_bottom, area.y + area.h))
     }
 
     fn desk_area(&self, cx: &mut Cx) -> LRect {
@@ -834,6 +906,14 @@ impl App {
                 self.activate_client(cx, client);
                 return;
             }
+        }
+
+        #[cfg(all(unix, any(feature = "app-hub", native_mobile)))]
+        if app.bin == "studio-app" && cfg!(dev_mode) {
+            if let Err(error) = host_tools::studio_bundles::request_launch_installed(&app.id) {
+                self.notify(cx, "Could not open developer app", &error);
+            }
+            return;
         }
 
         // In-process hosting (aicontrol §3): a linked module the person
@@ -1374,7 +1454,12 @@ impl App {
             }
             WmRequest::SetFullscreen { fullscreen } => {
                 self.focus_client(cx, client);
-                let on = self.state_mut().layout.fullscreen_mode() != FullscreenMode::None;
+                let layout = &self.state_mut().layout;
+                let on = if layout.desktop.enabled {
+                    layout.is_fullscreen(client)
+                } else {
+                    layout.fullscreen_mode() != FullscreenMode::None
+                };
                 if on != *fullscreen {
                     self.do_action(cx, WmAction::Fullscreen(FullscreenMode::Fullscreen));
                 }
@@ -1931,7 +2016,7 @@ impl App {
         // (process_close::Insistence) is ended; the rest are waited on.
         let now = host::now();
         let (forced, refused): (Vec<ClientId>, Vec<ClientId>) =
-            refused.into_iter().partition(|client| self.module_host.close_gate_mut().insist(*client, now));
+            refused.into_iter().partition(|client| !self.update_restart_waiting && self.module_host.close_gate_mut().insist(*client, now));
         for client in forced {
             log!("wm: client {client} refused the quit {} times; ending it", process_close::FORCE_CLOSES);
             self.remove_client(cx, client);
@@ -1949,7 +2034,11 @@ impl App {
                     .collect()
             })
             .unwrap_or_default();
-        let ask = self.process_close.quit(windows, host::now());
+        let ask = if self.update_restart_waiting {
+            self.process_close.quit_for_update(windows, now)
+        } else {
+            self.process_close.quit(windows, now)
+        };
         for client in &ask.asked {
             self.send_wm_event(*client, WmEvent::CloseRequested);
         }
@@ -2008,6 +2097,7 @@ impl App {
     }
 
     fn remove_client(&mut self, cx: &mut Cx, client: ClientId) {
+        self.studio_clients.retain(|_, id| *id != client);
         log!("wm: removing client {}", client);
         peer_link::process_gone(client);
         self.process_close.gone(client);
@@ -2215,12 +2305,18 @@ impl App {
         // A process app that promised to answer a close and did not: the
         // fallback ends it (process_close.rs). One asking the person is
         // never among these.
-        for client in self.process_close.overdue(host::now()) {
-            log!(
-                "wm: client {client} did not answer its close in {}s; ending it",
-                process_close::ANSWER_TIMEOUT
-            );
-            self.end_process_client(cx, client);
+        let overdue = self.process_close.overdue(host::now());
+        if self.update_restart_waiting && !overdue.is_empty() {
+            self.cancel_update_restart();
+            self.notify(cx, "Update restart cancelled", "An app did not confirm closing. Save your work and try again when ready.");
+        } else {
+            for client in overdue {
+                log!(
+                    "wm: client {client} did not answer its close in {}s; ending it",
+                    process_close::ANSWER_TIMEOUT
+                );
+                self.end_process_client(cx, client);
+            }
         }
         // A quit nobody answered for a minute: the person kept the asking
         // app (it does not say so). Drop the quit and say so, so a later
@@ -2232,6 +2328,7 @@ impl App {
             self.quit_waiting_since = None;
             self.process_close.abandon_quit();
             self.module_host.abandon_quit();
+            self.cancel_update_restart();
             log!("wm: the quit waited {}s on an app asking the person; dropped", process_close::QUIT_ANSWER_WINDOW);
             self.notify(cx, "Quit cancelled", "An app asked before closing and was kept open. Quit again when you are ready.");
         }
@@ -2625,11 +2722,23 @@ impl App {
             Some(instance) => (instance.manifest(), instance.root.clone(), instance.vm_id),
             None => return,
         };
-        self.state_mut()
-            .clients
-            .insert(id, clients::ClientSlot::module(id, &app.id, &app.label));
+        let mut slot = clients::ClientSlot::module(id, &app.id, &app.label);
+        // Host services know a script app in front by its manifest id.
+        slot.card_app = apps::card_manifest_id(app).map(str::to_owned);
+        self.state_mut().clients.insert(id, slot);
         let gap = self.state_mut().gap;
-        self.state_mut().layout.insert(id, area, gap);
+        // A script app may ask its desktop window to open at a size (its
+        // manifest's `window`), which the desk clamps; without one, or for
+        // any other module, the default size. Phones ignore it: their apps
+        // are full-screen.
+        // It ends above a dock that floats over the desk.
+        let preferred = if self.state_mut().style.target.mobile() { None } else { apps::window_hint(cx, app) };
+        let dock = if preferred.is_some() { self.dock_overlay(cx, area) } else { 0.0 };
+        self.state_mut().layout.insert_sized(id, area, gap, preferred, dock);
+        if let (Some((w, h)), Some(window)) = (preferred, self.state_mut().layout.desktop.get(id)) {
+            log!("wm: {} asks for a {}x{} window; it opens at {}x{} (the dock covers {} points of the desk)",
+                app.id, w, h, window.rect.w, window.rect.h, dock);
+        }
         // The tile is a module tile from its first draw; the root is seated
         // in it before anything asks it to draw.
         self.desk(cx).borrow_mut::<WmDesk>().map(|mut d| {
@@ -2818,7 +2927,7 @@ impl App {
             let existing = |this: &Self, key: LiveId| this.module_windows.iter()
                 .find(|(_, (o, k))| *o == owner && *k == key).map(|(w, _)| *w);
             match request {
-                WindowRequest::Open { key, title, root, size: _ } => {
+                WindowRequest::Open { key, title, root, size } => {
                     if let Some(window) = existing(self, key) {
                         self.activate_client(cx, window);
                         continue;
@@ -2826,9 +2935,25 @@ impl App {
                     let id = self.next_id;
                     self.next_id += 1;
                     let area = self.desk_area(cx);
-                    self.state_mut().clients.insert(id, clients::ClientSlot::module(id, app, &title));
+                    let mut slot = clients::ClientSlot::module(id, app, &title);
+                    // An instance's extra window is its app in front too.
+                    slot.card_app = self.state.as_ref().and_then(|s| s.clients.get(&owner)).and_then(|o| o.card_app.clone());
+                    self.state_mut().clients.insert(id, slot);
                     let gap = self.state_mut().gap;
-                    self.state_mut().layout.insert(id, area, gap);
+                    // The size the module asks for is a hint, clamped as a
+                    // script app's manifest `window` is (above a dock that
+                    // floats over the desk); none, or a size that is not
+                    // one, is the default. A phone shows no extra windows.
+                    let preferred = if self.state_mut().style.target.mobile() {
+                        None
+                    } else {
+                        desktop_layout::requested_size(size.map(|s| (s.x, s.y)))
+                    };
+                    let dock = if preferred.is_some() { self.dock_overlay(cx, area) } else { 0.0 };
+                    self.state_mut().layout.insert_sized(id, area, gap, preferred, dock);
+                    if let (Some((w, h)), Some(window)) = (preferred, self.state_mut().layout.desktop.get(id)) {
+                        log!("wm: {} asks for a {}x{} window {:?}; it opens at {}x{}", app, w, h, title, window.rect.w, window.rect.h);
+                    }
                     self.desk(cx).borrow_mut::<WmDesk>().map(|mut d| {
                         d.mark_module(id);
                         d.with_module_view(cx, id, |cx, v| v.set_root(cx, id, vm_id, root));
@@ -3514,6 +3639,7 @@ impl App {
         self.pane_links.reannounce();
         // App peers take `dev.run` and developer grants, or lose them.
         crate::host_tools::developer_mode_changed();
+        shell::launcher::invalidate_apps();
         for notice in dev_mode::take_notices() {
             self.notify(cx, "Developer mode", &notice);
         }
@@ -3702,8 +3828,9 @@ impl App {
         }
         match target {
             "system.quit" => {
+                self.cancel_update_restart();
                 if self.ask_before_quit(cx) {
-                    cx.quit();
+                    self.quit_after_review(cx);
                 }
             }
             "style.background" => {
@@ -4649,12 +4776,81 @@ impl App {
 
     /// SUPER+F hides the bar with the window; anything that leaves
     /// fullscreen puts it back, unless SUPER+SHIFT+SPACE hid it.
+    /// The bar lies over the top of the scene (the root's body overlays
+    /// them). The scene starts below a docked bar, and at the window's top
+    /// when the bar is hidden or slides over a full-screen window: then it
+    /// shows only while the top is out (`WmState::top_reveal`), coming down
+    /// from above the top edge with the window's title bar, which the desk
+    /// draws under it (`WmState::top_bar`).
+    fn place_bar(&mut self, cx: &mut Cx) {
+        let reveal = self.state.as_ref().map_or(0.0, |s| s.top_reveal);
+        // Only a bar full screen hid comes out; one the person hid stays hidden.
+        let floating = self.front_fullscreen && self.bar_hidden_by_fullscreen;
+        let bar = self.ui.widget(cx, ids!(bar));
+        if floating && bar.visible() != (reveal > 0.001) {
+            bar.set_visible(cx, reveal > 0.001);
+        }
+        #[cfg(not(mobile_only))]
+        let height = self.bar_metrics.map_or(SCENE_TOP, |(h, _)| h);
+        #[cfg(mobile_only)]
+        let height = SCENE_TOP;
+        let title = self.state.as_ref().map_or(0.0, |s| s.style.target.title_height());
+        let scene_top = if bar.visible() && !floating { height } else { 0.0 };
+        let bar_top = if floating { -(height + title) * (1.0 - edge_reveal::ease(reveal)) } else { 0.0 };
+        if let Some(state) = self.state.as_mut() {
+            state.top_bar = if floating { height } else { 0.0 };
+        }
+        let mut moved = false;
+        if let Some(mut scene) = self.ui.widget(cx, ids!(scene)).borrow_mut::<scene::WmScene>() {
+            if scene.walk.margin.top != scene_top {
+                scene.walk.margin.top = scene_top;
+                moved = true;
+            }
+        }
+        if let Some(mut view) = bar.borrow_mut::<View>() {
+            if view.walk.margin.top != bar_top {
+                view.walk.margin.top = bar_top;
+                moved = true;
+            }
+        }
+        if moved {
+            self.redraw_all(cx);
+        }
+    }
+
+    /// While the bar slides over a full-screen window, the pointer over it
+    /// is the bar's alone, as the AI pane's is: never the window under it.
+    fn floating_bar_pointer(&mut self, cx: &mut Cx, event: &Event) -> bool {
+        if !(self.front_fullscreen && self.bar_hidden_by_fullscreen) || self.drag.is_some() {
+            return false;
+        }
+        let abs = match event {
+            Event::MouseMove(e) => e.abs,
+            Event::MouseDown(e) => e.abs,
+            Event::MouseUp(e) => e.abs,
+            Event::Scroll(e) => e.abs,
+            _ => return false,
+        };
+        let bar = self.ui.widget(cx, ids!(bar));
+        if !bar.visible() || !bar.area().rect(cx).contains(abs) {
+            return false;
+        }
+        match self.state.as_mut() {
+            Some(state) => bar.handle_event(cx, event, &mut Scope::with_data(state)),
+            None => bar.handle_event(cx, event, &mut Scope::empty()),
+        }
+        true
+    }
+
     fn sync_bar_for_fullscreen(&mut self, cx: &mut Cx) {
         let fullscreen = {
-            let layout = &self.state_mut().layout;
+            let state = self.state_mut();
+            let layout = &state.layout;
             let ws = layout.focus_ws();
-            layout.workspaces[ws].fullscreen.is_some()
-                && layout.workspaces[ws].fullscreen_mode == FullscreenMode::Fullscreen
+            (!layout.desktop.enabled
+                && layout.workspaces[ws].fullscreen.is_some()
+                && layout.workspaces[ws].fullscreen_mode == FullscreenMode::Fullscreen)
+                || desktop::front_fullscreen(state)
         };
         let bar = self.ui.widget(cx, ids!(bar));
         if fullscreen && bar.visible() {
@@ -4887,6 +5083,11 @@ impl App {
         resize: bool,
         armed: bool,
     ) -> bool {
+        // A full-screen window on a floating desk has no place to move to
+        // or size to; it leaves full screen first.
+        if self.state_mut().layout.desktop.enabled && self.state_mut().layout.is_fullscreen(client) {
+            return false;
+        }
         self.sync_geometry(cx);
         let area = self.desk_area(cx);
         let gap = self.state_mut().gap;
@@ -4964,17 +5165,18 @@ impl App {
             let rect = if resize {
                 // The grabbed corner moves with the pointer; the opposite
                 // one is fixed (DragController.cpp:413-423).
+                use crate::desktop_layout::{MIN_H, MIN_W};
                 let (x, w) = if !resize_x {(start_rect.x,start_rect.w)}else if grab_left {
-                    let w = (start_rect.w - d.x).max(80.0);
+                    let w = (start_rect.w - d.x).max(MIN_W);
                     (start_rect.x + start_rect.w - w, w)
                 } else {
-                    (start_rect.x, (start_rect.w + d.x).max(80.0))
+                    (start_rect.x, (start_rect.w + d.x).max(MIN_W))
                 };
                 let (y, h) = if !resize_y {(start_rect.y,start_rect.h)}else if grab_top {
-                    let h = (start_rect.h - d.y).max(60.0);
+                    let h = (start_rect.h - d.y).max(MIN_H);
                     (start_rect.y + start_rect.h - h, h)
                 } else {
-                    (start_rect.y, (start_rect.h + d.y).max(60.0))
+                    (start_rect.y, (start_rect.h + d.y).max(MIN_H))
                 };
                 LRect::new(x, y, w, h)
             } else {
@@ -5244,22 +5446,17 @@ impl App {
         self.handle_event(cx, &event);
     }
 
-    /// The test actions' timers: a `capture:` tick writes the next frame; a
-    /// due `ask-appcard:` sends its text to the appcard instance's executor
-    /// exactly as the assistant's `ask` call would.
-    fn fire_test_timers(&mut self, cx: &mut Cx, te: &TimerEvent) {
-        if let Some((timer, path)) = self.test_capture.clone() {
-            if timer.is_timer(te).is_some() {
-                #[cfg(not(target_os = "android"))]
-                {
-                    let tmp = path.with_extension("part.png");
-                    cx.capture_next_frame_to_file(tmp);
-                    let _ = std::fs::rename(path.with_extension("part.png"), path);
-                }
-                #[cfg(target_os = "android")]
-                {
-                    for result in cx.try_take_texture_readbacks() {
-                        if Some(result.ticket) != self.test_capture_ticket { continue; }
+    /// One consumer drains the platform queue; a test capture cannot discard
+    /// Studio's ticket (or vice versa). Cancelled unowned tickets are drained
+    /// too, releasing their platform readback reservation.
+    fn route_texture_readbacks(&mut self, cx: &mut Cx) {
+        for result in cx.try_take_texture_readbacks() {
+            let Some(result) = self.studio.readback(cx, result) else {continue};
+            #[cfg(all(unix, any(feature = "app-hub", native_mobile)))]
+            let Some(result) = studio::apps::readback(cx, result) else {continue};
+            #[cfg(target_os = "android")]
+            if Some(result.ticket) == self.test_capture_ticket {
+                let Some((_, path)) = self.test_capture.clone() else {continue};
                         self.test_capture_ticket = None;
                         let output = if self.test_recording {
                             let timestamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis();
@@ -5282,7 +5479,26 @@ impl App {
                                 if std::fs::write(&tmp,png).is_ok() { let _ = std::fs::rename(tmp,output); }
                             }
                         }) { Ok(task) => task.detach(), Err(error) => log!("wm: capture worker unavailable: {error}") }
-                    }
+            }
+            #[cfg(not(target_os = "android"))]
+            let _ = result;
+        }
+    }
+
+    /// The test actions' timers: a `capture:` tick writes the next frame; a
+    /// due `ask-appcard:` sends its text to the appcard instance's executor
+    /// exactly as the assistant's `ask` call would.
+    fn fire_test_timers(&mut self, cx: &mut Cx, te: &TimerEvent) {
+        if let Some((timer, _path)) = self.test_capture.clone() {
+            if timer.is_timer(te).is_some() {
+                #[cfg(not(target_os = "android"))]
+                {
+                    let tmp = _path.with_extension("part.png");
+                    cx.capture_next_frame_to_file(tmp);
+                    let _ = std::fs::rename(_path.with_extension("part.png"), _path);
+                }
+                #[cfg(target_os = "android")]
+                {
                     if self.test_capture_ticket.is_none() {
                         let focus = self.state_mut().layout.focused_client();
                         let texture = focus.and_then(|client|self.desk(cx).borrow::<WmDesk>().and_then(|desk|desk.phone_client_texture(client)));
@@ -5340,17 +5556,14 @@ impl App {
 
     /// `--test-action <name>` fires one WmAction at startup, so every
     /// binding can be driven from a script even where the host OS keeps a
-    /// chord for itself.
+    /// chord for itself. Command-line flags, which only the local user can
+    /// pass, work in every build. The app config's `test_actions` arrive
+    /// with a launch that another app may have made (an Android intent
+    /// extra), so only a development build takes them (`launch_input`).
     fn run_test_actions(&mut self, cx: &mut Cx) {
         let mut args: Vec<String> = std::env::args().collect();
-        if let Ok(config) = std::env::var("MAKEPAD_APP_CONFIG") {
-            if let Ok(config) = makepad_strict_json::parse(config.as_bytes()) {
-                if let Some(actions) = config.get("test_actions").and_then(|v| v.as_arr()) {
-                    for action in actions.iter().filter_map(|v| v.as_str()) {
-                        args.extend(["--test-action".into(), action.into()]);
-                    }
-                }
-            }
+        for action in launch_input::test_actions() {
+            args.extend(["--test-action".into(), action]);
         }
         let mut i = 0;
         while i < args.len() {
@@ -5400,10 +5613,39 @@ impl App {
                         i += 2;
                         continue;
                     }
+                    // host-fullscreen: the shell behaves as if its window were
+                    // full screen on its host (a hidden run cannot enter one),
+                    // so a floating dock hides until the pointer comes to the
+                    // bottom edge (`desktop::dock_auto_hides`).
+                    if name == "host-fullscreen" {
+                        log!("wm: --test-action host-fullscreen");
+                        self.test_host_fullscreen = true;
+                        if let Some(state) = self.state.as_mut() {
+                            state.host_fullscreen = true;
+                        }
+                        self.redraw_all(cx);
+                        i += 2;
+                        continue;
+                    }
                     if let Some(app) = name.strip_prefix("launch-") {
                         let app = app.to_string();
                         log!("wm: --test-action launch {}", app);
                         self.launch_app(cx, &app);
+                        i += 2;
+                        continue;
+                    }
+                    #[cfg(unix)]
+                    if let Some(path) = name.strip_prefix("studio-render:") {
+                        // Development builds only: a release build has no studio.
+                        let result = if cfg!(dev_mode) { host_tools::studio::test_action(path) } else { Err("not a development build".to_string()) };
+                        if let Err(error) = result { log!("studio test: {error}"); }
+                        i += 2;
+                        continue;
+                    }
+                    #[cfg(all(unix, any(feature = "app-hub", native_mobile)))]
+                    if let Some(path) = name.strip_prefix("studio-flow:") {
+                        let result = if cfg!(dev_mode) { host_tools::studio::test_flow(path) } else { Err("not a development build".to_string()) };
+                        if let Err(error) = result { log!("studio flow: {error}"); }
                         i += 2;
                         continue;
                     }
@@ -5864,6 +6106,10 @@ mod app_hub_lifecycle_tests {
             dragging: Vec::new(),
             drop_hint: None,
             pane_sliding: false,
+            host_fullscreen: false,
+            dock_reveal: 1.0,
+            top_reveal: 0.0,
+            top_bar: 0.0,
         });
         // Real module isolates exercise shutdown and client removal without
         // requiring a downloaded Card or changing the machine's catalog.
@@ -6008,6 +6254,10 @@ impl MatchEvent for App {
             dragging: Vec::new(),
             drop_hint: None,
             pane_sliding: false,
+            host_fullscreen: false,
+            dock_reveal: 1.0,
+            top_reveal: 0.0,
+            top_bar: 0.0,
             style: Default::default(),
             material,
             roles,
@@ -6016,6 +6266,8 @@ impl MatchEvent for App {
         // the one path a style switch uses.
         self.apply_material_to_chrome(cx, material, None);
         self.next_id = 1;
+        #[cfg(any(feature = "app-updater", native_mobile))]
+        octosense_updater_ui::configure(crate::octosense::paths::home().join("updates"));
         // The hosting registry: the linked modules, the person's overrides
         // in ~/.makepad/wm/apps.splash, a dev run's `--module <id>` flags.
         let args: Vec<String> = std::env::args().collect();
@@ -6330,6 +6582,10 @@ impl MatchEvent for App {
                 #[cfg(wasm_functions)]
                 wasm_service::warm(&id);
             }
+            #[cfg(all(unix, any(feature = "app-hub", native_mobile)))]
+            if cfg!(dev_mode) {
+                self.drain_studio(cx);
+            }
             self.drain_hub(cx);
             self.drain_client_lines(cx);
             self.drain_module_upstream();
@@ -6346,6 +6602,7 @@ impl App {
         host::set_child_env("MAKEPAD_HOME", octosense::paths::home().as_os_str());
         desktop_style::install(vm,desktop_style::StyleSheet::load(desktop_style::DesktopStyle::Omarchy));
         crate::makepad_widgets::script_mod(vm);
+        charts::register(vm);
         octosense::icon_frame::script_mod(vm);
 
         // The theme: evaluated before any module that reads
@@ -6433,6 +6690,15 @@ impl App {
     }
 
     pub fn shell_handle_event(&mut self, cx: &mut Cx, event: &Event) {
+        // A separate manual quit/close cancels a pending update, rather than
+        // converting that unrelated action into permission to replace the app.
+        if self.update_restart_waiting && matches!(event, Event::QuitRequested(_) | Event::WindowCloseRequested(_)) {
+            self.cancel_update_restart();
+        }
+        #[cfg(any(feature = "app-updater", native_mobile))]
+        if let Event::AndroidIntegration { channel, payload } = event {
+            if channel == "home_updater.result" { octosense_updater_ui::android_result(payload); }
+        }
         #[cfg(any(feature = "app-hub", native_mobile))]
         self.audio_session_event(cx, event);
         #[cfg(any(feature = "app-hub", native_mobile))]
@@ -6443,6 +6709,10 @@ impl App {
         device_calendar::handle_event(cx, event);
         self.webview_render.handle_event(cx, event);
         self.shell_handle_event_inner(cx, event);
+        // Studio is independent of modal/phone routes that may consume an event.
+        if cfg!(dev_mode) {
+            if let Event::Draw(draw) = event { self.studio.draw(cx, draw); }
+        }
         // A switch or Home action must stop device access in this event, not
         // wait for the newly focused app's next draw.
         #[cfg(any(feature = "app-hub", native_mobile))]
@@ -6454,11 +6724,16 @@ impl App {
         // Modules' peer links (#142): the links opened during this event,
         // and what the instances sent on theirs, to the shell's peer link.
         self.module_host.pump_peer_links(cx);
+        self.poll_update_restart(cx);
         // A quit that waited on instances asking the person goes ahead once
         // the last of them confirmed (or failed and has nothing left to ask).
         if self.take_quit_ready() {
             log!("wm: every instance and app confirmed; quitting");
-            cx.quit();
+            self.quit_after_review(cx);
+        }
+        #[cfg(all(target_os = "macos", any(feature = "app-updater", native_mobile)))]
+        if matches!(event, Event::Draw(_)) && self.state.is_some() {
+            octosense_updater_ui::restart::acknowledge_startup();
         }
     }
 
@@ -6483,10 +6758,9 @@ impl App {
             } else {
                 state.layout.focused_client()?
             };
-            let app = &state.clients.get(&client)?.app;
-            // Hosted Hub previews have no dedicated client identity. They
-            // must open the installed app before requesting native audio.
-            app.strip_prefix("hub:").map(str::to_owned)
+            // A system app in front is its manifest id as much as an
+            // installed one; a hosted Hub preview is none (`foreground_app`).
+            state.clients.get(&client)?.foreground_app()
         });
         let foreground = glance.or(focused);
         files_service::set_foreground_app(foreground.clone());
@@ -6495,6 +6769,25 @@ impl App {
     }
 
     fn shell_handle_event_inner(&mut self, cx: &mut Cx, event: &Event) {
+        // The top of a full-screen window sliding out or back: every event,
+        // before anything below can return early.
+        if let Some(state) = self.state.as_mut() {
+            if self.top_edge.handle_event(cx, event, &mut state.top_reveal) {
+                self.redraw_all(cx);
+            }
+        }
+        if let Event::MouseLeave(_) = event {
+            if self.front_fullscreen {
+                self.top_edge.want(cx, false);
+            }
+        }
+        if cfg!(dev_mode) {
+            #[cfg(all(unix, any(feature = "app-hub", native_mobile)))]
+            studio::apps::tick(cx, event);
+            let studio_surface = studio::surface_geometry(cx);
+            self.studio.event(cx, event, studio_surface);
+        }
+        self.route_texture_readbacks(cx);
         // Quitting, or closing the shell's window, asks the hosted instances
         // first (makepad#65). A termination signal is never refused.
         match event {
@@ -6556,6 +6849,13 @@ impl App {
             }
             // The bar is the caption: keep it around the OS buttons.
             self.update_bar_chrome(cx, &ev.new_geom);
+            // A full-screen shell hides its floating dock until the pointer
+            // comes to the bottom edge (`desktop::dock_auto_hides`).
+            let fullscreen = ev.new_geom.is_fullscreen || self.test_host_fullscreen;
+            if self.state.as_ref().is_some_and(|s| s.host_fullscreen != fullscreen) {
+                self.state_mut().host_fullscreen = fullscreen;
+                self.redraw_all(cx);
+            }
             // A warm instance is configured with the desktop's own dpi, so
             // what it warms up is what its tile will use.
             self.dpi_factor = ev.new_geom.dpi_factor;
@@ -6666,6 +6966,7 @@ impl App {
         if self.phone_search_event(cx,event) {return;}
         if self.state.is_some() && self.phone_pointer(cx,event) {return;}
         if self.state.is_some() && self.snap_event(cx,event) {return;}
+        if self.state.is_some() && self.floating_bar_pointer(cx,event) {return;}
         if self.state.is_some() && self.desktop_pointer(cx,event) {return;}
         // The AI pane owns the pointer inside its rect while it is open:
         // the event goes to the pane alone, so neither the WM's own drag
@@ -6678,6 +6979,20 @@ impl App {
         if let Event::Draw(_) = event {
             if self.state.is_some() {
                 self.sync_ai_pane_geometry(cx);
+                // Maximized and snapped windows end above a floating dock:
+                // its height from `dock_overlay`, the one lookup for it.
+                let area = self.desk_area(cx);
+                let dock = self.dock_overlay(cx, area);
+                self.state_mut().layout.desktop.dock = dock;
+                // A window in front going full screen, or another window
+                // coming to the front: the top bar and its edge follow.
+                let fullscreen = desktop::front_fullscreen(self.state_mut());
+                if fullscreen != self.front_fullscreen {
+                    self.front_fullscreen = fullscreen;
+                    self.top_edge.set(cx, false);
+                    self.sync_bar_for_fullscreen(cx);
+                }
+                self.place_bar(cx);
             }
         }
         // SUPER + mouse:272 / mouse:273 — move and resize (tiling.lua).

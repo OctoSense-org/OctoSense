@@ -132,7 +132,7 @@ vector、pdf）现已有代理工具，系统代理可以调用：
   `SKILL.md`：frontmatter 为 `name: <family>-engine` 和一行不超过 200 字节的
   `description`，正文写引擎能做什么、系统代理可用的工具、文件规则和示例。旁边是
   按引擎固定版本生成的参考文件：有命令目录的十个引擎（photo、word、deck、cad、
-  light、design、film、effect、vector、pdf，共 4,557 个 id）各有一份
+  light、design、film、effect、vector、pdf，共 4,569 个 id）各有一份
   `commands.md`，每个 id 一行；light 有 `controls.md`，sheet 有 `functions.md`。
   每个服务都嵌入自己的技能（`src/skill.rs`），因此构建发布的技能总与其引擎一致。
   Shell 用与服务相同的条件注册已链接引擎的技能
@@ -313,7 +313,7 @@ App Hub 的 card-host）。
 | 引擎 | 系统代理的工具 | 入口在 `safe` id 之外还运行什么 | 上限（单次调用） |
 | --- | --- | --- | --- |
 | word | `word.info`、`word.run` | 389 个 id 中的 328 个。读取：`insert.picture`、`picture.change`（`path`）。 | 表格 ≤ 10,000 个单元格；页面每边 72–1584 pt；一次替换使文本最多增长 1,000 倍（连续替换合计 ≤ 10,000 倍）；文档 ≤ 500,000 个字符、50,000 个段落、128 MiB 图片；PDF ≤ 10,000 页。 |
-| deck | `deck.info`、`deck.run` | 222 个中的 198 个。读取：`insert.picture`、`picture.change`（`path`）。在 deckcraft 限制其媒体和 zip 解析之前暂缓开放（恶意数据可能让 Shell 进程中止，#448）：`insert.audio`、`insert.video`、`media.info`、`media.posterFrame`、`file.openBytes`。 | 表格 ≤ 5,625 个单元格；图表 ≤ 10,000 个数据点；单张幻灯片面积 ≤ 1920 × 1080 pt；演示文稿 ≤ 500 张幻灯片、20,000 个形状、1,000,000 个字符；每次调用的栅格化 ≤ 160 MP，每张 ≤ 4096²。 |
+| deck | `deck.info`、`deck.run` | 222 个中的 198 个。读取：`insert.picture`、`picture.change`（`path`）。在 deckcraft 限制其媒体和 zip 解析之前暂缓开放（恶意数据可能让 Shell 进程中止，#448）：`insert.audio`、`insert.video`、`media.info`、`media.posterFrame`、`file.openBytes`。应用自己的请求还能使用 Quick Deck v2 的打开文档（`apps/quickdeck/design/SERVICE.md`）：每个方法的命令参数由服务自己构造，在该方法自己的每次调用命令数上限之内通过同一个入口，并合并为一个撤销步骤；`shape.fill` 和 `design.background` 在这里运行时不带 `picture` 或 `path`；图片读取只接受应用存储中的 PNG、JPEG、WebP、GIF、TIFF 或 BMP。服务打开的每个文件，无论经由哪条路径，都先通过它自己的导入检查：有界地读取 zip 的目录，只接受引擎自己的 zip 读取器（deckcraft 使用的 `zip` crate）会以同样方式读取的结构，并与该读取器的读取结果逐项比对，并在引擎读到任何字节之前拒绝其中嵌套的 zip（`ppt/embeddings/` 下的嵌入对象除外，例如图表的工作簿，没有任何组件会解压它）、加密包以及旧版 `.ppt`。演示文稿中的音频和视频作为字节随文档打开，服务只携带、从不解码（解码器只能经由上面暂缓开放的命令到达）；其媒体计入会话的 128 MiB 上限。 | 表格 ≤ 5,625 个单元格；图表 ≤ 10,000 个数据点；单张幻灯片面积 ≤ 1920 × 1080 pt；演示文稿 ≤ 500 张幻灯片、20,000 个形状、1,000,000 个字符；每次调用的栅格化 ≤ 160 MP，每张 ≤ 4096²。应用自己的请求：每个调用方 ≤ 8 个打开的文档，合计 ≤ 32 个；绘制宽 48–3840 px、每边 ≤ 4096 px 且 ≤ 16 MP；每次调用列出的幻灯片或形状 ≤ 500 个；一次表格填充 ≤ 1,024 个单元格；备注 ≤ 20,000 个字符；图片 ≤ 50 MP；PDF 导出 ≤ 160 MP，图像导出 ≤ 64 张幻灯片、合计 ≤ 256 MP；渲染缓存 ≤ 16 MiB 和 64 个文件，写入会因空间不足失败之前先清空。导入检查：≤ 10,000 个条目，每个条目 ≤ 64 MiB，合计 ≤ 256 MiB，超过 100 KiB 的条目压缩比 ≤ 100 比 1。 |
 | cad | `cad.info`、`cad.run` | 295 个中的 288 个。`setvar` 被拒绝：它按名称设置变量，而没有任何名称经过审查。 | 阵列和复制 ≤ 10,000 份，一次调用内相乘 ≤ 10,000；多边形 ≤ 1,024 条边；样条拟合点 ≤ 2,000；填充和线型比例 ≥ 0.0001；图形 ≤ 200,000 个对象；渲染约 ≤ 一秒的绘制工作量，先估算再绘制。 |
 | light | `light.info`、`light.run` | 239 个中的 189 个。没有其他。 | 原图 ≤ 64 MP；导出 ≤ 16 MP（AVIF ≤ 4）；≤ 16 张照片（含虚拟副本）；≤ 16 个蒙版、256 笔画笔、64 个污点；裁剪每边 ≥ 1%。 |
 | film | `film.info`、`film.run` | 675 个中的 525 个。读取：`captions.import`（`path`）。只运行内置项：`effects.apply`、两个转场命令、`effects.setDefaultTransition`、`mixer.addInsert`、`presets.apply`、`lumetri.applyPreset`、`essentialSound.applyPreset`。 | 序列每边 ≤ 4096 且 ≤ 9.4 MP，≤ 120 fps，≤ 96 kHz；速度 1%–10,000%；时长 ≤ 24 小时；一次调用最多添加 5,000 个元素；分析 ≤ 18,000 帧；导出 ≤ 18,000 帧。 |
@@ -321,7 +321,7 @@ App Hub 的 card-host）。
 | vector | `vector.info`、`vector.run` | 679 个中的 574 个。只运行内置项：`effect.apply` 和 `appearance.addEffect`（经 `effect` 或 `id`）；`perspective.draw` 只运行 `shape.*` 命令，每条再经过准入。 | 形状 ≤ 1,000 个点；混合 ≤ 1,000 步；重复、马赛克和网格 ≤ 10,000 份（每次调用 ≤ 10,000）；变换效果 ≤ 1,000 份；文档按绘制计 ≤ 20,000 个节点、100,000 个对象；栅格 `out` 每边 ≤ 8192 px 且 ≤ 16 MP。 |
 | sound | `sound.info`、`peaks`、`convert`、`trim`、`mix` | 没有入口：soundcraft 没有命令目录。 | — |
 | design | `design.info`、`render`、`export` | 按决定不设入口（#418）。 | — |
-| pdf | `pdf.info`、`text`、`render`、`merge`、`split` | 没有入口：只有几个固定操作。 | — |
+| pdf | `pdf.info`、`text`、`render`、`merge`、`split` | 没有入口：只有几个固定操作。应用自己的请求还能使用 PDF Tools v2 的打开文档（`apps/pdftools/design/SERVICE.md`）：每个方法只运行为它审查过的命令，参数由服务自己构造；`comment_add` 不带附件类型或路径；`page_insert_file` 读取应用存储中的 PDF；`doc_save`、`page_extract` 和各种导出写入存储内的暂存文件夹，再移到目标位置，不替换已有文件（保存回文档自己的文件除外）；`doc_open` 和 `form_fill` 在 JavaScript 关闭时运行。 | 应用自己的请求：每个调用方 ≤ 8 个打开的文档；渲染 24–300 dpi 且 ≤ 16 MP；查找 ≤ 500 个匹配；每次调用 ≤ 512 页；一次图像导出 ≤ 64 页、合计 ≤ 256 MP；渲染缓存 ≤ 16 MiB 和 64 个文件，写入会因空间不足失败之前先清空。 |
 | photo | 无（照片应用自己的 `photos.info`） | `photo.run` 只供应用自己的请求使用：817 个 id 中的 692 个，并且每个还要通过 photocraft 自己的工作区检查。 | 尚未设上限（只供应用自己的请求使用）。 |
 | sheet | 无（Sheets 应用自己的 `sheets.*`） | 没有入口：公式求值。 | — |
 

@@ -238,7 +238,8 @@ jobs:
           # installer), plus what went into them: the binary, the kernel and
           # the staged resources.
           exe=octosense; [ "$RUNNER_OS" = Windows ] && exe=octosense.exe
-          python "$SRC/tools/release-scan.py" upload/packages/* resources kernel "$SRC/target/release/$exe"
+          target=$(python -c 'import json; print(json.load(open("receipt.json"))["target"])')
+          python "$SRC/tools/release-scan.py" upload/packages/* resources kernel "$SRC/target/$target/release/$exe"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: octosense-desktop-unsigned-${{ matrix.platform }}
@@ -311,6 +312,17 @@ jobs:
           package["signed"] = True
           open(package_receipt, "w").write(json.dumps(package, indent=2) + "\n")
           PY
+          fi
+          helper="$app/Contents/MacOS/octosense-update-helper"
+          if [ -f "$helper" ]; then
+            sign "$helper"
+            python3 - "$receipt" "$helper" <<'PYHELPER'
+          import hashlib, json, sys
+          receipt, helper = sys.argv[1:]
+          record = json.load(open(receipt))
+          record["updater"]["sha256"] = hashlib.sha256(open(helper, "rb").read()).hexdigest()
+          open(receipt, "w").write(json.dumps(record, indent=2) + "\n")
+          PYHELPER
           fi
           sign --entitlements in/signing/entitlements.plist "$app"
           codesign --verify --deep --strict --verbose=2 "$app"

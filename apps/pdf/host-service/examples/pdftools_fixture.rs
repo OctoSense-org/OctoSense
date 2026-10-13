@@ -13,13 +13,17 @@
 //! With `--import-sample <file>` it writes one more PDF, a three-page garden
 //! plan, to `<file>`: what a test places in the library as `Imported PDF.pdf`,
 //! the name PDF Tools gives the first PDF it opens from the device, to drive
-//! the path an imported PDF takes without the host's file dialog. The PDFs are
-//! written by hand below, so they are the same on every run and need no
-//! files of their own. Nothing here calls the engine.
+//! the path an imported PDF takes without the host's file dialog. With
+//! `--edit-sample <file>` it writes a page as a web browser prints it, whose
+//! fonts break text editing the way real-world PDFs do (`printed_flyer`
+//! below), for PDF Tools' Edit. The PDFs are written by hand below, so they
+//! are the same on every run and need no files of their own. Nothing here
+//! calls the engine.
 //!
 //! ```sh
 //! cargo run --locked -p octosense-pdf-service --example pdftools_fixture -- <apps root>
 //! cargo run --locked -p octosense-pdf-service --example pdftools_fixture -- --import-sample <file>
+//! cargo run --locked -p octosense-pdf-service --example pdftools_fixture -- --edit-sample <file>
 //! ```
 
 use std::path::{Path, PathBuf};
@@ -36,8 +40,9 @@ fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let written = match args.as_slice() {
         [flag, file] if flag == "--import-sample" => write(Path::new(file), &garden_plan()).map(|_| PathBuf::from(file)),
+        [flag, file] if flag == "--edit-sample" => write(Path::new(file), &printed_flyer()).map(|_| PathBuf::from(file)),
         [root] if !root.starts_with('-') => samples(Path::new(root)),
-        _ => Err("usage: pdftools_fixture <apps root> | --import-sample <file>".into()),
+        _ => Err("usage: pdftools_fixture <apps root> | --import-sample <file> | --edit-sample <file>".into()),
     };
     match written {
         Ok(path) => println!("Wrote {}", path.display()),
@@ -48,8 +53,9 @@ fn main() {
     }
 }
 
-/// The samples: file name and bytes.
-fn documents() -> Vec<(&'static str, Vec<u8>)> {
+/// The samples: file name and bytes. (The service's own tests include
+/// this file as a module and use them too.)
+pub(crate) fn documents() -> Vec<(&'static str, Vec<u8>)> {
     vec![
         ("Quarterly report.pdf", quarterly_report()),
         ("Board minutes.pdf", board_minutes()),
@@ -513,7 +519,7 @@ fn apartment_lease() -> Vec<u8> {
     pdf(&info(title, "Harbour Lane Homes", "Lease for 14 Harbour Lane, flat 3B", "lease, rental, agreement"), pages)
 }
 
-fn garden_plan() -> Vec<u8> {
+pub(crate) fn garden_plan() -> Vec<u8> {
     let title = "Garden plan - spring 2027";
     let beds = [
         ("Bed 1: salad", 0x6a994e, "Lettuce, rocket and radishes, sown every three weeks from March for a steady supply."),
@@ -556,4 +562,363 @@ fn garden_plan() -> Vec<u8> {
     }
     pages.push(calendar);
     pdf(&info(title, "Allotment 14", "What grows where, and when to sow it", "garden, plan, allotment"), pages)
+}
+
+// ---------------------------------------------------- a page printed from the web
+//
+// Real-world PDFs break text editing in ways the samples above never do (a
+// page a web browser printed, 11 Oct 2026). This sample has all three, in
+// fonts made here, so the service's tests and PDF Tools' Edit can be held to
+// honest answers:
+//
+// - A designed title in pieces. "Studio2026" is in an unnamed Type 3 font,
+//   then 春, 季, 发布 and 会 alternate between two more, each piece in its own
+//   text object, as a browser prints a title whose glyphs span several fonts.
+//   The engine reads five paragraphs where a person sees one title, and a
+//   longer "Studio2026" runs into the pieces after it.
+// - Chinese text in an embedded subset font: a CID-keyed TrueType program
+//   with only the glyphs its paragraph uses (Identity-H, FontFile2 and a
+//   ToUnicode map), as office programs and browsers embed one. A Chinese
+//   character it lacks needs a Chinese face the engine doesn't have.
+// - Subsets everywhere: a character outside a piece's or the paragraph's font
+//   makes the engine draw the edit in a stand-in (Helvetica), with other
+//   widths than the original.
+//
+// The glyphs are blocky placeholders drawn from bitmaps here (no one's font
+// is copied); the text layer, the widths and the font dictionaries are what a
+// browser writes.
+
+/// The page `--edit-sample` writes (the notes above): US Letter, as a
+/// browser prints one.
+pub(crate) fn printed_flyer() -> Vec<u8> {
+    const TITLE: f64 = 27.8;
+    const BODY: f64 = 12.65;
+    let mut objs: Vec<Vec<u8>> = vec![Vec::new(), Vec::new(), Vec::new()]; // the catalog, the pages, the page: last
+    let helvetica = add(&mut objs, b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>".to_vec());
+    let latin = ['S', 't', 'u', 'd', 'i', 'o', '2', '0', '6'];
+    let first = ['春', '发', '布'];
+    let second = ['季', '会'];
+    let t1 = type3(&mut objs, &latin, latin_glyph);
+    let t2 = type3(&mut objs, &first, cjk_glyph);
+    let t3 = type3(&mut objs, &second, cjk_glyph);
+    let lines = ["春季发布会展示新的应用和工具", "报名截止 2026 年 4 月 30 日"];
+    let mut body: Vec<char> = Vec::new();
+    for c in lines.iter().flat_map(|l| l.chars()) {
+        if !body.contains(&c) {
+            body.push(c);
+        }
+    }
+    let c1 = cid_subset(&mut objs, "ABCDEF+FixtureSans-SC", &body);
+
+    let mut ops = String::new();
+    ops.push_str("BT /F1 9.14 Tf 0.35 0.37 0.4 rg 1 0 0 1 44.62 708 Tm (OctoSense sample - a page as a web browser prints it) Tj ET\n");
+    // The title, a piece at a time: each in its own text object and font.
+    let mut x = 44.62;
+    for (font, chars, text) in [("T1", &latin[..], "Studio2026"), ("T2", &first[..], "春"), ("T3", &second[..], "季"), ("T2", &first[..], "发布"), ("T3", &second[..], "会")] {
+        let codes: String = text.chars().map(|c| format!("{:02X}", chars.iter().position(|k| *k == c).unwrap() + 1)).collect();
+        ops.push_str(&format!("BT /{font} {TITLE} Tf 0.07 0.09 0.15 rg 1 0 0 1 {x:.2} 670 Tm <{codes}> Tj ET\n"));
+        let em: i32 = text.chars().map(|c| i32::from(if c.is_ascii() { latin_glyph(c) } else { cjk_glyph(c) }.advance)).sum();
+        x += f64::from(em) / 1000.0 * TITLE;
+    }
+    // The Chinese paragraph: two lines in the embedded subset.
+    let cids = |line: &str| -> String { line.chars().map(|c| format!("{:04X}", body.iter().position(|k| *k == c).unwrap() + 1)).collect() };
+    ops.push_str(&format!("BT /C1 {BODY} Tf 0.12 0.14 0.16 rg 1 0 0 1 44.62 630 Tm <{}> Tj 0 -22.5 Td <{}> Tj ET\n", cids(lines[0]), cids(lines[1])));
+    // A paragraph in Helvetica just below it.
+    ops.push_str("BT /F1 12 Tf 0.12 0.14 0.16 rg 1 0 0 1 44.62 588 Tm (Doors open at nine in the main hall. Bring a) Tj 0 -16.5 Td (laptop and the badge we send you by email.) Tj ET\n");
+
+    let contents = add(&mut objs, pdf_stream(ops.as_bytes(), ""));
+    let info = add(
+        &mut objs,
+        b"<< /Title (Studio2026 spring launch) /Creator (PDF Tools sample generator: a page as a web browser prints it) \
+          /Producer (octosense-pdf-service pdftools_fixture) /CreationDate (D:20261011090000Z) >>"
+            .to_vec(),
+    );
+    objs[0] = b"<< /Type /Catalog /Pages 2 0 R >>".to_vec();
+    objs[1] = b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_vec();
+    objs[2] = format!(
+        "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 {helvetica} 0 R /T1 {t1} 0 R /T2 {t2} 0 R \
+         /T3 {t3} 0 R /C1 {c1} 0 R >> >> /Contents {contents} 0 R >>"
+    )
+    .into_bytes();
+    let mut out = b"%PDF-1.7\n%\xe2\xe3\xcf\xd3\n".to_vec();
+    let mut offsets = Vec::new();
+    for (i, body) in objs.iter().enumerate() {
+        offsets.push(out.len());
+        out.extend(format!("{} 0 obj\n", i + 1).bytes());
+        out.extend(body);
+        out.extend(b"\nendobj\n");
+    }
+    let xref = out.len();
+    out.extend(format!("xref\n0 {}\n0000000000 65535 f \n", objs.len() + 1).bytes());
+    for offset in offsets {
+        out.extend(format!("{offset:010} 00000 n \n").bytes());
+    }
+    out.extend(format!("trailer\n<< /Size {} /Root 1 0 R /Info {info} 0 R >>\nstartxref\n{xref}\n%%EOF\n", objs.len() + 1).bytes());
+    out
+}
+
+/// Add an object: its number.
+fn add(objs: &mut Vec<Vec<u8>>, body: Vec<u8>) -> usize {
+    objs.push(body);
+    objs.len()
+}
+
+/// A stream object of `data`, with `extra` entries in its dictionary.
+fn pdf_stream(data: &[u8], extra: &str) -> Vec<u8> {
+    let mut out = format!("<< /Length {}{extra} >>\nstream\n", data.len()).into_bytes();
+    out.extend_from_slice(data);
+    out.extend_from_slice(b"\nendstream");
+    out
+}
+
+/// A glyph: its advance in thousandths of an em, and the filled boxes
+/// `[x, y, w, h]` that draw it, y up from the baseline.
+struct Glyph {
+    advance: i16,
+    boxes: Vec<[i16; 4]>,
+}
+
+impl Glyph {
+    /// Its bounding box `[x0, y0, x1, y1]` (all zero for a blank glyph).
+    fn bounds(&self) -> [i16; 4] {
+        self.boxes.iter().fold(None, |b: Option<[i16; 4]>, r| {
+            let r = [r[0], r[1], r[0] + r[2], r[1] + r[3]];
+            Some(b.map_or(r, |b| [b[0].min(r[0]), b[1].min(r[1]), b[2].max(r[2]), b[3].max(r[3])]))
+        })
+        .unwrap_or([0; 4])
+    }
+}
+
+/// A 5 × 7 bitmap (top row first, the leftmost pixel the high bit) of each
+/// Latin character the sample draws in its own fonts.
+fn latin_bitmap(c: char) -> [u8; 7] {
+    match c {
+        'S' => [0b01111, 0b10000, 0b10000, 0b01110, 0b00001, 0b00001, 0b11110],
+        't' => [0b00100, 0b00100, 0b11111, 0b00100, 0b00100, 0b00100, 0b00011],
+        'u' => [0b00000, 0b00000, 0b10001, 0b10001, 0b10001, 0b10011, 0b01101],
+        'd' => [0b00001, 0b00001, 0b01101, 0b10011, 0b10001, 0b10011, 0b01101],
+        'i' => [0b00100, 0b00000, 0b01100, 0b00100, 0b00100, 0b00100, 0b01110],
+        'o' => [0b00000, 0b00000, 0b01110, 0b10001, 0b10001, 0b10001, 0b01110],
+        '0' => [0b01110, 0b10001, 0b10011, 0b10101, 0b11001, 0b10001, 0b01110],
+        '2' => [0b01110, 0b10001, 0b00001, 0b00010, 0b00100, 0b01000, 0b11111],
+        '3' => [0b11110, 0b00001, 0b00001, 0b01110, 0b00001, 0b00001, 0b11110],
+        '4' => [0b00010, 0b00110, 0b01010, 0b10010, 0b11111, 0b00010, 0b00010],
+        '6' => [0b00110, 0b01000, 0b10000, 0b11110, 0b10001, 0b10001, 0b01110],
+        _ => [0; 7],
+    }
+}
+
+/// A Latin character in 100-unit pixels from its bitmap, each row's runs one
+/// box; a space is blank. Advances: 600, a space 300.
+fn latin_glyph(c: char) -> Glyph {
+    if c == ' ' {
+        return Glyph { advance: 300, boxes: Vec::new() };
+    }
+    let mut boxes = Vec::new();
+    for (row, bits) in latin_bitmap(c).iter().enumerate() {
+        let y = (6 - row as i16) * 100;
+        let mut col = 0;
+        while col < 5 {
+            if bits >> (4 - col) & 1 == 0 {
+                col += 1;
+                continue;
+            }
+            let start = col;
+            while col < 5 && bits >> (4 - col) & 1 == 1 {
+                col += 1;
+            }
+            boxes.push([50 + start as i16 * 100, y, (col - start) as i16 * 100, 100]);
+        }
+    }
+    Glyph { advance: 600, boxes }
+}
+
+/// A Chinese character's placeholder: a top stroke and a spine, and strokes
+/// picked by its code point, so the sample's characters look different.
+fn cjk_glyph(c: char) -> Glyph {
+    let n = c as u32;
+    let mut boxes = vec![[120, 700, 760, 70], [465, -40, 70, 800]];
+    let strokes = [[120, 470, 760, 60], [120, 240, 760, 60], [120, 20, 760, 60], [200, 120, 60, 520], [740, 120, 60, 520], [300, 560, 400, 50]];
+    for (bit, stroke) in strokes.iter().enumerate() {
+        if n >> bit & 1 == 1 {
+            boxes.push(*stroke);
+        }
+    }
+    Glyph { advance: 1000, boxes }
+}
+
+/// A ToUnicode CMap: code `i + 1` (`bytes` long) is `chars[i]`.
+fn to_unicode(chars: &[char], bytes: usize) -> String {
+    let digits = bytes * 2;
+    let (lo, hi) = if bytes == 1 { ("00", "FF") } else { ("0000", "FFFF") };
+    let mut s = format!(
+        "/CIDInit /ProcSet findresource begin\n12 dict begin\nbegincmap\n/CIDSystemInfo << /Registry (Adobe) /Ordering (UCS) /Supplement 0 >> def\n\
+         /CMapName /Adobe-Identity-UCS def\n/CMapType 2 def\n1 begincodespacerange\n<{lo}> <{hi}>\nendcodespacerange\n{} beginbfchar\n",
+        chars.len()
+    );
+    for (i, c) in chars.iter().enumerate() {
+        let mut units = [0u16; 2];
+        let utf16: String = c.encode_utf16(&mut units).iter().map(|u| format!("{u:04X}")).collect();
+        s.push_str(&format!("<{:0digits$X}> <{utf16}>\n", i + 1));
+    }
+    s.push_str("endbfchar\nendcmap\nCMapName currentdict /CMap defineresource pop\nend\nend\n");
+    s
+}
+
+/// An unnamed Type 3 font as a browser embeds one: `chars` get the codes 1,
+/// 2, … in order, each drawn by `glyph`, with a ToUnicode map. Its number.
+fn type3(objs: &mut Vec<Vec<u8>>, chars: &[char], glyph: fn(char) -> Glyph) -> usize {
+    let (mut procs, mut widths) = (Vec::new(), Vec::new());
+    for (i, &c) in chars.iter().enumerate() {
+        let g = glyph(c);
+        let [x0, y0, x1, y1] = g.bounds();
+        let mut draw = format!("{} 0 {x0} {y0} {x1} {y1} d1\n", g.advance);
+        for [x, y, w, h] in &g.boxes {
+            draw.push_str(&format!("{x} {y} {w} {h} re\n"));
+        }
+        draw.push_str("f\n");
+        procs.push(format!("/g{} {} 0 R", i + 1, add(objs, pdf_stream(draw.as_bytes(), ""))));
+        widths.push(g.advance.to_string());
+    }
+    let cmap = add(objs, pdf_stream(to_unicode(chars, 1).as_bytes(), ""));
+    let names: Vec<String> = (1..=chars.len()).map(|i| format!("/g{i}")).collect();
+    add(
+        objs,
+        format!(
+            "<< /Type /Font /Subtype /Type3 /FontBBox [0 -120 1000 880] /FontMatrix [0.001 0 0 0.001 0 0] /CharProcs << {} >> \
+             /Encoding << /Type /Encoding /Differences [1 {}] >> /FirstChar 1 /LastChar {} /Widths [{}] /ToUnicode {cmap} 0 R /Resources << >> >>",
+            procs.join(" "),
+            names.join(" "),
+            chars.len(),
+            widths.join(" ")
+        )
+        .into_bytes(),
+    )
+}
+
+/// A CID-keyed TrueType subset (Type0, Identity-H) named `name`, with a glyph
+/// for each of `chars` and no other: CID `i + 1` is `chars[i]`, its program
+/// embedded (FontFile2) and its widths in `/W`. Its number.
+fn cid_subset(objs: &mut Vec<Vec<u8>>, name: &str, chars: &[char]) -> usize {
+    let glyphs: Vec<Glyph> = chars.iter().map(|&c| if c.is_ascii() { latin_glyph(c) } else { cjk_glyph(c) }).collect();
+    let program = truetype(&glyphs);
+    let file = add(objs, pdf_stream(&program, &format!(" /Length1 {}", program.len())));
+    let descriptor = add(
+        objs,
+        format!(
+            "<< /Type /FontDescriptor /FontName /{name} /Flags 4 /FontBBox [0 -120 1000 880] /ItalicAngle 0 /Ascent 880 /Descent -120 \
+             /CapHeight 700 /StemV 80 /FontFile2 {file} 0 R >>"
+        )
+        .into_bytes(),
+    );
+    let widths: Vec<String> = glyphs.iter().map(|g| g.advance.to_string()).collect();
+    let cid = add(
+        objs,
+        format!(
+            "<< /Type /Font /Subtype /CIDFontType2 /BaseFont /{name} /CIDSystemInfo << /Registry (Adobe) /Ordering (Identity) /Supplement 0 >> \
+             /FontDescriptor {descriptor} 0 R /DW 1000 /W [1 [{}]] /CIDToGIDMap /Identity >>",
+            widths.join(" ")
+        )
+        .into_bytes(),
+    );
+    let cmap = add(objs, pdf_stream(to_unicode(chars, 2).as_bytes(), ""));
+    add(objs, format!("<< /Type /Font /Subtype /Type0 /BaseFont /{name} /Encoding /Identity-H /DescendantFonts [{cid} 0 R] /ToUnicode {cmap} 0 R >>").into_bytes())
+}
+
+/// A TrueType program whose glyph 0 is blank (.notdef) and glyph `i + 1`
+/// draws `glyphs[i]`'s boxes, one contour each: the tables a renderer needs
+/// to draw outlines by glyph id (`glyf`, `head`, `hhea`, `hmtx`, `loca`,
+/// `maxp`), which is how a CID-keyed font with an identity CIDToGIDMap reaches
+/// its glyphs.
+fn truetype(glyphs: &[Glyph]) -> Vec<u8> {
+    let blank = Glyph { advance: 500, boxes: Vec::new() };
+    let all: Vec<&Glyph> = std::iter::once(&blank).chain(glyphs).collect();
+    let push16 = |v: &mut Vec<u8>, x: i32| v.extend_from_slice(&(x as u16).to_be_bytes());
+    let (mut glyf, mut loca, mut hmtx) = (Vec::new(), Vec::new(), Vec::new());
+    let (mut most_points, mut most_contours) = (0, 0);
+    for g in &all {
+        loca.extend_from_slice(&(glyf.len() as u32).to_be_bytes());
+        let [x0, y0, x1, y1] = g.bounds();
+        push16(&mut hmtx, i32::from(g.advance));
+        push16(&mut hmtx, i32::from(x0));
+        if g.boxes.is_empty() {
+            continue;
+        }
+        let n = g.boxes.len() as i32;
+        most_points = most_points.max(n * 4);
+        most_contours = most_contours.max(n);
+        for v in [n, i32::from(x0), i32::from(y0), i32::from(x1), i32::from(y1)] {
+            push16(&mut glyf, v);
+        }
+        for k in 0..n {
+            push16(&mut glyf, k * 4 + 3);
+        }
+        push16(&mut glyf, 0); // no instructions
+        glyf.extend(std::iter::repeat_n(1u8, (n * 4) as usize)); // every point on the curve
+        // Each box clockwise from its lower left, as deltas from the point before.
+        let points: Vec<(i32, i32)> = g
+            .boxes
+            .iter()
+            .flat_map(|&[x, y, w, h]| {
+                let (x, y, w, h) = (i32::from(x), i32::from(y), i32::from(w), i32::from(h));
+                [(x, y), (x, y + h), (x + w, y + h), (x + w, y)]
+            })
+            .collect();
+        for axis in 0..2 {
+            let mut last = 0;
+            for p in &points {
+                let v = if axis == 0 { p.0 } else { p.1 };
+                push16(&mut glyf, v - last);
+                last = v;
+            }
+        }
+        while glyf.len() % 4 != 0 {
+            glyf.push(0);
+        }
+    }
+    loca.extend_from_slice(&(glyf.len() as u32).to_be_bytes());
+    let count = all.len() as i32;
+    let mut head = Vec::new();
+    for v in [1, 0] {
+        push16(&mut head, v); // version 1.0
+    }
+    head.extend_from_slice(&0x0001_0000u32.to_be_bytes()); // font revision
+    head.extend_from_slice(&0u32.to_be_bytes()); // checksum adjustment
+    head.extend_from_slice(&0x5F0F_3CF5u32.to_be_bytes()); // magic number
+    push16(&mut head, 3); // flags: baseline and left side bearing at 0
+    push16(&mut head, 1000); // units per em
+    head.extend_from_slice(&[0; 16]); // created, modified
+    for v in [0, -120, 1000, 880, 0, 8, 2, 1, 0] {
+        push16(&mut head, v); // bounds, mac style, lowest ppem, direction, long loca, glyph format
+    }
+    let mut hhea = 0x0001_0000u32.to_be_bytes().to_vec();
+    for v in [880, -120, 0, 1000, 0, 0, 1000, 1, 0, 0, 0, 0, 0, 0, 0, count] {
+        push16(&mut hhea, v); // ascender … caret, reserved, metric format, metrics count
+    }
+    let mut maxp = 0x0001_0000u32.to_be_bytes().to_vec();
+    for v in [count, most_points, most_contours, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0] {
+        push16(&mut maxp, v);
+    }
+    let tables: [(&[u8; 4], Vec<u8>); 6] = [(b"glyf", glyf), (b"head", head), (b"hhea", hhea), (b"hmtx", hmtx), (b"loca", loca), (b"maxp", maxp)];
+    let mut out = 0x0001_0000u32.to_be_bytes().to_vec();
+    for v in [6, 64, 2, 32] {
+        push16(&mut out, v); // tables, search range, entry selector, range shift
+    }
+    let mut offset = 12 + 16 * tables.len();
+    let mut data = Vec::new();
+    for (tag, table) in &tables {
+        let mut padded = table.clone();
+        while padded.len() % 4 != 0 {
+            padded.push(0);
+        }
+        let sum = padded.chunks(4).fold(0u32, |s, w| s.wrapping_add(u32::from_be_bytes([w[0], w[1], w[2], w[3]])));
+        out.extend_from_slice(*tag);
+        out.extend_from_slice(&sum.to_be_bytes());
+        out.extend_from_slice(&(offset as u32).to_be_bytes());
+        out.extend_from_slice(&(table.len() as u32).to_be_bytes());
+        offset += padded.len();
+        data.extend(padded);
+    }
+    out.extend(data);
+    out
 }

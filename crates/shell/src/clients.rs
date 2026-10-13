@@ -134,11 +134,13 @@ fn manifest_value(manifest: &str, key: &str) -> Option<String> {
 /// apps and installed apps, read fresh so an install needs no restart).
 pub fn registry() -> Vec<AppDef> {
     let base = crate::octosense::catalog::loaded().as_ref().cloned().unwrap_or_default();
+    let mut installed = crate::apps::installed_card_apps();
+    installed.extend(crate::apps::studio_apps());
     merge_catalog(
         base,
         crate::apps::bundled_modules_catalog(),
         crate::apps::system_card_apps(),
-        crate::apps::installed_card_apps(),
+        installed,
     )
 }
 
@@ -502,6 +504,11 @@ pub struct ClientSlot {
     pub id: ClientId,
     /// Registry id of the app this client runs.
     pub app: String,
+    /// The manifest id of the script app this client runs, recorded when it
+    /// opened (`apps::card_manifest_id`): a system app's `os.<name>` or an
+    /// installed app's own id. What host services check as the app in front
+    /// ([`ClientSlot::foreground_app`]); `None` for every other client.
+    pub card_app: Option<String>,
     pub title: String,
     /// The process behind the slot: the build (`cargo build`) while
     /// `pending` holds the app, then the app itself.
@@ -577,6 +584,7 @@ impl ClientSlot {
         ClientSlot {
             id,
             app: app.to_string(),
+            card_app: None,
             title: title.to_string(),
             child: None,
             pending: None,
@@ -603,6 +611,15 @@ impl ClientSlot {
             pane: false,
             stopped: false,
         }
+    }
+
+    /// The app host services treat as in front while this client has the
+    /// focus (`files_service::set_foreground_app`, the native audio
+    /// session): its script app's manifest id ([`ClientSlot::card_app`]),
+    /// a system app's as much as an installed one's. A hosted Hub preview
+    /// has no identity of its own: it must open the installed app first.
+    pub fn foreground_app(&self) -> Option<String> {
+        self.card_app.clone().or_else(|| self.app.strip_prefix("hub:").map(str::to_owned))
     }
 }
 
@@ -1457,6 +1474,7 @@ pub fn spawn_client(
     Ok(ClientSlot {
         id,
         app: app.id.to_string(),
+        card_app: None,
         title: String::new(),
         child: Some(child),
         pending,
@@ -2356,6 +2374,25 @@ mod tests {
         slot.task_pool = Some(pool);
         slot.child = Some(child);
         drop(slot);
+    }
+
+    /// The app host services treat as in front: a system app's manifest id
+    /// as much as an installed app's. PDF Tools' "Open a PDF from this
+    /// device" was refused as `foreground_required` in a focused window
+    /// because only `hub:` ids counted.
+    #[test]
+    fn a_script_app_in_front_is_its_manifest_id() {
+        let mut system = ClientSlot::module(1, "pdftools", "PDF Tools");
+        system.card_app = Some("os.pdftools".into());
+        assert_eq!(system.foreground_app().as_deref(), Some("os.pdftools"));
+        let mut installed = ClientSlot::module(2, "hub:org.example.notes", "Notes");
+        assert_eq!(installed.foreground_app().as_deref(), Some("org.example.notes"), "an installed app, even unrecorded");
+        installed.card_app = Some("org.example.notes".into());
+        assert_eq!(installed.foreground_app().as_deref(), Some("org.example.notes"));
+        let preview = ClientSlot::module(3, "apphub", "App Hub");
+        assert_eq!(preview.foreground_app(), None, "a hosted Hub preview has no identity of its own");
+        let native = ClientSlot::module(4, "terminal", "Terminal");
+        assert_eq!(native.foreground_app(), None);
     }
 
     /// A live group's escalation is still delivered, but an escalation

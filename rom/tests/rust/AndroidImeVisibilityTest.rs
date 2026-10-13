@@ -1,7 +1,7 @@
 use std::{cell::RefCell,collections::VecDeque};
 enum CxOsOp {ShowTextIME((),(),i32)}
 struct Keyboard {text_ime_dismissed:bool}
-struct Os {last_ime_config:Option<i32>,ime_editor_session:u64}
+struct Os {last_ime_config:Option<i32>,ime_editor_session:u64,pending_ime_hide:bool}
 struct Cx {keyboard:Keyboard,os:Os,ops:VecDeque<CxOsOp>,focused_session:u64,publishes:usize}
 mod android_jni {
     use super::*;
@@ -20,17 +20,19 @@ impl Cx {
     }
 }
 fn main() {
-    let mut cx=Cx{keyboard:Keyboard{text_ime_dismissed:false},os:Os{last_ime_config:Some(1),ime_editor_session:1},ops:VecDeque::new(),focused_session:1,publishes:0};
+    let mut cx=Cx{keyboard:Keyboard{text_ime_dismissed:false},os:Os{last_ime_config:Some(1),ime_editor_session:1,pending_ime_hide:false},ops:VecDeque::new(),focused_session:1,publishes:0};
     // A draw requested Show before Gboard delivered its final hidden inset.
     // DidHide retires the cached configuration and records user dismissal;
     // the already queued request must be revalidated when dispatched.
     cx.ops.push_back(CxOsOp::ShowTextIME((),(),1));
     cx.keyboard.text_ime_dismissed=true;cx.os.last_ime_config=None;
     cx.dispatch();android_jni::SHOWS.with(|v|assert!(v.borrow().is_empty()));
-    // A deliberate new tap resets dismissal and may reopen the same editor.
-    cx.keyboard.text_ime_dismissed=false;
+    // A deliberate new tap resets dismissal and may reopen the same editor,
+    // and an editor asking for the keyboard keeps it up through a pending hide.
+    cx.keyboard.text_ime_dismissed=false;cx.os.pending_ime_hide=true;
     cx.ops.push_back(CxOsOp::ShowTextIME((),(),1));cx.dispatch();
     android_jni::SHOWS.with(|v|assert_eq!(*v.borrow(),vec![true]));
+    assert!(!cx.os.pending_ime_hide,"a show cancels the pending hide");
     cx.ops.push_back(CxOsOp::ShowTextIME((),(),1));cx.dispatch();
     android_jni::SHOWS.with(|v|assert_eq!(*v.borrow(),vec![true]));
     assert_eq!(cx.publishes,0,"the same editor's repeated shows publish nothing");

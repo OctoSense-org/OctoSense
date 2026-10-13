@@ -72,6 +72,10 @@ jobs:
         run: |
           cargo test --locked -p octosense-kernel
           cargo clippy --locked -p octosense-kernel --all-targets --no-deps -- -D warnings
+      - name: OctoSense release updater
+        run: |
+          cargo test --locked -p octosense-updater
+          cargo clippy --locked -p octosense-updater --all-targets --no-deps -- -D warnings
       - name: App peers
         run: |
           cargo test --locked -p octosense-app-peers

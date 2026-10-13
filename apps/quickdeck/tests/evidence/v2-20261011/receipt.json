@@ -1,0 +1,123 @@
+{
+ "date": "2026-10-11",
+ "branch": "design/quickdeck-v2",
+ "bundle": {
+  "main.splash": "cfa14f27f09f12b88ec44d358f0d1002329ecf4cb85db87d005583f6e8dc465f",
+  "manifest.json": "375c02131477e08ceef11383a384527ea2eab5cb005fbe097e423a8d866cec4e",
+  "dev-fixture/engine.splash": "4e699291b4384a6fb0a91142b2c80065220a7c496d8a382446206bf355342174",
+  "dev-fixture/make_fixture.py": "e36eb637904c10f2842044318a64b9d79449afc8add60d214e31c4cc3f419c15",
+  "tests/ui.py": "d1bffead3c7b3397a0251a74148fd08753685dca16643a9fb9d521a0f28cc018"
+ },
+ "sources": {
+  "makepad": "d653bc44 with runtime-patches.lock.json (tools/setup.py)",
+  "app_hub_pin": "386359153ed6377b5f047bd9ed2767a6a2ac2bc7 (root Cargo.toml)",
+  "deckcraft": "d0e57d7e25f9852179cc66be12dd6188f1c05535",
+  "deck_service": "the deck service as merged into main in 202d7cc8 (#503, from head a1a0b496): the shell runs below used it. Rounds 1 to 10 used a local merge with the service's branch at 74be4c07, never pushed"
+ },
+ "card_host": {
+  "machine": "macOS 26.6.2, Apple silicon (arm64)",
+  "binary": "OctoSense-App-Hub/target/release/card-host",
+  "binary_sha256": "7b8c302d57e092f999fdc60f7b7e3e0bb762345525642edc3a51e38affdce275",
+  "binary_note": "built on 11 Oct 2026 from an App Hub checkout since removed; its runtime has no MAKEPAD_SPLASH_BUDGET_MS, so every card-host run used the 64 ms script budget",
+  "command": "python3 apps/quickdeck/tests/ui.py --card-host <App Hub>/target/release/card-host --output <dir> --work <dir> --only missing --only fixture --only states",
+  "runs": {
+   "missing": "passed, light and dark: Home ('The deck engine isn't available here' instead of the themes, 'Not available here' beside Open), a deck's tab, the outline page and Draft with AI ('Drafting needs OctoSense's AI service, which isn't available here.')",
+   "fixture": "passed, light and dark: the ten designed screens at 1536 x 1024 (sheets in fixture/)",
+   "states": "passed, light and dark: damaged, protected, held, unsupported, unsaved changes, storage full, empty library"
+  },
+  "load_averages": "about 9 to 20 during the final run",
+  "log_errors": "none (no script error, no budget overrun)",
+  "bundle_note": "the rebase onto main 202d7cc8 changed no file of the app, its fixture or its tests (the digests under bundle are the same before and after), so the card-host frames stand"
+ },
+ "shell": {
+  "machine": "Ubuntu 26.04 LTS, x86_64, 72 CPUs, no GPU; weston 14.0.2 headless (pixman), Mesa llvmpipe",
+  "build": "cargo build --locked -p octosense --no-default-features --features app-hub,craft-engines (dev profile), from this branch rebased on main 202d7cc8, in a scratch checkout of exactly that tree",
+  "binary_sha256": "7a455d0ac9ae64d406b21da3a5a822b1d49f209e0773a6a62de3c7044a5b6697",
+  "command": "python3 apps/quickdeck/tests/ui.py --shell target/debug/octosense --lock <dir> --work <dir> --grab-scale 1 --output <dir> --port 8936",
+  "window": "Quick Deck asked for 1536 x 1024 and opened at 1296 x 698 (the dock covers 78 points of the 1400 x 900 desk): an app area of 1292 x 662",
+  "runs": {
+   "shell": "passed, light, then dark through the shell's style menu, at the runtime's 64 ms budget (20:52 to 20:55 UTC, host load averages about 16 to 24): Home; Draft with AI answering no_provider; a 4-slide deck from the typed outline (deck.create); text edited in place (deck.view editing, deck.set_text); bold (deck.format); a chart with the engine's sample data and its grid (deck.insert, deck.slide); undo and redo; a layout; the Ember theme (deck.design); notes (deck.notes); the sorter: duplicate, hide, a section (deck.slides_op); save; .pptx and PDF exports (deck.export); Present (deck.show, deck.view step). No script error and no budget overrun in the log; four 'script_result dropped' warnings (a nested region answered after its holder was drawn again)",
+   "restart": "passed: the deck in the library after a restart ('6 slides  ·  5 KB', its cover drawn by deck.cover), opened again at 6 slides"
+  },
+  "model_tests": "on the same rebased tree: cargo test --locked -p octosense-shell --lib quickdeck_model: 22 passed; with --features app-hub: 23 passed (the manifest's window hint too)"
+ },
+ "rounds": [
+  {
+   "round": "card-host 1",
+   "result": "light passed before the polish; kept for comparison"
+  },
+  {
+   "round": "card-host 2",
+   "result": "failed: New was pushed off the tab row (the title width estimate was too low for the runtime's font); fixed with each title's own width and one common cap"
+  },
+  {
+   "round": "card-host 3",
+   "result": "failed: the outline's fourth card was below the fold for the driver; fixed in ui.py (scroll to the next empty field)"
+  },
+  {
+   "round": "card-host 4",
+   "result": "passed, light and dark, before the as-built contract"
+  },
+  {
+   "round": "card-host 5",
+   "result": "failed: Home kept its scroll after a tab closed and the states journey looked for its top; fixed in ui.py"
+  },
+  {
+   "round": "card-host 6",
+   "result": "every step passed; the dark states log had one 'script time budget exceeded' right after a PNG decode, at load averages of 36 to 100 on the Mac"
+  },
+  {
+   "round": "card-host 7 and 8",
+   "result": "passed, light and dark; 8 is the evidence"
+  },
+  {
+   "round": "shell 1 and 2",
+   "result": "failed: the driver scrolled outside the shorter shell window, and the outline's counts and Make deck were below the fold; fixed: the side card keeps them in view"
+  },
+  {
+   "round": "shell 3",
+   "result": "failed: deck.hit refused an empty `selected` list, so no tap chose anything; fixed: the app leaves it out"
+  },
+  {
+   "round": "shell 4",
+   "result": "failed: the chart strip didn't wrap in the narrower canvas, hiding Insert chart; fixed"
+  },
+  {
+   "round": "shell 5",
+   "result": "failed: the driver didn't unchoose the current slide before Duplicate; fixed in ui.py"
+  },
+  {
+   "round": "shell 6",
+   "result": "failed: Export's button was below the fold; fixed in ui.py (scroll to it)"
+  },
+  {
+   "round": "shell 7",
+   "result": "failed: the dark pass looked for Home although the style switch keeps the open deck; fixed in ui.py. Found: a note stayed over the Present stage; fixed"
+  },
+  {
+   "round": "shell 8",
+   "result": "failed: the dark pass's sorter tiles were below the fold, and its counts and export names assumed the light pass; fixed in ui.py. Found: an images export sent include_hidden, which the service refuses; fixed"
+  },
+  {
+   "round": "shell 9",
+   "result": "shell passed, light and dark; restart failed: the deck's card was below the fold; fixed in ui.py"
+  },
+  {
+   "round": "shell 10",
+   "result": "shell and restart passed on the local merge with the service's branch at 74be4c07 (the frames this receipt first carried)"
+  },
+  {
+   "round": "shell 11 (the evidence)",
+   "result": "after the rebase onto main 202d7cc8 with the merged service and the guard's final rules: shell and restart passed; nothing changed for the app"
+  }
+ ],
+ "not_verified": [
+  "Opening a presentation from the device with a real file dialog (macOS refuses it for a hidden window; this Linux host has no dialog helper), and so the import guard's refusals through the app",
+  "Draft with AI with a real provider (only the no-provider answer was seen)",
+  "A hidden shell on macOS (another session's OctoSense tests were running; the Linux host was used instead)",
+  "Pictures and tables inserted with the real engine, the shape gallery, layouts and backgrounds beyond one layout change, Present's notes strip with long notes, images export, undo after a save and reopen",
+  "Windows narrower than 1180 points (the floating inspector), other screen sizes, phones",
+  "The designs' exact sizes: the shell's window is 1292 x 662, not 1536 x 1024"
+ ],
+ "base": "main 202d7cc8 (#503 merged); the branch is rebased on it"
+}

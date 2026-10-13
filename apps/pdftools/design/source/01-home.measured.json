@@ -1,0 +1,1069 @@
+{
+ "schema_version": 1,
+ "image": "01-home.png",
+ "image_sha256": "7f52b77e4b72a1421bb54fa35b1e8d6d7df1a6da08fbc2e71089db4e1a02ad74",
+ "script_sha256": "ea860507e32482b955d3ac577ab3cf9fc559f59ecc916c89175293932b54e0b7",
+ "size": [
+  1536,
+  1024
+ ],
+ "ocr_engine": "Apple Vision VNRecognizeTextRequest accurate, en-US (App Flow ocr.swift)",
+ "text": [
+  {
+   "text": "Home",
+   "bounds": [
+    60.3,
+    22.3,
+    40.2,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#383a3c",
+   "ground": "#f4f4f4"
+  },
+  {
+   "text": "Q3 2026 Board Report.pdf x",
+   "bounds": [
+    241.1,
+    22.0,
+    194.2,
+    16
+   ],
+   "confidence": 1,
+   "ink": "#63666b",
+   "ground": "#f3f4f4"
+  },
+  {
+   "text": "+ Open",
+   "bounds": [
+    488.9,
+    22.0,
+    58.0,
+    16
+   ],
+   "confidence": 1,
+   "ink": "#404246",
+   "ground": "#f2f3f4"
+  },
+  {
+   "text": "Recent",
+   "bounds": [
+    343.8,
+    298.9,
+    73.7,
+    15.6
+   ],
+   "confidence": 1,
+   "ink": "#31363e",
+   "ground": "#eceeef"
+  },
+  {
+   "text": "NORTHWIND",
+   "bounds": [
+    422.0,
+    370.3,
+    78.1,
+    11.2
+   ],
+   "confidence": 1,
+   "ink": "#5184c8",
+   "ground": "#f2f6fb"
+  },
+  {
+   "text": "COOPERATIVE",
+   "bounds": [
+    422.0,
+    381.5,
+    73.7,
+    11.2
+   ],
+   "confidence": 1,
+   "ink": "#92b3da",
+   "ground": "#f6f9fc"
+  },
+  {
+   "text": "Q3 2026",
+   "bounds": [
+    386.1,
+    410.0,
+    89.6,
+    23.4
+   ],
+   "confidence": 1,
+   "ink": "#323941",
+   "ground": "#f3f3f4"
+  },
+  {
+   "text": "Board Report",
+   "bounds": [
+    386.2,
+    434.8,
+    136.3,
+    25.0
+   ],
+   "confidence": 1,
+   "ink": "#303840",
+   "ground": "#f4f5f5"
+  },
+  {
+   "text": "Building strong communities",
+   "bounds": [
+    388.5,
+    468.0,
+    120.6,
+    12
+   ],
+   "confidence": 1,
+   "ink": "#b0b7c1",
+   "ground": "#f8f9fa"
+  },
+  {
+   "text": "through cooperative growth.",
+   "bounds": [
+    386.2,
+    481.9,
+    120.6,
+    9.1
+   ],
+   "confidence": 1,
+   "ink": "#b5bcc6",
+   "ground": "#f7f8f9"
+  },
+  {
+   "text": "Q3 2026 Board Report.pdf",
+   "bounds": [
+    381.8,
+    555.5,
+    174.1,
+    15.6
+   ],
+   "confidence": 1,
+   "ink": "#353639",
+   "ground": "#f3f4f4"
+  },
+  {
+   "text": "24 pages \u2022 2.8 MB",
+   "bounds": [
+    381.8,
+    580.0,
+    113.9,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#797d83",
+   "ground": "#f6f6f7"
+  },
+  {
+   "text": "Opened today",
+   "bounds": [
+    381.8,
+    602.0,
+    89.3,
+    14
+   ],
+   "confidence": 1,
+   "ink": "#7e8289",
+   "ground": "#f7f7f7"
+  },
+  {
+   "text": "INVOICE",
+   "bounds": [
+    381.7,
+    675.9,
+    93.8,
+    20.3
+   ],
+   "confidence": 1,
+   "ink": "#245eb9",
+   "ground": "#f1f5fa"
+  },
+  {
+   "text": "INV-2041",
+   "bounds": [
+    383.8,
+    699.8,
+    56.1,
+    14.8
+   ],
+   "confidence": 1,
+   "ink": "#595d62",
+   "ground": "#f6f6f7"
+  },
+  {
+   "text": "Bill to:",
+   "bounds": [
+    384.0,
+    722.8,
+    31.3,
+    11.2
+   ],
+   "confidence": 1,
+   "ink": "#707277",
+   "ground": "#f3f4f4"
+  },
+  {
+   "text": "Northwind Cooperative",
+   "bounds": [
+    381.8,
+    736.0,
+    109.4,
+    11.4
+   ],
+   "confidence": 1,
+   "ink": "#8b8e94",
+   "ground": "#f7f7f7"
+  },
+  {
+   "text": "123 Harbor Way",
+   "bounds": [
+    381.8,
+    751.8,
+    69.2,
+    7.2
+   ],
+   "confidence": 1,
+   "ink": "#8d9096",
+   "ground": "#f1f2f3"
+  },
+  {
+   "text": "Portland, OR 97201",
+   "bounds": [
+    381.8,
+    760.7,
+    87.1,
+    11.3
+   ],
+   "confidence": 1,
+   "ink": "#8e9197",
+   "ground": "#f6f7f7"
+  },
+  {
+   "text": "Descriptior",
+   "bounds": [
+    388.5,
+    789.8,
+    46.9,
+    6.7
+   ],
+   "confidence": 1,
+   "ink": "#84888c",
+   "ground": "#f0f2f2"
+  },
+  {
+   "text": "Consulting Services",
+   "bounds": [
+    388.5,
+    807.6,
+    78.1,
+    11.4
+   ],
+   "confidence": 1,
+   "ink": "#9d9fa2",
+   "ground": "#f8f9f9"
+  },
+  {
+   "text": "Invoice INV-2041.pdf",
+   "bounds": [
+    381.8,
+    843.0,
+    138.4,
+    16.0
+   ],
+   "confidence": 1,
+   "ink": "#3c3d3f",
+   "ground": "#f5f5f6"
+  },
+  {
+   "text": "1 page \u2022 84 KB",
+   "bounds": [
+    381.6,
+    864.7,
+    91.8,
+    17.5
+   ],
+   "confidence": 1,
+   "ink": "#7c8086",
+   "ground": "#f9f9fa"
+  },
+  {
+   "text": "Opened 1 Oct",
+   "bounds": [
+    381.8,
+    887.9,
+    89.3,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#757a81",
+   "ground": "#f7f7f8"
+  },
+  {
+   "text": "Amount",
+   "bounds": [
+    515.7,
+    787.5,
+    38.0,
+    11.2
+   ],
+   "confidence": 1,
+   "ink": "#7d7f84",
+   "ground": "#f6f7f7"
+  },
+  {
+   "text": "$2,400.00",
+   "bounds": [
+    511.3,
+    807.6,
+    44.7,
+    11.2
+   ],
+   "confidence": 1,
+   "ink": "#83868a",
+   "ground": "#f5f6f6"
+  },
+  {
+   "text": "14.6 of 64 MB used",
+   "bounds": [
+    20.1,
+    995.0,
+    125.0,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#72757b",
+   "ground": "#f3f4f5"
+  },
+  {
+   "text": "PDF",
+   "bounds": [
+    747.9,
+    111.5,
+    38.0,
+    17.8
+   ],
+   "confidence": 1,
+   "ink": "#2061c5",
+   "ground": "#eef3f9"
+  },
+  {
+   "text": "PDF Tools",
+   "bounds": [
+    680.6,
+    154.4,
+    179.2,
+    34.7
+   ],
+   "confidence": 1,
+   "ink": "#2d3339",
+   "ground": "#f4f5f6"
+  },
+  {
+   "text": "Open a PDF from this device",
+   "bounds": [
+    649.7,
+    232.0,
+    216.6,
+    18
+   ],
+   "confidence": 1,
+   "ink": "#d4e3f5",
+   "ground": "#0a61cb"
+  },
+  {
+   "text": "RIVERSIDE",
+   "bounds": [
+    674.2,
+    368.1,
+    120.6,
+    22.3
+   ],
+   "confidence": 1,
+   "ink": "#247b76",
+   "ground": "#f0f6f5"
+  },
+  {
+   "text": "LEASE AGREEMENT",
+   "bounds": [
+    674.2,
+    394.9,
+    140.7,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#498986",
+   "ground": "#f3f8f7"
+  },
+  {
+   "text": "2026",
+   "bounds": [
+    674.2,
+    410.5,
+    38.0,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#438681",
+   "ground": "#f1f7f6"
+  },
+  {
+   "text": "This Lease Agreement is made",
+   "bounds": [
+    674.2,
+    435.0,
+    145.1,
+    11.2
+   ],
+   "confidence": 1,
+   "ink": "#8d9096",
+   "ground": "#f6f7f7"
+  },
+  {
+   "text": "and entered into as of",
+   "bounds": [
+    674.2,
+    448.0,
+    107.2,
+    12
+   ],
+   "confidence": 1,
+   "ink": "#898c93",
+   "ground": "#f6f7f7"
+  },
+  {
+   "text": "January 1, 2026.",
+   "bounds": [
+    674.2,
+    461.8,
+    78.1,
+    11.2
+   ],
+   "confidence": 1,
+   "ink": "#888c94",
+   "ground": "#f5f6f7"
+  },
+  {
+   "text": "Riverside Lease 2026.pdf",
+   "bounds": [
+    674.2,
+    555.5,
+    160.7,
+    15.6
+   ],
+   "confidence": 1,
+   "ink": "#313336",
+   "ground": "#f3f4f4"
+  },
+  {
+   "text": "12 pages \u2022 1.1 MB",
+   "bounds": [
+    674.2,
+    580.0,
+    109.4,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#797d85",
+   "ground": "#f6f6f7"
+  },
+  {
+   "text": "Opened yesterday",
+   "bounds": [
+    674.2,
+    602.0,
+    109.4,
+    16.0
+   ],
+   "confidence": 1,
+   "ink": "#7d8087",
+   "ground": "#f8f8f9"
+  },
+  {
+   "text": "Site Survey Photos",
+   "bounds": [
+    665.3,
+    673.7,
+    140.7,
+    15.6
+   ],
+   "confidence": 1,
+   "ink": "#35373a",
+   "ground": "#f3f3f3"
+  },
+  {
+   "text": "Project: Community Center",
+   "bounds": [
+    665.3,
+    696.0,
+    107.2,
+    11.2
+   ],
+   "confidence": 1,
+   "ink": "#8b8c90",
+   "ground": "#f7f7f7"
+  },
+  {
+   "text": "Site Survey Photos.pdf",
+   "bounds": [
+    674.2,
+    843.0,
+    149.6,
+    16.0
+   ],
+   "confidence": 1,
+   "ink": "#2c2d2f",
+   "ground": "#f2f2f3"
+  },
+  {
+   "text": "18 pages \u2022 9.6 MB",
+   "bounds": [
+    674.2,
+    867.8,
+    111.6,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#747980",
+   "ground": "#f7f7f8"
+  },
+  {
+   "text": "Opened 28 Sep",
+   "bounds": [
+    674.2,
+    890.0,
+    96,
+    14
+   ],
+   "confidence": 1,
+   "ink": "#757a81",
+   "ground": "#f6f6f7"
+  },
+  {
+   "text": "Up to 64 MB",
+   "bounds": [
+    917.6,
+    234.0,
+    78.1,
+    16.0
+   ],
+   "confidence": 1,
+   "ink": "#737980",
+   "ground": "#f3f4f5"
+  },
+  {
+   "text": "Field Guide to",
+   "bounds": [
+    957.8,
+    368.0,
+    120.6,
+    20.2
+   ],
+   "confidence": 1,
+   "ink": "#3d3f42",
+   "ground": "#f5f5f4"
+  },
+  {
+   "text": "Garden Birds",
+   "bounds": [
+    957.8,
+    390.0,
+    113.9,
+    20.5
+   ],
+   "confidence": 1,
+   "ink": "#444749",
+   "ground": "#f5f4f4"
+  },
+  {
+   "text": "Identify common birds",
+   "bounds": [
+    957.8,
+    417.0,
+    100.5,
+    11.3
+   ],
+   "confidence": 1,
+   "ink": "#757476",
+   "ground": "#f5f4f4"
+  },
+  {
+   "text": "in your backyard",
+   "bounds": [
+    960.0,
+    430.6,
+    75.9,
+    11.4
+   ],
+   "confidence": 1,
+   "ink": "#7d7e80",
+   "ground": "#f4f4f3"
+  },
+  {
+   "text": "and local parks.",
+   "bounds": [
+    957.8,
+    444.0,
+    69.2,
+    11.2
+   ],
+   "confidence": 1,
+   "ink": "#7e7e80",
+   "ground": "#f5f5f5"
+  },
+  {
+   "text": "Field Guide to Garden Birds.pdf",
+   "bounds": [
+    964.5,
+    555.5,
+    196.5,
+    15.6
+   ],
+   "confidence": 1,
+   "ink": "#343537",
+   "ground": "#f3f3f4"
+  },
+  {
+   "text": "7 pages \u2022 16 KB",
+   "bounds": [
+    964.5,
+    577.8,
+    100.5,
+    15.6
+   ],
+   "confidence": 1,
+   "ink": "#7d8288",
+   "ground": "#f9f9f9"
+  },
+  {
+   "text": "Opened 3 Oct",
+   "bounds": [
+    964.4,
+    599.7,
+    87.2,
+    16.4
+   ],
+   "confidence": 1,
+   "ink": "#7f848a",
+   "ground": "#f9f9fa"
+  }
+ ],
+ "surfaces": [
+  {
+   "bounds": [
+    0,
+    7,
+    1536,
+    1017
+   ],
+   "fill": "#f7f8f9",
+   "border": "#d2d3d7",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    341,
+    334,
+    268,
+    292
+   ],
+   "fill": "#fdfdfd",
+   "border": "#f9f9fa",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    922,
+    334,
+    267,
+    292
+   ],
+   "fill": "#fcfbfa",
+   "border": "#f8f9fa",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    633,
+    334,
+    267,
+    292
+   ],
+   "fill": "#fdfcfc",
+   "border": "#f8f8f9",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    341,
+    638,
+    268,
+    275
+   ],
+   "fill": "#fdfdfd",
+   "border": "#fafafb",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    632,
+    641,
+    268,
+    273
+   ],
+   "fill": "#fcfcfc",
+   "border": "#f8f9fa",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    2,
+    982,
+    1533,
+    41
+   ],
+   "fill": "#f7f8f8",
+   "border": "#f7f8f9",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    372,
+    355,
+    209,
+    179
+   ],
+   "fill": "#fdfcfd",
+   "border": "#fdfdfd",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    925,
+    538,
+    261,
+    84
+   ],
+   "fill": "#fdfdfd",
+   "border": "#fdfcfc",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    636,
+    541,
+    261,
+    81
+   ],
+   "fill": "#fdfdfd",
+   "border": "#fbfcfc",
+   "radius": 1
+  },
+  {
+   "bounds": [
+    345,
+    829,
+    261,
+    80
+   ],
+   "fill": "#fdfdfd",
+   "border": "#fdfdfd",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    584,
+    214,
+    315,
+    51
+   ],
+   "fill": "#015dca",
+   "border": "#f7f6f8",
+   "radius": 4
+  },
+  {
+   "bounds": [
+    666,
+    726,
+    194,
+    80
+   ],
+   "fill": "#9d8b77",
+   "border": "#f6f5f5",
+   "radius": 26
+  },
+  {
+   "bounds": [
+    203,
+    11,
+    266,
+    37
+   ],
+   "fill": "#f6f7f7",
+   "border": "#f5f6f6",
+   "radius": 1
+  },
+  {
+   "bounds": [
+    666,
+    726,
+    104,
+    80
+   ],
+   "fill": "#a3927d",
+   "border": "#f7f7f6",
+   "radius": 26
+  },
+  {
+   "bounds": [
+    15,
+    11,
+    186,
+    39
+   ],
+   "fill": "#fcfcfd",
+   "border": "#fdfdfd",
+   "radius": 1
+  },
+  {
+   "bounds": [
+    386,
+    804,
+    178,
+    20
+   ],
+   "fill": "#fcfcfc",
+   "border": "#fbfcfc",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    386,
+    782,
+    178,
+    20
+   ],
+   "fill": "#fcfcfc",
+   "border": "#f7f8fa",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    478,
+    11,
+    81,
+    37
+   ],
+   "fill": "#f6f7f8",
+   "border": "#f5f6f7",
+   "radius": 1
+  },
+  {
+   "bounds": [
+    745,
+    84,
+    46,
+    54
+   ],
+   "fill": "#f6f7f9",
+   "border": "#f7f8fc",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    749,
+    88,
+    38,
+    46
+   ],
+   "fill": "#f6f7f9",
+   "border": "#f6f8fb",
+   "radius": 1
+  }
+ ],
+ "dividers": [
+  {
+   "axis": "h",
+   "at": 48,
+   "from": 3,
+   "to": 1533,
+   "color": "#d4d7db"
+  },
+  {
+   "axis": "h",
+   "at": 214,
+   "from": 587,
+   "to": 895,
+   "color": "#3878cc"
+  },
+  {
+   "axis": "h",
+   "at": 215,
+   "from": 584,
+   "to": 894,
+   "color": "#0253cc"
+  },
+  {
+   "axis": "h",
+   "at": 262,
+   "from": 586,
+   "to": 896,
+   "color": "#064ebf"
+  },
+  {
+   "axis": "h",
+   "at": 263,
+   "from": 588,
+   "to": 894,
+   "color": "#d3e0f2"
+  },
+  {
+   "axis": "h",
+   "at": 979,
+   "from": 1,
+   "to": 1535,
+   "color": "#ecedee"
+  },
+  {
+   "axis": "h",
+   "at": 980,
+   "from": 1,
+   "to": 1536,
+   "color": "#d3d5d8"
+  },
+  {
+   "axis": "h",
+   "at": 999,
+   "from": 247,
+   "to": 1274,
+   "color": "#f1f1f2"
+  },
+  {
+   "axis": "h",
+   "at": 1000,
+   "from": 164,
+   "to": 1274,
+   "color": "#d9d9db"
+  },
+  {
+   "axis": "h",
+   "at": 1004,
+   "from": 242,
+   "to": 1274,
+   "color": "#d9dadb"
+  },
+  {
+   "axis": "h",
+   "at": 1005,
+   "from": 243,
+   "to": 1274,
+   "color": "#f0f0f1"
+  },
+  {
+   "axis": "v",
+   "at": 579,
+   "from": 353,
+   "to": 541,
+   "color": "#d3d4d8"
+  },
+  {
+   "axis": "v",
+   "at": 606,
+   "from": 338,
+   "to": 623,
+   "color": "#cbced3"
+  },
+  {
+   "axis": "v",
+   "at": 607,
+   "from": 338,
+   "to": 621,
+   "color": "#e8e9eb"
+  },
+  {
+   "axis": "v",
+   "at": 633,
+   "from": 339,
+   "to": 621,
+   "color": "#edeef0"
+  },
+  {
+   "axis": "v",
+   "at": 634,
+   "from": 338,
+   "to": 621,
+   "color": "#d1d3d7"
+  },
+  {
+   "axis": "v",
+   "at": 660,
+   "from": 354,
+   "to": 540,
+   "color": "#e9ebed"
+  },
+  {
+   "axis": "v",
+   "at": 661,
+   "from": 354,
+   "to": 541,
+   "color": "#d9dbdd"
+  },
+  {
+   "axis": "v",
+   "at": 896,
+   "from": 645,
+   "to": 911,
+   "color": "#d3d5d9"
+  },
+  {
+   "axis": "v",
+   "at": 897,
+   "from": 337,
+   "to": 623,
+   "color": "#c8cacf"
+  },
+  {
+   "axis": "v",
+   "at": 898,
+   "from": 339,
+   "to": 622,
+   "color": "#e5e7e9"
+  },
+  {
+   "axis": "v",
+   "at": 923,
+   "from": 337,
+   "to": 540,
+   "color": "#c9cbd0"
+  },
+  {
+   "axis": "v",
+   "at": 924,
+   "from": 336,
+   "to": 540,
+   "color": "#f1f1f3"
+  },
+  {
+   "axis": "v",
+   "at": 1185,
+   "from": 336,
+   "to": 540,
+   "color": "#f4f4f5"
+  },
+  {
+   "axis": "v",
+   "at": 1186,
+   "from": 337,
+   "to": 623,
+   "color": "#c2c4ca"
+  },
+  {
+   "axis": "v",
+   "at": 1187,
+   "from": 339,
+   "to": 621,
+   "color": "#ecedef"
+  }
+ ],
+ "limits": [
+  "Evidence for review: roles and widgets are assigned in the semantic map, not here."
+ ]
+}

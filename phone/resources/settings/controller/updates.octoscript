@@ -32,6 +32,7 @@ fn settings_updates_event(s,e,o,out) {
     if e.kind=="press" { ui.pressed={id:e.id,request:candidate}; return candidate!=nil }
     if e.kind=="release" { ui.pressed=nil; return false }
     if e.kind!="click" || s.pending { return false }
+    if e.id=="updates_app" && o.updater { settings_request(out,{kind:"open_app",app:"updater"}); return true }
     if e.id=="updates_cancel_review" { ui.review=nil; return true }
     if e.id=="updates_refresh" { if o.android { settings_request(out,{kind:"read",domain:"updates"}) }; return true }
     if candidate==nil { return false }
@@ -67,6 +68,7 @@ fn settings_updates_refresh(s,o,out) {
     }
     settings_text(out,"updates_availability",availability); settings_text(out,"updates_current",current); settings_text(out,"updates_check_state",check); settings_text(out,"updates_offer",offer)
     settings_text(out,"updates_rom_state","System update: "+rom); settings_text(out,"updates_home_state","Home update: "+home)
+    settings_enabled(out,"updates_app",o.updater && !s.pending)
     settings_enabled(out,"updates_refresh",ready)
     for id in ["updates_check","updates_rom","updates_home","updates_reboot","updates_confirm"] { settings_enabled(out,id,ready && settings_updates_candidate(s,o,id)!=nil) }
     settings_visible(out,"updates_confirmation",ui.review!=nil); settings_enabled(out,"updates_cancel_review",!s.pending)

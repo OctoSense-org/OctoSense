@@ -45,7 +45,7 @@ impl Default for AppRegistry {
 
 /// A linked module by id, without a registry: what the launcher asks.
 pub fn is_linked(id: &str) -> bool {
-    linked_modules().iter().any(|m| m.id() == id) || is_card_app(id)
+    linked_modules().iter().any(|m| m.id() == id) || is_card_app(id) || is_studio_app(id)
 }
 
 /// The native apps this build links (`native-apps.json`, generated into
@@ -60,6 +60,10 @@ fn linked_modules() -> Vec<&'static dyn AppModule> {
     let mut out: Vec<&'static dyn AppModule> = Vec::new();
     crate::native_apps::link(&mut out);
     out.extend(crate::ext::linked_modules());
+    #[cfg(all(unix, any(feature = "app-hub", native_mobile)))]
+    if cfg!(dev_mode) {
+        out.push(&crate::studio::module::STUDIO_MODULE);
+    }
     out
 }
 
@@ -98,6 +102,40 @@ pub fn card_manifest_id(app: &crate::clients::AppDef) -> Option<&str> {
         return None;
     }
     app.id.strip_prefix("hub:").or_else(|| app.args.iter().find_map(|a| a.strip_prefix(SYSTEM_ARG)))
+}
+
+/// The size, in points, a script app's manifest asks its desktop window to
+/// open at (App Hub's optional `window`, schema_minor 1), read from the
+/// bundle the Card runner is about to open: a system app's admitted build
+/// (unpacked now if this is its first launch) or an installed app's bundle.
+/// `None` for any other app, and for a manifest that does not ask or does
+/// not parse (the Card runner then refuses it, or opens it as before). The
+/// hint grants nothing; the desk clamps it
+/// (`desktop_layout::preferred_size`).
+#[cfg(any(feature = "app-hub", native_mobile))]
+pub fn window_hint(cx: &mut makepad_widgets::Cx, app: &crate::clients::AppDef) -> Option<(f64, f64)> {
+    window_hint_in(&octosense_app_hub_app::data_root(cx), app)
+}
+
+/// [`window_hint`] under App Hub's apps root `root`, the one the Card runner
+/// opens its apps from.
+#[cfg(any(feature = "app-hub", native_mobile))]
+fn window_hint_in(root: &Path, app: &crate::clients::AppDef) -> Option<(f64, f64)> {
+    let manifest_id = card_manifest_id(app)?;
+    let system = octosense_app_hub_app::system_apps().into_iter().find(|system| system.id == manifest_id);
+    let bundle = match system {
+        Some(system) => octosense_appstore::system::prepare(root, &system).ok()?.0,
+        None => installed_bundle(root, manifest_id),
+    };
+    let text = std::fs::read_to_string(bundle.join(octosense_app_contract::MANIFEST_FILE)).ok()?;
+    let window = octosense_app_contract::AppManifest::parse(&text).ok()?.window?;
+    Some((f64::from(window.width), f64::from(window.height)))
+}
+
+/// Without App Hub there is no script app to ask.
+#[cfg(not(any(feature = "app-hub", native_mobile)))]
+pub fn window_hint(_cx: &mut makepad_widgets::Cx, _app: &crate::clients::AppDef) -> Option<(f64, f64)> {
+    None
 }
 
 /// A system app's launcher row carries its manifest id as this argument.
@@ -174,6 +212,7 @@ pub(crate) mod test_system_apps {
 /// `glance` takes the cards apps publish to the glance screen (glance.rs).
 /// `mail_demo` in MAKEPAD_APP_CONFIG serves a demo mailbox from a file vault
 /// instead (no keychain, no network): `MAKEPAD_APP_CONFIG='{"mail_demo":true}'`.
+/// A desktop reads it; a phone only in a development build (`launch_input`).
 /// `news` fetches News's feeds on a timer, with no model (ADR 0002), into
 /// the Card runner's host directory, so it keeps fetching while News is
 /// closed. Last, every system app no service answers gets the notice
@@ -191,12 +230,7 @@ pub fn register_mail_services() {
     static ONCE: std::sync::Once = std::sync::Once::new();
     ONCE.call_once(|| {
         crate::glance::register();
-        let demo = std::env::var("MAKEPAD_APP_CONFIG")
-            .ok()
-            .and_then(|text| makepad_strict_json::parse(text.as_bytes()).ok())
-            .and_then(|config| config.get("mail_demo").and_then(|v| v.as_bool()))
-            .unwrap_or(false);
-        if demo {
+        if crate::launch_input::flag("mail_demo") {
             octosense_mail_service::register_demo()
         } else {
             octosense_mail_service::register()
@@ -250,6 +284,7 @@ pub fn register_host_services() {
         octosense_appstore::host_api::register_runtime_feature("storage.binary_write", 1);
         octosense_appstore::host_api::register_runtime_feature("video.playback_controls", 1);
         octosense_appstore::host_api::register_runtime_feature("camera.capture_intent", 1);
+        crate::charts::register_feature();
         octosense_markdown_editor::register();
         crate::connected_review::register();
         octosense_oauth_service::host_inbox::register_with_review_hook(crate::connected_review::sheet);
@@ -594,6 +629,26 @@ fn cached_installed_apps(key: (std::path::PathBuf, u64), load: impl FnOnce() -> 
     })
 }
 
+/// Local developer installs are a separate registry, never catalog packages.
+pub fn studio_apps() -> Vec<crate::clients::AppDef> {
+    if !cfg!(dev_mode) {
+        return Vec::new();
+    }
+    #[cfg(all(unix, any(feature = "app-hub", native_mobile)))]
+    { return crate::host_tools::studio_bundles::installed_apps().into_iter()
+        .map(|bundle| studio_row(bundle.id.clone(), bundle.name.clone(), Vec::new())).collect(); }
+    #[cfg(not(all(unix, any(feature = "app-hub", native_mobile))))]
+    { Vec::new() }
+}
+fn is_studio_app(id: &str) -> bool {
+    id.starts_with("dev.studio.") && studio_apps().iter().any(|app| app.id == id)
+}
+#[cfg(all(unix, any(feature = "app-hub", native_mobile)))]
+pub fn studio_row(id: String, label: String, args: Vec<String>) -> crate::clients::AppDef {
+    crate::clients::AppDef { id, label, bin: "studio-app".into(), package: String::new(),
+        dir: String::new(), manifest: None, args, policy: crate::clients::LaunchPolicy::OrFocus, target_dir: None }
+}
+
 /// Every launcher row the Card runner opens: system apps, then installed ones.
 pub fn card_apps() -> Vec<crate::clients::AppDef> {
     let mut apps = system_card_apps();
@@ -614,7 +669,7 @@ fn is_card_app(id: &str) -> bool {
 /// Launch-or-focus: a Card app focuses only an instance of that same app,
 /// never a built-in (or another installed app) whose name it shares.
 pub fn matches_running_app(app: &crate::clients::AppDef, running_id: &str, title: &str) -> bool {
-    if app.bin == "card" || running_id.starts_with("hub:") {
+    if matches!(app.bin.as_str(), "card" | "studio-app") || running_id.starts_with("hub:") || running_id.starts_with("dev.studio.") {
         running_id == app.id
     } else {
         crate::clients::word_match(running_id, &app.id) || crate::clients::word_match(title, &app.id)
@@ -625,14 +680,19 @@ pub fn matches_running_app(app: &crate::clients::AppDef, running_id: &str, title
 /// the launcher row names — a system app by its `os.*` manifest id, an
 /// installed one by its own. Any other module opens with what
 /// MAKEPAD_APP_CONFIG gives it (`{"module_open": {"<id>": {...}}}`, or
-/// `mail_endpoint` for a linked `mail` module), else empty.
+/// `mail_endpoint` for a linked `mail` module; a desktop reads it, a phone
+/// only in a development build, `launch_input`), else empty.
 pub fn module_open(module: &'static dyn AppModule, app: &crate::clients::AppDef) -> Result<makepad_app_module::ValidatedOpen, String> {
     let schema = module.open_schema();
     if module.id() == "card" {
         let manifest_id = card_manifest_id(app).ok_or_else(|| format!("{} names no app for the card runner", app.id))?;
         return schema.validate(&format!("{{\"app\":{}}}", makepad_strict_json::Value::Str(manifest_id.into()).to_json()), &[]);
     }
-    let config = std::env::var("MAKEPAD_APP_CONFIG").ok().and_then(|text| makepad_strict_json::parse(text.as_bytes()).ok());
+    if module.id() == "studio-app" {
+        let instance = app.args.iter().find_map(|a| a.strip_prefix("--studio-instance=")).ok_or("Studio launch requires an admitted instance")?;
+        return schema.validate(&format!("{{\"instance_id\":{}}}", makepad_strict_json::Value::Str(instance.into()).to_json()), &[]);
+    }
+    let config = crate::launch_input::app_config();
     if let Some(json) = config.as_ref().and_then(|c| c.get("module_open")).and_then(|v| v.get(module.id())).map(|v| v.to_json()) {
         return schema.validate(&json, &[]);
     }
@@ -650,6 +710,7 @@ pub fn module_open(module: &'static dyn AppModule, app: &crate::clients::AppDef)
 pub fn bundled_catalog() -> Vec<crate::clients::AppDef> {
     let mut catalog = bundled_modules_catalog();
     catalog.extend(card_apps());
+    catalog.extend(studio_apps());
     catalog.retain(|app| catalog_visible(&app.id));
     catalog
 }
@@ -657,7 +718,7 @@ pub fn bundled_catalog() -> Vec<crate::clients::AppDef> {
 /// Whether an id may be a launcher row: the `card` host is internal (the
 /// apps it runs are the rows), and the retired empty `appstore` stays out.
 pub fn catalog_visible(id: &str) -> bool {
-    !matches!(id, "card" | "appstore")
+    !matches!(id, "card" | "appstore" | "studio-app")
 }
 
 /// Registry rows a shell surface launches but no list shows as an app:
@@ -785,6 +846,9 @@ impl AppRegistry {
         if let Some(module) = self.modules.iter().copied().find(|m| m.id() == id) {
             return Some(module);
         }
+        if is_studio_app(id) {
+            return self.modules.iter().copied().find(|m| m.id() == "studio-app");
+        }
         if is_card_app(id) {
             return self.modules.iter().copied().find(|m| m.id() == "card");
         }
@@ -801,8 +865,9 @@ impl AppRegistry {
         if !crate::host::processes_available() {
             return if self.module(id).is_some() { Hosting::Module } else { Hosting::Process };
         }
+        if is_studio_app(id) && self.module(id).is_some() { return Hosting::Module; }
         // Neither the store nor Settings has a process form.
-        if matches!(id, "apphub" | "settings") && self.module(id).is_some() {
+        if matches!(id, "apphub" | "settings" | "updater") && self.module(id).is_some() {
             return Hosting::Module;
         }
         if self.modules.iter().any(|m| m.id() == id) && !self.overrides.contains_key(id) {
@@ -890,12 +955,18 @@ mod tests {
             "schema": 1, "id": "org.example.coldcard", "name": "Cold card", "version": "1.0.0",
             "integrity": {"bundle_blake3": "0".repeat(64)},
             "capabilities": [], "requires": ["host-api-v1", "script-tools-v1"],
-            "host_api": {"required": {"app_tools.dispatch": 1, "runtime.describe": 1}}
+            "host_api": {"required": {"app_tools.dispatch": 1, "runtime.describe": 1, "charts.d3": 1}}
         }).to_string()).unwrap();
         assert!(octosense_appstore::host_api::check_manifest(&manifest).is_err());
         register_host_services();
         octosense_appstore::host_api::check_manifest(&manifest)
             .expect("compatible card installs and reopens without warming a module first");
+        #[cfg(wasm_functions)]
+        assert_eq!(
+            octosense_appstore::host_api::available_versions().get("wasm.sockets"),
+            Some(&1),
+            "socket components must be installable before the first app calls wasm"
+        );
     }
 
     #[test]
@@ -948,6 +1019,61 @@ mod tests {
         std::fs::create_dir_all(&current).unwrap();
         assert_eq!(installed_bundle(&root, "dev.example.app"), current, "the new layout wins");
         assert_eq!(installed_bundle(&root, "dev.example.none"), root.join("dev.example.none/bundle"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A script app's manifest `window` is the size its desktop window asks
+    /// for (`window_hint`), read from the bundle the Card runner opens: a
+    /// system app's admitted build, unpacked here as on a first launch, or
+    /// an installed app's bundle. No hint, a manifest App Hub refuses, or an
+    /// app that is not a script app: the default size.
+    #[cfg(feature = "app-hub")]
+    #[test]
+    fn a_script_apps_manifest_window_is_the_size_it_asks_for() {
+        let root = std::env::temp_dir().join(format!("shell-window-hint-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        // A system app, packed by digest as the build packs one.
+        let source = root.join("source");
+        std::fs::create_dir_all(&source).unwrap();
+        std::fs::write(source.join("main.splash"), "use mod.widgets.*\nApp { Label { text: \"Probe\" } }\n").unwrap();
+        std::fs::write(source.join("manifest.json"), serde_json::json!({
+            "schema": 1, "schema_minor": 1, "id": "os.windowprobe", "version": "1.0.0", "name": "Window probe",
+            "integrity": {"bundle_blake3": ""}, "window": {"width": 900, "height": 700}
+        }).to_string()).unwrap();
+        let packed = octosense_app_hub::pack::pack_system_app(&source).unwrap();
+        test_system_apps::register(octosense_appstore::system::SystemApp {
+            id: "os.windowprobe", name: "Window probe", pack: Box::leak(packed.pack_json.into_boxed_str()), assets: &[],
+        });
+        let probe = card_row("windowprobe".into(), "Window probe".into(), vec![format!("{SYSTEM_ARG}os.windowprobe")]);
+        assert_eq!(window_hint_in(&root, &probe), Some((900.0, 700.0)));
+        assert!(root.join(".system/os.windowprobe").is_dir(), "unpacked as the Card runner unpacks it");
+        // An installed app: its bundle's manifest.
+        let bundle = root.join(".bundles/org.example.wide/bundle");
+        std::fs::create_dir_all(&bundle).unwrap();
+        let installed = card_row(installed_launch_id("org.example.wide"), "Wide".into(), Vec::new());
+        let manifest = |extra: serde_json::Value| {
+            let mut manifest = serde_json::json!({
+                "schema": 1, "id": "org.example.wide", "version": "1.0.0", "name": "Wide",
+                "integrity": {"bundle_blake3": "0".repeat(64)}
+            });
+            manifest.as_object_mut().unwrap().extend(extra.as_object().unwrap().clone());
+            std::fs::write(bundle.join("manifest.json"), manifest.to_string()).unwrap();
+        };
+        manifest(serde_json::json!({"schema_minor": 1, "window": {"width": 1200, "height": 800}}));
+        assert_eq!(window_hint_in(&root, &installed), Some((1200.0, 800.0)));
+        manifest(serde_json::json!({}));
+        assert_eq!(window_hint_in(&root, &installed), None, "no hint");
+        manifest(serde_json::json!({"window": {"width": 1200, "height": 800}}));
+        assert_eq!(window_hint_in(&root, &installed), None, "App Hub refuses window below schema_minor 1");
+        let mut native = installed.clone();
+        native.bin = "notes".into();
+        assert_eq!(window_hint_in(&root, &native), None, "not a script app");
+        // The build's own PDF Tools (desktop builds pack it) asks for its
+        // designs' 1536 x 1024, admitted as the Card runner admits it.
+        if system_app_ids().contains(&"pdftools") {
+            let pdftools = card_row("pdftools".into(), "PDF Tools".into(), vec![format!("{SYSTEM_ARG}os.pdftools")]);
+            assert_eq!(window_hint_in(&root, &pdftools), Some((1536.0, 1024.0)));
+        }
         let _ = std::fs::remove_dir_all(&root);
     }
     use super::*;
@@ -1094,6 +1220,21 @@ mod tests {
         let system = card_row("mail".into(), "Mail".into(), vec![format!("{SYSTEM_ARG}os.mail")]);
         assert_eq!(card_manifest_id(&system), Some("os.mail"));
         assert!(!matches_running_app(&system, "mailer", "Mail"), "a Card app focuses only itself");
+    }
+
+    #[cfg(all(unix, any(feature = "app-hub", native_mobile)))]
+    #[test]
+    fn developer_apps_require_admitted_instances_and_exact_launch_identity() {
+        let module: &'static dyn AppModule = &crate::studio::module::STUDIO_MODULE;
+        let mut app = studio_row("dev.studio.planner".into(), "Planner".into(), Vec::new());
+        assert!(!catalog_visible(module.id()));
+        assert!(module_open(module, &app).is_err());
+        app.args.push("--studio-instance=host-issued-id".into());
+        assert_eq!(module_open(module, &app).unwrap().text("instance_id"), Some("host-issued-id"));
+        assert!(matches_running_app(&app, "dev.studio.planner", "Any title"));
+        assert!(!matches_running_app(&app, "planner", "Planner"));
+        assert!(!matches_running_app(&app, "dev.studio.planner-copy", "Planner"));
+        assert!(!matches_running_app(&app, "studio-instance:preview", "Planner"));
     }
 
     /// The system apps this build packs (system-apps.json): each a Card app

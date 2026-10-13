@@ -1,0 +1,472 @@
+{
+ "result": "pass",
+ "date": "2026-10-11",
+ "platform": "Linux: the Linux build host (Ubuntu 26.04 LTS, Linux 7.0, x86_64, 72 CPUs, 138 GiB), under a headless weston 14.0.2 (pixman renderer) of each run's own, Makepad's Wayland backend, Mesa 26.0.8 llvmpipe (software OpenGL ES 3.2, LLVM 21.1.8); no GPU, no desktop session, and no Xwayland (weston's cannot start there: no /tmp/.X11-unix)",
+ "scope": "PDF Tools v2 with its follow-ups (one search in the top bar, Read mode, pdf.cover, the storage line, Edit's Alignment and Colour, comment dates in local time) and the window hint, end to end on Linux for the first time: ui.py's shell, restart, full and empty runs in an OctoSense desktop shell built from main with the real pdf engine, at the runtime's 64 ms script budget, five times (the host's own zone, UTC; TZ=Pacific/Kiritimati, UTC+14; UTC with the final ui.py; and UTC after rebases onto main 3632d376 and 3a563057); plus 'Open a PDF from this device' through makepad's Linux file dialog with a stand-in helper, and the window opened from the shell's menu.",
+ "live_engine": true,
+ "tested": {
+  "main": "5cab54ad7a6b4b4b175957d0116982bd7b17a342 (#479 merged: PDF Tools v2's follow-ups; the window hint since #478)",
+  "since": "main moved during the runs, twice. First to 3632d3767c19191423a0f3b54265e0fd2fb3353c, adding #485 (the dock hides while OctoSense is full screen; Wayland counts a maximized window) and #494 (pdfcraft 615ff308173a: safe comment dates and page labels): the branch was rebased, rebuilt and run again. Then to 3a56305771594ae4c1430b5b61be40e50b76e9bf, adding #487 (maximize and snaps end above a floating dock; a native window's own size): the branch was rebased onto it, and at its head 44ef956856b076df9984247fea183cbace8ef1f3 (target/debug/octosense sha256 9a554d89e459a7033b2fbb1756b25586ad816a6f40273bbe495d441ee7c862f7, pdftools_fixture d213bf46e52b62842a7b00c4404dfa43701f91f0c8d22eaf8aa222892ee4f63b) the journeys, the import check and the window probe passed again. The frames are from the first run, on 5cab54ad",
+  "changed": "apps/pdftools/tests/ui.py only, this branch's Linux launch path (sha256 4a1c85f1dddacff567cd83b2a55ac1b75ff7011f1f5d6411486e5c7c57480bd6); the shell, the bundle and the pdf service are main's. The first two runs, the import check and the window probe used ui.py 7caadf412901b82c351fe55883bff26a174c8a042c320eaffd4fcd5fe7958862, which lacks only the guard that stops the shell and its weston when the bridge never answers; the third run used the final file",
+  "trees": {
+   "crates/shell": "bcdea6075b6de48c8ac1253e1348797284165252",
+   "apps/pdftools/bundle": "3052366c75bd829dfdb87f72c48301aca5ccecd6",
+   "apps/pdf/host-service": "52ea110128e23578b36511fc0210d2c47a60748a",
+   "desktop": "c070dac010c68d746990796d9feec0112bcd4ba7",
+   "Cargo.lock": "32773c2743a6bf09808f68e70ba65a8daad838eb"
+  }
+ },
+ "checkout": "a scratch git worktree of main on the build host, prepared by tools/setup.py against the host's source hubs (OCTOSENSE_SOURCES_HUB): .sources/makepad d653bc449361 with runtime-patches.lock.json's stacked patches, .sources/octoscript-makepad 6cf2d90aa33f, .sources/octoscript 2e37d9e657a2; App Hub 386359153ed6377b5f047bd9ed2767a6a2ac2bc7 (the root Cargo.toml pin); rustc 1.99.0 (b940084d7 2026-09-28); Python 3.14.4",
+ "shell": {
+  "build": "cargo build --locked -p octosense --no-default-features --features app-hub,craft-engines (debug, 4 min 52 s with -j 36)",
+  "binary": "target/debug/octosense",
+  "binary_sha256": "750d6c69c24ca5b8edafb732ca7a77b4b3d0d8976c91746a7ffd7a1e37889d84",
+  "fixture": "cargo build --locked -p octosense-pdf-service --example pdftools_fixture (ui.py runs it with cargo run); target/debug/examples/pdftools_fixture sha256 5805c28bab266d8b723c7e221c8e3c86f1cc601764a31ea139b3247b72a013fb",
+  "compositor": "per session: weston --backend=headless --renderer=pixman --idle-time=0 --socket=wayland-pdftools --no-config --log=<run>/weston.log, with XDG_RUNTIME_DIR a fresh 0700 folder; stopped (with its clients) after the shell exits",
+  "launch": "the shell in a session of its own, with ui.py's environment plus OCTOSENSE_HOME=<fresh home> OCTOS_APP_CORE_DIR=<home>/octos-home/.octos MAKEPAD_HOME=<home>/makepad MAKEPAD_HIDE_WINDOWS=1 (no effect on Linux: the window is mapped on the run's weston) MAKEPAD_REMOTE=127.0.0.1:8915 MAKEPAD_WM_TEST_APP=pdftools XDG_RUNTIME_DIR=<weston's> WAYLAND_DISPLAY=wayland-pdftools XDG_CONFIG_HOME, XDG_DATA_HOME, XDG_CACHE_HOME, XDG_STATE_HOME=<home>/xdg/*; ended with /quit",
+  "window": "the shell's window is 1400 x 900 points at dpi 1 (weston's headless output does not constrain a floating window); PDF Tools at its own window size: an app area of 1292 x 662 points, the wide layout",
+  "frames": "the app's area cut from each /g grab taken at --grab-scale 1 (one pixel per point at dpi 1); window/opened-from-the-menu.png is the whole window",
+  "script_budget": "the runtime's 64 ms: no MAKEPAD_SPLASH_BUDGET_MS, no --budget-ms",
+  "homes": "on ext4 (--work on the host's disk). The host's /tmp is tmpfs, so ui.py's default --work (the system's temporary folder) would have put every home, and every rename, on tmpfs"
+ },
+ "source_sha256": {
+  "apps/pdftools/bundle/main.splash": "39801504143dcb670252d9e3167deb0283c2f361962e11627d115c61a083a3e9",
+  "apps/pdftools/bundle/manifest.json": "3c062555c5521ec7de41a0c2c86b1bac75be0d005cd7727f9d32c55535000236",
+  "apps/pdftools/tests/ui.py": "4a1c85f1dddacff567cd83b2a55ac1b75ff7011f1f5d6411486e5c7c57480bd6",
+  "apps/pdftools/tests/evidence/linux-20261011/import/check.py": "00efba6fea2d97cd5631e18a1cf3f890ed18e9220efcac5c34c2c4408b8b214b",
+  "apps/pdf/host-service/examples/pdftools_fixture.rs": "f44ad5a202da98b4a07468e9dccdff59f7e2b333edec6e879245a3b7491307fc",
+  "apps/pdf/host-service/src/dates.rs": "0590244f3ca006adb59107ca201a6be424e3a85d122495bad55b2e581626e714",
+  "apps/pdf/host-service/src/review.rs": "9a75b9548958a95c223b514b91541aff7348e886f7d170a79b1dfbe12a036414",
+  "apps/pdf/host-service/src/cache.rs": "7f4d6d2a8de28ffb1a92b5c582c1476149cd7d711787e2afcb6067b183dc6dd2",
+  "apps/pdf/host-service/src/covers.rs": "a391029db168f272dfbd6e670c09a595081cad834febd3164bbe8358fe1be300",
+  "apps/pdf/host-service/src/change.rs": "226b188c08425e173de2583ad80c88140202dedd757d8072da15564e0d48f563",
+  "crates/shell/src/files_service/mod.rs": "74df96648bdca7a0dbe64116addcab48643e6295a44aaafdb443c5992889eb9f",
+  "crates/shell/src/shell/bar.rs": "d8885338365c795ca62c5fe6a7885a336e8112536c689ccf933d0df776451357",
+  ".sources/makepad/platform/src/os/linux/file_dialog.rs": "de288782465206028fb3e516458d8fe19897509ae0b60561c594e01e2e25bd94"
+ },
+ "commands": [
+  "(on the host) git -C <ci>/repo.git worktree add --detach <scratch> 5cab54ad7a6b4b4b175957d0116982bd7b17a342",
+  "(in <scratch>) OCTOSENSE_SOURCES_HUB=<ci>/cache/hub python3 tools/setup.py",
+  "cargo build --locked -j 36 -p octosense --no-default-features --features app-hub,craft-engines",
+  "cargo build --locked -j 36 -p octosense-pdf-service --example pdftools_fixture",
+  "after each rebase (onto 3632d376, then 3a563057): the scratch checkout moved to the branch head (829ce84f, then 44ef9568), tools/setup.py again, both builds again (under a minute each time), then the third command below once more (output <work>/ui-main), import/check.py and the window probe",
+  "python3 apps/pdftools/tests/ui.py --shell target/debug/octosense --lock <work>/octosense-shell.lock --work <work>/homes --grab-scale 1 --output <work>/ui-64ms",
+  "TZ=Pacific/Kiritimati python3 apps/pdftools/tests/ui.py --shell target/debug/octosense --lock <work>/octosense-shell.lock --work <work>/homes --grab-scale 1 --output <work>/ui-tz",
+  "(the final ui.py) python3 apps/pdftools/tests/ui.py --shell target/debug/octosense --lock <work>/octosense-shell.lock --work <work>/homes --grab-scale 1 --output <work>/ui-final",
+  "python3 apps/pdftools/tests/evidence/linux-20261011/import/check.py --shell target/debug/octosense --output <work>/import-check",
+  "the window from the menu: ui.py's Shell with MAKEPAD_WM_TEST_APP left out of its environment, then, once the desk had drawn, its menu() ('pdf tools', Return), /s and one /g grab (a scratch probe, not kept)",
+  "cargo test --locked -j 36 -p octosense-pdf-service (56 passed and 1 ignored, then 1 passed and 1 ignored, then 1 passed); cargo test --locked -j 36 -p octosense-shell --lib pdftools_model (18 passed)",
+  "frames: each grab cut to its sidecar's area (PIL); compare/: the Linux frame beside the macOS frame of the same step, halved and reduced to 256 colours"
+ ],
+ "runs": [
+  {
+   "name": "ui.py, the host's own zone (UTC)",
+   "runs": [
+    "shell (light, then dark)",
+    "restart",
+    "full",
+    "empty"
+   ],
+   "when": "11 Oct 2026, 14:25:02 to 14:28:57 UTC",
+   "load": "one-minute load average 34.8 at the start, 18.0 at the end (other sessions' CI on the host)",
+   "result": "all journeys passed on the first attempt; no script errors and no 'script time budget exceeded' in any log; each shell exited after /quit",
+   "frames": "light/, dark/, restart/, full/, empty/, compare/"
+  },
+  {
+   "name": "ui.py with TZ=Pacific/Kiritimati (UTC+14)",
+   "runs": [
+    "shell (light, then dark)",
+    "restart",
+    "full",
+    "empty"
+   ],
+   "when": "11 Oct 2026, 14:31:50 to 14:35:49 UTC, which was 04:31 to 04:35 on 12 Oct there",
+   "load": "one-minute load average 10.7 at the start, 22.3 at the end",
+   "result": "all journeys passed; no script errors and no budget overruns",
+   "frames": "tz/"
+  },
+  {
+   "name": "ui.py again, the final file, in UTC",
+   "runs": [
+    "shell (light, then dark)",
+    "restart",
+    "full",
+    "empty"
+   ],
+   "when": "11 Oct 2026, 14:54:09 to 14:58:06 UTC",
+   "load": "one-minute load average 28.9 at the start, 22.0 at the end, with another session's local CI on the host",
+   "result": "all journeys passed; no script errors and no budget overruns; comments dated 'Today 14:54' and 'Today 14:56'"
+  },
+  {
+   "name": "ui.py after the rebase onto main 3632d376 (#485, #494), the final file, in UTC",
+   "runs": [
+    "shell (light, then dark)",
+    "restart",
+    "full",
+    "empty"
+   ],
+   "when": "11 Oct 2026, 15:02:28 to 15:06:19 UTC",
+   "load": "one-minute load average 14.5 at the start, 10.4 at the end",
+   "result": "all journeys passed; no script errors and no budget overruns; comments dated 'Today 15:03' and 'Today 15:04'; the same storage line (191,793 bytes) and window ('it opens at 1296x698'); then import/check.py and the window probe passed again (1296 x 709 from the menu)"
+  },
+  {
+   "name": "ui.py after the rebase onto main 3a563057 (#487 too), the final file, in UTC",
+   "runs": [
+    "shell (light, then dark)",
+    "restart",
+    "full",
+    "empty"
+   ],
+   "when": "11 Oct 2026, 15:10:20 to 15:14:10 UTC",
+   "load": "one-minute load average 1.8 at the start, 6.8 at the end",
+   "result": "all journeys passed; no script errors and no budget overruns; comments dated 'Today 15:11' and 'Today 15:12'; the same storage line (191,793 bytes) and window ('it opens at 1296x698'); then import/check.py passed again ('Lease 2026', '1 / 7', the same bytes) and the window probe gave 1296 x 709 from the menu again"
+  },
+  {
+   "name": "Open a PDF from this device, with a stand-in helper",
+   "how": "import/check.py: a stand-in zenity first on the shell's PATH records its arguments and prints the path of a copy of the samples' Field guide.pdf named 'Lease 2026.pdf'; the check taps 'Open a PDF from this device' and checks the tab, the copied bytes and library.json",
+   "when": "11 Oct 2026, 14:44:47 UTC, load 14.8",
+   "result": "pass; no script errors",
+   "observed": {
+    "page_label": "1 / 7",
+    "zenity_args": [
+     "--file-selection",
+     "--title=Import a file into this app"
+    ],
+    "library": [
+     "Apartment lease.pdf",
+     "Board minutes.pdf",
+     "Damaged scan.pdf",
+     "Field guide.pdf",
+     "Imported PDF.pdf",
+     "Quarterly report.pdf"
+    ],
+    "imported_file": {
+     "name": "Imported PDF.pdf",
+     "bytes": 16477,
+     "same_bytes_as_chosen": true
+    },
+    "library_json_entry": {
+     "pages": 7,
+     "bytes": 16477,
+     "title": "Lease 2026",
+     "opened": 1791729898.686883,
+     "cover": ".cache/covers/9bbd32ca74ee02a3-16477-1791729898675883482@48.png"
+    }
+   },
+   "frames": "import/"
+  },
+  {
+   "name": "the window opened from the shell's menu",
+   "how": "no MAKEPAD_WM_TEST_APP; once the desk had drawn: the menu (Logo+Space), 'pdf tools', Return",
+   "when": "11 Oct 2026, 14:45 UTC",
+   "observed": {
+    "log": "wm: pdftools asks for a 1536x1024 window; it opens at 1296x709 (the dock covers 78 points of the desk)",
+    "shell_window": [
+     1400,
+     900
+    ],
+    "dpi": 1,
+    "app_area": [
+     54,
+     105,
+     1292,
+     673
+    ],
+    "status_line": [
+     74,
+     747,
+     147,
+     18
+    ]
+   },
+   "frame": "window/opened-from-the-menu.png"
+  }
+ ],
+ "linux_findings": [
+  "File dialog: makepad's Linux file dialog is neither xdg-desktop-portal nor GTK. It runs the desktop's own helper, the first of zenity, qarma, matedialog and kdialog on PATH (kdialog first under KDE), and reads the chosen path from its output (.sources/makepad/platform/src/os/linux/file_dialog.rs). The build host has none of them, so file_dialogs::native_file_bytes_supported() is false: files.status answers import_supported false, and the shell does not offer files.import at all. PDF Tools then shows 'Not available here' beside 'Open a PDF from this device', and the button shows the banner 'This OctoSense can't open files from the device for PDF Tools.' Nothing hangs, and nothing is logged as an error. On Linux, ui.py now checks that (open_on_linux).",
+  "On Linux the shell's window is mapped on the run's own weston (MAKEPAD_HIDE_WINDOWS does nothing there). The files service counts a window outside macOS as focused until it reports losing focus (crates/shell/src/files_service/mod.rs, Foreground). So with a helper on PATH the dialog really opens. That is why ui.py leaves the step out when a helper is on PATH, and why the stand-in helper's check could run a real import.",
+  "A real import, which no test had run before (on the Mac the hidden window has the dialog refused): the helper was asked 'zenity --file-selection --title=Import a file into this app'. The chosen 'Lease 2026.pdf' (16,477 bytes) was copied byte for byte into accounts/device/library/Imported PDF.pdf. library.json titled it 'Lease 2026', 7 pages, with its cover. It opened in a tab, 'Lease 2026.pdf', on '1 / 7'. The import passes no file filter (the files service adds one only for photos), so the dialog would list every file, on every platform.",
+  "Fonts and text: the host has only DejaVu (8 font files in fontconfig), and nothing differs from macOS. The shell's interface draws with Makepad's bundled fonts, and the engine's page renders (the samples' sans-serif and serif text) match the Mac's. compare/ shows Home, a page, find and an edited paragraph beside the macOS frames of the same steps: the same text, wrapping and layout, and the same storage numbers. CJK text was not exercised.",
+  "Software GL: each shell's start stalls its UI thread: a 3.1 to 3.6 s first event, then draw-list stalls of 0.5 to 1.2 s whose sampled frames are LLVM compiling (Mesa's llvmpipe builds its shaders; one more such compile, of 0.55 to 0.65 s, comes with the first page). Apart from those, no UI-thread stall logged in the five runs was longer than 409 ms, and no script handler overran 64 ms in any of them.",
+  "Window size: on weston the shell's window is 1400 x 900 points at dpi 1. The log says 'wm: pdftools asks for a 1536x1024 window; it opens at 1296x698 (the dock covers 78 points of the desk)', an app area of 1292 x 662, the wide layout: the same as the macOS hidden shell (1400 x 898). Opened from the menu once the desk had drawn, it is 1296 x 709 (app area 1292 x 673), ending above the dock; the macOS hidden shell's 1400 x 897 window gave 1296 x 703. Both sizes were the same on main 3a563057, which has #485 (the dock hides only while OctoSense is full screen or, on Wayland, maximized; the shell's window on weston is neither) and #487.",
+  "Read mode: in both runs, light and dark, it was entered from the floating bar on 2 / 4. Tabs, mode bar, rail, panels and status line were gone. A page turned to 3 / 4 and the zoom went from 100% to 125%. It was left by Exit read mode (light) or the corner control (dark), on 3 / 4 at 125%.",
+  "Comment dates: in the host's own zone, UTC, the highlight read 'Today 14:25' at 14:25 UTC. Local time is UTC there, so that alone cannot tell the two apart. With TZ=Pacific/Kiritimati (UTC+14, already 12 Oct) it read 'Today 04:32' at 14:32 UTC on 11 Oct. The pdf service's conversion and the app's std.local_time both take the offset from localtime_r's tm_gmtoff (crates/shell/src/shell/bar.rs sets the script's offset), and they agree across the date change.",
+  "ext4: every home was on ext4. pdf.save's staging and rename, the render cache's writes and the covers all passed at 64 ms with no overrun, at load averages of 10 to 35, in five runs. On the Mac the 64 ms runs overran after 262 and 555 ms renames, at load averages of 54 to 74; the loads differ, so this is not a like-for-like timing comparison. After the restart the five current covers were kept with the same nanosecond modification times, and only the new import's cover was drawn. Remove deleted the PDF's cover. The cache evicts by modification time (cache.rs), not by directory order, which differs between ext4 and APFS.",
+  "The same numbers as on the Mac: the storage line read '187 KB of 64 MB used' for 191,793 bytes, and the samples' covers had the same name hashes and sizes. Only the combined PDF differs, by one byte (10,535 here, 10,534 there)."
+ ],
+ "observed": {
+  "utc_run": {
+   "storage_line": {
+    "shown": [
+     191488.0,
+     64
+    ],
+    "jail_bytes": 191793,
+    "library_pdf_bytes": 38356
+   },
+   "open_from_device": [
+    {
+     "step": "01b-open-from-device",
+     "shown": [
+      "Not available here",
+      "This OctoSense can't open files from the device for PDF Tools."
+     ]
+    },
+    {
+     "step": "e02-empty-open",
+     "shown": [
+      "Not available here",
+      "This OctoSense can't open files from the device for PDF Tools."
+     ]
+    },
+    {
+     "step": "de02-empty-open",
+     "shown": [
+      "Not available here",
+      "This OctoSense can't open files from the device for PDF Tools."
+     ]
+    }
+   ],
+   "read_mode": [
+    {
+     "pass": "light",
+     "entered_on": "2 / 4",
+     "left_on": "3 / 4",
+     "zoom": [
+      1.0,
+      1.25
+     ],
+     "left_by": "Exit read mode"
+    },
+    {
+     "pass": "dark",
+     "entered_on": "2 / 4",
+     "left_on": "3 / 4",
+     "zoom": [
+      1.0,
+      1.25
+     ],
+     "left_by": "corner control"
+    }
+   ],
+   "comment_dates": [
+    {
+     "pass": "light",
+     "utc_now": "2026-10-11T14:25Z",
+     "shown_one_of": [
+      "Today 14:25"
+     ]
+    },
+    {
+     "pass": "dark",
+     "utc_now": "2026-10-11T14:27Z",
+     "shown_one_of": [
+      "Today 14:27"
+     ]
+    }
+   ],
+   "combine_button": [
+    {
+     "pass": "light",
+     "area": [
+      54,
+      76,
+      1292,
+      662
+     ],
+     "button": [
+      937,
+      613,
+      140,
+      46
+     ]
+    },
+    {
+     "pass": "dark",
+     "area": [
+      54,
+      76,
+      1292,
+      662
+     ],
+     "button": [
+      937,
+      613,
+      140,
+      46
+     ]
+    }
+   ],
+   "covers_after_shell_run": [
+    "529d0969fe6aecff-16477-1791728703749376961@48.png",
+    "613ca0035b985603-10535-1791728845501895083@48.png",
+    "af4c8071f14d2a8a-5732-1791728703749355064@48.png",
+    "daec677dceec21c2-9551-1791728703748896645@48.png",
+    "e135281299f25e61-10535-1791728767562760297@48.png",
+    "f0b4f225a4635b83-83406-1791728862457895929@48.png"
+   ],
+   "removed_with_its_cover": {
+    "pdf": "Quarterly report combined.pdf",
+    "cover": ".cache/covers/e135281299f25e61-10535-1791728767562760297@48.png"
+   },
+   "covers_after_restart": {
+    "kept_untouched": [
+     "529d0969fe6aecff-16477-1791728703749376961@48.png",
+     "613ca0035b985603-10535-1791728845501895083@48.png",
+     "af4c8071f14d2a8a-5732-1791728703749355064@48.png",
+     "daec677dceec21c2-9551-1791728703748896645@48.png",
+     "f0b4f225a4635b83-83406-1791728862457895929@48.png"
+    ],
+    "drawn_now": [
+     "9bbd32ca74ee02a3-5053-1791728868349894832@48.png"
+    ],
+    "gone_now": [
+     "e135281299f25e61-10535-1791728767562760297@48.png"
+    ]
+   }
+  },
+  "utc_plus_14_run": {
+   "comment_dates": [
+    {
+     "pass": "light",
+     "utc_now": "2026-10-11T14:32Z",
+     "shown_one_of": [
+      "Today 04:32"
+     ]
+    },
+    {
+     "pass": "dark",
+     "utc_now": "2026-10-11T14:33Z",
+     "shown_one_of": [
+      "Today 04:33"
+     ]
+    }
+   ],
+   "read_mode": [
+    {
+     "pass": "light",
+     "entered_on": "2 / 4",
+     "left_on": "3 / 4",
+     "zoom": [
+      1.0,
+      1.25
+     ],
+     "left_by": "Exit read mode"
+    },
+    {
+     "pass": "dark",
+     "entered_on": "2 / 4",
+     "left_on": "3 / 4",
+     "zoom": [
+      1.0,
+      1.25
+     ],
+     "left_by": "corner control"
+    }
+   ],
+   "storage_line": {
+    "shown": [
+     191488.0,
+     64
+    ],
+    "jail_bytes": 191793,
+    "library_pdf_bytes": 38356
+   },
+   "open_from_device": [
+    {
+     "step": "01b-open-from-device",
+     "shown": [
+      "Not available here",
+      "This OctoSense can't open files from the device for PDF Tools."
+     ]
+    },
+    {
+     "step": "e02-empty-open",
+     "shown": [
+      "Not available here",
+      "This OctoSense can't open files from the device for PDF Tools."
+     ]
+    },
+    {
+     "step": "de02-empty-open",
+     "shown": [
+      "Not available here",
+      "This OctoSense can't open files from the device for PDF Tools."
+     ]
+    }
+   ],
+   "covers_after_restart": {
+    "kept_untouched": [
+     "529d0969fe6aecff-16477-1791729111372300750@48.png",
+     "613ca0035b985603-10535-1791729257928890540@48.png",
+     "af4c8071f14d2a8a-5732-1791729111372280555@48.png",
+     "daec677dceec21c2-9551-1791729111371892155@48.png",
+     "f0b4f225a4635b83-83406-1791729275737890344@48.png"
+    ],
+    "drawn_now": [
+     "9bbd32ca74ee02a3-5053-1791729282199890273@48.png"
+    ],
+    "gone_now": [
+     "e135281299f25e61-10535-1791729174500891459@48.png"
+    ]
+   }
+  }
+ },
+ "not_verified": [
+  "Windows: no machine here",
+  "a real helper's dialog (zenity, qarma, matedialog, kdialog): none is installed on the host, and installing software there is not allowed; a stand-in answered; xdg-desktop-portal has no path in makepad",
+  "X11 (weston's Xwayland cannot start on the host: no /tmp/.X11-unix), a desktop compositor (GNOME, KDE), a GPU driver, a scale above 1 on Linux",
+  "the card-host runs (missing, fixture) on Linux, and a release build",
+  "CJK and other non-Latin text on a host with no such fonts",
+  "phones"
+ ],
+ "grabs": [
+  "compare/01-home.png",
+  "compare/02-reading.png",
+  "compare/03-find.png",
+  "compare/08b-edited.png",
+  "dark/d01-home.png",
+  "dark/d02c-read-mode.png",
+  "dark/d02e-read-mode-left.png",
+  "dark/d03-find.png",
+  "dark/d04-comment.png",
+  "dark/d06-combine.png",
+  "dark/d08-edit.png",
+  "dark/d08b-edited.png",
+  "empty/de01-empty.png",
+  "empty/de02-empty-open.png",
+  "empty/e01-empty.png",
+  "empty/e02-empty-open.png",
+  "full/f01-home-full.png",
+  "full/f02-remove-asks.png",
+  "full/f03-removed.png",
+  "import/i01-home-import-offered.png",
+  "import/i02-imported-and-opened.png",
+  "import/i03-home-with-the-import.png",
+  "light/01-home.png",
+  "light/01b-open-from-device.png",
+  "light/02-reading.png",
+  "light/02c-read-mode.png",
+  "light/02d-read-mode-zoomed.png",
+  "light/02e-read-mode-left.png",
+  "light/03-find.png",
+  "light/03b-find-done.png",
+  "light/04-comment.png",
+  "light/04b-replied.png",
+  "light/05-pages-rotated.png",
+  "light/06-combine.png",
+  "light/06b-combined.png",
+  "light/07-fill-sign.png",
+  "light/08a-colours.png",
+  "light/08b-edited.png",
+  "light/09-saved.png",
+  "light/10-damaged.png",
+  "restart/r01-home.png",
+  "restart/r02-imported.png",
+  "restart/r03-place-kept.png",
+  "restart/r04-removed.png",
+  "tz/04b-replied.png",
+  "tz/d04-comment.png",
+  "window/opened-from-the-menu.png"
+ ]
+}

@@ -1,55 +1,592 @@
-// Quick Deck's dev fixture: a stand-in for the shell's `deck` engine, for UI
-// tests in App Hub's card-host, which serves no host services. It never
-// ships. apps/quickdeck/tests/ui.py puts it in place of deck_call() in a
-// scratch copy of the bundle, and copies dev-fixture/ into the app's storage
-// as dev/, where the stand-in reads its settings (dev/fixture.json) and its
-// pictures: real deckcraft renders of dev-fixture/outline.txt. Like the
-// engine, it writes what it is asked for at the paths it is given, so the
-// app runs its one code path.
-let fixture = nil
-let fixture_slides = []     // what the last deck.new was given
-fn fixture_settings(){
-    if fixture == nil {
-        let f = try { fs.read("dev/fixture.json").parse_json() } catch { nil }
-        if f == nil { f = {} }
-        fixture = {dir: optional(f, "dir", "dev") delay: optional(f, "delay", 0.35) fail: optional(f, "fail", "") unreadable: optional(f, "unreadable", false)}
-    }
-    fixture
+// Quick Deck v2's dev fixture: a stand-in for the shell's deck service, for
+// UI tests in App Hub's card-host, which serves no host services. It never
+// ships. apps/quickdeck/tests/ui.py puts it in place of engine() in a scratch
+// copy of the bundle, and make_fixture.py fills the app's storage with what it
+// answers (dev/fixture.json) and the pictures it hands out (dev/slides,
+// dev/covers, dev/layouts): the approved designs' sample deck drawn with PIL,
+// standing in for the engine's renders. It answers SERVICE.md's methods with
+// SERVICE.md's shapes, keeps each open document in memory (edits change its
+// data, not its pictures; undo and redo step back through it), and answers
+// every call on a later turn.
+let fixture_data = nil
+let fixture_docs = {}
+let fixture_next = 1
+let fixture_ids = 5000
+fn fixture(){
+    if fixture_data == nil { fixture_data = try { fs.read("dev/fixture.json").parse_json() } catch { {} } }
+    fixture_data
 }
-fn deck_call(method, args, done){
-    let f = fixture_settings()
-    let answer = fixture_answer(f, method, args)
-    start_timeout(f.delay, || done(answer))
+fn engine(method, args, done){
+    let answer = try { fixture_answer(method, args) } catch { {is_ok: false data: nil error: "invalid: the dev fixture couldn't answer deck." + method} }
+    start_timeout(0.04, || done(answer))
 }
-fn fixture_answer(f, method, args){
-    if f.fail == method || f.fail == "all" {
-        return {is_ok: false data: nil error: "deck." + method + ": the dev fixture refuses this call"}
+fn fx_ok(data){ {is_ok: true data: data error: nil} }
+fn fx_err(e){ {is_ok: false data: nil error: e} }
+fn fx_arg(args, key){ optional(args, key, nil) }
+fn fx_copy(v){ v.to_json().parse_json() }
+fn fx_doc(args){ optional(fixture_docs, "" + optional(args, "doc", ""), nil) }
+fn fx_slide(d, id){
+    for s in d.deck.slides { if s.id == id { return s } }
+    nil
+}
+fn fx_index(d, id){
+    for i s in d.deck.slides { if s.id == id { return i } }
+    -1
+}
+fn fx_shape(s, id){
+    for sh in s.shapes { if sh.id == id { return sh } }
+    nil
+}
+fn fx_all(d){
+    let out = []
+    for s in d.deck.slides { out.push(s.id) }
+    out
+}
+// The common answer of a change (SERVICE.md "Revisions").
+fn fx_change(d, changed){
+    d.rev = d.rev + 1
+    d.edited = true
+    d.can_undo = true
+    d.can_redo = false
+    {rev: d.rev changed: changed edited: true can_undo: true can_redo: false}
+}
+fn fx_with(base, extra){
+    let out = {}
+    for k v in base { out[k] = v }
+    for k v in extra { out[k] = v }
+    out
+}
+fn fx_sections(d){
+    let out = []
+    for k name in d.deck.section_names {
+        let first = -1
+        let count = 0
+        for i s in d.deck.slides {
+            if optional(s, "section", 0) == k {
+                if first < 0 { first = i }
+                count = count + 1
+            }
+        }
+        if count > 0 { out.push({name: name first: first count: count}) }
     }
-    if method == "new" {
-        fixture_slides = args.slides
-        fs.write(args.out, "Quick Deck dev fixture: a stand-in deck\n")
-        return {is_ok: true error: nil data: {out: args.out slides: args.slides.len() format: "deckcraft"}}
+    out
+}
+// As the service answers (SERVICE.md "As built in #503"): a slide's layout
+// by its id, its notes as a preview of at most 200 characters (the whole
+// notes come with deck.slide), its transition by kind (deck.slide gives it
+// whole, its duration in milliseconds).
+fn fx_layout_id(name){
+    for l in optional(fixture(), "layouts", []) { if ("" + l.name) == ("" + name) { return l.id } }
+    name
+}
+fn fx_preview(notes){
+    let n = "" + notes
+    if n.len() <= 200 { return n }
+    let m = regex("^([\\s\\S]{0,200})").exec(n)
+    if m == nil { return n }
+    m.captures[1] + "…"
+}
+let FX_MS = {fade: 700 push: 1000 wipe: 1000 split: 1000 reveal: 2000 cover: 1000 morph: 2000}
+fn fx_transition(s){
+    let kind = "" + optional(s, "transition", "none")
+    if kind == "none" || kind == "" { return nil }
+    {kind: kind option: nil duration: optional(s, "duration", optional(FX_MS, kind, 1000)) advance_after: nil on_click: true}
+}
+fn fx_slides_answer(d){
+    let list = []
+    for i s in d.deck.slides {
+        list.push({id: s.id index: i title: s.title layout: fx_layout_id(s.layout) hidden: s.hidden section: optional(s, "section", 0) notes: fx_preview(s.notes) transition: s.transition builds: s.builds comments: 0})
     }
-    if method == "info" {
+    {slides: list sections: fx_sections(d) size: d.deck.size}
+}
+fn fx_pic(d, s, width, editing){
+    let size = "big"
+    if width <= 420 { size = "thumb" } else if width <= 700 { size = "small" }
+    let pic = "" + optional(s, "pic", "blank")
+    if pic == "blank" { return "dev/blank@" + size + ".png" }
+    let base = "dev/slides/" + d.deck.key + "/" + pic
+    if editing != nil && fs.exists(base + "-editing@big.png") { return base + "-editing@big.png" }
+    base + "@" + size + ".png"
+}
+fn fx_open_deck(path){
+    let decks = optional(fixture(), "decks", {})
+    let deck = optional(decks, path, nil)
+    if deck == nil { return nil }
+    deck = fx_copy(deck)
+    fx_design_defaults(deck)
+    let names = []
+    for sec in optional(deck, "sections", []) { names.push(sec.name) }
+    if names.len() == 0 { names.push("") }
+    deck.section_names = names
+    for i s in deck.slides {
+        let k = 0
+        for j sec in optional(deck, "sections", []) { if i >= sec.first { k = j } }
+        s.section = k
+    }
+    deck
+}
+// The deck's design as the service reports it (SERVICE.md "Inspector states
+// (#507)"): a built-in theme's colour set and font pair are named after it.
+fn fx_design_defaults(deck){
+    if optional(deck, "color_scheme", nil) == nil { deck.color_scheme = deck.theme }
+    if optional(deck, "font_scheme", nil) == nil { deck.font_scheme = deck.theme }
+    if optional(deck, "footer", nil) == nil { deck.footer = {slide_numbers: false footer: false footer_text: "" date: false hide_on_title: false} }
+}
+fn fx_design_state(d){ {theme: d.deck.theme color_scheme: d.deck.color_scheme font_scheme: d.deck.font_scheme footer: d.deck.footer} }
+// One undo step per change, as the service folds them: the deck before it.
+let FX_CHANGES = ["format", "set_text", "notes", "insert", "shape", "picture", "table", "chart", "transition", "design", "slides_op"]
+fn fx_remember(d){
+    let past = optional(d, "past", [])
+    past.push(fx_copy(d.deck))
+    while past.len() > 20 { past.remove(0) }
+    d.past = past
+    d.future = []
+}
+fn fx_new_handle(path, deck){
+    fixture_next = fixture_next + 1
+    let h = "d" + fixture_next
+    let d = {path: path deck: deck rev: 1 edited: false can_undo: false can_redo: false}
+    fixture_docs[h] = d
+    {handle: h doc: d}
+}
+fn fx_open_answer(h, d){
+    let layouts = []
+    for l in optional(fixture(), "layouts", []) { layouts.push({id: l.id name: l.name kind: l.kind}) }
+    {doc: h path: d.path title: d.deck.title size: d.deck.size slides: d.deck.slides.len() theme: d.deck.theme layouts: layouts
+        sections: fx_sections(d) rev: d.rev edited: false can_undo: false can_redo: false missing_fonts: optional(d.deck, "missing_fonts", [])
+        color_scheme: d.deck.color_scheme font_scheme: d.deck.font_scheme footer: d.deck.footer}
+}
+fn fx_refusal(path){ optional(optional(fixture(), "refusals", {}), path, nil) }
+fn fx_new_id(){
+    fixture_ids = fixture_ids + 1
+    fixture_ids
+}
+fn fx_text_shape(id, box, text, size){
+    {id: id name: "Text " + id kind: "textBox" box: box rotation: 0 text: text paragraphs: [{text: text level: 0}]
+        fmt: {font: "Open Sans" size: size bold: false italic: false underline: false strike: false color: "#2B3542" align: "l" bullets: false numbering: false line_spacing: 1.0
+            anchor: "top" autofit: "none"}}
+}
+fn fx_blank_slide(layout, title){
+    let shapes = [fx_text_shape(fx_new_id(), [60, 36, 840, 58], title, 34)]
+    shapes[0].kind = "placeholder"
+    shapes[0].placeholder = "title"
+    {id: fx_new_id() title: title layout: layout hidden: false notes: "" transition: "none" builds: 0 shapes: shapes pic: "blank" section: 0}
+}
+fn fixture_answer(method, args){
+    if method == "themes" { return fx_ok(optional(fixture(), "themes", {})) }
+    if method == "fonts" { return fx_ok({families: optional(fixture(), "fonts", [])}) }
+    if method == "shapes" { return fx_ok({presets: optional(fixture(), "shapes", [])}) }
+    if method == "cover" {
+        let path = "" + fx_arg(args, "path")
+        let refused = fx_refusal(path)
+        if refused != nil { return fx_err(refused) }
+        let deck = optional(optional(fixture(), "decks", {}), path, nil)
+        if deck == nil { return fx_err("not_found: no cover for " + path) }
+        return fx_ok({path: "dev/covers/" + deck.key + ".png" width: 480 height: 270})
+    }
+    if method == "open" {
+        let path = "" + fx_arg(args, "path")
+        let refused = fx_refusal(path)
+        if refused != nil { return fx_err(refused) }
+        let deck = fx_open_deck(path)
+        if deck == nil { return fx_err("not_found: " + path + " isn't in the dev fixture") }
+        let n = fx_new_handle(path, deck)
+        return fx_ok(fx_open_answer(n.handle, n.doc))
+    }
+    if method == "create" {
+        let out = "" + fx_arg(args, "out")
+        let base = fx_open_deck("decks/Q3 2026 Board Update.deckcraft")
+        if base == nil { base = {key: "" slides: []} }
         let slides = []
-        for s in fixture_slides { slides.push({title: s.title layout: "Title and Content"}) }
-        return {is_ok: true error: nil data: {file: args.path slides: slides}}
+        for k item in optional(args, "slides", [{title: ""}]) {
+            let title = "" + optional(item, "title", "")
+            let pic = "blank"
+            for s in base.slides { if s.title == title { pic = s.pic } }
+            let s = fx_blank_slide(optional(item, "layout", "Title and Content"), title)
+            s.pic = pic
+            s.notes = "" + optional(item, "notes", "")
+            slides.push(s)
+        }
+        if slides.len() == 0 { slides.push(fx_blank_slide("Title Slide", "")) }
+        let deck = {key: base.key title: file_stem(base_name(out)) theme: optional(args, "theme", "Harbor") size: [960, 540] slides: slides sections: [] section_names: [""] missing_fonts: []}
+        fx_design_defaults(deck)
+        fs.write(out, "Quick Deck dev fixture: a stand-in deck\n")
+        let n = fx_new_handle(out, deck)
+        return fx_ok(fx_open_answer(n.handle, n.doc))
     }
-    if method == "render" {
-        let name = "slide-" + two(args.slide + 1) + ".png"
-        let src = f.dir + "/thumbs/" + name
-        if args.max_side > 600 && fs.exists(f.dir + "/views/" + name) { src = f.dir + "/views/" + name }
-        if !fs.exists(src) { return {is_ok: false data: nil error: "deck.render: no picture for slide " + (args.slide + 1) + " in the dev fixture"} }
-        // `unreadable`: the call answers but leaves no picture to read, so
-        // each slide shows its text.
-        if !f.unreadable { fs.write_bytes(args.out, fs.read_bytes(src)) }
-        return {is_ok: true error: nil data: {out: args.out slide: args.slide width: 480 height: 270 bytes: 0}}
+    let d = fx_doc(args)
+    if d == nil { return fx_err("unknown_doc: no such document for this app") }
+    // dev/full: the storage has no room (the brief's storage-full state).
+    if (method == "save" || method == "export") && fs.exists("dev/full") { return fx_err("storage_full: Quick Deck's storage has no room for this file") }
+    if method == "close" {
+        if d.edited && optional(args, "discard", false) != true { return fx_err("unsaved: the document has unsaved changes") }
+        let kept = {}
+        for k v in fixture_docs { if k != args.doc { kept[k] = v } }
+        fixture_docs = kept
+        return fx_ok({closed: true})
     }
-    if method == "convert" {
-        let format = "pptx"
-        if args.out.search(".pdf") >= 0 { format = "pdf" }
-        fs.write(args.out, "Quick Deck dev fixture: a stand-in " + format + "\n")
-        return {is_ok: true error: nil data: {out: args.out format: format bytes: 48213}}
+    if method == "state" { return fx_ok(fx_with({rev: d.rev edited: d.edited can_undo: d.can_undo can_redo: d.can_redo undo: nil redo: nil slides: d.deck.slides.len()}, fx_design_state(d))) }
+    if has(FX_CHANGES, method) { fx_remember(d) }
+    if method == "save" {
+        let path = optional(args, "path", d.path)
+        if path != d.path {
+            if fs.exists(path) { return fx_err("invalid: " + path + " is taken") }
+            fs.write(path, "Quick Deck dev fixture: a stand-in deck\n")
+            d.path = path
+        }
+        d.edited = false
+        return fx_ok({path: path bytes: 3565158 rev: d.rev})
     }
-    {is_ok: false data: nil error: "deck." + method + " is not in the dev fixture"}
+    if method == "slides" { return fx_ok(fx_slides_answer(d)) }
+    if method == "slide" {
+        let s = fx_slide(d, fx_arg(args, "slide"))
+        if s == nil { return fx_err("unknown_id: no such slide") }
+        return fx_ok({id: s.id index: fx_index(d, s.id) layout: fx_layout_id(s.layout) background: "#FFFFFF" hidden: s.hidden notes: s.notes transition: fx_transition(s) builds: s.builds shapes: s.shapes})
+    }
+    if method == "view" {
+        let s = fx_slide(d, fx_arg(args, "slide"))
+        if s == nil { return fx_err("unknown_id: no such slide") }
+        let w = optional(args, "width", 960)
+        return fx_ok({path: fx_pic(d, s, w, fx_arg(args, "editing")) width: w height: round(w * 9 / 16) rev: d.rev})
+    }
+    if method == "layouts" { return fx_ok({layouts: optional(fixture(), "layouts", [])}) }
+    if method == "text" {
+        let out = ""
+        for s in d.deck.slides { out = out + s.title + "\n" }
+        return fx_ok({outline: out})
+    }
+    if method == "hit" {
+        let s = fx_slide(d, fx_arg(args, "slide"))
+        if s == nil { return fx_err("unknown_id: no such slide") }
+        let at = args.at
+        let found = nil
+        for sh in s.shapes {
+            let b = sh.box
+            if at[0] >= b[0] && at[0] <= b[0] + b[2] && at[1] >= b[1] && at[1] <= b[1] + b[3] { found = sh }
+        }
+        if found == nil { return fx_ok({hit: nil}) }
+        let kind = "shape"
+        if found.kind == "placeholder" || found.kind == "textBox" { kind = "text" }
+        return fx_ok({hit: {kind: kind id: found.id}})
+    }
+    let s = fx_slide(d, fx_arg(args, "slide"))
+    if method == "format_state" {
+        let sh = nil
+        if s != nil { sh = fx_shape(s, fx_arg(args, "id")) }
+        if sh == nil { return fx_err("unknown_id: no such shape") }
+        return fx_ok(fx_with({anchor: "top" autofit: "none"}, optional(sh, "fmt", {})))
+    }
+    if method == "format" {
+        if s == nil { return fx_err("unknown_id: no such slide") }
+        for id in optional(args, "ids", []) {
+            let sh = fx_shape(s, id)
+            if sh != nil && optional(sh, "fmt", nil) != nil { sh.fmt = fx_with(sh.fmt, fx_format_keys(args)) }
+        }
+        return fx_ok(fx_change(d, [s.id]))
+    }
+    if method == "set_text" {
+        if s == nil { return fx_err("unknown_id: no such slide") }
+        let sh = fx_shape(s, fx_arg(args, "id"))
+        if sh == nil { return fx_err("unknown_id: no such shape") }
+        if optional(args, "cell", nil) != nil && optional(sh, "table", nil) != nil {
+            let c = args.cell
+            sh.table.cells[c[0]][c[1]] = args.text
+        } else {
+            sh.text = args.text
+            let paras = []
+            for p in ("" + args.text).split("\n") { paras.push({text: p level: 0}) }
+            sh.paragraphs = paras
+        }
+        return fx_ok(fx_with(fx_change(d, [s.id]), {id: sh.id}))
+    }
+    if method == "notes" {
+        if s == nil { return fx_err("unknown_id: no such slide") }
+        s.notes = "" + args.text
+        return fx_ok(fx_change(d, [s.id]))
+    }
+    if method == "insert" {
+        if s == nil { return fx_err("unknown_id: no such slide") }
+        let kind = "" + args.kind
+        let id = fx_new_id()
+        let sh = fx_text_shape(id, [380, 250, 200, 40], "" + optional(args, "text", ""), 18)
+        if kind == "shape" { sh = {id: id name: "Shape " + id kind: "shape" box: [405, 195, 150, 150] rotation: 0 preset: args.preset fill: "#1B7FA6" text: "" paragraphs: [] fmt: sh.fmt} }
+        if kind == "picture" { sh = {id: id name: "Picture " + id kind: "picture" box: [280, 120, 400, 300] rotation: 0 picture: {} alt_text: ""} }
+        if kind == "table" {
+            let cells = []
+            for r in args.rows {
+                let row = []
+                for c in args.cols { row.push("") }
+                cells.push(row)
+            }
+            sh = {id: id name: "Table " + id kind: "table" box: [96, 150, 768, args.rows * 40] rotation: 0 table: {rows: args.rows cols: args.cols style: "medium2-accent1" cells: cells
+                options: {header_row: true total_row: false banded_rows: true first_column: false last_column: false banded_columns: false}}}
+        }
+        if kind == "chart" {
+            let cats = optional(args, "categories", ["Q1", "Q2", "Q3", "Q4"])
+            let series = optional(args, "series", [{name: "Series 1" values: [4.2, 2.8, 3.6, 4.7]}, {name: "Series 2" values: [2.6, 4.1, 1.9, 3.0]}, {name: "Series 3" values: [2.1, 2.4, 3.3, 5.1]}])
+            sh = {id: id name: "Chart " + id kind: "chart" box: [144, 81, 672, 378] rotation: 0 chart: {type: "" + args.type title: "Chart Title" categories: cats series: series legend: "b" data_labels: false gridlines: true palette: "colorful1"}}
+        }
+        s.shapes.push(sh)
+        let extra = {id: id}
+        if kind == "picture" { extra.size = [400, 300] }
+        return fx_ok(fx_with(fx_change(d, [s.id]), extra))
+    }
+    if method == "shape" {
+        if s == nil { return fx_err("unknown_id: no such slide") }
+        let op = "" + args.op
+        let ids = optional(args, "ids", [])
+        let out_ids = ids
+        if op == "delete" {
+            let kept = []
+            for sh in s.shapes { if !has(ids, sh.id) { kept.push(sh) } }
+            s.shapes = kept
+            out_ids = []
+        }
+        if op == "duplicate" {
+            out_ids = []
+            for id in ids {
+                let sh = fx_shape(s, id)
+                if sh != nil {
+                    let copy = fx_copy(sh)
+                    copy.id = fx_new_id()
+                    copy.box = [sh.box[0] + 12, sh.box[1] + 12, sh.box[2], sh.box[3]]
+                    s.shapes.push(copy)
+                    out_ids.push(copy.id)
+                }
+            }
+        }
+        for id in ids {
+            let sh = fx_shape(s, id)
+            if sh != nil {
+                if op == "move" { sh.box = [sh.box[0] + args.dx, sh.box[1] + args.dy, sh.box[2], sh.box[3]] }
+                if op == "bounds" { sh.box = [args.x, args.y, args.w, args.h] }
+                if op == "rotate" { sh.rotation = args.deg }
+                if op == "fill" { sh.fill = pick(optional(args, "none", false) == true, "none", "" + optional(args, "color", "")) }
+            }
+        }
+        return fx_ok(fx_with(fx_change(d, [s.id]), {ids: out_ids}))
+    }
+    if method == "picture" || method == "table" || method == "chart" {
+        if s == nil { return fx_err("unknown_id: no such slide") }
+        let sh = fx_shape(s, fx_arg(args, "id"))
+        if sh == nil { return fx_err("unknown_id: no such shape") }
+        let extra = {}
+        if method == "chart" {
+            let c = sh.chart
+            if optional(args, "type", nil) != nil { c.type = args.type }
+            if optional(args, "categories", nil) != nil { c.categories = args.categories }
+            if optional(args, "series", nil) != nil { c.series = args.series }
+            if has_key(args, "title") { c.title = "" + optional(args, "title", "") }
+            if optional(args, "legend", nil) != nil { c.legend = "" + args.legend }
+            if optional(args, "data_labels", nil) != nil { c.data_labels = args.data_labels == true }
+            if optional(args, "gridlines", nil) != nil { c.gridlines = args.gridlines == true }
+            if optional(args, "palette", nil) != nil { c.palette = "" + args.palette }
+        }
+        if method == "table" {
+            let tb = sh.table
+            if args.op == "style" { tb.style = args.style }
+            if args.op == "options" {
+                let o = optional(tb, "options", {header_row: true total_row: false banded_rows: true first_column: false last_column: false banded_columns: false})
+                if optional(args, "header_row", nil) != nil { o.header_row = args.header_row == true }
+                if optional(args, "total_row", nil) != nil { o.total_row = args.total_row == true }
+                if optional(args, "banded_rows", nil) != nil { o.banded_rows = args.banded_rows == true }
+                if optional(args, "first_column", nil) != nil { o.first_column = args.first_column == true }
+                if optional(args, "last_column", nil) != nil { o.last_column = args.last_column == true }
+                if optional(args, "banded_columns", nil) != nil { o.banded_columns = args.banded_columns == true }
+                tb.options = o
+            }
+            if args.op == "insert_row" || args.op == "delete_row" {
+                let rows = []
+                let at = args.row + pick(optional(args, "below", false) == true, 1, 0)
+                for r row in tb.cells {
+                    if args.op == "insert_row" && r == at { let blank = [] for c in tb.cols { blank.push("") } rows.push(blank) }
+                    if !(args.op == "delete_row" && r == args.row) { rows.push(row) }
+                }
+                if args.op == "insert_row" && at >= tb.cells.len() { let blank = [] for c in tb.cols { blank.push("") } rows.push(blank) }
+                tb.cells = rows
+                tb.rows = rows.len()
+            }
+            extra = {rows: tb.rows cols: tb.cols}
+        }
+        return fx_ok(fx_with(fx_change(d, [s.id]), extra))
+    }
+    if method == "transition" {
+        let targets = optional(args, "slides", [])
+        if optional(args, "all", false) == true { targets = fx_all(d) }
+        for id in targets {
+            let t = fx_slide(d, id)
+            if t != nil {
+                t.transition = "" + args.kind
+                t.duration = optional(args, "duration", optional(FX_MS, "" + args.kind, 1000))
+            }
+        }
+        return fx_ok(fx_change(d, targets))
+    }
+    if method == "design" {
+        if optional(args, "theme", nil) != nil {
+            d.deck.theme = args.theme
+            d.deck.color_scheme = args.theme
+            d.deck.font_scheme = args.theme
+        }
+        if optional(args, "colors", nil) != nil { d.deck.color_scheme = "" + args.colors }
+        if optional(args, "fonts", nil) != nil { d.deck.font_scheme = "" + args.fonts }
+        let f = optional(args, "footer", nil)
+        if f != nil {
+            let now = d.deck.footer
+            if optional(f, "slide_numbers", nil) != nil { now.slide_numbers = f.slide_numbers == true }
+            if optional(f, "date", nil) != nil { now.date = f.date == true }
+            if optional(f, "footer", nil) != nil { now.footer = f.footer == true }
+            if optional(f, "footer_text", nil) != nil { now.footer_text = "" + f.footer_text }
+            if optional(f, "hide_on_title", nil) != nil { now.hide_on_title = f.hide_on_title == true }
+            d.deck.footer = now
+        }
+        if optional(args, "size", nil) == "4:3" { d.deck.size = [720, 540] }
+        if optional(args, "size", nil) == "16:9" { d.deck.size = [960, 540] }
+        return fx_ok(fx_with(fx_change(d, fx_all(d)), {size: d.deck.size}))
+    }
+    if method == "slides_op" { return fx_slides_op(d, args) }
+    if method == "undo" || method == "redo" {
+        let past = optional(d, "past", [])
+        let future = optional(d, "future", [])
+        if method == "undo" && past.len() == 0 { return fx_err("invalid: nothing to undo") }
+        if method == "redo" && future.len() == 0 { return fx_err("invalid: nothing to redo") }
+        if method == "undo" {
+            future.push(fx_copy(d.deck))
+            d.deck = past[past.len() - 1]
+            past.remove(past.len() - 1)
+        } else {
+            past.push(fx_copy(d.deck))
+            d.deck = future[future.len() - 1]
+            future.remove(future.len() - 1)
+        }
+        d.past = past
+        d.future = future
+        d.rev = d.rev + 1
+        d.edited = true
+        d.can_undo = past.len() > 0
+        d.can_redo = future.len() > 0
+        return fx_ok({rev: d.rev changed: fx_all(d) edited: true can_undo: d.can_undo can_redo: d.can_redo undo: nil redo: nil})
+    }
+    if method == "show" {
+        let from = fx_index(d, optional(args, "from", -1))
+        let order = []
+        for i s2 in d.deck.slides { if i >= max(0, from) && !s2.hidden { order.push({slide: s2.id steps: s2.builds}) } }
+        // SERVICE.md's answer also says `loop`, a reserved word in Splash.
+        let shown = {order: order}
+        shown["loop"] = false
+        return fx_ok(shown)
+    }
+    if method == "export" {
+        let kind = "" + args.kind
+        if kind == "images" {
+            fs.mkdir(args.out_dir)
+            let paths = []
+            let ids = optional(args, "slides", fx_all(d))
+            for i id in ids {
+                let p = args.out_dir + "/slide-" + (i + 1) + ".png"
+                fs.write(p, "Quick Deck dev fixture: a stand-in picture\n")
+                paths.push(p)
+            }
+            return fx_ok({paths: paths})
+        }
+        fs.write(args.out, "Quick Deck dev fixture: a stand-in " + kind + "\n")
+        return fx_ok({path: args.out bytes: pick(kind == "pdf", 5033164, 2202009) pages: d.deck.slides.len()})
+    }
+    fx_err("deck." + method + " is not in the dev fixture")
+}
+fn fx_format_keys(args){
+    let out = {}
+    for k v in args { if k != "doc" && k != "slide" && k != "ids" && k != "paragraphs" { out[k] = v } }
+    out
+}
+fn fx_slides_op(d, args){
+    let op = "" + args.op
+    let ids = optional(args, "slides", [])
+    let slides = d.deck.slides
+    if op == "new" {
+        let at = clamp(optional(args, "at", slides.len()), 0, slides.len())
+        let s = fx_blank_slide(optional(args, "layout", "Title and Content"), "")
+        if at > 0 { s.section = optional(slides[at - 1], "section", 0) }
+        let out = []
+        for i x in slides {
+            if i == at { out.push(s) }
+            out.push(x)
+        }
+        if at >= slides.len() { out.push(s) }
+        d.deck.slides = out
+        return fx_ok(fx_with(fx_change(d, [s.id]), {slide: s.id}))
+    }
+    if op == "duplicate" {
+        let out = []
+        let made = []
+        for x in slides {
+            out.push(x)
+            if has(ids, x.id) {
+                let copy = fx_copy(x)
+                copy.id = fx_new_id()
+                out.push(copy)
+                made.push(copy.id)
+            }
+        }
+        d.deck.slides = out
+        return fx_ok(fx_with(fx_change(d, made), {slides: made}))
+    }
+    if op == "delete" {
+        let out = []
+        for x in slides { if !has(ids, x.id) { out.push(x) } }
+        if out.len() == 0 { return fx_err("invalid: a deck keeps at least one slide") }
+        d.deck.slides = out
+        return fx_ok(fx_change(d, []))
+    }
+    if op == "move" {
+        let moving = []
+        let rest = []
+        for x in slides { if has(ids, x.id) { moving.push(x) } else { rest.push(x) } }
+        let to = clamp(args.to, 0, rest.len())
+        let out = []
+        for i x in rest {
+            if i == to { for m in moving { out.push(m) } }
+            out.push(x)
+        }
+        if to >= rest.len() { for m in moving { out.push(m) } }
+        d.deck.slides = out
+        return fx_ok(fx_change(d, ids))
+    }
+    if op == "hide" {
+        for x in slides { if has(ids, x.id) { x.hidden = args.hidden == true } }
+        return fx_ok(fx_change(d, ids))
+    }
+    if op == "layout" {
+        let name = "" + args.layout
+        for l in optional(fixture(), "layouts", []) { if ("" + l.id) == name { name = l.name } }
+        for x in slides { if has(ids, x.id) { x.layout = name } }
+        return fx_ok(fx_change(d, ids))
+    }
+    if op == "reset" { return fx_ok(fx_change(d, ids)) }
+    if op == "section_add" {
+        let at = clamp(args.at, 0, slides.len() - 1)
+        let names = d.deck.section_names
+        names.push("" + args.name)
+        let k = names.len() - 1
+        let base = optional(slides[at], "section", 0)
+        for i x in slides { if i >= at && optional(x, "section", 0) == base { x.section = k } }
+        return fx_ok(fx_with(fx_change(d, []), {sections: fx_sections(d)}))
+    }
+    if op == "section_rename" || op == "section_remove" {
+        let list = fx_sections(d)
+        let sec = optional(list, args.section, nil)
+        if sec == nil { return fx_err("unknown_id: no such section") }
+        let k = optional(slides[sec.first], "section", 0)
+        if op == "section_rename" {
+            let names = []
+            for j n in d.deck.section_names { names.push(pick(j == k, "" + args.name, n)) }
+            d.deck.section_names = names
+        } else {
+            let into = 0
+            if sec.first > 0 { into = optional(slides[sec.first - 1], "section", 0) }
+            for x in slides { if optional(x, "section", 0) == k { x.section = into } }
+        }
+        return fx_ok(fx_with(fx_change(d, []), {sections: fx_sections(d)}))
+    }
+    fx_err("invalid: slides_op " + op + " is not in the dev fixture")
 }

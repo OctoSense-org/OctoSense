@@ -401,6 +401,23 @@ pub struct WmState {
     /// frame, and every tile snaps to the layout like a dragged one — a
     /// tween on top of the slide would lag it (see `dragging`).
     pub pane_sliding: bool,
+    /// The shell's own window is full screen on its host: macOS's
+    /// full-screen space, a maximized Wayland window, a KMS desk. A floating
+    /// dock then hides below the bottom edge until the pointer comes to it,
+    /// as macOS's Dock does beside a full-screen app
+    /// (`desktop::dock_auto_hides`); in a window it always shows.
+    pub host_fullscreen: bool,
+    /// How far up the dock is: 1 in place, 0 hidden below the bottom edge.
+    /// Always 1 unless `host_fullscreen` hides it. The shelf moves it, and
+    /// the shelf and the desk's dock backdrop read it in the same frame.
+    pub dock_reveal: f64,
+    /// How far out the top of a full-screen window is (the top bar and the
+    /// window's title bar): 0 hidden above the top edge, 1 out. The shell
+    /// moves it (`App::top_edge`); the desk and the bar read it.
+    pub top_reveal: f64,
+    /// The height of the bar sliding out over a full-screen window, above
+    /// its title bar: 0 when no bar comes out with it (`App::place_bar`).
+    pub top_bar: f64,
 }
 
 impl WmState {
@@ -837,6 +854,9 @@ pub struct WmDesk {
     #[rust] chrome_pressed: Option<(ClientId, ChromeHit)>,
     #[rust] minimized: HashSet<ClientId>,
     #[rust] dock_warps: HashMap<ClientId, DockWarp>,
+    /// `draw_window_chrome` draws a full-screen window's title bar over its
+    /// content: solid, and with no resize edges.
+    #[rust] chrome_overlay: bool,
     #[live] draw_warp: DrawDockWarp,
     #[uid]
     uid: WidgetUid,
@@ -1179,10 +1199,19 @@ impl WmDesk {
         let dpi = cx.current_dpi_factor().max(1.0);
         draw_rect = snap_to_device(draw_rect, dpi);
 
+        // A full-screen window (`DesktopWindow::fullscreen`) is its content
+        // alone: no frame, title bar, corners, shadow or glass. Its title bar
+        // comes out over the content when the pointer comes to the top
+        // (`WmState::top_reveal`).
+        let (fullscreen, top_reveal, top_bar) = scope
+            .data
+            .get_mut::<WmState>()
+            .map(|s| (s.layout.desktop.enabled && s.layout.is_fullscreen(client), s.top_reveal, s.top_bar))
+            .unwrap_or((false, 0.0, 0.0));
         let glass = self.shell_draw.material().is_glass();
-        let inset = self.style.frame_inset(glass);
-        let glass_share = self.style.glass_share(glass);
-        let resize_bar = self.style.mix(|s| s.resize_bar);
+        let inset = if fullscreen { 0.0 } else { self.style.frame_inset(glass) };
+        let glass_share = if fullscreen { 0.0 } else { self.style.glass_share(glass) };
+        let resize_bar = if fullscreen { 0.0 } else { self.style.mix(|s| s.resize_bar) };
         let mut inner = snap_child_rect(
             Rect {
                 pos: draw_rect.pos + dvec2(inset, inset),
@@ -1203,8 +1232,10 @@ impl WmDesk {
         let backdrop = if self.composing && (self.terminal_clients.contains(&client) || startup_glass) {
             Some(self.compositor.as_mut().unwrap().backdrop(cx, inner, 3.0))
         } else {None};
-        let rounding = self.style.mix(|s| s.rounding);
-        self.draw_window_shadow(cx, draw_rect, focus, fade);
+        let rounding = if fullscreen { 0.0 } else { self.style.mix(|s| s.rounding) };
+        if !fullscreen {
+            self.draw_window_shadow(cx, draw_rect, focus, fade);
+        }
         // The glass frame's backdrop is requested HERE, before the capture
         // opens its own draw list: a compositor checkpoint ends the scene's
         // list, so every `backdrop()` request has to come before any nested
@@ -1237,7 +1268,7 @@ impl WmDesk {
         if let Some(snapshot) = backdrop {
             self.terminal_glass.draw_surface_with_backdrop(cx, inner, Some(snapshot), fade as f32);
         }
-        let title_h = self.style.title_height().min((inner.size.y * 0.3).max(0.0));
+        let title_h = if fullscreen { 0.0 } else { self.style.title_height().min((inner.size.y * 0.3).max(0.0)) };
         if title_h > 0.1 {
             self.draw_window_chrome(cx, client, draw_rect, title_h, focus, fade);
             inner.pos.y += title_h;
@@ -1312,7 +1343,7 @@ impl WmDesk {
             },
             dpi,
         );
-        let title_h = self.style.target.title_height().min(settled_inner.size.y * 0.3);
+        let title_h = if fullscreen { 0.0 } else { self.style.target.title_height().min(settled_inner.size.y * 0.3) };
         settled_inner.pos.y += title_h;
         settled_inner.size.y = (settled_inner.size.y-title_h).max(1.0);
         let (_, settled_child) = split_groupbar(settled_inner, grouped);
@@ -1338,6 +1369,15 @@ impl WmDesk {
                 view.set_corner_radius(((rounding - inset).max(0.0) * 0.5 * glass_share) as f32);
             });
             item.draw_walk_all(cx, scope, Walk::abs_rect(child_rect));
+        }
+        if fullscreen && top_reveal > 0.001 {
+            // Over the content, under the bar, the two sliding down together
+            // from above the top edge.
+            let h = self.style.target.title_height();
+            let y = draw_rect.pos.y + top_bar - (top_bar + h) * (1.0 - crate::edge_reveal::ease(top_reveal));
+            self.chrome_overlay = true;
+            self.draw_window_chrome(cx, client, Rect { pos: dvec2(draw_rect.pos.x, y), size: dvec2(draw_rect.size.x, h) }, h, focus, fade);
+            self.chrome_overlay = false;
         }
         if let Some(mut frame) = capture {
             frame.end(cx);
@@ -1564,7 +1604,11 @@ impl WmDesk {
         self.chrome.color=lerp_color(alpha(if chrome_dark {rgb(48,48,51)}else{rgb(237,237,240)},opacity),alpha(if focus>0.5 {rgb(10,36,106)}else{rgb(128,128,128)},opacity),classic as f64);
         self.chrome.color=lerp_color(self.chrome.color,alpha(if focus>0.5 {rgb(0,0,0)}else{rgb(85,85,85)},opacity),next as f64);
         let title_fill=rect(title.pos.x,title.pos.y,title.size.x,(h-2.0*classic as f64).max(1.0));
-        self.chrome.color.w *= (1.0-glass_share) as f32;
+        // Over a full-screen window's content no glass lies under the title:
+        // its fill is solid.
+        if !self.chrome_overlay {
+            self.chrome.color.w *= (1.0-glass_share) as f32;
+        }
         self.chrome.draw_abs(cx,title_fill);
         if classic>0.01 {
             self.shell_draw.solid(cx,rect(title.pos.x,title.pos.y+h-2.0,title.size.x,2.0),alpha(rgb(212,208,200),opacity*classic));
@@ -1673,6 +1717,8 @@ impl WmDesk {
             self.title_hits.push((client,button,hit));
         }
         self.chrome.pressed=0.0;
+        // A full-screen window's title bar does not resize it.
+        if self.chrome_overlay { return; }
         for (edge,x,y) in [
             (rect(r.pos.x,r.pos.y+12.0,5.0,(r.size.y-24.0).max(0.0)),-1,0),
             (rect(r.pos.x+r.size.x-5.0,r.pos.y+12.0,5.0,(r.size.y-24.0).max(0.0)),1,0),
@@ -1739,6 +1785,10 @@ impl Widget for WmDesk {
             (rect.size.x - gaps_out * 2.0).max(1.0),
             (rect.size.y - gaps_out * 2.0).max(1.0),
         );
+        // The desk as drawn now is what a full-screen window covers: the
+        // bar may just have gone (`App::place_bar`), which the last action's
+        // `sync_geometry` could not see.
+        state.layout.set_outer(LRect::new(rect.pos.x, rect.pos.y, rect.size.x, rect.size.y));
         // `rects` already hands floats (and the scratchpad) back after the
         // tiled windows, so drawing in order puts them on top.
         let mut targets = state.layout.rects(area, gap);
@@ -1926,9 +1976,12 @@ impl Widget for WmDesk {
             // its blur footprint it can share an earlier terminal checkpoint.
             let size = cx.owning_window_or_root_pass_size();
             let dock = if self.style.share(|s| s.glass_shelf) > 0.001 {
-                // As deep as whichever pill samples it.
+                // As deep as whichever pill samples it. A dock hidden below
+                // the edge samples nothing.
                 let level = crate::desktop::dock_backdrop_level(&self.style, &self.shell_draw.material());
-                scope.data.get_mut::<WmState>().map(|state| (crate::desktop::dock_bounds(state, size), level))
+                scope.data.get_mut::<WmState>()
+                    .filter(|state| crate::desktop::dock_showing(state))
+                    .map(|state| (crate::desktop::dock_bounds(state, size), level))
             } else { None };
             let (snapshot, stacks, passes) = self.compositor.as_mut().unwrap().finish(cx, self.desk_rect, dock);
             if self.blur_counts != (stacks, passes) {

@@ -1,0 +1,68 @@
+homes in <tmp>/pdftools-shell-hqw08mg5
+warning: method `update_native_dpi_factor` is never used
+   --> .sources/makepad/platform/src/window.rs:893:19
+    |
+833 | impl CxWindow {
+    | ------------- method in this implementation
+...
+893 |     pub(crate) fn update_native_dpi_factor(&mut self, density: f64) -> Option<(WindowGeom, WindowGeom)> {
+    |                   ^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+Wrote <tmp>/pdftools-shell-hqw08mg5/home/apps/os.pdftools/accounts/device/library
+   <scratch>/ui-go/shell/01-home.png
+   <scratch>/ui-go/shell/01b-open-from-device.png
+   <scratch>/ui-go/shell/02-reading.png
+   <scratch>/ui-go/shell/02b-page-2.png
+   <scratch>/ui-go/shell/02c-read-mode.png
+   <scratch>/ui-go/shell/02d-read-mode-zoomed.png
+   <scratch>/ui-go/shell/02e-read-mode-left.png
+   <scratch>/ui-go/shell/03-find.png
+   <scratch>/ui-go/shell/03b-find-done.png
+   <scratch>/ui-go/shell/04-comment.png
+   <scratch>/ui-go/shell/04b-replied.png
+   <scratch>/ui-go/shell/05-pages-rotated.png
+   <scratch>/ui-go/shell/05b-undone.png
+   <scratch>/ui-go/shell/06-combine.png
+   <scratch>/ui-go/shell/06a-combine-end.png
+   <scratch>/ui-go/shell/06b-combined.png
+   <scratch>/ui-go/shell/07-fill-sign.png
+   <scratch>/ui-go/shell/08a-colours.png
+   <scratch>/ui-go/shell/08-edit.png
+   <scratch>/ui-go/shell/08b-edited.png
+   <scratch>/ui-go/shell/09-saved.png
+   <scratch>/ui-go/shell/10-damaged.png
+   <scratch>/ui-go/shell/d01-home.png
+   <scratch>/ui-go/shell/d02-reading.png
+   <scratch>/ui-go/shell/d02b-page-2.png
+   <scratch>/ui-go/shell/d02c-read-mode.png
+   <scratch>/ui-go/shell/d02d-read-mode-zoomed.png
+   <scratch>/ui-go/shell/d02e-read-mode-left.png
+   <scratch>/ui-go/shell/d03-find.png
+   <scratch>/ui-go/shell/d04-comment.png
+   <scratch>/ui-go/shell/d04b-replied.png
+   <scratch>/ui-go/shell/d05-pages-rotated.png
+   <scratch>/ui-go/shell/d05b-undone.png
+   <scratch>/ui-go/shell/d06-combine.png
+   <scratch>/ui-go/shell/d06a-combine-end.png
+   <scratch>/ui-go/shell/d06b-combined.png
+   <scratch>/ui-go/shell/d07-fill-sign.png
+   <scratch>/ui-go/shell/d08-edit.png
+   <scratch>/ui-go/shell/d08b-edited.png
+   <scratch>/ui-go/shell/d09-saved.png
+   <scratch>/ui-go/shell/d10-damaged.png
+Traceback (most recent call last):
+  File "<repo>/apps/pdftools/tests/ui.py", line 1331, in <module>
+    main()
+  File "<repo>/apps/pdftools/tests/ui.py", line 1322, in main
+    shell_runs(args, runs)
+  File "<repo>/apps/pdftools/tests/ui.py", line 1199, in shell_runs
+    session("shell", home, light_then_dark)
+  File "<repo>/apps/pdftools/tests/ui.py", line 1186, in session
+    check_log(log)
+  File "<repo>/apps/pdftools/tests/ui.py", line 1126, in check_log
+    assert not errors, f"script errors in {log}:\n" + "\n".join(errors)
+AssertionError: script errors in <scratch>/ui-go/shell/shell.log:
+[E] splash:36369862144:1174:10 - script time budget exceeded (.sources/makepad/platform/script/src/vm.rs:1230)
+exit=1

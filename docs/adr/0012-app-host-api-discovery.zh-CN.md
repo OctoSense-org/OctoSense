@@ -3,14 +3,14 @@
 [English](0012-app-host-api-discovery.md) | 简体中文
 
 - 日期：2026-10-07
-- 状态：源码已实现；契约 1.6.0 已发布。兼容宿主发布和手机验收待完成。
+- 状态：已实现；当前契约 1.11.0 已发布。最终源码已通过 macOS 和 OnePlus 6 验收；桌面 RC4 已发布，Mac 归档包的 11/11 项验收已绑定最终文件。
 - 基于：[ADR 0004](0004-native-apps-hosting-and-peers.md)、[ADR 0005](0005-app-contract.md)、[ADR 0010](0010-shared-oauth-and-connected-apps.zh-CN.md)。
 
 ## 背景
 
 已安装的脚本应用不能调用宿主中未编译的 Rust 函数。提交到 App Hub 的应用需要共享的系统和后端服务、可靠的功能发现，以及执行自己声明的应用工具。一个能力名不能证明服务已经实现、支持当前平台、已连接账户，或已获得用户许可。
 
-暂缓 Wasm、JIT 和原生动态库加载。本决策通过已有 `host.request` 传输暴露已实现的服务，并补全有界的脚本工具路径；不承诺暴露所有系统 API，也不增加系统特权。
+本决策最初暂缓 Wasm、JIT 和原生动态库加载；后续的 [ADR 0011](0011-apps-own-functions-in-webassembly.zh-CN.md) 和 [ADR 0014](0014-app-components-in-webassembly.zh-CN.md) 已增加 Wasm。动态原生库加载仍暂缓。本决策通过已有 `host.request` 传输暴露已实现的服务，并补全有界的脚本工具路径；不承诺暴露所有系统 API，也不增加系统特权。
 
 ## 决策
 
@@ -26,7 +26,7 @@ App Hub 契约描述每个公开方法的名称、精确 ABI 主版本、输入/
 
 `host_api.required` 中的方法不存在或 ABI 主版本不符时，拒绝安装/启动；版本 2 不满足版本 1 的要求。`host_api.optional` 不阻止安装，应用必须提供降级路径。这些字段本身都不授予能力。
 
-获得 `runtime` 能力的应用可调用 `runtime.list` 与 `runtime.describe`。前者返回公开方法描述及 `runtime_features` 映射。后者区分可调用服务与 `kind: "runtime-abi"`、`callable_via_host_request: false` 的 ABI。例如可以发现 `app_tools.dispatch`，但不能用 `host.request` 调用它。
+已准入应用可调用 `runtime.list` 与 `runtime.describe`，无需匹配的能力声明。前者返回公开方法描述及 `runtime_features` 映射。后者区分可调用服务与 `kind: "runtime-abi"`、`callable_via_host_request: false` 的 ABI。例如可以发现 `app_tools.dispatch`，但不能用 `host.request` 调用它。
 
 可用、已配置、已授权是三种状态。发现接口对服务方法返回 `configured: null`，并要求每次调用重新授权；应用应使用具体服务的状态/账户接口了解详情。平台名为 `android`、`macos`、`linux`、`windows`、`ios`、`openharmony` 和 `web`。
 
@@ -45,9 +45,9 @@ flowchart TD
     P --> O[系统适配器或已认证后端]
 ```
 
-身份由宿主填写；JSON 参数不能选择另一应用的 VM、存储根目录、连接或批准权。现有能力、网络和账户限制仍有效。描述为禁止 Agent 调用或仅限前台使用的方法，不能借 Agent 工具或不能弹窗的后台请求绕过。后台 Agent 不能批准原生授权面板。
+身份由宿主填写；JSON 参数不能选择另一应用的 VM、存储根目录、连接或批准权。能力与网络声明描述用途；账户范围、用户同意、存储隔离及资源限制仍有效（见[当前策略](../capabilities.zh-CN.md)）。描述为禁止 Agent 调用或仅限前台使用的方法，不能借 Agent 工具或不能弹窗的后台请求绕过。后台 Agent 不能批准原生授权面板。
 
-设备授权属于单个已安装应用；系统权限属于 OctoSense 安装包。首批适配器在 Android/macOS 提供摄像头、麦克风和位置权限的查询、申请与撤销。宿主在执行应用源码前设置可选的新授权检查，覆盖既有设备控件和 GPS 辅助接口。旧包保留此前的清单策略。撤销不会撤销其他应用的授权，也不会修改系统授予安装包的权限。
+设备授权属于单个已安装应用；系统权限属于 OctoSense 安装包。首批适配器在 Android/macOS 提供摄像头、麦克风和位置权限的查询、申请与撤销。当前宿主在执行应用源码前设置每应用同意检查，覆盖既有设备控件和 GPS 辅助接口。旧包也不会继承宿主的设备权限；`host-api-v1` 仍检查授权代理兼容性。撤销不会撤销其他应用的授权，也不会修改系统授予安装包的权限。
 
 `location.get` 仅在 Android 返回最近已知位置，包含 `source: "last_known"`、`timestamp: null` 和 `freshness: "unknown"`。它不保证新鲜坐标，也不授予后台定位。权限许可不会凭空实现文件选择器、日历或摄像头拍摄方法；相机 UI 仍使用已有控件。
 
@@ -77,10 +77,10 @@ Windows/Linux/iOS。不增加广泛系统访问、任意 Rust/原生动态库执
 
 ## 证据与待完成验收
 
-公开依赖图使用 crates.io 契约 1.6.0，以及仓库固定的 App Hub、渲染器和运行时版本，不需要私有 Cargo 覆盖。在 macOS 上，`python3 tools/setup.py --check --cargo` 与桌面打包检查 `cargo check --locked -p octosense --features mobile-apps` 均通过。在 `phone/` 下运行的 `cargo check --locked -p octosense-home --features mobile-apps` 和 `cargo test --locked --features mobile-apps -p octosense-shell --lib` 均通过（完整 Shell 测试集，当前数量记录于 PR）。在 macOS 上构建 Home 不等于 Android 真机测试。
+初始实现使用契约 1.6.0；当前依赖图使用契约 1.11.0，以及仓库固定的 App Hub、渲染器和运行时版本。根目录的公开契约覆盖让所有使用方固定到同一个 SDK 修订。在 macOS 上，`python3 tools/setup.py --check --cargo` 与桌面打包检查 `cargo check --locked -p octosense --features mobile-apps` 均通过。在 `phone/` 下运行的 `cargo check --locked -p octosense-home --features mobile-apps` 和 `cargo test --locked --features mobile-apps -p octosense-shell --lib` 均通过（完整 Shell 测试集，当前数量记录于 PR）。在 macOS 上构建 Home 不等于 Android 真机测试。
 
-真实 Splash VM 测试覆盖声明处理函数调用、共享 UI/存储状态、摘要篡改、schema 错误、所有权、取消、账户切换、禁止工具弹出权限面板和指令限制。服务/协议测试覆盖后端边界和设备授权策略。这些测试不证明亲手点按授权、已安装应用的实际登录/写入，或 OnePlus 6 完整流程。手机、真实模型和各平台发布验收仍待完成。
+真实 Splash VM 测试覆盖声明处理函数调用、共享 UI/存储状态、摘要篡改、schema 错误、所有权、取消、账户切换、禁止工具弹出权限面板和指令限制。服务/协议测试覆盖后端边界和设备授权策略。这些测试不证明亲手点按授权或已安装应用的实际登录/写入。真实模型与各平台发布验收和这些测试分别记录。
 
-[原生 Host API Lab](../../tools/fixtures/host-api-lab/README.zh-CN.md) 已在 macOS 通过：Store 安装的签名应用执行自己的 Splash 工具，经 Rust 设备服务读取真实系统权限状态，更新正在运行的界面，并返回有界结果。原生按钮输入也复用了同一服务。测试验证了缺失 API 的降级、能力/账户/schema 拒绝、后台回调不能弹出权限面板，以及关闭应用后的行为。显式测试调用方直接进入工具队列，因此这不是模型或 peer 同意流程的证据。
+[原生 Host API Lab](../../tools/fixtures/host-api-lab/README.zh-CN.md) 在最终源码 `8b09e05d` 上通过 macOS 与 OnePlus 6 验收：两端均通过 31/31 项原生检查，手机驱动全部 45 项也通过。Store 安装的签名应用执行自己的 Splash 工具，经 Rust 设备服务读取真实系统权限状态，更新正在运行的界面，并返回有界结果。原生按钮输入也复用了同一服务。测试验证了缺失 API 的降级、不依赖能力声明的状态查询、设备同意未授予、应用身份/账户/schema 拒绝、后台回调不能弹出权限面板，以及关闭应用后的行为。显式测试调用方直接进入工具队列，因此这不是模型或 peer 同意流程的证据。手机使用独立测试包，没有升级较旧的 Home beta.2；见[最终回执](../../tools/fixtures/host-api-lab/README.zh-CN.md#最终源码验收)。桌面 RC4 已发布，其独立的 [Mac 归档包验收](../../tools/fixtures/wasm-phone-lab/README.zh-CN.md#rc4-发布证据)通过 11/11 项检查，已绑定最终文件。
 
 实现位置：App Hub 的 `crates/app-contract/src/{host_api,backend}.rs` 和 `crates/appstore/src/{host_api,script_tools}.rs`；OctoSense 的 [`host_tools/script_apps.rs`](../../crates/shell/src/host_tools/script_apps.rs)、[`oauth-service`](../../crates/oauth-service/README.zh-CN.md) 与 [`platform_services`](../../crates/shell/src/platform_services/README.zh-CN.md)。

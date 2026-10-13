@@ -7,10 +7,19 @@
 //! it; else `octos-core`, which this crate links). `OCTOSENSE_OCTOS_REVISION`
 //! at build time overrides it. Empty when neither is found: the desktop then
 //! refuses a packaged kernel it cannot check (an explicit program still runs).
+//!
+//! `dev_mode` marks a development build, as the shell's build.rs does: any
+//! build with debug assertions, or feature `dev-mode` (a shell's `dev-mode`
+//! turns it on). Only then does an Android kernel take the launch extra
+//! `makepad.OCTOS_PROXY` (`launch::launch_proxy`).
 
 use std::path::Path;
 
 fn main() {
+    println!("cargo:rustc-check-cfg=cfg(dev_mode)");
+    if std::env::var_os("CARGO_FEATURE_DEV_MODE").is_some() || std::env::var_os("CARGO_CFG_DEBUG_ASSERTIONS").is_some() {
+        println!("cargo:rustc-cfg=dev_mode");
+    }
     println!("cargo:rerun-if-env-changed=OCTOSENSE_OCTOS_REVISION");
     let lock = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../Cargo.lock");
     println!("cargo:rerun-if-changed={}", lock.display());

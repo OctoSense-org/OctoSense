@@ -362,7 +362,7 @@ impl App {
     pub(super) fn phone_animation_event(&mut self,cx:&mut Cx,event:&Event) {
         if let Some(frame)=self.phone_frame.is_event(event) {
             if self.state.as_ref().is_some_and(|s|s.style.target.mobile()) {
-                let dt=if self.phone_time==0.0 {1.0/60.0}else{(frame.time-self.phone_time).clamp(0.001,0.05)};
+                let dt=if self.phone_time==0.0 {1.0/60.0}else{(frame.time-self.phone_time).clamp(0.001,0.1)};
                 self.phone_time=frame.time;
                 let Some(state) = self.state.as_mut() else { return };
                 let phone = &mut state.phone;
@@ -401,6 +401,10 @@ impl App {
                 }
                 // The tiles follow the phone state every frame: a window
                 // takes its compact face only once its dismissal settled.
+                let focus = phone.search_focus_requested && phone.searching() && !phone.search_closing && phone.search_reveal >= 0.98;
+                if focus {
+                    if let Some(mut desk)=self.desk(cx).borrow_mut::<WmDesk>() {desk.focus_phone_search(cx,&mut self.state_mut().phone);}
+                }
                 self.sync_home_tiles(cx);
                 self.redraw_all(cx);
             }
@@ -586,8 +590,9 @@ impl App {
                 if let Some(mut desk)=self.desk(cx).borrow_mut::<WmDesk>() {desk.clear_phone_search(cx,&mut self.state_mut().phone);}
             }
             PhoneHit::CancelSearch=>{
-                if let Some(mut desk)=self.desk(cx).borrow_mut::<WmDesk>() {desk.dismiss_phone_search(cx,&mut self.state_mut().phone,true);}
-                self.phone_action(cx,PhoneHit::Home);
+                if let Some(mut desk)=self.desk(cx).borrow_mut::<WmDesk>() {desk.dismiss_phone_search(cx,&mut self.state_mut().phone,false);}
+                self.state_mut().phone.search_closing = true;
+                self.animate_phone(cx);
                 return;
             }
             PhoneHit::Shift=>{let p=&mut self.state_mut().phone;p.shift=!p.shift;}
@@ -914,6 +919,10 @@ impl App {
                 phone.openness = if phone.client.is_some() { 1.0 } else { 0.0 };
                 phone.overview = if held { 1.0 } else { progress * 0.6 };
             }
+            ShellGesture::HomeSearch { progress } if from == PhoneScreen::Home => {
+                phone.search_reveal = progress;
+                phone.search_reveal_velocity = 0.0;
+            }
             ShellGesture::Back { progress, .. } if from == PhoneScreen::App => {
                 phone.openness = (1.0 - progress * 0.18).clamp(0.4, 1.0);
             }
@@ -1047,7 +1056,8 @@ impl App {
             // pager step and no keyboard remaining over Home.
             GestureKind::Back if from == PhoneScreen::Drawer => {
                 self.dismiss_phone_keyboard(cx);
-                self.phone_action(cx, PhoneHit::Home);
+                let target = if self.state_mut().phone.searching() { PhoneHit::CancelSearch } else { PhoneHit::Home };
+                self.phone_action(cx, target);
             }
             // Hosted apps see Back first; Home follows only if they decline.
             GestureKind::Back => self.phone_action(cx, PhoneHit::Back),
@@ -1125,6 +1135,7 @@ impl App {
         match phase {
             PhonePointerPhase::Down=>{
                 if !primary {return phone.screen!=PhoneScreen::App;}
+                if phone.search_closing { phone.search_closing=false; phone.search_focus_requested=true; }
                 let old=phone.screen;
                 // The recognizer claims a finger in a band (or on the home
                 // page body); an excluded edge is left to the app.
@@ -1133,6 +1144,7 @@ impl App {
                 if hit==Some(PhoneHit::Scrub) || matches!(&hit,Some(PhoneHit::AppNavigation(_))) || matches!(&hit,Some(PhoneHit::Shade(h)) if ShadeState::drags(h)) {self.phone_gestures.cancel();}
                 let shell=self.phone_gestures.active();
                 if !shell && !screen.contains(p) && hit.is_none() {return false;}
+                if old == PhoneScreen::Home { phone.pages.touch(); }
                 phone.search_touch(p.y,time);
                 phone.pages.glance_touch(p.y, time);
                 if hit==Some(PhoneHit::Scrub) {
@@ -1185,7 +1197,9 @@ impl App {
             }
             PhonePointerPhase::Up=>{
                 let Some(g)=phone.gesture.take() else{return phone.screen!=PhoneScreen::App;};
+                phone.pages.release(0.0, screen.size.x);
                 if g.glance_scroll {
+                    phone.pages.release(0.0, screen.size.x);
                     phone.pages.glance_lift(time);
                     self.phone_gestures.cancel();
                     phone.gesture_out=None;
@@ -1218,6 +1232,12 @@ impl App {
                     self.animate_phone(cx);return true;
                 }
                 let out=if g.shell {self.phone_gestures.feed(FingerPhase::Up,p,time,&ctx,&phone.exclusions)} else {None};
+                let velocity = self.phone_gestures.release_velocity();
+                let page = matches!(out, Some(ShellGesture::Commit(GestureKind::Page(_)) | ShellGesture::Cancel(GestureKind::Page(_))));
+                phone.pages.release(if page { velocity.x } else { 0.0 }, screen.size.x);
+                if matches!(out, Some(ShellGesture::Commit(GestureKind::HomeSearch) | ShellGesture::Cancel(GestureKind::HomeSearch))) {
+                    phone.search_reveal_velocity = (velocity.y / self.phone_gestures.metrics.commit_distance).clamp(-8.0, 8.0);
+                }
                 phone.gesture_out=out;
                 self.gesture_out_age=0;
                 match out {

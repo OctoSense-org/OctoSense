@@ -1,0 +1,113 @@
+# Sign a desktop release with GitHub's signature, so the in-app updater
+# (docs/updater.md) offers it. Run it on the draft that release-desktop.yml
+# made, before publishing the draft (desktop/README.md, "Cutting a desktop
+# release"):
+#
+#   gh workflow run sign-desktop-release.yml --ref main -f tag=desktop-v0.2.0
+#
+# The job waits for a reviewer of the desktop-release-signing environment.
+# It checks that the release's SHA256SUMS lists exactly the release's files,
+# each with its GitHub digest; GitHub then signs SHA256SUMS (actions/attest:
+# a Sigstore bundle, recorded in the public transparency log), and the job
+# attaches that bundle to the release as SHA256SUMS.sigstore.json. The
+# updater accepts a signature from this workflow only, run on main in that
+# environment (crates/updater/src/signature.rs), the way devices accept App
+# Hub's catalog.
+name: Sign desktop release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "The desktop release to sign: desktop-v<major>.<minor>.<patch>[-<pre>]"
+        required: true
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: sign-desktop-release
+  cancel-in-progress: false
+
+jobs:
+  sign:
+    # The updater trusts this workflow on main only.
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: desktop-release-signing
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - name: Check the release and its checksums
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          python3 - <<'PY'
+          import hashlib, json, os, re, subprocess, sys
+
+          tag, repo = os.environ["TAG"], os.environ["GITHUB_REPOSITORY"]
+          number = r"(?:0|[1-9][0-9]*)"
+          if not re.fullmatch(rf"desktop-v{number}\.{number}\.{number}(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?", tag):
+              sys.exit(f"{tag!r} is not a desktop release tag")
+
+          def api(path, *args):
+              return subprocess.run(["gh", "api", *args, path], check=True, capture_output=True).stdout
+
+          # Drafts are listed for this token; a draft has no tag URL yet.
+          pages = json.loads(api(f"repos/{repo}/releases?per_page=100", "--paginate", "--slurp"))
+          matches = [r for page in pages for r in page if r["tag_name"] == tag]
+          if len(matches) != 1:
+              sys.exit(f"{tag}: expected one release, found {len(matches)}")
+          assets = {a["name"]: a for a in matches[0]["assets"]}
+          if "SHA256SUMS.sigstore.json" in assets:
+              sys.exit(f"{tag} is already signed; delete its SHA256SUMS.sigstore.json to sign it again")
+          if "SHA256SUMS" not in assets:
+              sys.exit(f"{tag} has no SHA256SUMS")
+          sums_asset = assets.pop("SHA256SUMS")
+          sums = api(f"repos/{repo}/releases/assets/{sums_asset['id']}", "-H", "Accept: application/octet-stream")
+          if sums_asset.get("digest") != "sha256:" + hashlib.sha256(sums).hexdigest():
+              sys.exit("SHA256SUMS does not match its GitHub digest")
+
+          listed = {}
+          for line in sums.decode("utf-8").splitlines():
+              if not line:
+                  continue
+              m = re.fullmatch(r"([0-9a-f]{64}) [ *]([0-9A-Za-z_+-][0-9A-Za-z._+-]*)", line)
+              if not m or m.group(2) in listed:
+                  sys.exit(f"malformed SHA256SUMS line: {line!r}")
+              listed[m.group(2)] = m.group(1)
+          # What GitHub signs must describe the whole release, file for file.
+          if set(listed) != set(assets):
+              sys.exit("SHA256SUMS does not list exactly the release's files: "
+                       f"unlisted {sorted(set(assets) - set(listed))}, missing {sorted(set(listed) - set(assets))}")
+          for name, asset in assets.items():
+              if asset.get("digest") != "sha256:" + listed[name]:
+                  sys.exit(f"{name} does not match its line in SHA256SUMS")
+
+          subject = os.path.join(os.environ["RUNNER_TEMP"], "subject", f"{tag}.SHA256SUMS")
+          os.makedirs(os.path.dirname(subject))
+          with open(subject, "wb") as out:
+              out.write(sums)
+          with open(os.environ["GITHUB_OUTPUT"], "a") as out:
+              out.write(f"subject={subject}\n")
+          state = "draft" if matches[0]["draft"] else "published"
+          print(f"{tag} ({state}): SHA256SUMS lists its {len(assets)} files with their GitHub digests")
+          PY
+      - name: GitHub signs the checksums
+        id: attest
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: ${{ steps.release.outputs.subject }}
+      - name: Attach the signature to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+          BUNDLE: ${{ steps.attest.outputs.bundle-path }}
+        run: |
+          cp "$BUNDLE" "$RUNNER_TEMP/SHA256SUMS.sigstore.json"
+          gh release upload "$TAG" "$RUNNER_TEMP/SHA256SUMS.sigstore.json" -R "$GITHUB_REPOSITORY"

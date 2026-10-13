@@ -1,0 +1,51 @@
+{
+  "tag": "desktop-v0.1.0-rc.4",
+  "release_id": 409124391,
+  "assets": [
+    {
+      "name": "OctoSense_0.1.0-rc.4_aarch64.dmg",
+      "sha256": "cb1b4f64cef34be94fcd7590dcbdb69e89215282cb0a0bc04e7064e1826dfa6e",
+      "mode": "identical verified Actions candidate copied"
+    },
+    {
+      "name": "octosense_0.1.0-rc.4_amd64.deb",
+      "sha256": "fb8b75442390abce28955421f5d145b32b6e2429672b9a41408b542980e70203",
+      "mode": "downloaded final draft asset"
+    },
+    {
+      "name": "OctoSense_0.1.0-rc.4_linux-x64.receipt.json",
+      "sha256": "9c05b6c2142d420c7be7113745e29f491462162505b03e970616d56dbebce0f5",
+      "mode": "downloaded final draft asset"
+    },
+    {
+      "name": "OctoSense_0.1.0-rc.4_macos-arm64.receipt.json",
+      "sha256": "bc27c27f161216083c8ec4ab3d054b634c6a85c2c3f2edc9a8c6585d45f6a4ef",
+      "mode": "identical verified Actions candidate copied"
+    },
+    {
+      "name": "OctoSense_0.1.0-rc.4_macos_aarch64.app.zip",
+      "sha256": "a58fe9efdece0fa6a58c51a5767b368127a9713a1c7048509366427eead2837e",
+      "mode": "identical verified Actions candidate copied"
+    },
+    {
+      "name": "OctoSense_0.1.0-rc.4_windows-x64.receipt.json",
+      "sha256": "bcb0016590ac00e2b3f633e65add2c649e27bf52e48fdf313e81bf44e3e6171e",
+      "mode": "downloaded final draft asset"
+    },
+    {
+      "name": "octosense_0.1.0-rc.4_x64-setup.exe",
+      "sha256": "0a5d4dfdc4a08cf5aadebb8f0d60867b4771e7af65b5e73facb94121a2d25344",
+      "mode": "downloaded final draft asset"
+    },
+    {
+      "name": "octosense_0.1.0-rc.4_x86_64.AppImage",
+      "sha256": "0c69363fdf386639634401970bef9778c8ebdff8fdba9ffc19b434398201ef35",
+      "mode": "downloaded final draft asset"
+    },
+    {
+      "name": "SHA256SUMS",
+      "sha256": "32caafb719215eae0e8b41426b5389bfb7a2fdeb4163df11341ac3de60a6b7ee",
+      "mode": "downloaded final draft asset"
+    }
+  ]
+}
