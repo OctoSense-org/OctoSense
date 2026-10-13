@@ -35,7 +35,7 @@ use serde_json::{json, Value as Json};
 
 use crate::args;
 use crate::cache;
-use crate::codes::{fail, invalid, too_large, Code};
+use crate::codes::{fail, invalid, Code};
 use crate::reading;
 use crate::Ctx;
 
@@ -79,7 +79,7 @@ pub(crate) fn cover(a: &Json, cx: &Ctx) -> Result<Json, String> {
     let mut session = deckcraft_engine::Session::new();
     engine_file::add_opened(&mut session, &name, None, deck);
     if let Some(why) = crate::Held::of(&session).over() {
-        return Err(too_large(format!("the deck holds {why}, more than the deck service opens")));
+        return Err(crate::too_large_deck(why));
     }
     let deck = session.doc().map_err(|_| fail(Code::Damaged, "the engine opened no deck"))?.doc.clone();
     if deck.slides.is_empty() {

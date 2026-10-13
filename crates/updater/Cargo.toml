@@ -18,6 +18,9 @@ sigstore-verify = { version = "=0.14.0", default-features = false }
 sigstore-trust-root = { version = "=0.14.0", default-features = false }
 sigstore-types = "=0.14.0"
 
+[target.'cfg(target_os = "macos")'.dependencies]
+libc = "0.2"
+
 [dev-dependencies]
 base64 = "0.22"
 tempfile = "3"

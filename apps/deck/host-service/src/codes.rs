@@ -21,7 +21,8 @@ pub(crate) enum Code {
     Unsupported,
     /// An encrypted `.pptx`, which needs a password.
     Protected,
-    /// The deck holds audio or video, or its zip is beyond the import guard
+    /// The deck's zip is beyond the import guard (a zip inside the zip, past
+    /// a bound), or a command the door holds back until deckcraft bounds it
     /// (#448).
     Held,
     /// Over one of the service's caps.

@@ -61,8 +61,8 @@ unsaved changes asks: Save, Don't save, or Cancel.
 States every screen handles: an empty library, a slide still rendering, a
 damaged deck ("Couldn't open this deck" and the engine's reason), a protected
 presentation (OctoSense keeps passwords on host sheets and there is none for
-presentations, so it is not opened), one the engine holds back (video or
-audio, or parts beyond the service's import guard, #448), one it doesn't read
+presentations, so it is not opened), one the engine holds back (a zip
+inside it, or parts beyond the service's import guard, #448), one it doesn't read
 (.ppt, .key, .odp, PDF), eight decks already open, storage full (the bar
 under the tabs, and the status line goes red), unsaved changes when closing,
 and no engine on the device ("The deck engine isn't available here"), or an

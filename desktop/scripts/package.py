@@ -71,6 +71,7 @@ PACKAGING = DESKTOP / "packaging"
 PACKAGE = "octosense"
 KERNEL_NAME = "octos-kernel"
 RECEIPT_NAME = "octos-kernel.json"
+UPDATER_NAME = "octosense-update-helper"
 # cargo-packager signs when these are set; the build never does (see above).
 SIGNING_ENV = ("APPLE_SIGNING_IDENTITY", "APPLE_CERTIFICATE", "APPLE_CERTIFICATE_PASSWORD", "APPLE_API_KEY",
                "APPLE_API_ISSUER", "APPLE_API_KEY_PATH", "APPLE_API_KEY_P8", "APPLE_ID", "APPLE_PASSWORD", "APPLE_TEAM_ID",
@@ -291,6 +292,15 @@ def stage_kernel(kernel, source, out, resources):
     return sidecar, receipt
 
 
+def stage_updater(binary, out, resources, triple):
+    """The helper is copied out before shutdown, so it survives bundle exchange."""
+    sidecar = out / "bin" / UPDATER_NAME
+    sidecar.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(binary, sidecar.with_name(f"{UPDATER_NAME}-{triple}"))
+    (resources / "octosense-updater.json").write_text('{"protocol":1}\n')
+    return sidecar, {"protocol": 1, "sha256": hashlib.sha256(binary.read_bytes()).hexdigest()}
+
+
 def debian_depends(binaries):
     """The shared-library packages the binaries link, from dpkg-shlibdeps."""
     if not shutil.which("dpkg-shlibdeps"):
@@ -304,7 +314,7 @@ def debian_depends(binaries):
     return [d.strip() for d in line.split("=", 1)[-1].split(",") if d.strip()]
 
 
-def packager_config(base, *, version, binaries_dir, out_dir, resources, kernel):
+def packager_config(base, *, version, binaries_dir, out_dir, resources, kernel, updater=None):
     """release.json with this build's version, paths and kernel (never
     signing: see the module docstring)."""
     config = json.loads(json.dumps(base))
@@ -312,10 +322,10 @@ def packager_config(base, *, version, binaries_dir, out_dir, resources, kernel):
     config["binariesDir"] = str(binaries_dir)
     config["outDir"] = str(out_dir)
     config["resources"] = [{"src": str(resources), "target": "."}]
-    if kernel:
+    if kernel or updater:
         # cargo-packager copies `<path>-<target triple>[.exe]` beside the
         # main binary as `<name>[.exe]`.
-        config["externalBinaries"] = [str(kernel)]
+        config["externalBinaries"] = [str(p) for p in (kernel, updater) if p]
     return config
 
 
@@ -377,6 +387,15 @@ def main(argv=None):
     elif release_tag:
         verify_release_identity(binary, release_tag)
 
+    updater_binary = binaries_dir / UPDATER_NAME
+    if os_name == "macos":
+        if not args.skip_build:
+            subprocess.run(["cargo", "build", "--locked", "--release", "-p", "octosense-updater",
+                            "--bin", UPDATER_NAME, *build_options, *offline], cwd=ROOT, env=env, check=True)
+            record_release_identity(updater_binary, release_tag)
+        elif release_tag:
+            verify_release_identity(updater_binary, release_tag)
+
     print("==> staging resources", flush=True)
     metadata = json.loads(cargo_json(["metadata", "--locked", "--format-version", "1"], env))
     crates = resource_crates(metadata, linked_packages(args.features, env))
@@ -384,6 +403,10 @@ def main(argv=None):
     for name, src in crates:
         size = sum(f.stat().st_size for f in (resources / name).rglob("*") if f.is_file())
         print(f"    {name:<28} {size / 1e6:7.1f} MB  <- {src.relative_to(ROOT) if ROOT in src.parents else name}")
+
+    updater_sidecar, updater_receipt = None, None
+    if os_name == "macos":
+        updater_sidecar, updater_receipt = stage_updater(updater_binary, out, resources, triple)
 
     kernel_receipt = None
     sidecar = None
@@ -400,7 +423,7 @@ def main(argv=None):
 
     base = json.loads((PACKAGING / "release.json").read_text())
     config = packager_config(base, version=version, binaries_dir=binaries_dir, out_dir=out / "dist",
-                             resources=resources, kernel=sidecar)
+                             resources=resources, kernel=sidecar, updater=updater_sidecar)
     if os_name == "linux":
         depends = debian_depends([binaries_dir / PACKAGE, *([sidecar.with_name(f"{KERNEL_NAME}-{triple}")] if sidecar else [])])
         if depends:
@@ -416,7 +439,7 @@ def main(argv=None):
     receipt_path.unlink(missing_ok=True)  # A failed restage must not leave an old success receipt.
     receipt = {
         "version": version, "release_tag": release_tag or None, "target": triple, "formats": formats,
-        "resources": [name for name, _ in crates], "kernel": kernel_receipt,
+        "resources": [name for name, _ in crates], "kernel": kernel_receipt, "updater": updater_receipt,
         "makepad_package_dir": added["MAKEPAD_PACKAGE_DIR"],
     }
     print(f"==> cargo packager --formats {','.join(formats)}", flush=True)

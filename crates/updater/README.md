@@ -2,7 +2,7 @@
 
 English | [简体中文](README.zh-CN.md)
 
-`octosense-updater` checks OctoSense's public GitHub releases and downloads a verified installer into host-owned private storage. It does not install, run a shell command, replace a running executable, or expose a service to app agents. The shell must ask the person to open the native installer after download.
+`octosense-updater` checks OctoSense's public GitHub releases and downloads a verified installer into host-owned private storage. It runs no shell command, never replaces a running executable, and exposes no service to app agents. The shell must ask the person to open the native installer after download; on macOS, its `macos` module can instead install and restart through a separate helper, and accepts only code signed by the installed app's own developer ([updater guide](../../docs/updater.md#macos-install--restart-source-build-not-in-rc6)).
 
 `Client::check` and `Client::download` are synchronous worker-thread entry points. Network I/O uses a private Tokio runtime so cancellation can interrupt a stalled request; UI events must never call these methods directly. Cloned clients share a busy guard. Failures and cancellation release it, remove that attempt's partial file, and permit Retry. Cancellation does not interrupt a subsequent native installer that the person has opened.
 

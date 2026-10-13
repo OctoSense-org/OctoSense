@@ -313,6 +313,17 @@ jobs:
           open(package_receipt, "w").write(json.dumps(package, indent=2) + "\n")
           PY
           fi
+          helper="$app/Contents/MacOS/octosense-update-helper"
+          if [ -f "$helper" ]; then
+            sign "$helper"
+            python3 - "$receipt" "$helper" <<'PYHELPER'
+          import hashlib, json, sys
+          receipt, helper = sys.argv[1:]
+          record = json.load(open(receipt))
+          record["updater"]["sha256"] = hashlib.sha256(open(helper, "rb").read()).hexdigest()
+          open(receipt, "w").write(json.dumps(record, indent=2) + "\n")
+          PYHELPER
+          fi
           sign --entitlements in/signing/entitlements.plist "$app"
           codesign --verify --deep --strict --verbose=2 "$app"
 

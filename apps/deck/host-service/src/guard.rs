@@ -42,18 +42,28 @@
 //!   other zip (`.key`, `.odp`) is `unsupported:`.
 //! - Then every entry is inflated, bounded, into a scratch buffer (nothing
 //!   is kept but its first bytes): one that inflates past its declared size
-//!   is `damaged:`. Any audio or video part is `held:`, found by its
-//!   extension, by the content type the package declares for it
-//!   (`[Content_Types].xml`, or a native deck's `presentation.json`), or by
-//!   its first bytes (a movie or sound container's signature).
-//! - So is a zip inside the zip, except an Office package's embedded object
+//!   is `damaged:`.
+//! - Audio and video parts pass like any other part. The engine's readers
+//!   keep them as bytes (a package's media with its own poster picture),
+//!   and nothing the service runs decodes them: deckcraft's decoders
+//!   (`deckcraft-media`) are a dependency of its engine only, reached only
+//!   through `media.info`, `media.posterFrame`, `insert.audio` and
+//!   `insert.video`, which the door holds back (#448). The renderer draws a
+//!   clip's poster, or a film or speaker glyph, and the writers copy its
+//!   bytes. Before the engine reads, the declared total of a zip's binary
+//!   parts (everything but its XML and relationship parts, and a native
+//!   deck's manifest) is held to the session's 128 MiB of media
+//!   (`too_large:`, in the session ceiling's words, [`binary_total`]), so
+//!   the engine never copies out more; after it reads, every path checks
+//!   the deck's media against the same ceiling.
+//! - A zip inside the zip is `held:`, except an Office package's embedded object
 //!   ([`EMBEDDINGS`]): a chart's workbook or an embedded document is a zip
 //!   that neither the service nor the engine ever unzips (deckcraft's only
 //!   zip readers are its package and native readers; it reads a chart from
 //!   the chart's own cached values, and keeps only an embedded object's
 //!   XML and preview). Such a part passes, held like every entry to the
-//!   bounds above (entries, name, declared and actual size, ratio, totals)
-//!   and to the media checks; its own entries are never read, by anyone.
+//!   bounds above (entries, name, declared and actual size, ratio,
+//!   totals); its own entries are never read, by anyone.
 //! - **An OLE compound file** (`D0 CF 11 E0`): one whose directory holds an
 //!   `EncryptedPackage` stream is a password-protected Office file
 //!   (`protected:`); any other is a legacy `.ppt` or not a presentation at
@@ -63,11 +73,10 @@
 //!
 //! The guard reads only the bytes the service already read (at most the
 //! service's 64 MiB a file). Beyond the directory's entries it allocates a
-//! 64 KiB inflate buffer, the package's content-type list (at most
-//! [`MAX_TYPES_BYTES`]) and, for an OLE file, a sector table of at most one
-//! entry a sector; the engine's zip reader, run on a directory the guard
-//! has bounded, holds one record an entry. Engine-side bounds stay tracked
-//! in #448.
+//! 64 KiB inflate buffer and, for an OLE file, a sector table of at most
+//! one entry a sector; the engine's zip reader, run on a directory the
+//! guard has bounded, holds one record an entry. Engine-side bounds stay
+//! tracked in #448.
 
 use std::io::Read;
 
@@ -86,8 +95,6 @@ pub(crate) const MAX_RATIO: u64 = 100;
 /// Entries up to this size are not held to [`MAX_RATIO`]: a small blank
 /// picture or printer setting compresses far better than that.
 pub(crate) const RATIO_GRACE: u64 = 100 << 10;
-/// The most of `[Content_Types].xml` the guard reads for media types.
-pub(crate) const MAX_TYPES_BYTES: u64 = 1 << 20;
 /// The most extensible data a ZIP64 end record may carry beyond its 44
 /// bytes of fields: the engine's zip reader allocates all of it, and an
 /// honest writer leaves it empty.
@@ -175,13 +182,6 @@ struct Entry {
     compressed: u64,
     declared: u64,
     offset: u64,
-}
-
-impl Entry {
-    fn extension(&self) -> String {
-        let file = self.name.rsplit('/').next().unwrap_or("");
-        file.rsplit_once('.').map(|(_, e)| e.to_ascii_lowercase()).unwrap_or_default()
-    }
 }
 
 /// A zip's central directory: its entries, and where it starts.
@@ -572,51 +572,17 @@ fn inflate(b: &[u8], e: &Entry, keep: bool, watch: &mut dyn FnMut(&[u8])) -> Res
     Ok(out)
 }
 
-/// File extensions of movies and sounds.
-const MEDIA_EXTENSIONS: &[&str] = &[
-    "mp4", "m4v", "mov", "qt", "wmv", "asf", "avi", "webm", "mkv", "mka", "mpg", "mpeg", "mpe", "m1v", "m2v", "3gp", "3g2", "flv", "ogv", "ogg",
-    "oga", "opus", "mp3", "wav", "wave", "m4a", "m4b", "aac", "wma", "flac", "aif", "aiff", "aifc", "mid", "midi", "au", "snd", "caf", "amr",
-    "swf", "mts", "m2ts",
-];
-
-/// The kind of movie or sound container `head` starts with, by its
-/// signature (strong signatures only: a two-byte frame sync would also
-/// match the first bytes of obfuscated fonts and other binary parts).
-fn media_signature(head: &[u8]) -> Option<&'static str> {
-    let at = |i: usize, sig: &[u8]| head.get(i..i + sig.len()) == Some(sig);
-    if at(4, b"ftyp") {
-        Some("an MP4 or QuickTime movie or sound")
-    } else if at(0, b"RIFF") && at(8, b"WAVE") {
-        Some("a WAV sound")
-    } else if at(0, b"RIFF") && at(8, b"AVI ") {
-        Some("an AVI movie")
-    } else if at(0, b"OggS") {
-        Some("an Ogg movie or sound")
-    } else if at(0, b"fLaC") {
-        Some("a FLAC sound")
-    } else if at(0, &[0x1A, 0x45, 0xDF, 0xA3]) {
-        Some("a Matroska or WebM movie or sound")
-    } else if at(0, &[0x30, 0x26, 0xB2, 0x75, 0x8E, 0x66, 0xCF, 0x11]) {
-        Some("a Windows Media movie or sound")
-    } else if at(0, b"ID3") {
-        Some("an MP3 sound")
-    } else if at(0, b"FORM") && (at(8, b"AIFF") || at(8, b"AIFC")) {
-        Some("an AIFF sound")
-    } else if at(0, b"caff") {
-        Some("a Core Audio sound")
-    } else if at(0, b"MThd") {
-        Some("a MIDI sound")
-    } else if at(0, b"FLV\x01") {
-        Some("a Flash video")
-    } else if at(0, b".snd") {
-        Some("an AU sound")
-    } else if at(0, &[0, 0, 1, 0xBA]) || at(0, &[0, 0, 1, 0xB3]) {
-        Some("an MPEG movie")
-    } else if at(0, b"#!AMR") {
-        Some("an AMR sound")
-    } else {
-        None
-    }
+/// What a zip's binary parts declare in all: every entry but a text part
+/// of the model (an Office package's XML and relationship parts, a native
+/// deck's `presentation.json` and `mimetype`). The media a deck holds once
+/// read is some of these, so a total past the session's media ceiling is
+/// refused before the engine copies any of it out.
+fn binary_total(entries: &[Entry]) -> u64 {
+    let text = |name: &str| {
+        let lower = name.to_ascii_lowercase();
+        lower.ends_with(".xml") || lower.ends_with(".rels") || lower == "presentation.json" || lower == "mimetype"
+    };
+    entries.iter().filter(|e| !text(&e.name)).map(|e| e.declared).fold(0u64, u64::saturating_add)
 }
 
 /// Whether `head` starts a zip archive: a zip inside the zip.
@@ -636,105 +602,14 @@ fn embedded_object(name: &str) -> bool {
     lower.strip_prefix(EMBEDDINGS).is_some_and(|rest| !rest.contains('\\') && rest.split('/').all(|seg| !seg.is_empty() && seg != "." && seg != ".."))
 }
 
-/// Pairs of names, lowercased.
-type Pairs = Vec<(String, String)>;
-
-/// `[Content_Types].xml`'s declarations: (extension, type) defaults and
-/// (part name, type) overrides, lowercased, part names without their
-/// leading `/`.
-fn content_types(xml: &str) -> (Pairs, Pairs) {
-    let mut defaults = Vec::new();
-    let mut overrides = Vec::new();
-    let mut rest = xml;
-    while let Some(lt) = rest.find('<') {
-        rest = &rest[lt + 1..];
-        let end = rest.find('>').unwrap_or(rest.len());
-        let tag = &rest[..end];
-        let name_end = tag.find(|c: char| c.is_whitespace() || c == '/').unwrap_or(tag.len());
-        let (name, attrs) = tag.split_at(name_end);
-        let attr = |key: &str| -> Option<String> {
-            let mut a = attrs;
-            while let Some(i) = a.find(key) {
-                let before_ok = a[..i].chars().next_back().is_none_or(char::is_whitespace);
-                let after = a[i + key.len()..].trim_start();
-                if before_ok && after.starts_with('=') {
-                    let value = after[1..].trim_start();
-                    let quote = value.chars().next()?;
-                    if quote == '"' || quote == '\'' {
-                        let body = &value[1..];
-                        return body.find(quote).map(|j| body[..j].to_string());
-                    }
-                }
-                a = &a[i + key.len()..];
-            }
-            None
-        };
-        match name {
-            "Default" => {
-                if let (Some(ext), Some(ct)) = (attr("Extension"), attr("ContentType")) {
-                    defaults.push((ext.to_ascii_lowercase(), ct.to_ascii_lowercase()));
-                }
-            }
-            "Override" => {
-                if let (Some(part), Some(ct)) = (attr("PartName"), attr("ContentType")) {
-                    overrides.push((part.trim_start_matches('/').to_ascii_lowercase(), ct.to_ascii_lowercase()));
-                }
-            }
-            _ => {}
-        }
-        rest = &rest[end.min(rest.len())..];
-    }
-    (defaults, overrides)
-}
-
-/// A streaming search for `needles` across the chunks of one entry.
-struct Scan {
-    needles: &'static [&'static [u8]],
-    tail: Vec<u8>,
-    found: bool,
-}
-
-impl Scan {
-    fn new(needles: &'static [&'static [u8]]) -> Scan {
-        Scan { needles, tail: Vec::new(), found: false }
-    }
-
-    fn feed(&mut self, chunk: &[u8]) {
-        if self.found {
-            return;
-        }
-        let longest = self.needles.iter().map(|n| n.len()).max().unwrap_or(1);
-        let mut window = std::mem::take(&mut self.tail);
-        window.extend_from_slice(chunk);
-        let first: Vec<u8> = self.needles.iter().filter_map(|n| n.first().copied()).collect();
-        let mut i = 0;
-        while i < window.len() {
-            match window[i..].iter().position(|c| first.contains(c)) {
-                Some(k) => {
-                    let at = i + k;
-                    if self.needles.iter().any(|n| window[at..].starts_with(n)) {
-                        self.found = true;
-                        return;
-                    }
-                    i = at + 1;
-                }
-                None => break,
-            }
-        }
-        let keep = window.len().saturating_sub(longest - 1);
-        self.tail = window.split_off(keep);
-    }
-}
-
-/// How a native deck's `presentation.json` names the content type of a
-/// movie or a sound (`deckcraft_format` writes it compact).
-const NATIVE_MEDIA_TYPES: &[&[u8]] = &[b"\"contentType\":\"audio/", b"\"contentType\":\"video/"];
-
 /// The guard for a zip (module doc).
 fn zip(b: &[u8]) -> Result<Format, String> {
     let dir = directory(b)?;
     read_alike(b, &dir)?;
     let entries = &dir.entries;
+    if let Some(why) = crate::media_over(binary_total(entries)) {
+        return Err(crate::too_large_deck(why));
+    }
     // What it is (module doc): a native deck by deckcraft's own marker,
     // which the engine tries first, else an Office package by its
     // content-type list in the directory both readers read alike. The
@@ -747,50 +622,11 @@ fn zip(b: &[u8]) -> Result<Format, String> {
     } else {
         return Err(fail(Code::Unsupported, "this zip is not a presentation the deck engine reads (.pptx or .deckcraft)"));
     };
-    // The content types a package declares, whichever reader takes it.
-    let (defaults, overrides) = match package {
-        Some(types) => {
-            if types.declared > MAX_TYPES_BYTES {
-                return Err(held(format!("the presentation's content-type list is larger than the {MAX_TYPES_BYTES} bytes the deck service reads (#448)")));
-            }
-            let xml = inflate(b, types, true, &mut |_| {})?.kept.unwrap_or_default();
-            content_types(&String::from_utf8_lossy(&xml))
-        }
-        None => (Vec::new(), Vec::new()),
-    };
     for e in entries {
-        let mut scan = Scan::new(NATIVE_MEDIA_TYPES);
-        let watch_json = e.name == "presentation.json";
-        let inflated = inflate(b, e, false, &mut |chunk| {
-            if watch_json {
-                scan.feed(chunk)
-            }
-        })?;
+        let inflated = inflate(b, e, false, &mut |_| {})?;
         // An Office package's embedded object may be a zip: nothing unzips it.
         if zip_signature(&inflated.head) && !(format == Format::Pptx && embedded_object(&e.name)) {
             return Err(held(format!("the presentation holds a zip inside its zip (`{}`), which the deck service does not open (#448)", shown(&e.name))));
-        }
-        let lower = e.name.to_ascii_lowercase();
-        let declared_type = overrides
-            .iter()
-            .find(|(part, _)| *part == lower)
-            .or_else(|| defaults.iter().find(|(ext, _)| *ext == e.extension()))
-            .map(|(_, ct)| ct.as_str());
-        let media = if MEDIA_EXTENSIONS.contains(&e.extension().as_str()) {
-            Some("a movie or sound file")
-        } else if declared_type.is_some_and(|ct| ct.starts_with("audio/") || ct.starts_with("video/")) {
-            Some("a part its package says is a movie or sound")
-        } else {
-            media_signature(&inflated.head)
-        };
-        if let Some(what) = media {
-            return Err(held(format!(
-                "the presentation holds video or audio (`{}`, {what}), which the deck service does not open yet (#448)",
-                shown(&e.name)
-            )));
-        }
-        if scan.found {
-            return Err(held("the presentation holds video or audio, which the deck service does not open yet (#448)"));
         }
     }
     Ok(format)
@@ -1229,7 +1065,7 @@ mod tests {
     }
 
     #[test]
-    fn embedded_objects_pass_and_other_nested_zips_and_media_are_held() {
+    fn embedded_objects_and_media_pass_and_other_nested_zips_are_held() {
         let inner = zip(&[Part::deflated("[Content_Types].xml", b"<Types/>"), Part::deflated("xl/workbook.xml", b"<workbook/>")]);
         // A chart's workbook, an embedded document or object: zips that
         // nothing unzips, under the package's embeddings.
@@ -1269,22 +1105,30 @@ mod tests {
         bomb[body + 64..body + 128].fill(0xFF);
         let e = coded(check("bomb.pptx", &bomb), "held");
         assert!(e.contains("100 to 1"), "{e}");
-        // Media under the embeddings is still media.
-        coded(check("movie.pptx", &package(vec![Part::stored("ppt/embeddings/clip.mp4", b"\0\0\0\x18ftypisom")], "")), "held");
-        // Media by extension, by declared type, by signature; in a native
-        // deck by signature and by its manifest's content type.
-        let e = coded(check("movie.pptx", &package(vec![Part::stored("ppt/media/media1.mp4", b"\0\0\0\0data")], "")), "held");
-        assert!(e.contains("video or audio") && e.contains("ppt/media/media1.mp4"), "{e}");
-        coded(check("movie.pptx", &package(vec![Part::stored("ppt/media/clip.bin", b"0123")], "<Override PartName=\"/ppt/media/clip.bin\" ContentType=\"video/mp4\"/>")), "held");
-        coded(check("sound.pptx", &package(vec![Part::stored("ppt/media/a.dat", b"0123")], "<Default Extension=\"dat\" ContentType='audio/x-dat'/>")), "held");
-        coded(check("sound.pptx", &package(vec![Part::deflated("ppt/media/a.bin", b"RIFF\x10\0\0\0WAVEfmt ")], "")), "held");
-        coded(check("movie.pptx", &package(vec![Part::stored("ppt/media/b.bin", b"\0\0\0\x18ftypisom")], "")), "held");
-        coded(check("sound.deckcraft", &native(vec![Part::stored("media/9", b"ID3\x04\0\0\0")], "{}")), "held");
+        // Audio and video pass like any other part, however they show: by
+        // extension, by declared type, by signature, under the embeddings,
+        // in a native deck by signature and by its manifest's content type.
+        // Nothing the service runs decodes them (module doc).
+        let movie = b"\0\0\0\x18ftypisom".as_slice();
+        for (name, part, types) in [
+            ("movie.pptx", Part::stored("ppt/media/media1.mp4", movie), ""),
+            ("movie.pptx", Part::stored("ppt/media/clip.bin", b"0123"), "<Override PartName=\"/ppt/media/clip.bin\" ContentType=\"video/mp4\"/>"),
+            ("sound.pptx", Part::stored("ppt/media/a.dat", b"0123"), "<Default Extension=\"dat\" ContentType='audio/x-dat'/>"),
+            ("sound.pptx", Part::deflated("ppt/media/a.bin", b"RIFF\x10\0\0\0WAVEfmt "), ""),
+            ("movie.pptx", Part::stored("ppt/embeddings/clip.mp4", movie), ""),
+        ] {
+            assert_eq!(check(name, &package(vec![part], types)), Ok(Format::Pptx), "{name}");
+        }
+        assert_eq!(check("sound.deckcraft", &native(vec![Part::stored("media/9", b"ID3\x04\0\0\0")], "{}")), Ok(Format::Native));
         let json = "{\"presentation\":{\"media\":[{\"id\":9,\"name\":\"a.wav\",\"contentType\":\"audio/wav\"}]}}";
-        let e = coded(check("sound.deckcraft", &native(vec![], json)), "held");
-        assert!(e.contains("video or audio"), "by the manifest's content type: {e}");
-        // A type declared for an extension no part has is no media.
-        assert_eq!(check("deck.pptx", &package(vec![], "<Default Extension=\"wav\" ContentType=\"audio/wav\"/>")), Ok(Format::Pptx));
+        assert_eq!(check("sound.deckcraft", &native(vec![], json)), Ok(Format::Native));
+        // Media is still held to every bound: a movie that lies about its
+        // size, or compresses past the ratio, is refused.
+        let liar = Part { declared: Some(10), ..Part::deflated("ppt/media/media1.mp4", &[movie, &[0u8; 4096]].concat()) };
+        coded(check("movie.pptx", &package(vec![liar], "")), "damaged");
+        let bombed = package(vec![Part::deflated("ppt/media/media1.mp4", &[movie.to_vec(), vec![0u8; 16 << 20]].concat())], "");
+        let e = coded(check("movie.pptx", &bombed), "held");
+        assert!(e.contains("100 to 1"), "{e}");
     }
 
     /// The two parts every package below starts with.
@@ -1405,19 +1249,19 @@ mod tests {
         coded(check("t.pptx", &with([0xCAFEu16.to_le_bytes(), 9u16.to_le_bytes()].concat())), "damaged");
         // ZIP64: a field of 24 bytes gives all three values over the 32-bit
         // ones, to the engine's reader and so to the guard. Here it moves an
-        // innocent slide onto a movie no header names, which the guard then
+        // innocent slide onto a zip no header names, which the guard then
         // finds as that reader would.
-        let movie = b"\0\0\0\x18ftypisom-a-movie".to_vec();
-        let n = movie.len() as u64;
+        let hidden = zip(&[Part::stored("a", b"b")]);
+        let n = hidden.len() as u64;
         let moved = field(0x0001, &[n.to_le_bytes(), n.to_le_bytes(), 0u64.to_le_bytes()].concat());
         let parts = vec![
-            Part { hidden: true, ..Part::stored("hidden.bin", &movie) },
+            Part { hidden: true, ..Part::stored("hidden.bin", &hidden) },
             Part::deflated("[Content_Types].xml", b"<Types/>"),
             Part::deflated("ppt/presentation.xml", b"<p:presentation/>"),
             Part { extra: moved, ..Part::stored("ppt/slides/slide1.xml", b"<p:sld/>") },
         ];
         let e = coded(check("moved.pptx", &zip(&parts)), "held");
-        assert!(e.contains("video or audio") && e.contains("ppt/slides/slide1.xml"), "{e}");
+        assert!(e.contains("zip inside its zip") && e.contains("ppt/slides/slide1.xml"), "{e}");
         // And a ZIP64 field too short for what it must give.
         let short = Part { declared: Some(0xFFFF_FFFF), extra: field(0x0001, &[0u8; 4]), ..Part::stored("ppt/x.xml", b"x") };
         coded(check("short.pptx", &package(vec![short], "")), "damaged");
@@ -1449,18 +1293,5 @@ mod tests {
         let ours = zip_of("octosense-deck-service");
         assert_eq!(ours, zip_of("deckcraft-pptx"));
         assert_eq!(ours, zip_of("deckcraft-format"));
-    }
-
-    #[test]
-    fn the_streaming_scan_finds_a_needle_across_chunks() {
-        const NEEDLES: &[&[u8]] = &[b"\"contentType\":\"audio/"];
-        let mut scan = Scan::new(NEEDLES);
-        scan.feed(b"{\"media\":[{\"content");
-        assert!(!scan.found);
-        scan.feed(b"Type\":\"audio/wav\"}]}");
-        assert!(scan.found);
-        let mut scan = Scan::new(NEEDLES);
-        scan.feed(b"\"contentType\":\"image/png\"");
-        assert!(!scan.found);
     }
 }

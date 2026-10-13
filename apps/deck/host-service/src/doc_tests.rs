@@ -8,6 +8,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use deckcraft_engine::cmd::file as engine_file;
+use deckcraft_engine::render;
 use deckcraft_engine::Session;
 use deckcraft_model::text::RunKind;
 use deckcraft_model::{Presentation, ShapeId};
@@ -475,7 +476,6 @@ fn hostile() -> Vec<(&'static str, Vec<u8>, &'static str)> {
     let nested = fx::package(vec![Part::stored("ppt/slides/inner.zip", &fx::zip(&[Part::stored("a", b"b")]))], "");
     // A chart's workbook that is a zip bomb: refused by its ratio.
     let workbook_bomb = fx::package(vec![Part::deflated("ppt/embeddings/Microsoft_Excel_Worksheet1.xlsx", &[fx::zip(&[Part::stored("a", b"b")]), vec![0u8; 16 << 20]].concat())], "");
-    let media = fx::package(vec![Part::stored("ppt/media/media1.mp4", b"\0\0\0\x18ftypisom")], "");
     // A zip whose end record is `end(directory size, directory offset)`.
     let ended = |parts: &[Part], end: &dyn Fn(u32, u32) -> Vec<u8>| {
         let l = fx::layout(parts);
@@ -515,7 +515,6 @@ fn hostile() -> Vec<(&'static str, Vec<u8>, &'static str)> {
         ("hidden_end.pptx", hidden, "damaged"),
         ("prepended.pptx", prepended, "damaged"),
         ("shifted.pptx", shifted, "damaged"),
-        ("media.pptx", media, "held"),
         ("locked.pptx", fx::ole(&["EncryptionInfo", "EncryptedPackage"]), "protected"),
         ("legacy.ppt", fx::ole(&["PowerPoint Document", "Current User"]), "unsupported"),
     ]
@@ -625,16 +624,16 @@ fn a_package_with_its_content_types_late_opens_on_every_path() {
     w.ok("convert", json!({ "path": "late.pptx", "out": "late.deckcraft" }));
     w.ok("run", json!({ "path": "late.pptx", "cmds": [] }));
     assert_eq!(engine_reads(), before + 7, "every path read it through the engine");
-    // Still behind every bound: the same layout with a movie in it, with a
-    // zip bomb in it, or with its entry counts disagreeing never reaches
+    // Still behind every bound: the same layout with a zip inside it, with
+    // a zip bomb in it, or with its entry counts disagreeing never reaches
     // the engine.
-    let movie = fx::with_last(&pptx(&sample(4)), "[Content_Types].xml", vec![Part::stored("ppt/media/clip.mp4", b"\0\0\0\x18ftypisom")]);
+    let nested = fx::with_last(&pptx(&sample(4)), "[Content_Types].xml", vec![Part::stored("ppt/slides/inner.zip", &fx::zip(&[Part::stored("a", b"b")]))]);
     let bomb = fx::with_last(&pptx(&sample(4)), "[Content_Types].xml", vec![Part::deflated("ppt/slides/slide9.xml", &vec![0u8; 16 << 20])]);
     let mut counted = late.clone();
     let end = counted.len() - 22;
     let total = u16::from_le_bytes([counted[end + 10], counted[end + 11]]);
     counted[end + 8..end + 10].copy_from_slice(&(total + 1).to_le_bytes());
-    for (name, bytes, code) in [("late-movie.pptx", movie, "held"), ("late-bomb.pptx", bomb, "held"), ("late-counted.pptx", counted, "damaged")] {
+    for (name, bytes, code) in [("late-nested.pptx", nested, "held"), ("late-bomb.pptx", bomb, "held"), ("late-counted.pptx", counted, "damaged")] {
         w.put(name, &bytes);
         let before = engine_reads();
         coded(&w.err("open", json!({ "path": name })), code);
@@ -738,6 +737,271 @@ fn the_inspector_reads_the_decks_design_and_its_objects() {
     w.ok("table", json!({ "doc": again, "slide": ids[2], "id": table["id"], "op": "options", "header_row": false, "banded_columns": true }));
     let options = shapes(ids[2]).into_iter().find(|s| s["table"].is_object()).unwrap()["table"]["options"].clone();
     assert_eq!((options["header_row"].clone(), options["banded_columns"].clone(), options["banded_rows"].clone()), (json!(false), json!(true), json!(true)), "{options}");
+}
+
+// ------------------------------------------------------------ audio and video
+
+/// A solid red picture, `n` pixels square.
+fn red_png(n: u32) -> Vec<u8> {
+    render::Image { width: n, height: n, pixels: [255u8, 0, 0, 255].repeat((n * n) as usize) }.to_png()
+}
+
+/// The straight colour of pixel (`x`, `y`) of `img`.
+fn rgba(img: &render::Image, x: u32, y: u32) -> [u8; 4] {
+    let px = img.to_straight();
+    let i = ((y * img.width + x) * 4) as usize;
+    [px[i], px[i + 1], px[i + 2], px[i + 3]]
+}
+
+/// Where `with_clips` puts its video on slide 1 (points), and its sound on
+/// slide 3.
+const VIDEO_BOX: [f64; 4] = [700.0, 420.0, 240.0, 100.0];
+const SOUND_BOX: [f64; 4] = [700.0, 380.0, 96.0, 96.0];
+
+/// A deck as deckcraft writes one, with a video on slide 1 (with a red
+/// poster, unless `poster` is false) and a sound on slide 3, their bytes
+/// `video` and `sound`: carried, never decoded.
+fn with_clips(video: &[u8], sound: &[u8], poster: bool) -> Presentation {
+    use deckcraft_model::{MediaClip, MediaId, MediaItem, Shape, ShapeKind, Xfrm};
+    let mut p = sample(3);
+    let clip = |p: &mut Presentation, name: &str, content_type: &str, data: Vec<u8>| {
+        let id = MediaId(p.alloc_id());
+        p.media.push(MediaItem { id, name: name.into(), content_type: content_type.into(), data: Arc::new(data), link: None });
+        id
+    };
+    let film = clip(&mut p, "media1.mp4", "video/mp4", video.to_vec());
+    let still = poster.then(|| clip(&mut p, "image9.png", "image/png", red_png(8)));
+    let tone = clip(&mut p, "media2.m4a", "audio/mp4", sound.to_vec());
+    let shape = |p: &mut Presentation, name: &str, [x, y, w, h]: [f64; 4], clip: MediaClip| Shape {
+        id: ShapeId(p.alloc_id()),
+        name: name.into(),
+        xfrm: Some(Xfrm::new(x, y, w, h)),
+        kind: ShapeKind::Media(clip),
+        ..Default::default()
+    };
+    let video_shape = shape(&mut p, "Video 1", VIDEO_BOX, MediaClip { media: film, video: true, poster: still, volume: 1.0, ..Default::default() });
+    let sound_shape = shape(&mut p, "Sound 1", SOUND_BOX, MediaClip { media: tone, video: false, volume: 1.0, ..Default::default() });
+    Arc::make_mut(&mut p.slides[0]).shapes.push(video_shape);
+    Arc::make_mut(&mut p.slides[2]).shapes.push(sound_shape);
+    p
+}
+
+/// The deck the open document `doc` holds.
+fn held_deck(doc: &str) -> Presentation {
+    docs::with_open(doc, |d| d.session.doc().unwrap().doc.as_ref().clone()).unwrap()
+}
+
+/// Bytes that would trip a video decoder if one ever saw them: an MP4 whose
+/// boxes claim 4 GiB and 16 EiB and a sample table of four billion samples.
+fn hostile_movie() -> Vec<u8> {
+    let mut b = b"\0\0\0\x18ftypisom\0\0\x02\0isomiso2".to_vec();
+    b.extend(0xFFFF_FFFFu32.to_be_bytes());
+    b.extend(b"moov");
+    b.extend(0x14u32.to_be_bytes());
+    b.extend(b"stsz\0\0\0\0");
+    b.extend(0xFFFF_FFFFu32.to_be_bytes());
+    b.extend(0xFFFF_FFFFu32.to_be_bytes());
+    b.extend(1u32.to_be_bytes());
+    b.extend(b"mdat");
+    b.extend(u64::MAX.to_be_bytes());
+    b.extend((0..4096u32).map(|i| (i.wrapping_mul(2_654_435_761) >> 24) as u8));
+    b
+}
+
+/// The same for a sound: a WAV of 65,535 channels whose data claims 4 GiB.
+fn hostile_sound() -> Vec<u8> {
+    let mut b = b"RIFF\xFF\xFF\xFF\xFFWAVEfmt \x10\0\0\0\x01\0\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x20\0data".to_vec();
+    b.extend(0xFFFF_FFFFu32.to_be_bytes());
+    b.extend((0..2048u32).map(|i| (i.wrapping_mul(40_503) >> 8) as u8));
+    b
+}
+
+/// A deck holding a video and a sound opens from a package and from a
+/// native file, draws the video's poster (and a film glyph without one, a
+/// speaker glyph for the sound), saves natively and opens again, and
+/// exports a package with the clips' bytes unchanged, and a PDF.
+#[test]
+fn a_deck_with_video_and_sound_opens_draws_saves_and_exports() {
+    let w = World::new();
+    let video = b"\0\0\0\x18ftypisom\0\0\x02\0isomiso2mp41 a small movie".to_vec();
+    let sound = b"\0\0\0\x18ftypM4A \0\0\0\0M4A isom a small sound".to_vec();
+    let deck = with_clips(&video, &sound, true);
+    w.put("clips.pptx", &pptx(&deck));
+    w.put("clips.deckcraft", &native(&deck));
+    let carries = |d: &Presentation| d.media.iter().any(|m| *m.data == video) && d.media.iter().any(|m| *m.data == sound);
+    let [vx, vy, vw, vh] = VIDEO_BOX;
+    let centre = ((vx + vw / 2.0) as u32, (vy + vh / 2.0) as u32);
+    for path in ["clips.pptx", "clips.deckcraft"] {
+        let doc = w.open(path);
+        let held = held_deck(&doc);
+        assert!(carries(&held), "{path}: the clips come through as bytes");
+        // The video's poster, drawn where the video sits.
+        let img = render::render_slide(&held, 0, &render::RenderOpts { scale: 1.0, ..Default::default() });
+        let [r, g, b, _] = rgba(&img, centre.0, centre.1);
+        assert!(r > 200 && g < 60 && b < 60, "{path}: the poster at the video's centre is red, not {:?}", (r, g, b));
+        let ids = w.slide_ids(&doc);
+        for step in [None, Some(0)] {
+            let mut args = json!({ "doc": doc, "slide": ids[0], "width": 960 });
+            if let Some(n) = step {
+                args["step"] = json!(n);
+            }
+            w.ok("view", args);
+        }
+        w.ok("cover", json!({ "path": path }));
+        // Saved natively, it opens again with the same bytes.
+        let saved = format!("saved-{}.deckcraft", path.replace('.', "-"));
+        w.ok("save", json!({ "doc": doc, "path": saved }));
+        let again = w.open(&saved);
+        assert!(carries(&held_deck(&again)), "{path}: saved and opened again");
+        // A package export carries the clips' bytes unchanged; a PDF draws.
+        let out = format!("out-{}.pptx", path.replace('.', "-"));
+        w.ok("export", json!({ "doc": doc, "kind": "pptx", "out": out }));
+        let exported = std::fs::read(w.root.join(&out)).unwrap();
+        assert!(carries(&deckcraft_pptx::import(&exported).unwrap()), "{path}: the package export keeps the bytes");
+        assert!(carries(&held_deck(&w.open(&out))), "{path}: and opens again");
+        let pdf = w.ok("export", json!({ "doc": doc, "kind": "pdf", "out": format!("out-{}.pdf", path.replace('.', "-")) }));
+        assert_eq!(pdf["pages"], 3, "{pdf}");
+        for d in [doc, again] {
+            w.ok("close", json!({ "doc": d, "discard": true }));
+        }
+    }
+    // Without a poster, the video is a dark frame with a film glyph; the
+    // sound, a speaker glyph.
+    let bare = with_clips(&video, &sound, false);
+    let img = render::render_slide(&bare, 0, &render::RenderOpts { scale: 1.0, ..Default::default() });
+    let [r, g, b, _] = rgba(&img, (vx + 4.0) as u32, (vy + 4.0) as u32);
+    assert!(r < 60 && g < 60 && b < 60, "the dark frame behind the glyph, not {:?}", (r, g, b));
+    let mut silent = bare.clone();
+    Arc::make_mut(&mut silent.slides[2]).shapes.pop();
+    let opts = render::RenderOpts { scale: 1.0, ..Default::default() };
+    assert_ne!(render::render_slide(&bare, 2, &opts).pixels, render::render_slide(&silent, 2, &opts).pixels, "the speaker glyph is drawn");
+}
+
+/// Clip bytes that would trip a decoder (`hostile_movie`, `hostile_sound`)
+/// ride along on every path: opened, inspected, drawn with and without a
+/// build step, presented, saved, exported every way, edited, undone and
+/// redone. That proves nothing the service runs decodes them. The four
+/// commands that would decode them stay held through the door.
+#[test]
+fn hostile_clip_bytes_are_carried_on_every_path_and_never_decoded() {
+    let w = World::new();
+    let (movie, noise) = (hostile_movie(), hostile_sound());
+    let deck = with_clips(&movie, &noise, false);
+    w.put("hostile.pptx", &pptx(&deck));
+    w.put("hostile.deckcraft", &native(&deck));
+    for path in ["hostile.pptx", "hostile.deckcraft"] {
+        // The file methods, the agent's tools among them.
+        w.ok("info", json!({ "path": path }));
+        w.ok("text", json!({ "path": path }));
+        for out in ["r.png", "c.pptx", "c.deckcraft", "c.txt", "c.pdf"] {
+            let (method, args) = if out.ends_with(".png") { ("render", json!({ "path": path, "out": format!("{path}-{out}") })) } else { ("convert", json!({ "path": path, "out": format!("{path}-{out}") })) };
+            w.ok(method, args);
+        }
+        w.ok("run", json!({ "path": path, "cmds": [{ "id": "document.inspect" }, { "id": "slide.inspect", "params": { "index": 0 } }] }));
+        for id in ["media.info", "media.posterFrame", "insert.video", "insert.audio"] {
+            let e = w.err("run", json!({ "path": path, "cmds": [{ "id": "slide.go", "params": { "index": 0 } }, { "id": id }] }));
+            assert!(e.contains(&format!("`{id}` is held back")), "{id}: {e}");
+        }
+        // The open document, on every method that reads, draws or writes.
+        let doc = w.open(path);
+        let ids = w.slide_ids(&doc);
+        w.ok("slides", json!({ "doc": doc }));
+        for (i, s) in ids.iter().enumerate() {
+            w.ok("slide", json!({ "doc": doc, "slide": s }));
+            w.ok("view", json!({ "doc": doc, "slide": s, "width": 640 }));
+            w.ok("view", json!({ "doc": doc, "slide": s, "width": 640, "step": 0 }));
+            w.ok("view", json!({ "doc": doc, "slide": s, "width": 320, "edit": true }));
+            assert!(w.ok("hit", json!({ "doc": doc, "slide": s, "at": [10, 10] })).is_object(), "slide {i}");
+        }
+        w.ok("show", json!({ "doc": doc }));
+        w.ok("layouts", json!({ "doc": doc }));
+        w.ok("cover", json!({ "path": path }));
+        w.ok("notes", json!({ "doc": doc, "slide": ids[0], "text": "Hostile bytes ride along" }));
+        w.ok("slides_op", json!({ "doc": doc, "op": "duplicate", "slides": [ids[0]] }));
+        w.ok("undo", json!({ "doc": doc }));
+        w.ok("undo", json!({ "doc": doc }));
+        w.ok("redo", json!({ "doc": doc }));
+        let stem = path.replace('.', "-");
+        w.ok("save", json!({ "doc": doc, "path": format!("{stem}-saved.deckcraft") }));
+        w.ok("export", json!({ "doc": doc, "kind": "pptx", "out": format!("{stem}.pptx") }));
+        w.ok("export", json!({ "doc": doc, "kind": "pdf", "out": format!("{stem}.pdf") }));
+        w.ok("export", json!({ "doc": doc, "kind": "images", "out_dir": format!("{stem}-pictures"), "width": 320 }));
+        w.ok("export", json!({ "doc": doc, "kind": "outline", "out": format!("{stem}.txt") }));
+        let held = held_deck(&doc);
+        assert!(held.media.iter().any(|m| *m.data == movie) && held.media.iter().any(|m| *m.data == noise), "{path}: carried unchanged");
+        w.ok("close", json!({ "doc": doc }));
+    }
+}
+
+/// A deck whose binary parts declare just past the door's 128 MiB of media,
+/// each part inside every other bound of the guard, is `too_large:` on all
+/// seven paths before the engine reads a byte (the guard's pre-read bound,
+/// in the session ceiling's words), whether its media is a native deck's or
+/// a package's parts. One just under opens on every path.
+#[test]
+fn a_deck_past_the_media_ceiling_is_too_large_before_the_engine_reads() {
+    use deckcraft_model::{MediaId, MediaItem};
+    let w = World::new();
+    let item = guard::RATIO_GRACE as usize;
+    let filler = |k: usize| {
+        let mut data = vec![0u8; item];
+        data[..8].copy_from_slice(&(k as u64).to_le_bytes());
+        data
+    };
+    let native_with = |n: usize| {
+        let mut p = sample(1);
+        for k in 0..n {
+            let id = MediaId(p.alloc_id());
+            p.media.push(MediaItem { id, name: format!("filler{k}.bin"), content_type: "application/octet-stream".into(), data: Arc::new(filler(k)), link: None });
+        }
+        native(&p)
+    };
+    let over = MAX_RUN_MEDIA as usize / item + 1;
+    assert!((over * item) as u64 > MAX_RUN_MEDIA && ((over - 1) * item) as u64 <= MAX_RUN_MEDIA, "just over, and just under");
+    let package = fx::package((0..over).map(|k| Part::deflated(&format!("ppt/media/filler{k}.bin"), &filler(k))).collect(), "");
+    let paths = |name: &str| {
+        vec![
+            ("open", json!({ "path": name })),
+            ("cover", json!({ "path": name })),
+            ("info", json!({ "path": name })),
+            ("text", json!({ "path": name })),
+            ("render", json!({ "path": name, "out": format!("{name}.png") })),
+            ("convert", json!({ "path": name, "out": format!("{name}.txt") })),
+            ("run", json!({ "path": name, "cmds": [] })),
+        ]
+    };
+    for (name, bytes) in [("over.deckcraft", native_with(over)), ("over.pptx", package)] {
+        assert!(bytes.len() < 4 << 20, "{name}: a small file, {} bytes", bytes.len());
+        w.put(name, &bytes);
+        let before = engine_reads();
+        for (method, args) in paths(name) {
+            let e = w.err(method, args);
+            coded(&e, "too_large");
+            assert!(e.contains(&format!("bytes of media, more than the {MAX_RUN_MEDIA} the door allows")), "{name} {method}: {e}");
+        }
+        assert_eq!(engine_reads(), before, "{name}: refused before the engine read a byte");
+    }
+    w.put("under.deckcraft", &native_with(over - 1));
+    let before = engine_reads();
+    for (method, args) in paths("under.deckcraft") {
+        w.ok(method, args);
+    }
+    assert_eq!(engine_reads(), before + 7, "just under: every path read it");
+    assert_eq!(docs::open_count(), 1);
+    // After the engine reads, every path also holds the deck's own media to
+    // the same ceiling, in the same words (`media_ceiling`).
+    let deck = |n: usize| {
+        let mut p = sample(1);
+        for k in 0..n {
+            let id = MediaId(p.alloc_id());
+            p.media.push(MediaItem { id, name: format!("filler{k}.bin"), content_type: "application/octet-stream".into(), data: Arc::new(filler(k)), link: None });
+        }
+        p
+    };
+    let e = media_ceiling(&deck(over)).unwrap_err();
+    coded(&e, "too_large");
+    assert!(e.contains("bytes of media"), "{e}");
+    assert_eq!(media_ceiling(&deck(over - 1)), Ok(()));
 }
 
 /// The import guard passes what the engine itself writes, at the sizes the

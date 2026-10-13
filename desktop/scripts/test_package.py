@@ -455,5 +455,35 @@ class ConfigTests(unittest.TestCase):
         self.assertIn(f'"{package.RECEIPT_NAME}"', launch)
 
 
+class UpdaterPackagingTests(unittest.TestCase):
+    def test_helper_and_protocol_marker_are_packaged_with_or_without_kernel(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            binary, resources = root / package.UPDATER_NAME, root / 'resources'
+            binary.write_bytes(b'helper fixture')
+            binary.chmod(0o755)
+            resources.mkdir()
+            sidecar, receipt = package.stage_updater(binary, root / 'out', resources, 'aarch64-apple-darwin')
+            staged = sidecar.with_name(package.UPDATER_NAME + '-aarch64-apple-darwin')
+            self.assertEqual(staged.read_bytes(), binary.read_bytes())
+            self.assertEqual(staged.stat().st_mode & 0o777, 0o755)
+            self.assertEqual(receipt['sha256'], hashlib.sha256(binary.read_bytes()).hexdigest())
+            self.assertEqual(json.loads((resources / 'octosense-updater.json').read_text()), {'protocol': 1})
+            for kernel in (None, root / 'octos-kernel'):
+                config = package.packager_config({}, version='0.1.0-rc.7', binaries_dir=root,
+                    out_dir=root / 'dist', resources=resources, kernel=kernel, updater=sidecar)
+                self.assertEqual(config['externalBinaries'], [str(p) for p in (kernel, sidecar) if p])
+
+    def test_a_missing_or_changed_helper_cannot_be_relabelled_as_a_release(self):
+        with tempfile.TemporaryDirectory() as temp:
+            binary = Path(temp) / package.UPDATER_NAME
+            with self.assertRaises((OSError, RuntimeError)):
+                package.verify_release_identity(binary, 'desktop-v0.1.0-rc.7')
+            binary.write_bytes(b'helper version one')
+            package.record_release_identity(binary, 'desktop-v0.1.0-rc.7')
+            binary.write_bytes(b'different helper')
+            with self.assertRaises(RuntimeError):
+                package.verify_release_identity(binary, 'desktop-v0.1.0-rc.7')
+
 if __name__ == "__main__":
     unittest.main()

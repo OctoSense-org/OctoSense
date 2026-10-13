@@ -4,6 +4,8 @@
 
 **预发布版下载：** [桌面版 0.1.0-rc.6](https://github.com/OctoSense-org/OctoSense/releases/tag/desktop-v0.1.0-rc.6) 包含应用契约 1.12.0、WASI TCP/UDP/DNS、共享组件、能力仅用于声明的公开 API 及 OctoSense Updates。请核对带签名的校验和，并查看发行说明中的各平台验收范围。RC5 用户须先手动升级一次。内嵌网页需要满足[各平台浏览器前置条件](../docs/desktop-embedded-browser.zh-CN.md#运行条件)；其他平台限制见[宿主 OS API 状态](../docs/host-os-api-status.zh-CN.md)。
 
+源码构建还会打包一个小型 macOS 更新辅助程序和启动协议标记。**Install & Restart** 沿用应用关闭确认、保留旧应用包，并使用相同配置重新启动。RC6 仍需手动替换，详见[更新器指南](../docs/updater.zh-CN.md)。
+
 **服务商登录**：GitHub 和 Google 登录仍需[发行方提供注册信息](../crates/oauth-service/README.zh-CN.md#配置发行版本维护者)。发布工作流未配置这些信息；从 App Hub 安装连接账户的应用也不会补上。
 
 **初次阅读源码**？先读[桌面、Home、ROM 与系统应用导读](docs/code-walkthrough.zh-CN.md)，再读 [Agent 与 Tokio 导读](../docs/architecture-walkthrough.zh-CN.md)。前者追踪启动、原生托管、脚本 bundle、应用数据和 Android 平台边界。

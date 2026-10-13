@@ -4,6 +4,8 @@ English | [简体中文](README.zh-CN.md)
 
 **Prerelease download:** [desktop 0.1.0-rc.6](https://github.com/OctoSense-org/OctoSense/releases/tag/desktop-v0.1.0-rc.6) includes app-contract 1.12.0, WASI TCP/UDP/DNS, shared components, declaration-only public APIs and OctoSense Updates. Check its signed checksums and release notes for platform acceptance limits. RC5 users need one manual upgrade. Embedded pages need the [platform browser prerequisites](../docs/desktop-embedded-browser.md#runtime-requirements); other platform limits remain in [Host OS API status](../docs/host-os-api-status.md).
 
+The source build also packages a small macOS update helper and startup protocol marker. **Install & Restart** uses the existing app close review, keeps the previous bundle, and reopens the same profile. RC6 still requires manual replacement; see [the updater guide](../docs/updater.md).
+
 **Provider sign-in:** GitHub and Google login still need [distributor-supplied registrations](../crates/oauth-service/README.md#configure-a-release-maintainers). The release workflow does not configure them; installing a connected app from App Hub does not add them.
 
 **New to the code?** Read the [desktop, Home, ROM and system-app walkthrough](docs/code-walkthrough.md), then the [agent and Tokio walkthrough](../docs/architecture-walkthrough.md). The first follows launch, native hosting, script bundles, app data and Android platform boundaries.

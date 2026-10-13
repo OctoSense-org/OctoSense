@@ -33,7 +33,7 @@ OctoSense-System-Apps 仓库（已归档）。
 - **`model` 媒体 API** 使用宿主持有的供应商配置，执行有上限的图片、语音、向量和异步
   视频请求。应用声明 `model` 和精确宿主 API 版本；调用时检查供应商权益。见
   [媒体契约与验证范围](ai-providers/host-service/MEDIA.zh-CN.md)。
-- **`deck` 宿主服务**（`deck/host-service`，ADR 0013）把 deckcraft 演示文稿引擎放在 `deck.*` 之后：检查幻灯片、提取大纲文本、渲染 PNG、按标题和要点新建演示文稿，以及格式转换（pptx、原生格式、大纲、PDF），全部限制在调用方自己的文件夹内。它的应用是 Quick Deck（`quickdeck/bundle`），其调用在 Quick Deck 自己的存储中运行。它还为 Quick Deck v2 保持打开的文档（`apps/quickdeck/design/SERVICE.md`）：`deck.open` 和 `deck.create` 返回一个句柄，作用于它的方法（幻灯片、对象、文本、格式、设计、备注、切换效果、撤销与重做、把幻灯片绘制到渲染缓存、放映的顺序与动画步骤、保存与导出）都通过与系统代理的 `deck.run` 相同的入口运行经过审查的引擎命令，每次调用合为一个撤销步骤。服务打开的每个文件都先通过它自己的导入检查：在引擎读取之前，拒绝超出界限的 zip、音频和视频、加密的 `.pptx` 以及旧版 `.ppt`。
+- **`deck` 宿主服务**（`deck/host-service`，ADR 0013）把 deckcraft 演示文稿引擎放在 `deck.*` 之后：检查幻灯片、提取大纲文本、渲染 PNG、按标题和要点新建演示文稿，以及格式转换（pptx、原生格式、大纲、PDF），全部限制在调用方自己的文件夹内。它的应用是 Quick Deck（`quickdeck/bundle`），其调用在 Quick Deck 自己的存储中运行。它还为 Quick Deck v2 保持打开的文档（`apps/quickdeck/design/SERVICE.md`）：`deck.open` 和 `deck.create` 返回一个句柄，作用于它的方法（幻灯片、对象、文本、格式、设计、备注、切换效果、撤销与重做、把幻灯片绘制到渲染缓存、放映的顺序与动画步骤、保存与导出）都通过与系统代理的 `deck.run` 相同的入口运行经过审查的引擎命令，每次调用合为一个撤销步骤。服务打开的每个文件都先通过它自己的导入检查：在引擎读取之前，拒绝超出界限的 zip、加密的 `.pptx` 以及旧版 `.ppt`。演示文稿中的音频和视频会原样保留：显示其海报图，保存和导出时不作改动，并且从不解码或播放。
 - **`cad` 引擎服务**（`cad/host-service`）：cadcraft 制图引擎，提供 `cad.*` 方法（ADR 0013，暂无 bundle）——在调用方自己的文件夹内检查、查询、测量、渲染和转换 DXF/DWG 图纸。
 - **`light` 引擎服务**（`light/host-service`）把 lightcraft 的 RAW 显影引擎
   放在 `light.*` 方法之后（ADR 0013）：EXIF/XMP 元数据、显影控制目录、单张与

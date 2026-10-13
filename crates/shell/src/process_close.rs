@@ -308,6 +308,21 @@ impl ProcessCloseGate {
         ask
     }
 
+    /// An installation asks once without counting as a repeated user close.
+    /// Retrying a cancelled update can never escalate to forced termination.
+    pub fn quit_for_update(&mut self, clients: impl IntoIterator<Item = ClientId>, now: f64) -> QuitAsk {
+        let mut asked = Vec::new();
+        for client in clients {
+            if self.declared.contains(&client) && !self.pending.contains_key(&client) {
+                self.pending.insert(client, Pending::Awaiting { since: now });
+                asked.push(client);
+            }
+        }
+        asked.sort_unstable();
+        self.quit_waiting = !self.pending.is_empty();
+        QuitAsk { asked, forced: Vec::new() }
+    }
+
     /// A quit is waiting on apps here.
     pub fn quit_waiting(&self) -> bool {
         self.quit_waiting
@@ -316,6 +331,14 @@ impl ProcessCloseGate {
     /// Nothing is pending: no app is answering or asking.
     pub fn idle(&self) -> bool {
         self.pending.is_empty()
+    }
+
+    /// An updater-triggered quit was cancelled. Its unanswered requests must
+    /// not later reach the force-close timeout. No earlier close was pending
+    /// when the updater acquired this gate.
+    pub fn cancel_update_quit(&mut self) {
+        self.pending.clear();
+        self.quit_waiting = false;
     }
 
     /// Drop a waiting quit (a new close of one app, or the quit went).
@@ -341,6 +364,31 @@ pub fn take_quit_ready(modules: &mut CloseGate, apps: &mut ProcessCloseGate) -> 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn repeated_update_attempts_never_force_an_app() {
+        let mut gate = declared(&[1]);
+        for attempt in 0..10 {
+            let ask = gate.quit_for_update([1, 1, 9], attempt as f64);
+            assert_eq!(ask.asked, vec![1]);
+            assert!(ask.forced.is_empty());
+            assert!(gate.refused(1));
+            gate.cancel_update_quit();
+        }
+        assert_eq!(gate.close(1, 11.0), CloseStep::Ask);
+    }
+
+    #[test]
+    fn cancelled_update_does_not_force_an_unanswered_app_later() {
+        let mut gate = declared(&[1, 2]);
+        gate.quit([1, 2], 0.0);
+        gate.refused(1);
+        gate.cancel_update_quit();
+        assert!(!gate.quit_waiting());
+        assert!(gate.overdue(100.0).is_empty());
+        assert!(!gate.refused(2), "a late answer no longer holds an update");
+        assert_eq!(gate.quit([1, 2], 100.0).asked, vec![1, 2]);
+    }
 
     /// A no at an app's question says nothing to the shell: the waiting
     /// quit is dropped a minute after the last refusal (it quit the shell

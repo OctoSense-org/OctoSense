@@ -750,7 +750,7 @@ fn font_mark(chosen, scheme, pairs, major, minor){
 }
 fn open_detail(state){
     if state == "protected" { return "Quick Deck doesn't open password-protected files: OctoSense keeps passwords on its own sheets, and there isn't one for presentations." }
-    if state == "held" { return "It holds video or audio, or parts larger or more unusual than the deck engine reads safely yet (#448). Remove the media, or save a smaller copy, in the app that made it, then open it again." }
+    if state == "held" { return "It holds a zip inside the presentation, or parts larger or more unusual than Quick Deck takes (#448). Save a simpler copy in the app that made it, then open it again." }
     if state == "unsupported" { return "Word documents, Excel workbooks, older PowerPoint (.ppt), Keynote (.key), OpenDocument (.odp) and PDF files can't be opened here. Save the presentation as .pptx in the app that made it." }
     if state == "too_large" { return "It's beyond what the deck engine opens on this device." }
     if state == "full" { return "Close another deck's tab, then open this one again." }
@@ -1275,7 +1275,7 @@ fn slide_count(v){
 }
 fn doc_meta(d){
     if d.state == "protected" { return "Protected with a password" }
-    if d.state == "held" { return "Has video or audio" }
+    if d.state == "held" { return "Can't open this file" }
     if d.state == "unsupported" { return "Not a .pptx presentation" }
     if d.state != "" { return "Couldn't open this deck" }
     let m = deck_meta(d.slides, d.bytes)

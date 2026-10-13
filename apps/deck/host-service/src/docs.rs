@@ -501,7 +501,7 @@ pub(crate) fn open(a: &Json, cx: &Ctx) -> Result<Json, String> {
     let mut session = app_session();
     engine_file::add_opened(&mut session, &rel, None, deck);
     if let Some(why) = crate::Held::of(&session).over() {
-        return Err(too_large(format!("the deck holds {why}, more than the deck service opens")));
+        return Err(crate::too_large_deck(why));
     }
     let file = (format == Format::Native).then(|| rel.clone());
     let mut doc = new_doc(cx, owner, session, file)?;

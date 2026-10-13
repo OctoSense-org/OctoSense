@@ -665,6 +665,7 @@ pub(crate) fn read_guarded(area: &Area, rel: &str, key: &str, m: &str) -> Result
             fail(Code::Damaged, format!("the deck engine couldn't read it: {words}"))
         }
     })?;
+    media_ceiling(&deck)?;
     Ok((name, deck, format))
 }
 
@@ -722,6 +723,7 @@ fn read_deck(args: &Json, area: &Area, method: &str) -> Result<(Session, String)
     let bytes = std::fs::read(&path).map_err(|e| format!("deck.{method}: {rel}: {e}"))?;
     let format = guard::check(&rel, &bytes)?;
     let doc = engine_read(&rel, &bytes, format).map_err(|e| format!("deck.{method}: {e}"))?;
+    media_ceiling(&doc)?;
     let mut s = Session::new();
     engine_file::add_opened(&mut s, &rel, None, doc);
     Ok((s, rel))
@@ -1036,7 +1038,30 @@ impl Held {
         if let Some((n, max, what)) = counts.into_iter().find(|(n, max, _)| n > max) {
             return Some(format!("{n} {what}, more than the {max} the door allows"));
         }
-        (self.media > MAX_RUN_MEDIA).then(|| format!("{} bytes of media, more than the {MAX_RUN_MEDIA} the door allows", self.media))
+        media_over(self.media)
+    }
+}
+
+/// The media ceiling's words (the door's [`MAX_RUN_MEDIA`]), wherever it is
+/// met: before the engine reads (the import guard's declared total of a
+/// file's media and other binary parts), after it reads (the deck's media,
+/// on every path that opens a file), and in a session ([`Held::over`]).
+pub(crate) fn media_over(bytes: u64) -> Option<String> {
+    (bytes > MAX_RUN_MEDIA).then(|| format!("{bytes} bytes of media, more than the {MAX_RUN_MEDIA} the door allows"))
+}
+
+/// A deck past one of the session's ceilings, as every path answers it.
+pub(crate) fn too_large_deck(why: impl std::fmt::Display) -> String {
+    codes::too_large(format!("the deck holds {why}, more than the deck service opens"))
+}
+
+/// The media ceiling on a deck the engine has just read, before anything is
+/// done with it: the same words on all seven paths (`deck.open`,
+/// `deck.cover` and the file methods).
+fn media_ceiling(deck: &Presentation) -> Result<(), String> {
+    match media_over(deck.media.iter().map(|m| m.data.len() as u64).sum()) {
+        Some(why) => Err(too_large_deck(why)),
+        None => Ok(()),
     }
 }
 

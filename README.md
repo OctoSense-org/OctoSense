@@ -8,6 +8,8 @@ English | [简体中文](README.zh-CN.md)
 
 [OctoSense Updates](docs/updater.md) checks and downloads verified host releases, then opens the OS installation flow. It is available in desktop RC6. RC5 and older releases need one manual upgrade before using it for later versions.
 
+The source build adds macOS **Install & Restart**, with app close review and a retained previous bundle; this is not in RC6 yet. See the [updater guide](docs/updater.md#macos-install--restart-source-build-not-in-rc6).
+
 [Capabilities and execution boundaries](docs/capabilities.md) explains declaration-only APIs, consent, accounts and app isolation.
 
 **Desktop prerelease download:** [OctoSense 0.1.0-rc.6](https://github.com/OctoSense-org/OctoSense/releases/tag/desktop-v0.1.0-rc.6) includes app-contract 1.12.0, WASI TCP/UDP/DNS, shared components, GitHub-attested app installation and OctoSense Updates. Choose the package for your operating system and architecture. The release notes record verified checksums, GitHub signature, platform acceptance and remaining limits. This desktop release does not update Android Home.

@@ -34,7 +34,7 @@ Quick Deck（`os.quickdeck`）是 OctoSense 桌面版的演示文稿应用：演
 
 Undo 和 Redo 使用引擎的历史记录；Save 写入原生 `.deckcraft` 文件（`deck.undo`、`deck.redo`、`deck.save`、`deck.state`）。关闭有未保存更改的标签时会询问：保存、不保存或取消。
 
-每个页面都会处理这些状态：空的演示文稿库、正在渲染的幻灯片、损坏的演示文稿（"Couldn't open this deck" 及引擎给出的原因）、受密码保护的演示文稿（OctoSense 只在宿主的表单中处理密码，目前没有演示文稿用的表单，因此不打开）、引擎暂不打开的演示文稿（含视频或音频，或超出服务导入防护的部分，#448）、引擎不读取的格式（.ppt、.key、.odp、PDF）、已打开八个演示文稿、存储已满（标签栏下方出现提示条，状态栏变红）、关闭时有未保存的更改，以及设备上没有引擎（"The deck engine isn't available here"）或引擎版本较旧（"This OctoSense's deck engine is older than Quick Deck"）。
+每个页面都会处理这些状态：空的演示文稿库、正在渲染的幻灯片、损坏的演示文稿（"Couldn't open this deck" 及引擎给出的原因）、受密码保护的演示文稿（OctoSense 只在宿主的表单中处理密码，目前没有演示文稿用的表单，因此不打开）、引擎暂不打开的演示文稿（内含 zip，或超出服务导入防护的部分，#448）、引擎不读取的格式（.ppt、.key、.odp、PDF）、已打开八个演示文稿、存储已满（标签栏下方出现提示条，状态栏变红）、关闭时有未保存的更改，以及设备上没有引擎（"The deck engine isn't available here"）或引擎版本较旧（"This OctoSense's deck engine is older than Quick Deck"）。
 
 ## 从本设备打开演示文稿
 

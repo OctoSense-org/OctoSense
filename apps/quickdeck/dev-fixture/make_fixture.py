@@ -534,7 +534,7 @@ def main():
         refusals = {
             "decks/Damaged deck.deckcraft": "damaged: the engine couldn't read it: the archive's central directory is cut short",
             "imports/Payroll 2025.pptx": "protected: this presentation is encrypted and needs a password",
-            "imports/Town hall recording.pptx": "held: the presentation holds video, which Quick Deck can't open yet (#448)",
+            "imports/Town hall recording.pptx": "held: the presentation holds a zip inside its zip (`ppt/media/recording.zip`), which the deck service does not open (#448)",
             "imports/Minutes 2019.pptx": "unsupported: this is a legacy PowerPoint file (.ppt), not a .pptx presentation",
         }
         for path, error in refusals.items():

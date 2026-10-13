@@ -1,10 +1,13 @@
 //! Host-owned, explicit OctoSense updates from the project's public GitHub releases.
 //!
-//! This crate checks and downloads; it never launches installers or replaces the
-//! running application. Run its blocking public methods on a worker thread. No
+//! Checks and downloads run on a worker thread. The macOS submodule prepares
+//! replacement for a separate helper, after explicit, vetoable shutdown. No
 //! account, GitHub token, shell command or application-agent capability is used.
 //! A desktop release is offered only with GitHub's signature on its checksums
 //! (`signature.rs`).
+
+#[cfg(target_os = "macos")]
+pub mod macos;
 
 use semver::Version;
 use serde::Deserialize;

@@ -69,7 +69,7 @@ commands it runs (engine d0e57d7e; classes from `skill/safety.json`).
   | `damaged:` | the engine couldn't read it; the engine's reason follows |
   | `unsupported:` | not a presentation the engine reads: `.ppt`, `.key`, `.odp`, PDF |
   | `protected:` | an encrypted `.pptx`, which needs a password; v2 doesn't open these |
-  | `held:` | the deck holds audio or video, or its zip is beyond the import guard (#448) |
+  | `held:` | its zip is beyond the import guard (#448) |
   | `too_large:` | over a cap below |
   | `storage_full:` | the storage has no room |
   | `too_many_open:` | the caller already has 8 open documents |
@@ -136,8 +136,7 @@ commands it runs (engine d0e57d7e; classes from `skill/safety.json`).
   agent's `deck.info`. It refuses with `held:` more than 10,000 entries, any
   entry declaring over 64 MiB uncompressed, a declared total over 256 MiB, a
   compression ratio over 100 to 1 (parts up to 100 KiB are exempt), a name
-  over 1,024 bytes, a zip inside the zip outside `ppt/embeddings/`, and any
-  audio or video part (by content type, extension or file signature). In a
+  over 1,024 bytes, and a zip inside the zip outside `ppt/embeddings/`. In a
   `.pptx`, an embedded Office object under `ppt/embeddings/` (a chart's
   workbook) is a zip too; it stays within every other bound, and neither the
   service nor the engine ever unzips it. A native deck has no embedded
@@ -148,6 +147,11 @@ commands it runs (engine d0e57d7e; classes from `skill/safety.json`).
   package is `unsupported:`. An OLE file (`D0 CF 11 E0`) is
   `protected:` when it holds an `EncryptedPackage` stream, and
   `unsupported:` otherwise (a legacy `.ppt`).
+- **Audio and video** open. The service carries a deck's clips as bytes: it
+  draws a clip's poster (or a film or speaker glyph), and saves and exports
+  them unchanged. Nothing decodes or plays them, and `media.info`,
+  `media.posterFrame`, `insert.audio` and `insert.video` stay held. A deck
+  holding more than 128 MiB of media is `too_large:`.
 
 ## Reading and drawing
 
@@ -434,6 +438,8 @@ changes; where they differ from the sections above, they win.
   whose content types come late (as LibreOffice writes them) opens.
 - **`deck.hit`** treats `selected: []` as no selection.
 - **Pictures** whose size can't be read are `invalid:`.
+- **Audio and video (#511)** open, carried as bytes and never decoded, as
+  "Audio and video" above says; that lifts decision 4's media refusal.
 
 ## Inspector states (#507)
 

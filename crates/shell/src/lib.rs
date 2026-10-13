@@ -11,6 +11,7 @@
 
 pub mod agents;
 pub mod runtime_host;
+mod update_restart;
 #[cfg(any(feature = "app-hub", native_mobile))]
 pub mod mail_background;
 #[cfg(any(feature = "app-hub", native_mobile))]
@@ -473,6 +474,8 @@ pub struct App {
     /// the last refusal), so it expires (process_close `quit_expired`).
     #[rust]
     pub quit_waiting_since: Option<f64>,
+    #[rust]
+    update_restart_waiting: bool,
     /// The notifications cards asked for (`glance.publish` with `notify`):
     /// the desktop toasts' ids and the card each opens, and the phone
     /// shade's ids and the exact card each opens.
@@ -1992,7 +1995,7 @@ impl App {
         // (process_close::Insistence) is ended; the rest are waited on.
         let now = host::now();
         let (forced, refused): (Vec<ClientId>, Vec<ClientId>) =
-            refused.into_iter().partition(|client| self.module_host.close_gate_mut().insist(*client, now));
+            refused.into_iter().partition(|client| !self.update_restart_waiting && self.module_host.close_gate_mut().insist(*client, now));
         for client in forced {
             log!("wm: client {client} refused the quit {} times; ending it", process_close::FORCE_CLOSES);
             self.remove_client(cx, client);
@@ -2010,7 +2013,11 @@ impl App {
                     .collect()
             })
             .unwrap_or_default();
-        let ask = self.process_close.quit(windows, host::now());
+        let ask = if self.update_restart_waiting {
+            self.process_close.quit_for_update(windows, now)
+        } else {
+            self.process_close.quit(windows, now)
+        };
         for client in &ask.asked {
             self.send_wm_event(*client, WmEvent::CloseRequested);
         }
@@ -2277,12 +2284,18 @@ impl App {
         // A process app that promised to answer a close and did not: the
         // fallback ends it (process_close.rs). One asking the person is
         // never among these.
-        for client in self.process_close.overdue(host::now()) {
-            log!(
-                "wm: client {client} did not answer its close in {}s; ending it",
-                process_close::ANSWER_TIMEOUT
-            );
-            self.end_process_client(cx, client);
+        let overdue = self.process_close.overdue(host::now());
+        if self.update_restart_waiting && !overdue.is_empty() {
+            self.cancel_update_restart();
+            self.notify(cx, "Update restart cancelled", "An app did not confirm closing. Save your work and try again when ready.");
+        } else {
+            for client in overdue {
+                log!(
+                    "wm: client {client} did not answer its close in {}s; ending it",
+                    process_close::ANSWER_TIMEOUT
+                );
+                self.end_process_client(cx, client);
+            }
         }
         // A quit nobody answered for a minute: the person kept the asking
         // app (it does not say so). Drop the quit and say so, so a later
@@ -2294,6 +2307,7 @@ impl App {
             self.quit_waiting_since = None;
             self.process_close.abandon_quit();
             self.module_host.abandon_quit();
+            self.cancel_update_restart();
             log!("wm: the quit waited {}s on an app asking the person; dropped", process_close::QUIT_ANSWER_WINDOW);
             self.notify(cx, "Quit cancelled", "An app asked before closing and was kept open. Quit again when you are ready.");
         }
@@ -3793,8 +3807,9 @@ impl App {
         }
         match target {
             "system.quit" => {
+                self.cancel_update_restart();
                 if self.ask_before_quit(cx) {
-                    cx.quit();
+                    self.quit_after_review(cx);
                 }
             }
             "style.background" => {
@@ -6576,6 +6591,11 @@ impl App {
     }
 
     pub fn shell_handle_event(&mut self, cx: &mut Cx, event: &Event) {
+        // A separate manual quit/close cancels a pending update, rather than
+        // converting that unrelated action into permission to replace the app.
+        if self.update_restart_waiting && matches!(event, Event::QuitRequested(_) | Event::WindowCloseRequested(_)) {
+            self.cancel_update_restart();
+        }
         #[cfg(any(feature = "app-updater", native_mobile))]
         if let Event::AndroidIntegration { channel, payload } = event {
             if channel == "home_updater.result" { octosense_updater_ui::android_result(payload); }
@@ -6605,11 +6625,16 @@ impl App {
         // Modules' peer links (#142): the links opened during this event,
         // and what the instances sent on theirs, to the shell's peer link.
         self.module_host.pump_peer_links(cx);
+        self.poll_update_restart(cx);
         // A quit that waited on instances asking the person goes ahead once
         // the last of them confirmed (or failed and has nothing left to ask).
         if self.take_quit_ready() {
             log!("wm: every instance and app confirmed; quitting");
-            cx.quit();
+            self.quit_after_review(cx);
+        }
+        #[cfg(all(target_os = "macos", any(feature = "app-updater", native_mobile)))]
+        if matches!(event, Event::Draw(_)) && self.state.is_some() {
+            octosense_updater_ui::restart::acknowledge_startup();
         }
     }
 

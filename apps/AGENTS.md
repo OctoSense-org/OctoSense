@@ -109,9 +109,15 @@ app's own agent and `tools.json`, the system toolbox, `glance.publish` and
   engine's reader (`engine_read`, the steps of the pinned
   `open_presentation` after its sniff, compared by a test). It inflates
   every entry against its declared size and
-  refuses a nested zip or an audio or video part (`held:`), an encrypted
+  refuses a nested zip (`held:`), an encrypted
   `.pptx` (`protected:`) and a legacy `.ppt` or any other file it does not
-  know (`unsupported:`); engine-side bounds stay with #448. The one nested
+  know (`unsupported:`); engine-side bounds stay with #448. Audio and video
+  open like any other part: the service carries them as bytes (drawn with
+  their poster, or a film or speaker glyph; saved and exported unchanged)
+  and nothing it runs decodes or plays them, since deckcraft's decoders
+  (`deckcraft-media`) are reached only through `media.info`,
+  `media.posterFrame`, `insert.audio` and `insert.video`, which stay held;
+  a deck's media counts against the session's 128 MiB (`too_large:`). The one nested
   zip it lets through is an Office package's embedded object under
   `ppt/embeddings/` (a chart's workbook, an embedded document), which
   neither the service nor deckcraft ever unzips; it still counts against

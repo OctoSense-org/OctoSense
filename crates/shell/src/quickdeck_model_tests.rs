@@ -479,6 +479,19 @@ fn the_footer_and_the_marks_follow_the_deck() {
 }
 
 #[test]
+fn a_held_deck_is_explained_without_media() {
+    // #511: audio and video open now; held: is a zip inside the zip or a
+    // part past the import guard's bounds.
+    let detail = quickdeck_model("open_detail(\"held\").to_json()");
+    let text = detail.as_str().unwrap();
+    assert!(text.contains("zip") && text.contains("simpler copy") && !text.contains("video") && !text.contains("audio"), "{text}");
+    // The library card's own line (`doc_meta`, after the app's start, which
+    // this harness leaves out) names no media either.
+    assert!(QUICK_DECK.contains("if d.state == \"held\" { return \"Can't open this file\" }"));
+    assert!(!QUICK_DECK.contains("video or audio"));
+}
+
+#[test]
 fn an_office_document_that_isnt_a_presentation_is_explained() {
     // #507: a .docx or .xlsx answers unsupported:.
     let detail = quickdeck_model("open_detail(\"unsupported\").to_json()");

@@ -8,6 +8,8 @@
 
 [OctoSense Updates](docs/updater.zh-CN.md) 检查并下载经过校验的宿主发行版，再打开操作系统安装流程。桌面 RC6 已发布此功能。RC5 及更早版本须先手动升级一次，才能用它更新后续版本。
 
+源码构建新增 macOS **Install & Restart**，沿用应用关闭确认并保留旧应用包；RC6 尚不包含此功能。详见[更新器指南](docs/updater.zh-CN.md)。
+
 [能力声明与执行边界](docs/capabilities.zh-CN.md)说明声明式 API、用户同意、账户和应用隔离。
 
 **桌面预发布版下载：** [OctoSense 0.1.0-rc.6](https://github.com/OctoSense-org/OctoSense/releases/tag/desktop-v0.1.0-rc.6) 包含应用契约 1.12.0、WASI TCP/UDP/DNS、共享组件、GitHub 证明应用安装及 OctoSense Updates。请选择与操作系统和架构对应的安装包。发行说明记录了经过验证的校验和、GitHub 签名、各平台验收范围及剩余限制。此桌面发布不会更新 Android Home。
