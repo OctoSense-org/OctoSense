@@ -757,6 +757,189 @@ fn open_detail(state){
     ""
 }
 
+// ---- playback (SERVICE.md "Playback") ---------------------------------------
+// A deck's clip plays in the runtime's Video widget (.sources/makepad/widgets/
+// src/video.rs), which hands the file deck.media wrote to the system's own
+// player. The script only asks the widget what it is doing (state(), error(),
+// the position and the duration: Video::script_call) and tells it to start,
+// pause or stop (script_control). The words: the contract's for storage, and
+// for a system whose widget has no player.
+let CLIP_FULL = "There isn't room in Quick Deck's storage to play this clip."
+let CLIP_NO_PLAYER = "Playback isn't available on this system"
+let CLIP_FAILED = "This clip couldn't be played."
+// How long a clip may take to get ready (seconds), and how often Quick Deck
+// asks the widget to start one, before it gives up.
+let CLIP_WAIT = 20
+let CLIP_KICKS = 3
+// A clip whose position stays within this many milliseconds of its end has
+// ended: the Mac's player plays to the last frame and says nothing more (the
+// Apple backend sends no VideoPlaybackCompleted).
+let CLIP_END_MS = 300
+
+// A shape of deck.slide that is a clip (a video or a sound), as playback needs
+// it; nil for any other shape. deck.slide reports a clip with media: {id,
+// video, autoplay, loop}; the engine calls its kind "video" or "audio".
+fn clip_of(sh){
+    if sh == nil { return nil }
+    let kind = "" + optional(sh, "kind", "")
+    let m = optional(sh, "media", nil)
+    if m == nil && kind != "video" && kind != "audio" { return nil }
+    let video = kind == "video"
+    if m != nil { video = optional(m, "video", video) == true }
+    {id: optional(sh, "id", nil) kind: pick(video, "video", "audio") box: optional(sh, "box", [0, 0, 0, 0])
+        autoplay: optional(m, "autoplay", false) == true looping: optional(m, "loop", false) == true}
+}
+// A slide's clips, in its order.
+fn clips_in(shapes){
+    let out = []
+    for sh in shapes {
+        let c = clip_of(sh)
+        if c != nil { out.push(c) }
+    }
+    out
+}
+// The clip a show starts by itself when the slide shows: the first one set to
+// play automatically.
+fn autoplay_clip(clips){
+    for c in clips { if c.autoplay { return c } }
+    nil
+}
+// What deck.media's refusal leaves: the clip's state and the words for it.
+fn clip_refused(error){
+    let code = err_code(error)
+    let s = "" + error
+    if code == "storage_full" || s.search("app storage is full") >= 0 || s.search("bytes left in this storage") >= 0 {
+        return {phase: "storage_full" words: CLIP_FULL}
+    }
+    // A clip linked to a file outside the deck, an empty or missing one, or
+    // one of another kind.
+    if code == "unsupported" { return {phase: "unsupported" words: "Quick Deck can't play this clip: it isn't stored in the deck, it's empty, or it isn't MP4, MOV, M4V, MP3, M4A, AAC or WAV."} }
+    if code == "unknown_id" { return {phase: "failed" words: "That's no longer a clip on this slide (an undo may have removed it)."} }
+    if code == "unknown_doc" { return {phase: "failed" words: "The engine closed this deck. Close its tab and open it again."} }
+    {phase: "failed" words: "Quick Deck couldn't get the clip ready: " + err_words(error)}
+}
+// The widget couldn't play: on a system with no player every clip fails, so
+// the first failure says so; once a clip has played here, a failure is this
+// clip's. A path outside the storage or too many players is never the system.
+fn clip_failure(error, played){
+    let e = "" + error
+    if played || e.search("outside app storage") >= 0 || e.search("Too many open video players") >= 0 {
+        return {phase: "failed" words: CLIP_FAILED}
+    }
+    {phase: "unavailable" words: CLIP_NO_PLAYER}
+}
+// One look at the widget moves a clip on. `look` is what it answers: state,
+// error, pos and dur (milliseconds); `now` is in seconds. The answer is the
+// clip's next phase and what to do: kick (begin_playback), seek (to where a
+// widget made again left off, -1 for none), reveal (show its picture), stop
+// (stop_and_cleanup_resources), and the position and duration to keep.
+//
+// The widget is made with autoplay off and kicked once it exists: one made
+// with autoplay on stays "preparing" in this runtime. Drawing the canvas or
+// the stage again makes the widget again; it then says "unprepared" with no
+// error, and a playing clip starts again where it was.
+fn clip_step(c, look, now){
+    let s = "" + optional(look, "state", "")
+    let e = "" + optional(look, "error", "")
+    let pos = optional(look, "pos", 0)
+    let dur = optional(look, "dur", 0)
+    let out = {phase: c.phase kick: false seek: -1 reveal: false stop: false pos: c.pos dur: c.dur resume_at: c.resume_at}
+    if dur > 0 { out.dur = dur }
+    if e != "" && s != "playing" && s != "paused" {
+        out.phase = "failed"
+        out.stop = true
+        return out
+    }
+    if c.phase == "preparing" {
+        if s == "playing" {
+            out.phase = "playing"
+            out.reveal = true
+            out.pos = pos
+            if c.resume_at > 0 {
+                out.seek = c.resume_at
+                out.pos = c.resume_at
+                out.resume_at = 0
+            }
+            return out
+        }
+        if now - c.since > CLIP_WAIT {
+            out.phase = "failed"
+            out.stop = true
+            return out
+        }
+        if s == "unprepared" || s == "prepared" || s == "paused" {
+            if c.kicks >= CLIP_KICKS {
+                out.phase = "failed"
+                out.stop = true
+                return out
+            }
+            out.kick = true
+        }
+        return out
+    }
+    if c.phase == "playing" {
+        if s == "playing" {
+            if !c.looping && out.dur > 0 && pos >= out.dur - CLIP_END_MS && pos == c.pos {
+                out.phase = "ended"
+                out.stop = true
+                return out
+            }
+            out.pos = pos
+            return out
+        }
+        if s == "completed" {
+            out.phase = "ended"
+            out.stop = true
+            return out
+        }
+        if s == "paused" {
+            out.phase = "paused"
+            out.pos = pos
+            return out
+        }
+        if s == "unprepared" {
+            out.phase = "preparing"
+            out.resume_at = c.pos
+            out.kick = true
+            return out
+        }
+        return out
+    }
+    if c.phase == "paused" {
+        if s == "playing" {
+            out.phase = "playing"
+            out.reveal = true
+            out.pos = pos
+        }
+        if s == "unprepared" && c.pos > 0 { out.resume_at = c.pos }
+        return out
+    }
+    out
+}
+// "0:42", or "0:42 / 1:05" once the duration is known.
+fn clip_clock(ms){
+    let s = floor(max(0, ms) / 1000)
+    "" + floor(s / 60) + ":" + two(s % 60)
+}
+fn clip_time(pos, dur){
+    if dur > 0 { return clip_clock(pos) + " / " + clip_clock(dur) }
+    clip_clock(pos)
+}
+// Where a clip's control goes on the canvas, in points from the slide's
+// corner: under the clip, else over it, else inside its foot; never past the
+// slide's sides. `sw` x `sh` is the slide at zoom `z`; `bw` x `bh` the control.
+fn clip_bar_at(box, z, sw, sh, bw, bh){
+    let x = box[0] * z
+    let y = box[1] * z
+    let w = box[2] * z
+    let h = box[3] * z
+    let left = clamp(x + w / 2 - bw / 2, 4, max(4, sw * z - bw - 4))
+    let top = y + h + 8
+    if top + bh > sh * z - 4 { top = y - bh - 8 }
+    if top < 4 { top = max(4, y + h - bh - 8) }
+    [round(left), round(top)]
+}
+
 start_timeout(0.05, || boot())
 
 // ---- appearance -----------------------------------------------------------
@@ -911,12 +1094,21 @@ if st == nil {
         present: nil          // the show going on
         next_key: 1
         insp_over: false      // a narrow window shows the inspector over the canvas
+        clip: nil             // the clip playing or getting ready (playback, below)
+        clip_n: 0
+        clip_timer: nil       // its look at the Video widget, four times a second
+        clip_played: false    // a clip has played here: this system has a player
     }
     mod.quickdeck_state = st
 }
-// The heartbeat (below), started again by every run of this file.
+// The heartbeat (below), started again by every run of this file, and the
+// clip's look at its widget while one plays.
 if st.heartbeat != nil { stop_timer(st.heartbeat) }
 st.heartbeat = start_interval(2, || heartbeat())
+if st.clip_timer != nil {
+    stop_timer(st.clip_timer)
+    st.clip_timer = start_interval(0.25, || clip_tick())
+}
 
 // ---- small helpers that need the state -----------------------------------
 
@@ -2155,6 +2347,8 @@ fn go_slide(t, id){
     t.custom_open = false
     t.detail_due = true
     remember_place(t)
+    // Another slide stops a clip (playback).
+    clip_check()
     render_canvas()
     render_thumbs()
     render_inspector()
@@ -2343,6 +2537,8 @@ fn selection_changed(t){
     t.alt_text = pick(sh == nil, "", "" + optional(sh, "alt_text", ""))
     if t.sel.len() > 0 && t.seg != "format" { t.seg = "format" }
     if narrow() && t.sel.len() > 0 { st.insp_over = true }
+    // Another choice stops a clip (playback).
+    clip_check()
     render_canvas()
     render_insp_tabs()
     render_inspector()
@@ -2580,6 +2776,11 @@ fn insert_chart(t){ insert_kind(t, {kind: "chart" type: t.chart_type categories:
 // effects and quick styles of the selection.
 fn shape_op(t, args, what){
     if t == nil || t.sel.len() == 0 { return }
+    // A clip that plays isn't changed until it stops (playback).
+    if clip_busy(t) {
+        note("Stop the clip first: it stays as it is while it plays.")
+        return
+    }
     if t.editing != nil { end_edit(t) }
     args.doc = t.doc
     args.slide = t.cur
@@ -2954,7 +3155,10 @@ fn start_present(t){
             note("Every slide from here on is hidden, so there's nothing to show. Show a slide in the sorter first.")
             return
         }
-        st.present = {key: t.key order: order i: 0 step: 0 notes: st.show_notes started: time_now() pics: {} failed: {} full: {} timer: nil done: false}
+        // media: each slide's clips (deck.slide); autoplayed: the slide on
+        // show has started its clip by itself (playback).
+        st.present = {key: t.key order: order i: 0 step: 0 notes: st.show_notes started: time_now() pics: {} failed: {} full: {} timer: nil done: false
+            media: {} autoplayed: {}}
         st.present.timer = start_interval(1, || present_tick())
         // The stage shows the slide alone: an earlier note goes.
         note("")
@@ -2979,36 +3183,44 @@ fn present_next(){
     if p == nil || t == nil || p.done { return false }
     let item = present_item()
     if item == nil { return false }
-    // The step on show, then the next one ahead of the tap.
+    // The step on show, then the slide's clips and whole notes, then the next
+    // step ahead of the tap.
     let want = [{item: item step: p.step}]
     if p.step < optional(item, "steps", 0) { want.push({item: item step: p.step + 1}) }
     if p.step >= optional(item, "steps", 0) && p.i + 1 < p.order.len() { want.push({item: p.order[p.i + 1] step: 0}) }
-    for w in want {
+    for i w in want {
         let k = present_key(w.item, w.step)
         if optional(p.pics, k, nil) == nil && optional(p.failed, k, nil) == nil {
             present_render(t, w.item, w.step)
             return true
         }
-    }
-    // The notes strip: a preview that was cut gets the slide's whole notes.
-    let nk = "s" + item.slide
-    if p.notes && optional(p.full, nk, nil) == nil {
-        let s = slide_of(t, item.slide)
-        let preview = pick(s == nil, "", "" + optional(s, "notes", ""))
-        if preview.len() > 200 {
-            busy_on()
-            engine("slide", {doc: t.doc slide: item.slide}, fn(a){
-                st.busy = false
-                if st.present != p { return }
-                p.full[nk] = preview
-                if a.is_ok { p.full[nk] = "" + optional(a.data, "notes", preview) }
-                render_present()
-                later_pump()
-            })
-            return true
-        }
+        if i == 0 && present_slide_next(t, item) { return true }
     }
     false
+}
+// The slide on show: its clips (what plays, and where) and its whole notes
+// (deck.slides gives a preview), from deck.slide, once per slide.
+fn present_slide_next(t, item){
+    let p = st.present
+    let nk = "s" + item.slide
+    if optional(p.media, nk, nil) != nil { return false }
+    busy_on()
+    engine("slide", {doc: t.doc slide: item.slide}, fn(a){
+        st.busy = false
+        if st.present != p { return }
+        p.media[nk] = []
+        if a.is_ok {
+            p.media[nk] = clips_in(optional(a.data, "shapes", []))
+            p.full[nk] = "" + optional(a.data, "notes", "")
+        }
+        let now = present_item()
+        if now != nil && now.slide == item.slide {
+            render_present()
+            present_autoplay()
+        }
+        later_pump()
+    })
+    true
 }
 fn present_notes(t, item){
     let full = optional(st.present.full, "s" + item.slide, nil)
@@ -3039,10 +3251,12 @@ fn present_step(dir){
         p.done = false
         render_present()
         render_present_bar()
+        present_autoplay()
         return
     }
     let item = present_item()
     if item == nil { return }
+    let was = p.i
     if dir > 0 {
         if p.step < optional(item, "steps", 0) { p.step = p.step + 1 }
         else if p.i + 1 < p.order.len() {
@@ -3056,8 +3270,15 @@ fn present_step(dir){
             p.step = optional(p.order[p.i], "steps", 0)
         }
     }
+    // Another slide (or the end) stops the clip; a slide that shows starts
+    // its own by itself (playback). A build step on the same slide doesn't.
+    if p.i != was || p.done {
+        clip_check()
+        p.autoplayed = {}
+    }
     render_present()
     render_present_bar()
+    present_autoplay()
     pump()
 }
 fn present_tick(){
@@ -3082,6 +3303,263 @@ fn stop_present(){
     show()
     if t != nil && item != nil { go_slide(t, item.slide) }
     pump()
+}
+
+// ---- playback -------------------------------------------------------------------
+// One clip plays at a time: in the editor, the chosen clip, from its control
+// on the canvas or the inspector; in Present, a clip of the slide on show,
+// tapped, or by itself when it plays automatically. st.clip is that clip:
+// where it plays, its deck (tab key), slide and shape, its box, and its
+// phase: asking (deck.media is out), preparing, playing, paused, ended, or
+// why it can't play (storage_full, unsupported, unavailable, failed).
+//
+// deck.media writes the clip's bytes into the storage (.cache/media/); a
+// Video widget made over the clip's box, with that file as its storage
+// source (VideoDataSource.Filesystem, kept inside the app's storage by the
+// runtime), plays it. It is made hidden, kicked to start, shown once it
+// plays, and asked four times a second what it is doing (clip_tick).
+
+// Whether a clip is getting ready or playing: its widget is (or is about to
+// be) on screen.
+fn clip_live(c){ c != nil && (c.phase == "asking" || c.phase == "preparing" || c.phase == "playing" || c.phase == "paused") }
+// The editor's clip, when it is `t`'s chosen one and plays: its editing waits.
+fn clip_busy(t){
+    let c = st.clip
+    clip_live(c) && c.where == "editor" && t != nil && c.key == t.key && has(t.sel, c.id)
+}
+// The clip of `where` for shape `id` of tab `t`, if it is the one in hand.
+fn clip_mine(where, t, id){
+    let c = st.clip
+    c != nil && c.where == where && t != nil && c.key == t.key && c.id == id
+}
+// The playing widget, by its name in the editor's layer or the stage's.
+fn clip_widget(c){
+    if c.where == "present" { return ui.stage_clip }
+    ui.qd_clip
+}
+fn play_clip(where, t, slide, c){
+    if t == nil || t.doc == nil || c == nil { return }
+    stop_clip(false)
+    st.clip_n = st.clip_n + 1
+    let n = st.clip_n
+    st.clip = {n: n where: where key: t.key slide: slide id: c.id kind: c.kind box: c.box autoplay: c.autoplay looping: c.looping
+        phase: "asking" path: "" kicks: 0 since: time_now() pos: 0 dur: 0 resume_at: 0 error: "" words: "" muted: false}
+    clip_drawn()
+    engine("media", {doc: t.doc slide: slide id: c.id}, fn(a){
+        let k = st.clip
+        if k == nil || k.n != n { return }
+        if !a.is_ok {
+            let r = clip_refused(a.error)
+            k.phase = r.phase
+            k.words = r.words
+            k.error = "" + a.error
+            if r.phase == "storage_full" { wrote(a) }
+            clip_drawn()
+            return
+        }
+        k.path = "" + optional(a.data, "path", "")
+        k.kind = pick(("" + optional(a.data, "kind", k.kind)) == "audio", "audio", "video")
+        k.looping = optional(a.data, "loop", k.looping) == true
+        k.phase = "preparing"
+        k.since = time_now()
+        clip_drawn()
+        clip_ticking()
+    })
+}
+// Stop the clip in hand (its widget lets the system's player go) and, with
+// `draw`, draw its layer again without it.
+fn stop_clip(draw){
+    let c = st.clip
+    if c == nil { return }
+    if clip_live(c) { try { clip_widget(c).stop_and_cleanup_resources() } catch { nil } }
+    st.clip = nil
+    st.clip_n = st.clip_n + 1
+    clip_ticking()
+    if draw { clip_layer(c) }
+}
+// A clip ends where it no longer is: another tab, view, slide or choice in the
+// editor; another slide, the show's end or Exit in Present.
+fn clip_check(){
+    let c = st.clip
+    if c == nil { return }
+    if c.where == "editor" {
+        let t = deck_tab()
+        let here = st.present == nil && st.screen == "deck" && t != nil && t.key == c.key && t.state == "ready" && t.view == "slides" && t.cur == c.slide && t.sel.len() == 1 && t.sel[0] == c.id
+        if !here { stop_clip(false) }
+        return
+    }
+    let item = present_item()
+    if st.present == nil || st.present.done || item == nil || item.slide != c.slide { stop_clip(false) }
+}
+// The clip's layer, drawn again: its widget comes or goes with the canvas
+// (the clip's frame drops its handles while it plays, and gets them back
+// after) or the stage it is part of.
+fn clip_layer(c){
+    if c.where == "present" {
+        render_present()
+        return
+    }
+    if deck_tab() != nil && deck_tab().key == c.key {
+        render_canvas()
+        render_inspector()
+    }
+}
+fn clip_drawn(){ if st.clip != nil { clip_layer(st.clip) } }
+// Only the clip's control (its time, its buttons) or the stage's note about
+// it, regions of their own: the widget stays.
+fn clip_bar_drawn(){
+    let c = st.clip
+    if c == nil { return }
+    if c.where == "present" {
+        render_stage_note()
+        return
+    }
+    render_clip_bar()
+}
+// A region inside another one is made empty with it and drawn on a later
+// turn: the canvas's and the stage's draw these after them.
+fn render_clip_bar(){
+    let t = deck_tab()
+    if t == nil || t.state != "ready" || clip_of(selected_shape(t)) == nil { return }
+    try { ui.clip_bar.render() } catch { nil }
+}
+fn render_stage_note(){
+    if st.present == nil { return }
+    try { ui.stage_note.render() } catch { nil }
+}
+fn clip_ticking(){
+    let on = clip_live(st.clip)
+    if on && st.clip_timer == nil { st.clip_timer = start_interval(0.25, || clip_tick()) }
+    if !on && st.clip_timer != nil {
+        stop_timer(st.clip_timer)
+        st.clip_timer = nil
+    }
+}
+// Four times a second: what the widget says moves the clip on (clip_step).
+fn clip_tick(){
+    let c = st.clip
+    if !clip_live(c) {
+        clip_ticking()
+        return
+    }
+    if c.phase == "asking" { return }
+    let w = try { clip_widget(c) } catch { nil }
+    let look = {state: "" error: "" pos: 0 dur: 0}
+    if w != nil {
+        look.state = try { "" + w.state() } catch { "" }
+        look.error = try { "" + w.error() } catch { "" }
+        look.pos = try { w.current_position_ms() } catch { 0 }
+        look.dur = try { w.total_duration_ms() } catch { 0 }
+    }
+    let was = c.phase
+    let shown = clip_time(c.pos, c.dur)
+    let act = clip_step(c, look, time_now())
+    c.phase = act.phase
+    c.pos = act.pos
+    c.dur = act.dur
+    c.resume_at = act.resume_at
+    if act.kick && w != nil {
+        c.kicks = c.kicks + 1
+        try { w.begin_playback() } catch { nil }
+    }
+    if act.seek >= 0 && w != nil { try { w.seek_to(act.seek) } catch { nil } }
+    if act.reveal { clip_reveal(c) }
+    if c.phase == "playing" {
+        st.clip_played = true
+        c.kicks = 0
+    }
+    if c.phase == "failed" && was != "failed" {
+        let f = clip_failure(look.error, st.clip_played)
+        c.phase = f.phase
+        c.words = f.words
+        c.error = look.error
+    }
+    if act.stop && w != nil { try { w.stop_and_cleanup_resources() } catch { nil } }
+    if c.phase != was {
+        if !clip_live(c) {
+            clip_ticking()
+            clip_drawn()
+        } else {
+            clip_bar_drawn()
+            if c.where == "editor" { render_inspector() }
+        }
+        return
+    }
+    if clip_time(c.pos, c.dur) != shown { clip_bar_drawn() }
+}
+// A video shows its picture once it plays (until then the slide's poster
+// shows through); a sound has none.
+fn clip_reveal(c){
+    if c.kind != "video" { return }
+    if c.where == "present" {
+        try { ui.stage_clip_box.set_visible(true) } catch { nil }
+        return
+    }
+    try { ui.qd_clip_box.set_visible(true) } catch { nil }
+}
+// Play, pause or play on: the clip in hand pauses or plays on; another one
+// starts.
+fn clip_toggle(where, t, slide, c){
+    let k = st.clip
+    if clip_mine(where, t, c.id) && clip_live(k) {
+        if k.phase == "playing" {
+            try { clip_widget(k).pause_playback() } catch { nil }
+            k.phase = "paused"
+        } else if k.phase == "paused" {
+            if k.resume_at > 0 {
+                // Its widget was made again while it was paused.
+                k.phase = "preparing"
+                k.since = time_now()
+                k.kicks = 0
+            } else {
+                try { clip_widget(k).begin_playback() } catch { nil }
+                k.phase = "playing"
+            }
+        }
+        clip_bar_drawn()
+        if where == "editor" { render_inspector() }
+        clip_ticking()
+        return
+    }
+    play_clip(where, t, slide, c)
+}
+fn clip_mute(){
+    let k = st.clip
+    if !clip_live(k) { return }
+    k.muted = !k.muted
+    if k.muted { try { clip_widget(k).mute_playback() } catch { nil } } else { try { clip_widget(k).unmute_playback() } catch { nil } }
+    clip_bar_drawn()
+}
+// The editor's chosen clip: play, pause or play on, and stop.
+fn chosen_clip_toggle(){
+    let t = deck_tab()
+    if t == nil { return }
+    let c = clip_of(selected_shape(t))
+    if c == nil { return }
+    clip_toggle("editor", t, t.cur, c)
+}
+fn chosen_clip_stop(){
+    stop_clip(true)
+}
+// Present: a tap on a clip plays or pauses it.
+fn stage_clip_tap(c){
+    let t = present_tab()
+    let item = present_item()
+    if st.present == nil || t == nil || item == nil { return }
+    clip_toggle("present", t, item.slide, c)
+}
+// The slide on show starts its clip by itself, once per showing.
+fn present_autoplay(){
+    let p = st.present
+    let t = present_tab()
+    let item = present_item()
+    if p == nil || t == nil || item == nil || p.done { return }
+    let k = "s" + item.slide
+    let clips = optional(p.media, k, nil)
+    if clips == nil || optional(p.autoplayed, k, false) { return }
+    p.autoplayed[k] = true
+    let c = autoplay_clip(clips)
+    if c != nil && !clip_mine("present", t, c.id) { play_clip("present", t, item.slide, c) }
 }
 
 // ---- Export -----------------------------------------------------------------------
@@ -3452,6 +3930,8 @@ fn render_canvas(){
     // While a text box is edited its field stays put.
     if t != nil && t.editing != nil && !t.editing.waiting && t.drag == nil { ui.drag_layer_host.render() return }
     ui.canvas.render()
+    // The chosen clip's control, a region of the canvas (playback).
+    start_timeout(0.03, || render_clip_bar())
 }
 fn render_drag(){ ui.drag_layer_host.render() }
 fn render_pill(){ ui.pill.render() }
@@ -3475,7 +3955,11 @@ fn render_storage(){
     ui.full_bar.render()
     render_status()
 }
-fn render_present(){ if st.present != nil { ui.present.render() } }
+fn render_present(){
+    if st.present == nil { return }
+    ui.present.render()
+    start_timeout(0.03, || render_stage_note())
+}
 fn render_present_bar(){ if st.present != nil { ui.present_bar.render() } }
 fn refresh_doc(){
     if st.screen == "home" { render_tabs() return }
@@ -3518,6 +4002,8 @@ fn show_regions(){
 }
 // Which regions show, then every region drawn again.
 fn show(){
+    // Another tab, view or screen stops a clip (playback).
+    clip_check()
     let t = cur_tab()
     let presenting = st.present != nil
     let deck = !presenting && t != nil && t.kind == "deck"
@@ -3551,6 +4037,7 @@ fn show(){
                 render_thumbs()
                 render_insp_tabs()
                 render_inspector()
+                render_clip_bar()
             })
         }
         if t.state == "ready" && t.view == "sorter" {
@@ -4026,8 +4513,11 @@ fn canvas_view(){
                 on_tap: |x, y| canvas_tap(x / z, y / z, false)
                 on_double_tap: |x, y| canvas_double_tap(x / z, y / z)
                 on_long_press: |x, y| canvas_tap(x / z, y / z, true)}
-            for id in t.sel { selection_view(t, id, z, t.sel.len() == 1 && (e == nil || e.id != id)) }
+            // A clip that plays keeps its frame, without handles (playback).
+            for id in t.sel { selection_view(t, id, z, t.sel.len() == 1 && (e == nil || e.id != id) && !clip_busy(t)) }
             if e != nil && !e.waiting { edit_box(t, e, z) }
+            // The chosen clip's Video widget while it plays, and its control.
+            play_view(t, z)
             if r != nil && busy {
                 View{width: Fill height: Fill align: Align{x: 1.0 y: 0.0} padding: 8
                     LoadingSpinner{width: 16 height: 16}
@@ -4104,6 +4594,132 @@ fn drag_view(){
 fn ghost(b, z){
     RoundedView{margin: Inset{left: b[0] * z top: b[1] * z} width: max(2, b[2] * z) height: max(2, b[3] * z) show_bg: true
         draw_bg +: {color: #x2f6fdf14 border_size: 1.5 border_color: qd_select border_radius: 0.0}}
+}
+// The chosen clip on the canvas: its Video widget over its box while it plays
+// (hidden until it does: the slide's poster shows through), a tap on it to
+// pause or play on, and its control (clip_bar_view), a region of its own so
+// that the time can tick without making the widget again.
+fn play_view(t, z){
+    let c = clip_of(selected_shape(t))
+    if c == nil { return View{width: 1 height: 1} }
+    let k = st.clip
+    let live = clip_mine("editor", t, c.id) && k.path != "" && (k.phase == "preparing" || k.phase == "playing" || k.phase == "paused")
+    let b = c.box
+    View{width: Fill height: Fill flow: Overlay
+        if live && c.kind == "video" {
+            View{margin: Inset{left: b[0] * z top: b[1] * z} width: max(4, b[2] * z) height: max(4, b[3] * z) flow: Overlay
+                qd_clip_box := View{visible: false width: Fill height: Fill
+                    qd_clip := Video{width: Fill height: Fill source: VideoDataSource.Filesystem{path: k.path}
+                        autoplay: false is_looping: k.looping mute: k.muted show_controls: false}
+                }
+                GestureView{width: Fill height: Fill cursor: MouseCursor.Hand on_tap: |x, y| chosen_clip_toggle()}
+            }
+        }
+        if live && c.kind == "audio" {
+            qd_clip_box := View{visible: false width: 1 height: 1
+                qd_clip := Video{width: 1 height: 1 source: VideoDataSource.Filesystem{path: k.path}
+                    autoplay: false is_looping: k.looping mute: k.muted show_controls: false}
+            }
+        }
+        clip_bar := View{width: Fill height: Fill flow: Overlay on_render: || { clip_bar_view() }}
+    }
+}
+let CLIP_BAR_H = 36
+// The control's width for what it shows (clip_bar_at places it by it): why
+// a clip can't play takes one line when it is short, and wraps when not.
+fn clip_bar_w(phase, kind, words){
+    let speaker = pick(kind == "audio", 30, 0)
+    if phase == "idle" { return 92 + speaker }
+    if phase == "ended" { return 128 + speaker }
+    if phase == "asking" || phase == "preparing" { return 226 }
+    if phase == "playing" || phase == "paused" { return 196 }
+    pick(("" + words).len() <= 44, 330, 320)
+}
+fn clip_bar_view(){
+    let t = deck_tab()
+    if t == nil || t.state != "ready" || t.cur == nil { return View{width: 1 height: 1} }
+    let c = clip_of(selected_shape(t))
+    if c == nil { return View{width: 1 height: 1} }
+    let k = st.clip
+    let phase = pick(clip_mine("editor", t, c.id), optional(k, "phase", "idle"), "idle")
+    let bw = clip_bar_w(phase, c.kind, optional(k, "words", ""))
+    let at = clip_bar_at(c.box, t.zoom, t.size[0], t.size[1], bw, CLIP_BAR_H)
+    View{margin: Inset{left: at[0] top: at[1]} width: bw height: Fit
+        clip_chip(phase, c.kind, k, bw)
+    }
+}
+let ClipBtn = Flat{height: 26 padding: Inset{left: 6 right: 8} spacing: 6 icon_walk: Walk{width: 14 height: 14}
+    draw_bg +: {color: #x00000000 color_hover: #xffffff22 color_down: #xffffff33 color_focus: #x00000000}
+    draw_text +: {color: #xffffff color_hover: #xffffff color_down: #xffffff color_focus: #xffffff text_style: theme.font_regular{font_size: 12}}
+    draw_icon +: {color: #xffffff}}
+let ClipIcon = ClipBtn{width: 26 padding: 0 spacing: 0 text: ""}
+// The clip's control: dark, so it reads on any slide. Play; Preparing the
+// clip; pause or play on, stop, the time and the sound; or why it can't play.
+fn clip_chip(phase, kind, k, bw){
+    let live = phase == "playing" || phase == "paused"
+    RoundedView{width: bw height: Fit flow: Right align: Align{y: 0.5} padding: Inset{left: 5 right: 8 top: 5 bottom: 5} spacing: 2 show_bg: true
+        draw_bg +: {color: #x1c1c1e border_radius: 8.0}
+        if kind == "audio" && (phase == "idle" || phase == "ended" || phase == "asking" || phase == "preparing") {
+            View{width: 26 height: 26 align: Align{x: 0.5 y: 0.5}
+                Ico{width: 15 height: 15 draw_svg +: {svg: icon("speaker") color: #xffffff}}
+            }
+        }
+        if phase == "idle" || phase == "ended" {
+            ClipBtn{text: pick(phase == "ended", "Play again", "Play") draw_icon +: {svg: icon("play")} on_click: || chosen_clip_toggle()}
+        }
+        if phase == "asking" || phase == "preparing" {
+            View{width: 26 height: 26 align: Align{x: 0.5 y: 0.5} LoadingSpinner{width: 14 height: 14}}
+            Label{padding: 0 width: Fill text: "Preparing the clip…" draw_text +: {color: #xffffff text_style: theme.font_regular{font_size: 12}}}
+            ClipIcon{draw_icon +: {svg: icon("stop")} on_click: || chosen_clip_stop()}
+        }
+        if live {
+            ClipIcon{draw_icon +: {svg: icon(pick(phase == "playing", "pause", "play"))} on_click: || chosen_clip_toggle()}
+            ClipIcon{draw_icon +: {svg: icon("stop")} on_click: || chosen_clip_stop()}
+            View{width: Fill height: Fit padding: Inset{left: 4}
+                Label{padding: 0 text: clip_time(k.pos, k.dur) draw_text +: {color: #xffffff text_style: theme.font_regular{font_size: 12}}}
+            }
+            ClipIcon{draw_icon +: {svg: icon(pick(k.muted, "speaker-off", "speaker"))} on_click: || clip_mute()}
+        }
+        if !clip_live(k) && phase != "idle" && phase != "ended" {
+            View{width: 22 height: 22 align: Align{x: 0.5 y: 0.5}
+                Ico{width: 15 height: 15 draw_svg +: {svg: icon("warning") color: #xffd36b}}
+            }
+            Label{padding: Inset{left: 4} width: bw - 44 flow: Flow.Right{wrap: true} text: k.words
+                draw_text +: {color: #xffffff text_style: theme.font_regular{font_size: 12 line_spacing: 1.35}}}
+        }
+    }
+}
+// The inspector's clip section: what the clip is, how it plays in a show,
+// and the same play and stop as the control on the canvas.
+fn clip_status(phase, k){
+    if phase == "asking" || phase == "preparing" { return "Preparing the clip…" }
+    if phase == "playing" { return "Playing." }
+    if phase == "paused" { return "Paused." }
+    if phase == "ended" { return "Played to the end." }
+    if phase == "idle" { return "Play it here to check it. Playing doesn't change the deck." }
+    "" + optional(k, "words", "")
+}
+fn clip_section(t, sh){
+    let c = clip_of(sh)
+    let k = st.clip
+    let mine = clip_mine("editor", t, c.id)
+    let phase = pick(mine, optional(k, "phase", "idle"), "idle")
+    let live = mine && clip_live(k)
+    View{width: Fill height: Fit flow: Down padding: Inset{left: 16 right: 16 top: 12 bottom: 14} spacing: 8
+        heading(pick(c.kind == "video", "Video", "Audio"))
+        hint(clip_status(phase, k))
+        View{width: Fill height: Fit flow: Right spacing: 8
+            Outline{height: 32 text: pick(phase == "playing", "Pause", "Play") icon_walk: Walk{width: 15 height: 15}
+                draw_icon +: {svg: icon(pick(phase == "playing", "pause", "play"))} on_click: || chosen_clip_toggle()}
+            if live { Outline{height: 32 text: "Stop" icon_walk: Walk{width: 15 height: 15} draw_icon +: {svg: icon("stop")} on_click: || chosen_clip_stop()} }
+        }
+        sublabel("In a show")
+        hint(pick(c.autoplay, "Starts by itself when its slide shows.", "Starts when it's tapped."))
+        hint(pick(c.looping, "Plays again from the start until the slide changes.", "Plays once."))
+        if mine && (phase == "unavailable" || phase == "failed") && ("" + optional(k, "error", "")) != "" {
+            Code{text: "The player said: " + k.error}
+        }
+    }
 }
 // The text field over a box being edited: the engine draws the slide without
 // its text meanwhile (deck.view `editing`).
@@ -4332,6 +4948,10 @@ fn format_panel(t){
             chart_section(t, sh)
             divider()
         }
+        if clip_of(sh) != nil {
+            clip_section(t, sh)
+            divider()
+        }
         arrange_section(t, sh)
     }
 }
@@ -4340,7 +4960,7 @@ fn nothing_panel(t){
     View{width: Fill height: Fit flow: Down
         View{width: Fill height: Fit flow: Down padding: Inset{left: 16 right: 16 top: 12 bottom: 14} spacing: 8
             heading("Slide " + (slide_index(t, t.cur) + 1))
-            hint("Tap a text box, picture, shape, table or chart on the slide to format it. Double-tap a text box to type in it.")
+            hint("Tap a text box, picture, shape, table, chart or clip on the slide to format it. Double-tap a text box to type in it.")
             sublabel("Background")
             background_row(t)
         }
@@ -5708,8 +6328,7 @@ fn present_view(){
     let item = present_item()
     let notes = present_notes(t, item).trim()
     let show_notes = p.notes && notes != ""
-    let room_h = st.height - 150 - pick(show_notes, 130, 0)
-    let w = floor(min(st.width - 96, room_h * t.size[0] / max(1, t.size[1])))
+    let w = stage_w(t, show_notes)
     let h = round(w * t.size[1] / max(1, t.size[0]))
     let src = optional(p.pics, present_key(item, p.step), nil)
     View{width: Fill height: Fill flow: Overlay
@@ -5718,6 +6337,8 @@ fn present_view(){
                 if src != nil { Image{width: Fill height: Fill fit: ImageFit.Stretch src: src} }
                 if src == nil { View{width: Fill height: Fill align: Align{x: 0.5 y: 0.5} LoadingSpinner{width: 28 height: 28}} }
                 GestureView{width: Fill height: Fill on_tap: |x, y| present_step(1) on_swipe: |dx, dy| present_step(pick(dx > 0, -1, 1))}
+                // The slide's clips: a tap on one plays or pauses it (playback).
+                stage_view(t, item, w)
             }
             if show_notes {
                 RoundedView{width: w height: 110 margin: Inset{top: 14} flow: Down padding: Inset{left: 18 right: 18 top: 12 bottom: 12} show_bg: true
@@ -5733,6 +6354,81 @@ fn present_view(){
                 RoundedView{width: 46 height: 46 align: Align{x: 0.5 y: 0.5} show_bg: true draw_bg +: {color: qd_stage_pill border_size: 1.0 border_color: qd_stage_line border_radius: 23.0}
                     Ico{width: 18 height: 18 draw_svg +: {svg: icon("close") color: qd_stage_ink}}
                 }
+            }
+        }
+    }
+}
+// The slide's width on the stage, in points: the window less its margins,
+// the bar and, when it shows, the notes strip.
+fn stage_w(t, show_notes){
+    let room_h = st.height - 150 - pick(show_notes, 130, 0)
+    floor(min(st.width - 96, room_h * t.size[0] / max(1, t.size[1])))
+}
+// The slide's clips on the stage: over each one's box a tap that plays or
+// pauses it; for the clip in hand, its Video widget (hidden until it plays);
+// and a note while it gets ready, is paused or can't play (stage_note_view),
+// a region of its own.
+fn stage_view(t, item, w){
+    let p = st.present
+    let clips = optional(p.media, "s" + item.slide, [])
+    let z = w / max(1, t.size[0])
+    View{width: Fill height: Fill flow: Overlay
+        for c in clips { stage_clip_view(t, c, z) }
+        stage_note := View{width: Fill height: Fill flow: Overlay on_render: || { stage_note_view() }}
+    }
+}
+fn stage_clip_view(t, c, z){
+    let k = st.clip
+    let live = clip_mine("present", t, c.id) && k.path != "" && (k.phase == "preparing" || k.phase == "playing" || k.phase == "paused")
+    let b = c.box
+    View{margin: Inset{left: b[0] * z top: b[1] * z} width: max(4, b[2] * z) height: max(4, b[3] * z) flow: Overlay
+        if live && c.kind == "video" {
+            stage_clip_box := View{visible: false width: Fill height: Fill
+                stage_clip := Video{width: Fill height: Fill source: VideoDataSource.Filesystem{path: k.path}
+                    autoplay: false is_looping: k.looping mute: k.muted show_controls: false}
+            }
+        }
+        if live && c.kind == "audio" {
+            stage_clip_box := View{visible: false width: 1 height: 1
+                stage_clip := Video{width: 1 height: 1 source: VideoDataSource.Filesystem{path: k.path}
+                    autoplay: false is_looping: k.looping mute: k.muted show_controls: false}
+            }
+        }
+        GestureView{width: Fill height: Fill cursor: MouseCursor.Hand on_tap: |x, y| stage_clip_tap(c)
+            on_swipe: |dx, dy| present_step(pick(dx > 0, -1, 1))}
+    }
+}
+// What the stage says about the clip in hand: a video that plays says
+// nothing, a sound shows its time.
+fn stage_note_text(k){
+    if k.phase == "asking" || k.phase == "preparing" { return "Preparing the clip…" }
+    if k.phase == "paused" { return "Paused  ·  " + clip_time(k.pos, k.dur) }
+    if k.phase == "playing" && k.kind == "audio" { return "Playing  ·  " + clip_time(k.pos, k.dur) }
+    if k.phase == "playing" || k.phase == "ended" { return "" }
+    "" + k.words
+}
+fn stage_note_view(){
+    let k = st.clip
+    let p = st.present
+    let t = present_tab()
+    if k == nil || k.where != "present" || p == nil || t == nil { return View{width: 1 height: 1} }
+    let text = stage_note_text(k)
+    if text == "" { return View{width: 1 height: 1} }
+    let item = present_item()
+    let z = stage_w(t, p.notes && item != nil && present_notes(t, item).trim() != "") / max(1, t.size[0])
+    let b = k.box
+    let wide = max(180, min(420, b[2] * z))
+    View{margin: Inset{left: max(8, b[0] * z + 8) top: max(8, (b[1] + b[3]) * z - 44)} width: wide height: Fit
+        RoundedView{width: Fit height: Fit flow: Right align: Align{y: 0.5} padding: Inset{left: 10 right: 12 top: 7 bottom: 7} spacing: 8 show_bg: true
+            draw_bg +: {color: #x1c1c1e border_radius: 8.0}
+            if k.phase == "asking" || k.phase == "preparing" { LoadingSpinner{width: 14 height: 14} }
+            if !clip_live(k) { Ico{width: 15 height: 15 draw_svg +: {svg: icon("warning") color: #xffd36b}} }
+            if text.len() <= 44 {
+                Label{padding: 0 text: text draw_text +: {color: #xffffff text_style: theme.font_regular{font_size: 13}}}
+            }
+            if text.len() > 44 {
+                Label{padding: 0 width: wide - 52 flow: Flow.Right{wrap: true} text: text
+                    draw_text +: {color: #xffffff text_style: theme.font_regular{font_size: 13 line_spacing: 1.35}}}
             }
         }
     }
