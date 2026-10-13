@@ -406,6 +406,52 @@ mod bar_chrome_tests {
     }
 }
 
+/// The bar's strip under the root `ui`: the body's own child called `bar`,
+/// never a search for that name. The body lays the bar over the scene, so a
+/// search from the root walks the scene first, and every hosted app's
+/// widgets with it: Quick Deck's storage strip is also called `bar`, and
+/// the bar's height, applied to it, ran in the shell's script heap against
+/// the app's objects and took the shell down. Anything inside the bar is
+/// searched for from here.
+fn bar_strip_of(ui: &WidgetRef, cx: &Cx) -> WidgetRef {
+    ui.widget(cx, ids!(main_window.body)).child(id!(bar))
+}
+
+#[cfg(test)]
+mod bar_strip_tests {
+    use super::*;
+
+    #[test]
+    fn the_bar_strip_is_the_bodys_own_bar_not_a_hosted_apps() {
+        let mut cx = Cx::new(Box::new(|_, _| {}));
+        cx.with_vm(makepad_widgets::script_mod);
+        // The root's shape: the scene, with an app that has a `bar` of its
+        // own, before the body's bar.
+        let ui = cx.with_vm(|vm| {
+            let value = script_eval!(vm, {use mod.prelude.widgets.* View{
+                main_window := View{
+                    body := View{
+                        scene := View{app := View{bar := View{}}}
+                        bar := View{shell_bar := View{}}
+                    }
+                }
+            }});
+            WidgetRef::script_from_value(vm, value)
+        });
+        let app_bar = ui.widget(&cx, ids!(app.bar));
+        assert!(!app_bar.is_empty());
+        assert_eq!(
+            ui.widget(&cx, ids!(bar)).widget_uid(),
+            app_bar.widget_uid(),
+            "the premise: a search from the root finds the app's bar first"
+        );
+        let strip = bar_strip_of(&ui, &cx);
+        assert!(!strip.is_empty());
+        assert_ne!(strip.widget_uid(), app_bar.widget_uid());
+        assert!(!strip.widget(&cx, ids!(shell_bar)).is_empty());
+    }
+}
+
 /// The octos reader's WebView renderer host (feature `toolbox-peers`;
 /// nothing without it). A plain field type: the `Script` derive takes no
 /// `#[cfg]` on fields.
@@ -3855,7 +3901,7 @@ impl App {
         if self.state.as_ref().is_some_and(|state| state.style.target.mobile()) {
             return false;
         }
-        let bar = self.ui.widget(cx, ids!(shell_bar));
+        let bar = self.shell_bar(cx);
         let borrowed = bar.borrow::<shell::bar::ShellBar>();
         borrowed
             .as_ref()
@@ -4082,7 +4128,7 @@ impl App {
             return;
         };
         let anchor = {
-            let bar = self.ui.widget(cx, ids!(shell_bar));
+            let bar = self.shell_bar(cx);
             let borrowed = bar.borrow::<shell::bar::ShellBar>();
             borrowed
                 .as_ref()
@@ -4557,7 +4603,7 @@ impl App {
         }
         // The middle window control reads "restore" while maximized.
         data.maximized = self.ui.window(cx, ids!(main_window)).is_fullscreen(cx);
-        let bar = self.ui.widget(cx, ids!(shell_bar));
+        let bar = self.shell_bar(cx);
         {
             let mut borrowed = bar.borrow_mut::<shell::bar::ShellBar>();
             if let Some(b) = borrowed.as_mut() {
@@ -4635,19 +4681,19 @@ impl App {
             return;
         }
         self.bar_metrics = Some((height, pad_left));
-        let mut bar = self.ui.widget(cx, ids!(bar));
+        let mut bar = self.bar_strip(cx);
         script_apply_eval!(cx, bar, {
             height: #(height)
         });
         // The bar's content starts after the OS window buttons.
-        let shell_bar = self.ui.widget(cx, ids!(shell_bar));
+        let shell_bar = bar.widget(cx, ids!(shell_bar));
         {
             let mut borrowed = shell_bar.borrow_mut::<shell::bar::ShellBar>();
             if let Some(b) = borrowed.as_mut() {
                 b.pad_left = pad_left;
             }
         }
-        if let Some(mut controls) = self.ui.widget(cx, ids!(phone_controls)).borrow_mut::<mobile_surface::PhoneSurface>() {
+        if let Some(mut controls) = bar.widget(cx, ids!(phone_controls)).borrow_mut::<mobile_surface::PhoneSurface>() {
             controls.pad_left = pad_left;
         }
         self.redraw_all(cx);
@@ -4774,8 +4820,16 @@ impl App {
         self.preview_cache.clear();
     }
 
-    /// SUPER+F hides the bar with the window; anything that leaves
-    /// fullscreen puts it back, unless SUPER+SHIFT+SPACE hid it.
+    /// The bar's strip, `bar` in the root's DSL ([`bar_strip_of`]).
+    fn bar_strip(&self, cx: &Cx) -> WidgetRef {
+        bar_strip_of(&self.ui, cx)
+    }
+
+    /// The bar's modules, searched for inside its strip only.
+    fn shell_bar(&self, cx: &Cx) -> WidgetRef {
+        self.bar_strip(cx).widget(cx, ids!(shell_bar))
+    }
+
     /// The bar lies over the top of the scene (the root's body overlays
     /// them). The scene starts below a docked bar, and at the window's top
     /// when the bar is hidden or slides over a full-screen window: then it
@@ -4786,7 +4840,7 @@ impl App {
         let reveal = self.state.as_ref().map_or(0.0, |s| s.top_reveal);
         // Only a bar full screen hid comes out; one the person hid stays hidden.
         let floating = self.front_fullscreen && self.bar_hidden_by_fullscreen;
-        let bar = self.ui.widget(cx, ids!(bar));
+        let bar = self.bar_strip(cx);
         if floating && bar.visible() != (reveal > 0.001) {
             bar.set_visible(cx, reveal > 0.001);
         }
@@ -4831,7 +4885,7 @@ impl App {
             Event::Scroll(e) => e.abs,
             _ => return false,
         };
-        let bar = self.ui.widget(cx, ids!(bar));
+        let bar = self.bar_strip(cx);
         if !bar.visible() || !bar.area().rect(cx).contains(abs) {
             return false;
         }
@@ -4842,6 +4896,8 @@ impl App {
         true
     }
 
+    /// SUPER+F hides the bar with the window; anything that leaves
+    /// fullscreen puts it back, unless SUPER+SHIFT+SPACE hid it.
     fn sync_bar_for_fullscreen(&mut self, cx: &mut Cx) {
         let fullscreen = {
             let state = self.state_mut();
@@ -4852,7 +4908,7 @@ impl App {
                 && layout.workspaces[ws].fullscreen_mode == FullscreenMode::Fullscreen)
                 || desktop::front_fullscreen(state)
         };
-        let bar = self.ui.widget(cx, ids!(bar));
+        let bar = self.bar_strip(cx);
         if fullscreen && bar.visible() {
             bar.set_visible(cx, false);
             self.bar_hidden_by_fullscreen = true;
@@ -5034,7 +5090,7 @@ impl App {
             WmAction::ThemeMenu => self.open_shell_menu(cx, "style.theme", MenuSkin::Menu),
             WmAction::BackgroundNext => self.next_background(cx),
             WmAction::ToggleBar => {
-                let bar = self.ui.widget(cx, ids!(bar));
+                let bar = self.bar_strip(cx);
                 let visible = bar.visible();
                 bar.set_visible(cx, !visible);
                 self.bar_hidden_by_fullscreen = false;
@@ -6866,7 +6922,7 @@ impl App {
             // window. macOS treats unanswered strip points as native drag.
             // The shell bar's own modules are BUTTONS, not a drag handle:
             // where it claims a point, the press reaches the widget.
-            let bar = self.ui.view(cx, ids!(bar)).area();
+            let bar = self.bar_strip(cx).area();
             if cfg!(native_mobile) || MOBILE_ONLY
                 || self.phone_toolbar_hit(cx,dq.abs).is_some() || self.shell_bar_claims(cx, dq.abs) {
                 dq.response.set(WindowDragQueryResponse::Client);
@@ -6879,7 +6935,7 @@ impl App {
         #[cfg(not(mobile_only))]
         if self.state.is_some() && !self.state_mut().style.target.mobile() {
             if let Event::MouseDown(e)=event {
-                let module=self.ui.widget(cx,ids!(shell_bar)).borrow::<shell::bar::ShellBar>().and_then(|b|b.module_at(e.abs));
+                let module=self.shell_bar(cx).borrow::<shell::bar::ShellBar>().and_then(|b|b.module_at(e.abs));
                 if module==Some(BarModule::Appearance) {self.toggle_desktop_appearance(cx);return;}
                 if module==Some(BarModule::Style) {
                     self.open_style_menu(cx);
