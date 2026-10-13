@@ -1439,6 +1439,63 @@ mod assistant_tests {
         assert!(host.teardown(&mut cx, 1));
     }
 
+    /// A Daycast reminder opens Rinx's native sheet without sending anything.
+    #[cfg(feature = "app-rinx")]
+    #[test]
+    fn rinx_reminder_confirmation_does_not_stop_the_module() {
+        if super::run_with_isolated_module_data("module_host::assistant_tests::rinx_reminder_confirmation_does_not_stop_the_module") { return; }
+        let _one_rinx = super::RINX_INSTANCE_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let mut cx = Cx::new(Box::new(|_, _| {}));
+        cx.with_vm(makepad_widgets::script_mod);
+        let mut host = crate::module_host::ModuleHost::default();
+        host.apply_style(&mut cx, &crate::desktop_style::StyleSheet::load(crate::desktop_style::DesktopStyle::Macos));
+        let module = &rinx::module::RINX_MODULE;
+        host.create(&mut cx, 7, module, module.open_schema().empty_open().unwrap(), dvec2(400.0, 700.0)).unwrap();
+        let tile = cx.with_vm(|vm| {
+            script_eval!(vm, { mod.wm_theme = { background: #1a1b26 } });
+            crate::module_view::script_mod(vm);
+            let value = script_eval!(vm, { use mod.widgets.* MpModuleView {} });
+            WidgetRef::script_from_value(vm, value)
+        });
+        let instance = host.get(7).unwrap();
+        tile.borrow_mut::<crate::module_view::MpModuleView>().unwrap().set_root(&mut cx, 7, instance.vm_id, instance.root.clone());
+        let draw_frame = |cx: &mut Cx| {
+            let pass = DrawPass::new(cx);
+            pass.set_size(cx, dvec2(800.0, 600.0));
+            let mut list = DrawList2d::new(cx);
+            let overlay = cx.with_vm(Overlay::script_new);
+            let event = DrawEvent::default();
+            let mut draw = CxDraw::new(cx, &event);
+            let mut cx = Cx2d::new(&mut draw);
+            cx.begin_pass(&pass, Some(1.0));
+            list.begin_always(&mut cx);
+            overlay.begin(&mut cx);
+            cx.begin_root_turtle(dvec2(800.0, 600.0), Layout::flow_right());
+            tile.draw_walk_all(&mut cx, &mut Scope::empty(), Walk::fixed(400.0, 600.0));
+            cx.end_turtle();
+            overlay.end(&mut cx);
+            list.end(&mut cx);
+            cx.end_pass(&pass);
+        };
+        draw_frame(&mut cx);
+        assert!(host.take_faults(&mut cx).is_empty(), "Rinx initial draw: {:?}", host.get(7).unwrap().failure());
+        let prompt = rinx::assistant::Prompt {
+            call_id: "daycast-rinx-test".into(), account: "@test:example.org".into(),
+            room: rinx::assistant::RoomRef { id: "!test".into(), name: "家人聊天室".into() },
+            kind: rinx::assistant::PromptKind::Send { text: "Daycast 家庭天气提醒 · 北京\n天气变化，注意适时添减衣物。".into() },
+            deadline: std::time::Instant::now() + std::time::Duration::from_secs(120),
+        };
+        for action in [rinx::assistant::AssistantAction::ShowPrompt(prompt.clone()), rinx::assistant::AssistantAction::HidePrompt, rinx::assistant::AssistantAction::ShowPrompt(prompt)] {
+            host.dispatch(&mut cx, 7, "Daycast reminder confirmation", |cx, root| {
+                root.handle_event(cx, &makepad_widgets::Event::Actions(vec![Box::new(action)]), &mut makepad_widgets::Scope::empty());
+            });
+            draw_frame(&mut cx);
+            assert!(host.take_faults(&mut cx).is_empty(), "Rinx stopped: {:?}", host.get(7).unwrap().failure());
+        }
+        assert!(host.teardown(&mut cx, 7));
+    }
+
+
     /// The real Rinx module: hosted from creation, with the shell's service,
     /// and no kernel started by creating it (ADR 0007 criterion 7).
     #[cfg(feature = "app-rinx")]
