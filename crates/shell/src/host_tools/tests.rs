@@ -1418,13 +1418,15 @@ fn studio_app_tools_are_own_caller_only_and_disappear_on_revocation() {
     let host=Arc::new(Exec::default());
     relay.set_executor(super::relay::HOST_EXECUTOR,Some(host.clone()));
     let mut w=World::new(FixedDevMode::all());w.dev_all=true;
-    for (index,name) in super::studio::APP_TOOLS.iter().enumerate(){
+    // `studio.image` is the system agent's alone: an app's agent is not
+    // offered it (checked in studio_image's tests).
+    let app_tools: Vec<&str>=super::studio::APP_TOOLS.iter().copied().filter(|name| *name!="studio.image").collect();
+    for (index,name) in app_tools.iter().enumerate(){
         let id=format!("studio-app-{index}");
         let mut c=call(&id,name,"os.news");c.app="os.news".into();
         c.args=match *name {
             "studio.bundle_check"|"studio.install"|"studio.open"=>json!({"bundle_path":"planner"}),
             "studio.uninstall"=>json!({"app_id":"dev.studio.planner"}),
-            "studio.image"=>json!({"prompt":"a red square on white"}),
             "studio.input"=>json!({"instance_id":"one","widget_id":"button","action":"tap"}),
             _=>json!({"instance_id":"one"}),
         };
@@ -1440,7 +1442,7 @@ fn studio_app_tools_are_own_caller_only_and_disappear_on_revocation() {
         assert_eq!(sent.lock().unwrap()[0]["error"]["kind"],"not_granted");
         w.dev_all=true;
     }
-    assert_eq!(host.0.lock().unwrap().len(),super::studio::APP_TOOLS.len());
+    assert_eq!(host.0.lock().unwrap().len(),app_tools.len());
 }
 // ------------------------------------------------------------ the engines
 //

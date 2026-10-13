@@ -37,10 +37,19 @@ pub fn declarations(app: &str) -> Vec<Value> {
     }
     let mut out = vec![declaration(app)];
     if cfg!(all(unix, any(feature = "app-hub", native_mobile))) {
-        out.extend(APP_TOOLS.iter().map(|name| tool_declaration(app, name)));
+        out.extend(
+            APP_TOOLS
+                .iter()
+                .filter(|name| app == SYSTEM || !SYSTEM_ONLY.contains(*name))
+                .map(|name| tool_declaration(app, name)),
+        );
     }
     out
 }
+/// The tools of [`APP_TOOLS`] the system agent alone gets: `studio.image`
+/// spends the person's image budget, so an app's agent is not offered it
+/// in this slice (ADR 0006).
+const SYSTEM_ONLY: &[&str] = &["studio.image"];
 /// The declaration of one of [`APP_TOOLS`].
 fn tool_declaration(app: &str, name: &str) -> Value {
     #[cfg(all(unix, any(feature = "app-hub", native_mobile)))]
@@ -67,7 +76,11 @@ fn app_declaration(app: &str, name: &str) -> Value {
 /// while developer mode covers it, for the studio's image tool
 /// (`apps.rs` consults this when it registers the model service).
 pub fn system_caller_admitted(app: &str) -> bool {
-    SUPPORTED && app == SYSTEM && crate::dev_mode::grants_all(SYSTEM)
+    system_caller_admitted_given(app, crate::dev_mode::grants_all(SYSTEM))
+}
+/// [`system_caller_admitted`] with the live grant answered by the caller.
+pub fn system_caller_admitted_given(app: &str, system_granted_all: bool) -> bool {
+    SUPPORTED && app == SYSTEM && system_granted_all
 }
 /// Whether this build has the studio at all: a development build on a unix
 /// target. Release builds answer no tool, module, launcher row or fixture.
@@ -128,7 +141,7 @@ fn workspace(call: &HostToolCall) -> Result<PathBuf, String> {
         .ok_or_else(|| "the broker has not confirmed this peer workspace".into())
 }
 
-fn app_available(call: &HostToolCall) -> Result<(), String> {
+pub(super) fn app_available(call: &HostToolCall) -> Result<(), String> {
     let account = call
         .account
         .as_deref()
@@ -144,7 +157,7 @@ fn app_available(call: &HostToolCall) -> Result<(), String> {
     Ok(())
 }
 
-fn authorized(app: &str, tag: &crate::dev_mode::DevTag) -> bool {
+pub(super) fn authorized(app: &str, tag: &crate::dev_mode::DevTag) -> bool {
     crate::dev_mode::tag_valid(tag) && crate::dev_mode::grants_all(app)
 }
 
@@ -194,6 +207,13 @@ impl StudioExecutor {
             ));
             return;
         }
+        if app != SYSTEM && SYSTEM_ONLY.contains(&call.name.as_str()) {
+            reply.finish(ToolOutcome::error(
+                "not_granted",
+                "studio.image is the system agent's tool",
+            ));
+            return;
+        }
         let decl = if call.name == RENDER {
             declaration(&app)
         } else {
@@ -234,7 +254,7 @@ impl StudioExecutor {
         std::thread::spawn(move || {
             #[cfg(all(unix, any(feature = "app-hub", native_mobile)))]
             let outcome = if call.name == super::studio_image::TOOL {
-                super::studio_image::execute(&call, &root, &app, &flag, &reply)
+                super::studio_image::execute(&call, &root, &app, &tag, &flag, &reply)
             } else if call.name != RENDER {
                 super::studio_bundles::execute(&call, &root, &tag, &flag, &reply)
             } else {
