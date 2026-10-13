@@ -259,13 +259,20 @@ pub fn register_host_services() {
     ONCE.call_once(|| {
         // Capability declarations describe intended use. Admission still binds
         // every call to a verified app and the current host profile.
+        // The system agent reaches `model.image` through the studio's image
+        // tool while developer mode covers it (ADR 0006 slice 2); apps as
+        // themselves, admitted.
         crate::ai_host::set_model_grants(|app, host_dir| {
-            crate::host_tools::script_apps::admitted_host(app, host_dir).is_ok()
+            crate::host_tools::studio::system_caller_admitted(app)
+                || crate::host_tools::script_apps::admitted_host(app, host_dir).is_ok()
         });
         crate::ai_host::contained::set_caller_admitted(|app, host_dir| {
             crate::host_tools::script_apps::admitted_host(app, host_dir).is_ok()
         });
         crate::ai_host::set_model_scope(|app, _| {
+            if app == crate::host_tools::SYSTEM {
+                return Some("device".into());
+            }
             crate::app_storage::lifecycle::contained_account(app)
                 .map(|account| crate::app_storage::account_hash(&account))
         });

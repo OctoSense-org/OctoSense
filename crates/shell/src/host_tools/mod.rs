@@ -43,6 +43,8 @@ pub mod schema;
 pub mod studio;
 #[cfg(all(unix, any(feature = "app-hub", native_mobile)))]
 pub mod studio_bundles;
+#[cfg(all(unix, any(feature = "app-hub", native_mobile)))]
+pub mod studio_image;
 #[cfg(any(feature = "app-hub", native_mobile))]
 pub(crate) mod admission;
 #[cfg(feature = "toolbox-peers")]
@@ -127,6 +129,10 @@ pub fn pump() {
     // Components' calls to their apps' host services (ADR 0014).
     #[cfg(wasm_functions)]
     crate::wasm_service::pump_host_calls();
+    // The studio's image generations (ADR 0006 slice 2): `model.image`
+    // calls under the calling agent's identity.
+    #[cfg(all(unix, any(feature = "app-hub", native_mobile)))]
+    studio_image::pump();
     for _ in 0..8 {
         let events = std::mem::take(&mut *INBOX.lock().unwrap_or_else(|e| e.into_inner()));
         if events.is_empty() {

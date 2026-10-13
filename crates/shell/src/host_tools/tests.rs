@@ -1424,6 +1424,7 @@ fn studio_app_tools_are_own_caller_only_and_disappear_on_revocation() {
         c.args=match *name {
             "studio.bundle_check"|"studio.install"|"studio.open"=>json!({"bundle_path":"planner"}),
             "studio.uninstall"=>json!({"app_id":"dev.studio.planner"}),
+            "studio.image"=>json!({"prompt":"a red square on white"}),
             "studio.input"=>json!({"instance_id":"one","widget_id":"button","action":"tap"}),
             _=>json!({"instance_id":"one"}),
         };
