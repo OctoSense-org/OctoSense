@@ -21,7 +21,7 @@ index 01a356d..3c79a78 100644
          self.do_callback(Win32Event::WindowLostFocus(self.window_id));
      }
  
-+    fn hardware_mouse_message() -> bool {
++    fn os_reported_pointer_message() -> bool {
 +        // This pinned windows-rs shim lacks Win32::UI::Input's message-origin
 +        // bindings. Query user32 directly while processing the native message.
 +        #[repr(C)]
@@ -38,7 +38,7 @@ index 01a356d..3c79a78 100644
 +
 +    fn trusted_pointer_source(device_type: i32, origin_id: i32) -> bool {
 +        matches!(device_type, 2 | 4 | 8 | 16) // mouse, touch, pen, touchpad
-+            && origin_id == 1 // IMO_HARDWARE; injected/post messages fail closed
++            && origin_id == 1 // IMO_HARDWARE also includes UIAccess-injected input
 +    }
 +
      pub fn send_mouse_down(&mut self, button: MouseButton, modifiers: KeyModifiers) {
@@ -49,7 +49,7 @@ index 01a356d..3c79a78 100644
              time: self.time_now(),
              handled: Cell::new(Area::Empty),
 -        }));
-+        }, Self::hardware_mouse_message()));
++        }, Self::os_reported_pointer_message()));
      }
  
      pub fn send_mouse_up(&mut self, button: MouseButton, modifiers: KeyModifiers) {
@@ -58,7 +58,7 @@ index 01a356d..3c79a78 100644
              abs: self.last_mouse_pos,
              time: self.time_now(),
 -        }));
-+        }, Self::hardware_mouse_message()));
++        }, Self::os_reported_pointer_message()));
      }
  
      pub fn send_mouse_move(&mut self, pos: Vec2d, modifiers: KeyModifiers) {
@@ -72,7 +72,7 @@ index 01a356d..3c79a78 100644
 +    use super::Win32Window;
 +
 +    #[test]
-+    fn only_physical_pointer_messages_are_trusted() {
++    fn only_os_hardware_class_pointer_messages_are_trusted() {
 +        for device in [2, 4, 8, 16] {
 +            assert!(Win32Window::trusted_pointer_source(device, 1));
 +            assert!(!Win32Window::trusted_pointer_source(device, 2));

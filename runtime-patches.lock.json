@@ -4,7 +4,7 @@
     "base_revision": "d653bc4493619ab979ccff165cf48c0c63b77d19",
     "patch": "tools/runtime-patches/makepad-settings.patch",
     "sha256": "3a79cddddc89dc4d064a9f0bdd17dc8111dcab9c796a334d95f61ecb9d5011aa",
-    "tree": "42d271b01ba54a929ccda1a15362a1758fa7334d",
+    "tree": "1cd60ba4a4473f2bb7b1fd9796eb1a273e1677b5",
     "product_fixes": [
       "Settings integration: Android IME synchronization, accessibility and reduced motion, GLES program-cache validation, obscured-gesture cancellation and scroll-position observation.",
       "Contained-app isolation and secret-input restrictions come from the pinned upstream runtime; the Settings overlay preserves those gates.",
@@ -48,7 +48,7 @@
       "A native host may stage up to 64 MiB into an app's jail (MAX_IMPORT_BYTES; prepare_import and commit_import), so files.import can take documents above the 1 MiB script write limit. Staged bytes never enter the script heap; the jail's byte quota and entry cap still apply, and script writes, photo picks and exports keep 1 MiB.",
       "An OS resume restarts only the Video playback its pause stopped, including a start it cancelled; a player paused by the person, or paused or stopped by its app during the pause, stays paused (#406).",
       "Camera capture and recording use explicit per-call boolean audio/library options, defaulting to silent app-local output. Permission availability never opts into recording audio or exporting captures; async microphone checks retain capture intent and background provenance. Unsupported library export fails before capture.",
-      "Windows physical pointer messages carry scoped input provenance to host review sheets. Injected, posted, remote and nested synthetic input remains untrusted; approval eligibility changes across host services, not only camera consent.",
+      "Windows user32 hardware-class pointer messages carry scoped input provenance to host review sheets. Posted and ordinary injected messages remain untrusted; UIAccess injection can be classified as hardware, and remote-desktop behavior is unverified. Approval eligibility changes across host services, not only camera consent.",
       "A Media Foundation camera source feeds the existing YUV video preview and still-capture path, with latest-frame buffering and cleanup; macOS retains its native AVFoundation preview."
     ],
     "stacked": [
@@ -190,7 +190,7 @@
       },
       {
         "patch": "tools/runtime-patches/makepad-windows-trusted-input.patch",
-        "sha256": "a5786f0121051d074813b7ad908da5388dcad3c46f804d4def57c1e1ef057ed3"
+        "sha256": "a72d973f7d7a2d629a87bb83df85e5b91b2acd6d8a322796a2637d5b8006a102"
       },
       {
         "patch": "tools/runtime-patches/makepad-windows-camera-preview.patch",
