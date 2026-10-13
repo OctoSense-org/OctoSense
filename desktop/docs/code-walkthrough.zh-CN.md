@@ -149,7 +149,8 @@ MAKEPAD_APP_CONFIG='{"mail_demo":true}' cargo run --locked --release -p octosens
 `Window::fullscreen` 在 macOS 上目前不起作用），OSD 显示 "Press Esc to exit full screen"
 三秒。以下任一情况结束演示全屏：Esc、`{on: false}`、⌘F、窗口关闭或失去焦点、应用模块出错、
 切换风格、用户离开宿主全屏。`App::sync_presentation` 在每个事件之后检查；只有这次演示全屏让
-宿主窗口进入了全屏时，宿主窗口才退出全屏，即使它在演示结束之后才进入全屏。回答是
+宿主窗口进入了全屏时，宿主窗口才退出全屏，即使它在演示结束之后 20 秒内才进入全屏
+（`PENDING_LEAVE_SECONDS`）。回答是
 `{applied, fullscreen, fills_screen}`，应用可选的
 `on_app_fullscreen(on)` 钩子在开始和结束时都会收到通知。在手机上，这个请求不改变任何东西
 （`fills_screen: true`）。隐藏窗口运行的 Shell（`MAKEPAD_HIDE_WINDOWS`）从不让宿主窗口进入

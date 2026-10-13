@@ -194,7 +194,8 @@ These end it: Esc, `{on: false}`, ⌘F, the window closing or losing the
 focus, the app's module failing, a style switch, or the person leaving the
 host's full screen. `App::sync_presentation` checks after every event, and
 the host window leaves full screen only if the presentation entered it, even
-when it gets there after the presentation ended. The answer is
+when it gets there up to 20 seconds after the presentation ended
+(`PENDING_LEAVE_SECONDS`). The answer is
 `{applied, fullscreen, fills_screen}`, and the app's optional
 `on_app_fullscreen(on)` hook hears both ends. On a phone the request changes
 nothing (`fills_screen: true`). A hidden shell (`MAKEPAD_HIDE_WINDOWS`) never

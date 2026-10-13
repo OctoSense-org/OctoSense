@@ -26,11 +26,12 @@
 //! person leaving the host's full screen ends it and puts everything back as
 //! it was: the window's rect and its place in the stack (never changed while
 //! it was full screen), the bar and the dock, and the host window, which
-//! leaves full screen only if this presentation took it there, however late
-//! it arrives there. The app hears both ends through its optional
-//! `on_app_fullscreen(on)` hook, called in its own isolate as
-//! `on_app_resize` is. On a phone every app already fills the screen and the
-//! shell has no immersive mode: the request changes nothing and says so.
+//! leaves full screen only if this presentation took it there, even when it
+//! arrives there late ([`PENDING_LEAVE_SECONDS`]). The app hears both ends
+//! through its optional `on_app_fullscreen(on)` hook, called in its own
+//! isolate as `on_app_resize` is. On a phone every app already fills the
+//! screen and the shell has no immersive mode: the request changes nothing
+//! and says so.
 //!
 //! **Its own window only.** The shell finds the window whose Card runner
 //! runs the isolate that asked, for the app that asked (`App::window_of`,
@@ -87,6 +88,12 @@ pub const MAX_QUEUED: usize = 16;
 /// The log gets at most one line per app this often for requests that
 /// changed nothing (refusals among them), and counts the rest.
 pub const QUIET_LOG_SECONDS: f64 = 10.0;
+/// How long a leave waits, once a presentation ended while the host window
+/// was still entering full screen, for the window to say it is in. After
+/// that the enter is taken never to have come (macOS ignores one asked for
+/// while the window is still leaving the last full screen), and a full
+/// screen the window reports is the person's.
+pub const PENDING_LEAVE_SECONDS: f64 = 20.0;
 
 pub const NOT_A_WINDOW: &str = "not_a_window: only the app's own window can go full screen";
 pub const FOREGROUND_REQUIRED: &str =
@@ -253,10 +260,11 @@ enum HostState {
     #[default]
     Idle,
     /// Asked to enter full screen; it has not said that it did. `leave`: the
-    /// presentation ended meanwhile, so the window's next report decides:
-    /// in, however late, and it leaves; not in, and there is nothing to give
-    /// back (macOS reports a failed enter too).
-    Entering { leave: bool },
+    /// presentation ended meanwhile, at that time, so the window's next
+    /// report decides: in, however late, and it leaves; not in, and there is
+    /// nothing to give back (macOS reports a failed enter too). Past
+    /// [`PENDING_LEAVE_SECONDS`] the leave is dropped.
+    Entering { leave: Option<f64> },
     /// In full screen because a presentation asked.
     Entered,
     /// Already in full screen when the presentation began: it stays so.
@@ -276,13 +284,14 @@ pub struct HostFullscreen {
 }
 
 impl HostFullscreen {
-    /// A presentation begins, the host window `fullscreen` or not; `may_ask`:
-    /// the shell may ask it to enter (its windows are shown).
-    pub fn begin(&mut self, fullscreen: bool, may_ask: bool) -> Option<HostOp> {
+    /// A presentation begins at `now`, the host window `fullscreen` or not;
+    /// `may_ask`: the shell may ask it to enter (its windows are shown).
+    pub fn begin(&mut self, fullscreen: bool, may_ask: bool, now: f64) -> Option<HostOp> {
+        self.expire(now);
         if let HostState::Entering { .. } = self.state {
             // The enter asked for before is still on its way: it serves this
             // one, and a second toggle would take the window back out.
-            self.state = HostState::Entering { leave: false };
+            self.state = HostState::Entering { leave: None };
             return None;
         }
         self.state = if fullscreen {
@@ -290,28 +299,29 @@ impl HostFullscreen {
         } else if !may_ask {
             HostState::Skipped
         } else {
-            HostState::Entering { leave: false }
+            HostState::Entering { leave: None }
         };
         matches!(self.state, HostState::Entering { .. }).then_some(HostOp::Enter)
     }
 
-    /// The host window reports whether it is full screen. The op to send,
-    /// and whether the person took it out of a full screen a presentation
-    /// relies on (which ends the presentation).
-    pub fn reported(&mut self, fullscreen: bool) -> (Option<HostOp>, bool) {
+    /// The host window reports at `now` whether it is full screen. The op
+    /// to send, and whether the person took it out of a full screen a
+    /// presentation relies on (which ends the presentation).
+    pub fn reported(&mut self, fullscreen: bool, now: f64) -> (Option<HostOp>, bool) {
+        self.expire(now);
         match (self.state, fullscreen) {
             // In after its presentation ended, however late: it goes back out.
-            (HostState::Entering { leave: true }, true) => {
+            (HostState::Entering { leave: Some(_) }, true) => {
                 self.state = HostState::Idle;
                 (Some(HostOp::Leave), false)
             }
             // Not in after its presentation ended: the enter failed or never
             // came, and nothing is left to give back.
-            (HostState::Entering { leave: true }, false) => {
+            (HostState::Entering { leave: Some(_) }, false) => {
                 self.state = HostState::Idle;
                 (None, false)
             }
-            (HostState::Entering { leave: false }, true) => {
+            (HostState::Entering { leave: None }, true) => {
                 self.state = HostState::Entered;
                 (None, false)
             }
@@ -323,15 +333,15 @@ impl HostFullscreen {
         }
     }
 
-    /// A presentation ends, the host window `fullscreen` or not; `toggles`:
-    /// entering and leaving are one toggle (macOS).
-    pub fn end(&mut self, fullscreen: bool, toggles: bool) -> Option<HostOp> {
+    /// A presentation ends at `now`, the host window `fullscreen` or not;
+    /// `toggles`: entering and leaving are one toggle (macOS).
+    pub fn end(&mut self, fullscreen: bool, toggles: bool, now: f64) -> Option<HostOp> {
         let op = match self.state {
             HostState::Entered if fullscreen || !toggles => Some(HostOp::Leave),
             // Still on its way in: a toggle now would only turn it round in
-            // the middle, so the window's next report decides.
+            // the middle, so the window's next report decides, for a while.
             HostState::Entering { .. } if toggles => {
-                self.state = HostState::Entering { leave: true };
+                self.state = HostState::Entering { leave: Some(now) };
                 return None;
             }
             HostState::Entering { .. } => Some(HostOp::Leave),
@@ -339,6 +349,16 @@ impl HostFullscreen {
         };
         self.state = HostState::Idle;
         op
+    }
+
+    /// A leave that waited longer than [`PENDING_LEAVE_SECONDS`] for an
+    /// enter is dropped: whatever the window reports next is the person's.
+    fn expire(&mut self, now: f64) {
+        if let HostState::Entering { leave: Some(at) } = self.state {
+            if !(now >= at && now - at <= PENDING_LEAVE_SECONDS) {
+                self.state = HostState::Idle;
+            }
+        }
     }
 }
 
@@ -672,7 +692,7 @@ impl App {
         let window = self.ui.window(cx, ids!(main_window));
         let fullscreen = window.is_fullscreen(cx);
         let may_ask = !crate::launch_input::hidden_windows();
-        let op = self.presenter.host.begin(fullscreen, may_ask);
+        let op = self.presenter.host.begin(fullscreen, may_ask, host::now());
         if fullscreen {
             log!("wm: app full screen: {app} (client {client}); the host window is full screen already and stays so");
         } else if !may_ask {
@@ -707,7 +727,7 @@ impl App {
         }
         // The host window leaves full screen only if this presentation took it there.
         let window = self.ui.window(cx, ids!(main_window));
-        let op = self.presenter.host.end(window.is_fullscreen(cx), cfg!(target_os = "macos"));
+        let op = self.presenter.host.end(window.is_fullscreen(cx), cfg!(target_os = "macos"), host::now());
         self.host_window_op(cx, op);
         // A closed window, or a failed app, has no script left to tell.
         if !matches!(ending, Ending::Closed | Ending::Failed) {
@@ -728,7 +748,7 @@ impl App {
         if self.ui.window(cx, ids!(main_window)).window_id() != Some(window) {
             return;
         }
-        let (op, left) = self.presenter.host.reported(fullscreen);
+        let (op, left) = self.presenter.host.reported(fullscreen, host::now());
         self.host_window_op(cx, op);
         if left {
             self.end_presentation(cx, Ending::HostLeft);
@@ -975,9 +995,9 @@ mod tests {
     #[test]
     fn a_host_window_already_full_screen_stays_so() {
         let mut host = HostFullscreen::default();
-        assert_eq!(host.begin(true, true), None);
-        assert_eq!(host.end(true, true), None);
-        assert_eq!(host.end(true, false), None);
+        assert_eq!(host.begin(true, true, 0.0), None);
+        assert_eq!(host.end(true, true, 1.0), None);
+        assert_eq!(host.end(true, false, 1.0), None);
     }
 
     /// Not full screen: the presentation enters it and leaves it again, on a
@@ -986,18 +1006,18 @@ mod tests {
     fn a_presentation_leaves_only_the_full_screen_it_entered() {
         for toggles in [true, false] {
             let mut host = HostFullscreen::default();
-            assert_eq!(host.begin(false, true), Some(HostOp::Enter));
-            assert_eq!(host.reported(true), (None, false), "it went in");
-            assert_eq!(host.reported(true), (None, false), "another geometry change");
-            assert_eq!(host.end(true, toggles), Some(HostOp::Leave), "toggles {toggles}");
-            assert_eq!(host.reported(false), (None, false), "our own leave ends nothing");
-            assert_eq!(host.end(false, toggles), None, "nothing more to give back");
+            assert_eq!(host.begin(false, true, 0.0), Some(HostOp::Enter));
+            assert_eq!(host.reported(true, 0.5), (None, false), "it went in");
+            assert_eq!(host.reported(true, 1.0), (None, false), "another geometry change");
+            assert_eq!(host.end(true, toggles, 5.0), Some(HostOp::Leave), "toggles {toggles}");
+            assert_eq!(host.reported(false, 5.5), (None, false), "our own leave ends nothing");
+            assert_eq!(host.end(false, toggles, 6.0), None, "nothing more to give back");
         }
         // The person left it already (macOS): a toggle now would enter it again.
         let mut host = HostFullscreen::default();
-        host.begin(false, true);
-        host.reported(true);
-        assert_eq!(host.end(false, true), None);
+        host.begin(false, true, 0.0);
+        host.reported(true, 0.5);
+        assert_eq!(host.end(false, true, 5.0), None);
     }
 
     /// The person leaving the host's full screen ends the presentation, which
@@ -1006,36 +1026,61 @@ mod tests {
     fn the_person_leaving_the_host_full_screen_ends_the_presentation() {
         for already in [false, true] {
             let mut host = HostFullscreen::default();
-            host.begin(already, true);
-            host.reported(true);
-            assert_eq!(host.reported(false), (None, true), "already {already}");
-            assert_eq!(host.end(false, true), None);
+            host.begin(already, true, 0.0);
+            host.reported(true, 0.5);
+            assert_eq!(host.reported(false, 1.0), (None, true), "already {already}");
+            assert_eq!(host.end(false, true, 2.0), None);
         }
     }
 
     /// Ended while the host window is still on its way in: on a toggling
-    /// platform the window's next report decides, however late it comes: in,
-    /// and it leaves; not in (a failed enter), and nothing is given back.
-    /// Elsewhere it leaves at once.
+    /// platform the window's next report decides, however late it comes
+    /// within [`PENDING_LEAVE_SECONDS`]: in, and it leaves; not in (a failed
+    /// enter), and nothing is given back. Elsewhere it leaves at once.
     #[test]
     fn a_presentation_ended_while_entering_leaves_once_in_however_late() {
         let mut host = HostFullscreen::default();
-        host.begin(false, true);
-        assert_eq!(host.end(false, true), None, "a toggle now would turn it round");
-        assert_eq!(host.reported(true), (Some(HostOp::Leave), false), "in, long after: it goes back out");
-        assert_eq!(host.reported(false), (None, false), "our own leave ends nothing");
-        assert_eq!(host.reported(true), (None, false), "and the next full screen is the person's");
+        host.begin(false, true, 0.0);
+        assert_eq!(host.end(false, true, 0.5), None, "a toggle now would turn it round");
+        let late = 0.5 + PENDING_LEAVE_SECONDS - 1.0;
+        assert_eq!(host.reported(true, late), (Some(HostOp::Leave), false), "in, long after: it goes back out");
+        assert_eq!(host.reported(false, late + 0.5), (None, false), "our own leave ends nothing");
+        assert_eq!(host.reported(true, late + 9.0), (None, false), "and the next full screen is the person's");
 
         let mut host = HostFullscreen::default();
-        host.begin(false, true);
-        host.end(false, true);
-        assert_eq!(host.reported(false), (None, false), "the enter failed");
-        assert_eq!(host.reported(true), (None, false), "so a full screen after it is the person's");
-        assert_eq!(host.begin(false, true), Some(HostOp::Enter), "and a new presentation asks again");
+        host.begin(false, true, 0.0);
+        host.end(false, true, 0.5);
+        assert_eq!(host.reported(false, 1.0), (None, false), "the enter failed");
+        assert_eq!(host.reported(true, 9.0), (None, false), "so a full screen after it is the person's");
+        assert_eq!(host.begin(false, true, 10.0), Some(HostOp::Enter), "and a new presentation asks again");
 
         let mut host = HostFullscreen::default();
-        host.begin(false, true);
-        assert_eq!(host.end(false, false), Some(HostOp::Leave), "maximize and restore do not toggle");
+        host.begin(false, true, 0.0);
+        assert_eq!(host.end(false, false, 0.5), Some(HostOp::Leave), "maximize and restore do not toggle");
+    }
+
+    /// A leave that waits has a limit. A presentation began while the window
+    /// was still leaving the last full screen, so macOS ignored its enter,
+    /// and the window's report of that leave came during the presentation.
+    /// Once [`PENDING_LEAVE_SECONDS`] pass after the presentation ends, the
+    /// person's own full screen is theirs, and a new presentation asks to
+    /// enter again instead of waiting for an enter that never came.
+    #[test]
+    fn a_leave_waiting_for_an_enter_that_never_came_expires() {
+        let mut host = HostFullscreen::default();
+        assert_eq!(host.begin(false, true, 0.0), Some(HostOp::Enter), "macOS ignores it mid-transition");
+        assert_eq!(host.reported(false, 0.8), (None, false), "the old leave's report, while it presents");
+        assert_eq!(host.end(false, true, 30.0), None, "still waiting for its enter");
+        let later = 30.0 + PENDING_LEAVE_SECONDS + 1.0;
+        assert_eq!(host.reported(true, later), (None, false), "the person's own full screen stays");
+        assert_eq!(host.end(true, true, later + 1.0), None, "and nothing of a presentation's is left");
+
+        let mut host = HostFullscreen::default();
+        host.begin(false, true, 0.0);
+        host.end(false, true, 1.0);
+        assert_eq!(host.begin(false, true, 1.0 + PENDING_LEAVE_SECONDS + 1.0), Some(HostOp::Enter), "it asks again");
+        assert_eq!(host.reported(true, 30.0), (None, false), "in, for the new presentation");
+        assert_eq!(host.end(true, true, 40.0), Some(HostOp::Leave));
     }
 
     /// A presentation beginning again while the enter asked for before is on
@@ -1043,20 +1088,20 @@ mod tests {
     #[test]
     fn a_new_presentation_keeps_an_enter_on_its_way() {
         let mut host = HostFullscreen::default();
-        assert_eq!(host.begin(false, true), Some(HostOp::Enter));
-        assert_eq!(host.end(false, true), None);
-        assert_eq!(host.begin(false, true), None, "the first enter serves it");
-        assert_eq!(host.reported(true), (None, false), "in, for the new presentation");
-        assert_eq!(host.end(true, true), Some(HostOp::Leave));
+        assert_eq!(host.begin(false, true, 0.0), Some(HostOp::Enter));
+        assert_eq!(host.end(false, true, 0.2), None);
+        assert_eq!(host.begin(false, true, 0.4), None, "the first enter serves it");
+        assert_eq!(host.reported(true, 0.6), (None, false), "in, for the new presentation");
+        assert_eq!(host.end(true, true, 3.0), Some(HostOp::Leave));
     }
 
     /// Hidden windows: the host window is never asked, so nothing is given back.
     #[test]
     fn hidden_windows_are_never_asked_to_go_full_screen() {
         let mut host = HostFullscreen::default();
-        assert_eq!(host.begin(false, false), None);
-        assert_eq!(host.reported(true), (None, false));
-        assert_eq!(host.end(false, true), None);
+        assert_eq!(host.begin(false, false, 0.0), None);
+        assert_eq!(host.reported(true, 0.5), (None, false));
+        assert_eq!(host.end(false, true, 1.0), None);
     }
 
     /// The presentation holds while its window is open with the instance
