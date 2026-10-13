@@ -378,7 +378,7 @@ workspace as a file, as section 7 already requires.
 | Step of the flow | State |
 | --- | --- |
 | Brief, and writing `main.splash` | Works: the system agent writes files into its workspace |
-| Generated designs | Merged, no live call recorded yet: `studio.image` (slice 2) generates one image through `model.image` under the calling agent's identity and writes it into the agent's workspace; the system agent is admitted while covered by developer mode, and the host still sets the model (`gpt-image-1`, `gpt-image-1-mini` or MiniMax `image-01`); octos's own `image_generation` tool still has no backend (`no_backend_bound`) |
+| Generated designs | Merged, no live call recorded yet: `studio.image` (slice 2, #513) generates one image through `model.image` under the calling agent's identity and writes it into the agent's workspace; the system agent is admitted while covered by developer mode, and the host still sets the model (`gpt-image-1`, `gpt-image-1-mini` or MiniMax `image-01`); octos's own `image_generation` tool still has no backend (`no_backend_bound`) |
 | Reference images in | `files.pick_photo` on Home 0.1.0-beta.2, one image, 1 MiB; no image share target; no capture of other apps |
 | Measurement, OCR, mapping | Not ported; `ocrs` and `rten` are in the lock file and unused outside the PDF engine |
 | Review screen | Not built |
@@ -399,7 +399,7 @@ Each slice is usable on its own.
 2. **Inputs.** An agent tool that calls `model.image` and saves the PNG into
    the agent's workspace, with the provider the person chose and the model the
    host sets for it; which to use first is an open question (below). Merged in
-   slice 2's PR as `studio.image`; no live call is recorded yet. Reference
+   #513 as `studio.image`; no live call is recorded yet. Reference
    images through `files.pick_photo`.
 3. **The pipeline as components.** The five crates above, developed on the
    desktop with OctoSense's `wasm_call` example (OctoSense #455) and App Flow's
