@@ -3919,7 +3919,7 @@ fn render_confirm(){
     ui.confirm.render()
 }
 fn render_home(){ if st.screen == "home" { ui.home_pane.render() render_status() } }
-fn render_bar(){ if deck_tab() != nil { ui.bar.render() } }
+fn render_bar(){ if deck_tab() != nil { ui.qd_toolbar.render() } }
 fn render_strip(){ if deck_tab() != nil { ui.strip.render() } }
 fn render_thumbs(){
     let t = deck_tab()
@@ -6484,7 +6484,9 @@ SolidView{width: Fill height: Fill flow: Overlay draw_bg.color: qd_desk
         }
         deck := View{visible: false width: Fill height: Fill flow: Down
             View{width: Fill height: Fit flow: Down
-                bar := SolidView{width: Fill height: BAR_H draw_bg.color: qd_bar on_render: || { bar_view() }}
+                // Not `bar`: the shell looks its own bar up by that name in the
+                // whole window, hosted apps included (#516, #519).
+                qd_toolbar := SolidView{width: Fill height: BAR_H draw_bg.color: qd_bar on_render: || { bar_view() }}
                 Line{}
             }
             full_box := View{visible: false width: Fill height: Fit

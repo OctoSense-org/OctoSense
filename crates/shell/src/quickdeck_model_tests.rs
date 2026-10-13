@@ -647,3 +647,50 @@ fn a_clips_control_tells_the_time_and_stays_on_the_slide() {
     assert_eq!(at("[900, 100, 60, 40]", 300.0)[0], json!(541));
 }
 
+/// The names the shell finds its own widgets by in the whole window
+/// (`self.ui.widget(cx, ids!(bar))`), hosted apps' widgets included.
+fn shell_window_lookups() -> std::collections::BTreeSet<String> {
+    let mut names = std::collections::BTreeSet::new();
+    for source in [include_str!("lib.rs"), include_str!("desktop_app.rs"), include_str!("mobile_app.rs")] {
+        for (at, _) in source.match_indices("self.ui.") {
+            let rest = &source[at..];
+            let line = &rest[..rest.find('\n').unwrap_or(rest.len())];
+            let Some(open) = line.find("(cx, ids!(") else { continue };
+            let name = &line[open + "(cx, ids!(".len()..];
+            let name: String = name.chars().take_while(|c| c.is_ascii_alphanumeric() || *c == '_').collect();
+            if !name.is_empty() {
+                names.insert(name);
+            }
+        }
+    }
+    names
+}
+
+/// The names Quick Deck gives its widgets (`name := Widget{...}`).
+fn quick_deck_widget_names() -> std::collections::BTreeSet<String> {
+    let mut names = std::collections::BTreeSet::new();
+    for (at, _) in QUICK_DECK.match_indices(" := ") {
+        let before = &QUICK_DECK[..at];
+        let name: String = before.chars().rev().take_while(|c| c.is_ascii_alphanumeric() || *c == '_').collect::<Vec<_>>().into_iter().rev().collect();
+        if !name.is_empty() {
+            names.insert(name);
+        }
+    }
+    names
+}
+
+#[test]
+fn quick_deck_names_no_widget_the_shell_finds_by_name_in_its_window() {
+    // Since #516 put the shell's own bar after the scene, the shell's
+    // `self.ui.widget(cx, ids!(bar))` found Quick Deck's toolbar, then named
+    // `bar`, first, and the shell panicked applying its chrome to it (#519
+    // finds the bar another way). `bar` stays out of Quick Deck's names, and
+    // so does every name the shell looks up in its window.
+    let mut shell = shell_window_lookups();
+    assert!(shell.contains("main_window"), "the lookups were read: {shell:?}");
+    shell.insert("bar".to_string());
+    let ours = quick_deck_widget_names();
+    assert!(ours.contains("qd_toolbar") && ours.contains("qd_clip"), "the names were read: {ours:?}");
+    let both: Vec<&String> = shell.intersection(&ours).collect();
+    assert!(both.is_empty(), "Quick Deck names widgets the shell looks up in its window: {both:?}");
+}
