@@ -1,0 +1,117 @@
+name: Publish Octos npm packages
+
+# Keep the npm credential in OctoSense. Publish only already-released, stable
+# Octos/OctosCode packages; never execute scripts from the downloaded package.
+on:
+  pull_request:
+    paths: ['.github/workflows/publish-octos-npm.yml']
+  workflow_dispatch:
+    inputs:
+      package:
+        description: Package to publish
+        required: true
+        type: choice
+        options: [octos, octoscode]
+      version:
+        description: Published stable version, without v (for example 2.0.3)
+        required: true
+        type: string
+      dry_run:
+        description: Validate credentials and package without publishing
+        required: true
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: octos-npm-${{ inputs.package || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  credential-check:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '22'
+          registry-url: https://registry.npmjs.org
+      - name: Verify npm authentication
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${NODE_AUTH_TOKEN:-}" ]; then
+            echo '::error::NPM_TOKEN is unavailable to OctoSense-org/OctoSense. Authorize this repository for the organization secret or set its repository secret.'
+            exit 1
+          fi
+          npm whoami
+
+  publish:
+    if: github.event_name == 'workflow_dispatch'
+    needs: credential-check
+    runs-on: ubuntu-latest
+    env:
+      PACKAGE: ${{ inputs.package }}
+      VERSION: ${{ inputs.version }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '22'
+          registry-url: https://registry.npmjs.org
+      - name: Validate official release and prepare package
+        id: package
+        run: |
+          set -euo pipefail
+          [[ "$PACKAGE" == octos || "$PACKAGE" == octoscode ]]
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          repo="octos-org/$PACKAGE"
+          tag="v$VERSION"
+          gh release view "$tag" --repo "$repo" --json tagName,isDraft,isPrerelease > release.json
+          jq -e --arg tag "$tag" '.tagName == $tag and .isDraft == false and .isPrerelease == false' release.json
+          mkdir package
+          if [ "$PACKAGE" == octos ]; then
+            gh api "repos/$repo/tarball/$tag" > source.tar.gz
+            mkdir source
+            tar -xzf source.tar.gz -C source --strip-components=1
+            cd source/packaging/npm
+            test "$(node -p 'require("./package.json").name')" = '@octos-org/octos'
+            npm version "$VERSION" --no-git-tag-version --allow-same-version --ignore-scripts
+            npm pack --ignore-scripts --pack-destination "$GITHUB_WORKSPACE/package" --json > "$GITHUB_WORKSPACE/pack.json"
+            cd "$GITHUB_WORKSPACE"
+            artifact="package/$(jq -r '.[0].filename' pack.json)"
+          else
+            gh release download "$tag" --repo "$repo" --pattern octoscode-npm-package.tar.gz --pattern sha256.sum --dir package
+            (cd package && grep ' \*octoscode-npm-package.tar.gz$' sha256.sum | sha256sum --check --strict -)
+            artifact=package/octoscode-npm-package.tar.gz
+          fi
+          # npm inspects the archive without executing its install hooks.
+          npm publish "$artifact" --dry-run --ignore-scripts --json > package-preview.json
+          jq -e --arg name "@octos-org/$PACKAGE" --arg version "$VERSION" '.name == $name and .version == $version' package-preview.json
+          echo "artifact=$artifact" >> "$GITHUB_OUTPUT"
+      - name: Publish stable package
+        if: inputs.dry_run == false
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          ARTIFACT: ${{ steps.package.outputs.artifact }}
+        run: |
+          set -euo pipefail
+          existing=$(npm view "@octos-org/$PACKAGE@$VERSION" version 2>/dev/null || true)
+          if [ "$existing" == "$VERSION" ]; then
+            echo "@octos-org/$PACKAGE@$VERSION already exists; verifying its stable tag."
+          else
+            npm publish "$ARTIFACT" --access public --tag latest --ignore-scripts
+          fi
+          for attempt in $(seq 1 18); do
+            published=$(npm view "@octos-org/$PACKAGE@latest" version 2>/dev/null || true)
+            if [ "$published" == "$VERSION" ]; then
+              echo "Verified @octos-org/$PACKAGE@latest = $VERSION"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo '::error::The requested stable package is not visible under latest.'
+          exit 1
