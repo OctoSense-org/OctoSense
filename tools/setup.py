@@ -170,9 +170,7 @@ def owned_state(path, overlay):
     untracked = git(path, "ls-files", "--others", "--exclude-standard").stdout.split()
     if untracked:
         return f"untracked files ({', '.join(untracked[:5])})"
-    # A promisor worktree may have index blobs that are not fetched locally;
-    # the staged tree hash still proves the exact reviewed overlay.
-    tree = git(path, "write-tree", "--missing-ok").stdout.strip()
+    tree = git(path, "write-tree").stdout.strip()
     allowed = {git(path, "rev-parse", "HEAD^{tree}").stdout.strip()}
     if overlay:
         allowed.add(overlay["tree"])
@@ -259,7 +257,7 @@ def prepare_source(root, name, spec, args, overlay=None):
     current = git(path, "rev-parse", "--verify", "HEAD", check=False).stdout.strip()
     if current and (git(path, "diff", "--quiet", check=False).returncode or git(path, "ls-files", "--others", "--exclude-standard").stdout):
         raise RuntimeError(f"Preserving local changes: {path}")
-    tree = git(path, "write-tree", "--missing-ok").stdout.strip()
+    tree = git(path, "write-tree").stdout.strip()
     base_tree = git(path, "rev-parse", "HEAD^{tree}", check=False).stdout.strip()
     patches = []
     if overlay:
@@ -292,7 +290,7 @@ def prepare_source(root, name, spec, args, overlay=None):
         for patch in patches:
             git(path, "apply", "--check", str(patch))
             git(path, "apply", "--index", str(patch))
-        if git(path, "write-tree", "--missing-ok").stdout.strip() != overlay["tree"]:
+        if git(path, "write-tree").stdout.strip() != overlay["tree"]:
             raise RuntimeError(f"Runtime patch produced an unexpected tree: {path}")
 
 
@@ -327,7 +325,7 @@ def verify_consumer(expected):
         if "Cargo.toml" not in files:
             continue
         path = Path(directory) / "Cargo.toml"
-        for line in path.read_text(encoding="utf-8").splitlines():
+        for line in path.read_text().splitlines():
             if line.lstrip().startswith("#"):
                 continue
             url = re.search(r'git\s*=\s*"([^"]+)"', line)
@@ -340,7 +338,7 @@ def verify_consumer(expected):
 def verify_cargo(root):
     """One Makepad (the prepared checkout), one App Hub, one octos, one Rinx."""
     metadata = json.loads(subprocess.check_output(
-        ["cargo", "metadata", "--locked", "--format-version", "1", "--all-features"], cwd=CONSUMER, text=True, encoding="utf-8"))
+        ["cargo", "metadata", "--locked", "--format-version", "1", "--all-features"], cwd=CONSUMER, text=True))
     seen = set()
     sources = {}
     for package in metadata["packages"]:

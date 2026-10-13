@@ -247,6 +247,20 @@ charges a per-app daily budget (defaults: 6 calls a minute, 100 calls and
 never sees the provider, the model id or the key. The method table and the
 error codes are in [src/complete/mod.rs](src/complete/mod.rs).
 
+On Windows, `model.complete@2` also accepts one optional
+`image: {app_path}` pointing into the authenticated caller's own storage.
+The host reads at most 10 MiB of JPEG, PNG or WebP, then sends it through a
+configured OpenAI-compatible chat route in the person's order. A configured
+route may still reject images; discovery reports host support, not provider
+readiness. Other platforms continue to advertise `model.complete@1` without
+image input. Apps can declare version 2 as optional and inspect
+`runtime.describe({method:"model.complete"})`; they should offer a manual
+fallback when it is absent. The image path is separate from the 32 KiB JSON
+`input` budget because the host reads the file only after caller admission.
+`files.import` can stage up to 64 MiB on desktop, while `files.pick_photo`
+stops at 1 MiB; callers must check the 10 MiB image limit before requesting
+the model. Provider credentials and model names remain host-owned.
+
 The shell registers it through [`crates/ai-host`](../../../crates/ai-host).
 Capability declarations describe usage: an app can call `model.complete`
 without listing `model`. The host must supply `complete::Options::grants`

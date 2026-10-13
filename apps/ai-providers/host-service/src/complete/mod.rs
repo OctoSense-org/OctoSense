@@ -8,8 +8,8 @@
 //!
 //! | method | args | answer |
 //! |---|---|---|
-//! | `model.complete` | `{task, input, schema, class?, allow_urls?, image?: {app_path}}` | `{output, meta: {class, requested, attempts, usage: {input_tokens, output_tokens, estimated}, budget}}` |
-//! | `model.vision_capability` | `{}` | `{schema: 1, supported: true}` for the admitted Pantry app on Windows |
+//! | `model.complete@2` on Windows | `{task, input, schema, class?, allow_urls?, image?: {app_path}}` | `{output, meta: {class, requested, attempts, usage: {input_tokens, output_tokens, estimated}, budget}}` |
+//! | `model.complete@1` elsewhere | `{task, input, schema, class?, allow_urls?}` | the same reply, without image input |
 //! | `model.budget` | – | the caller's `budget` alone |
 //!
 //! - `task` (1 to [`TASK_MAX`] bytes): what to do, in words.
@@ -61,7 +61,7 @@ use crate::model::{effective_model, ProfileStore};
 use crate::probe;
 use crate::vault::Vault;
 use octosense_appstore::services::{HostService, Replier, ServiceCall, ServiceHost};
-use octosense_llm_config::{catalog, registry, Provider};
+use octosense_llm_config::{catalog, registry, ApiType, Provider};
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -126,6 +126,8 @@ pub enum Code {
     Capability,
     /// The person has no usable AI provider.
     NoProvider,
+    /// This host does not implement the requested input mode.
+    Unavailable,
     /// Too many calls in the last minute.
     Rate,
     /// Today's calls or tokens are used up.
@@ -145,6 +147,7 @@ impl Code {
         match self {
             Code::Capability => "capability",
             Code::NoProvider => "no_provider",
+            Code::Unavailable => "unavailable",
             Code::Rate => "rate",
             Code::Budget => "budget",
             Code::BadRequest => "bad_request",
@@ -525,9 +528,9 @@ impl ModelHost {
         }
         let mut ordered = order(candidates, request.class);
         if image.is_some() {
-            ordered.retain(|candidate| vision::provider_allowed(&candidate.provider));
+            ordered.retain(|candidate| crate::model::effective_api_type(&candidate.provider) == ApiType::OpenAi);
             if ordered.is_empty() {
-                return Err(Refusal::new(Code::NoProvider, "No configured MiniMax-M3 or kimi-k2.5 image model is available."));
+                return Err(Refusal::new(Code::NoProvider, "No configured OpenAI-compatible AI route is available for image input."));
             }
         }
         let now = (self.clock)();

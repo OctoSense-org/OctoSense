@@ -4,7 +4,7 @@
     "base_revision": "d653bc4493619ab979ccff165cf48c0c63b77d19",
     "patch": "tools/runtime-patches/makepad-settings.patch",
     "sha256": "3a79cddddc89dc4d064a9f0bdd17dc8111dcab9c796a334d95f61ecb9d5011aa",
-    "tree": "3c19414f676789f67d65f1f7d9ec678f79665866",
+    "tree": "42d271b01ba54a929ccda1a15362a1758fa7334d",
     "product_fixes": [
       "Settings integration: Android IME synchronization, accessibility and reduced motion, GLES program-cache validation, obscured-gesture cancellation and scroll-position observation.",
       "Contained-app isolation and secret-input restrictions come from the pinned upstream runtime; the Settings overlay preserves those gates.",
@@ -14,7 +14,7 @@
       "Windows frame completion: backport Makepad work c508ab0c8 GPU completion polls around native and hosted repaint so upload buffers can retire.",
       "Android application extensions honor the manifest's explicit class name, keeping Back and platform integration active under custom test package ids.",
       "Android physical touchscreen input has scoped host approval provenance; default and nested synthetic input are untrusted. Compromised OS/root impersonation is outside this app-level boundary; the subsequent desktop patch adds macOS pointer provenance.",
-      "macOS AppKit pointer metadata enables native approval for HID events without a posting process. Synthetic and remote dispatch remain untrusted, including nested callbacks; the later Windows camera patch adds Windows pointer provenance, while Linux physical approval remains unsupported.",
+      "macOS AppKit pointer metadata enables native approval for HID events without a posting process. Synthetic and remote dispatch remain untrusted, including nested callbacks; the Windows patch adds pointer provenance while Linux physical approval remains unsupported.",
       "Android multiline Enter key events finish the active composition before inserting a newline, retaining the last word; ordinary IME composition commits keep replacement semantics.",
       "Host-owned backend authentication reuses native WebViews with isolated sessions, exact callback interception, same-origin navigation and no page tool bridge; Android uses an ephemeral private process and profile.",
       "Android Camera waits for one permission answer and refreshes an empty camera list after grant. Video pause/resume preserves an unprepared player so first-use authorization cannot prevent its initial source assignment.",
@@ -48,7 +48,8 @@
       "A native host may stage up to 64 MiB into an app's jail (MAX_IMPORT_BYTES; prepare_import and commit_import), so files.import can take documents above the 1 MiB script write limit. Staged bytes never enter the script heap; the jail's byte quota and entry cap still apply, and script writes, photo picks and exports keep 1 MiB.",
       "An OS resume restarts only the Video playback its pause stopped, including a start it cancelled; a player paused by the person, or paused or stopped by its app during the pause, stays paused (#406).",
       "Camera capture and recording use explicit per-call boolean audio/library options, defaulting to silent app-local output. Permission availability never opts into recording audio or exporting captures; async microphone checks retain capture intent and background provenance. Unsupported library export fails before capture.",
-      "Windows native physical pointer provenance enables host-owned camera consent. A Media Foundation camera source feeds the existing YUV video preview and still-capture path, with latest-frame buffering and cleanup; macOS retains its native AVFoundation preview."
+      "Windows physical pointer messages carry scoped input provenance to host review sheets. Injected, posted, remote and nested synthetic input remains untrusted; approval eligibility changes across host services, not only camera consent.",
+      "A Media Foundation camera source feeds the existing YUV video preview and still-capture path, with latest-frame buffering and cleanup; macOS retains its native AVFoundation preview."
     ],
     "stacked": [
       {
@@ -188,8 +189,12 @@
         "sha256": "d056b76d2eb6b55aa9c96447a49fc90d32a9a235b6bc9a1ff125902a73c28208"
       },
       {
+        "patch": "tools/runtime-patches/makepad-windows-trusted-input.patch",
+        "sha256": "a5786f0121051d074813b7ad908da5388dcad3c46f804d4def57c1e1ef057ed3"
+      },
+      {
         "patch": "tools/runtime-patches/makepad-windows-camera-preview.patch",
-        "sha256": "9e0a044e2557d3d654d5988e026fc254f70dfdbbb1a188ff7e273abbb22da24c"
+        "sha256": "4fd133379eb6d8973d146656198df33ed20320a3711986a5cf271ab8e730de3e"
       }
     ]
   }

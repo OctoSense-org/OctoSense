@@ -437,13 +437,6 @@ fn run_call(context: &Context) -> Result<Value, Refusal> {
     context.check()?;
     context.host.attach(&context.call.host_dir);
     match context.call.method() {
-        "vision_capability" => {
-            if super::vision::supported(&context.call.app_id) && context.call.args.as_object().is_some_and(|o| o.is_empty()) {
-                Ok(json!({"schema":1,"supported":true}))
-            } else {
-                Err(Refusal::new(Code::Capability, "Image calls are unavailable to this app on this host."))
-            }
-        }
         "complete" => {
             let mut args = context.call.args.clone();
             let image = args.as_object_mut().and_then(|o| o.remove("image"));
@@ -773,13 +766,19 @@ pub(super) fn catalog() -> Vec<HostApiMethod> {
                 .with_agent_access(AgentAccess::Allowed)
         })
         .collect();
-    methods.push(HostApiMethod::new("model.vision_capability", 1, "model",
-        "Check whether this host offers Pantry's app-local image call",
-        json!({"type":"object","additionalProperties":false}),
-        json!({"type":"object","required":["schema","supported"],
-            "properties":{"schema":{"const":1},"supported":{"const":true}},
-            "additionalProperties":false}))
-        .with_platforms(&["windows"])
+    let mut properties = json!({
+        "task":{"type":"string"}, "input":{}, "schema":{"type":"object"},
+        "class":{"enum":["fast","strong"]}, "allow_urls":{"type":"boolean"}
+    });
+    if cfg!(target_os = "windows") {
+        properties["image"] = json!({"type":"object","required":["app_path"],
+            "properties":{"app_path":{"type":"string"}},"additionalProperties":false});
+    }
+    methods.push(HostApiMethod::new("model.complete", if cfg!(target_os = "windows") { 2 } else { 1 }, "model",
+        "Make one schema-checked model call; version 2 accepts one bounded app-local image on Windows",
+        json!({"type":"object","required":["task","schema"],"properties":properties,"additionalProperties":false}),
+        json!({"type":"object"}))
+        .with_platforms(&["macos", "android", "windows", "linux", "ios", "openharmony"])
         .with_agent_access(AgentAccess::Allowed));
     methods
 }
