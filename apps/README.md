@@ -522,6 +522,28 @@ isolate under no app's policy. Calls from the sheet arrive marked
   they come from the sheet, before any service sees them;
 - only a service can open a sheet; an app cannot.
 
+### The `window` service
+
+The shell's own service for an app's window. `window.fullscreen {on: true}`
+puts the app's own window in presentation full screen when the person taps or
+clicks something in it (a deck's Present, a reader's Read mode), and
+`{on: false}` takes it out. On a desktop the window then covers the whole desk
+with no title bar, the shell's bar and dock hide (no screen edge brings them
+out while it presents), and the OctoSense window enters full screen unless it
+is already there. **Esc** ends it (the shell's
+key: a script app gets no keys), as do `{on: false}`, ⌘F and the window
+losing the focus, and the shell shows "Press Esc to exit full screen" for
+three seconds. The answer is `{applied, fullscreen, fills_screen}`. A refusal
+starts with `gesture_required:` (no press in the window in the last 5
+seconds), `foreground_required:` (a background surface or a window not in
+front), `not_a_window:` (a glance card, a sheet or another app's window) or
+`invalid_arguments:`. An app may define `fn on_app_fullscreen(on)`, which the
+shell calls in the app's isolate when full screen starts and when it ends. On
+a phone, where every app fills the screen, nothing changes:
+`{applied: false, fullscreen: false, fills_screen: true}`. The service is the
+shell's (`crates/shell/src/app_fullscreen.rs`), not App Hub's, and
+`runtime.list` does not list it yet.
+
 ### The `mail` service
 
 Ordinary App Hub apps now have account-bound compose/status APIs and native SMTP review. See the [Mail service guide and migration example](mail/host-service/README.md); direct agent or synthetic sending remains refused.

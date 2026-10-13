@@ -428,6 +428,22 @@ python3 apps/writer/tests/ui.py --card-host <App Hub>/target/release/card-host -
   `mail.sheet.cancel`），只有来自面板的调用才会被分发，且在任何服务看到之前就已检查；
 - 只有服务能打开面板，应用不能。
 
+### `window` 服务
+
+Shell 自己为应用窗口提供的服务。用户点按或点击应用窗口中的某个控件时（演示文稿的 Present、
+阅读器的 Read 模式），`window.fullscreen {on: true}` 让应用自己的窗口进入演示全屏，
+`{on: false}` 让它退出。在桌面上，窗口随即铺满整个桌面且没有标题栏，Shell 的栏和程序坞
+隐藏（演示期间屏幕边缘也不会把它们唤出），OctoSense 窗口如果还不在全屏中也会进入全屏。按 **Esc** 结束（这是 Shell 的按键：
+脚本应用收不到按键），`{on: false}`、⌘F 以及窗口失去焦点也会结束它；Shell 会显示
+"Press Esc to exit full screen" 三秒。回答是 `{applied, fullscreen, fills_screen}`。
+拒绝以下列前缀开头：`gesture_required:`（最近 5 秒内没有在这个窗口里按下过）、
+`foreground_required:`（后台界面，或窗口不在最前）、`not_a_window:`（glance 卡片、面板
+或其他应用的窗口）、`invalid_arguments:`。应用可以定义 `fn on_app_fullscreen(on)`，
+全屏开始和结束时 Shell 都会在应用的 isolate 中调用它。在手机上，每个应用本来就占满屏幕，
+所以什么都不会改变：`{applied: false, fullscreen: false, fills_screen: true}`。这个服务
+属于 Shell（`crates/shell/src/app_fullscreen.rs`），不属于 App Hub，`runtime.list` 目前还
+不列出它。
+
 ### `mail` 服务
 
 普通 App Hub 应用现可使用按应用/账户隔离的撰写、状态查询和原生 SMTP 审阅接口。见 [Mail 服务与迁移示例](mail/host-service/README.zh-CN.md)；Agent 和合成输入仍不能直接批准发送。

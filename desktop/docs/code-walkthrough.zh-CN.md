@@ -122,6 +122,32 @@ MAKEPAD_APP_CONFIG='{"mail_demo":true}' cargo run --locked --release -p octosens
 还原时窗口回到它自己的位置和尺寸。程序坞预留区域（Windows）或没有程序坞时，最大化的窗口
 像以前一样填满整个工作区。
 
+按 ⌘F 或在 macOS 系列样式中点绿色按钮，窗口进入全屏，铺满整个桌面。`DesktopWindow::fullscreen`
+与 `maximized` 相互独立，`WmLayout::rects_of` 给窗口越过外边距的矩形，这块矩形由
+`WmDesk::draw_walk` 每帧按桌面自身的矩形设置。`WmDesk::draw_tile` 只绘制窗口内容。顶栏和浮动程序坞
+隐藏（`desktop::front_fullscreen`），直到指针停在屏幕顶边或底边（`edge_reveal.rs`、
+`App::top_edge`、`App::place_bar`）。退出全屏时，窗口的矩形、缩放状态和它在窗口堆叠中的位置都
+原样恢复，因为它们从未改变。
+
+脚本应用在用户点按或点击的处理函数中调用
+`host.request("window.fullscreen", {on: true}, fn(r){…})`，让自己的窗口进入演示全屏
+（[`app_fullscreen.rs`](../../crates/shell/src/app_fullscreen.rs)）。Shell 的 `window`
+宿主服务把请求排入队列。事件处理完后，`App::serve_window_requests` 查找由该应用的 Card
+运行器运行发出请求的那个 isolate 的窗口（`App::window_of`），所以应用只能改动自己的窗口。
+用户在最近五秒内没有在这个窗口里按下过时，请求被拒绝（`Activation`）：makepad 无法分辨
+`host.request` 来自哪个处理函数，所以 Shell 像浏览器一样保留一个短暂的激活状态。随后
+`WmLayout::set_fullscreen` 让这个窗口进入全屏，`WmState::presentation` 让任何屏幕边缘都
+不再唤出顶栏、标题栏或程序坞（`desktop::dock_shows`、`App::desktop_pointer`），就像幻灯片的
+放映模式。Shell 自己的窗口如果还不在宿主全屏中，就进入全屏（`HostFullscreen`，使用栏上窗口
+控制按钮的同一个调用：macOS 上是原生全屏，其他平台是 makepad 的最大化；makepad 的
+`Window::fullscreen` 在 macOS 上目前不起作用），OSD 显示 "Press Esc to exit full screen"
+三秒。以下任一情况结束演示全屏：Esc、`{on: false}`、⌘F、窗口关闭或失去焦点、切换风格、用户
+离开宿主全屏。`App::sync_presentation` 在每个事件之后检查；只有这次演示全屏让宿主窗口进入了
+全屏时，宿主窗口才退出全屏。回答是 `{applied, fullscreen, fills_screen}`，应用可选的
+`on_app_fullscreen(on)` 钩子在开始和结束时都会收到通知。在手机上，这个请求不改变任何东西
+（`fills_screen: true`）。隐藏窗口运行的 Shell（`MAKEPAD_HIDE_WINDOWS`）从不让宿主窗口进入
+全屏，所以在真实显示器上进入 macOS 全屏**尚未验证**；Windows 和 Linux 上的最大化同样未验证。
+
 准入验证应用包，解析元数据与资源上限。能力名称披露用途，不是执行许可。脚本的 `host.request(...)` 按应用身份执行。
 App Hub 的 `crates/appstore/src/services.rs` 定义 `HostService`、`ServiceCall` 和回复机制；
 调用携带应用身份和宿主目录，供服务检查。只有明确声明的 Agent 工具，才会把相应操作提供给模型。

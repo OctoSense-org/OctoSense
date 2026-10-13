@@ -154,6 +154,43 @@ window fills the whole work area. Restoring brings back the
 window's own rect. With a dock that reserves its strip (Windows) or no dock,
 a maximized window fills the whole work area, as before.
 
+A full-screen window, from ⌘F or the green button in the macOS-family
+styles, covers the whole desk. `DesktopWindow::fullscreen` is kept apart from
+`maximized`, and `WmLayout::rects_of` gives the window the rect past the
+outer gap, which `WmDesk::draw_walk` sets from the desk's own rect every
+frame. `WmDesk::draw_tile` draws it as content alone. The bar and a floating
+dock hide (`desktop::front_fullscreen`) until the pointer rests on the top or
+bottom edge (`edge_reveal.rs`, `App::top_edge`, `App::place_bar`). Leaving
+full screen gives back the window's rect, zoom and place in the stack, which
+never changed.
+
+A script app puts its own window in presentation full screen with
+`host.request("window.fullscreen", {on: true}, fn(r){…})`, from the handler
+of the person's tap or click ([`app_fullscreen.rs`](../../crates/shell/src/app_fullscreen.rs)).
+The shell's `window` host service queues the request. After the event,
+`App::serve_window_requests` looks for the window whose Card runner runs the
+isolate that asked, for that app (`App::window_of`), so an app reaches only
+its own window. It refuses a request when the person has not pressed in that
+window in the last five seconds (`Activation`): makepad cannot tell which
+handler made a `host.request`, so the shell keeps a transient activation, as
+a browser does. `WmLayout::set_fullscreen` then makes that window full
+screen, and `WmState::presentation` keeps every edge from bringing the bar,
+the title bar or the dock out (`desktop::dock_shows`, `App::desktop_pointer`),
+as in a slideshow's play mode. The shell's own window enters the host's full
+screen if it is not there already (`HostFullscreen`, through the call the
+bar's own window control makes: macOS's native full screen, makepad's
+maximize elsewhere; makepad's `Window::fullscreen` does nothing on macOS
+yet), and the OSD says "Press Esc to exit full screen" for three seconds.
+These end it: Esc, `{on: false}`, ⌘F, the window closing or losing the
+focus, a style switch, or the person leaving the host's full screen.
+`App::sync_presentation` checks after every event, and the host window leaves
+full screen only if the presentation entered it. The answer is
+`{applied, fullscreen, fills_screen}`, and the app's optional
+`on_app_fullscreen(on)` hook hears both ends. On a phone the request changes
+nothing (`fills_screen: true`). A hidden shell (`MAKEPAD_HIDE_WINDOWS`) never
+asks the host window to go full screen, so entering macOS's full screen on a
+real display is **unverified**; so is the maximize on Windows and Linux.
+
 Admission verifies the bundle and resolves its metadata and resource limits.
 Capability names disclose usage, not execution permission. A script's
 `host.request(...)` runs under that app's identity. App Hub's
