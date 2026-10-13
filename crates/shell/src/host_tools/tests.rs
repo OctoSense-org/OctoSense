@@ -1443,6 +1443,16 @@ fn studio_app_tools_are_own_caller_only_and_disappear_on_revocation() {
         assert_eq!(sent.lock().unwrap()[0]["error"]["kind"],"not_granted");
         w.dev_all=true;
     }
+    // An app's agent naming `studio.image` directly is refused by the relay
+    // itself, before the schema check or the executor.
+    #[cfg(all(unix, any(feature="app-hub", native_mobile)))]
+    {
+        let mut c=call("studio-app-image","studio.image","os.news");c.app="os.news".into();
+        c.args=json!({"prompt":"a red square on white"});
+        let (r,sent)=reply("studio-app-image");
+        relay.handle(Event::Call{call:c,reply:r},&mut w);
+        assert_eq!(sent.lock().unwrap()[0]["error"]["kind"],"not_granted");
+    }
     assert_eq!(host.0.lock().unwrap().len(),app_tools.len());
 }
 // ------------------------------------------------------------ the engines

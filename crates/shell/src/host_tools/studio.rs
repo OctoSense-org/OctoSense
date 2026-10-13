@@ -50,6 +50,12 @@ pub fn declarations(app: &str) -> Vec<Value> {
 /// spends the person's image budget, so an app's agent is not offered it
 /// in this slice (ADR 0006).
 const SYSTEM_ONLY: &[&str] = &["studio.image"];
+/// Whether `tool` is a studio tool that `app`'s agent may be granted at
+/// all: every one for the system agent, all but [`SYSTEM_ONLY`] for an
+/// app's own agent. The relay's grant and the executor both ask.
+pub fn granted_to(app: &str, tool: &str) -> bool {
+    is_tool(tool) && (app == SYSTEM || !SYSTEM_ONLY.contains(&tool))
+}
 /// The declaration of one of [`APP_TOOLS`].
 fn tool_declaration(app: &str, name: &str) -> Value {
     #[cfg(all(unix, any(feature = "app-hub", native_mobile)))]
@@ -492,7 +498,9 @@ pub fn test_flow(spec_path: &str) -> Result<(), String> {
                 };
                 seen.insert(name.clone());
                 let tool = request["name"].as_str().unwrap_or("");
-                if !is_tool(tool) {
+                // A fixture drives the free tools only: `studio.image`
+                // spends the person's image budget.
+                if !is_tool(tool) || SYSTEM_ONLY.contains(&tool) {
                     continue;
                 }
                 let mut call = match HostToolCall::parse(
