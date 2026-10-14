@@ -3362,6 +3362,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "disktree-core"
+version = "0.11.0"
+source = "git+https://github.com/tobi/disktree?rev=6c8d4ce6211bf135ff4e42890faebff1040e1846#6c8d4ce6211bf135ff4e42890faebff1040e1846"
+dependencies = [
+ "chrono",
+ "rayon",
+ "rustc-hash 2.1.3",
+ "rustix",
+ "sysinfo 0.31.4",
+ "trash",
+ "winapi-util",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
 name = "dispatch2"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5381,8 +5396,8 @@ dependencies = [
  "libc",
  "log",
  "rustversion",
- "windows-link 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "windows-result 0.4.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "windows-link 0.1.3",
+ "windows-result 0.3.4",
 ]
 
 [[package]]
@@ -6297,7 +6312,7 @@ dependencies = [
  "log",
  "presser",
  "thiserror 2.0.20",
- "windows 0.62.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "windows 0.61.3",
 ]
 
 [[package]]
@@ -7043,7 +7058,7 @@ dependencies = [
  "js-sys",
  "log",
  "wasm-bindgen",
- "windows-core 0.62.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "windows-core 0.61.2",
 ]
 
 [[package]]
@@ -10976,7 +10991,7 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "subtle",
- "sysinfo",
+ "sysinfo 0.34.2",
  "tar",
  "tempfile",
  "tokio",
@@ -11829,6 +11844,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "octosense-octobuddy"
+version = "0.3.2"
+source = "git+https://github.com/tyreseluo/OctoBuddy.git?rev=668765cc3e1e6c2ccd9a35baaeabebd76d3da852#668765cc3e1e6c2ccd9a35baaeabebd76d3da852"
+dependencies = [
+ "base64 0.22.1",
+ "disktree-core",
+ "makepad-app-module",
+ "makepad-terminal",
+ "makepad-widgets",
+ "octosense-app-peers",
+ "octosense-app-policy",
+ "octosense-llm-config",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+]
+
+[[package]]
 name = "octosense-pdf-service"
 version = "0.1.0"
 dependencies = [
@@ -11955,6 +11988,7 @@ dependencies = [
  "octosense-markdown-editor",
  "octosense-news-service",
  "octosense-oauth-service",
+ "octosense-octobuddy",
  "octosense-pdf-service",
  "octosense-photo-service",
  "octosense-reference",
@@ -17055,6 +17089,19 @@ dependencies = [
 
 [[package]]
 name = "sysinfo"
+version = "0.31.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "355dbe4f8799b304b05e1b0f05fc59b2a18d36645cf169607da45bde2f69a1be"
+dependencies = [
+ "core-foundation-sys",
+ "libc",
+ "memchr 2.8.3",
+ "ntapi",
+ "windows 0.56.0",
+]
+
+[[package]]
+name = "sysinfo"
 version = "0.34.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a4b93974b3d3aeaa036504b8eefd4c039dced109171c1ae973f1dc63b2c7e4b2"
@@ -17713,6 +17760,23 @@ checksum = "1ad61aed86bc3faea4300c7aee358b4c6d0c8d6ccc36524c96e4c92ccf26e77e"
 dependencies = [
  "num-integer",
  "strength_reduce",
+]
+
+[[package]]
+name = "trash"
+version = "5.2.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "be89b3fe156965d29ac4f8522f3a640c655affdd9f21cb4f36857f0c92c00317"
+dependencies = [
+ "libc",
+ "log",
+ "objc2",
+ "objc2-foundation",
+ "once_cell 1.21.4",
+ "percent-encoding",
+ "scopeguard",
+ "urlencoding",
+ "windows 0.62.2 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
