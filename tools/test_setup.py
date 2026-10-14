@@ -5,6 +5,7 @@ import importlib.util
 import io
 import json
 import os
+import stat
 from pathlib import Path
 import subprocess
 import tempfile
@@ -271,6 +272,38 @@ class HubWorktrees(unittest.TestCase):
             self.prepare()
         self.assertTrue((self.path / ".git").is_dir())
         self.assertEqual((self.path / "notes.txt").read_text(), "mine\n")
+
+    @unittest.skipUnless(os.name == "nt", "Windows enforces the read-only file attribute on deletion")
+    def test_conversion_removes_readonly_git_objects(self):
+        self.prepare()
+        objects = [p for p in (self.path / ".git" / "objects").glob("*/*") if p.is_file()]
+        self.assertTrue(objects, "the fixture must contain real loose Git objects")
+        for obj in objects:
+            obj.chmod(stat.S_IREAD)
+        self.args.hub, self.args.convert = str(self.hubs), True
+        self.prepare()
+        self.assert_worktree_of_hub(self.commits[0])
+        self.assertEqual(list(self.root.iterdir()), [self.path])
+        self.assertEqual(run("-C", str(self.hub), "cat-file", "-t", self.commits[0]), "commit")
+
+    def test_failed_conversion_restores_the_original_clone_after_partial_checkout(self):
+        self.prepare()
+        original = run("-C", str(self.path), "rev-parse", "HEAD")
+        self.args.hub, self.args.convert = str(self.hubs), True
+
+        def fail_after_creating_files(*args):
+            self.path.mkdir(parents=True)
+            partial = self.path / "partial.txt"
+            partial.write_text("unfinished checkout\n")
+            partial.chmod(stat.S_IREAD)
+            raise RuntimeError("checkout interrupted")
+
+        with patch.object(native, "add_worktree", side_effect=fail_after_creating_files):
+            with self.assertRaisesRegex(RuntimeError, "checkout interrupted"):
+                self.prepare()
+        self.assertTrue((self.path / ".git").is_dir())
+        self.assertEqual(run("-C", str(self.path), "rev-parse", "HEAD"), original)
+        self.assertEqual(list(self.root.iterdir()), [self.path])
 
     def test_remove_worktrees_keeps_local_work_and_clones(self):
         self.args.hub = str(self.hubs)
