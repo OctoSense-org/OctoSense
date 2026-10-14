@@ -43,6 +43,7 @@ import os
 from pathlib import Path
 import re
 import shutil
+import stat
 import subprocess
 import sys
 
@@ -179,6 +180,25 @@ def owned_state(path, overlay):
     return None
 
 
+def remove_conversion_tree(path):
+    """Remove a conversion's temporary tree, including Windows read-only objects."""
+    def retry_readonly_file(action, filename, error):
+        failure = error[1]
+        if os.name != "nt" or action is not os.unlink or not isinstance(failure, PermissionError):
+            raise failure
+        mode = os.stat(filename, follow_symlinks=False).st_mode
+        if not stat.S_ISREG(mode) or mode & stat.S_IWRITE:
+            raise failure
+        # Git's loose objects are read-only on Windows. Only clear that
+        # attribute on a regular file the conversion already owns; locked
+        # files, directories and other permission errors must still fail.
+        os.chmod(filename, mode | stat.S_IWRITE)
+        action(filename)
+
+    # onerror keeps this compatible with Python versions before 3.12.
+    shutil.rmtree(path, onerror=retry_readonly_file)
+
+
 def convert_clone(hub, path, name, overlay, args):
     """Replace a clean standalone clone with a worktree of the hub at the same commit."""
     reason = owned_state(path, overlay)
@@ -203,11 +223,11 @@ def convert_clone(hub, path, name, overlay, args):
         add_worktree(hub, path, name, head, args)
     except Exception:
         if path.exists():
-            shutil.rmtree(path)
+            remove_conversion_tree(path)
         git(hub, "worktree", "prune")
         aside.rename(path)
         raise
-    shutil.rmtree(aside)
+    remove_conversion_tree(aside)
     note(f"converted the clone at {path} into a worktree of {hub}")
 
 
