@@ -1,5 +1,11 @@
 //! Host verification seam for native activity locators. No kernel or write grants.
 
+fn matrix_id(value: &str, sigil: char) -> bool {
+    value.len() <= 255 && !value.chars().any(|c| c.is_whitespace() || c.is_control())
+        && value.strip_prefix(sigil).and_then(|rest| rest.split_once(':'))
+            .is_some_and(|(local, server)| !local.is_empty() && !server.is_empty() && !server.contains(['/', '?', '#', '\\']))
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Pointer {
     pub version: u8,
@@ -18,13 +24,7 @@ impl Pointer {
         if self.version != 1
             || !id(&self.app)
             || !id(&self.resource)
-            || self.room.len() > 255
-            || !self.room.starts_with('!')
-            || !self.room[1..].contains(':')
-            || self
-                .room
-                .chars()
-                .any(|c| c.is_whitespace() || c.is_control())
+            || !matrix_id(&self.room, '!')
         {
             return Err("Unsupported activity locator".into());
         }
@@ -92,6 +92,7 @@ pub struct VerifiedOpen {
     pointer: Pointer,
     source: Source,
     until: u64,
+    issued_at: u64,
 }
 
 fn verify(
@@ -101,18 +102,15 @@ fn verify(
     pointer: &Pointer,
 ) -> Result<(), String> {
     pointer.check()?;
-    if b.session().as_ref() != Some(session) {
+    if !matrix_id(&session.account, '@') || b.session().as_ref() != Some(session) {
         return Err("Activity account changed".into());
     }
-    if source.event.is_empty()
+    if source.event.len() < 2
         || source.event.len() > 255
         || !source.event.starts_with('$')
-        || source.sender.is_empty()
-        || !source.sender.starts_with('@')
-        || source.sender.len() > 255
-        || source.room.is_empty()
-        || !source.room.starts_with('!')
-        || source.room.len() > 255
+        || source.event.chars().any(|c| c.is_whitespace() || c.is_control())
+        || !matrix_id(&source.sender, '@')
+        || !matrix_id(&source.room, '!')
     {
         return Err("Invalid activity source".into());
     }
@@ -146,6 +144,7 @@ pub fn prepare(
         source,
         pointer,
         until: now.checked_add(120).ok_or("Invalid activity clock")?,
+        issued_at: now,
     })
 }
 
@@ -156,7 +155,7 @@ pub fn complete(
     open: VerifiedOpen,
     now: u64,
 ) -> Result<Opened, String> {
-    if now >= open.until {
+    if now < open.issued_at || now >= open.until {
         return Err("Activity open expired".into());
     }
     verify(b, &open.session, &open.source, &open.pointer)?;
@@ -170,6 +169,28 @@ pub fn complete(
 mod tests {
     use super::*;
     use std::collections::BTreeSet;
+    #[test]
+    fn malformed_source_and_empty_session_are_refused() {
+        for account in ["", "@", "@:example.org", "@person:"] {
+            let mut h = host(); h.session.account = account.into();
+            assert!(pending(&h).is_err()); assert_eq!(h.opens, 0);
+        }
+        for sender in ["@", "@:example.org", "@person:"] {
+            let mut h = host(); h.event.source.sender = sender.into();
+            assert!(pending(&h).is_err()); assert_eq!(h.opens, 0);
+        }
+        for room in ["!", "!:example.org", "!room:", "!room:example.org/path"] {
+            let mut h = host(); h.event.source.room = room.into();
+            assert!(pending(&h).is_err()); assert_eq!(h.opens, 0);
+        }
+        let mut h = host(); h.event.source.event = "$".into();
+        assert!(pending(&h).is_err()); assert_eq!(h.opens, 0);
+    }
+    #[test]
+    fn clock_rollback_cannot_extend_a_queued_open() {
+        let mut h = host(); let open = pending(&h).unwrap();
+        assert!(complete(&mut h, open, 99).is_err()); assert_eq!(h.opens, 0);
+    }
     struct Host {
         session: Session,
         event: SourceEvent,

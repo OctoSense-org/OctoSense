@@ -1,0 +1,36 @@
+name: Native activity verification contract
+on:
+  push:
+    branches: [native-activity-verification]
+  pull_request:
+    paths:
+      - 'crates/shell/src/native_activity.rs'
+      - 'tools/check_native_activity.py'
+      - '.github/workflows/native-activity.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  contract:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: rustup toolchain install 1.98.0 --profile minimal
+      - name: Test exact production verification contract
+        env:
+          RUSTUP_TOOLCHAIN: 1.98.0
+        run: python tools/check_native_activity.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-activity-contract-${{ matrix.os }}
+          path: target/native-activity/result.json
+          if-no-files-found: error
