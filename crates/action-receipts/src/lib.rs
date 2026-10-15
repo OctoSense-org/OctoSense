@@ -230,7 +230,7 @@ impl Journal {
         }
         db.execute_batch("CREATE TABLE IF NOT EXISTS operations(id TEXT PRIMARY KEY, app TEXT NOT NULL, account TEXT NOT NULL, status TEXT NOT NULL, body TEXT NOT NULL);
             CREATE INDEX IF NOT EXISTS operations_scope ON operations(app, account);
-            CREATE INDEX IF NOT EXISTS operations_pending_scope ON operations(app, account, status);
+            CREATE INDEX IF NOT EXISTS operations_unresolved_scope ON operations(app, account) WHERE status IN ('dispatching','unknown');
             PRAGMA user_version=1;")?;
         Ok(Self { db })
     }

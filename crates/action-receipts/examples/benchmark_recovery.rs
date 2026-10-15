@@ -29,7 +29,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let raw: String = db.query_row("SELECT body FROM operations WHERE id=?1", [&template.id], |row| row.get(0))?;
     // This temporary fixture starts with the previously shipped table schema.
     // The baseline uses the same production query functions, grant and rows.
-    db.execute_batch("DROP INDEX operations_scope; DROP INDEX operations_pending_scope; DELETE FROM operations;")?;
+    db.execute_batch("DROP INDEX IF EXISTS operations_scope; DROP INDEX IF EXISTS operations_pending_scope; DROP INDEX IF EXISTS operations_unresolved_scope; DELETE FROM operations;")?;
     let transaction = db.transaction()?;
     {
         let mut insert = transaction.prepare("INSERT INTO operations(id,app,account,status,body) VALUES(?1,?2,?3,?4,?5)")?;
