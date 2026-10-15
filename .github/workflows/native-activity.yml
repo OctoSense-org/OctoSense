@@ -34,3 +34,23 @@ jobs:
           name: native-activity-contract-${{ matrix.os }}
           path: target/native-activity/result.json
           if-no-files-found: error
+  shell-packagings:
+    runs-on: macos-14
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Prepare official pinned framework sources
+        run: python3 tools/setup.py
+      - uses: Swatinem/rust-cache@v2
+      - name: Check desktop and Home against the same verification module
+        run: |
+          cargo check --locked -p octosense
+          cargo check --locked -p octosense --features mobile-apps
+          cargo check --locked -p octosense-home --features mobile-apps
+          cargo test --locked -p octosense-shell --features mobile-apps native_activity
