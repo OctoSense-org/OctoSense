@@ -1,0 +1,36 @@
+name: Recoverable native actions
+on:
+  push:
+    branches: [durable-action-receipts]
+  pull_request:
+    paths:
+      - 'crates/action-receipts/**'
+      - '.github/workflows/action-receipts.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  portable-journal:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - run: rustup toolchain install 1.98.0 --profile minimal
+      - name: Test production journal and failure recovery
+        env:
+          RUSTUP_TOOLCHAIN: 1.98.0
+        run: cargo test --manifest-path crates/action-receipts/Cargo.toml --locked
+      - name: Compare identical history before and after indexing
+        env:
+          RUSTUP_TOOLCHAIN: 1.98.0
+        run: cargo run --manifest-path crates/action-receipts/Cargo.toml --locked --example benchmark_recovery
+      - name: Measure unresolved recovery under one account's confirmed history
+        env:
+          RUSTUP_TOOLCHAIN: 1.98.0
+        run: cargo run --manifest-path crates/action-receipts/Cargo.toml --locked --example benchmark_owned_history
