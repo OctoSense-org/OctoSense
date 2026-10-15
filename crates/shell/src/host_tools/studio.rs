@@ -21,6 +21,7 @@ pub const APP_TOOLS: &[&str] = &[
     "studio.close",
     "studio.install",
     "studio.uninstall",
+    "studio.image",
 ];
 /// A development build only (`cfg(dev_mode)`: a debug build, or the
 /// `dev-mode` feature): a release build has no studio, whatever it is
@@ -36,9 +37,32 @@ pub fn declarations(app: &str) -> Vec<Value> {
     }
     let mut out = vec![declaration(app)];
     if cfg!(all(unix, any(feature = "app-hub", native_mobile))) {
-        out.extend(APP_TOOLS.iter().map(|name| app_declaration(app, name)));
+        out.extend(
+            APP_TOOLS
+                .iter()
+                .filter(|name| app == SYSTEM || !SYSTEM_ONLY.contains(*name))
+                .map(|name| tool_declaration(app, name)),
+        );
     }
     out
+}
+/// The tools of [`APP_TOOLS`] the system agent alone gets: `studio.image`
+/// spends the person's image budget, so an app's agent is not offered it
+/// in this slice (ADR 0006).
+const SYSTEM_ONLY: &[&str] = &["studio.image"];
+/// Whether `tool` is a studio tool that `app`'s agent may be granted at
+/// all: every one for the system agent, all but [`SYSTEM_ONLY`] for an
+/// app's own agent. The relay's grant and the executor both ask.
+pub fn granted_to(app: &str, tool: &str) -> bool {
+    is_tool(tool) && (app == SYSTEM || !SYSTEM_ONLY.contains(&tool))
+}
+/// The declaration of one of [`APP_TOOLS`].
+fn tool_declaration(app: &str, name: &str) -> Value {
+    #[cfg(all(unix, any(feature = "app-hub", native_mobile)))]
+    if name == super::studio_image::TOOL {
+        return super::studio_image::declaration(app);
+    }
+    app_declaration(app, name)
 }
 fn app_declaration(app: &str, name: &str) -> Value {
     let (description,properties,required)=match name {
@@ -53,6 +77,16 @@ fn app_declaration(app: &str, name: &str) -> Value {
     json!({"name":name,"app":app,"description":description,
         "input_schema":{"type":"object","properties":properties,"required":required,"additionalProperties":false},
         "output_schema":{"type":"object"},"risk":if name=="studio.install" || name=="studio.uninstall" || name=="studio.input" || name=="studio.open" {"act"} else {"read"},"background":false,"shareable":false})
+}
+/// Whether the system agent may use the `model` service as itself: only
+/// while developer mode covers it, for the studio's image tool
+/// (`apps.rs` consults this when it registers the model service).
+pub fn system_caller_admitted(app: &str) -> bool {
+    system_caller_admitted_given(app, crate::dev_mode::grants_all(SYSTEM))
+}
+/// [`system_caller_admitted`] with the live grant answered by the caller.
+pub fn system_caller_admitted_given(app: &str, system_granted_all: bool) -> bool {
+    SUPPORTED && app == SYSTEM && system_granted_all
 }
 /// Whether this build has the studio at all: a development build on a unix
 /// target. Release builds answer no tool, module, launcher row or fixture.
@@ -113,7 +147,7 @@ fn workspace(call: &HostToolCall) -> Result<PathBuf, String> {
         .ok_or_else(|| "the broker has not confirmed this peer workspace".into())
 }
 
-fn app_available(call: &HostToolCall) -> Result<(), String> {
+pub(super) fn app_available(call: &HostToolCall) -> Result<(), String> {
     let account = call
         .account
         .as_deref()
@@ -129,7 +163,7 @@ fn app_available(call: &HostToolCall) -> Result<(), String> {
     Ok(())
 }
 
-fn authorized(app: &str, tag: &crate::dev_mode::DevTag) -> bool {
+pub(super) fn authorized(app: &str, tag: &crate::dev_mode::DevTag) -> bool {
     crate::dev_mode::tag_valid(tag) && crate::dev_mode::grants_all(app)
 }
 
@@ -179,10 +213,17 @@ impl StudioExecutor {
             ));
             return;
         }
+        if app != SYSTEM && SYSTEM_ONLY.contains(&call.name.as_str()) {
+            reply.finish(ToolOutcome::error(
+                "not_granted",
+                "studio.image is the system agent's tool",
+            ));
+            return;
+        }
         let decl = if call.name == RENDER {
             declaration(&app)
         } else {
-            app_declaration(&app, &call.name)
+            tool_declaration(&app, &call.name)
         };
         if let Err(why) = super::schema::check(&decl["input_schema"], &call.args) {
             reply.finish(ToolOutcome::error("invalid_args", why));
@@ -218,7 +259,9 @@ impl StudioExecutor {
         let running = self.running.clone();
         std::thread::spawn(move || {
             #[cfg(all(unix, any(feature = "app-hub", native_mobile)))]
-            let outcome = if call.name != RENDER {
+            let outcome = if call.name == super::studio_image::TOOL {
+                super::studio_image::execute(&call, &root, &app, &tag, &flag, &reply)
+            } else if call.name != RENDER {
                 super::studio_bundles::execute(&call, &root, &tag, &flag, &reply)
             } else {
                 render_call(&call, &root, &app, &tag, &flag, &reply)
@@ -455,7 +498,9 @@ pub fn test_flow(spec_path: &str) -> Result<(), String> {
                 };
                 seen.insert(name.clone());
                 let tool = request["name"].as_str().unwrap_or("");
-                if !is_tool(tool) {
+                // A fixture drives the free tools only: `studio.image`
+                // spends the person's image budget.
+                if !is_tool(tool) || SYSTEM_ONLY.contains(&tool) {
                     continue;
                 }
                 let mut call = match HostToolCall::parse(
@@ -702,6 +747,13 @@ pub(super) mod scoped {
         }
         pub fn output_json(&self) -> Result<Output, String> {
             self.output_extension("json")
+        }
+        /// An image file, in the formats the `model` service returns.
+        pub fn output_image(&self, format: &str) -> Result<Output, String> {
+            if !matches!(format, "png" | "jpg") {
+                return Err(format!("unexpected image format {format}"));
+            }
+            self.output_extension(format)
         }
         fn output_extension(&self, extension: &str) -> Result<Output, String> {
             let name = format!(".studio-{}.{}", uuid::Uuid::new_v4(), extension);
