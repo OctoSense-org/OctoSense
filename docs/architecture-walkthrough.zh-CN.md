@@ -279,6 +279,9 @@ Agent 可先用普通文件工具从头编写 `manifest.json` 和 `main.splash`�
 | `studio.close {instance_id}` | 关闭应用，丢弃预览状态。 |
 | `studio.install {bundle_path}` | 登记本地开发者安装，在 Home 中显示。随后可用 `studio.open {app_id}` 或启动器图块打开；应用自己的状态在关闭、重开后保留。 |
 | `studio.uninstall {app_id}` | 删除调用方自己的一个开发者安装：收据、快照、应用数据和所有者记录。该应用仍有实例打开时拒绝。 |
+| `studio.image {prompt, size?, seed?, class?}` 或 `{job}` | 借助用户配置的图像提供方生成一张图：以调用方 Agent 自己的身份经 `model.image` 服务生成，写入调用方的 workspace，返回图像的 `path` 以及 `width`、`height`、`format`。若提供方在一次调用内未完成，则返回 `{job, state: "running"}`，之后只传入该 `job` 再次调用，直到 `state` 为 `done`。 |
+
+`studio.image`（[studio_image.rs](../crates/shell/src/host_tools/studio_image.rs)）是唯一会产生费用的 studio 工具，本阶段只提供给系统 Agent。它调用的 `model.image` 就是任何应用都能访问的那个宿主服务，因此用户配置的提供方、宿主选定的模型、每日图像预算和该服务的字节上限都原样适用；审批由开发者模式自行通过，不弹出面板。系统 Agent 只在开发者模式涵盖它时获准使用该服务。服务调用与其他宿主调用一样在 UI 线程上执行，工具线程只负责等待：若内核 30 秒期限中属于自己的份额已用完，则返回一个 job id。每个对话最多持有两个 job，无论进行中还是已完成（模型服务允许单个应用同时进行两次生成）；已生成的图像最长保留 10 分钟，等待同一对话的调用取走，且不会被自动发送到 workspace 之外。每个 job 都带有发起它的那次调用的开发者模式标记：开发者模式一旦结束，排队中的调用不再发送，进行中的调用被取消，返回的结果和已生成的图像都被丢弃，也不会写入任何文件。
 
 首个完整应用路径接受 `dev.studio.*` 命名空间下的离线、仅存储权限 `main.splash` 包。应用本身没有 Agent、账户访问和 `net` 模块，每个 `host.request` 都会被拒绝；准入的指令预算只是声明，真正强制的是存储 jail、配额和内存上限。准入还会拒绝文本中含有 URL 或 `{{assets}}` 路径的 `main.splash`。这只是一道静态检查，因为 Splash 可以在运行时拼接出字符串；真正的离线保证来自隔离环境本身：它没有任何网络主机，也没有任何宿主能力，运行时发起的 URL 加载会被直接拒绝。包中可携带原创启动器图标，但暂不支持屏幕内的资源加载路径。[studio_bundles.rs](../crates/shell/src/host_tools/studio_bundles.rs)把包限制为 128 个文件/目录、八层目录、总计 2 MiB；单文件最多 512 KiB，`main.splash` 最多 64 KiB。解析后的策略最多允许 1 MiB 私有应用存储、五百万脚本指令和 16 MiB 堆；清单中更低的限制仍然生效。
 
@@ -300,7 +303,7 @@ Agent 可先用普通文件工具从头编写 `manifest.json` 和 `main.splash`�
 
 这些操作不会创建 Agent peer，也不是每个应用对应一个 Tokio task。已有 Agent 调用宿主工具，Rust 工作线程负责文件与编码，UI 线程持有控件并提交 GPU 工作。
 
-DeepSeek V4 Flash 从头编写的 Task Planner 已在**真实 OnePlus 6 上通过 129 次工具调用**，覆盖任务输入、完成与筛选、预览状态丢弃、独立安装状态、关闭重开、进程重启、准确的中文输入及滚动。测试工具没有直接修改应用源码或存储。竖屏应用与键盘视觉评审已通过；间距较宽，Shell 浮层和状态栏另有观察记录。损坏存储与保存失败的故障注入仍待完成，详见[验收报告](studio/oneplus6-validation.md)。见 [ADR 0006](adr/0006-app-studio-on-the-phone.md) 和[新应用需求](studio/task-planner-brief.md)。本次实现不包含 `mod.studio` 工具箱适配器、图像生成/比较、更完整的资源路径或公开发布。合并 `main` 之后，一个由 Claude 从头编写的 Task Planner 在一部普通小米手机上通过了同样的验收流程（在最终代码上共 134 次工具调用）；另一项由请求队列驱动的检查则覆盖了应用数据的所有权、`studio.uninstall` 和开发者授权结束后的行为（见[再次验证](studio/xiaomi-revalidation.md)）。
+DeepSeek V4 Flash 从头编写的 Task Planner 已在**真实 OnePlus 6 上通过 129 次工具调用**，覆盖任务输入、完成与筛选、预览状态丢弃、独立安装状态、关闭重开、进程重启、准确的中文输入及滚动。测试工具没有直接修改应用源码或存储。竖屏应用与键盘视觉评审已通过；间距较宽，Shell 浮层和状态栏另有观察记录。损坏存储与保存失败的故障注入仍待完成，详见[验收报告](studio/oneplus6-validation.md)。见 [ADR 0006](adr/0006-app-studio-on-the-phone.md) 和[新应用需求](studio/task-planner-brief.md)。本阶段不包含 `mod.studio` 工具箱适配器、图像比较、更完整的资源路径或公开发布；图像生成随第 2 阶段的 `studio.image` 加入。合并 `main` 之后，一个由 Claude 从头编写的 Task Planner 在一部普通小米手机上通过了同样的验收流程（在最终代码上共 134 次工具调用）；另一项由请求队列驱动的检查则覆盖了应用数据的所有权、`studio.uninstall` 和开发者授权结束后的行为（见[再次验证](studio/xiaomi-revalidation.md)）。
 
 ## 11. 测试
 
