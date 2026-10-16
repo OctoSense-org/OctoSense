@@ -552,3 +552,5 @@ on request.
 
 **Unverified:** a physical approval, the journey through a rendered installed
 app, a live backend service, and Android, Windows and Linux.
+
+Backend declaration revalidation reuses a process-wide HTTPS connection pool. The pool contains no credentials or cookie store: each request attaches only its current account token. Registration bindings, withdrawal checks and native approval still run for every operation.
