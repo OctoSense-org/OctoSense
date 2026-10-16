@@ -91,6 +91,7 @@ authors = ["octos-app contributors"]
 octosense-updater-ui = { path = "crates/updater-ui" }
 rinx = { git = "https://github.com/hagency-org/Rinx.git", tag = "v1.1.0", default-features = false, features = ["octosense-module"] }
 octosense-reference = { path = "apps/reference" }
+octosense-octobuddy = { git = "https://github.com/tyreseluo/OctoBuddy.git", rev = "668765cc3e1e6c2ccd9a35baaeabebd76d3da852", default-features = false, features = ["octosense-module"] }
 makepad-sheets = { git = "https://github.com/OctoSense-org/makepad.git", rev = "d653bc4493619ab979ccff165cf48c0c63b77d19", default-features = false }
 makepad-terminal = { git = "https://github.com/OctoSense-org/makepad.git", rev = "d653bc4493619ab979ccff165cf48c0c63b77d19" }
 octosense-appcard = { path = "apps/appcard/module" }

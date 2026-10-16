@@ -31,6 +31,7 @@ impl Drop for Scratch {
 fn jail_only(root: &Path, hub_port: u16) -> Policy {
     let app = crate::native_apps::NativeApp {
         id: "probe",
+        name: None,
         feature: "app-probe",
         bin: Some("probe"),
         macos: crate::native_apps::Hosting::Process,
