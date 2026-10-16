@@ -29,7 +29,7 @@ Quick Deck（`os.quickdeck`）是 OctoSense 桌面版的演示文稿应用：演
 | 编辑器 | 导航栏、画布和检查器。点按选中（`deck.hit`），长按加入或移出选择，再点一次已选中的文本框（或双击）即可在其中输入，拖动可移动，拖动控制点可调整大小或旋转。插入条用于文本、图片（来自 images/ 或本设备）、形状（引擎的形状库）、表格和图表。选中的视频或音频可用它的控件播放 | `deck.slides`、`deck.slide`、`deck.view`、`deck.hit`、`deck.set_text`、`deck.format_state`、`deck.format`、`deck.insert`、`deck.shape`、`deck.picture`、`deck.table`、`deck.chart`、`deck.layouts`、`deck.slides_op`、`deck.design`、`deck.transition`、`deck.notes`、`deck.fonts`、`deck.shapes`、`deck.media` |
 | 浏览视图 | 每张幻灯片以磁贴显示在所属分节中，带编号和切换效果：选择幻灯片、New slide、Duplicate、Delete、Hide 或 Show、前移和后移、拖动磁贴移动，添加、重命名和删除分节 | `deck.slides_op`、`deck.view` |
 | 从大纲新建 | 每张幻灯片一张卡片（一个标题，下面每行一个要点）、一个主题和一种幻灯片尺寸，然后 Make deck。Draft with AI 请用户自己的提供方起草卡片（`model.complete`，fast 档）；没有提供方时提示到 Settings → AI providers 设置，手动输入大纲始终可用 | `deck.create`；宿主的 `model.complete` |
-| 放映 | 幻灯片单独显示在应用窗口内的深色舞台上，下方一个小控制条（上一张、"4 / 12"、下一张、Notes、计时、Exit），角落还有一个 Exit；每个动画步骤显示其最终状态，不播放任何动画。Notes 打开显示本张备注的条带。设为自动播放的媒体剪辑在其幻灯片出现时开始播放，点按剪辑可播放或暂停，切换到其他幻灯片或 Exit 时停止 | `deck.show`、`deck.view {step}`、`deck.slide`、`deck.media` |
+| 放映 | 幻灯片单独显示在占满整个屏幕的深色舞台上：点按 Present 时会请 Shell 让窗口进入全屏（`window.fullscreen`）；宿主做不到时（card-host、手机），舞台占满应用窗口。下方一个小控制条（上一张、"4 / 12"、下一张、Notes、计时、Exit），角落还有一个 Exit；全屏时 Esc 是 Shell 的按键，也会结束放映，窗口恢复原样。每个动画步骤显示其最终状态，不播放任何动画；为较小窗口渲染的幻灯片会按全屏尺寸重新渲染。Notes 打开显示本张备注的条带。设为自动播放的媒体剪辑在其幻灯片出现时开始播放，点按剪辑可播放或暂停，切换到其他幻灯片或 Exit 时停止 | `deck.show`、`deck.view {step}`、`deck.slide`、`deck.media`；Shell 的 `window.fullscreen` |
 | 导出 | Presentation（.pptx）、PDF（幻灯片、备注页或讲义，每页 1 到 9 张）或 Images（每张幻灯片一个 PNG）；全部幻灯片、当前幻灯片或一个范围；是否包含隐藏的幻灯片；名称。列出该演示文稿以前的导出，并可删除 | `deck.export` |
 
 Undo 和 Redo 使用引擎的历史记录；Save 写入原生 `.deckcraft` 文件（`deck.undo`、`deck.redo`、`deck.save`、`deck.state`）。关闭有未保存更改的标签时会询问：保存、不保存或取消。
