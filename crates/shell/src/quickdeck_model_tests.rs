@@ -4,7 +4,9 @@
 //! library index keeps across a restart and what v1's decks become, the words
 //! the status line, the notes and the outline counts show, what an outline and
 //! a model's draft send to the engine, which slides a range names, where Move
-//! earlier and Move later put slides, and what a refusal says.
+//! earlier and Move later put slides, what a refusal says, and how a clip
+//! plays: which shapes are clips, what deck.media's refusals and the Video
+//! widget's failures say, and the clip's steps from the widget's own answers.
 use makepad_widgets::*;
 use serde_json::json;
 
@@ -497,4 +499,198 @@ fn an_office_document_that_isnt_a_presentation_is_explained() {
     let detail = quickdeck_model("open_detail(\"unsupported\").to_json()");
     let text = detail.as_str().unwrap();
     assert!(text.contains("Word documents") && text.contains("Excel workbooks"), "{text}");
+}
+
+/// A deck.slide shape as the script receives it: parsed from JSON, since
+/// `loop` (a key the service sends) is a keyword in a script literal.
+fn shape(value: serde_json::Value) -> String {
+    format!("{}.parse_json()", serde_json::to_string(&value.to_string()).unwrap())
+}
+
+#[test]
+fn a_clip_is_found_by_its_shape_and_plays_by_its_own_settings() {
+    // SERVICE.md "Playback": deck.slide reports a video or audio shape with
+    // media: {id, video, autoplay, loop}; deck.media takes the SHAPE's id,
+    // never media.id (the clip's media item).
+    let clip = |value: serde_json::Value| quickdeck_model(&format!("clip_of({}).to_json()", shape(value)));
+    assert_eq!(
+        clip(json!({"id": 102, "kind": "video", "box": [200, 120, 560, 315], "media": {"id": 7, "video": true, "autoplay": true, "loop": false}})),
+        json!({"id": 102, "kind": "video", "box": [200, 120, 560, 315], "autoplay": true, "looping": false})
+    );
+    let sound = clip(json!({"id": 202, "kind": "audio", "box": [440, 200, 80, 80], "media": {"id": 8, "video": false, "autoplay": false, "loop": true}}));
+    assert_eq!((sound["id"].clone(), sound["kind"].clone(), sound["looping"].clone()), (json!(202), json!("audio"), json!(true)));
+    // A service without the media field still names the kind.
+    assert_eq!(clip(json!({"id": 5, "kind": "video", "box": [0, 0, 10, 10]}))["autoplay"], json!(false));
+    assert_eq!(clip(json!({"id": 6, "kind": "picture", "box": [0, 0, 10, 10]})), json!(null));
+    assert_eq!(quickdeck_model("clip_of(nil).to_json()"), json!(null));
+    // A slide's clips in order, and the first one set to play by itself.
+    let shapes = shape(json!([
+        {"id": 1, "kind": "textBox", "box": [0, 0, 1, 1]},
+        {"id": 2, "kind": "video", "box": [0, 0, 1, 1], "media": {"id": 1, "video": true, "autoplay": false, "loop": false}},
+        {"id": 3, "kind": "audio", "box": [0, 0, 1, 1], "media": {"id": 2, "video": false, "autoplay": true, "loop": false}}
+    ]));
+    let ids = quickdeck_model(&format!("let out = [] for c in clips_in({shapes}) {{ out.push(c.id) }} out.to_json()"));
+    assert_eq!(ids, json!([2, 3]));
+    assert_eq!(quickdeck_model(&format!("autoplay_clip(clips_in({shapes})).id.to_json()")), json!(3));
+    // A .pptx's clips never play by themselves (deckcraft's reader at
+    // d0e57d7e doesn't read PowerPoint's timing): nothing to start.
+    let pptx = shape(json!([{"id": 2, "kind": "video", "box": [0, 0, 1, 1], "media": {"id": 1, "video": true, "autoplay": false, "loop": false}}]));
+    assert_eq!(quickdeck_model(&format!("autoplay_clip(clips_in({pptx})).to_json()")), json!(null));
+}
+
+#[test]
+fn a_clip_deck_media_refuses_is_explained() {
+    let refused = |error: &str| quickdeck_model(&format!("clip_refused(\"{error}\").to_json()"));
+    // The contract's own words for room.
+    assert_eq!(
+        refused("deck.media: storage_full: There isn't room in Quick Deck's storage to play this clip."),
+        json!({"phase": "storage_full", "words": "There isn't room in Quick Deck's storage to play this clip."})
+    );
+    // unsupported: a linked, missing or empty clip, or another kind.
+    let unsupported = refused("unsupported: the clip is linked to a file outside the deck");
+    assert_eq!(unsupported["phase"], json!("unsupported"));
+    let words = unsupported["words"].as_str().unwrap();
+    assert!(words.contains("isn't stored in the deck") && words.contains("MP4, MOV, M4V, MP3, M4A, AAC or WAV"), "{words}");
+    assert_eq!(refused("unknown_id: shape 4 on slide 9 is not a video or audio clip")["phase"], json!("failed"));
+    assert!(refused("unknown_id: shape 4")["words"].as_str().unwrap().contains("no longer a clip"));
+    assert_eq!(refused("busy: try again")["words"], json!("Quick Deck couldn't get the clip ready: try again"));
+}
+
+#[test]
+fn a_system_without_a_player_says_so_and_a_clip_that_fails_later_is_that_clip() {
+    let failure = |error: &str, played: bool| quickdeck_model(&format!("clip_failure(\"{error}\", {played}).to_json()"));
+    // Video's error when no player takes the file (the software fallback
+    // without a media plugin, software_video.rs).
+    assert_eq!(
+        failure("playback session unavailable: no media plugin installed", false),
+        json!({"phase": "unavailable", "words": "Playback isn't available on this system"})
+    );
+    assert_eq!(failure("Linux Vulkan video texture import is not implemented", false)["phase"], json!("unavailable"));
+    assert_eq!(failure("", false)["words"], json!("Playback isn't available on this system"), "a clip that never got ready");
+    // Once a clip has played here, a failure is that clip's.
+    assert_eq!(failure("playback session unavailable: no media plugin installed", true),
+        json!({"phase": "failed", "words": "This clip couldn't be played."}));
+    // Never the system's: a path outside the storage, too many players.
+    assert_eq!(failure("Video source is outside app storage", false)["phase"], json!("failed"));
+    assert_eq!(failure("Too many open video players", false)["phase"], json!("failed"));
+}
+
+/// One look at the widget (`clip_step`): `clip` and `look` are script objects.
+fn clip_step(clip: &str, look: &str, now: f64) -> serde_json::Value {
+    quickdeck_model(&format!("clip_step({clip}, {look}, {now}).to_json()"))
+}
+
+#[test]
+fn a_clip_gets_ready_by_a_kick_and_shows_its_picture_once_it_plays() {
+    let preparing = "{phase: \"preparing\" kicks: 0 since: 100 pos: 0 dur: 0 resume_at: 0 looping: false}";
+    // Made with autoplay off: it says "unprepared" until it is kicked.
+    let act = clip_step(preparing, "{state: \"unprepared\" error: \"\" pos: 0 dur: 0}", 100.3);
+    assert_eq!((act["phase"].clone(), act["kick"].clone(), act["reveal"].clone()), (json!("preparing"), json!(true), json!(false)));
+    let act = clip_step(preparing, "{state: \"preparing\" error: \"\" pos: 0 dur: 0}", 100.6);
+    assert_eq!((act["phase"].clone(), act["kick"].clone()), (json!("preparing"), json!(false)), "it is on its way");
+    let act = clip_step(preparing, "{state: \"playing\" error: \"\" pos: 166 dur: 5000}", 101.0);
+    assert_eq!(act, json!({"phase": "playing", "kick": false, "seek": -1, "reveal": true, "stop": false, "pos": 166, "dur": 5000, "resume_at": 0}));
+    // A widget made again (its canvas drawn again) starts where it was.
+    let again = "{phase: \"preparing\" kicks: 0 since: 100 pos: 2000 dur: 5000 resume_at: 2000 looping: false}";
+    let act = clip_step(again, "{state: \"playing\" error: \"\" pos: 40 dur: 5000}", 101.0);
+    assert_eq!((act["seek"].clone(), act["pos"].clone(), act["resume_at"].clone()), (json!(2000), json!(2000), json!(0)));
+    // It gives up after three kicks, or 20 seconds.
+    let kicked = "{phase: \"preparing\" kicks: 3 since: 100 pos: 0 dur: 0 resume_at: 0 looping: false}";
+    let act = clip_step(kicked, "{state: \"unprepared\" error: \"\" pos: 0 dur: 0}", 101.0);
+    assert_eq!((act["phase"].clone(), act["stop"].clone()), (json!("failed"), json!(true)));
+    let act = clip_step(preparing, "{state: \"preparing\" error: \"\" pos: 0 dur: 0}", 121.0);
+    assert_eq!(act["phase"], json!("failed"), "never ready");
+    // The widget's error ends it.
+    let act = clip_step(preparing, "{state: \"unprepared\" error: \"playback session unavailable: no media plugin installed\" pos: 0 dur: 0}", 100.5);
+    assert_eq!((act["phase"].clone(), act["stop"].clone(), act["kick"].clone()), (json!("failed"), json!(true), json!(false)));
+}
+
+#[test]
+fn a_playing_clip_pauses_ends_and_starts_again_where_it_was() {
+    let playing = "{phase: \"playing\" kicks: 0 since: 100 pos: 1500 dur: 5000 resume_at: 0 looping: false}";
+    assert_eq!(clip_step(playing, "{state: \"playing\" error: \"\" pos: 1750 dur: 5000}", 102.0)["pos"], json!(1750));
+    assert_eq!(clip_step(playing, "{state: \"paused\" error: \"\" pos: 1600 dur: 5000}", 102.0)["phase"], json!("paused"));
+    assert_eq!(clip_step(playing, "{state: \"completed\" error: \"\" pos: 5000 dur: 5000}", 102.0)["phase"], json!("ended"));
+    // The Mac's player says nothing at the end: a clip that stopped moving at
+    // its last frame has ended, unless it loops.
+    let at_end = "{phase: \"playing\" kicks: 0 since: 100 pos: 4958 dur: 5000 resume_at: 0 looping: false}";
+    let act = clip_step(at_end, "{state: \"playing\" error: \"\" pos: 4958 dur: 5000}", 106.0);
+    assert_eq!((act["phase"].clone(), act["stop"].clone()), (json!("ended"), json!(true)));
+    let looping = "{phase: \"playing\" kicks: 0 since: 100 pos: 4958 dur: 5000 resume_at: 0 looping: true}";
+    assert_eq!(clip_step(looping, "{state: \"playing\" error: \"\" pos: 4958 dur: 5000}", 106.0)["phase"], json!("playing"));
+    assert_eq!(clip_step(at_end, "{state: \"playing\" error: \"\" pos: 4990 dur: 5000}", 106.0)["phase"], json!("playing"), "still moving");
+    // Its widget made again: kicked, to start again at 1.5 s.
+    let act = clip_step(playing, "{state: \"unprepared\" error: \"\" pos: 0 dur: 0}", 102.0);
+    assert_eq!((act["phase"].clone(), act["kick"].clone(), act["resume_at"].clone()), (json!("preparing"), json!(true), json!(1500)));
+    // A paused clip waits; made again, it keeps its place for the next play.
+    let paused = "{phase: \"paused\" kicks: 0 since: 100 pos: 1500 dur: 5000 resume_at: 0 looping: false}";
+    assert_eq!(clip_step(paused, "{state: \"paused\" error: \"\" pos: 1500 dur: 5000}", 103.0)["phase"], json!("paused"));
+    assert_eq!(clip_step(paused, "{state: \"unprepared\" error: \"\" pos: 0 dur: 0}", 103.0)["resume_at"], json!(1500));
+    let act = clip_step(paused, "{state: \"playing\" error: \"\" pos: 1550 dur: 5000}", 103.0);
+    assert_eq!((act["phase"].clone(), act["reveal"].clone()), (json!("playing"), json!(true)));
+}
+
+#[test]
+fn a_clips_control_tells_the_time_and_stays_on_the_slide() {
+    assert_eq!(quickdeck_model("clip_time(2400, 5000).to_json()"), json!("0:02 / 0:05"));
+    assert_eq!(quickdeck_model("clip_time(65000, 0).to_json()"), json!("1:05"), "before the duration is known");
+    assert_eq!(quickdeck_model("clip_time(-5, 3725000).to_json()"), json!("0:00 / 62:05"));
+    // Under the clip at 88%: [200, 120, 560, 315] on a 960 x 540 slide.
+    let at = |b: &str, bw: f64| quickdeck_model(&format!("clip_bar_at({b}, 0.88, 960, 540, {bw}, 36).to_json()"));
+    assert_eq!(at("[200, 120, 560, 315]", 196.0), json!([324, 391]));
+    // A clip at the foot of the slide: the control goes over it.
+    assert_eq!(at("[200, 380, 560, 150]", 196.0)[1], json!(290));
+    // A clip filling the slide: inside its foot.
+    assert_eq!(at("[0, 0, 960, 540]", 196.0)[1], json!(431));
+    // Never past the slide's sides.
+    assert_eq!(at("[0, 100, 40, 40]", 300.0)[0], json!(4));
+    assert_eq!(at("[900, 100, 60, 40]", 300.0)[0], json!(541));
+}
+
+/// The names the shell finds its own widgets by in the whole window
+/// (`self.ui.widget(cx, ids!(bar))`), hosted apps' widgets included.
+fn shell_window_lookups() -> std::collections::BTreeSet<String> {
+    let mut names = std::collections::BTreeSet::new();
+    for source in [include_str!("lib.rs"), include_str!("desktop_app.rs"), include_str!("mobile_app.rs")] {
+        for (at, _) in source.match_indices("self.ui.") {
+            let rest = &source[at..];
+            let line = &rest[..rest.find('\n').unwrap_or(rest.len())];
+            let Some(open) = line.find("(cx, ids!(") else { continue };
+            let name = &line[open + "(cx, ids!(".len()..];
+            let name: String = name.chars().take_while(|c| c.is_ascii_alphanumeric() || *c == '_').collect();
+            if !name.is_empty() {
+                names.insert(name);
+            }
+        }
+    }
+    names
+}
+
+/// The names Quick Deck gives its widgets (`name := Widget{...}`).
+fn quick_deck_widget_names() -> std::collections::BTreeSet<String> {
+    let mut names = std::collections::BTreeSet::new();
+    for (at, _) in QUICK_DECK.match_indices(" := ") {
+        let before = &QUICK_DECK[..at];
+        let name: String = before.chars().rev().take_while(|c| c.is_ascii_alphanumeric() || *c == '_').collect::<Vec<_>>().into_iter().rev().collect();
+        if !name.is_empty() {
+            names.insert(name);
+        }
+    }
+    names
+}
+
+#[test]
+fn quick_deck_names_no_widget_the_shell_finds_by_name_in_its_window() {
+    // Since #516 put the shell's own bar after the scene, the shell's
+    // `self.ui.widget(cx, ids!(bar))` found Quick Deck's toolbar, then named
+    // `bar`, first, and the shell panicked applying its chrome to it (#519
+    // finds the bar another way). `bar` stays out of Quick Deck's names, and
+    // so does every name the shell looks up in its window.
+    let mut shell = shell_window_lookups();
+    assert!(shell.contains("main_window"), "the lookups were read: {shell:?}");
+    shell.insert("bar".to_string());
+    let ours = quick_deck_widget_names();
+    assert!(ours.contains("qd_toolbar") && ours.contains("qd_clip"), "the names were read: {ours:?}");
+    let both: Vec<&String> = shell.intersection(&ours).collect();
+    assert!(both.is_empty(), "Quick Deck names widgets the shell looks up in its window: {both:?}");
 }

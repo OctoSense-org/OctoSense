@@ -1,0 +1,66 @@
+{
+ "platform": "darwin",
+ "editor": "playing",
+ "cache": {
+  "66ed412a780d9114a6eb0c732114f1566724e655c6cf161c7be900cfae99971c.mp4": 26739
+ },
+ "dp1-editor-playing": {
+  "pixels_changed": 7020,
+  "times": [
+   "0:01 / 0:05",
+   "0:03 / 0:05"
+  ],
+  "rect": [
+   495.0,
+   305.4,
+   347.1,
+   195.2
+  ]
+ },
+ "dp2-present-playing": {
+  "pixels_changed": 12814,
+  "times": [
+   null,
+   null
+  ],
+  "rect": [
+   435.4,
+   237.6,
+   530.2,
+   298.3
+  ]
+ },
+ "present": "playing",
+ "present_taps": [
+  [
+   "1 / 2",
+   null
+  ],
+  [
+   "1 / 2",
+   "Paused  \u00b7  0:01 / 0:05"
+  ],
+  [
+   "1 / 2",
+   null
+  ],
+  [
+   "1 / 2",
+   "Paused  \u00b7  0:03 / 0:05"
+  ]
+ ],
+ "dp4-pptx-present-playing": {
+  "pixels_changed": 12814,
+  "times": [
+   null,
+   null
+  ],
+  "rect": [
+   435.4,
+   237.6,
+   530.2,
+   298.3
+  ]
+ },
+ "pptx_present": "playing"
+}
