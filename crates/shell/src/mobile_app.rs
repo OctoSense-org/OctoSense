@@ -338,8 +338,9 @@ impl App {
         }
         #[cfg(not(mobile_only))]
         {
-            self.ui.widget(cx,ids!(desktop_controls)).set_visible(cx,!style.mobile());
-            self.ui.widget(cx,ids!(phone_controls)).set_visible(cx,style.mobile());
+            let bar=self.bar_strip(cx);
+            bar.widget(cx,ids!(desktop_controls)).set_visible(cx,!style.mobile());
+            bar.widget(cx,ids!(phone_controls)).set_visible(cx,style.mobile());
         }
         self.ui.widget(cx,ids!(shell_ai_pane)).set_visible(cx,!style.mobile());
         // The desktop's own full-screen layers stay out of the phone's frame:
@@ -357,7 +358,7 @@ impl App {
     /// A hit on the desk bar's phone strip (there is none in the standalone shell).
     pub(super) fn phone_toolbar_hit(&self,cx:&Cx,p:Vec2d)->Option<PhoneHit> {
         if MOBILE_ONLY || !self.state.as_ref().is_some_and(|s|s.style.target.mobile()) {return None;}
-        self.ui.widget(cx,ids!(phone_controls)).borrow::<PhoneSurface>().and_then(|s|s.hit(p))
+        self.bar_strip(cx).widget(cx,ids!(phone_controls)).borrow::<PhoneSurface>().and_then(|s|s.hit(p))
     }
     pub(super) fn phone_animation_event(&mut self,cx:&mut Cx,event:&Event) {
         if let Some(frame)=self.phone_frame.is_event(event) {
