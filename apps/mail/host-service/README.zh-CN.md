@@ -64,6 +64,10 @@ fn save_reply(account, to, subject, body){
     })
 }
 fn review_reply(account, to, subject, body){
+    if compose_id == "" {
+        // 先保存，等待成功回调后再打开审阅。
+        return
+    }
     host.request("mail.review_send", {
         account: account, to: to, subject: subject, body: body,
         compose_id: compose_id, expected_revision: revision
@@ -73,6 +77,10 @@ fn review_reply(account, to, subject, body){
     })
 }
 ```
+
+先调用 `save_reply`，等待其成功回调后再调用 `review_reply`。
+保存失败时保留用户文字，不打开审阅：空 `compose_id` 和版本 `0`
+不符合公共撰写接口的参数约束。
 
 声明 `mail` 说明用途，省略声明不会拒绝调用。新应用可声明精确主版本要求：
 `host_api.required: {"mail.compose": 1, "mail.compose_status": 1,
