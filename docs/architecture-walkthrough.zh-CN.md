@@ -297,6 +297,8 @@ Agent 可先用普通文件工具从头编写 `manifest.json` 和 `main.splash`�
 
 `snapshot_path` 指向完整原始结果文件，包含所有控件、矩形、geometry、tree、检查详情和 PNG 路径。该 JSON 按行缩进，最多 1 MiB，与 PNG 一起存入调用方的对话 workspace；可用 `read_file` 按有限行数读取。这样既保留完整诊断，也避免重要 selector 被内核对模型工具结果的 4 KiB 截断隐藏。
 
+系统 Agent 不是从工具回复，而是从一个受管理的技能学习 Splash：`app-studio`（[studio_skill/](../crates/shell/src/host_tools/studio_skill/)）。Shell 在包含 studio bundle 工具的构建里把它与 craft 引擎的技能一同注册（[skills.rs](../crates/shell/src/system_chat/skills.rs)，[ADR 0013](adr/0013-craft-engines-as-pinned-services.zh-CN.md)），内核在每次启动前安装。它的 `SKILL.md` 保持在 4 KiB 以内，因为内核的上下文管理器只让模型看到任一工具回复的前 4 KiB（`read_file` 也不例外），其余部分留给 `recall`；`reference.md` 列出 studio 应用可用的 Splash，按行区间读取；`template/` 是一个可运行的笔记应用，供起步使用。加入该技能之前，在 Mac 上首次有人监督的实测中，Agent 写出了 SwiftUI 风格的 `main.splash`。因此 `studio.bundle_check` 的描述会指向该技能，而求值后没有任何内容的 `main.splash` 会失败，错误信息会点明它应是 Splash。
+
 当前 pin 在 Android 上没有 HTTP 远程 instrument。Studio 直接在进程内调用底层 Makepad 控件 API，范围限定为自身应用。现有检查能发现空几何信息、文字裁切与过小按钮，不能据此证明功能或整体 UX。应用检查返回 `settled: false`：它捕获当前帧，不声称任意交互脚本已经停止变化。Agent 可用 `view_image` 查看返回的 PNG，再发送输入测试实际行为。
 
 `studio.render` 仍是独立的 L0 glance 路径：参数为相对 `source_path`、可选 `data_path` 和 `dark`，源码/数据上限为 16/32 KiB。它使用真实 glance 宽度与 72–440 点高度范围，临时 jail 配额为零，没有网络或宿主能力。着色器就绪且连续三次读回一致后返回 `settled: true`；聊天与图像资源明确返回不支持。两条截图路径都把 PNG 限制为 5 MiB，并检查取消、前台状态与开发者授权。UI 请求期限为 20 秒，处于宿主 25 秒等待和内核默认 30 秒工具期限之内。

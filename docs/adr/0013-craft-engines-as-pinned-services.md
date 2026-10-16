@@ -164,7 +164,9 @@ reach: photocraft alone has 817 commands.
   ships the skill that matches its engine. The shell registers the linked
   engines' skills with the services' own gates
   (`crates/shell/src/system_chat/skills.rs`): sheet with `app-hub`,
-  photo and the ten with `craft-engines`.
+  photo and the ten with `craft-engines`. App Studio's `app-studio` skill
+  rides the same mechanism in a development build
+  ([ADR 0006](0006-app-studio-on-the-phone.md)).
 - **Installed before every kernel start.** The kernel service
   (`crates/kernel/src/skills.rs`) writes them into the skills dir octos
   reads for the system agent's profile, `<core dir>/profiles/_main/data/skills`,

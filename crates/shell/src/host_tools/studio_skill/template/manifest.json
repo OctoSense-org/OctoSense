@@ -1,0 +1,7 @@
+{
+  "schema": 1,
+  "id": "dev.studio.my-notes",
+  "version": "0.1.0",
+  "name": "My Notes",
+  "capabilities": ["storage"]
+}

@@ -444,3 +444,42 @@ with a new engine is still built on a desktop.
 - Whether `rten` builds and runs for `wasm32-wasip2` within 256 MiB and the 2 s call deadline, whether `ocrs` reads UI text well enough, and, if it runs but not within 2 s, whether the studio needs a longer deadline for its components.
 - Which Home release ships components. A component has run in Home on a phone only in the isolated acceptance packages, and the first Home release with components is the first that can run the studio's pipeline.
 - Which image model and provider first, and who approves the paid calls.
+
+### The system agent learns Splash from a skill (17 October 2026)
+
+The first supervised live run of the loop on a Mac (a developer build, the
+system agent driving the tools as it would on a phone) failed before the
+studio saw a bundle. Asked for a tip calculator, the agent wrote a 165-line
+SwiftUI-style `main.splash` (`scene`, `vstack`, `state {}`, `.padding()`),
+pointed `studio.bundle_check` at the file instead of the folder, and polled
+`studio.image` with a job id it had invented. The tool-contract fixes are
+#545. The language gap is closed by a managed skill (the mechanism of
+[ADR 0013](0013-craft-engines-as-pinned-services.md)), not by a new tool:
+`app-studio` (`crates/shell/src/host_tools/studio_skill/`), which the shell
+registers beside the engines' skills wherever the studio's bundle tools are
+(`host_tools::studio::skill::OFFERED`) and the kernel installs before every
+start.
+
+- `SKILL.md` stays under 4 KiB: what a bundle is, the loop (write, check,
+  open, inspect, input, close, install), the nine tools, and example calls
+  checked against the tools' schemas. The size matters because the kernel's
+  context manager shows the model the first 4 KiB of any tool reply,
+  `read_file` included, and keeps the rest for `recall` (`ToolOutputPolicy`,
+  `model_visible_max_bytes`); the 3,800-byte bound on `studio.inspect`
+  replies noted above follows from the same policy.
+- `reference.md` is the Splash a studio app may use, taken from the runtime
+  and the working system apps: syntax, `ui.<id>`, events, timers, `fs.*`,
+  strings and arrays, the widgets that resolve and the ones that do not,
+  layout and styling, state and re-rendering, what is not available, and
+  the limits. The skill tells the agent to read it in line ranges.
+- `template/` is App Flow's storage-only notes app (`manifest.json` and
+  `main.splash`), to start from instead of an empty file.
+- `studio.bundle_check`'s description points the system agent at the skill,
+  and a `main.splash` that evaluates to nothing fails with a message that
+  names Splash and the reference, not only "produced no root content".
+
+The shell's skill tests cover it like the engines' skills: valid frontmatter
+with a description within its budget, `## Tools` equal to the system agent's studio
+grant, every example call valid against the tools' schemas, every shipped
+file named, and `SKILL.md` within 4 KiB. Whether the agent then writes Splash
+is the next live run's question.

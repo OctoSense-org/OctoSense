@@ -1,6 +1,8 @@
 //! The system agent's skills (ADR 0013): one per craft engine linked into
-//! this build, which the kernel installs into its skills dir before every
-//! start (`octosense_kernel::skills`).
+//! this build, and App Studio's in a development build with the studio's
+//! bundle tools (`host_tools::studio::skill`, ADR 0006), which the kernel
+//! installs into its skills dir before every start
+//! (`octosense_kernel::skills`).
 //!
 //! A skill teaches the system agent an engine on demand. octos lists each
 //! skill's one-line description in the agent's system prompt; the agent
@@ -49,14 +51,24 @@ pub fn engine_skills() -> Vec<Skill> {
     skills
 }
 
+/// This build's skills: the linked engines' and, where the studio's bundle
+/// tools are (`host_tools::studio::skill::OFFERED`), App Studio's.
+pub fn skills() -> Vec<Skill> {
+    let mut skills = engine_skills();
+    if crate::host_tools::studio::skill::OFFERED {
+        skills.push((crate::host_tools::studio::skill::NAME, crate::host_tools::studio::skill::FILES));
+    }
+    skills
+}
+
 /// At startup (`system_chat::init`, before any kernel start): this build's
 /// skills, for every kernel start from now on.
 pub fn init() {
     #[cfg(kernel)]
     {
         use octosense_ai_host::kernel::skills::{set_managed, ManagedSkill};
-        let skills = engine_skills().into_iter().map(|(name, files)| ManagedSkill { name, files }).collect();
-        for error in set_managed(skills) {
+        let managed = skills().into_iter().map(|(name, files)| ManagedSkill { name, files }).collect();
+        for error in set_managed(managed) {
             makepad_widgets::log!("skills: not installed: {error}");
         }
     }
@@ -69,7 +81,7 @@ mod tests {
     use std::collections::BTreeSet;
 
     fn managed() -> Vec<ManagedSkill> {
-        engine_skills().into_iter().map(|(name, files)| ManagedSkill { name, files }).collect()
+        skills().into_iter().map(|(name, files)| ManagedSkill { name, files }).collect()
     }
 
     /// The system agent's own tools for a skill's engine: its engine tools
@@ -87,6 +99,11 @@ mod tests {
                 .map(|t| t.to_string())
                 .collect(),
             "photo-engine" => BTreeSet::new(),
+            // App Studio: every studio tool the system agent is declared.
+            crate::host_tools::studio::skill::NAME => crate::host_tools::studio::declarations(crate::host_tools::SYSTEM)
+                .iter()
+                .map(|tool| tool["name"].as_str().unwrap().to_owned())
+                .collect(),
             #[cfg(feature = "craft-engines")]
             other => {
                 let prefix = format!("{}.", other.strip_suffix("-engine").unwrap());
@@ -114,7 +131,8 @@ mod tests {
     }
 
     /// Each skill is one octos will list as written: a valid frontmatter,
-    /// a one-line description within the budget, the name `<family>-engine`.
+    /// a one-line description within the budget, the name `<family>-engine`
+    /// (App Studio's apart).
     #[test]
     fn every_linked_engine_skill_is_valid_and_within_its_budget() {
         let skills = managed();
@@ -122,7 +140,7 @@ mod tests {
         assert_eq!(names.len(), skills.len(), "one skill per engine");
         for skill in &skills {
             assert_eq!(validate(skill), Ok(()), "{}", skill.name);
-            assert!(skill.name.ends_with("-engine"), "{}", skill.name);
+            assert!(skill.name.ends_with("-engine") || skill.name == crate::host_tools::studio::skill::NAME, "{}", skill.name);
             let body = skill.files.iter().find(|(p, _)| *p == "SKILL.md").unwrap().1;
             let (_, description) = frontmatter(body).unwrap();
             assert!(description.len() <= DESCRIPTION_BUDGET, "{}: {} bytes", skill.name, description.len());
@@ -146,6 +164,20 @@ mod tests {
         assert_eq!(names, expected.iter().map(String::as_str).collect::<BTreeSet<_>>());
         #[cfg(feature = "craft-engines")]
         assert_eq!(names.len(), 12);
+    }
+
+    /// App Studio's skill comes with the studio's bundle tools (a
+    /// development build on unix with App Hub or on a native mobile target),
+    /// and only then; its `SKILL.md` fits what the kernel shows the model of
+    /// one `read_file` reply (4 KiB), so the agent reads it in one call.
+    #[test]
+    fn the_studio_skill_comes_with_the_studio() {
+        use crate::host_tools::studio::skill::{FILES, NAME, OFFERED};
+        let names: Vec<&str> = skills().iter().map(|(name, _)| *name).collect();
+        assert_eq!(names.contains(&NAME), OFFERED);
+        assert_eq!(names.len(), engine_skills().len() + usize::from(OFFERED));
+        let body = FILES.iter().find(|(p, _)| *p == "SKILL.md").unwrap().1;
+        assert!(body.len() <= 4096, "SKILL.md is {} bytes", body.len());
     }
 
     /// A skill's `## Tools` are exactly the system agent's own tools for its
@@ -180,6 +212,9 @@ mod tests {
                 from(&sheets["agent"]["tools"])
             }
             "photo-engine" => Default::default(),
+            crate::host_tools::studio::skill::NAME => {
+                from(&serde_json::Value::Array(crate::host_tools::studio::declarations(crate::host_tools::SYSTEM)))
+            }
             #[cfg(feature = "craft-engines")]
             other => {
                 let family = other.strip_suffix("-engine").unwrap();
