@@ -121,8 +121,11 @@ fn admit_snapshot(
     expected: Option<(&str, &str)>,
 ) -> Result<Bundle, String> {
     let manifest_path = root.join("manifest.json");
-    let text =
-        std::fs::read_to_string(&manifest_path).map_err(|e| format!("manifest.json: {e}"))?;
+    // The first thing an agent gets wrong is the shape of a bundle: say what
+    // one is, not only what was not found.
+    let text = std::fs::read_to_string(&manifest_path).map_err(|e| {
+        format!("manifest.json: {e}. A bundle is a folder in your workspace holding manifest.json and main.splash; pass that folder as bundle_path")
+    })?;
     if text.len() > 64 * 1024 {
         return Err("manifest exceeds 64 KiB".into());
     }
