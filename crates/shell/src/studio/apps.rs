@@ -552,7 +552,10 @@ impl StudioApp {
             s.children(&mut |_, _| children += 1);
         }
         if children == 0 {
-            return Err(format!("studio_eval_failed: {}/main.splash produced no root content", spec.instance_id));
+            return Err(format!(
+                "studio_eval_failed: {}/main.splash produced no root content; main.splash is Splash (declarations, then one root widget), not Swift, Kotlin or JavaScript: see the app-studio skill's reference.md",
+                spec.instance_id
+            ));
         }
         self.timer = cx.start_interval(0.08);
         Ok(())

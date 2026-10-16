@@ -74,6 +74,13 @@ fn app_declaration(app: &str, name: &str) -> Value {
         "studio.uninstall" => ("Remove one of your own local developer installs: its receipt, snapshot, app data and owner record. Close its open instance first. Catalog apps are never touched.",json!({"app_id":{"type":"string","minLength":1,"maxLength":100}}),vec!["app_id"]),
         _ => ("Close your Studio app instance. Preview state is discarded; an installed app's state persists.",json!({"instance_id":{"type":"string","minLength":1,"maxLength":100}}),vec!["instance_id"]),
     };
+    // The system agent has the app-studio skill (`skill`); the first live run
+    // showed it needs telling before it writes a bundle.
+    let description = if name == "studio.bundle_check" && app == SYSTEM && skill::OFFERED {
+        format!("{description} Read the app-studio skill first (SKILL.md, then reference.md in parts): main.splash is Splash, not Swift or JavaScript, and bundle_path is the folder.")
+    } else {
+        description.to_owned()
+    };
     json!({"name":name,"app":app,"description":description,
         "input_schema":{"type":"object","properties":properties,"required":required,"additionalProperties":false},
         "output_schema":{"type":"object"},"risk":if name=="studio.install" || name=="studio.uninstall" || name=="studio.input" || name=="studio.open" {"act"} else {"read"},"background":false,"shareable":false})
@@ -91,6 +98,25 @@ pub fn system_caller_admitted_given(app: &str, system_granted_all: bool) -> bool
 /// Whether this build has the studio at all: a development build on a unix
 /// target. Release builds answer no tool, module, launcher row or fixture.
 pub const SUPPORTED: bool = cfg!(all(unix, dev_mode));
+/// The system agent's skill for the studio, installed like the engines'
+/// (ADR 0013, `system_chat::skills`): `SKILL.md` says what a bundle is,
+/// the loop and the tools; `reference.md` is the Splash a studio app may
+/// use, which the model must read rather than guess (it wrote SwiftUI on
+/// the first live run); `template/` is a working notes app to start from.
+/// `SKILL.md` stays under 4 KiB because the kernel's context manager shows
+/// the model the first 4 KiB of any tool reply, `read_file` included.
+pub mod skill {
+    pub const NAME: &str = "app-studio";
+    pub const FILES: &[(&str, &str)] = &[
+        ("SKILL.md", include_str!("studio_skill/SKILL.md")),
+        ("reference.md", include_str!("studio_skill/reference.md")),
+        ("template/main.splash", include_str!("studio_skill/template/main.splash")),
+        ("template/manifest.json", include_str!("studio_skill/template/manifest.json")),
+    ];
+    /// Whether this build offers the skill: the studio with its bundle
+    /// tools (the same condition as [`super::declarations`]'s second half).
+    pub const OFFERED: bool = super::SUPPORTED && cfg!(any(feature = "app-hub", native_mobile));
+}
 pub const SOURCE_MAX: usize = 16 * 1024;
 pub const DATA_MAX: usize = 32 * 1024;
 const MAX_WAIT: Duration = Duration::from_secs(25);
