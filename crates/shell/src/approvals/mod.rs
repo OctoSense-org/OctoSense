@@ -236,6 +236,9 @@ pub fn app_confirm_answered(id: &RequestId, approved: bool, reason: &str) -> Res
 /// `consent::granted(app)`: whether `app` may have its agent now (the
 /// person allowed it, or developer mode grants everything). For #106's
 /// contained apps and the Rinx/native offer path.
+/// Changes on native consent decisions; no account data is exposed.
+pub fn consent_epoch() -> u64 { with(|a| a.consent.generation()).unwrap_or(0) }
+
 pub fn consent_granted(app: &str) -> bool {
     with(|a| a.consent_granted(app)).unwrap_or(false)
 }

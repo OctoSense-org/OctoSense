@@ -84,7 +84,8 @@ pub fn installed_launch_id(manifest_id: &str) -> String {
 /// shell checks again against its own `native-apps.json`, so a native app
 /// App Hub has not heard of yet is covered too.
 pub fn check_script_app_id(manifest_id: &str) -> Result<(), String> {
-    let namespace = manifest_id.rsplit('.').next().unwrap_or(manifest_id);
+    let normalized_namespace = manifest_id.rsplit('.').next().unwrap_or(manifest_id).replace('-', "");
+    let namespace = normalized_namespace.as_str();
     for name in [manifest_id, namespace] {
         if crate::native_apps::find(name).is_some() {
             return Err(format!("{manifest_id} takes the native app {name:?}'s name, which no script app may use"));
@@ -406,6 +407,10 @@ pub fn register_host_services() {
         // Apps' own WebAssembly functions (ADR 0011).
         #[cfg(wasm_functions)]
         crate::wasm_service::register();
+        // Cross-app read bridge (host API `app_tools.read` / `cancel` / `focus`
+        // / `watch_authorization`): Windows-only v1.
+        #[cfg(any(feature = "app-hub", native_mobile))]
+        crate::host_tools::read_bridge::register();
         // After every service of the shell's own: the notice service never
         // stands in for one.
         let served = crate::glance_notice::serve_system_apps();

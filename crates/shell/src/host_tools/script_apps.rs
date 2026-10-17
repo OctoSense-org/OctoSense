@@ -156,8 +156,20 @@ pub(crate) fn glance_template(app: &str, name: &str) -> Result<String, String> {
 /// ([`super::relay::Catalog::owner_of`]): the native app of that id, the
 /// toolbox, else the system app (`mail.send` → `os.mail`); never whichever
 /// app declared the name first.
-fn owner_for(tool: &str) -> String {
-    super::owner_of(tool).unwrap_or_else(|| format!("{}{}", octosense_appstore::system::SYSTEM_ID_PREFIX, tool.split('.').next().unwrap_or(tool)))
+pub(crate) fn owner_for(tool: &str) -> Option<String> {
+    let ns = tool.split('.').next()?;
+    if crate::native_apps::find(ns).is_some() || ns == "toolbox" { return super::owner_of(tool); }
+    let system = format!("os.{ns}");
+    if octosense_appstore::system::system_app(&system).is_some() { return Some(system); }
+    // Discovery reads admitted bundles, without starting peers or loading their
+    // grants recursively. A cold installed owner retains its exact identity.
+    let candidates: Vec<_> = crate::apps::agent_apps().into_iter().filter(|a| !a.native && !a.id.starts_with("os.") && a.id.rsplit('.').next().unwrap_or(&a.id).replace('-', "") == ns)
+        .filter_map(|a| guidance(&a.id).ok().map(|g| (a.id, g.tools.iter().any(|t| t["name"] == tool)))).collect();
+    match super::installed_owner::resolve(ns, candidates.iter().map(|(a, d)| (a.as_str(), *d))) {
+        super::installed_owner::Resolution::Unique(app) => Some(app),
+        super::installed_owner::Resolution::Ambiguous => None,
+        super::installed_owner::Resolution::Missing => super::owner_of(tool),
+    }
 }
 
 /// Hand one app's agent block to the relay: its tools, its grants (other
@@ -169,10 +181,21 @@ pub fn install(app: &str, loaded: Loaded, host_dir: PathBuf) {
         return;
     }
     super::declare(app, loaded.tools.clone());
+    super::clear_script_grants(app);
     for tool in &loaded.asks {
-        let owner = owner_for(tool);
-        if owner != app {
-            super::grant(app, &owner, tool);
+        if let Some(owner) = owner_for(tool) {
+            // Only grant tools that are read-only, shareable, and require no
+            // confirmation. This is the host-side gate for cross-app reads
+            // and stops a script app from pulling in a write or one-shot
+            // tool just because it asked.
+            let admitted_read = !owner.starts_with("os.")
+                && crate::native_apps::find(&owner).is_none()
+                && owner != "toolbox"
+                && guidance(&owner).is_ok_and(|g| g.script_tools.contains(tool)
+                    && g.tools.iter().any(|t| t["name"] == *tool && t["risk"] == "read" && t["shareable"] == true && t.get("confirm").is_none()));
+            if owner != app && admitted_read {
+                super::grant(app, &owner, tool);
+            }
         }
     }
     super::set_generic(app, loaded.generic.clone());
@@ -188,7 +211,7 @@ pub fn install(app: &str, loaded: Loaded, host_dir: PathBuf) {
 pub fn load(app: &str) -> Result<(), String> {
     let (root, bundle) = admitted_bundle(app)?;
     let loaded = from_bundle(&bundle)?;
-    let owners: BTreeSet<_> = loaded.asks.iter().map(|tool| owner_for(tool)).collect();
+    let owners: BTreeSet<_> = loaded.asks.iter().filter_map(|tool| owner_for(tool)).collect();
     install(app, loaded, root.join(".host"));
     // Register granted owners before the caller takes its tool offer. This
     // loads executors, not agents or UI, including in a cold Mail job. The
@@ -529,7 +552,7 @@ struct ScriptAppExecutor { host: HostServiceExecutor, tools: BTreeSet<String> }
 struct ScriptWaiting { token: Option<String>, reply: ToolReply, host_dir: PathBuf, account: String, caller: Option<String> }
 type ScriptKey = (String, String);
 static SCRIPT_WAITING: Mutex<Option<HashMap<ScriptKey, ScriptWaiting>>> = Mutex::new(None);
-fn current_script_account(host_dir: &Path, app: &str) -> String {
+pub(crate) fn current_script_account(host_dir: &Path, app: &str) -> String {
     octosense_oauth_service::host::active_connection(host_dir, app)
         .map(|connection| connection.handle).unwrap_or_else(|| "device".into())
 }
@@ -867,7 +890,7 @@ pub(crate) mod tests {
         let loaded = from_bundle(&dir).unwrap();
         assert_eq!(loaded.generic, ["ask_user_question"]);
         assert_eq!(loaded.asks, ["mail.send"]);
-        assert_eq!(owner_for("mail.send"), "os.mail", "the system app of its namespace until someone declares it");
+        assert_eq!(owner_for("mail.send").as_deref(), Some("os.mail"), "the system app of its namespace until someone declares it");
         let _ = std::fs::remove_dir_all(dir);
         for tool in ["web_search", "shell", "read_file"] {
             let dir = stamped_bundle("news", tool, |_, m| {
