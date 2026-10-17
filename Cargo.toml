@@ -65,6 +65,7 @@ members = [
 ]
 # Separate tools with their own lockfiles, and the framework checkouts.
 exclude = [
+    "crates/action-receipts",
     ".sources",
     "apps/appcard/personal-data",
     "apps/appcard/tools",
