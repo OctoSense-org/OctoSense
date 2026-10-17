@@ -1,0 +1,39 @@
+diff --git a/widgets/src/widget_tree.rs b/widgets/src/widget_tree.rs
+index f1dded6..7adb2f5 100644
+--- a/widgets/src/widget_tree.rs
++++ b/widgets/src/widget_tree.rs
+@@ -8,7 +8,9 @@
+     crate::radio_button::RadioButton,
+     crate::text_input::TextInput,
+     crate::widget::{WidgetRef, WidgetRegistry, WidgetUid, WidgetWeakRef},
+-    crate::widget_async::update_global_ui_handle,
++    crate::widget_async::{
++        current_splash_vm_id, inject_splash_ui_handle, update_global_ui_handle, MAIN_SPLASH_VM_ID,
++    },
+     crate::window::Window,
+     std::any::TypeId,
+     std::cell::RefCell,
+@@ -3179,13 +3181,21 @@ pub struct FlatTreeRow {
+ }
+ 
+ pub fn set_ui_root(cx: &mut Cx, ui: &WidgetRef) {
++    let root_uid = ui.widget_uid();
++    let vm_id = current_splash_vm_id(cx);
++    if vm_id != MAIN_SPLASH_VM_ID {
++        // A hosted module's Root belongs to its isolate. Keep it there instead
++        // of replacing the shell's process-wide widget tree with a VM-owned
++        // WidgetRef that becomes invalid when that module closes.
++        inject_splash_ui_handle(cx, vm_id, root_uid);
++        return;
++    }
+     let state = get_or_init_state(cx);
+     state.tree.set_root_widget(ui.clone());
+     cx.widget_tree_dump_callback = Some(compact_widget_tree_dump_callback);
+     cx.widget_query_callback = Some(widget_query_callback);
+     cx.widget_snapshot_callback = Some(widget_snapshot_callback);
+     cx.tweak_callback = Some(crate::tweaker::tweak_callback);
+-    let root_uid = ui.widget_uid();
+     update_global_ui_handle(cx, root_uid);
+ }
+ 
+
