@@ -438,10 +438,13 @@ fn run_call(context: &Context) -> Result<Value, Refusal> {
     context.host.attach(&context.call.host_dir);
     match context.call.method() {
         "complete" => {
-            let request = super::Request::from_args(&context.call.args)?;
+            let mut args = context.call.args.clone();
+            let image = args.as_object_mut().and_then(|o| o.remove("image"));
+            let request = super::Request::from_args(&args)?;
+            let image = image.as_ref().map(|value| super::vision::load(&context.call.app_id, &context.call.host_dir, value)).transpose()?;
             context
                 .host
-                .complete_while(&context.call.app_id, request, || context.check().is_ok())
+                .complete_while(&context.call.app_id, request, image.as_deref(), || context.check().is_ok())
                 .map(|completion| completion.to_reply())
         }
         "budget" => {
@@ -755,12 +758,27 @@ fn public_url(raw: &str) -> Result<String, Refusal> {
 }
 
 pub(super) fn catalog() -> Vec<HostApiMethod> {
-    wire::schemas()
+    let mut methods: Vec<_> = wire::schemas()
         .into_iter()
         .map(|(name, summary, args, result)| {
             HostApiMethod::new(name, 1, "model", summary, args, result)
                 .with_platforms(&["macos", "android", "windows", "linux", "ios", "openharmony"])
                 .with_agent_access(AgentAccess::Allowed)
         })
-        .collect()
+        .collect();
+    let mut properties = json!({
+        "task":{"type":"string"}, "input":{}, "schema":{"type":"object"},
+        "class":{"enum":["fast","strong"]}, "allow_urls":{"type":"boolean"}
+    });
+    if cfg!(target_os = "windows") {
+        properties["image"] = json!({"type":"object","required":["app_path"],
+            "properties":{"app_path":{"type":"string"}},"additionalProperties":false});
+    }
+    methods.push(HostApiMethod::new("model.complete", if cfg!(target_os = "windows") { 2 } else { 1 }, "model",
+        "Make one schema-checked model call; version 2 accepts one bounded app-local image on Windows",
+        json!({"type":"object","required":["task","schema"],"properties":properties,"additionalProperties":false}),
+        json!({"type":"object"}))
+        .with_platforms(&["macos", "android", "windows", "linux", "ios", "openharmony"])
+        .with_agent_access(AgentAccess::Allowed));
+    methods
 }

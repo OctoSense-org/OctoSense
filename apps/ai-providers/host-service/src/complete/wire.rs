@@ -24,6 +24,10 @@ pub struct Prepared {
 
 /// The request for `provider`: `system` and one `user` message.
 pub fn prepare(provider: &Provider, key: Option<&str>, system: &str, user: &str) -> Result<Prepared, String> {
+    prepare_with_image(provider, key, system, user, None)
+}
+
+pub fn prepare_with_image(provider: &Provider, key: Option<&str>, system: &str, user: &str, image: Option<&str>) -> Result<Prepared, String> {
     let family = registry::lookup(&provider.family).map(|f| f.id).unwrap_or(provider.family.as_str());
     if family == "vertex" {
         return Err("Vertex AI is not supported for direct calls".into());
@@ -36,6 +40,9 @@ pub fn prepare(provider: &Provider, key: Option<&str>, system: &str, user: &str)
     let model = effective_model(provider).ok_or("no model")?;
     let mut headers = vec![("Content-Type".to_string(), "application/json".to_string())];
     let api = effective_api_type(provider);
+    if image.is_some() && api != ApiType::OpenAi {
+        return Err("the selected image model requires the OpenAI chat protocol".into());
+    }
     let (url, body) = match api {
         ApiType::Anthropic => {
             if let Some(key) = key {
@@ -55,10 +62,14 @@ pub fn prepare(provider: &Provider, key: Option<&str>, system: &str, user: &str)
             } else {
                 format!("{base}/chat/completions")
             };
+            let content = match image {
+                Some(data) => json!([{"type":"text","text":user},{"type":"image_url","image_url":{"url":data}}]),
+                None => json!(user),
+            };
             (
                 url,
                 json!({"model": model, "stream": false, "messages": [
-                    {"role": "system", "content": system}, {"role": "user", "content": user}
+                    {"role": "system", "content": system}, {"role": "user", "content": content}
                 ]}),
             )
         }

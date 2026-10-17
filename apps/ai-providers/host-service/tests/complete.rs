@@ -17,6 +17,7 @@ static SERIAL: Mutex<()> = Mutex::new(());
 static NEXT: AtomicUsize = AtomicUsize::new(41_000);
 
 const APP: &str = "com.example.notes";
+const OTHER_APP: &str = "com.example.photos";
 const KEY: &str = "sk-test-deepseek-0000aaaa1234";
 
 struct NoSheets;
@@ -102,7 +103,7 @@ impl Rig {
         let options = complete::Options::default()
             .providers(Arc::new(Fixed(providers)))
             .transport(fake.clone())
-            .grants(|app: &str, _: &Path| app == APP)
+            .grants(|app: &str, _: &Path| app == APP || app == OTHER_APP)
             .clock(move || clock.load(Ordering::SeqCst));
         let host = complete::register_with(extra(options));
         Rig { dir, fake, now, host, _serial: serial }
@@ -462,4 +463,94 @@ fn a_host_caller_may_send_a_larger_input_than_an_app() {
     rig.host.complete(APP, request(Some("You write a digest."))).unwrap();
     let huge = Request { input: json!("x".repeat(complete::HOST_INPUT_MAX + 1)), ..request(Some("s")) };
     assert_eq!(rig.host.complete(APP, huge).unwrap_err().code, Code::BadRequest);
+}
+
+#[test]
+fn image_contract_is_versioned_and_has_no_app_specific_probe() {
+    let rig = Rig::new("image-contract", vec![deepseek("configured-model")]);
+    let versions = octosense_appstore::host_api::available_versions();
+    assert_eq!(versions.get("model.complete"), Some(&if cfg!(target_os = "windows") { 2 } else { 1 }));
+    assert!(!versions.contains_key("model.vision_capability"));
+    assert!(rig.call("unadmitted.app", "complete", args()).unwrap_err().starts_with("capability:"));
+    assert!(rig.fake.seen().is_empty());
+}
+
+#[cfg(target_os = "windows")]
+#[test]
+fn image_uses_the_authenticated_apps_jail_and_configured_openai_route() {
+    for (family, model, tag) in [
+        ("minimax", "configurable-vision-model", "image-minimax"),
+        ("minimax-cn", "another-vision-model", "image-minimax-cn"),
+        ("moonshot", "selected-by-person", "image-moonshot"),
+    ] {
+        let rig = Rig::new(tag, vec![Candidate { provider: Provider::new(family, Some(model.into())), key: Some("vision-test-key".into()) }]);
+        let dir = rig.dir.join(OTHER_APP);
+        std::fs::create_dir_all(&dir).unwrap();
+        image::DynamicImage::new_rgba8(1, 1)
+            .save_with_format(dir.join("photo.png"), image::ImageFormat::Png).unwrap();
+        rig.fake.says(GOOD);
+        let mut request = args();
+        request["image"] = json!({"app_path":"/photo.png"});
+        assert_eq!(rig.call(OTHER_APP, "complete", request).unwrap()["output"]["title"], "Errands");
+        let seen = rig.fake.seen();
+        assert_eq!(seen.len(), 1);
+        let expected_host = match family {
+            "minimax" => "api.minimax.io",
+            "minimax-cn" => "api.minimaxi.com",
+            _ => "api.moonshot.ai",
+        };
+        assert!(seen[0].0.starts_with(&format!("https://{expected_host}/v1/chat/completions")));
+        let body = &seen[0].2;
+        assert_eq!(body["model"], model);
+        assert_eq!(body["messages"][1]["content"][0]["type"], "text");
+        assert_eq!(body["messages"][1]["content"][1]["type"], "image_url");
+        assert!(body["messages"][1]["content"][1]["image_url"]["url"]
+            .as_str().unwrap().starts_with("data:image/png;base64,"));
+        assert!(!body.to_string().contains("photo.png"));
+    }
+}
+
+#[cfg(target_os = "windows")]
+#[test]
+fn image_validation_precedes_any_provider_call() {
+    let rig = Rig::new("image-refusal", vec![anthropic("configured-text-model")]);
+    let dir = rig.dir.join(OTHER_APP);
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("fake.png"), b"not an image").unwrap();
+    std::fs::write(dir.join("large.png"), vec![0u8; 10 * 1024 * 1024 + 1]).unwrap();
+    for path in ["../.host/secret", "C:/Windows/win.ini", "missing.png", "fake.png", "large.png"] {
+        let mut request = args();
+        request["image"] = json!({"app_path":path});
+        assert!(rig.call(OTHER_APP, "complete", request).unwrap_err().starts_with("bad_request:"), "{path}");
+    }
+    let mut request = args();
+    request["image"] = json!({"app_path":"fake.png"});
+    assert!(rig.call(APP, "complete", request).unwrap_err().starts_with("bad_request:"));
+    image::DynamicImage::new_rgba8(1, 1)
+        .save_with_format(dir.join("valid.png"), image::ImageFormat::Png).unwrap();
+    let mut request = args();
+    request["image"] = json!({"app_path":"valid.png"});
+    let error = rig.call(OTHER_APP, "complete", request).unwrap_err();
+    assert!(error.starts_with("no_provider:"));
+    assert!(!error.contains("configured-text-model"));
+    assert!(rig.fake.seen().is_empty());
+    std::fs::remove_file(dir.join("large.png")).unwrap();
+}
+
+#[cfg(target_os = "windows")]
+#[test]
+fn image_keeps_the_structured_output_validator() {
+    let rig = Rig::new("image-schema", vec![Candidate {
+        provider: Provider::new("minimax", Some("configurable-model".into())),
+        key: Some("vision-test-key".into()),
+    }]);
+    let dir = rig.dir.join(APP);
+    std::fs::create_dir_all(&dir).unwrap();
+    image::DynamicImage::new_rgba8(1, 1)
+        .save_with_format(dir.join("valid.png"), image::ImageFormat::Png).unwrap();
+    rig.fake.says(r#"{"title":5,"tags":[]}"#).says(r#"{"title":5,"tags":[]}"#);
+    let mut request = args();
+    request["image"] = json!({"app_path":"valid.png"});
+    assert!(rig.call(APP, "complete", request).unwrap_err().starts_with("invalid_output:"));
+    assert_eq!(rig.fake.seen().len(), 2);
 }

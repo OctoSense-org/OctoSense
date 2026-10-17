@@ -10,10 +10,12 @@ person approved the send with a physical press, and the threaded SMTP reply was
 verified. These are separate checkpoints: the new workspace tests did not send
 real email.
 
-Sending needs a physical press on the host's review, either a tap on Android or
-a click on macOS; synthetic and remote input are refused. The macOS path is
-**unverified**: no real message has been sent from a Mac. Windows, Linux and
-accessibility approval, and the complete phone UI matrix, remain deferred.
+Sending needs a trusted press on the host's review: a tap on Android or a
+click on macOS. Windows accepts pointer messages reported as `IMO_HARDWARE`
+for host reviews, but Mail has no Windows send adapter. Windows also classifies
+UIAccess-injected input this way, and remote-desktop input has not been tested.
+The macOS path is **unverified**: no real message has been sent
+from a Mac. Linux approval and the complete phone UI matrix remain deferred.
 
 After a saved transport receipt confirms SMTP acceptance, the bound reply card
 and notification leave Glance. The draft and send receipt remain stored, and an
@@ -330,13 +332,21 @@ null objects or Java exceptions enqueue no trusted input. A
 [second overlay](../tools/runtime-patches/makepad-desktop-trusted-input.patch)
 trusts a macOS pointer press or release only when AppKit supplies a CGEvent
 from the HID source with no posting process.
+The [Windows overlay](../tools/runtime-patches/makepad-windows-trusted-input.patch)
+trusts mouse, touch, pen or touchpad messages reported by user32 as
+`IMO_HARDWARE`; posted, `IMO_INJECTED` and `IMO_SYSTEM` messages do not qualify.
+Microsoft [includes UIAccess-injected input](https://learn.microsoft.com/en-us/windows/win32/api/winuser/ne-winuser-input_message_origin_id) in `IMO_HARDWARE`, so this is not
+proof of a physical device. This provenance also applies to connected-account
+and device-consent reviews, not just Mail.
 
 A scoped guard applies only while the native handler of a trusted touch
-(`TouchUpdate`) or click runs. Remote and synthetic dispatch (with any native
+(`TouchUpdate`) or click runs. Untrusted synthetic dispatch (with any native
 callback nested inside it), deferred actions and script tasks do not inherit the
 guard. Host review requires a matching trusted press and release.
-`with_untrusted_input` can only remove trust. Keyboard/IME, long press,
-accessibility input and any input on Windows or Linux cannot approve a send. A
+`with_untrusted_input` can only remove trust. Keyboard/IME, long press and
+Linux input cannot approve a send. Windows accessibility input is subject to
+the same OS classification, including the UIAccess caveat above. Windows can satisfy
+the input provenance gate, but its Mail send adapter remains unavailable. A
 compromised OS/root process impersonating hardware lies outside this
 application-level boundary; this is not hardware attestation.
 
@@ -371,7 +381,7 @@ acceptance results; installing the later build does not rerun the earlier flows.
 | Remaining phone UI matrix | Full IME composition, cursor/selection, Unicode, themes, touch-target sizing, conflicts, account switching, expiry and retry coverage remains incomplete. Relevant local tests are not a substitute. |
 | Notification-toast touch route | Four new regressions passed. On 0415, a visible notification followed by an injected Android tap opened the exact bound card and retained revision 44. This proves navigation, not send authorization. |
 | Physical-press approval and real threaded reply | No real SMTP send performed. Approval with a physical press, provider acceptance and matching card/sheet receipts remain unverified. |
-| Desktop/accessibility approval | Deferred at this checkpoint; the provenance boundary denied these routes. Later builds accept a click on macOS as a physical press (**unverified**); input on Windows or Linux, and accessibility input, still cannot approve. See [Runtime contracts and input provenance](#runtime-contracts-and-input-provenance). |
+| Desktop/accessibility approval | Deferred at this historical checkpoint. Later builds accept physical pointer input on macOS (**unverified**) and Windows OS hardware-class input, including UIAccess injection; Windows Mail still has no send adapter. Linux input cannot approve. See [Runtime contracts and input provenance](#runtime-contracts-and-input-provenance). |
 
 ### Per-provider engineering review
 

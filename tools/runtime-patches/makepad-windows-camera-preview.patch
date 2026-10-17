@@ -1,0 +1,352 @@
+diff --git a/platform/src/os/windows/mod.rs b/platform/src/os/windows/mod.rs
+index 4856a92..0132132 100644
+--- a/platform/src/os/windows/mod.rs
++++ b/platform/src/os/windows/mod.rs
+@@ -20,6 +20,7 @@
+ pub mod windows_media_engine_notify;
+ pub mod windows_mf_source_reader;
+ pub mod windows_video_playback;
++pub mod windows_camera_player;
+ pub mod windows_video_player;
+ pub mod winrt_midi;
+ 
+diff --git a/platform/src/os/windows/windows.rs b/platform/src/os/windows/windows.rs
+index fb1dd91..5f099d8 100644
+--- a/platform/src/os/windows/windows.rs
++++ b/platform/src/os/windows/windows.rs
+@@ -1219,6 +1219,9 @@ fn handle_platform_ops(
+                         let tex_y_id = tex_y.texture_id();
+                         let tex_u_id = tex_u.texture_id();
+                         let tex_v_id = tex_v.texture_id();
++                        let camera_access = if matches!(&source, VideoSource::Camera(..)) {
++                            Some(self.os.media.media_foundation())
++                        } else { None };
+                         let player = WindowsUnifiedVideoPlayer::new(
+                             &device,
+                             video_id,
+@@ -1229,6 +1232,7 @@ fn handle_platform_ops(
+                             source,
+                             autoplay,
+                             should_loop,
++                            camera_access,
+                         );
+                         self.os.video_players.insert(video_id, player);
+                         // Notify widget so it can bind textures to shader slots
+diff --git a/platform/src/os/windows/windows_camera_player.rs b/platform/src/os/windows/windows_camera_player.rs
+new file mode 100644
+index 0000000..060c7bb
+--- /dev/null
++++ b/platform/src/os/windows/windows_camera_player.rs
+@@ -0,0 +1,84 @@
++//! Media Foundation camera frames as a bounded latest-frame video source.
++use {
++    super::media_foundation::MediaFoundationAccess,
++    crate::{
++        media_plugin::PlaybackPrepared,
++        video::{CameraFrameInputFn, CameraFrameOwned, CameraFramePool, CameraFrameRef, VideoFormatId, VideoInputId},
++    },
++    std::{sync::{Arc, Mutex}, time::{Duration, Instant}},
++};
++
++pub struct WindowsCameraPlayer {
++    frame_pool: Arc<Mutex<CameraFramePool>>,
++    access: Option<Arc<Mutex<MediaFoundationAccess>>>,
++    started: Instant,
++    prepared: bool,
++    playing: bool,
++}
++
++impl WindowsCameraPlayer {
++    pub fn new(input_id: VideoInputId, format_id: VideoFormatId,
++               access: Arc<Mutex<MediaFoundationAccess>>, autoplay: bool) -> Self {
++        let frame_pool = Arc::new(Mutex::new(CameraFramePool::new(4)));
++        let pending = frame_pool.clone();
++        let callback: CameraFrameInputFn = Box::new(move |source: CameraFrameRef<'_>| {
++            let mut pool = pending.lock().unwrap();
++            let mut frame = pool.checkout();
++            if frame.convert_to_i420(source) {
++                pool.publish_latest(frame);
++            } else {
++                pool.recycle(frame);
++            }
++        });
++        {
++            let mut camera = access.lock().unwrap();
++            *camera.camera_frame_input_cb[0].lock().unwrap() = Some(callback);
++            *camera.video_input_cb[0].lock().unwrap() = None;
++            camera.use_video_input(&[(input_id, format_id)]);
++        }
++        Self { frame_pool, access: Some(access), started: Instant::now(),
++            prepared: false, playing: autoplay }
++    }
++
++    pub fn check_prepared(&mut self) -> Option<Result<PlaybackPrepared, String>> {
++        if self.prepared { return None; }
++        let mut pool = self.frame_pool.lock().unwrap();
++        if let Some(frame) = pool.take_latest() {
++            let (width, height) = (frame.width as u32, frame.height as u32);
++            pool.publish_latest(frame);
++            self.prepared = true;
++            return Some(Ok(PlaybackPrepared::new(width, height, 0, false,
++                vec!["camera".to_string()], vec![])));
++        }
++        if self.started.elapsed() > Duration::from_secs(6) {
++            self.prepared = true;
++            return Some(Err("Camera did not deliver a video frame".to_string()));
++        }
++        None
++    }
++
++    pub fn take_frame(&self) -> Option<CameraFrameOwned> {
++        if self.playing { self.frame_pool.lock().unwrap().take_latest() } else { None }
++    }
++
++    pub fn recycle_frame(&self, frame: CameraFrameOwned) {
++        self.frame_pool.lock().unwrap().recycle(frame);
++    }
++
++    pub fn is_playing(&self) -> bool { self.playing }
++    pub fn keep_polling(&self) -> bool { !self.prepared || self.playing }
++    pub fn play(&mut self) { self.playing = true; }
++    pub fn pause(&mut self) { self.playing = false; }
++    pub fn cleanup(&mut self) {
++        if let Some(access) = self.access.take() {
++            let mut camera = access.lock().unwrap();
++            camera.use_video_input(&[]);
++            *camera.camera_frame_input_cb[0].lock().unwrap() = None;
++        }
++        self.playing = false;
++    }
++}
++
++impl Drop for WindowsCameraPlayer {
++    fn drop(&mut self) { self.cleanup(); }
++}
+diff --git a/platform/src/os/windows/windows_video_player.rs b/platform/src/os/windows/windows_video_player.rs
+index 9a7ac30..7604ccb 100644
+--- a/platform/src/os/windows/windows_video_player.rs
++++ b/platform/src/os/windows/windows_video_player.rs
+@@ -1,5 +1,7 @@
+ use {
+     super::{
++        media_foundation::MediaFoundationAccess,
++        windows_camera_player::WindowsCameraPlayer,
+         windows_mf_source_reader::WindowsMfSourceReaderPlayer,
+         windows_video_playback::WindowsVideoPlayer,
+     },
+@@ -12,7 +14,8 @@
+             CxTexturePool, TextureAlloc, TextureCategory, TextureFormat, TextureId, TexturePixel,
+         },
+         video_decode::software_video::PlaybackSessionHandle,
+-        video_decode::yuv::YuvPlaneData,
++        video_decode::yuv::{YuvColorMatrix, YuvLayout, YuvPlaneData},
++        video::CameraColorMatrix,
+         windows::{
+             core::Interface,
+             Win32::Graphics::{
+@@ -25,6 +28,7 @@
+             },
+         },
+     },
++    std::sync::{Arc, Mutex},
+ };
+ 
+ struct D3d11R8GpuPlane {
+@@ -250,6 +254,7 @@ pub struct WindowsUnifiedVideoPlayer {
+ }
+ 
+ enum WindowsPlayerMode {
++    Camera(WindowsCameraPlayer),
+     /// Progressive files: Source Reader + DXGI NV12 (true zero-copy when possible).
+     SourceReader(WindowsMfSourceReaderPlayer),
+     /// Adaptive / fallback: MediaEngine Transfer present.
+@@ -268,9 +273,13 @@ pub fn new(
+         source: VideoSource,
+         autoplay: bool,
+         is_looping: bool,
++        camera_access: Option<Arc<Mutex<MediaFoundationAccess>>>,
+     ) -> Self {
+         let force_software = std::env::var_os("MAKEPAD_FORCE_SOFTWARE_VIDEO").is_some();
+-        let mode = if force_software {
++        let mode = if let VideoSource::Camera(input_id, format_id) = &source {
++            WindowsPlayerMode::Camera(WindowsCameraPlayer::new(*input_id, *format_id,
++                camera_access.expect("camera access required for camera source"), autoplay))
++        } else if force_software {
+             crate::log!("VIDEO: MAKEPAD_FORCE_SOFTWARE_VIDEO set, using software video decoder");
+             WindowsPlayerMode::Software(PlaybackSessionHandle::new(
+                 video_id,
+@@ -396,6 +405,7 @@ fn switch_to_software(&mut self, reason: &str) {
+     /// Pump the active native worker once per UI paint (coalesces Tick).
+     pub fn sync_worker(&mut self) {
+         match &mut self.mode {
++            WindowsPlayerMode::Camera(_) => {},
+             WindowsPlayerMode::SourceReader(player) => player.sync_worker(),
+             WindowsPlayerMode::Native(player) => player.sync_worker(),
+             WindowsPlayerMode::Software(_) => {}
+@@ -414,11 +424,13 @@ pub fn sync_worker(&mut self) {
+ 
+     pub fn check_prepared(&mut self) -> Option<Result<PlaybackPrepared, String>> {
+         let out = match &mut self.mode {
++            WindowsPlayerMode::Camera(player) => player.check_prepared(),
+             WindowsPlayerMode::SourceReader(player) => match player.check_prepared() {
+                 Some(Err(err)) => {
+                     self.switch_to_media_engine(&err);
+                     self.prepare_resolved = false;
+                     match &mut self.mode {
++                        WindowsPlayerMode::Camera(_) => Some(Err(err.clone())),
+                         WindowsPlayerMode::Native(native) => native.check_prepared(),
+                         WindowsPlayerMode::Software(software) => software.check_prepared(),
+                         WindowsPlayerMode::SourceReader(_) => Some(Err(err)),
+@@ -455,7 +467,39 @@ pub fn check_prepared(&mut self) -> Option<Result<PlaybackPrepared, String>> {
+     }
+ 
+     pub fn poll_frame(&mut self, textures: &mut CxTexturePool) -> bool {
++        if let WindowsPlayerMode::Camera(player) = &mut self.mode {
++            let Some(mut frame) = player.take_frame() else { return false; };
++            if frame.width == 0 || frame.height == 0 || frame.plane_count < 3 {
++                player.recycle_frame(frame);
++                return false;
++            }
++            let matrix = match frame.matrix {
++                CameraColorMatrix::BT601 => YuvColorMatrix::BT601,
++                CameraColorMatrix::BT2020 => YuvColorMatrix::BT2020,
++                _ => YuvColorMatrix::BT709,
++            };
++            let planes = YuvPlaneData {
++                y: std::mem::take(&mut frame.planes[0].bytes),
++                u: std::mem::take(&mut frame.planes[1].bytes),
++                v: std::mem::take(&mut frame.planes[2].bytes),
++                width: frame.width as u32, height: frame.height as u32,
++                layout: YuvLayout::I420, matrix,
++                y_stride: frame.planes[0].row_stride as u32,
++                u_stride: frame.planes[1].row_stride as u32,
++                v_stride: frame.planes[2].row_stride as u32,
++            };
++            self.yuv_matrix = matrix.as_f32();
++            self.yuv_biplanar = false;
++            self.yuv_array = false;
++            self.upload_yuv_to_d3d11(textures, &planes);
++            frame.planes[0].bytes = planes.y;
++            frame.planes[1].bytes = planes.u;
++            frame.planes[2].bytes = planes.v;
++            if let WindowsPlayerMode::Camera(player) = &self.mode { player.recycle_frame(frame); }
++            return true;
++        }
+         match &mut self.mode {
++            WindowsPlayerMode::Camera(_) => unreachable!(),
+             WindowsPlayerMode::SourceReader(player) => {
+                 let ok = player.poll_frame(textures);
+                 self.yuv_biplanar = player.presents_nv12();
+@@ -568,7 +612,7 @@ pub fn is_software_mode(&self) -> bool {
+ 
+     /// YUV shader path: software decode, SourceReader DXGI NV12, or MF Transfer NV12.
+     pub fn uses_yuv(&self) -> bool {
+-        self.is_software_mode()
++        matches!(self.mode, WindowsPlayerMode::Camera(_)) || self.is_software_mode()
+             || matches!(self.mode, WindowsPlayerMode::SourceReader(_))
+             || self.yuv_biplanar
+     }
+@@ -591,6 +635,7 @@ pub fn yuv_full_range(&self) -> bool {
+ 
+     pub fn check_eos(&mut self) -> bool {
+         match &mut self.mode {
++            WindowsPlayerMode::Camera(_) => false,
+             WindowsPlayerMode::SourceReader(player) => player.check_eos(),
+             WindowsPlayerMode::Native(player) => player.check_eos(),
+             WindowsPlayerMode::Software(player) => player.check_eos(),
+@@ -599,6 +644,7 @@ pub fn check_eos(&mut self) -> bool {
+ 
+     pub fn is_playing(&self) -> bool {
+         match &self.mode {
++            WindowsPlayerMode::Camera(player) => player.is_playing(),
+             WindowsPlayerMode::SourceReader(player) => player.is_playing(),
+             WindowsPlayerMode::Native(player) => player.is_playing(),
+             WindowsPlayerMode::Software(player) => player.is_playing(),
+@@ -608,6 +654,7 @@ pub fn is_playing(&self) -> bool {
+     /// Keep Poll while Media Foundation is still buffering, or while playing.
+     pub fn keep_polling(&self) -> bool {
+         match &self.mode {
++            WindowsPlayerMode::Camera(player) => player.keep_polling(),
+             WindowsPlayerMode::SourceReader(player) => player.keep_polling(),
+             WindowsPlayerMode::Native(player) => player.keep_polling(),
+             WindowsPlayerMode::Software(player) => !self.prepare_resolved || player.is_playing(),
+@@ -616,6 +663,7 @@ pub fn keep_polling(&self) -> bool {
+ 
+     pub fn play(&mut self) {
+         match &mut self.mode {
++            WindowsPlayerMode::Camera(player) => player.play(),
+             WindowsPlayerMode::SourceReader(player) => player.play(),
+             WindowsPlayerMode::Native(player) => player.play(),
+             WindowsPlayerMode::Software(player) => player.play(),
+@@ -624,6 +672,7 @@ pub fn play(&mut self) {
+ 
+     pub fn pause(&mut self) {
+         match &mut self.mode {
++            WindowsPlayerMode::Camera(player) => player.pause(),
+             WindowsPlayerMode::SourceReader(player) => player.pause(),
+             WindowsPlayerMode::Native(player) => player.pause(),
+             WindowsPlayerMode::Software(player) => player.pause(),
+@@ -632,6 +681,7 @@ pub fn pause(&mut self) {
+ 
+     pub fn resume(&mut self) {
+         match &mut self.mode {
++            WindowsPlayerMode::Camera(player) => player.play(),
+             WindowsPlayerMode::SourceReader(player) => player.resume(),
+             WindowsPlayerMode::Native(player) => player.resume(),
+             WindowsPlayerMode::Software(player) => player.resume(),
+@@ -640,6 +690,7 @@ pub fn resume(&mut self) {
+ 
+     pub fn mute(&mut self) {
+         match &mut self.mode {
++            WindowsPlayerMode::Camera(_) => {},
+             WindowsPlayerMode::SourceReader(player) => player.mute(),
+             WindowsPlayerMode::Native(player) => player.mute(),
+             WindowsPlayerMode::Software(player) => player.mute(),
+@@ -648,6 +699,7 @@ pub fn mute(&mut self) {
+ 
+     pub fn unmute(&mut self) {
+         match &mut self.mode {
++            WindowsPlayerMode::Camera(_) => {},
+             WindowsPlayerMode::SourceReader(player) => player.unmute(),
+             WindowsPlayerMode::Native(player) => player.unmute(),
+             WindowsPlayerMode::Software(player) => player.unmute(),
+@@ -656,6 +708,7 @@ pub fn unmute(&mut self) {
+ 
+     pub fn seek_to(&mut self, position_ms: u64) {
+         match &mut self.mode {
++            WindowsPlayerMode::Camera(_) => {},
+             WindowsPlayerMode::SourceReader(player) => player.seek_to(position_ms),
+             WindowsPlayerMode::Native(player) => player.seek_to(position_ms),
+             WindowsPlayerMode::Software(player) => player.seek_to(position_ms),
+@@ -664,6 +717,7 @@ pub fn seek_to(&mut self, position_ms: u64) {
+ 
+     pub fn set_volume(&mut self, volume: f64) {
+         match &mut self.mode {
++            WindowsPlayerMode::Camera(_) => {},
+             WindowsPlayerMode::SourceReader(player) => player.set_volume(volume),
+             WindowsPlayerMode::Native(player) => player.set_volume(volume),
+             WindowsPlayerMode::Software(player) => player.set_volume(volume),
+@@ -672,6 +726,7 @@ pub fn set_volume(&mut self, volume: f64) {
+ 
+     pub fn set_playback_rate(&mut self, rate: f64) {
+         match &mut self.mode {
++            WindowsPlayerMode::Camera(_) => {},
+             WindowsPlayerMode::SourceReader(player) => player.set_playback_rate(rate),
+             WindowsPlayerMode::Native(player) => player.set_playback_rate(rate),
+             WindowsPlayerMode::Software(player) => player.set_playback_rate(rate),
+@@ -680,6 +735,7 @@ pub fn set_playback_rate(&mut self, rate: f64) {
+ 
+     pub fn current_position_ms(&self) -> u128 {
+         match &self.mode {
++            WindowsPlayerMode::Camera(_) => 0,
+             WindowsPlayerMode::SourceReader(player) => player.current_position_ms(),
+             WindowsPlayerMode::Native(player) => player.current_position_ms(),
+             WindowsPlayerMode::Software(player) => player.current_position_ms(),
+@@ -688,6 +744,7 @@ pub fn current_position_ms(&self) -> u128 {
+ 
+     pub fn cleanup(&mut self) {
+         match &mut self.mode {
++            WindowsPlayerMode::Camera(player) => player.cleanup(),
+             WindowsPlayerMode::SourceReader(player) => player.cleanup(),
+             WindowsPlayerMode::Native(player) => player.cleanup(),
+             WindowsPlayerMode::Software(player) => player.cleanup(),

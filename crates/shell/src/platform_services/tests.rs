@@ -141,7 +141,7 @@ fn glance_devices_use_host_consent_for_declared_and_legacy_apps() {
     let replies = services::take_replies_for(&[heap]);
     assert_eq!(replies.len(), 1);
     let error = replies[0].2.as_ref().unwrap_err();
-    if permission_supported() {
+    if permission_supported("camera") {
         assert_eq!(
             error,
             "camera.permission.request is unavailable to agents/background surfaces"
@@ -257,7 +257,7 @@ fn descriptors_do_not_claim_unimplemented_location_or_background_authorization()
     for family in ["camera", "microphone", "location"] {
         let service = DeviceService { family };
         let methods = service.api_methods();
-        if !permission_supported() {
+        if !permission_supported(family) {
             assert_eq!(methods.len(), usize::from(family == "camera"));
             continue;
         }
@@ -266,7 +266,7 @@ fn descriptors_do_not_claim_unimplemented_location_or_background_authorization()
             .find(|m| m.name.ends_with("permission.request"))
             .unwrap();
         assert_eq!(request.agent_access, services::AgentAccess::ForegroundOnly);
-        assert!(!request.platforms.contains(&"windows".into()));
+        assert_eq!(request.platforms.contains(&"windows".into()), family == "camera");
         assert!(request.input_schema["additionalProperties"] == false);
         assert_eq!(
             methods.iter().any(|m| m.name == "location.get"),
@@ -361,7 +361,7 @@ fn location_samples_validate_bounds_age_accuracy_and_platform_data() {
     }
     let methods = DeviceService { family: "location" }.api_methods();
     let sample = methods.iter().find(|m| m.name == "location.sample");
-    assert_eq!(sample.is_some(), permission_supported());
+    assert_eq!(sample.is_some(), permission_supported("location"));
     if let Some(sample) = sample {
         assert_eq!(sample.agent_access, services::AgentAccess::ForegroundOnly);
         assert_eq!(sample.platforms, ["android", "macos"]);
@@ -374,7 +374,7 @@ fn location_samples_validate_bounds_age_accuracy_and_platform_data() {
 /// events. A child process owns global registries; no OS/device is opened.
 #[test]
 fn location_sampling_broker_lifecycle() {
-    if !permission_supported() {
+    if !permission_supported("location") {
         return;
     }
     const CHILD: &str = "OCTOSENSE_LOCATION_TEST_CHILD";
