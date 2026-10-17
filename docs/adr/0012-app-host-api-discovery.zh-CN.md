@@ -72,8 +72,10 @@ flowchart TD
 macOS/Android 实现嵌入式后端登录；Windows/Linux 保留独立的外部浏览器认证
 路径，仍需平台执行验收。后续[桌面浏览器扩展](../desktop-embedded-browser.zh-CN.md)为 Windows 和
 Linux X11/XWayland 提供普通 `WebReader`；原生 Wayland 或引擎缺失时明确报错。
-这不启用嵌入式后端认证。Google Android 登录仍不受支持。新设备适配器不宣称支持
-Windows/Linux/iOS。不增加广泛系统访问、任意 Rust/原生动态库执行或 Wasm 加载。
+这不启用嵌入式后端认证。Google Android 登录仍不受支持。设备适配器在 Issue #3
+宿主扩展中仅为 Windows 增加麦克风授权与录音；Windows 授权适配器不能核实系统隐私
+设置，授权成功不代表已收到音频帧。摄像头和位置在 Windows 仍不受支持；Linux/iOS
+仍不列入。不增加广泛系统访问、任意 Rust/原生动态库执行或 Wasm 加载。
 
 ## 证据与待完成验收
 

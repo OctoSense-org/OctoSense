@@ -54,6 +54,8 @@ one place only. Prompts and text are UTF-8 bytes for input limits.
 | `model.video.cancel` | `job` | Confirmed cancellation of a queued remote job, or an error |
 | `model.capabilities` | `{}` | `configured` flags, limits and lifecycle note |
 | `model.budget` | `{}` | Existing call/token budget plus `media` resource usage and limits |
+| `model.transcribe_capability` (Windows) | `{}` | `schema:1`, `supported`, `configured`; no provider identity or credential |
+| `model.transcribe` (Windows, foreground) | `audio:{app_path}`, a WAV inside the caller's app storage | Trimmed `text`, `duration_seconds` |
 
 Image sizes are `512x512`, `1024x1024` (default), `1536x1024`, and
 `1024x1536`. The OpenAI route rejects `512x512` and `seed` before submission;
@@ -61,6 +63,12 @@ the MiniMax route supports both. Only one image per request is supported.
 Generated PNG/JPEG dimensions must match the request. Audio output is MP3;
 apps should disclose that the voice is AI-generated. Duration is omitted
 when the provider does not report it; the host does not invent a value.
+Transcription accepts only a 16 kHz mono PCM16 WAV of at most 1 MiB and
+30 seconds, from the calling app's own storage. The host selects a configured
+MiniMax/MiniMax CN/MiniMaxI route and uploads the WAV once. Any installed
+Windows app with the model grant can probe this method; the catalog does not
+promise a configured provider. The provider must return nonempty text and a
+valid duration. The app receives neither the provider body nor credentials.
 Embeddings must be finite numeric vectors with consistent dimensions, at
 most 4096 dimensions. Provider batch indices are validated and reordered.
 
@@ -102,6 +110,7 @@ model call/rate budget. Media also reserves its own daily units before HTTP:
 | --- | --- |
 | Image output pixels | 8,388,608 |
 | Speech input characters | 10,000 |
+| Transcription input seconds | 300 |
 | Video duration seconds | 12 |
 | Embedding input UTF-8 bytes | 100,000 |
 

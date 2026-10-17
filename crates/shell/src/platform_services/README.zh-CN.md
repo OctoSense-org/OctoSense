@@ -8,7 +8,7 @@
 - **应用授权。** 用户在宿主的原生面板上允许这个应用。授权覆盖该应用的所有账户，不覆盖其他应用。
 - **系统权限。** 操作系统授予 OctoSense 本身的权限。单凭它，任何已安装应用都无权使用设备。
 
-本模块的设备服务（`DeviceService`）在 Android 和 macOS 上实现权限的查询、申请和撤销，支持 Android/macOS 有时限的新鲜位置采样，并保留 Android 最近已知位置读取。在其他平台上，API 发现接口（`runtime.list` 和 `runtime.describe`）不列出这些方法：`status` 返回 `os_permission: "unsupported"`，`request` 和 `location.get` 以 `unsupported_platform` 失败。获得权限并不会多出日历、文件选择器、摄像头拍摄或后台定位服务。要显示摄像头画面，请使用已有的 `CameraPreview` 控件。
+本模块的设备服务（`DeviceService`）在 Android 和 macOS 上提供摄像头、位置权限的查询、申请和撤销；麦克风权限的这三项操作还支持 Windows。Android/macOS 支持有时限的新鲜位置采样，Android 保留最近已知位置读取。API 发现接口不列出不支持的方法。Windows 麦克风状态反映宿主的应用授权，但当前固定的 Windows 适配器不能查询系统隐私设置；系统阻止设备时录音仍可能失败。获得权限并不会多出日历、文件选择器、摄像头拍摄或后台定位服务。要显示摄像头画面，请使用已有的 `CameraPreview` 控件。
 
 ## 声明应用要用的能力
 

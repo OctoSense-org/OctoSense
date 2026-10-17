@@ -128,8 +128,8 @@ fn native_sessions_follow_foreground_heap_identity_and_account_storage_without_a
     };
     assert_eq!(
         state.window_unfocused,
-        cfg!(target_os = "macos"),
-        "macOS must wait for its first native focus event"
+        cfg!(any(target_os = "macos", target_os = "windows")),
+        "desktop capture must wait for its first native focus event"
     );
     state.sessions.insert(id.clone(), session);
     maintain(&mut cx, &mut state, &Event::WindowLostFocus(WindowId(0, 0)));
@@ -147,6 +147,17 @@ fn native_sessions_follow_foreground_heap_identity_and_account_storage_without_a
         state.sessions[&id].state, "cancelled",
         "focus gain never resumes capture"
     );
+
+    // The bounded lifetime still terminates a stalled recorder after focus
+    // returns; a late worker result cannot turn it into a saved file.
+    let session = state.sessions.get_mut(&id).unwrap();
+    session.state = "recording";
+    session.ended = None;
+    session.started = Instant::now() - Duration::from_secs(41);
+    session.shared = Arc::new(Shared::new());
+    maintain(&mut cx, &mut state, &Event::Signal);
+    assert_eq!(state.sessions[&id].state, "failed");
+    assert!(state.sessions[&id].shared.stop.load(Ordering::Acquire));
 
     // Queue an explicit Cancel before the UI sees a worker's ready file.
     // Native-only dispatch creates the normal pending reply; it does not
@@ -180,6 +191,7 @@ fn native_sessions_follow_foreground_heap_identity_and_account_storage_without_a
     let session = state.sessions.get_mut(&id).unwrap();
     session.state = "stopping";
     session.ended = None;
+    session.started = Instant::now();
     session.shared = Arc::new(Shared::new());
     let staged = session
         .storage
@@ -275,10 +287,14 @@ fn bounded_capture_queue_reports_overflow_without_growing() {
 fn discovery_never_advertises_background_capture_or_unsupported_platforms() {
     let mut methods = microphone_methods();
     methods.extend(AudioService.api_methods());
-    assert_eq!(methods.len(), if supported() { 7 } else { 0 });
+    assert_eq!(methods.len(), if playback_supported() { 7 } else if supported() { 4 } else { 0 });
     for method in methods {
         method.validate().unwrap();
         assert_eq!(method.agent_access, AgentAccess::ForegroundOnly);
-        assert_eq!(method.platforms, vec!["macos", "android"]);
+        assert_eq!(method.platforms, if method.name.starts_with("microphone.") {
+            vec!["macos", "android", "windows"]
+        } else {
+            vec!["macos", "android"]
+        });
     }
 }
