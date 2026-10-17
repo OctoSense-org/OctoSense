@@ -985,6 +985,28 @@ mod tests {
         );
     }
 
+    /// Cold-start regression: `handle_startup` calls `register_host_services`
+    /// before `agents::start`, so the host-API table is populated by the
+    /// time the first agent's `prepare_allowed` thread observes its
+    /// manifest. A second `register_host_services()` call is a no-op
+    /// (the inner `Once`), so re-ordering a call does not break anything.
+    #[test]
+    fn cold_start_orders_register_host_services_before_agents_start() {
+        let manifest = octosense_app_policy::AppManifest::parse(&serde_json::json!({
+            "schema": 1, "id": "org.example.coldstart", "name": "Cold start", "version": "1.0.0",
+            "integrity": {"bundle_blake3": "0".repeat(64)},
+            "capabilities": [], "requires": ["host-api-v1"],
+            "host_api": {"required": {"app_tools.dispatch": 1, "runtime.describe": 1}}
+        }).to_string()).unwrap();
+        // Idempotent: a second registration must not panic or wipe the
+        // first one. The inner `Once` inside `register_host_services`
+        // guarantees this.
+        register_host_services();
+        register_host_services();
+        octosense_appstore::host_api::check_manifest(&manifest)
+            .expect("the host-API table must be populated before the first agent prepares");
+    }
+
     #[test]
     fn script_agent_discovery_requires_matching_identity_and_genuine_opt_in() {
         let root = std::env::temp_dir().join(format!("shell-agent-discovery-{}", std::process::id()));
