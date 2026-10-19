@@ -1,0 +1,30 @@
+{
+ "dp2-playing": {
+  "pixels_changed": 13850,
+  "times": [
+   "0:01 / 0:05",
+   "0:03 / 0:05"
+  ],
+  "rect": [
+   490.0,
+   371.6,
+   492.9,
+   277.3
+  ]
+ },
+ "dp3-paused": "0:03 / 0:05",
+ "dp8-present": {
+  "pixels_changed": 33418,
+  "times": [
+   null,
+   null
+  ],
+  "rect": [
+   382.4,
+   213.2,
+   771.2,
+   433.8
+  ]
+ },
+ "dp9-present-paused": "Paused  \u00b7  0:04 / 0:05"
+}

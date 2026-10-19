@@ -48,6 +48,7 @@ libc = "0.2"
 sha2 = "0.10"
 # The hub's per-launch connect secrets (hub.rs): v4 UUIDs from the OS CSPRNG.
 uuid = { workspace = true }
+base64 = "0.22"
 serde = { workspace = true }
 serde_json = { workspace = true }
 chrono = { workspace = true }

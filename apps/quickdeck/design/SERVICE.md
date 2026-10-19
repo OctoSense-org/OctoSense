@@ -494,7 +494,10 @@ held (#448).
   media cache are cleared before the write, and a clip that still doesn't fit
   is `storage_full:` ("There isn't room in Quick Deck's storage to play this
   clip.").
-- Writes are staged and never replace a file the call didn't create.
+- Writes are staged and never replace a file the call didn't create, with
+  one exception: a stale entry at a clip's own name (a file that doesn't
+  hold the clip's bytes, or a link, which is never followed) is removed and
+  the clip written there anew.
 - **Where it plays:** the app overlays a `Video` widget on the clip's box,
   with the file as its storage source, in the editor (a play control on a
   chosen clip) and in Present (autoplay clips start when their slide shows;
@@ -515,7 +518,8 @@ bullets above, they win:
   `unsupported:`.
 - "Oldest first" means used longest ago: a clip handed out again counts as
   just used (its file's modification time is set to now), so a slide's
-  other clip can't push it out before it plays.
+  other clip can't push it out before it plays. Clips no open document uses
+  go before any that one does.
 - Anything else at a clip's file name (a file cut short, or a link) is a
   stale entry: it goes, and the clip is written anew, create-only. A folder
   there is `invalid:`.

@@ -262,7 +262,7 @@ pub(crate) fn isolate_closed(heap: usize) {
 /// The clips the documents open in the storage `owner` use, whichever app
 /// opened them; `None` while a call holds the table (the clips then stay,
 /// within the media cache's bounds, until a later open prunes them).
-fn clips_in_use(owner: &Path) -> Option<Vec<String>> {
+pub(crate) fn clips_in_use(owner: &Path) -> Option<Vec<String>> {
     DOCS.with(|docs| docs.try_borrow().ok().map(|docs| docs.open.iter().filter(|d| d.owner == owner).flat_map(|d| d.clips.iter().cloned()).collect()))
 }
 

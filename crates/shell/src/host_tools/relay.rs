@@ -673,7 +673,8 @@ impl Relay {
             _ if super::studio::is_tool(&tool) => (
                 if call.caller_kind == CallerKind::System { Caller::SystemAgent } else { Caller::OwnAgent { client: call.client.clone() } },
                 super::studio::SUPPORTED && calling == owner && env.grants_all(&calling)
-                    && (call.caller_kind == CallerKind::AppPeer || calling == SYSTEM),
+                    && (call.caller_kind == CallerKind::AppPeer || calling == SYSTEM)
+                    && super::studio::granted_to(&calling, &tool),
             ),
             // The shell's own: only the app's own agent, on its own peer;
             // `dev.run` only while developer mode covers the app.
