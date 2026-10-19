@@ -1,0 +1,344 @@
+{
+ "date": "2026-10-13",
+ "branch": "feat/quickdeck-playback, rebased on main ffd5e488 (#515 deck.media, #516 window full screen, #517 deck.media follow-ups)",
+ "contract": "apps/quickdeck/design/SERVICE.md, Playback and its \"As built in #515\" bullets (on main; not changed here)",
+ "files": {
+  "apps/quickdeck/bundle/main.splash": "b13ec7024c93f7e76cab401a943fe1518855feb73e829a091eba0302d2acc562",
+  "apps/quickdeck/bundle/manifest.json": "375c02131477e08ceef11383a384527ea2eab5cb005fbe097e423a8d866cec4e",
+  "apps/quickdeck/bundle/icons/pause.svg": "683302da301cd63aed103d55f4a6f25dda19df53f6194f9d04b9af6f0e72ccdf",
+  "apps/quickdeck/bundle/icons/stop.svg": "49559ab8b9018718e1b36a22a4779cc4f46cace4cfc322c097da7764e640b427",
+  "apps/quickdeck/bundle/icons/speaker.svg": "e4e386e766c9c147f17844223e3630c30b992bf2b74e1f63e9d037f82001b165",
+  "apps/quickdeck/bundle/icons/speaker-off.svg": "fc237e239bd3519c75109fe7fe6209601ec7fb50b9f594cd321c140a34078152",
+  "apps/quickdeck/dev-fixture/engine.splash": "3ec2588064063399268a05557a576036d6127ce97c43bb6b0d2e43b8bea55760",
+  "apps/quickdeck/dev-fixture/make_fixture.py": "2315b397750b16ffbcecd39e9ee2ea59d9fd49a1a52a4132923a1422c487d686",
+  "apps/quickdeck/dev-fixture/media/clip.mp4": "66ed412a780d9114a6eb0c732114f1566724e655c6cf161c7be900cfae99971c",
+  "apps/quickdeck/tests/ui.py": "f52f31f4e7c15c32b39347cde95f5746cddda522f9422c39739cac0c001c9e30",
+  "apps/quickdeck/tests/make_media_decks.py": "6e2079abf1f3d1bbcaf0e5e71a0624f6c035b8fde01c099437b78f832c93e53d",
+  "apps/quickdeck/tests/media/launch-film.deckcraft": "7f7a55377f526d2dbb76d9ccc5430fd12e4b91c926b294325ac5be2444014aec",
+  "apps/quickdeck/tests/media/launch-film.pptx": "05734ba54957e8b31dfc2243130f2249cb34ccb25eb6d676212164f05ae8afd6",
+  "crates/shell/src/quickdeck_model_tests.rs": "d2e2cb379d15426f1dc87b205a4585e168632f8d2314b75113c60e52144411a4"
+ },
+ "sample_clip": "dev-fixture/media/clip.mp4 is crates/video-api-smoke/resources/playback.mp4 (the same bytes): the repository's synthetic 320 x 180, five-second H.264 clip with no sound track, made by tools/generate-video-fixture.swift",
+ "media_decks": "tests/media/launch-film.deckcraft and .pptx, made by tests/make_media_decks.py with deckcraft-cli built at deckcraft d0e57d7e (cargo build --locked --release -p deckcraft-cli) on the Linux host; a second run of the script wrote the same bytes",
+ "runtime": "makepad d653bc44 with OctoSense's runtime patches (runtime-patches.lock.json at main 083f89f0), as tools/setup.py prepares .sources/makepad; the Video widget's script controls come from tools/runtime-patches/makepad-video-controls-lifecycle.patch",
+ "card_host": {
+  "machine": "macOS 26.6.2 (25G83), Apple silicon (arm64)",
+  "build": "App Hub 38635915 (the root Cargo.toml's pin) in .sources/OctoSense-App-Hub beside this checkout's .sources/makepad: cargo build --release -p octosense-card-host -p octosense-app-hub",
+  "binary_sha256": "29f10e48dd504100db79b8dcb830dde01b5a5dea4f8191790e062207cd11f538",
+  "budget": "the runtime's 64 ms",
+  "command": "python3 apps/quickdeck/tests/ui.py --card-host .sources/OctoSense-App-Hub/target/release/card-host --output <dir> --work <dir> --only missing --only fixture --only states --only playback",
+  "window": "05:54 to 05:59 UTC",
+  "results": {
+   "missing": "passed, light and dark",
+   "fixture": "passed, light and dark (every designed screen, the inspector's states checked against the stand-in, a change and its Undo)",
+   "states": "passed, light and dark",
+   "playback": {
+    "result": "passed, light and dark",
+    "light": {
+     "p2-playing": {
+      "pixels_changed": 13850,
+      "times": [
+       "0:01 / 0:05",
+       "0:03 / 0:05"
+      ],
+      "rect": [
+       490.0,
+       371.6,
+       492.9,
+       277.3
+      ]
+     },
+     "p3-paused": "0:03 / 0:05",
+     "p8-present": {
+      "pixels_changed": 33418,
+      "times": [
+       null,
+       null
+      ],
+      "rect": [
+       382.4,
+       213.2,
+       771.2,
+       433.8
+      ]
+     },
+     "p9-present-paused": "Paused  ·  0:04 / 0:05"
+    },
+    "dark": {
+     "dp2-playing": {
+      "pixels_changed": 13850,
+      "times": [
+       "0:01 / 0:05",
+       "0:03 / 0:05"
+      ],
+      "rect": [
+       490.0,
+       371.6,
+       492.9,
+       277.3
+      ]
+     },
+     "dp3-paused": "0:03 / 0:05",
+     "dp8-present": {
+      "pixels_changed": 33418,
+      "times": [
+       null,
+       null
+      ],
+      "rect": [
+       382.4,
+       213.2,
+       771.2,
+       433.8
+      ]
+     },
+     "dp9-present-paused": "Paused  ·  0:04 / 0:05"
+    },
+    "what": "the chosen clip's control; Play: the sample clip playing over the clip's box (two grabs a second apart differ there by the pixel counts above, and the control's time moved on); Pause held the time for 1.2 s; Play played on; Stop; another slide stopped it; the sound's control; unsupported: and storage_full: in words; a clip whose file isn't there, after a clip had played: \"This clip couldn't be played.\"; Present: the clip that plays by itself (two grabs a second apart differ), a tap paused it (the stage's note above), another tap played it on, the next slide"
+   },
+   "playback-fresh": "passed, light and dark: in a session where nothing had played, the clip whose file isn't there read \"Playback isn't available on this system\", the inspector adding the player's words (\"playback session unavailable: no media plugin installed\": AVFoundation refused the missing file and the runtime's software fallback has no media plugin)"
+  },
+  "log": "no script error and no budget overrun in the final run; the player's own errors for the clip that can't be opened (AVPlayer failed to prepare; Error decoding video), and two 'script_result dropped' warnings a session, as before. Two earlier rounds on this tree each had one 'script time budget exceeded' (after a PNG decode in states-full, and in states), at load averages of 63 and 74 on this Mac while other builds ran"
+ },
+ "shell": {
+  "machine": "Ubuntu 26.04 LTS, x86_64, 72 CPUs, no GPU; weston 14.0.2 headless (pixman); GStreamer 1.28.2 with gstreamer1.0-plugins-base only (no MP4 demuxer, no H.264 or audio decoders)",
+  "build": "cargo build --locked -p octosense --no-default-features --features app-hub,craft-engines (dev profile), from this branch's tree 35c16e4d on main ffd5e488, which has #516 and not #519: Quick Deck's toolbar is no longer called `bar`, so the shell's by-name lookup finds its own bar and doesn't panic",
+  "binary_sha256": "4158410f9d6abd3c36ef62e036d66c1105afe58af122329ad0543cbcc7e2523d",
+  "tree": "35c16e4d (the bundle is read from the checkout at run time)",
+  "window": "1296 x 698 points (an app area of 1292 x 662)",
+  "budget": "the runtime's 64 ms",
+  "command": "python3 apps/quickdeck/tests/ui.py --shell target/debug/octosense --lock <dir> --work <dir> --grab-scale 1 --output <dir>",
+  "runs": {
+   "window": "05:41 to 05:46 UTC",
+   "shell": "passed, light then dark, the inspector's states following real changes and their undo, as before",
+   "restart": "passed",
+   "playback": {
+    "result": "passed, light then dark; after every step the shell's log has no 'wm: removing client' and no contained module fault (still_open)",
+    "light": {
+     "platform": "linux",
+     "editor": "Playback isn't available on this system",
+     "cache": {
+      "66ed412a780d9114a6eb0c732114f1566724e655c6cf161c7be900cfae99971c.mp4": 26739
+     },
+     "present": "Playback isn't available on this system",
+     "sound": "Playback isn't available on this system",
+     "cache_after_sound": {
+      "66ed412a780d9114a6eb0c732114f1566724e655c6cf161c7be900cfae99971c.mp4": 26739,
+      "e9dabf6257fc45f120e97bffd895209c5506909fd10a541f22cd2418f90f67a6.wav": 32044
+     },
+     "pptx_present": "Playback isn't available on this system"
+    },
+    "what": "deck.media wrote the sample clip as .cache/media/<its sha256>.mp4 (26,739 bytes, the clip's own bytes) and the tone as .wav; closing the deck took both out of the cache; the native deck's video in the editor and in Present (where it starts by itself), its sound, and the .pptx copy's video in Present (which waited for a tap) each said \"Playback isn't available on this system\"; the widget's error was GStreamer's \"Your GStreamer installation is missing a plug-in.\""
+   }
+  },
+  "log": "no script error, no budget overrun, no panic; GStreamer's own errors for each clip; PulseAudio refused at each shell start (no sound server on the host); 'script_result dropped' warnings (four in shell, eight in playback), as before",
+  "model_tests": "cargo test --locked -p octosense-shell --lib quickdeck_model: 35 passed; with --features app-hub: 36 passed"
+ },
+ "rounds": [
+  {
+   "round": "card-host 1 (playback only)",
+   "result": "passed, light and dark"
+  },
+  {
+   "round": "linux 1",
+   "result": "shell and restart passed; playback failed in the test: its tab-closed check found Home's card of the same title; fixed in ui.py (tab_label)"
+  },
+  {
+   "round": "linux 2 (playback)",
+   "result": "light passed; dark failed in the test: the deck reopened where it was left (slide 2), so the test chose the sound; fixed in ui.py (go_to 1)"
+  },
+  {
+   "round": "linux 3 (playback)",
+   "result": "passed, light then dark"
+  },
+  {
+   "round": "model tests 1",
+   "result": "33 of 34: a test's shape literal wrote `loop:`, a keyword in script; the shapes are parsed from JSON now"
+  },
+  {
+   "round": "macOS shell (playback), before the rebase",
+   "result": "passed, light then dark (05:30 to 05:31 UTC); another session's hidden shell overlapped it, so it was run again on the rebased tree"
+  },
+  {
+   "round": "linux 4 (playback, with the stays-open checks), before the rebase",
+   "result": "passed, light then dark (05:32 to 05:33 UTC)"
+  },
+  {
+   "round": "card-host on the rebased tree 1 and 2",
+   "result": "each had one 'script time budget exceeded' (states-full dark after a PNG decode; states light), at load averages of 63 and 74 while other builds ran"
+  },
+  {
+   "round": "linux on the rebased tree",
+   "result": "shell, restart and playback passed (05:41 to 05:46 UTC)"
+  },
+  {
+   "round": "macOS shell on the rebased tree",
+   "result": "playback passed, light then dark (05:52 to 05:54 UTC)"
+  },
+  {
+   "round": "final",
+   "result": "card-host: missing, fixture, states and playback, light and dark, at 64 ms with no overrun (05:54 to 05:59 UTC, load 6 to 16); Linux: shell, restart, playback; macOS shell: playback; model tests 35 and 36"
+  }
+ ],
+ "not_verified": [
+  "sound with audio out on any system (these runs open no audio device; the fixture's sound is refused as linked, and Linux has no decoder)",
+  "Windows (the runtime has a Media Foundation backend; never run for Quick Deck)",
+  "a looping clip playing (only the model tests), a light/dark switch while a clip plays, clips inside a group (deck.slide lists top-level shapes only)"
+ ],
+ "shell_macos": {
+  "machine": "macOS 26.6.2 (25G83), Apple silicon (arm64)",
+  "build": "cargo build --locked -p octosense --no-default-features --features app-hub,craft-engines (dev profile), from this branch's tree 35c16e4d on main ffd5e488 (#516 in, #519 not)",
+  "binary_sha256": "b17bcd162f5d8cced18e7ded8977ab8983c057ff6c58eb4c9f179ac73d076863",
+  "tree": "35c16e4d",
+  "window": "1296 x 698 points (an app area of 1292 x 662), hidden, started from a Terminal.app tab, under the lock folder; pgrep found no other OctoSense before the launch",
+  "budget": "the runtime's 64 ms",
+  "command": "python3 apps/quickdeck/tests/ui.py --shell target/debug/octosense --lock <scratchpad>/octosense-shell.lock --work <dir> --output <dir> --only playback",
+  "runs": {
+   "window": "05:52 to 05:54 UTC",
+   "playback": {
+    "result": "passed, light then dark; Quick Deck stayed open after every step (still_open)",
+    "light": {
+     "platform": "darwin",
+     "editor": "playing",
+     "cache": {
+      "66ed412a780d9114a6eb0c732114f1566724e655c6cf161c7be900cfae99971c.mp4": 26739
+     },
+     "p1-editor-playing": {
+      "pixels_changed": 6825,
+      "times": [
+       "0:01 / 0:05",
+       "0:03 / 0:05"
+      ],
+      "rect": [
+       495.0,
+       305.4,
+       347.1,
+       195.2
+      ]
+     },
+     "p2-present-playing": {
+      "pixels_changed": 12814,
+      "times": [
+       null,
+       null
+      ],
+      "rect": [
+       435.4,
+       237.6,
+       530.2,
+       298.3
+      ]
+     },
+     "present": "playing",
+     "present_taps": [
+      [
+       "1 / 2",
+       null
+      ],
+      [
+       "1 / 2",
+       "Paused  ·  0:01 / 0:05"
+      ],
+      [
+       "1 / 2",
+       null
+      ],
+      [
+       "1 / 2",
+       "Paused  ·  0:03 / 0:05"
+      ]
+     ],
+     "p4-pptx-present-playing": {
+      "pixels_changed": 12814,
+      "times": [
+       null,
+       null
+      ],
+      "rect": [
+       435.4,
+       237.6,
+       530.2,
+       298.3
+      ]
+     },
+     "pptx_present": "playing"
+    },
+    "dark": {
+     "platform": "darwin",
+     "editor": "playing",
+     "cache": {
+      "66ed412a780d9114a6eb0c732114f1566724e655c6cf161c7be900cfae99971c.mp4": 26739
+     },
+     "dp1-editor-playing": {
+      "pixels_changed": 7020,
+      "times": [
+       "0:01 / 0:05",
+       "0:03 / 0:05"
+      ],
+      "rect": [
+       495.0,
+       305.4,
+       347.1,
+       195.2
+      ]
+     },
+     "dp2-present-playing": {
+      "pixels_changed": 12814,
+      "times": [
+       null,
+       null
+      ],
+      "rect": [
+       435.4,
+       237.6,
+       530.2,
+       298.3
+      ]
+     },
+     "present": "playing",
+     "present_taps": [
+      [
+       "1 / 2",
+       null
+      ],
+      [
+       "1 / 2",
+       "Paused  ·  0:01 / 0:05"
+      ],
+      [
+       "1 / 2",
+       null
+      ],
+      [
+       "1 / 2",
+       "Paused  ·  0:03 / 0:05"
+      ]
+     ],
+     "dp4-pptx-present-playing": {
+      "pixels_changed": 12814,
+      "times": [
+       null,
+       null
+      ],
+      "rect": [
+       435.4,
+       237.6,
+       530.2,
+       298.3
+      ]
+     },
+     "pptx_present": "playing"
+    },
+    "what": "deck.media wrote the sample clip as .cache/media/<its sha256>.mp4 (26,739 bytes); the native deck's video played in the editor (two grabs a second apart differ by the pixel counts above; the control's time moved on), Pause, Play, a tap on the video (paused) and Stop worked; in Present it started by itself and played, and four taps paused it and played it on, on the same slide; closing the deck took its clips out of the cache; the .pptx copy's video didn't start by itself, and a tap played it. The sound was never played (these runs open no audio device)"
+   }
+  },
+  "log": "no script error, no budget overrun, no panic, no 'wm: removing client', no contained module fault; eight 'script_result dropped' warnings"
+ },
+ "teardown_report": {
+  "what": "During a visible demo of this branch at d953aa3d, Quick Deck's window went away while the shell stayed up; the demo's log has exactly 'wm: removing client 1' then 'wm: module instance card.1 torn down; isolate SplashVmId(1) freed', after two Present renders of the slide with a video, and nothing else",
+  "signature": "that pair is the shell's ordinary close (crates/shell/src/lib.rs close_client → remove_client → module_host.rs teardown). A module fault logs 'wm: contained a module panic in isolate …' (module_host.rs:114) and leaves the tile with a failure until 'failed module instance … released' (module_host.rs:1219); a script error logs [E] splash lines; a Video error logs 'Error decoding video with id …' (video.rs:1874). None of these is in the demo's log",
+  "reproduced": "In a hidden macOS shell (the demo's binary on a copy of the demo profile; the deck, its frames and logs stayed on that Mac and are not in this evidence), Cmd+W gave exactly the demo's two lines (crates/shell/src/binds.rs:151-152: Super+W and Super+Q are Close window, and Super is Cmd on macOS). Playing the deck's video from the canvas control and the inspector, pausing, tapping it, changing slides while it played, Present with six taps on the clip, the arrow keys, Space, Escape and Return in Present, and browsing every slide closed nothing",
+  "conclusion": "a close request, not a crash: Cmd+W or Cmd+Q (Close window in the shell), the window's close button, or a right or middle click on the bar's window title. Present can't be left with Escape (script apps get no key events), so a presenter's next reflex closes the app. Not an app bug; the shell could log which input closed a client, and Splash apps can't ask before a close (App Hub's card runner answers close_requested with Allow), so a close also drops unsaved edits"
+ },
+ "toolbar_rename": "Quick Deck's toolbar region is now `qd_toolbar`, not `bar`: on main since #516 the shell's `self.ui.widget(cx, ids!(bar))` found an app's `bar` first and panicked ('value belongs to a different heap'); #519 fixes the shell, and the model test quick_deck_names_no_widget_the_shell_finds_by_name_in_its_window keeps Quick Deck off every name the shell looks up in its window. The Linux and macOS shells above ran main with #516 and without #519, and didn't panic"
+}

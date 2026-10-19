@@ -42,7 +42,7 @@ impl App {
     /// sits on the wallpaper with no flat wash beneath; under flat it is
     /// `mod.wm_theme.background` again, as the DSL resolved it.
     pub(super) fn apply_material_to_chrome(&mut self, cx: &mut Cx, material: shell::MaterialTokens, palette: Option<shell::ShellPalette>) {
-        if let Some(mut w) = self.ui.widget(cx, ids!(shell_bar)).borrow_mut::<shell::bar::ShellBar>() {
+        if let Some(mut w) = self.shell_bar(cx).borrow_mut::<shell::bar::ShellBar>() {
             w.set_material(material, palette);
         }
         if let Some(mut w) = self.ui.widget(cx, ids!(shell_menu)).borrow_mut::<ShellMenu>() {
@@ -81,7 +81,7 @@ impl App {
             w.set_material(material);
         }
         let bar_strip = bar_strip_color(&material, self.state_mut().bar_ground);
-        let mut bar = self.ui.widget(cx, ids!(bar));
+        let mut bar = self.bar_strip(cx);
         script_apply_eval!(cx, bar, { draw_bg +: { color: #(bar_strip) } });
     }
 
@@ -241,10 +241,10 @@ impl App {
     #[cfg(not(mobile_only))]
     pub(super) fn open_style_menu(&mut self, cx: &mut Cx) {
         let anchor = if self.state_mut().style.target.mobile() {
-            self.ui.widget(cx, ids!(phone_controls)).borrow::<crate::mobile_surface::PhoneSurface>()
+            self.bar_strip(cx).widget(cx, ids!(phone_controls)).borrow::<crate::mobile_surface::PhoneSurface>()
                 .and_then(|bar| bar.hit_rect(&crate::mobile::PhoneHit::Style))
         } else {
-            self.ui.widget(cx, ids!(shell_bar)).borrow::<crate::shell::bar::ShellBar>()
+            self.shell_bar(cx).borrow::<crate::shell::bar::ShellBar>()
                 .and_then(|bar| bar.module_rect(BarModule::Style))
         };
         self.open_shell_menu(cx, "desktop", MenuSkin::Menu);

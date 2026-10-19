@@ -253,22 +253,38 @@ pub fn register_mail_services() {
 }
 
 #[cfg(any(feature = "app-hub", native_mobile))]
+/// The `model` service's grant: an app as itself, by its host-side
+/// admission, and the system agent through the studio's image tool while
+/// developer mode covers it (ADR 0006 slice 2).
+pub(crate) fn model_grant(app: &str, host_dir: &std::path::Path) -> bool {
+    crate::host_tools::studio::system_caller_admitted(app)
+        || crate::host_tools::script_apps::admitted_host(app, host_dir).is_ok()
+}
+
+/// The budget scope of a `model` call: the app's contained account, and
+/// the device for the system agent's studio calls, in a build that has the
+/// studio.
+#[cfg(any(feature = "app-hub", native_mobile))]
+pub(crate) fn model_scope(app: &str) -> Option<String> {
+    if crate::host_tools::studio::SUPPORTED && app == crate::host_tools::SYSTEM {
+        return Some("device".into());
+    }
+    crate::app_storage::lifecycle::contained_account(app)
+        .map(|account| crate::app_storage::account_hash(&account))
+}
+
+#[cfg(any(feature = "app-hub", native_mobile))]
 pub fn register_host_services() {
     register_mail_services();
     static ONCE: std::sync::Once = std::sync::Once::new();
     ONCE.call_once(|| {
         // Capability declarations describe intended use. Admission still binds
         // every call to a verified app and the current host profile.
-        crate::ai_host::set_model_grants(|app, host_dir| {
-            crate::host_tools::script_apps::admitted_host(app, host_dir).is_ok()
-        });
+        crate::ai_host::set_model_grants(model_grant);
         crate::ai_host::contained::set_caller_admitted(|app, host_dir| {
             crate::host_tools::script_apps::admitted_host(app, host_dir).is_ok()
         });
-        crate::ai_host::set_model_scope(|app, _| {
-            crate::app_storage::lifecycle::contained_account(app)
-                .map(|account| crate::app_storage::account_hash(&account))
-        });
+        crate::ai_host::set_model_scope(|app, _| model_scope(app));
         crate::platform_services::register();
         crate::device_calendar::register(|app| {
             crate::app_storage::lifecycle::contained_account(app)

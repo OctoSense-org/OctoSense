@@ -17,24 +17,29 @@
 //! **The media cache**, beside the render cache ([`crate::cache`]): each
 //! clip at `.cache/media/<SHA-256 of its bytes>.<ext>`, at most
 //! [`MAX_BYTES`] (32 MiB) and [`MAX_FILES`] clips per storage. When it needs
-//! room, the clip used longest ago goes first (written, or handed out again
-//! by a later call). A clip already there with the same bytes is handed out
-//! again, not written twice. A document's clips go when it closes or is
-//! released, with its renders ([`forget`]), unless another document open in
-//! the same storage uses them, and any a released document left behind go
-//! when a document next opens there ([`prune`]). If a clip doesn't fit what
-//! is left of the storage, the render cache and then the media cache are
-//! cleared before the write; a clip that still doesn't fit is
-//! `storage_full:`, and so is one larger than the whole media cache, at
-//! once, with nothing cleared, since even an empty cache can't hold it.
+//! room, clips no open document uses go first, and the ones open documents
+//! use only when that is not enough; each, the clip used longest ago first
+//! (written, or handed out again by a later call). A clip already there with
+//! the same bytes is handed out again, not written twice. A document's clips
+//! go when it closes or is released, with its renders ([`forget`]), unless
+//! another document open in the same storage uses them, and any a released
+//! document left behind go when a document next opens there ([`prune`]). If
+//! a clip doesn't fit what is left of the storage, the render cache and then
+//! the media cache are cleared before the write; a clip that still doesn't
+//! fit is `storage_full:`, before anything is staged, and so is one larger
+//! than the whole media cache, at once, before it is even hashed, with
+//! nothing cleared, since even an empty cache can't hold it.
 //!
 //! **Writes** are staged inside the storage and moved into place by a link
 //! that refuses anything already there (`octosense_engine_area::Stage`), so
 //! a write only ever creates a file. The folders on the way must be plain: a
 //! link there is refused, and only regular files directly in `.cache/media`
-//! are counted, handed out or removed. Whatever else sits at a clip's name
-//! (a link, or a file that doesn't hold the clip's bytes) is a stale cache
-//! entry and goes as an evicted clip would, before the clip is written anew.
+//! are counted, handed out or removed. A clip's path is the checked folder
+//! joined with a name the service makes itself (a hex digest and an
+//! extension from [`EXTS`]), never resolved through what is there. Whatever
+//! else sits at that name (a link, never followed, or a file that doesn't
+//! hold the clip's bytes) is a stale cache entry: it goes, as an evicted
+//! clip would, and the clip is written anew.
 
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -69,6 +74,9 @@ pub(crate) fn media(a: &Json, cx: &Ctx) -> Result<Json, String> {
     args::only(a, &["doc", "slide", "id"], M)?;
     let slide = args::id(a, "slide", M)?;
     let id = args::id(a, "id", M)?;
+    // The clips open documents use, read before the call holds the table:
+    // eviction spares them while it can.
+    let in_use = docs::clips_in_use(&docs::owner(cx.area)).unwrap_or_default();
     docs::with_doc(a, cx, M, |doc| {
         let i = doc.slide_index(slide)?;
         let deck = doc.deck()?;
@@ -81,7 +89,7 @@ pub(crate) fn media(a: &Json, cx: &Ctx) -> Result<Json, String> {
         let ext = ext_of(item).ok_or_else(|| {
             fail(Code::Unsupported, format!("this clip is not a kind Quick Deck plays ({}), by its name or by its declared type", EXTS.join(", ")))
         })?;
-        let rel = write(cx.area, &item.data, ext, M)?;
+        let rel = write(cx.area, &item.data, ext, &in_use, M)?;
         if !doc.clips.contains(&rel) {
             doc.clips.push(rel.clone());
         }
@@ -134,40 +142,51 @@ fn full() -> String {
     fail(Code::StorageFull, FULL)
 }
 
-/// Write `bytes` to the media cache as `<SHA-256>.<ext>`, or find them there
-/// already: the storage-relative path.
-fn write(area: &Area, bytes: &[u8], ext: &str, m: &str) -> Result<String, String> {
-    let rel = format!("{DIR}/{:x}.{ext}", Sha256::digest(bytes));
-    let target = crate::inside(area, &rel, "path", m)?;
-    let dir = root(area)?;
-    if dir.is_some() && reuse(&target, bytes) {
-        return Ok(rel);
-    }
+/// Write `bytes` to the media cache as `<SHA-256>.<ext>` (`ext` one of
+/// [`EXTS`]), or find them there already: the storage-relative path.
+/// `in_use` are the clips open documents use, which eviction spares while it
+/// can.
+fn write(area: &Area, bytes: &[u8], ext: &'static str, in_use: &[String], m: &str) -> Result<String, String> {
     let len = bytes.len() as u64;
+    // Larger than the whole media cache, it can be neither there nor written:
+    // refused before anything else, hashing included.
     if len > MAX_BYTES {
         return Err(full());
     }
-    if let Some(dir) = &dir {
-        match std::fs::symlink_metadata(&target) {
-            Ok(meta) if meta.is_dir() => return Err(invalid(format!("{m}: `{rel}` is a folder in the media cache"))),
-            Ok(meta) => {
-                std::fs::remove_file(&target).map_err(|e| codes::io(m, &e))?;
-                if meta.is_file() {
-                    area.credit(meta.len());
-                }
-            }
-            Err(_) => {}
-        }
-        area.credit(evict(dir, &target, len));
+    // The path is built from the checked folder and the service's own name,
+    // so nothing at that name is followed, a link included.
+    let (dir, _) = folder(area)?;
+    let name = format!("{:x}.{ext}", Sha256::digest(bytes));
+    let target = dir.join(&name);
+    let rel = format!("{DIR}/{name}");
+    if reuse(&target, bytes) {
+        return Ok(rel);
     }
+    // Anything else at the clip's own name is a stale entry: it goes (a link
+    // itself, never what it points to), and the clip is written anew.
+    match std::fs::symlink_metadata(&target) {
+        Ok(meta) if meta.is_dir() => return Err(invalid(format!("{m}: `{rel}` is a folder in the media cache"))),
+        Ok(meta) => {
+            std::fs::remove_file(&target).map_err(|e| codes::io(m, &e))?;
+            if meta.is_file() {
+                area.credit(meta.len());
+            }
+        }
+        Err(_) => {}
+    }
+    area.credit(evict(&dir, &target, len, in_use));
     // Not room enough in the storage: the render cache goes first, then the
-    // media cache.
+    // media cache; a clip that still doesn't fit is refused before anything
+    // is staged.
     cache::make_room(area, len);
     if area.room().is_some_and(|room| len > room) {
         area.credit(clear(area));
     }
+    if area.room().is_some_and(|room| len > room) {
+        return Err(full());
+    }
     let create = Area::new(area.root.clone(), area.room(), false);
-    let stage = create.stage().map_err(codes::area)?;
+    let stage = crate::stage(&create)?;
     let staged = stage.path("clip");
     std::fs::write(&staged, bytes).map_err(|e| match e.kind() {
         std::io::ErrorKind::StorageFull | std::io::ErrorKind::QuotaExceeded => full(),
@@ -188,15 +207,21 @@ fn plain_dir(path: &Path, shown: &str) -> Result<bool, String> {
     }
 }
 
+/// The media cache's folder in `area`, `.cache/media`, and whether it is
+/// there: refused when it, or `.cache`, is there but isn't a plain folder (a
+/// link, a file).
+fn folder(area: &Area) -> Result<(PathBuf, bool), String> {
+    let dot = area.root.join(".cache");
+    let dir = dot.join("media");
+    let there = plain_dir(&dot, ".cache")? && plain_dir(&dir, DIR)?;
+    Ok((dir, there))
+}
+
 /// The media cache's folder in `area`, when it is there and plain all the
 /// way.
 fn root(area: &Area) -> Result<Option<PathBuf>, String> {
-    let dot = area.root.join(".cache");
-    if !plain_dir(&dot, ".cache")? {
-        return Ok(None);
-    }
-    let dir = dot.join("media");
-    Ok(plain_dir(&dir, DIR)?.then_some(dir))
+    let (dir, there) = folder(area)?;
+    Ok(there.then_some(dir))
 }
 
 /// One clip in the media cache.
@@ -267,12 +292,13 @@ fn same_file(_: &std::fs::Metadata, file: &std::fs::File) -> bool {
 }
 
 /// Make room in the media cache's folder `dir` for a clip of `incoming`
-/// bytes at `keep` (which does not count): the clips used longest ago go
-/// until the cache with it holds at most [`MAX_BYTES`] and [`MAX_FILES`].
-/// The bytes it freed.
-fn evict(dir: &Path, keep: &Path, incoming: u64) -> u64 {
+/// bytes at `keep` (which does not count), until the cache with it holds at
+/// most [`MAX_BYTES`] and [`MAX_FILES`]: clips no open document uses go
+/// first, and those open documents use (`in_use`) only when that is not
+/// enough; each, the clip used longest ago first. The bytes it freed.
+fn evict(dir: &Path, keep: &Path, incoming: u64, in_use: &[String]) -> u64 {
     let mut all: Vec<Kept> = kept(dir).into_iter().filter(|k| k.path != keep).collect();
-    all.sort_by_key(|k| k.used);
+    all.sort_by_cached_key(|k| (rel_of(&k.path).is_some_and(|rel| in_use.contains(&rel)), k.used));
     let mut bytes: u64 = all.iter().map(|k| k.len).sum();
     let mut files = all.len();
     let mut freed = 0;

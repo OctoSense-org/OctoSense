@@ -46,10 +46,19 @@
 //! `octosense_app_peers::hosted`; tests use a fake one.
 
 use octosense_app_peers::{ContextEvent, ContextOp, ContextSpec, EventSink, OctosAppService, OctosContext, TurnTrigger};
-use octosense_appstore::services::{HostService, Replier, ServiceCall, ServiceHost};
+use octosense_appstore::services::{HostService, Replier, ServiceCall, ServiceHost, DEFAULT_TIMEOUT};
 use serde_json::Value;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, Weak};
+use std::time::Duration;
+
+/// Per-service timeout for `octos.turn.start`. The broker's
+/// `turn_timeout` is 180s (`crates/app-peers/src/broker.rs` `turn_timeout`);
+/// this constant is the broker's turn budget plus a 60s margin for
+/// context-establishment. **Keep this and the broker's `turn_timeout` in
+/// lockstep:** if either moves, the other should too, or a legitimate
+/// turn is dropped again.
+pub(crate) const TURN_START_TIMEOUT: Duration = Duration::from_secs(240);
 
 /// The account an app's peer acts for, as the host knows it (ADR 0004
 /// §11): [`ACCOUNT`] for an app without accounts; for one that keeps
@@ -484,6 +493,25 @@ fn sink(context: Weak<dyn OctosContext>, once: Once) -> EventSink {
 impl HostService for ContainedOctos {
     fn family(&self) -> &'static str {
         "octos"
+    }
+
+    /// `octos.turn.start` runs a model turn underneath a context that the
+    /// broker has allowed 180s for (`app-peers/src/broker.rs` `turn_timeout`),
+    /// plus time to establish the context before the turn even begins. The
+    /// host-side dispatcher (`octosense_appstore::services::dispatch`) uses
+    /// `DEFAULT_TIMEOUT = 60s` for any service that does not override it,
+    /// which is shorter than a legitimate turn on slow providers or large
+    /// outputs. We override only this one method, so a long-running turn is
+    /// not killed before the broker reports its answer, while every other
+    /// `octos.*` call (session.open, .close, .cancel, etc.) keeps the
+    /// default. Tests use `call.method() == "turn.start"` to match the
+    /// other per-service overrides (`octosense-appstore`).
+    fn timeout(&self, call: &ServiceCall) -> Duration {
+        if call.method() == "turn.start" {
+            TURN_START_TIMEOUT
+        } else {
+            DEFAULT_TIMEOUT
+        }
     }
 
     fn call(&mut self, call: ServiceCall, reply: Replier, _host: &mut dyn ServiceHost) {

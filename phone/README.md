@@ -113,6 +113,7 @@ developer mode on in that build (Settings → About phone, tap Build number seve
 times, open Developer options, type `turn on developer mode` and choose Turn
 on). From then on everything happens on the phone. In the system agent's chat,
 ask it to work on an app bundle in its workspace: with the studio tools it
+generates a design image to build from (when an image provider is configured),
 checks the bundle, opens a live preview, taps and types into it, reads the
 screenshots and the widget tree, fixes the script, installs the app as a
 launcher tile whose state survives a restart, and uninstalls it on request

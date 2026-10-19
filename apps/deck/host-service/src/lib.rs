@@ -608,6 +608,23 @@ thread_local! {
     /// How many files this thread's calls handed the engine to read (tests:
     /// a refusal of the import guard comes before any).
     static ENGINE_READS: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+    /// How many staging folders this thread's calls made for the service's
+    /// own writes (tests: a write that can't fit stages nothing).
+    static STAGES: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+}
+
+/// A staging folder in `area` for one of the service's own writes
+/// ([`Area::stage`]).
+pub(crate) fn stage(area: &Area) -> Result<octosense_engine_area::Stage<'_>, String> {
+    #[cfg(test)]
+    STAGES.with(|n| n.set(n.get() + 1));
+    area.stage().map_err(codes::area)
+}
+
+/// How many staging folders this thread's calls made (tests).
+#[cfg(test)]
+pub(crate) fn stages() -> u32 {
+    STAGES.with(std::cell::Cell::get)
 }
 
 /// How many files this thread's calls handed the engine (tests).

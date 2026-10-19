@@ -154,10 +154,11 @@ app's own agent and `tools.json`, the system toolbox, `glance.publish` and
   `.cache/media/<SHA-256>.<ext>` for the app's `Video` widget (`ext` from
   the deck's own name for the clip or its declared type, from SERVICE.md's
   list, else `unsupported:`), staged and create-only, reused by hash, in a
-  media cache of 32 MiB and 8 clips (the one used longest ago goes first);
-  a document's clips go when it closes or is released, unless another open
-  document uses them, and before a clip would not fit, the render cache and
-  then the media cache are cleared (`storage_full:`). What the inspector
+  media cache of 32 MiB and 8 clips (clips no open document uses go first,
+  then the one used longest ago); a document's clips go when it closes or
+  is released, unless another open document uses them, and before a clip
+  would not fit, the render cache and then the media cache are cleared
+  (`storage_full:`, refused before anything is staged). What the inspector
   shows beyond the commands' answers (a box's anchor and autofit, a
   chart's and a table's options, the deck's colour and font schemes and
   its footer, the engine's

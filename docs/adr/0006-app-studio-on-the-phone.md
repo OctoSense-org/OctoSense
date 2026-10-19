@@ -373,12 +373,12 @@ tools because of what they do, not because of a declaration. A host-tool
 reply is capped at 256 KiB of text, so an image a tool produces goes to the
 workspace as a file, as section 7 already requires.
 
-### Where things stand, 11 October 2026
+### Where things stand, 12 October 2026
 
 | Step of the flow | State |
 | --- | --- |
 | Brief, and writing `main.splash` | Works: the system agent writes files into its workspace |
-| Generated designs | Not available to the agent: octos's `image_generation` tool still has no backend (`no_backend_bound`); the `model.image` host method exists for script apps, with the model set by the host (`gpt-image-1`, `gpt-image-1-mini` or MiniMax `image-01`), and no live call is recorded |
+| Generated designs | Merged, no live call recorded yet: `studio.image` (slice 2, #513), offered only to the system agent in this slice, generates one image through `model.image` under that agent's identity and writes it into the agent's workspace; the system agent is admitted to `model.image` only while covered by developer mode, and the host still sets the model (`gpt-image-1`, `gpt-image-1-mini` or MiniMax `image-01`); octos's own `image_generation` tool still has no backend (`no_backend_bound`) |
 | Reference images in | `files.pick_photo` on Home 0.1.0-beta.2, one image, 1 MiB; no image share target; no capture of other apps |
 | Measurement, OCR, mapping | Not ported; `ocrs` and `rten` are in the lock file and unused outside the PDF engine |
 | Review screen | Not built |
@@ -397,9 +397,10 @@ Each slice is usable on its own.
    APK re-validated on a stock Xiaomi. Gives brief → `main.splash` → preview →
    install on the phone.
 2. **Inputs.** An agent tool that calls `model.image` and saves the PNG into
-   the agent's workspace, with the provider the person chose and a model still
-   to be chosen (see the open questions); the first live call. Reference images
-   through `files.pick_photo`.
+   the agent's workspace, with the provider the person chose and the model the
+   host sets for it; which to use first is an open question (below). Merged in
+   #513 as `studio.image`; no live call is recorded yet. Reference
+   images through `files.pick_photo`.
 3. **The pipeline as components.** The five crates above, developed on the
    desktop with OctoSense's `wasm_call` example (OctoSense #455) and App Flow's
    `tools/octo wasm call` (App Flow #184, merged), shipped in the studio's

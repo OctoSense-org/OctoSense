@@ -1329,8 +1329,9 @@ fn a_closed_isolates_clips_go_with_its_renders() {
 
 /// Before a clip would not fit the storage, the render cache and then the
 /// media cache are cleared; a clip that still doesn't fit is `storage_full:`
-/// in the contract's words, with nothing of it written. A clip larger than
-/// the whole media cache is `storage_full:` at once, with nothing cleared.
+/// in the contract's words, with nothing of it staged or written. A clip
+/// larger than the whole media cache is `storage_full:` at once, with
+/// nothing cleared or staged.
 #[test]
 fn the_render_cache_then_the_media_cache_are_cleared_before_storage_full() {
     let roomy = World::new();
@@ -1351,7 +1352,9 @@ fn the_render_cache_then_the_media_cache_are_cleared_before_storage_full() {
     assert!(!renders.is_empty());
     let full = format!("storage_full: {}", media::FULL);
     // Larger than the whole media cache: refused at once, nothing cleared.
+    let staged = stages();
     assert_eq!(roomy.err("media", json!({ "doc": doc, "slide": s, "id": ids[4] })), full);
+    assert_eq!(stages(), staged, "nothing staged");
     assert_eq!(roomy.files(".cache/slides"), renders);
     assert_eq!(roomy.files(".cache/media"), vec![a.clone()]);
     let tight = |quota: u64| World { _dir: tempfile::tempdir().unwrap(), root: roomy.root.clone(), areas: roomy.tight(quota) };
@@ -1361,19 +1364,91 @@ fn the_render_cache_then_the_media_cache_are_cleared_before_storage_full() {
     };
     // B fits once the render cache is cleared; A stays.
     let t = tight(30_000 - 1);
+    let staged = stages();
     let b = t.play(&doc, s, ids[1]);
+    assert_eq!(stages(), staged + 1, "a clip that fits is staged once");
     assert!(t.files(".cache/slides").is_empty(), "the render cache was cleared: {:?}", t.files(".cache/slides"));
     assert_eq!(t.files(".cache/media"), sorted(vec![a.clone(), b.clone()]));
     // C fits only once the media cache is cleared too.
     let t = tight(40_000 - 1);
     let c = t.play(&doc, s, ids[2]);
     assert_eq!(t.files(".cache/media"), vec![c.clone()], "the media cache was cleared");
-    // D doesn't fit even then.
+    // D doesn't fit even then: refused before anything is staged.
     let t = tight(0);
+    let staged = stages();
     assert_eq!(t.err("media", json!({ "doc": doc, "slide": s, "id": ids[3] })), full);
+    assert_eq!(stages(), staged, "nothing staged");
     assert!(t.files(".cache/media").is_empty(), "cleared trying");
     let staging = std::fs::read_dir(&roomy.root).unwrap().flatten().filter(|e| e.file_name().to_string_lossy().starts_with(octosense_engine_area::STAGING_PREFIX)).count();
     assert_eq!(staging, 0, "nothing staged is left");
+}
+
+/// A link at a clip's own name is a stale entry like any other, even one to
+/// a file outside the storage, and even one to a file holding the clip's
+/// very bytes: it goes (the link itself, never followed), the clip is
+/// written there as a plain file, and the file it pointed to is untouched.
+#[cfg(unix)]
+#[test]
+fn a_link_at_a_clips_name_goes_and_is_never_followed() {
+    use sha2::Digest as _;
+    let w = World::new();
+    let video = b"\0\0\0\x18ftypisom\0\0\x02\0isomiso2mp41 behind a link".to_vec();
+    w.put("clips.deckcraft", &native(&with_clips(&video, b"a sound", false)));
+    let name = w.root.join(format!(".cache/media/{:x}.mp4", sha2::Sha256::digest(&video)));
+    std::fs::create_dir_all(name.parent().unwrap()).unwrap();
+    let outside = w.root.parent().unwrap();
+    for (k, held) in [b"outside the storage".to_vec(), video.clone()].into_iter().enumerate() {
+        let target = outside.join(format!("outside{k}.mp4"));
+        std::fs::write(&target, &held).unwrap();
+        let written = std::fs::metadata(&target).unwrap().modified().unwrap();
+        std::os::unix::fs::symlink(&target, &name).unwrap();
+        let doc = w.open("clips.deckcraft");
+        let s = w.slide_ids(&doc)[0];
+        let id = w.shape_where(&doc, s, "kind", "video");
+        let path = w.play(&doc, s, id);
+        assert_eq!(w.root.join(&path), name);
+        let entry = std::fs::symlink_metadata(&name).unwrap();
+        assert!(entry.is_file(), "case {k}: a plain file now, not a link");
+        assert_eq!(std::fs::read(&name).unwrap(), video, "case {k}: the clip's bytes");
+        assert_eq!(std::fs::read(&target).unwrap(), held, "case {k}: the file outside is untouched");
+        assert_eq!(std::fs::metadata(&target).unwrap().modified().unwrap(), written, "case {k}: not even its time");
+        w.ok("close", json!({ "doc": doc }));
+        assert!(std::fs::symlink_metadata(&name).is_err(), "case {k}: the clip went with its document");
+    }
+}
+
+/// When the media cache needs room, clips no open document uses go first,
+/// even newer ones, and a clip an open document uses goes only when that is
+/// not enough, the one used longest ago first.
+#[test]
+fn eviction_takes_clips_no_open_document_uses_first() {
+    let w = World::new();
+    let names: Vec<String> = (0..9).map(|k| format!("clip{k}.mp4")).collect();
+    let items: Vec<(&str, &str, Vec<u8>, bool)> = names.iter().enumerate().map(|(k, n)| (n.as_str(), "video/mp4", clip_of(k, 4096), true)).collect();
+    w.put("nine.deckcraft", &native(&with_items(&items)));
+    let doc = w.open("nine.deckcraft");
+    let s = w.slide_ids(&doc)[0];
+    let ids = w.clip_ids(&doc, s);
+    let play = |k: usize| {
+        std::thread::sleep(Duration::from_millis(25));
+        w.play(&doc, s, ids[k])
+    };
+    let paths: Vec<String> = (0..7).map(play).collect();
+    // A clip no open document uses (one a document released while the table
+    // was busy left), the newest of all.
+    std::thread::sleep(Duration::from_millis(25));
+    w.put(".cache/media/stray.mp4", &clip_of(99, 4096));
+    assert_eq!(w.files(".cache/media").len(), media::MAX_FILES);
+    let seventh = play(7);
+    let now = w.files(".cache/media");
+    assert!(!now.contains(&".cache/media/stray.mp4".to_string()), "the clip no document uses went first: {now:?}");
+    assert!(now.contains(&paths[0]) && now.contains(&seventh), "the open document's clips stayed: {now:?}");
+    assert_eq!(now.len(), media::MAX_FILES);
+    // Only the open document's clips are left: the one used longest ago goes.
+    let eighth = play(8);
+    let now = w.files(".cache/media");
+    assert!(!now.contains(&paths[0]) && now.contains(&paths[1]) && now.contains(&eighth), "{now:?}");
+    assert_eq!(now.len(), media::MAX_FILES);
 }
 
 /// A hostile "video" (bytes that would trip a decoder, `hostile_movie`) and
@@ -2520,8 +2595,11 @@ fn the_cache_is_cleared_before_storage_full() {
     let len = out["bytes"].as_u64().unwrap();
     assert!(len > outline_len && len <= outline_len + cached, "the export needed the cache's room: {len} bytes");
     assert!(tight.files(".cache").is_empty(), "the cache was cleared: {:?}", tight.files(".cache"));
+    let staged = stages();
     let e = tight.err("export", json!({ "doc": doc, "kind": "pptx", "out": "again.pptx" }));
     coded(&e, "storage_full");
+    assert!(e.ends_with(octosense_engine_area::NO_ROOM), "the commit's own words: {e}");
+    assert_eq!(stages(), staged, "refused before anything was staged");
     coded(&tight.err("save", json!({ "doc": doc, "path": "copy.deckcraft" })), "storage_full");
     coded(&tight.err("view", json!({ "doc": doc, "slide": s, "width": 1920 })), "storage_full");
     assert!(!tight.root.join("again.pptx").exists());
