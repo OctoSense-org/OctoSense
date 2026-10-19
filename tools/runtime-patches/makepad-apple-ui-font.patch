@@ -1,0 +1,374 @@
+diff --git a/draw/src/shader/draw_text.rs b/draw/src/shader/draw_text.rs
+index 86fdd5429..60605b16c 100644
+--- a/draw/src/shader/draw_text.rs
++++ b/draw/src/shader/draw_text.rs
+@@ -3632,6 +3632,10 @@ pub struct FontMember {
+     /// real glyph miss; zero keeps the ordinary eager behavior.
+     #[live(0.0)]
+     pub lazy: f32,
++    /// The face's index in a font collection (`.ttc`); `0` for a
++    /// single-face file.
++    #[live(0.0)]
++    pub index: f32,
+ }
+ 
+ #[derive(Debug, Clone, Script, PartialEq)]
+@@ -3655,6 +3659,7 @@ pub struct FontMemberDef {
+     desc: f32,
+     weight: f32,
+     lazy: Option<LazyFontFamily>,
++    index: u32,
+ }
+ 
+ impl FontFamily {
+@@ -3703,7 +3708,7 @@ fn update_font_definitions(&self, cx: &mut Cx, fonts: &mut Fonts) {
+                         font_id,
+                         FontDefinition {
+                             data,
+-                            index: 0,
++                            index: member.index,
+                             ascender_fudge_in_ems: member.asc,
+                             descender_fudge_in_ems: member.desc,
+                             weight: font_member_weight(member),
+@@ -3856,6 +3861,11 @@ fn font_member_font_id(member: &FontMemberDef) -> FontId {
+     member.asc.to_bits().hash(&mut hasher);
+     member.desc.to_bits().hash(&mut hasher);
+     member.weight.to_bits().hash(&mut hasher);
++    // Faces of one collection differ only here; a single-face file keeps
++    // the id it always had.
++    if member.index != 0 {
++        member.index.hash(&mut hasher);
++    }
+     FontId::from(hasher.finish())
+ }
+ 
+@@ -3948,6 +3958,7 @@ fn on_custom_apply(
+                         2 => Some(LazyFontFamily::Emoji),
+                         _ => None,
+                     },
++                    index: member.index.max(0.0) as u32,
+                 });
+             }
+         }
+diff --git a/draw/src/text/system_fonts.rs b/draw/src/text/system_fonts.rs
+index d56f04288..03282816b 100644
+--- a/draw/src/text/system_fonts.rs
++++ b/draw/src/text/system_fonts.rs
+@@ -440,6 +440,77 @@ pub fn fallback_faces() -> &'static [Face] {
+     })
+ }
+ 
++/// The platform's own UI typeface, which leads every text role in place of
++/// the bundled faces so that every app reads alike, in Latin and in CJK:
++/// PingFang SC on macOS and iOS, read from the system (Apple does not license
++/// it for redistribution). `None` on other platforms, when system fonts are
++/// off (`MAKEPAD_SYSTEM_FONTS=0`), or when this machine lacks PingFang SC.
++#[derive(Clone, Debug)]
++pub struct UiFaces {
++    pub regular: UiFace,
++    pub semibold: UiFace,
++}
++
++/// One face of the UI typeface, with its own line metrics in ems (the
++/// descender negative), so a family can fit it to the line box it replaces.
++#[derive(Clone, Debug)]
++pub struct UiFace {
++    pub face: Face,
++    pub ascender_in_ems: f32,
++    pub descender_in_ems: f32,
++}
++
++pub fn ui_faces() -> Option<&'static UiFaces> {
++    static FACES: OnceLock<Option<UiFaces>> = OnceLock::new();
++    FACES
++        .get_or_init(|| {
++            if !fallback_enabled() || !cfg!(any(target_os = "macos", target_os = "ios")) {
++                return None;
++            }
++            let mut paths = pingfang_asset_paths();
++            paths.push(PathBuf::from("/System/Library/Fonts/PingFang.ttc"));
++            paths.into_iter().filter(|path| path.is_file()).find_map(|path| {
++                let faces = read_faces(&path)?;
++                let pick = |style: &str| {
++                    faces
++                        .iter()
++                        .find(|f| f.family.eq_ignore_ascii_case("PingFang SC") && f.style.eq_ignore_ascii_case(style))
++                        .and_then(ui_face)
++                };
++                Some(UiFaces { regular: pick("Regular")?, semibold: pick("Semibold")? })
++            })
++        })
++        .as_ref()
++}
++
++fn ui_face(face: &Face) -> Option<UiFace> {
++    use crate::text::font_face::FontFace;
++    use crate::makepad_platform::SharedBytes;
++    let data = SharedBytes::from_file_mmap_or_read(&face.path).ok()?;
++    let parsed = FontFace::from_data_and_index(data, face.index)?;
++    let (ascender_in_ems, descender_in_ems) = parsed.with_ttf_parser_face(|f| {
++        let units_per_em = f.units_per_em() as f32;
++        (f.ascender() as f32 / units_per_em, f.descender() as f32 / units_per_em)
++    });
++    Some(UiFace { face: face.clone(), ascender_in_ems, descender_in_ems })
++}
++
++/// macOS downloads PingFang on demand into its font asset store.
++fn pingfang_asset_paths() -> Vec<PathBuf> {
++    let mut out = Vec::new();
++    if let Ok(stores) = std::fs::read_dir("/System/Library/AssetsV2") {
++        for store in stores.flatten() {
++            if !store.file_name().to_string_lossy().starts_with("com_apple_MobileAsset_Font") {
++                continue;
++            }
++            for asset in std::fs::read_dir(store.path()).into_iter().flatten().flatten() {
++                out.push(asset.path().join("AssetData/PingFang.ttc"));
++            }
++        }
++    }
++    out
++}
++
+ /// Files to try, in order, with the family to pick from a collection.
+ fn fallback_candidates() -> Vec<(PathBuf, &'static [&'static str])> {
+     const SC: &[&str] = &["PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC", "Source Han Sans SC", "Microsoft YaHei"];
+@@ -451,16 +522,8 @@ fn fallback_candidates() -> Vec<(PathBuf, &'static [&'static str])> {
+         }
+     };
+     if cfg!(any(target_os = "macos", target_os = "ios")) {
+-        // PingFang is downloaded on demand into the asset store.
+-        if let Ok(stores) = std::fs::read_dir("/System/Library/AssetsV2") {
+-            for store in stores.flatten() {
+-                if !store.file_name().to_string_lossy().starts_with("com_apple_MobileAsset_Font") {
+-                    continue;
+-                }
+-                for asset in std::fs::read_dir(store.path()).into_iter().flatten().flatten() {
+-                    push(asset.path().join("AssetData/PingFang.ttc"), SC);
+-                }
+-            }
++        for path in pingfang_asset_paths() {
++            push(path, SC);
+         }
+         for name in [
+             "Hiragino Sans GB.ttc",
+diff --git a/platform/src/script/res.rs b/platform/src/script/res.rs
+index 42b9f4cfe..a2da5c7c9 100644
+--- a/platform/src/script/res.rs
++++ b/platform/src/script/res.rs
+@@ -530,6 +530,60 @@ pub fn register_crate_resource_path(vm: &mut ScriptVm, logical_path: &str) -> Sc
+     register_crate_resource_parts(vm, res_type, crate_part, file_path)
+ }
+ 
++/// Register an absolute file path as `res.file_resource(path)` does, without
++/// a script call. FontPolicy uses this for the platform's own UI typeface,
++/// which is read from the system rather than packaged.
++pub fn register_file_resource_path(vm: &mut ScriptVm, abs_path: &str) -> ScriptValue {
++    let res_type = vm.handle_type(id_lut!(res));
++    register_file_resource_parts(vm, res_type, abs_path.to_string())
++}
++
++fn register_file_resource_parts(
++    vm: &mut ScriptVm,
++    res_type: ScriptHandleType,
++    abs_path: String,
++) -> ScriptValue {
++    let heap_key = vm.bx.heap.heap_key();
++    let cx = vm.host.cx_mut();
++    if let Some(existing) = cx
++        .script_data
++        .resources
++        .get_handle_by_abs_path(heap_key, &abs_path)
++    {
++        return existing.into();
++    }
++
++    let handle_gc = CxScriptResourceGc {
++        resources: cx.script_data.resources.resources.clone(),
++        handles_by_abs_path: cx.script_data.resources.handles_by_abs_path.clone(),
++        handle: ScriptHandle::ZERO,
++        heap_key,
++    };
++    let handle = vm.bx.heap.new_handle(res_type, Box::new(handle_gc));
++
++    // Another heap may already track this path — attach our local
++    // handle to the shared entry instead of duplicating it.
++    if cx
++        .script_data
++        .resources
++        .attach_handle_for_path(heap_key, &abs_path, handle)
++    {
++        return handle.into();
++    }
++
++    cx.script_data.resources.insert_resource(
++        heap_key,
++        CxScriptResource {
++            abs_path,
++            dependency_path: None,
++            web_url: None,
++            data: CxScriptResourceData::NotLoaded,
++            handles: vec![(heap_key, handle)],
++        },
++    );
++    handle.into()
++}
++
+ fn font_policy_declares_path(font_set: crate::FontSet, dependency_path: Option<&str>) -> bool {
+     let Some(dependency_path) = dependency_path else {
+         return false;
+@@ -1248,46 +1302,7 @@ pub fn script_mod(vm: &mut ScriptVm) {
+             }
+ 
+             if let Some(abs_path) = vm.string_with(path, |_vm, s| s.to_string()) {
+-                let heap_key = vm.bx.heap.heap_key();
+-                let cx = vm.host.cx_mut();
+-                if let Some(existing) = cx
+-                    .script_data
+-                    .resources
+-                    .get_handle_by_abs_path(heap_key, &abs_path)
+-                {
+-                    return existing.into();
+-                }
+-
+-                let handle_gc = CxScriptResourceGc {
+-                    resources: cx.script_data.resources.resources.clone(),
+-                    handles_by_abs_path: cx.script_data.resources.handles_by_abs_path.clone(),
+-                    handle: ScriptHandle::ZERO,
+-                    heap_key,
+-                };
+-                let handle = vm.bx.heap.new_handle(res_type, Box::new(handle_gc));
+-
+-                // Another heap may already track this path — attach our local
+-                // handle to the shared entry instead of duplicating it.
+-                if cx
+-                    .script_data
+-                    .resources
+-                    .attach_handle_for_path(heap_key, &abs_path, handle)
+-                {
+-                    return handle.into();
+-                }
+-
+-                cx.script_data.resources.insert_resource(
+-                    heap_key,
+-                    CxScriptResource {
+-                        abs_path,
+-                        dependency_path: None,
+-                        web_url: None,
+-                        data: CxScriptResourceData::NotLoaded,
+-                        handles: vec![(heap_key, handle)],
+-                    },
+-                );
+-
+-                return handle.into();
++                return register_file_resource_parts(vm, res_type, abs_path);
+             }
+ 
+             script_err_type_mismatch!(vm.trap(), "invalid res arg type")
+diff --git a/widgets/src/font_policy.rs b/widgets/src/font_policy.rs
+index 18c846199..46dc4cfee 100644
+--- a/widgets/src/font_policy.rs
++++ b/widgets/src/font_policy.rs
+@@ -30,6 +30,9 @@ fn family_value(
+         NoTrap,
+     );
+ 
++    if let Some(ui) = ui_face_for(chain) {
++        push_ui_face(vm, family, member_proto, chain, ui);
++    }
+     for asset in chain.members {
+         let member = vm.bx.heap.new_with_proto(member_proto);
+         let resource = crate::makepad_platform::script::res::register_crate_resource_path(
+@@ -110,6 +113,61 @@ fn family_value(
+     family.into()
+ }
+ 
++/// The platform's own UI typeface for a text role (PingFang SC on macOS and
++/// iOS: `system_fonts::ui_faces`), so the shell and every app read alike.
++/// Code and icon roles keep their bundled faces. PingFang has no italic:
++/// italic roles take the upright weight.
++fn ui_face_for(chain: FontChain) -> Option<&'static crate::text::system_fonts::UiFace> {
++    let faces = crate::text::system_fonts::ui_faces()?;
++    match chain.role {
++        FontRole::Regular | FontRole::Italic => Some(&faces.regular),
++        FontRole::Bold | FontRole::BoldItalic => Some(&faces.semibold),
++        FontRole::Monospace | FontRole::Icons => None,
++    }
++}
++
++/// The line box, in ems above and below the baseline, that the theme's text
++/// roles are laid out in: the bundled primary's, IBM Plex Sans (1.025 above,
++/// 0.275 below) with its asset's -0.1 ascender fudge. A UI face is fitted to
++/// it, so layouts keep their size whichever face draws them.
++const TEXT_LINE_BOX: (f32, f32) = (0.925, -0.275);
++
++/// Lead `family` with `ui`; the bundled chain stays behind it for anything
++/// it lacks.
++fn push_ui_face(
++    vm: &mut ScriptVm,
++    family: crate::makepad_platform::ScriptObject,
++    member_proto: ScriptValue,
++    chain: FontChain,
++    ui: &crate::text::system_fonts::UiFace,
++) {
++    let Some(path) = ui.face.path.to_str() else {
++        return;
++    };
++    let member = vm.bx.heap.new_with_proto(member_proto);
++    let resource = crate::makepad_platform::script::res::register_file_resource_path(vm, path);
++    vm.bx.heap.set_value(member, id!(res).into(), resource, NoTrap);
++    vm.bx.heap.set_value(
++        member,
++        id!(asc).into(),
++        ((TEXT_LINE_BOX.0 - ui.ascender_in_ems) as f64).into(),
++        NoTrap,
++    );
++    vm.bx.heap.set_value(
++        member,
++        id!(desc).into(),
++        ((TEXT_LINE_BOX.1 - ui.descender_in_ems) as f64).into(),
++        NoTrap,
++    );
++    vm.bx.heap.set_value(member, id!(index).into(), (ui.face.index as f64).into(), NoTrap);
++    let name = match chain.role {
++        FontRole::Bold | FontRole::BoldItalic => "system_ui_semibold",
++        _ => "system_ui_regular",
++    };
++    let member_id = LiveId::from_str_with_lut(name).unwrap_or_else(|_| LiveId::from_str(name));
++    vm.bx.heap.vec_push(family, member_id.into(), member.into(), NoTrap);
++}
++
+ /// A style can choose its primary typeface without losing the platform's
+ /// symbol, CJK and emoji fallback policy. Keep lazy members lazy.
+ pub(crate) fn append_style_fallbacks(vm: &mut ScriptVm) {
+@@ -319,21 +377,27 @@ fn international_theme_keeps_desktop_chain_order_and_i18n_aliases() {
+             let bold_ids = bold.font_family.member_ids().collect::<Vec<_>>();
+             let italic_ids = italic.font_family.member_ids().collect::<Vec<_>>();
+             let bold_italic_ids = bold_italic.font_family.member_ids().collect::<Vec<_>>();
++            // Where the platform has a UI typeface (PingFang SC on macOS and
++            // iOS), it leads the text roles; the desktop chain follows in order.
++            let ui = crate::text::system_fonts::ui_faces().is_some();
++            let chain = |lead: &'static str, rest: [&'static str; 3]| {
++                ui.then_some(lead).into_iter().chain(rest).collect::<Vec<_>>()
++            };
+             assert_eq!(
+                 regular_ids,
+-                ["ibm_plex_text", "lxgw_wenkai_regular", "noto_color_emoji"]
++                chain("system_ui_regular", ["ibm_plex_text", "lxgw_wenkai_regular", "noto_color_emoji"])
+             );
+             assert_eq!(
+                 bold_ids,
+-                ["ibm_plex_semibold", "lxgw_wenkai_bold", "noto_color_emoji"]
++                chain("system_ui_semibold", ["ibm_plex_semibold", "lxgw_wenkai_bold", "noto_color_emoji"])
+             );
+             assert_eq!(
+                 italic_ids,
+-                ["ibm_plex_italic", "lxgw_wenkai_regular", "noto_color_emoji"]
++                chain("system_ui_regular", ["ibm_plex_italic", "lxgw_wenkai_regular", "noto_color_emoji"])
+             );
+             assert_eq!(
+                 bold_italic_ids,
+-                ["ibm_plex_bold_italic", "lxgw_wenkai_bold", "noto_color_emoji"]
++                chain("system_ui_semibold", ["ibm_plex_bold_italic", "lxgw_wenkai_bold", "noto_color_emoji"])
+             );
+             assert_eq!(regular_i18n.font_family.member_ids().collect::<Vec<_>>(), regular_ids);
+             assert_eq!(bold_i18n.font_family.member_ids().collect::<Vec<_>>(), bold_ids);
