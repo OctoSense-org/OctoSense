@@ -91,6 +91,7 @@ pub mod native_apps;
 pub mod sandbox;
 pub mod pane_links;
 pub mod peer_link;
+pub mod prebuild;
 pub mod preview;
 pub mod process_close;
 pub mod questions;
@@ -2407,6 +2408,8 @@ impl App {
             .iter_mut()
             .filter_map(|(id, slot)| slot.continue_launch(*id).map(|r| (*id, r)))
             .collect();
+        // The background prebuild steps aside while a launch is building.
+        prebuild::set_launches_building(self.state_mut().clients.values().filter(|slot| slot.building()).count());
         for (id, result) in started {
             match result {
                 Ok(()) => log!("wm: client {id}: built; the app starts"),
@@ -6371,6 +6374,9 @@ impl MatchEvent for App {
         if !self.warm_pool.enabled() {
             log!("octosense: background app prewarming disabled");
         }
+        // A checkout run builds its catalog apps in the background, so their
+        // first open needn't wait for cargo (prebuild.rs).
+        prebuild::start(&cx.thread_spawner());
 
         // `--gallery`: the shell surfaces with fixture data instead of a
         // desktop, so the port is verifiable over --remote (shell/gallery.rs).
@@ -7230,6 +7236,7 @@ impl App {
             }
         }
         if let Event::Shutdown = event {
+            prebuild::shutdown();
             if let Some(state) = &mut self.state {
                 clients::shutdown_clients(&mut state.clients);
             }
