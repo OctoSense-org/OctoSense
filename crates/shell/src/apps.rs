@@ -292,6 +292,9 @@ pub fn register_host_services() {
         });
         crate::files_service::register();
         crate::audio_service::register();
+        // `window.fullscreen`: an app's own window in presentation full
+        // screen, from the person's tap (app_fullscreen.rs).
+        crate::app_fullscreen::register();
         // App Hub admits bundles before the first CardModule is opened. The
         // linked card runner already supports app tools at that point, so its
         // ABI must not depend on a card's lazy VM registration.

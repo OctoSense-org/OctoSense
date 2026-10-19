@@ -290,6 +290,9 @@ fn touch(abs: Vec2d, state: TouchState) -> Event {
 enum Asked {
     Raise(u64),
     Restart(u64),
+    /// A press on the app's own content, which lets the app take its window
+    /// full screen for a few seconds (app_fullscreen.rs).
+    Press(u64),
 }
 
 /// Offer each event to the tiles front to back, as the desk does, and
@@ -308,6 +311,7 @@ fn offer(cx: &mut Cx, front_to_back: &[&WidgetRef], events: &[Event]) -> Vec<Ask
         .filter_map(|wa| match wa.cast::<MpRunViewAction>() {
             MpRunViewAction::Clicked { client } => Some(Asked::Raise(client)),
             MpRunViewAction::Restart { client } => Some(Asked::Restart(client)),
+            MpRunViewAction::Pressed { client } => Some(Asked::Press(client)),
             _ => None,
         })
         .collect()
@@ -371,11 +375,11 @@ fn close(mut cx: Cx, mut host: ModuleHost, tiles: Vec<WidgetRef>, frame: Frame, 
 fn a_click_on_the_window_in_front_never_reaches_the_app_behind() {
     let (mut cx, mut host, news, mail, frame) = news_and_mail(&NEWS);
     let over_both = dvec2(OVER_BOTH.0, OVER_BOTH.1);
-    assert_eq!(click(&mut cx, &[&mail, &news], over_both), [Asked::Raise(2)], "Mail alone is raised");
+    assert_eq!(click(&mut cx, &[&mail, &news], over_both), [Asked::Raise(2), Asked::Press(2)], "Mail alone is raised, and pressed");
     assert_eq!(counts(&mut cx, &mut host, 2), (1, 0), "Mail's app saw the press");
     assert_eq!(counts(&mut cx, &mut host, 1), (0, 0), "News's app never saw it, so no story opened");
     // Where News is in front of nothing, the same row takes the click.
-    assert_eq!(click(&mut cx, &[&mail, &news], dvec2(NEWS_ONLY.0, NEWS_ONLY.1)), [Asked::Raise(1)]);
+    assert_eq!(click(&mut cx, &[&mail, &news], dvec2(NEWS_ONLY.0, NEWS_ONLY.1)), [Asked::Raise(1), Asked::Press(1)]);
     assert_eq!(counts(&mut cx, &mut host, 1), (1, 1), "a click where News is in front opens its story");
     assert_eq!(counts(&mut cx, &mut host, 2), (1, 0));
     close(cx, host, vec![news, mail], frame, &[1, 2]);
@@ -386,10 +390,10 @@ fn a_click_on_the_window_in_front_never_reaches_the_app_behind() {
 #[test]
 fn a_touch_on_the_window_in_front_never_reaches_the_app_behind() {
     let (mut cx, mut host, news, mail, frame) = news_and_mail(&NEWS);
-    assert_eq!(tap(&mut cx, &[&mail, &news], dvec2(OVER_BOTH.0, OVER_BOTH.1)), [Asked::Raise(2)]);
+    assert_eq!(tap(&mut cx, &[&mail, &news], dvec2(OVER_BOTH.0, OVER_BOTH.1)), [Asked::Raise(2), Asked::Press(2)]);
     assert_eq!(counts(&mut cx, &mut host, 2), (1, 0));
     assert_eq!(counts(&mut cx, &mut host, 1), (0, 0), "News's app never saw the touch");
-    assert_eq!(tap(&mut cx, &[&mail, &news], dvec2(NEWS_ONLY.0, NEWS_ONLY.1)), [Asked::Raise(1)]);
+    assert_eq!(tap(&mut cx, &[&mail, &news], dvec2(NEWS_ONLY.0, NEWS_ONLY.1)), [Asked::Raise(1), Asked::Press(1)]);
     assert_eq!(counts(&mut cx, &mut host, 1), (1, 1));
     close(cx, host, vec![news, mail], frame, &[1, 2]);
 }
@@ -401,11 +405,11 @@ fn a_gesture_view_behind_the_window_in_front_never_captures_its_press() {
     let (mut cx, mut host, news, mail, frame) = news_and_mail(&GESTURE_NEWS);
     let row = host.dispatch(&mut cx, 1, "a test read", |_, root| root.area()).unwrap();
     let over_both = dvec2(OVER_BOTH.0, OVER_BOTH.1);
-    assert_eq!(offer(&mut cx, &[&mail, &news], &[mouse_down(over_both)]), [Asked::Raise(2)]);
+    assert_eq!(offer(&mut cx, &[&mail, &news], &[mouse_down(over_both)]), [Asked::Raise(2), Asked::Press(2)]);
     assert!(!cx.fingers.is_area_captured(row), "News's GestureView took a press made on Mail");
     offer(&mut cx, &[&mail, &news], &[mouse_up(over_both)]);
     let news_only = dvec2(NEWS_ONLY.0, NEWS_ONLY.1);
-    assert_eq!(offer(&mut cx, &[&mail, &news], &[mouse_down(news_only)]), [Asked::Raise(1)]);
+    assert_eq!(offer(&mut cx, &[&mail, &news], &[mouse_down(news_only)]), [Asked::Raise(1), Asked::Press(1)]);
     assert!(cx.fingers.is_area_captured(row), "where News is in front its row takes the press");
     offer(&mut cx, &[&mail, &news], &[mouse_up(news_only)]);
     close(cx, host, vec![news, mail], frame, &[1, 2]);
@@ -493,13 +497,13 @@ fn a_stopped_tile_takes_only_a_press_nothing_in_front_took() {
     let restart = stopped.borrow::<MpModuleView>().unwrap().restart_button(&cx).expect("the closed face has its Restart");
     assert!(restart.is_inside_of(mail_at) && under_at.contains(restart.center()), "Mail covers the Restart: {restart:?}");
     let front_to_back = [&over, &stopped, &under];
-    assert_eq!(click(&mut cx, &front_to_back, restart.center()), [Asked::Raise(2)], "a click on Mail is Mail's");
+    assert_eq!(click(&mut cx, &front_to_back, restart.center()), [Asked::Raise(2), Asked::Press(2)], "a click on Mail is Mail's");
     assert_eq!(counts(&mut cx, &mut host, 3), (0, 0));
     // On the face, clear of Mail: the stopped tile is raised, and the app
     // under it never sees the press.
     let face = dvec2(480.0, 300.0);
     assert!(stopped_at.contains(face) && !mail_at.contains(face) && under_at.contains(face));
-    assert_eq!(click(&mut cx, &front_to_back, face), [Asked::Raise(1)]);
+    assert_eq!(click(&mut cx, &front_to_back, face), [Asked::Raise(1)], "and no app content was pressed");
     assert_eq!(counts(&mut cx, &mut host, 3), (0, 0));
     // Mail moved off it: its Restart restarts it.
     drop(frame);
@@ -538,4 +542,35 @@ fn the_restart_on_a_stopped_face_responds_where_it_is_drawn() {
     assert_eq!(click(&mut cx, &[&stopped], top_left), [Asked::Raise(1)], "a click at the face's top left restarted the app");
     assert_eq!(tap(&mut cx, &[&stopped], top_left), [Asked::Raise(1)], "a tap at the face's top left restarted the app");
     close(cx, host, vec![stopped], frame, &[1]);
+}
+
+/// A card app's window with App Hub's own runner: a press on the app counts
+/// for its full screen (app_fullscreen.rs). One on a host service's sheet
+/// over it (a sign-in, a wizard) is the host's: it raises the window and
+/// counts for nothing, and once the sheet is gone the app's presses count
+/// again.
+#[cfg(feature = "app-hub")]
+#[test]
+fn a_press_on_a_host_sheet_over_a_card_app_is_not_the_apps() {
+    let (mut cx, mut host) = setup();
+    host.apply_style(&mut cx, &desktop_style::StyleSheet::load(desktop_style::DesktopStyle::Macos));
+    let module = &octosense_appstore::cardapp::CARD_MODULE;
+    let open = module.open_schema().validate(r#"{"app":"os.press-probe"}"#, &[]).unwrap();
+    host.create(&mut cx, 1, module, open, dvec2(400.0, 500.0)).unwrap();
+    let card = tile(&mut cx, &host, 1);
+    let frame = draw_stack(&mut cx, &[(&card, at(20.0, 40.0))]);
+    let inside = dvec2(220.0, 300.0);
+    let sheet = |cx: &mut Cx, host: &mut ModuleHost, up: bool| {
+        host.dispatch(cx, 1, "a test sheet", |cx, root| {
+            root.splash(cx, ids!(sheet)).borrow_mut().expect("the runner's sheet").view.visible = up;
+        })
+        .unwrap();
+    };
+    assert_eq!(click(&mut cx, &[&card], inside), [Asked::Raise(1), Asked::Press(1)], "a press on the app");
+    sheet(&mut cx, &mut host, true);
+    assert_eq!(click(&mut cx, &[&card], inside), [Asked::Raise(1)], "a press on the sheet");
+    assert_eq!(tap(&mut cx, &[&card], inside), [Asked::Raise(1)], "a touch on the sheet");
+    sheet(&mut cx, &mut host, false);
+    assert_eq!(click(&mut cx, &[&card], inside), [Asked::Raise(1), Asked::Press(1)], "the sheet gone");
+    close(cx, host, vec![card], frame, &[1]);
 }
