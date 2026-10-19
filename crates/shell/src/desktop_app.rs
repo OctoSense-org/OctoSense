@@ -507,10 +507,13 @@ impl App {
         let menu = self.ui.widget(cx, ids!(shell_menu)).borrow::<ShellMenu>().map(|m| (m.model.open, m.model.skin));
         let held = matches!(menu, Some((true, MenuSkin::Launcher)));
         let bar_menu = matches!(menu, Some((true, MenuSkin::Menu)));
+        // While an app presents (`WmState::presentation`), no edge brings
+        // anything out: Esc and the app's own exit are the ways out.
+        let presenting = self.state.as_ref().is_some_and(|s| s.presentation.is_some());
         let shelf = self.ui.widget(cx, ids!(desktop_shelf));
         let (hit, inside) = if let Some(mut s) = shelf.borrow_mut::<DesktopShelf>() {
             s.hover_at(cx, p);
-            s.auto_hide_pointer(cx, Some(p), held);
+            s.auto_hide_pointer(cx, (!presenting).then_some(p), held && !presenting);
             (s.hit(p), s.contains(p))
         } else {
             (None, false)
@@ -522,7 +525,7 @@ impl App {
             // The bar coming out with it, then the title bar.
             let depth = self.state_mut().top_bar + self.state_mut().style.target.title_height();
             let wants = bar_menu || crate::desktop::top_pointer_wants(p, screen, depth, self.top_edge.out);
-            self.top_edge.want(cx, wants);
+            self.top_edge.want(cx, wants && !presenting);
         }
         let chrome_hit = self.desk(cx).borrow_mut::<WmDesk>()
             .and_then(|mut d| d.chrome_pointer(cx, (!inside).then_some(p)));
