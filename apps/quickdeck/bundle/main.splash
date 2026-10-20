@@ -1092,6 +1092,7 @@ if st == nil {
         heartbeat: nil        // the interval below, made once
         index_dirty: false    // library.json waits for the heartbeat
         present: nil          // the show going on
+        screen_full: false    // the shell has the window in full screen for Present (on_app_fullscreen)
         next_key: 1
         insp_over: false      // a narrow window shows the inspector over the canvas
         clip: nil             // the clip playing or getting ready (playback, below)
@@ -3156,14 +3157,21 @@ fn start_present(t){
             return
         }
         // media: each slide's clips (deck.slide); autoplayed: the slide on
-        // show has started its clip by itself (playback).
-        st.present = {key: t.key order: order i: 0 step: 0 notes: st.show_notes started: time_now() pics: {} failed: {} full: {} timer: nil done: false
+        // show has started its clip by itself (playback); px: the width each
+        // picture was drawn at, so a bigger stage draws it again.
+        st.present = {key: t.key order: order i: 0 step: 0 notes: st.show_notes started: time_now() pics: {} px: {} failed: {} full: {} timer: nil done: false
             media: {} autoplayed: {}}
         st.present.timer = start_interval(1, || present_tick())
         // The stage shows the slide alone: an earlier note goes.
         note("")
         show()
         pump()
+        // The Present tap also asks the shell for the whole screen
+        // (window.fullscreen), within the 5 seconds a press counts for.
+        // Where it can't (a host with no window service, such as card-host,
+        // or a refusal), the show fills the window as before, and the answer
+        // is not shown.
+        host.request("window.fullscreen", {on: true}, fn(r){})
     })
 }
 fn present_tab(){
@@ -3190,7 +3198,10 @@ fn present_next(){
     if p.step >= optional(item, "steps", 0) && p.i + 1 < p.order.len() { want.push({item: p.order[p.i + 1] step: 0}) }
     for i w in want {
         let k = present_key(w.item, w.step)
-        if optional(p.pics, k, nil) == nil && optional(p.failed, k, nil) == nil {
+        // A picture drawn for a smaller stage (before the window went full
+        // screen) is drawn again; it shows, stretched, until then.
+        let stale = optional(p.pics, k, nil) == nil || optional(p.px, k, 0) != stage_px()
+        if stale && optional(p.failed, k, nil) == nil {
             present_render(t, w.item, w.step)
             return true
         }
@@ -3231,13 +3242,17 @@ fn present_notes(t, item){
 fn present_render(t, item, step){
     let p = st.present
     let k = present_key(item, step)
+    let px = stage_px()
     busy_on()
-    engine("view", {doc: t.doc slide: item.slide width: stage_px() step: step}, fn(a){
+    engine("view", {doc: t.doc slide: item.slide width: px step: step}, fn(a){
         st.busy = false
         if st.present != p { return }
         let src = nil
         if a.is_ok { src = read_png(optional(a.data, "path", "")) }
-        if src != nil { p.pics[k] = src } else { p.failed[k] = true }
+        if src != nil {
+            p.pics[k] = src
+            p.px[k] = px
+        } else { p.failed[k] = true }
         let now = present_item()
         if now != nil && present_key(now, p.step) == k { render_present() }
         later_pump()
@@ -3303,6 +3318,21 @@ fn stop_present(){
     show()
     if t != nil && item != nil { go_slide(t, item.slide) }
     pump()
+}
+// The shell's word that the window's full screen started or ended: when Esc,
+// ⌘F or another window ends it, Present ends too. One that starts after
+// Present already ended goes straight back.
+fn on_app_fullscreen(on){
+    st.screen_full = on
+    if on { screen_back() } else { stop_present() }
+}
+// The full screen Present asked for goes back once Present is over, however
+// it ended: Exit, the corner control or the end of the show (show() asks
+// after every change).
+fn screen_back(){
+    if !optional(st, "screen_full", false) || st.present != nil { return }
+    st.screen_full = false
+    host.request("window.fullscreen", {on: false}, fn(r){})
 }
 
 // ---- playback -------------------------------------------------------------------
@@ -4004,6 +4034,7 @@ fn show_regions(){
 fn show(){
     // Another tab, view or screen stops a clip (playback).
     clip_check()
+    screen_back()
     let t = cur_tab()
     let presenting = st.present != nil
     let deck = !presenting && t != nil && t.kind == "deck"
