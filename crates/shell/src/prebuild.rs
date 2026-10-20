@@ -17,7 +17,11 @@
 //!   cargo and waits, then starts that build again; cargo keeps what it
 //!   finished.
 //! - Cargo returns at once for an app that is already built, so a later
-//!   start costs a few seconds of up-to-date checks.
+//!   start costs a few seconds of up-to-date checks. Each success is
+//!   recorded beside the binary ([`clients::note_built`]): an open then
+//!   starts that binary without cargo while nothing its build read has
+//!   changed ([`clients::build_is_fresh`]), and this run of the same build
+//!   catches what that comparison cannot see.
 //! - Quitting the shell stops it ([`shutdown`]): its cargo has a process
 //!   group of its own, so nothing else would end it.
 //! - An installed shell has no build to run and never starts it, and
@@ -159,6 +163,7 @@ fn run(steps: Vec<(String, BuildStep)>) {
             match outcome {
                 Some(status) if status.success() => {
                     built += 1;
+                    clients::note_built(step);
                     makepad_widgets::log!("prebuild: {app} built ({:.0} s)", at.elapsed().as_secs_f64());
                 }
                 Some(status) => {

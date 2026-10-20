@@ -1056,6 +1056,8 @@ pub struct BuildStep {
     /// The checkout it builds from.
     pub checkout: PathBuf,
     pub target_dir: PathBuf,
+    /// The binary it produces: `<target_dir>/release/<bin>`.
+    pub program: PathBuf,
 }
 
 /// How one launch starts: the build, if any, then the app itself.
@@ -1165,7 +1167,7 @@ pub fn launch_plan(app: &AppDef, root: Option<&Path>, extra_args: &[String]) -> 
     build.push(target_dir.to_string_lossy().into_owned());
     let program = target_dir.join("release").join(exe_name(&bin));
     Ok(LaunchPlan {
-        build: Some(BuildStep { cargo: cargo_bin(), args: build, dir: checkout.clone(), checkout, target_dir }),
+        build: Some(BuildStep { cargo: cargo_bin(), args: build, dir: checkout.clone(), checkout, target_dir, program: program.clone() }),
         program,
         args,
     })
@@ -1225,6 +1227,146 @@ pub(crate) fn build_command(build: &BuildStep) -> Command {
     }
     crate::sandbox::scrub_env(&mut cmd);
     cmd
+}
+
+/// The record a successful build leaves beside its binary: its exact
+/// command, so a later launch can tell the binary is the one that build
+/// made (a manual `cargo build` with other features replaces the binary,
+/// and the record no longer covers it).
+fn build_stamp(build: &BuildStep) -> PathBuf {
+    build.program.with_extension("octosense-build")
+}
+
+fn stamp_text(build: &BuildStep) -> String {
+    let mut text = build.cargo.to_string_lossy().into_owned();
+    for arg in &build.args {
+        text.push('\n');
+        text.push_str(arg);
+    }
+    text.push('\n');
+    text
+}
+
+/// After `build` succeeded (a launch's, or the prebuild's): the record
+/// [`build_is_fresh`] trusts.
+pub(crate) fn note_built(build: &BuildStep) {
+    if let Err(e) = std::fs::write(build_stamp(build), stamp_text(build)) {
+        makepad_widgets::log!("build: could not record {}: {e}", build.program.display());
+    }
+}
+
+/// Whether a launch can start `build`'s binary at once, without running the
+/// build first. From a checkout, every open otherwise waits for cargo's own
+/// up-to-date check, which loads the whole workspace: 0.6–2 s for an app
+/// already built, 8 s for the first open after the shell starts (measured
+/// 21 Oct 2026; the larger part of each open). Fresh means:
+///
+/// - the shell's own build made this binary, with this command (the record
+///   [`note_built`] left, no older than the binary);
+/// - nothing that build read is newer than the binary: every file in its
+///   dep-info (`<bin>.d` beside it: the sources and included files of every
+///   path crate it links), those crates' `Cargo.toml`s, the checkout's
+///   manifest and lock, cargo's config and toolchain files on the way up
+///   from the build's directory, and the cargo and rustc it runs.
+///
+/// A few thousand `stat`s. Anything missing or unreadable says no, and the
+/// build runs as before. What this cannot see (a build script's own inputs,
+/// a changed environment) the prebuild's run of the same build catches in
+/// the background ([`crate::prebuild`]).
+pub(crate) fn build_is_fresh(build: &BuildStep) -> bool {
+    let Some(built) = modified(&build.program) else {
+        return false;
+    };
+    let stamp = build_stamp(build);
+    if !modified(&stamp).is_some_and(|at| at >= built)
+        || std::fs::read_to_string(&stamp).ok().as_deref() != Some(stamp_text(build).as_str())
+    {
+        return false;
+    }
+    let dep_info = std::fs::read_to_string(build.program.with_extension("d")).ok();
+    let Some(inputs) = dep_info.as_deref().and_then(dep_info_inputs) else {
+        return false;
+    };
+    let older = |path: &Path| modified(path).is_some_and(|at| at <= built);
+    // Each input's crate manifest, found once per directory.
+    let mut manifests: HashMap<PathBuf, Option<PathBuf>> = HashMap::new();
+    let mut checked = std::collections::HashSet::new();
+    for input in &inputs {
+        if !older(input) {
+            return false;
+        }
+        if let Some(manifest) = input.parent().and_then(|dir| manifest_above(dir, &mut manifests)) {
+            if checked.insert(manifest.clone()) && !older(&manifest) {
+                return false;
+            }
+        }
+    }
+    let mut optional = vec![build.checkout.join("Cargo.lock")];
+    optional.extend(build.cargo.parent().map(|dir| dir.join(exe_name("rustc"))));
+    for path in cargo_config_paths(&build.dir) {
+        if path.file_name().is_some_and(|name| name == ".cargo") {
+            optional.push(path.join("config.toml"));
+            optional.push(path.join("config"));
+        } else {
+            optional.push(path);
+        }
+    }
+    older(&build.checkout.join("Cargo.toml"))
+        && older(&build.cargo)
+        && optional.iter().all(|path| !path.exists() || older(path))
+}
+
+fn modified(path: &Path) -> Option<std::time::SystemTime> {
+    std::fs::metadata(path).and_then(|m| m.modified()).ok()
+}
+
+/// The nearest `Cargo.toml` at or above `dir`, remembered for every
+/// directory on the way.
+fn manifest_above(dir: &Path, seen: &mut HashMap<PathBuf, Option<PathBuf>>) -> Option<PathBuf> {
+    let mut walked = Vec::new();
+    let mut found = None;
+    for at in dir.ancestors() {
+        if let Some(known) = seen.get(at) {
+            found = known.clone();
+            break;
+        }
+        walked.push(at.to_path_buf());
+        let manifest = at.join("Cargo.toml");
+        if manifest.is_file() {
+            found = Some(manifest);
+            break;
+        }
+    }
+    for at in walked {
+        seen.insert(at, found.clone());
+    }
+    found
+}
+
+/// The inputs a Makefile-style dep-info file lists after its target, with
+/// cargo's escaping undone (`\ ` is a space inside a path); `None` when it
+/// lists none.
+fn dep_info_inputs(text: &str) -> Option<Vec<PathBuf>> {
+    let (_, deps) = text.split_once(": ")?;
+    let mut out = Vec::new();
+    let mut current = String::new();
+    let mut chars = deps.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\\' && chars.peek() == Some(&' ') {
+            current.push(' ');
+            chars.next();
+        } else if c.is_whitespace() {
+            if !current.is_empty() {
+                out.push(PathBuf::from(std::mem::take(&mut current)));
+            }
+        } else {
+            current.push(c);
+        }
+    }
+    if !current.is_empty() {
+        out.push(PathBuf::from(current));
+    }
+    (!out.is_empty()).then_some(out)
 }
 
 /// The sandbox of a native app's process launch (`None` for a catalog app
@@ -1301,6 +1443,8 @@ struct PendingApp {
     log: Option<std::fs::File>,
     /// The hub's secret for this launch, written to the app's stdin.
     launch_token: String,
+    /// The build it waits for, recorded once it succeeds ([`note_built`]).
+    build: BuildStep,
 }
 
 impl std::fmt::Debug for PendingApp {
@@ -1375,7 +1519,10 @@ pub fn spawn_client(
 ) -> Result<ClientSlot, String> {
     let root = repo_root();
     let plan = launch_plan(app, root.as_deref(), extra_args)?;
-    let via_cargo = plan.build.is_some();
+    // A binary the shell's own build made, older than nothing that build
+    // read, starts at once: no cargo, no "building…" ([`build_is_fresh`]).
+    let fresh = plan.build.as_ref().is_some_and(build_is_fresh);
+    let via_cargo = plan.build.is_some() && !fresh;
     // A native app runs under the OS sandbox its manifest entry builds
     // (ADR 0004 §3, sandbox/): the built binary itself, never the build.
     let policy = sandbox_policy(app, &plan, hub_port);
@@ -1448,7 +1595,10 @@ pub fn spawn_client(
     let log_path = client_log_path(id);
     makepad_widgets::log!("octosense: client {id} log: {}", log_path.display());
     let log = std::fs::File::create(&log_path).ok();
-    let (child, pending) = match &plan.build {
+    if fresh {
+        makepad_widgets::log!("wm: {}: built and unchanged since; it starts without cargo", app.id);
+    }
+    let (child, pending) = match plan.build.as_ref().filter(|_| !fresh) {
         Some(build) => {
             let pending = PendingApp {
                 cmd,
@@ -1456,6 +1606,7 @@ pub fn spawn_client(
                 lines: lines.clone(),
                 log: log.as_ref().and_then(|f| f.try_clone().ok()),
                 launch_token,
+                build: build.clone(),
             };
             let child = start_piped(build_command(build), spawner, id, log, lines, None).map_err(|e| {
                 crate::hub::revoke_launch_token(id);
@@ -1592,6 +1743,11 @@ impl ClientSlot {
             }
         };
         let pending = self.pending.take()?;
+        if status.success() {
+            // Built, whether or not this launch still wants it: the next open
+            // can start the binary without cargo.
+            note_built(&pending.build);
+        }
         if self.closing.is_some() {
             // Nothing will ever present this launch's secret.
             crate::hub::revoke_launch_token(id);
@@ -1878,6 +2034,72 @@ mod tests {
         assert!(cargo_progress(" --> /a/checkout/src/main.rs:2").is_none());
         assert!(cargo_progress("app: first frame").is_none());
         assert_eq!(cargo_progress("error[E0308]: type mismatch"), Some(("build failed — see the app log".into(), false)));
+    }
+
+    /// An open from a checkout starts a built app at once when the shell's
+    /// own build made the binary, with the same command, and nothing that
+    /// build read has changed since: no cargo up-to-date check (0.6–8 s per
+    /// open, 21 Oct 2026). Anything newer, gone or unrecorded runs the build.
+    #[test]
+    fn a_binary_newer_than_everything_its_build_read_starts_without_cargo() {
+        use std::time::{Duration, SystemTime};
+        let ws = std::env::temp_dir().join(format!("os-fresh-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&ws);
+        let file = |rel: &str| {
+            let path = ws.join(rel);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(&path, rel).unwrap();
+            path
+        };
+        let set = |rel: &str, at: SystemTime| std::fs::File::options().write(true).open(ws.join(rel)).unwrap().set_modified(at).unwrap();
+        let (before, built, after) = (SystemTime::now() - Duration::from_secs(3600), SystemTime::now() - Duration::from_secs(60), SystemTime::now());
+        let rustc = format!("toolchain/{}", exe_name("rustc"));
+        let inputs = ["Cargo.toml", "Cargo.lock", "app/Cargo.toml", "app/src/main.rs", "app/res/an icon.svg", "toolchain/cargo", rustc.as_str()];
+        for input in inputs {
+            file(input);
+            set(input, before);
+        }
+        let program = file("target/release/app");
+        let escaped = |rel: &str| ws.join(rel).to_string_lossy().replace(' ', "\\ ");
+        std::fs::write(program.with_extension("d"), format!("{}: {} {}\n", escaped("target/release/app"), escaped("app/src/main.rs"), escaped("app/res/an icon.svg"))).unwrap();
+        set("target/release/app", built);
+        let build = BuildStep {
+            cargo: ws.join("toolchain/cargo"),
+            args: vec!["build".into(), "--release".into()],
+            dir: ws.clone(),
+            checkout: ws.clone(),
+            target_dir: ws.join("target"),
+            program: program.clone(),
+        };
+        assert!(!build_is_fresh(&build), "no record of the shell's own build yet");
+        note_built(&build);
+        assert!(build_is_fresh(&build), "the shell built it and nothing is newer");
+        for (input, what) in [
+            ("app/src/main.rs", "an edited source"),
+            ("app/res/an icon.svg", "an included file (its path escaped in the dep-info)"),
+            ("app/Cargo.toml", "its crate's manifest"),
+            ("Cargo.lock", "the lock"),
+            ("Cargo.toml", "the workspace manifest"),
+            (rustc.as_str(), "the toolchain"),
+        ] {
+            set(input, after);
+            assert!(!build_is_fresh(&build), "{what} is newer than the binary");
+            set(input, before);
+            assert!(build_is_fresh(&build), "{what} back as it was");
+        }
+        let other = BuildStep { args: vec!["build".into()], ..build.clone() };
+        assert!(!build_is_fresh(&other), "another command made this binary");
+        set("target/release/app", SystemTime::now() + Duration::from_secs(3600));
+        assert!(!build_is_fresh(&build), "something rebuilt the binary after the shell's build");
+        set("target/release/app", built);
+        std::fs::remove_file(ws.join("app/src/main.rs")).unwrap();
+        assert!(!build_is_fresh(&build), "a listed input is gone");
+        file("app/src/main.rs");
+        set("app/src/main.rs", before);
+        assert!(build_is_fresh(&build));
+        std::fs::remove_file(program.with_extension("d")).unwrap();
+        assert!(!build_is_fresh(&build), "no dep-info");
+        let _ = std::fs::remove_dir_all(&ws);
     }
 
     /// ADR 0004 §3 (review 2026-09-30): a native app is built from the
@@ -2420,7 +2642,18 @@ mod tests {
     fn a_launch_starts_its_app_only_after_a_successful_build() {
         let spawner = Cx::new(Box::new(|_, _| {})).thread_spawner();
         let (tx, _rx) = std::sync::mpsc::channel();
-        let slot_for = |build: &str, app: &str| {
+        let dir = std::env::temp_dir().join(format!("os-launch-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let step = |name: &str| BuildStep {
+            cargo: "/bin/sh".into(),
+            args: vec![name.into()],
+            dir: dir.clone(),
+            checkout: dir.clone(),
+            target_dir: dir.clone(),
+            program: dir.join(name),
+        };
+        let slot_for = |build: &str, app: &str, name: &str| {
             let mut slot = ClientSlot::module(4, "terminal", "Terminal");
             slot.ready = false;
             let mut cmd = Command::new("/bin/sh");
@@ -2428,7 +2661,7 @@ mod tests {
             slot.child = Some(start_piped(cmd, &spawner, 4, None, tx.clone(), None).unwrap());
             let mut app_cmd = Command::new("/bin/sh");
             app_cmd.args(["-c", app]);
-            slot.pending = Some(PendingApp { cmd: app_cmd, spawner: spawner.clone(), lines: tx.clone(), log: None, launch_token: "the-secret".into() });
+            slot.pending = Some(PendingApp { cmd: app_cmd, spawner: spawner.clone(), lines: tx.clone(), log: None, launch_token: "the-secret".into(), build: step(name) });
             slot
         };
         let settle = |slot: &mut ClientSlot| {
@@ -2441,7 +2674,7 @@ mod tests {
         };
         // The build has no stdin (a read fails at once); the app reads the
         // hub secret as its stdin's only line (#220).
-        let mut ok = slot_for("read x && exit 1; exit 0", "read t || exit 2; [ \"$t\" = the-secret ] || exit 3; read u && exit 4; exit 7");
+        let mut ok = slot_for("read x && exit 1; exit 0", "read t || exit 2; [ \"$t\" = the-secret ] || exit 3; read u && exit 4; exit 7", "ok");
         let build_pid = ok.child.as_ref().unwrap().id();
         assert!(ok.building());
         assert_eq!(settle(&mut ok), Ok(()));
@@ -2449,17 +2682,21 @@ mod tests {
         assert_ne!(ok.child.as_ref().unwrap().id(), build_pid, "the app's group replaced the build's");
         assert_eq!(ok.child.as_mut().unwrap().wait().unwrap().code(), Some(7), "the app ran, read the secret, then EOF");
         assert!(ok.continue_launch(4).is_none(), "nothing left to continue");
+        assert!(build_stamp(&step("ok")).is_file(), "a successful build is recorded for the next open");
 
-        let mut failed = slot_for("exit 101", "exit 0");
+        let mut failed = slot_for("exit 101", "exit 0", "failed");
         assert!(settle(&mut failed).unwrap_err().contains("build failed"));
+        assert!(!build_stamp(&step("failed")).exists(), "a failed build is not");
         let status = failed.child.as_mut().unwrap().try_wait().unwrap().unwrap();
         let message = failed.exit_failure(status, "Terminal").unwrap();
         assert!(message.starts_with("Terminal did not start: its build failed"), "{message}");
 
-        let mut closed = slot_for("exit 0", "echo started > /dev/null; exit 3");
+        let mut closed = slot_for("exit 0", "echo started > /dev/null; exit 3", "closed");
         closed.closing = Some(0.0);
         assert_eq!(settle(&mut closed), Ok(()));
         assert!(closed.child.as_ref().unwrap().reaped(), "the reaped build stays; no app started");
+        assert!(build_stamp(&step("closed")).is_file(), "its build succeeded all the same");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[cfg(unix)]
