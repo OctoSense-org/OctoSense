@@ -39,7 +39,9 @@ bridge, saving original /g grabs. Every engine call is real.
   shell    a deck made from an outline, then edited: text in place, a format,
            a chart inserted and its data changed, a layout, a theme, the sorter
            (duplicate, hide, a section), notes, undo and redo, save, export
-           (.pptx, PDF and pictures), Present and its notes, light, then dark
+           (.pptx, PDF and pictures), Present and its notes (the show takes
+           the window full screen, window.fullscreen, and gives it back: by
+           Exit in the light pass, by Esc in the dark one), light, then dark
            through the shell's own style menu; in the light pass the
            inspector's states follow real changes and their undo: a box's
            anchor and autofit, a chart element, a table option, the colour set
@@ -53,8 +55,9 @@ bridge, saving original /g grabs. Every engine call is real.
            (.cache/media/<sha256>.<ext>, checked against the clip's own
            bytes) and the Video widget plays it where the system has a player
            (a Mac: two grabs a second apart differ) or says "Playback isn't
-           available on this system" (Linux), in the editor and in Present,
-           light, then dark; a closed deck's clips leave the cache. On a Mac
+           available on this system" (Linux), in the editor and in Present
+           (which takes the window full screen, the clip playing on through
+           it), light, then dark; a closed deck's clips leave the cache. On a Mac
            it never plays the sound (the runs open no audio device)
 
 Shell runs hold a lock folder, so one hidden shell runs on this machine at a
@@ -452,6 +455,25 @@ def wait_until(check, failure, timeout=30.0):
             pass
         time.sleep(0.4)
     raise AssertionError(failure)
+
+
+def window_rect(app):
+    """The whole window, in points: what a full-screen window covers."""
+    w, h = app.size()
+    return [0, 0, w, h]
+
+
+def same_rect(a, b):
+    return len(a) == len(b) and all(abs(x - y) < 1.5 for x, y in zip(a, b))
+
+
+def full_screen(app):
+    """Wait until the app covers the whole window: Present's tap asked the
+    shell for full screen (window.fullscreen). A hidden shell never asks the
+    host window itself, so the window is the screen here."""
+    wait_until(lambda: same_rect(app.area(), window_rect(app)),
+               f"the app did not go full screen: {app.area()} in {window_rect(app)}")
+    return app.area()
 
 
 def slide_rect(app):
@@ -927,6 +949,24 @@ def stage_rect(app):
     return max(imgs, key=lambda r: r[2] * r[3])
 
 
+def stage_settled(app, timeout=20.0):
+    """Present's slide picture once it stops moving: in a shell the show goes
+    full screen just after it starts, and the stage grows with the window."""
+    deadline = time.monotonic() + timeout
+    last, same = None, 0
+    while time.monotonic() < deadline:
+        try:
+            rect = stage_rect(app)
+        except AssertionError:
+            rect = None
+        same = same + 1 if rect is not None and rect == last else 0
+        if same >= 3:
+            return rect
+        last = rect
+        time.sleep(0.4)
+    raise AssertionError(f"Present's slide never settled; last {last}")
+
+
 def box_on(rect, box):
     """A clip's box (slide points) on screen, in the slide picture `rect`."""
     x, y, w, h = rect
@@ -1141,11 +1181,13 @@ def shell_playback(app, out, dark, home):
         app.find("Paused.", "Label", timeout=10)
         app.tap("Stop")
     still_open(app, "the editor's playback")
-    # Present: the video plays by itself (a native deck keeps autoplay).
+    # Present: the video plays by itself (a native deck keeps autoplay), and
+    # keeps playing as the show takes the window full screen.
     app.tap("Present", "Button")
     app.find("Exit", "Button", timeout=60)
+    full_screen(app)
     app.images(1, timeout=60)
-    stage = box_on(stage_rect(app), LAUNCH_FILM)
+    stage = box_on(stage_settled(app), LAUNCH_FILM)
     if LINUX:
         wait_until(lambda: stage_note(app) == NO_PLAYER, "the show's clip never said it can't play", timeout=40)
         app.grab(out, f"{p}p2-present-unavailable")
@@ -1189,10 +1231,11 @@ def shell_playback(app, out, dark, home):
     app.find("Starts when it's tapped.", "Label", timeout=30)
     app.tap("Present", "Button")
     app.find("Exit", "Button", timeout=60)
+    full_screen(app)
     app.images(1, timeout=60)
     time.sleep(2.0)
     assert stage_note(app) is None, f"a .pptx clip started by itself: {stage_note(app)}"
-    stage = box_on(stage_rect(app), LAUNCH_FILM)
+    stage = box_on(stage_settled(app), LAUNCH_FILM)
     app.click(stage[0] + stage[2] / 2, stage[1] + stage[3] / 2)
     if LINUX:
         wait_until(lambda: stage_note(app) == NO_PLAYER, "the tapped clip never said it can't play", timeout=40)
@@ -1336,14 +1379,27 @@ def shell_journey(app, out, dark):
     app.grab(out, f"{p}08-export")
     app.scroll(-3000)
     app.tap("Export", "Button")
-    # present
+    # present: the tap takes the whole screen (window.fullscreen); the light
+    # pass leaves by Exit, the dark one by Esc, the shell's key in full
+    # screen (a script gets no keys), and the window comes back either way.
     go_to(app, 1)
+    windowed = app.area()
     app.tap("Present", "Button")
     app.find("Exit", "Button", timeout=60)
+    full = full_screen(app)
     app.images(1, timeout=60)
     app.grab(out, f"{p}09-present")
     app.click(app.area()[2] / 2, app.area()[3] / 2)
-    app.tap("Exit", "Button")
+    if dark:
+        app.key("Escape")
+    else:
+        app.tap("Exit", "Button")
+    app.find("Present", "Button", timeout=30)
+    app.gone("Exit")
+    wait_until(lambda: same_rect(app.area(), windowed),
+               f"the window did not come back after Present: {app.area()}, was {windowed}")
+    (out / f"{p}present-full-screen.json").write_text(json.dumps(
+        {"window": windowed, "full_screen": full, "after": app.area(), "left_by": "Escape" if dark else "Exit"}, indent=1))
 
 
 def states_follow(app, out):

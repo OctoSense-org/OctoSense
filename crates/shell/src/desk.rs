@@ -418,6 +418,13 @@ pub struct WmState {
     /// The height of the bar sliding out over a full-screen window, above
     /// its title bar: 0 when no bar comes out with it (`App::place_bar`).
     pub top_bar: f64,
+    /// The window an app's presentation full screen covers
+    /// (`window.fullscreen`, app_fullscreen.rs), set and cleared with the
+    /// presentation. While it is set no edge brings anything out: the top
+    /// bar and the window's title bar stay above the top edge and the dock,
+    /// taskbar or column stays away, as in a slideshow's play mode. Esc and
+    /// the app's own exit are the ways out.
+    pub presentation: Option<ClientId>,
 }
 
 impl WmState {

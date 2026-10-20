@@ -17,8 +17,10 @@ private headless weston (the pixman renderer, never idle), which stops with it.
            what the light pass left): Home and its status line against the
            storage's own bytes (files.status), "Open a PDF from this device"
            refused, reading and thumbnails, Read mode (entered from the bar,
-           a page turned and the zoom changed, left by Exit read mode or the
-           corner control on that page at that zoom), find from the top bar
+           which puts the window in full screen too, a page turned and the
+           zoom changed, left by Exit read mode or the corner control on that
+           page at that zoom, with the window back; then left by Esc, the
+           shell's key in full screen), find from the top bar
            alone (the left panel given back), a highlight and its reply
            dated on this machine's clock, a rotation and its undo, combine
            with a page range, initials placed by Fill & Sign, a text edit with
@@ -96,11 +98,16 @@ def port_free(port):
 
 
 def octosense_running():
-    """A running OctoSense: the shell's own binary, or the packaged app."""
+    """A running OctoSense: any executable named octosense* (a build, or a
+    copy such as a demo's octosense-<name>-<sha>), or the packaged app."""
+    result = subprocess.run(["ps", "-axo", "pid=,comm="], capture_output=True, text=True)
     found = []
-    for pattern in (["-x", "octosense"], ["-f", "OctoSense.app/Contents/MacOS"]):
-        result = subprocess.run(["pgrep", *pattern], capture_output=True, text=True)
-        found += result.stdout.split()
+    for line in result.stdout.splitlines():
+        pid, _, command = line.strip().partition(" ")
+        name = os.path.basename(command.strip())
+        if (name.lower().startswith("octosense") and name != "octosense-update-helper") \
+                or "OctoSense.app/Contents/MacOS" in command:
+            found.append(pid)
     return found
 
 
@@ -868,14 +875,36 @@ def corner_exit(app):
     app.click(bx + bw / 2, by + bh / 2)
 
 
+def window_rect(app):
+    """The whole window, in points: what a full-screen window covers."""
+    w, h = app.size()
+    return [0, 0, w, h]
+
+
+def same_rect(a, b):
+    return len(a) == len(b) and all(abs(x - y) < 1.5 for x, y in zip(a, b))
+
+
+def full_screen(app):
+    """Wait until the app covers the whole window: Read mode's tap asked the
+    shell for full screen (window.fullscreen). A hidden shell never asks the
+    host window itself, so the window is the screen here."""
+    wait_until(lambda: same_rect(app.area(), window_rect(app)),
+               f"the app did not go full screen: {app.area()} in {window_rect(app)}")
+    return app.area()
+
+
 def read_mode(app, out, p, dark):
     """Read mode (the user: "there is no full screen read mode?"): entered
-    from the floating bar's last button, the pages alone; a page turned and
-    the zoom changed in it; left from the bar's Exit read mode (light) or the
-    corner control (dark), on that page at that zoom."""
+    from the floating bar's last button, the pages alone and, in a shell, the
+    window in full screen; a page turned and the zoom changed in it; left
+    from the bar's Exit read mode (light) or the corner control (dark), on
+    that page at that zoom, with the window back where it was."""
+    windowed = app.area()
     page = next(w["t"] for w in app.widgets() if re.fullmatch(r"\d+ / \d+", w.get("t") or ""))
     pill_end(app)
     app.find("Exit read mode", "Button")
+    full = full_screen(app) if isinstance(app, Shell) else None
     app.gone("Search in document")
     assert labels(app, "Outline") == 0 and labels(app, "Comments") == 0, "the rail shows in Read mode"
     assert not [w for w in app.widgets() if w.get("t") in ("Saved", "Edited")], "the status line shows in Read mode"
@@ -898,14 +927,42 @@ def read_mode(app, out, p, dark):
         app.tap("Exit read mode", "Button")
     app.find("Search in document", "TextInput")  # the bars are back
     app.gone("Exit read mode")
+    if full is not None:
+        wait_until(lambda: same_rect(app.area(), windowed), f"the window did not come back: {app.area()}, was {windowed}")
     app.find(turned, "Label")
     assert zoom(app) == zoomed, f"Read mode left at {zoomed}, the document shows {zoom(app)}"
     app.images(1)
     app.grab(out, f"{p}02e-read-mode-left")
     RECEIPT.setdefault("read_mode", []).append({"pass": "dark" if dark else "light", "entered_on": page, "left_on": turned,
-                                                "zoom": [before, zoomed], "left_by": "corner control" if dark else "Exit read mode"})
+                                                "zoom": [before, zoomed], "left_by": "corner control" if dark else "Exit read mode",
+                                                "window": windowed, "full_screen": full, "after": app.area()})
     zoom_button(app, -1)  # the zoom the rest of the journey reads at
     wait_until(lambda: zoom(app) == before, "the zoom did not go back")
+
+
+def read_mode_escape(app, out, p):
+    """Esc, the shell's key while Read mode has the window in full screen
+    (a script gets no keys): the shell ends the full screen, tells the app
+    (on_app_fullscreen), Read mode ends with it on the same page at the same
+    zoom, and the window is back."""
+    windowed = app.area()
+    page = next(w["t"] for w in app.widgets() if re.fullmatch(r"\d+ / \d+", w.get("t") or ""))
+    level = zoom(app)
+    pill_end(app)
+    app.find("Exit read mode", "Button")
+    full = full_screen(app)
+    app.images(1)
+    app.grab(out, f"{p}02f-read-mode-full-screen")
+    app.key("Escape")
+    app.find("Search in document", "TextInput")  # Read mode is over
+    app.gone("Exit read mode")
+    wait_until(lambda: same_rect(app.area(), windowed), f"the window did not come back after Esc: {app.area()}, was {windowed}")
+    app.find(page, "Label")
+    assert zoom(app) == level, f"Esc left Read mode at {zoom(app)}, it was entered at {level}"
+    app.images(1)
+    app.grab(out, f"{p}02g-read-mode-escape")
+    RECEIPT.setdefault("read_mode_escape", []).append({"window": windowed, "full_screen": full, "after_escape": app.area(),
+                                                       "page": page, "zoom": level})
 
 
 NO_IMPORT = "This OctoSense can't open files from the device for PDF Tools."
@@ -973,6 +1030,8 @@ def shell_journey(app, out, dark):
     app.images(2)
     app.grab(out, f"{p}02b-page-2")
     read_mode(app, out, p, dark)
+    if not dark:
+        read_mode_escape(app, out, p)
 
     # One search, in the top bar: the rail offers Pages, Outline and Comments.
     assert rail_labels(app) == ["Pages", "Outline", "Comments"], f"the rail: {rail_labels(app)}"

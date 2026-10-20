@@ -89,6 +89,15 @@ pub fn flag(key: &str) -> bool {
     app_config().and_then(|config| config.get(key).and_then(|value| value.as_bool())).unwrap_or(false)
 }
 
+/// Makepad's hidden-window mode (`MAKEPAD_HIDE_WINDOWS`, which test and
+/// evaluation runs set): the platform never orders a window onto the screen.
+/// The shell then never asks the OS to put its window in full screen, which
+/// on macOS could bring the hidden window onto the screen in a Space of its
+/// own (app_fullscreen.rs).
+pub fn hidden_windows() -> bool {
+    std::env::var_os("MAKEPAD_HIDE_WINDOWS").is_some()
+}
+
 fn note_ignored() {
     static ONCE: std::sync::Once = std::sync::Once::new();
     ONCE.call_once(|| {

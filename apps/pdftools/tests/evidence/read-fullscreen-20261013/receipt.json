@@ -1,0 +1,169 @@
+{
+ "result": "passed",
+ "date": "2026-10-13",
+ "platform": "Linux build host: Ubuntu 26.04 LTS, x86_64; a private headless weston 14.0.2 (pixman renderer, never idle), Makepad's Wayland backend",
+ "commit": "#520 at 18c11642 (feat/app-fullscreen) with this change's apps/pdftools/bundle/main.splash and apps/pdftools/tests/ui.py",
+ "source_sha1": {
+  "apps/pdftools/bundle/main.splash": "85b53408e460a574034d4a8105d2b01f8fb2efe5",
+  "apps/pdftools/tests/ui.py": "302515d35e11a264370e313e2c862f0f8caf3891"
+ },
+ "build": "cargo build --locked -p octosense --no-default-features --features app-hub,craft-engines",
+ "binary_sha256": "1eb5fb9e8dc21973b60769d101fcba7a17a160a05dd2a93506a424e53a2bb7ec",
+ "run": "python3 apps/pdftools/tests/ui.py --shell target/debug/octosense --lock <dir> --work <dir> --grab-scale 1 --only shell --output <dir>",
+ "script_budget_ms": 64,
+ "shell_log": {
+  "panics": 0,
+  "script_budget_overruns": 0,
+  "window_fullscreen_lines": [
+   "wm: app full screen: os.pdftools (client 1); the host window is not asked to enter full screen: windows are hidden (MAKEPAD_HIDE_WINDOWS)",
+   "wm: window.fullscreen {on: true} from os.pdftools: {\"applied\":true,\"fills_screen\":true,\"fullscreen\":true}",
+   "wm: app full screen ended: os.pdftools (client 1), App",
+   "wm: window.fullscreen {on: false} from os.pdftools: {\"applied\":true,\"fills_screen\":false,\"fullscreen\":false}",
+   "wm: app full screen: os.pdftools (client 1); the host window is not asked to enter full screen: windows are hidden (MAKEPAD_HIDE_WINDOWS)",
+   "wm: window.fullscreen {on: true} from os.pdftools: {\"applied\":true,\"fills_screen\":true,\"fullscreen\":true}",
+   "wm: app full screen ended: os.pdftools (client 1), Escape",
+   "wm: app full screen: os.pdftools (client 1); the host window is not asked to enter full screen: windows are hidden (MAKEPAD_HIDE_WINDOWS)",
+   "wm: window.fullscreen {on: true} from os.pdftools: {\"applied\":true,\"fills_screen\":true,\"fullscreen\":true}",
+   "wm: app full screen ended: os.pdftools (client 1), App",
+   "wm: window.fullscreen {on: false} from os.pdftools: {\"applied\":true,\"fills_screen\":false,\"fullscreen\":false}"
+  ]
+ },
+ "read_mode": [
+  {
+   "pass": "light",
+   "entered_on": "2 / 4",
+   "left_on": "3 / 4",
+   "zoom": [
+    1.0,
+    1.25
+   ],
+   "left_by": "Exit read mode",
+   "window": [
+    54,
+    76,
+    1292,
+    662
+   ],
+   "full_screen": [
+    0,
+    0,
+    1400,
+    900
+   ],
+   "after": [
+    54,
+    76,
+    1292,
+    662
+   ]
+  },
+  {
+   "pass": "dark",
+   "entered_on": "2 / 4",
+   "left_on": "3 / 4",
+   "zoom": [
+    1.0,
+    1.25
+   ],
+   "left_by": "corner control",
+   "window": [
+    54,
+    76,
+    1292,
+    662
+   ],
+   "full_screen": [
+    0,
+    0,
+    1400,
+    900
+   ],
+   "after": [
+    54,
+    76,
+    1292,
+    662
+   ]
+  }
+ ],
+ "read_mode_escape": [
+  {
+   "window": [
+    54,
+    76,
+    1292,
+    662
+   ],
+   "full_screen": [
+    0,
+    0,
+    1400,
+    900
+   ],
+   "after_escape": [
+    54,
+    76,
+    1292,
+    662
+   ],
+   "page": "3 / 4",
+   "zoom": 1.0
+  }
+ ],
+ "frames": {
+  "02c-read-mode.png": {
+   "area": [
+    0,
+    0,
+    1400,
+    900
+   ],
+   "window": [
+    1400,
+    900
+   ]
+  },
+  "02e-read-mode-left.png": {
+   "area": [
+    54,
+    76,
+    1292,
+    662
+   ],
+   "window": [
+    1400,
+    900
+   ]
+  },
+  "02g-read-mode-escape.png": {
+   "area": [
+    54,
+    76,
+    1292,
+    662
+   ],
+   "window": [
+    1400,
+    900
+   ]
+  },
+  "d02c-read-mode.png": {
+   "area": [
+    0,
+    0,
+    1400,
+    900
+   ],
+   "window": [
+    1400,
+    900
+   ]
+  }
+ },
+ "host_window": "never asked to enter full screen: MAKEPAD_HIDE_WINDOWS is set (#520's launch_input::hidden_windows)",
+ "not_verified": [
+  "the same run on macOS",
+  "the OctoSense window entering the host's full screen on a real display",
+  "card-host, which serves no window service"
+ ]
+}
