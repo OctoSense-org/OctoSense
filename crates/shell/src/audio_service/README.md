@@ -3,10 +3,16 @@
 English | [简体中文](README.zh-CN.md)
 
 Installed apps can record a short voice clip and play an audio file through
-OctoSense's native audio devices. These APIs currently support macOS and Android.
-They do not transcribe speech, synthesize speech, capture system audio, download
-media, or continue after the app leaves the foreground. Hardware acceptance is
-**unverified**; synthetic tests never activate a microphone or speaker.
+OctoSense's native audio devices. Recording supports macOS, Android and Windows;
+playback is advertised on macOS and Android.
+They do not themselves transcribe speech, synthesize speech, capture system audio, download
+media, or continue after the app leaves the foreground. On 2026-10-13, a
+task-owned Windows desktop host recorded real microphone input, saved a mono
+16 kHz WAV after manual Stop and after the 30-second automatic limit, and
+discarded an active recording when the app panel or host closed. Speaker
+playback hardware acceptance on Windows is **unverified**, so Windows does not
+advertise `audio.play/status/stop`; synthetic tests do
+not activate a microphone or speaker.
 
 | Method | Arguments | Result |
 | --- | --- | --- |
@@ -14,7 +20,7 @@ media, or continue after the app leaves the foreground. Hardware acceptance is
 | `microphone.record_status` | `session` | Current state and eventual output path/error |
 | `microphone.record_stop` | `session` | `stopping`; poll until `saved` or `failed` |
 | `microphone.record_cancel` | `session` | Stop and discard, without saving |
-| `audio.play` | `path` | Host session and `starting` after bounded decoding and device setup |
+| `audio.play` (macOS/Android) | `path` | Host session and `starting` after bounded decoding and device setup |
 | `audio.status` | `session` | Current state, including `playing`, `completed`, `stopped`, or `failed` |
 | `audio.stop` | `session` | `stopping`; poll for completion |
 
@@ -39,6 +45,12 @@ physical approval, followed by the OS permission flow. `record_start` only check
 the current OS grant; it cannot open a permission prompt or borrow another app's
 consent. The OS microphone indicator remains active while native input is open.
 Provide a visible recording state, Stop and Cancel in the app using these APIs.
+
+Windows microphone methods are included in the host catalog and use the same app consent
+and native capture route. The pinned Makepad Windows permission adapter reports
+the OS grant as granted without querying the Windows privacy setting; if that
+setting blocks capture, the device open/frames path reports failure. This is a
+platform adapter limitation, not evidence of an OS grant.
 
 Sessions belong to the host-assigned app identity and live Splash heap. Another
 app or a reopened instance cannot operate them. The shell supplies the focused

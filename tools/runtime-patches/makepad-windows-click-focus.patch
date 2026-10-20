@@ -1,0 +1,41 @@
+diff --git a/platform/src/os/windows/win32_window.rs b/platform/src/os/windows/win32_window.rs
+index 8cd0ceb..1f7620e 100644
+--- a/platform/src/os/windows/win32_window.rs
++++ b/platform/src/os/windows/win32_window.rs
+@@ -112,6 +112,27 @@
+     },
+ };
+ 
++// WA_CLICKACTIVE is 2 in WinUser.h, but this pinned windows-rs binding omits it.
++const WA_CLICKACTIVE_VALUE: usize = 2;
++
++fn window_activation_gained(wparam: usize) -> bool {
++    let state = wparam & 0xffff;
++    state == WA_ACTIVE as usize || state == WA_CLICKACTIVE_VALUE
++}
++
++#[cfg(test)]
++mod activation_tests {
++    use super::*;
++
++    #[test]
++    fn mouse_and_programmatic_activation_gain_focus_but_deactivation_loses_it() {
++        assert!(window_activation_gained(WA_ACTIVE as usize));
++        assert!(window_activation_gained(WA_CLICKACTIVE_VALUE));
++        assert!(window_activation_gained((1 << 16) | WA_CLICKACTIVE_VALUE));
++        assert!(!window_activation_gained(0));
++    }
++}
++
+ /// Whether a screen coordinate survives the conversion `CreateWindowExW` and `MoveWindow`
+ /// take: a real number inside `i32`, and not the `CW_USEDEFAULT` sentinel that `i32::MIN`
+ /// would be read as.
+@@ -795,7 +816,7 @@ unsafe fn imm_get_composition_string(
+         let window = &mut (*(user_data as *mut Win32Window));
+         match msg {
+             WM_ACTIVATE => {
+-                if wparam.0 & 0xffff == WA_ACTIVE as usize {
++                if window_activation_gained(wparam.0) {
+                     window.do_callback(Win32Event::WindowGotFocus(window.window_id));
+                 } else {
+                     if window.is_popup {

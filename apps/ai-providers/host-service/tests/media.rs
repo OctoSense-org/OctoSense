@@ -46,6 +46,7 @@ struct Seen {
     url: String,
     headers: Vec<(String, String)>,
     body: Value,
+    bytes: Option<Vec<u8>>,
 }
 #[derive(Default)]
 struct Fake {
@@ -89,6 +90,7 @@ impl media::Transport for Fake {
             body: body
                 .map(|b| serde_json::from_str(b).unwrap())
                 .unwrap_or(Value::Null),
+            bytes: None,
         });
         let gate = self.gate.lock().unwrap().clone();
         if let Some(gate) = gate {
@@ -98,6 +100,25 @@ impl media::Transport for Fake {
             .lock()
             .unwrap()
             .pop_front()
+            .ok_or_else(|| "synthetic no response".into())
+    }
+
+    fn request_bytes(
+        &self,
+        method: &str,
+        url: &str,
+        headers: &[(String, String)],
+        body: &[u8],
+    ) -> Result<(u16, Vec<u8>), String> {
+        self.seen.lock().unwrap().push(Seen {
+            method: method.into(),
+            url: url.into(),
+            headers: headers.to_vec(),
+            body: Value::Null,
+            bytes: Some(body.to_vec()),
+        });
+        if let Some(gate) = self.gate.lock().unwrap().clone() { gate.wait(); }
+        self.answers.lock().unwrap().pop_front()
             .ok_or_else(|| "synthetic no response".into())
     }
 }
@@ -137,6 +158,9 @@ impl Rig {
         Self::limits(family, media::Limits::default())
     }
     fn limits(family: &str, limits: media::Limits) -> Self {
+        Self::call_limit(family, limits, 1000)
+    }
+    fn call_limit(family: &str, limits: media::Limits, calls_per_day: u32) -> Self {
         let serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
         let root = std::env::temp_dir().join(format!("model-media-test-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(root.join(".host")).unwrap();
@@ -154,7 +178,7 @@ impl Rig {
             .grants(move |_, _| grant.load(Ordering::SeqCst))
             .limits(complete::ledger::Limits {
                 per_minute: 100,
-                calls_per_day: 1000,
+                calls_per_day,
                 tokens_per_day: 100_000,
             })
             .clock(move || clock.load(Ordering::SeqCst));
@@ -175,6 +199,9 @@ impl Rig {
         }
     }
     fn submit(&self, app: &str, method: &str, args: Value) -> usize {
+        self.submit_with_foreground(app, method, args, false)
+    }
+    fn submit_with_foreground(&self, app: &str, method: &str, args: Value, foreground: bool) -> usize {
         let heap = NEXT.fetch_add(1, Ordering::Relaxed);
         dispatch(
             ServiceCall {
@@ -182,7 +209,7 @@ impl Rig {
                 service: format!("model.{method}"),
                 args,
                 from_sheet: false,
-                may_prompt: false,
+                may_prompt: foreground,
                 host_dir: self.root.join(".host"),
             },
             heap,
@@ -203,6 +230,9 @@ impl Rig {
     }
     fn call(&self, method: &str, args: Value) -> Result<Value, String> {
         self.answer(self.submit(APP, method, args))
+    }
+    fn call_front(&self, app: &str, method: &str, args: Value) -> Result<Value, String> {
+        self.answer(self.submit_with_foreground(app, method, args, true))
     }
     fn start_video(&self) -> String {
         self.fake.json(200, json!({"task_id":"task_123"}));
@@ -234,6 +264,212 @@ fn png() -> String {
         w.write_image_data(&vec![120; 512 * 512]).unwrap();
     }
     STANDARD.encode(bytes)
+}
+
+#[cfg(target_os = "windows")]
+fn app_wav(rig: &Rig, app: &str, name: &str, bytes: &[u8]) {
+    let dir = rig.root.join(app).join("agent");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join(name), bytes).unwrap();
+}
+
+#[cfg(target_os = "windows")]
+fn short_wav() -> Vec<u8> {
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(b"RIFF");
+    bytes.extend_from_slice(&38u32.to_le_bytes());
+    bytes.extend_from_slice(b"WAVEfmt ");
+    bytes.extend_from_slice(&16u32.to_le_bytes());
+    bytes.extend_from_slice(&1u16.to_le_bytes());
+    bytes.extend_from_slice(&1u16.to_le_bytes());
+    bytes.extend_from_slice(&16_000u32.to_le_bytes());
+    bytes.extend_from_slice(&32_000u32.to_le_bytes());
+    bytes.extend_from_slice(&2u16.to_le_bytes());
+    bytes.extend_from_slice(&16u16.to_le_bytes());
+    bytes.extend_from_slice(b"data");
+    bytes.extend_from_slice(&2u32.to_le_bytes());
+    bytes.extend_from_slice(&0i16.to_le_bytes());
+    bytes
+}
+
+#[cfg(target_os = "windows")]
+#[test]
+fn pantry_transcribe_is_admitted_and_capability_hides_provider_details() {
+    let rig = Rig::new("moonshot");
+    assert_eq!(octosense_appstore::host_api::available_versions().get("model.transcribe"), Some(&1));
+    assert_eq!(octosense_appstore::host_api::available_versions().get("model.transcribe_capability"), Some(&1));
+    assert_eq!(rig.answer(rig.submit("pantry-steward", "transcribe_capability", json!({}))).unwrap(),
+        json!({"schema":1,"supported":true,"configured":false}));
+    assert_eq!(rig.answer(rig.submit(APP, "transcribe_capability", json!({}))).unwrap(),
+        json!({"schema":1,"supported":true,"configured":false}));
+    assert!(rig.answer(rig.submit("pantry-steward", "transcribe_capability", json!({"provider":"minimax"})))
+        .unwrap_err().starts_with("bad_request:"));
+    *rig.config.0.lock().unwrap() = vec![candidate("moonshot"), candidate("minimax-cn")];
+    assert_eq!(rig.answer(rig.submit("pantry-steward", "transcribe_capability", json!({}))).unwrap(),
+        json!({"schema":1,"supported":true,"configured":true}));
+    assert_eq!(rig.fake.count(), 0);
+}
+
+#[cfg(target_os = "windows")]
+#[test]
+fn pantry_transcribe_uses_only_bounded_wav_and_fixed_minimax_multipart() {
+    let rig = Rig::new("moonshot");
+    *rig.config.0.lock().unwrap() = vec![candidate("moonshot"), candidate("minimax-cn"), candidate("minimax")];
+    let wav = short_wav();
+    app_wav(&rig, "pantry-steward", "voice.wav", &wav);
+    app_wav(&rig, APP, "voice.wav", &wav);
+    rig.fake.json(200, json!({"text":"  今天吃豆腐  ","duration":0.25,"trace_id":"secret-trace"}));
+    let request = json!({"audio":{"app_path":"/agent/voice.wav"}});
+    let background_error = rig.answer(rig.submit("pantry-steward", "transcribe", request.clone())).unwrap_err();
+    assert!(background_error.contains("unavailable to agents/background surfaces"),
+        "background must be refused: {background_error}");
+    rig.fake.json(200, json!({"text":"今天吃豆腐","duration":0.25}));
+    assert_eq!(rig.call_front(APP, "transcribe", request.clone()).unwrap()["text"], "今天吃豆腐");
+    let result = rig.call_front("pantry-steward", "transcribe", request).unwrap();
+    assert_eq!(result, json!({"text":"今天吃豆腐","duration_seconds":0.25}));
+    let seen = rig.fake.seen.lock().unwrap();
+    assert_eq!(seen.len(), 2);
+    let call = &seen[1];
+    assert_eq!(call.method, "POST");
+    assert_eq!(call.url, "https://api.minimaxi.com/v1/speech_to_text");
+    assert!(call.headers.iter().any(|(key,value)| key == "Authorization" && value == &format!("Bearer {KEY}")));
+    let content_type = call.headers.iter().find(|(key,_)| key == "Content-Type").unwrap().1.as_str();
+    assert!(content_type.starts_with("multipart/form-data; boundary=octosense-"));
+    let body = call.bytes.as_ref().unwrap();
+    assert!(body.windows(wav.len()).any(|chunk| chunk == wav));
+    let form = String::from_utf8_lossy(body);
+    for field in ["model", "file", "response_format", "stream"] {
+        assert!(form.contains(&format!("name=\"{field}\"")));
+    }
+    assert_eq!(form.matches("Content-Disposition: form-data; name=\"").count(), 4);
+    assert!(form.contains("asr-1.0") && form.contains("\r\njson\r\n") && form.contains("\r\nfalse\r\n"));
+    for forbidden in ["timestamp_level", "language", "speaker", "subtitle"] {
+        assert!(!form.contains(forbidden));
+    }
+    assert!(!result.to_string().contains(KEY));
+}
+
+#[cfg(target_os = "windows")]
+#[test]
+fn pantry_transcribe_rejects_paths_and_malformed_audio_before_upload() {
+    let rig = Rig::new("minimax");
+    app_wav(&rig, "pantry-steward", "valid.wav", &short_wav());
+    app_wav(&rig, "pantry-steward", "empty.wav", b"");
+    app_wav(&rig, "pantry-steward", "broken.wav", b"RIFFbad");
+    app_wav(&rig, "pantry-steward", "oversize.wav", &vec![0; 1024 * 1024 + 1]);
+    for path in ["../valid.wav", "C:/valid.wav", "agent\\valid.wav", "https://host/valid.wav",
+        "data:audio/wav;base64,AAAA", "//agent/valid.wav", "/agent/empty.wav",
+        "/agent/broken.wav", "/agent/oversize.wav", "/agent/missing.wav"] {
+        let err = rig.call_front("pantry-steward", "transcribe", json!({"audio":{"app_path":path}})).unwrap_err();
+        assert!(err.starts_with("bad_request:"), "{path}: {err}");
+    }
+    for args in [json!({}), json!({"audio":"/agent/valid.wav"}),
+        json!({"audio":{"app_path":"/agent/valid.wav","url":"https://host"}}),
+        json!({"audio":{"app_path":"/agent/valid.wav"},"model":"other"})] {
+        assert!(rig.call_front("pantry-steward", "transcribe", args).unwrap_err().starts_with("bad_request:"));
+    }
+    assert_eq!(rig.fake.count(), 0);
+}
+
+#[cfg(target_os = "windows")]
+#[test]
+fn pantry_transcribe_charges_call_budget_and_never_retries_or_leaks_provider_errors() {
+    let rig = Rig::call_limit("minimax", media::Limits::default(), 0);
+    app_wav(&rig, "pantry-steward", "voice.wav", &short_wav());
+    assert!(rig.call_front("pantry-steward", "transcribe", json!({"audio":{"app_path":"/agent/voice.wav"}}))
+        .unwrap_err().starts_with("budget:"));
+    assert_eq!(rig.fake.count(), 0);
+    drop(rig);
+
+    let rig = Rig::new("minimax");
+    app_wav(&rig, "pantry-steward", "voice.wav", &short_wav());
+    rig.fake.json(403, json!({"error":format!("{KEY} https://private.example/trace") }));
+    let err = rig.call_front("pantry-steward", "transcribe", json!({"audio":{"app_path":"/agent/voice.wav"}})).unwrap_err();
+    assert!(err.starts_with("provider:"));
+    assert!(!err.contains(KEY) && !err.contains("private.example"));
+    assert_eq!(rig.fake.count(), 1);
+}
+
+#[cfg(target_os = "windows")]
+#[test]
+fn transcription_seconds_are_reserved_before_upload() {
+    let mut limits = media::Limits::default();
+    limits.transcription_seconds_per_day = 0;
+    let rig = Rig::limits("minimax", limits);
+    app_wav(&rig, "pantry-steward", "voice.wav", &short_wav());
+    let err = rig.call_front("pantry-steward", "transcribe",
+        json!({"audio":{"app_path":"/agent/voice.wav"}})).unwrap_err();
+    assert!(err.starts_with("budget:"), "{err}");
+    assert_eq!(rig.fake.count(), 0);
+}
+
+#[cfg(target_os = "windows")]
+#[test]
+fn minimaxi_alias_is_a_configured_transcription_route() {
+    let rig = Rig::new("minimaxi");
+    assert_eq!(rig.call("transcribe_capability", json!({})).unwrap()["configured"], true);
+}
+
+#[cfg(target_os = "windows")]
+#[test]
+fn pantry_transcribe_rejects_empty_or_invalid_provider_text_without_leaking_response() {
+    let rig = Rig::new("minimax");
+    app_wav(&rig, "pantry-steward", "voice.wav", &short_wav());
+    let args = json!({"audio":{"app_path":"/agent/voice.wav"}});
+    for reply in [
+        json!({"text":"  ","duration":0.25,"trace_id":KEY}),
+        json!({"text":"hello","duration":0,"trace_id":KEY}),
+        json!({"text":"hello","trace_id":KEY}),
+        json!({"text":"x".repeat(4097),"duration":0.25,"trace_id":KEY}),
+    ] {
+        rig.fake.json(200, reply);
+        let error = rig.call_front("pantry-steward", "transcribe", args.clone()).unwrap_err();
+        assert!(error.starts_with("provider:"), "{error}");
+        assert!(!error.contains(KEY));
+    }
+    assert_eq!(rig.fake.count(), 4);
+}
+
+#[cfg(target_os = "windows")]
+#[test]
+fn pantry_transcribe_drops_a_late_result_after_provider_change() {
+    let rig = Rig::new("minimax");
+    app_wav(&rig, "pantry-steward", "voice.wav", &short_wav());
+    let gate = Arc::new(Gate::default());
+    *rig.fake.gate.lock().unwrap() = Some(gate.clone());
+    rig.fake.json(200, json!({"text":"迟到回复","duration":0.25}));
+    let heap = rig.submit_with_foreground("pantry-steward", "transcribe",
+        json!({"audio":{"app_path":"/agent/voice.wav"}}), true);
+    rig.fake.wait_calls(1);
+    *rig.config.0.lock().unwrap() = vec![candidate("moonshot")];
+    gate.release();
+    assert!(rig.answer(heap).unwrap_err().starts_with("capability:"));
+    assert_eq!(rig.fake.count(), 1);
+}
+
+#[cfg(target_os = "windows")]
+#[test]
+fn pantry_transcribe_requires_a_current_app_grant_at_start_and_delivery() {
+    let rig = Rig::new("minimax");
+    app_wav(&rig, "pantry-steward", "voice.wav", &short_wav());
+    let args = json!({"audio":{"app_path":"/agent/voice.wav"}});
+    rig.allowed.store(false, Ordering::SeqCst);
+    assert!(rig.answer(rig.submit("pantry-steward", "transcribe_capability", json!({})))
+        .unwrap_err().starts_with("capability:"));
+    assert!(rig.call_front("pantry-steward", "transcribe", args.clone())
+        .unwrap_err().starts_with("capability:"));
+    assert_eq!(rig.fake.count(), 0);
+
+    rig.allowed.store(true, Ordering::SeqCst);
+    let gate = Arc::new(Gate::default());
+    *rig.fake.gate.lock().unwrap() = Some(gate.clone());
+    rig.fake.json(200, json!({"text":"late","duration":0.25}));
+    let heap = rig.submit_with_foreground("pantry-steward", "transcribe", args, true);
+    rig.fake.wait_calls(1);
+    rig.allowed.store(false, Ordering::SeqCst);
+    gate.release();
+    assert!(rig.answer(heap).unwrap_err().starts_with("capability:"));
+    assert_eq!(rig.fake.count(), 1);
 }
 
 #[test]
@@ -674,6 +910,39 @@ fn actual_http_transport_refuses_redirects_and_oversized_streams() {
         }
         server.join().unwrap();
     }
+}
+
+#[test]
+fn actual_http_transport_sends_binary_body_without_following_redirect() {
+    use media::Transport;
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let server = std::thread::spawn(move || {
+        let (mut connection, _) = listener.accept().unwrap();
+        connection.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+        let mut request = Vec::new();
+        let mut buffer = [0u8; 1024];
+        while !request.windows(4).any(|part| part == b"\r\n\r\n") {
+            let count = connection.read(&mut buffer).unwrap();
+            assert!(count > 0);
+            request.extend_from_slice(&buffer[..count]);
+        }
+        let body_start = request.windows(4).position(|part| part == b"\r\n\r\n").unwrap() + 4;
+        while request.len() - body_start < 5 {
+            let count = connection.read(&mut buffer).unwrap();
+            assert!(count > 0);
+            request.extend_from_slice(&buffer[..count]);
+        }
+        assert!(String::from_utf8_lossy(&request[..body_start]).starts_with("POST /fixture HTTP/1.1"));
+        assert_eq!(&request[body_start..], b"a\0b\xffc");
+        write!(connection,"HTTP/1.1 302 Found\r\nLocation: http://127.0.0.1:1/must-not-follow\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").unwrap();
+    });
+    let result = media::Http.request_bytes("POST", &format!("http://{address}/fixture"),
+        &[("Content-Type".into(), "application/octet-stream".into())], b"a\0b\xffc");
+    assert_eq!(result.unwrap().0, 302);
+    server.join().unwrap();
 }
 
 #[test]
