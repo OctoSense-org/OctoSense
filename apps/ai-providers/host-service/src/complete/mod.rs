@@ -8,7 +8,8 @@
 //!
 //! | method | args | answer |
 //! |---|---|---|
-//! | `model.complete` | `{task, input, schema, class?, allow_urls?}` | `{output, meta: {class, requested, attempts, usage: {input_tokens, output_tokens, estimated}, budget}}` |
+//! | `model.complete@2` on Windows | `{task, input, schema, class?, allow_urls?, image?: {app_path}}` | `{output, meta: {class, requested, attempts, usage: {input_tokens, output_tokens, estimated}, budget}}` |
+//! | `model.complete@1` elsewhere | `{task, input, schema, class?, allow_urls?}` | the same reply, without image input |
 //! | `model.budget` | – | the caller's `budget` alone |
 //!
 //! - `task` (1 to [`TASK_MAX`] bytes): what to do, in words.
@@ -60,7 +61,7 @@ use crate::model::{effective_model, ProfileStore};
 use crate::probe;
 use crate::vault::Vault;
 use octosense_appstore::services::{HostService, Replier, ServiceCall, ServiceHost};
-use octosense_llm_config::{catalog, registry, Provider};
+use octosense_llm_config::{catalog, registry, ApiType, Provider};
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -70,6 +71,7 @@ pub mod ledger;
 pub mod media;
 pub mod schema;
 pub mod wire;
+mod vision;
 
 use ledger::{Budget, Ledger, Limits, Refused};
 use schema::Schema;
@@ -124,6 +126,8 @@ pub enum Code {
     Capability,
     /// The person has no usable AI provider.
     NoProvider,
+    /// This host does not implement the requested input mode.
+    Unavailable,
     /// Too many calls in the last minute.
     Rate,
     /// Today's calls or tokens are used up.
@@ -143,6 +147,7 @@ impl Code {
         match self {
             Code::Capability => "capability",
             Code::NoProvider => "no_provider",
+            Code::Unavailable => "unavailable",
             Code::Rate => "rate",
             Code::Budget => "budget",
             Code::BadRequest => "bad_request",
@@ -507,10 +512,10 @@ impl ModelHost {
     /// One call for `app`, blocking (run it off the UI thread). The caller
     /// has checked that `app` may call at all.
     pub fn complete(&self, app: &str, request: Request) -> Result<Completion, Refusal> {
-        self.complete_while(app, request, || true)
+        self.complete_while(app, request, None, || true)
     }
 
-    fn complete_while(&self, app: &str, request: Request, active: impl Fn() -> bool) -> Result<Completion, Refusal> {
+    fn complete_while(&self, app: &str, request: Request, image: Option<&str>, active: impl Fn() -> bool) -> Result<Completion, Refusal> {
         let check = || if active() { Ok(()) } else { Err(Refusal::new(Code::Capability, "The request ended or this app no longer has model access.")) };
         check()?;
         let schema = request.check()?;
@@ -521,7 +526,13 @@ impl ModelHost {
         if candidates.is_empty() {
             return Err(Refusal::new(Code::NoProvider, "No AI provider is set up. Add one in AI providers."));
         }
-        let ordered = order(candidates, request.class);
+        let mut ordered = order(candidates, request.class);
+        if image.is_some() {
+            ordered.retain(|candidate| crate::model::effective_api_type(&candidate.provider) == ApiType::OpenAi);
+            if ordered.is_empty() {
+                return Err(Refusal::new(Code::NoProvider, "No configured OpenAI-compatible AI route is available for image input."));
+            }
+        }
         let now = (self.clock)();
         let admitted = self.ledger.lock().unwrap().admit(app, now, request.estimate());
         if let Err(refused) = admitted {
@@ -554,7 +565,7 @@ impl ModelHost {
                         "{user}\n\nYour previous answer was refused: {why}. Answer again with only one JSON value that validates against the schema."
                     ),
                 };
-                let text = match self.send(candidate, &system, &user) {
+                let text = match self.send(candidate, &system, &user, image) {
                     Ok((text, used)) => {
                         usage.add(used);
                         self.ledger.lock().unwrap().charge(app, (self.clock)(), used.total());
@@ -592,9 +603,9 @@ impl ModelHost {
 
     /// One request to one provider: the reply text and its usage, or why the
     /// provider failed (with the key removed).
-    fn send(&self, c: &Candidate, system: &str, user: &str) -> Result<(String, Usage), String> {
+    fn send(&self, c: &Candidate, system: &str, user: &str, image: Option<&str>) -> Result<(String, Usage), String> {
         let key = c.key.as_deref();
-        let prepared = wire::prepare(&c.provider, key, system, user)?;
+        let prepared = wire::prepare_with_image(&c.provider, key, system, user, image)?;
         let (status, body) = self.transport.post(&prepared.url, &prepared.headers, &prepared.body).map_err(|e| {
             format!("{}: {}", probe::transport_reason(&e), probe::describe_error(&e, key))
         })?;

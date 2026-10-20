@@ -362,9 +362,9 @@ flowchart TB
 4. **常设规则**，按（所属应用，工具）匹配，不论调用方是谁。由收到的内容或未知来源触发的运行会跳过规则，除非某条规则明确纳入。
 5. 否则由 **Shell 绘制的面板**列出所属应用、工具、确切参数和调用方应用（如有）。系统 Agent 为同一请求发起的审批可以合并到一个面板中。
 
-**发送邮件**从不经过审批路由。邮件自己的写信界面（`mail.review_send`）和它的回复卡片，最终都进入同一个由宿主拥有的确切邮件审阅界面，由 Shell 绘制在卡片内（`crates/shell/src/mail_review.rs`）；邮件的 Agent 只能提议发送（`mail.propose_send`）。只有对审阅界面上 Approve & Send 控件的一次可信按下和释放才会发送，而且只有亲手点按才可信：Android 上触摸屏幕，macOS 上用鼠标或触控板点击。开发者模式和常设规则都不能授权发送，`mail.send` 只会回答 `approval_required`。流程见[组合式邮件卡片](mail-composable-cards.zh-CN.md)。
+**发送邮件**从不经过审批路由。邮件自己的写信界面（`mail.review_send`）和它的回复卡片，最终都进入同一个由宿主拥有的确切邮件审阅界面，由 Shell 绘制在卡片内（`crates/shell/src/mail_review.rs`）；邮件的 Agent 只能提议发送（`mail.propose_send`）。只有对审阅界面上 Approve & Send 控件的一次可信按下和释放才会发送：Android 上触摸屏幕，macOS 上点击，Windows 上使用系统归类为硬件来源的指针消息。Windows 仍没有 Mail 发信适配器。开发者模式和常设规则都不能授权发送，`mail.send` 只会回答 `approval_required`。流程见[组合式邮件卡片](mail-composable-cards.zh-CN.md)。
 
-这种信任来自两个经审查的 Makepad 补丁（`tools/runtime-patches/`）：`makepad-trusted-user-input.patch` 针对 Android 触摸屏，`makepad-desktop-trusted-input.patch` 针对来自 HID 源、且不是由其他进程投递（post）的 macOS 指针事件。合成输入和远程输入都会被拒绝，在其分发过程中运行的原生回调也不例外。Windows 和 Linux 上的任何输入以及无障碍输入，都不能批准发送。macOS 路径**未验证**：还没有在 macOS 上实际发送过邮件。
+这种信任来自三个经审查的 Makepad 补丁（`tools/runtime-patches/`）：`makepad-trusted-user-input.patch` 针对 Android 触摸屏，`makepad-desktop-trusted-input.patch` 针对来自 HID 源、且不是由其他进程投递的 macOS 指针事件，`makepad-windows-trusted-input.patch` 针对 user32 归类为 `IMO_HARDWARE` 的 Windows 鼠标、触摸、笔和触控板消息。Windows 的输入来源判断作用于所有使用 `trusted_user_input()` 的宿主审阅界面，包括已连接账户的保存与发送以及设备授权。Windows 会拒绝 `IMO_INJECTED`、`IMO_SYSTEM` 和投递的消息，但微软也把具有 UIAccess 权限的应用注入的输入归为 `IMO_HARDWARE`；远程桌面输入尚未验证。处于不可信分发中的嵌套回调、不满足此归类的无障碍输入和 Linux 输入仍不可信。macOS Mail 路径**未验证**：还没有实际发送过邮件。Windows 输入来源判断本身不提供 Mail 发信适配器，也不证明已连接账户的真实写入。
 
 **已连接账户的写入和发送**也不经过审批路由。GitHub 提交（`github.review_save`）或 Google Calendar 写入（`gcalendar.review_save`）会打开宿主对确切改动的审阅界面，只有其中的 Approve & Save 控件才能保存。Gmail 发信（`gmail.draft.review`）会打开宿主对确切回复的审阅界面，只有其中的 Approve & Send 控件才能发送。在 `main` 上，这三种审阅界面都是原生的（`crates/shell/src/connected_review.rs`），只接受可信的亲手点按（按下和释放都必须可信），每次批准只能用一次（`crates/oauth-service/src/host_api.rs`、`host_inbox.rs`）。`desktop-v0.1.0-beta.2` 只在 Gmail 发信时检查是否亲手点按；它的 GitHub 和 Calendar 保存使用宿主面板，不检查 Approve & Save 是怎样按下的。Agent 打不开其中任何一个界面：它的工具调用以 `may_prompt: false` 到达服务（`host_tools/script_apps.rs`）。哪些平台支持亲手点按、哪些已经验证，见 [OAuth 服务 README](../crates/oauth-service/README.zh-CN.md#当前交付边界) 中的平台表。
 
@@ -437,8 +437,8 @@ Rinx（通过 `OctosAppService::set_account`）、邮件的宿主服务和 `auth
 | 应用 ↔ 内核 | 没有应用看得到宿主 token。只有 octos 客户端的内核端口使用 OUP，由路由器按编码范围约束（ADR 0003 第 9 条） |
 | peer ↔ peer | octos 为每个 peer 提供独立的工作区（拒绝重叠）、记忆命名空间和对话记录 |
 | Agent ↔ 机密 | 机密在所有 jail 和工作区之外；启动检查 |
-| Agent ↔ 邮件投递 | 没有任何 Agent 工具或生成的卡片能发送：只有用户在宿主的审阅界面上亲手点按批准确切的邮件后才发送；合成输入和远程输入都会被拒绝 |
-| Agent ↔ 已连接账户 | 应用和它的 Agent 只持有连接句柄。没有任何工具能登录、提交、保存日程或发送：这些都需要宿主面板或审阅界面。在 `main` 上，批准其中任何一项都需要可信的亲手点按；在 `desktop-v0.1.0-beta.2` 上，只有 Gmail 发信需要 |
+| Agent ↔ 邮件投递 | 没有任何 Agent 工具或生成的卡片能发送：只有宿主对确切邮件的审阅界面接受可信按下才会发送。Windows 接受系统归类为硬件来源的指针消息，包括 UIAccess 注入；远程桌面输入尚未验证 |
+| Agent ↔ 已连接账户 | 应用和它的 Agent 只持有连接句柄。没有任何工具能登录、提交、保存日程或发送：这些都需要宿主面板或审阅界面。在 `main` 上，批准其中任何一项都需要符合上述平台来源规则的可信按下；在 `desktop-v0.1.0-beta.2` 上，只有 Gmail 发信需要 |
 | 外部客户端 ↔ 内核 | 外部 token、方法与工具允许列表、`Host` 和 `Origin` 检查 |
 
 **进程沙箱**（`crates/shell/src/sandbox/`）根据条目的 `sandbox` 和 `storage` 块构建。它封闭用户的主目录和各个卷，只开放应用的 jail、它的机密文件夹和经审查的 `external` 授权（例如 Terminal 的 `home:rw`），并让下一次构建要读取或运行的一切保持只读。`network: none` 只留下 hub 的端口，`processes: false` 禁止 fork 和 exec；应用只继承 Shell 环境变量中允许列表内的那些，从不包括密钥或 token。

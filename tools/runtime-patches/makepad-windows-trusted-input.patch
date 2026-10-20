@@ -1,0 +1,115 @@
+diff --git a/platform/src/os/windows/win32_event.rs b/platform/src/os/windows/win32_event.rs
+index 8a02d73..3299138 100644
+--- a/platform/src/os/windows/win32_event.rs
++++ b/platform/src/os/windows/win32_event.rs
+@@ -30,8 +30,8 @@ pub enum Win32Event {
+         primary: bool,
+     },
+ 
+-    MouseDown(MouseDownEvent),
+-    MouseUp(MouseUpEvent),
++    MouseDown(MouseDownEvent, bool),
++    MouseUp(MouseUpEvent, bool),
+     MouseMove(MouseMoveEvent),
+     MouseLeave(MouseLeaveEvent),
+     Scroll(ScrollEvent),
+diff --git a/platform/src/os/windows/win32_window.rs b/platform/src/os/windows/win32_window.rs
+index 01a356d..3c79a78 100644
+--- a/platform/src/os/windows/win32_window.rs
++++ b/platform/src/os/windows/win32_window.rs
+@@ -1864,6 +1864,26 @@ pub fn send_focus_lost_event(&mut self) {
+         self.do_callback(Win32Event::WindowLostFocus(self.window_id));
+     }
+ 
++    fn os_reported_pointer_message() -> bool {
++        // This pinned windows-rs shim lacks Win32::UI::Input's message-origin
++        // bindings. Query user32 directly while processing the native message.
++        #[repr(C)]
++        #[derive(Default)]
++        struct InputMessageSource { device_type: i32, origin_id: i32 }
++        #[link(name = "user32")]
++        unsafe extern "system" {
++            fn GetCurrentInputMessageSource(source: *mut InputMessageSource) -> i32;
++        }
++        let mut source = InputMessageSource::default();
++        let received = unsafe { GetCurrentInputMessageSource(&mut source) != 0 };
++        received && Self::trusted_pointer_source(source.device_type, source.origin_id)
++    }
++
++    fn trusted_pointer_source(device_type: i32, origin_id: i32) -> bool {
++        matches!(device_type, 2 | 4 | 8 | 16) // mouse, touch, pen, touchpad
++            && origin_id == 1 // IMO_HARDWARE also includes UIAccess-injected input
++    }
++
+     pub fn send_mouse_down(&mut self, button: MouseButton, modifiers: KeyModifiers) {
+         if self.mouse_buttons_down == 0 {
+             unsafe {
+@@ -1878,7 +1898,7 @@ pub fn send_mouse_down(&mut self, button: MouseButton, modifiers: KeyModifiers)
+             abs: self.last_mouse_pos,
+             time: self.time_now(),
+             handled: Cell::new(Area::Empty),
+-        }));
++        }, Self::os_reported_pointer_message()));
+     }
+ 
+     pub fn send_mouse_up(&mut self, button: MouseButton, modifiers: KeyModifiers) {
+@@ -1896,7 +1916,7 @@ pub fn send_mouse_up(&mut self, button: MouseButton, modifiers: KeyModifiers) {
+             window_id: self.window_id,
+             abs: self.last_mouse_pos,
+             time: self.time_now(),
+-        }));
++        }, Self::os_reported_pointer_message()));
+     }
+ 
+     pub fn send_mouse_move(&mut self, pos: Vec2d, modifiers: KeyModifiers) {
+@@ -2085,3 +2105,19 @@ pub fn virtual_key_to_key_code(wparam: WPARAM) -> KeyCode {
+         }
+     }
+ }
++
++#[cfg(test)]
++mod input_source_tests {
++    use super::Win32Window;
++
++    #[test]
++    fn only_os_hardware_class_pointer_messages_are_trusted() {
++        for device in [2, 4, 8, 16] {
++            assert!(Win32Window::trusted_pointer_source(device, 1));
++            assert!(!Win32Window::trusted_pointer_source(device, 2));
++            assert!(!Win32Window::trusted_pointer_source(device, 4));
++        }
++        assert!(!Win32Window::trusted_pointer_source(0, 1));
++        assert!(!Win32Window::trusted_pointer_source(1, 1));
++    }
++}
+diff --git a/platform/src/os/windows/windows.rs b/platform/src/os/windows/windows.rs
+index fb1dd91..4d1a501 100644
+--- a/platform/src/os/windows/windows.rs
++++ b/platform/src/os/windows/windows.rs
+@@ -293,11 +293,11 @@ fn win32_event_callback(
+                 let time_now = with_win32_app(|app| app.time_now());
+                 self.paint_tick(time_now, true, d3d11_cx, d3d11_windows);
+             }
+-            Win32Event::MouseDown(mut e) => {
++            Win32Event::MouseDown(mut e, trusted) => {
+                 self.dpi_override_scale(&mut e.abs, e.window_id);
+                 self.fingers.process_tap_count(e.abs, e.time);
+                 self.fingers.mouse_down(e.button, e.window_id);
+-                self.call_event_handler(&Event::MouseDown(e.into()))
++                self.call_event_handler_with_input_trust(&Event::MouseDown(e.into()), trusted)
+             }
+             Win32Event::MouseMove(mut e) => {
+                 self.dpi_override_scale(&mut e.abs, e.window_id);
+@@ -305,10 +305,10 @@ fn win32_event_callback(
+                 self.fingers.cycle_hover_area(live_id!(mouse).into());
+                 self.fingers.switch_captures();
+             }
+-            Win32Event::MouseUp(mut e) => {
++            Win32Event::MouseUp(mut e, trusted) => {
+                 self.dpi_override_scale(&mut e.abs, e.window_id);
+                 let button = e.button;
+-                self.call_event_handler(&Event::MouseUp(e.into()));
++                self.call_event_handler_with_input_trust(&Event::MouseUp(e.into()), trusted);
+                 self.fingers.mouse_up(button);
+                 self.fingers.cycle_hover_area(live_id!(mouse).into());
+             }
