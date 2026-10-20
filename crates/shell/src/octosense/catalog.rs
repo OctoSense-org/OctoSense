@@ -74,13 +74,7 @@ pub fn parse_catalog(
                 let Some(root) = makepad_root else {
                     return Ok(None);
                 };
-                target_dir = Some(
-                    super::paths::home()
-                        .join("build")
-                        .join(name)
-                        .to_string_lossy()
-                        .into_owned(),
-                );
+                target_dir = Some(makepad_target_dir().to_string_lossy().into_owned());
                 (
                     Some(root.join("Cargo.toml").to_string_lossy().into_owned()),
                     required("package")?,
@@ -137,6 +131,19 @@ pub fn parse_catalog(
         out.push(app);
     }
     Ok(out)
+}
+
+/// Where the catalog's Makepad rows build: `makepad/` in the checkout's own
+/// target dir, beside the native apps (`CARGO_TARGET_DIR` when set). Every
+/// OctoSense home run from the checkout, a test or demo profile too, shares
+/// that one build; under the home, each new profile built all six apps
+/// again, minutes each. With no checkout to find, the home's
+/// `build/makepad`.
+fn makepad_target_dir() -> PathBuf {
+    match super::paths::project_root() {
+        Some(project) => crate::clients::workspace_target_dir(&crate::clients::workspace_root(&project)).join("makepad"),
+        None => super::paths::home().join("build").join("makepad"),
+    }
 }
 
 fn catalog_path() -> Result<Option<PathBuf>, String> {

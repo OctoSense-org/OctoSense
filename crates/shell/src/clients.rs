@@ -1098,6 +1098,12 @@ fn env_target_dir(dir: &Path) -> Option<PathBuf> {
     std::env::var_os("CARGO_TARGET_DIR").filter(|v| !v.is_empty()).map(|v| dir.join(v))
 }
 
+/// The target dir of the workspace at `root`, where its native apps build:
+/// `CARGO_TARGET_DIR` as cargo reads it there, else `<root>/target`.
+pub(crate) fn workspace_target_dir(root: &Path) -> PathBuf {
+    env_target_dir(root).unwrap_or_else(|| root.join("target"))
+}
+
 /// The launch of `app` (the release-only law: a hosted app is always a
 /// release build).
 ///
@@ -1131,7 +1137,7 @@ pub fn launch_plan(app: &AppDef, root: Option<&Path>, extra_args: &[String]) -> 
             // The desktop package lives in the workspace (`desktop/`): build
             // from the workspace itself, where its lock and target dir are.
             let root = &workspace_root(root);
-            let target = env_target_dir(root).unwrap_or_else(|| root.join("target"));
+            let target = workspace_target_dir(root);
             (root.to_path_buf(), root.join("Cargo.toml"), package.to_string(), bin.to_string(), target, true, Some(PROCESS_APPS))
         }
         _ => {
@@ -1807,6 +1813,27 @@ mod tests {
         assert!(!build.args[at + 1].starts_with("/cargo/checkouts"), "{}", build.args[at + 1]);
         assert_eq!(plan.program, build.target_dir.join("release").join(exe_name("example")));
         assert_eq!(build.dir, Path::new("/cargo/checkouts/makepad-d00a/ad8f372"), "cargo runs in its checkout");
+    }
+
+    /// Makepad's apps build in the checkout's own target dir, beside the
+    /// native apps, never in the OctoSense home: a test or demo profile
+    /// opens them already built, where one under the home built all six
+    /// again, minutes each (20 Oct 2026).
+    #[test]
+    fn makepad_launches_share_the_checkouts_build_with_every_home() {
+        let apps = crate::octosense::catalog::parse_catalog(
+            br#"[{"id":"files","label":"Files","source":"makepad","package":"makepad-files","bin":"files"}]"#,
+            Path::new("/catalog"),
+            Some(Path::new("/checkout/.sources/makepad")),
+        )
+        .unwrap();
+        let root = repo_root().expect("the tests run in a checkout");
+        let build = launch_plan(&apps[0], Some(&root), &[]).unwrap().build.unwrap();
+        let native = AppDef::app("terminal", "Terminal", "makepad-terminal", "", "terminal", LaunchPolicy::AlwaysNew);
+        let native = launch_plan(&native, Some(&root), &[]).unwrap().build.unwrap();
+        assert_eq!(build.target_dir, native.target_dir.join("makepad"), "beside the native apps' builds");
+        assert!(!build.target_dir.starts_with(crate::octosense::paths::home()), "{}", build.target_dir.display());
+        assert!(build.args.windows(2).any(|p| p[0] == "--target-dir" && Path::new(&p[1]) == build.target_dir), "{:?}", build.args);
     }
 
     #[test]
