@@ -121,6 +121,7 @@ App Hub's modules have no process form and always open in-process.
 | `--apps <file>` | Use this developer-program catalog. |
 | `--module <id>` | Host a linked module in-process. |
 | `--assistant`, `--prewarm` | Start the assistant app / prewarm apps (need matching catalog entries). Off by default. |
+| `MAKEPAD_WM_NO_PREBUILD=1` | Run from a checkout, the shell builds the catalog's native apps in the background shortly after it starts (one at a time, at background priority, stepping aside while an app you open is building), so their first open needn't wait for cargo. This turns it off. An installed shell builds nothing. |
 | `--demo-home`, `--download-wallpapers` | Generate a demo filesystem; fetch the Omarchy theme's full wallpaper set. |
 | `OCTOSENSE_HOME` | State directory (default `~/.octosense`; falls back to an existing `~/.makeos`, and `MAKEOS_HOME`). |
 | `OCTOSENSE_APP_DATA` | Where App Hub keeps installed apps (default `apps/` in the platform data directory). |

@@ -71,7 +71,7 @@ pub struct AppDef {
 }
 
 impl AppDef {
-    fn app(
+    pub(crate) fn app(
         id: &str,
         label: &str,
         package: &str,
@@ -1204,7 +1204,7 @@ fn toolchain_homes(home: &Path) -> (PathBuf, PathBuf) {
 
 /// The build's command: in its checkout, with the shell's allow-listed
 /// environment and a `PATH` no sandboxed app can have written to.
-fn build_command(build: &BuildStep) -> Command {
+pub(crate) fn build_command(build: &BuildStep) -> Command {
     let mut cmd = Command::new(&build.cargo);
     cmd.args(&build.args).current_dir(&build.dir);
     // Cargo colors its output when it thinks a terminal is watching; the
