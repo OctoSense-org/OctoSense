@@ -18,6 +18,7 @@ pub mod mail_background;
 pub mod agent_events;
 pub mod ai_bus;
 pub mod app_chat;
+pub mod app_fullscreen;
 pub mod app_storage;
 pub mod dev_mode;
 pub mod launch_input;
@@ -90,6 +91,7 @@ pub mod native_apps;
 pub mod sandbox;
 pub mod pane_links;
 pub mod peer_link;
+pub mod prebuild;
 pub mod preview;
 pub mod process_close;
 pub mod questions;
@@ -138,6 +140,7 @@ mod mail_compose;
 use glance::NoteTargets as GlanceNoteTargets;
 // The App derive takes a plain type name for a field.
 use approvals::RequestNotices as ApprovalNotices;
+use app_fullscreen::Presenter as FullscreenPresenter;
 pub mod system_chat;
 pub use octosense_ai_host as ai_host;
 
@@ -587,6 +590,11 @@ pub struct App {
     /// SUPER+SHIFT+SPACE — so it comes back on its own.
     #[rust]
     pub bar_hidden_by_fullscreen: bool,
+    /// An app's presentation full screen (`window.fullscreen`), the presses
+    /// that allow one, and the host window's full screen around it
+    /// (app_fullscreen.rs).
+    #[rust]
+    pub presenter: FullscreenPresenter,
     /// Output lines from every child, for the tile's status line.
     #[rust]
     pub client_lines: Option<ClientLines>,
@@ -2400,6 +2408,8 @@ impl App {
             .iter_mut()
             .filter_map(|(id, slot)| slot.continue_launch(*id).map(|r| (*id, r)))
             .collect();
+        // The background prebuild steps aside while a launch is building.
+        prebuild::set_launches_building(self.state_mut().clients.values().filter(|slot| slot.building()).count());
         for (id, result) in started {
             match result {
                 Ok(()) => log!("wm: client {id}: built; the app starts"),
@@ -6166,6 +6176,7 @@ mod app_hub_lifecycle_tests {
             dock_reveal: 1.0,
             top_reveal: 0.0,
             top_bar: 0.0,
+            presentation: None,
         });
         // Real module isolates exercise shutdown and client removal without
         // requiring a downloaded Card or changing the machine's catalog.
@@ -6314,6 +6325,7 @@ impl MatchEvent for App {
             dock_reveal: 1.0,
             top_reveal: 0.0,
             top_bar: 0.0,
+            presentation: None,
             style: Default::default(),
             material,
             roles,
@@ -6362,6 +6374,9 @@ impl MatchEvent for App {
         if !self.warm_pool.enabled() {
             log!("octosense: background app prewarming disabled");
         }
+        // A checkout run builds its catalog apps in the background, so their
+        // first open needn't wait for cargo (prebuild.rs).
+        prebuild::start(&cx.thread_spawner());
 
         // `--gallery`: the shell surfaces with fixture data instead of a
         // desktop, so the port is verifiable over --remote (shell/gallery.rs).
@@ -6614,9 +6629,10 @@ impl MatchEvent for App {
                         }
                     }
                 }
-                MpRunViewAction::Clicked { client } => {
-                    self.focus_client(cx, client);
-                }
+                MpRunViewAction::Clicked { client } => self.focus_client(cx, client),
+                // A press on the app's own content in this window: for a few
+                // seconds the app may take it full screen (app_fullscreen.rs).
+                MpRunViewAction::Pressed { client } => self.note_window_press(client),
                 MpRunViewAction::Restart { client } => self.restart_failed_module(cx, client),
                 MpRunViewAction::None => {}
             }
@@ -6777,6 +6793,14 @@ impl App {
         // or draw, or in a call the shell made — is contained by now; show
         // it closed and free it before the next event (module_host.rs).
         self.contain_module_faults(cx);
+        // The apps' `window.fullscreen` requests this event pumped, then
+        // whether a presentation still holds (app_fullscreen.rs). Not in a
+        // draw: an app's hook may redraw.
+        if !matches!(event, Event::Draw(_)) {
+            #[cfg(any(feature = "app-hub", native_mobile))]
+            self.serve_window_requests(cx);
+            self.sync_presentation(cx);
+        }
         // Modules' peer links (#142): the links opened during this event,
         // and what the instances sent on theirs, to the shell's peer link.
         self.module_host.pump_peer_links(cx);
@@ -6911,6 +6935,11 @@ impl App {
             if self.state.as_ref().is_some_and(|s| s.host_fullscreen != fullscreen) {
                 self.state_mut().host_fullscreen = fullscreen;
                 self.redraw_all(cx);
+            }
+            // An app's presentation follows the window's real full screen
+            // (app_fullscreen.rs): one it asked for arrived, or the person left.
+            if self.state.is_some() {
+                self.host_window_reported(cx, ev.window_id, ev.new_geom.is_fullscreen);
             }
             // A warm instance is configured with the desktop's own dpi, so
             // what it warms up is what its tile will use.
@@ -7143,6 +7172,14 @@ impl App {
                     self.system_chat_changed(cx);
                     return;
                 }
+                // Esc ends an app's presentation full screen: the shell's key
+                // while one is on, since a script app gets no keys
+                // (app_fullscreen.rs). The surfaces above keep theirs first.
+                if app_fullscreen::esc_ends(e.key_code, &e.modifiers, self.presenter.session.is_some()) {
+                    self.alt_armed = false;
+                    self.end_presentation(cx, app_fullscreen::Ending::Escape);
+                    return;
+                }
                 // F8: the system chat, everywhere.
                 if e.key_code == KeyCode::F8 && bare_key(&e.modifiers) {
                     self.alt_armed = false;
@@ -7199,6 +7236,7 @@ impl App {
             }
         }
         if let Event::Shutdown = event {
+            prebuild::shutdown();
             if let Some(state) = &mut self.state {
                 clients::shutdown_clients(&mut state.clients);
             }

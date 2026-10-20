@@ -59,7 +59,7 @@ page fits the canvas, up to 100%.
 | --- | --- | --- |
 | Home | Recent PDFs as cards with their first page, pages, size and when they were opened; Open a PDF from this device (up to 64 MB); remove a PDF (asks once more); an empty state on a first run | `pdf.open`, `pdf.info`, `pdf.page`, `pdf.close` |
 | Read | Pages render one at a time at 72 dpi x zoom x 2 and are kept; thumbnails fill in one by one; the outline jumps to a section | `pdf.open`, `pdf.page` |
-| Read mode | The pill's full-screen button: the pages alone. The tabs, the mode bar, the rail and both panels, the tool row and the status line give the pages their room, and the pill stays with previous and next, the page, the zoom, fit width and fit page, and Exit read mode. A quiet button at the top right leaves too (a script gets no key events, so there is no Esc). The page and the zoom you chose carry across entering and leaving; a fitted or automatic zoom fits the new canvas. A tap on a page only chooses it | `pdf.page` |
+| Read mode | The pill's full-screen button: the pages alone. The tabs, the mode bar, the rail and both panels, the tool row and the status line give the pages their room, and the pill stays with previous and next, the page, the zoom, fit width and fit page, and Exit read mode. In a desktop shell the same tap puts the window in full screen too (`window.fullscreen`): the pages fill the screen, with no bar, title bar or dock, and no screen edge brings them back. There Esc, the shell's key (a script gets no key events), leaves Read mode, and so do ⌘F and another window taking the focus (`on_app_fullscreen`). A quiet button at the top right leaves too. Where the shell can't (a tap it doesn't count, or a host with no window service, such as card-host), Read mode fills the window, without a word. The page and the zoom you chose carry across entering and leaving; a fitted or automatic zoom fits the new canvas. A tap on a page only chooses it | `pdf.page` |
 | Find | Search in document, the one way to search, then Return: "12 matches on 7 pages" in the left panel, the results grouped by page with the match in bold, every match highlighted on its page, the current one stronger, previous and next. Done, the results' cross or the field's cross ends the search, and the left panel shows what it did before (Pages if it showed nothing known); a change to the document ends it the same way | `pdf.find` |
 | Comment | Highlight, Underline or Strike out the line you tap (tap twice for its paragraph), Note and Text box where you tap, in one of four colours; threads with replies, a status, delete. Comments carry the name kept under "Comment as" | `pdf.lines`, `pdf.comments`, `pdf.comment` |
 | Fill & Sign | The form's fields outlined (required empty ones in red) and listed with their values; choose one to type its value; Add text, Add date and Add initials place a mark where you tap; initials are kept | `pdf.fields`, `pdf.fill`, `pdf.fill_sign` |
@@ -247,7 +247,7 @@ exceeded` in its log); `--budget-ms 1000` raises the hosts' budget
 
 | Run | What it covers |
 | --- | --- |
-| `shell` | Every mode on the samples in the shell's own window, light, then dark through the shell's own style menu (the dark pass works on what the light pass left): Home and its covers, the status line against the storage's own bytes, "Open a PDF from this device" refused (on Linux with no dialog helper, "Not available here"), reading and thumbnails, Read mode (entered from the pill, a page turned and the zoom changed in it, left by Exit read mode or the corner control on that page at that zoom), find ("9 matches on 4 pages") from the top bar alone, with the left panel given back when it ends, a highlight and its reply dated on this machine's clock ("Today 19:42"), a rotation and its undo, combine with a page range ("One PDF of 5 pages"), initials placed by Fill & Sign, a text edit with an alignment and a colour, save, and the damaged file; then one cover per PDF in the cover cache, each in `library.json` |
+| `shell` | Every mode on the samples in the shell's own window, light, then dark through the shell's own style menu (the dark pass works on what the light pass left): Home and its covers, the status line against the storage's own bytes, "Open a PDF from this device" refused (on Linux with no dialog helper, "Not available here"), reading and thumbnails, Read mode (entered from the pill, the window in full screen while it lasts, a page turned and the zoom changed in it, left by Exit read mode or the corner control on that page at that zoom, with the window back; then left by Esc), find ("9 matches on 4 pages") from the top bar alone, with the left panel given back when it ends, a highlight and its reply dated on this machine's clock ("Today 19:42"), a rotation and its undo, combine with a page range ("One PDF of 5 pages"), initials placed by Fill & Sign, a text edit with an alignment and a colour, save, and the damaged file; then one cover per PDF in the cover cache, each in `library.json` |
 | `restart` | The same home again: the library, its titles, the page a PDF was left at, `Imported PDF.pdf` placed as an import leaves one, every current cover kept, not drawn again, and a PDF removed from Home taking its kept cover with it |
 | `full` | Storage filled to 8 KB short of its 64 MiB: the refusal on Home, then a removal, which asks once more |
 | `empty` | No PDFs: the empty library and its Open button, light and dark |
@@ -325,16 +325,28 @@ they leave the step out and say so in `run.json`.
   `--edit-sample` page: the five-pieces note, the font and room warnings with
   Apply anyway, the plain refusal of Chinese text, an edit made anyway and
   one made at once. Edit on macOS since this change is **unverified**.
+- **Verified on 13 Oct 2026, Read mode in full screen** (the Linux build
+  host: Ubuntu 26.04, x86_64, a private headless weston;
+  [tests/evidence/read-fullscreen-20261013](tests/evidence/read-fullscreen-20261013/README.md)):
+  the model tests; the `shell` run with the real engine at the runtime's
+  64 ms budget, light and dark, on #520 at `18c11642`. The pill's
+  full-screen button put the window over the shell's whole window, Exit
+  read mode and the corner control gave it back on the same page at the
+  same zoom, and Esc ended both the full screen and Read mode. These are
+  **unverified**: the same on macOS; the OctoSense window entering the
+  host's full screen, which a hidden shell never asks for; and card-host,
+  which serves no window service, so Read mode there should fill its view
+  as before without a word.
 - **Not verified**: the host's own file dialog (a hidden window on the Mac
   cannot open it; on Linux a stand-in helper answered); with the real engine,
   form fields, outlines, Redo, the other comment and page operations,
   password-protected PDFs, the eight-PDF cap and the unsaved-changes question
   (the dev fixture covers their screens); other screen sizes; on Linux, X11,
   a GPU and a desktop compositor; Windows; phones.
-- **Known**: Read mode fills the app's window, not the screen: no app can
-  make the OctoSense window itself full screen (there is no host API for it),
-  so maximize the window for the full effect. On a heavily loaded machine a
-  tap can overrun the 64 ms budget
+- **Known**: Read mode's full screen asks the shell to put the OctoSense
+  window itself in full screen as well; a hidden test shell never asks the
+  host window, so that step on a real display is **unverified**. On a
+  heavily loaded machine a tap can overrun the 64 ms budget
   and be lost (seen at load averages of 60 to 150 before `library.json` moved
   off the tap path). The pdf service's file writes run on the UI thread and
   count against that budget too (overruns after 262 and 555 ms renames, at

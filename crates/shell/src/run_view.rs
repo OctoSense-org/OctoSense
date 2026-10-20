@@ -163,6 +163,13 @@ pub enum MpRunViewAction {
     Clicked {
         client: ClientId,
     },
+    /// The person pressed the app's own content in this tile: a module's
+    /// live root with no host service's sheet up over it, never a group
+    /// tab, a stopped app's face or a process tile. For a few seconds the
+    /// app may take its window full screen (`app_fullscreen.rs`).
+    Pressed {
+        client: ClientId,
+    },
     /// The person asked a tile whose app stopped (a module after a panic,
     /// `module_view.rs`; a process that died, [`MpRunView::show_stopped`])
     /// to start it again.

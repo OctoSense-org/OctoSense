@@ -4,7 +4,7 @@
     "base_revision": "d653bc4493619ab979ccff165cf48c0c63b77d19",
     "patch": "tools/runtime-patches/makepad-settings.patch",
     "sha256": "3a79cddddc89dc4d064a9f0bdd17dc8111dcab9c796a334d95f61ecb9d5011aa",
-    "tree": "623ec3e323a37d674527fb91eab7e35f70fba379",
+    "tree": "9d9aef6e88c28e18d38ba15fc7a21e5b41300559",
     "product_fixes": [
       "Settings integration: Android IME synchronization, accessibility and reduced motion, GLES program-cache validation, obscured-gesture cancellation and scroll-position observation.",
       "Contained-app isolation and secret-input restrictions come from the pinned upstream runtime; the Settings overlay preserves those gates.",
@@ -50,6 +50,7 @@
       "Camera capture and recording use explicit per-call boolean audio/library options, defaulting to silent app-local output. Permission availability never opts into recording audio or exporting captures; async microphone checks retain capture intent and background provenance. Unsupported library export fails before capture.",
       "A hidden Android native composer remembers animated IME insets without requesting a root layout every frame; showing it applies the latest inset before its first visible frame.",
       "Launch-input hardening: the Studio connection and the OCTOS_PROXY app HTTP proxy, which Makepad itself acts on from an Android Intent extra, are honoured only when the build opts into launch-time development input (debuggable, or the manifest meta-data dev.makepad.LAUNCH_STUDIO). A shipped build ignores them and drops any Studio host a development build saved. The exported activity would otherwise let another installed app point it at a host or a proxy.",
+      "Apple UI typeface (OctoSense-org/makepad#129): on macOS and iOS every text role leads with PingFang SC, read from the system and never packaged (Regular for regular and italic, Semibold for bold), fitted to the theme's line box so layouts keep their size; the bundled IBM Plex, LXGW WenKai and emoji chain stays behind it, code and icon roles keep their faces, and MAKEPAD_SYSTEM_FONTS=0 or another platform keeps today's chains. A font member can name a face of a collection (PingFang.ttc's face 0 is PingFang HK).",
       "Android buffer-stuffing recovery (OctoSense-org/makepad#128): the Choreographer beat carries its expected presentation time (API 33+), EGL frame timestamps report each frame's display time, and when two frames in a row reach the screen half a refresh late while a finger is down one beat is left unpainted, so a drag stops trailing the finger by an extra frame after one slow frame. `setprop debug.makepad.stuffing off` disables it."
     ],
     "stacked": [
@@ -196,6 +197,10 @@
       {
         "patch": "tools/runtime-patches/makepad-launch-input-hardening.patch",
         "sha256": "8eaafef3ef0591bec2a25c05d5187564d5dfb87a32e6b937b6d9c4e9f6fa5b84"
+      },
+      {
+        "patch": "tools/runtime-patches/makepad-apple-ui-font.patch",
+        "sha256": "eb6773f9f44681a89e43ffee45f3e6975d842fa5b0423e094ed1503859c953c1"
       },
       {
         "patch": "tools/runtime-patches/makepad-android-buffer-stuffing.patch",

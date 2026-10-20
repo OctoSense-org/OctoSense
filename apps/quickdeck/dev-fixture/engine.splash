@@ -243,6 +243,29 @@ fn fixture_answer(method, args){
         if s == nil { return fx_err("unknown_id: no such slide") }
         return fx_ok({id: s.id index: fx_index(d, s.id) layout: fx_layout_id(s.layout) background: "#FFFFFF" hidden: s.hidden notes: s.notes transition: fx_transition(s) builds: s.builds shapes: s.shapes})
     }
+    // deck.media (SERVICE.md "Playback"): a video or audio shape's clip as a
+    // file in the storage. make_fixture.py --media puts the sample clip at
+    // dev/media/clip.mp4; a shape's fixture_media says what to answer
+    // instead: a refusal (storage_full, unsupported), or another path (one
+    // that isn't there, for a clip the player can't open).
+    if method == "media" {
+        let s = fx_slide(d, fx_arg(args, "slide"))
+        if s == nil { return fx_err("unknown_id: no such slide") }
+        let sh = fx_shape(s, fx_arg(args, "id"))
+        if sh == nil { return fx_err("unknown_id: slide " + s.id + " has no shape " + fx_arg(args, "id") + " (an undo may have removed it)") }
+        let m = optional(sh, "media", nil)
+        if m == nil { return fx_err("unknown_id: shape " + sh.id + " on slide " + s.id + " is not a video or audio clip") }
+        let fxm = optional(sh, "fixture_media", {})
+        let answer = "" + optional(fxm, "answer", "ok")
+        if answer == "storage_full" { return fx_err("storage_full: There isn't room in Quick Deck's storage to play this clip.") }
+        if answer == "unsupported" { return fx_err("unsupported: the clip is linked to a file outside the deck") }
+        let video = optional(m, "video", true) == true
+        let clip = {path: "" + optional(fxm, "path", "dev/media/clip.mp4") kind: pick(video, "video", "audio") ext: "" + optional(fxm, "ext", "mp4")
+            bytes: optional(fxm, "bytes", 26739) autoplay: optional(m, "autoplay", false) == true poster: true}
+        // `loop` is a keyword in script: the key is written by name.
+        clip["loop"] = optional(m, "loop", false) == true
+        return fx_ok(clip)
+    }
     if method == "view" {
         let s = fx_slide(d, fx_arg(args, "slide"))
         if s == nil { return fx_err("unknown_id: no such slide") }

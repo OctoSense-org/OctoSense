@@ -474,7 +474,11 @@ HostedView{width: Fill height: Fill
             View{width: Fill height: Fit flow: Right align: Align{y: 1.0} padding: Inset{left: 18 right: 12 top: 14 bottom: 6}
                 View{width: Fill height: Fit flow: Down spacing: 2
                     date := Label{text: "" draw_text.color: secondary draw_text.text_style: theme.font_bold{font_size: 13}}
-                    Label{text: "News" draw_text.color: theme.color_text draw_text.text_style: theme.font_bold{font_size: 32}}
+                    View{width: Fit height: Fit flow: Right spacing: 8 align: Align{y: 0.5}
+                        Svg{width: 30 height: 30 animating: false
+                            draw_svg +: {svg: http_resource("{{assets}}/icons/octosense.svg") color: #x6a8058}}
+                        Label{text: "News" draw_text.color: theme.color_text draw_text.text_style: theme.font_bold{font_size: 32}}
+                    }
                 }
                 BarButton{text: "Refresh" on_click: || refresh()}
             }

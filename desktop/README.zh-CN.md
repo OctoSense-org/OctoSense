@@ -121,6 +121,7 @@ App Hub 的模块没有进程形态，总是在进程内打开。
 | `--apps <file>` | 使用这个开发者程序目录。 |
 | `--module <id>` | 在进程内托管一个已链接的模块。 |
 | `--assistant`、`--prewarm` | 启动助手应用 / 预热应用（需要目录中有对应条目）。默认关闭。 |
+| `MAKEPAD_WM_NO_PREBUILD=1` | 从源码检出运行时，Shell 启动后不久会在后台构建目录中的原生应用（一次一个，以后台优先级进行；你打开的应用正在构建时会让路），这样首次打开不必等待 cargo。设置此变量即关闭。已安装的 Shell 不构建任何东西。 |
 | `--demo-home`、`--download-wallpapers` | 生成演示文件系统；下载 Omarchy 主题的完整壁纸集。 |
 | `OCTOSENSE_HOME` | 状态目录（默认 `~/.octosense`；若已存在 `~/.makeos` 则回退到它，也支持 `MAKEOS_HOME`）。 |
 | `OCTOSENSE_APP_DATA` | App Hub 保存已安装应用的位置（默认为平台数据目录下的 `apps/`）。 |
@@ -406,6 +407,7 @@ cargo makepad android run -p octosense --release
 
 - 八种桌面样式。桌面构建启动时使用 **OctoSense** 样式，带 Liquid Glass 窗框，顶栏有 **Light / Dark** 切换；其余样式为 Omarchy、macOS、Windows、Windows 2000、NeXTSTEP、iOS 和 Android。主题源文件在 `../crates/shell/resources/themes/`，壁纸来源见 [crates/shell/resources/wallpapers/README.md](../crates/shell/resources/wallpapers/README.md)。
 - **全屏。** 点窗口的绿色按钮或按 ⌘F，窗口会像在 macOS 上一样进入全屏：它覆盖整个屏幕，顶栏、它自己的标题栏和程序坞都会隐藏。把指针停在屏幕顶边，顶栏和窗口标题栏就会出现（标题栏上的绿色按钮可退出全屏）；停在底边，程序坞就会升起。指针离开后不久它们会再次收起，而它们打开的菜单显示期间会保持出现。若想改为最大化（停在程序坞之上），可按住 Option 点绿色按钮、按 ⌘⌥F 或双击标题栏。
+- **应用的演示全屏。** 应用可以在用户点按或点击时让自己的窗口进入全屏，用于幻灯片放映或阅读模式（`window.fullscreen`）。此时屏幕边缘不会唤出顶栏、标题栏或程序坞；OctoSense 窗口如果还不在全屏中，也会进入全屏，结束后再退出。按 **Esc** 结束演示全屏，提示会显示三秒。以这种方式在真实显示器上进入全屏尚**未经验证**。
 - **全屏时的程序坞。** OctoSense 窗口本身全屏时（在 macOS 上点绿色按钮或按 ⌃⌘F），OctoSense 和 macOS 样式也会这样隐藏程序坞，就像 macOS 在全屏应用旁隐藏 Dock 一样；此时新窗口可以占用全部高度。没有任何全屏时，程序坞始终显示。在 Wayland 下，最大化的窗口也算全屏；makepad 在 Windows 和 X11 上不报告全屏，所以在那里只有 OctoSense 内的全屏窗口会让程序坞隐藏。隐藏窗口运行的 shell 可用 `MAKEPAD_HIDE_WINDOWS=1 MAKEPAD_REMOTE=127.0.0.1:8932 target/debug/octosense --test-action launch-calculator --test-action fullscreen`（窗口全屏）或 `--test-action host-fullscreen`（OctoSense 窗口全屏）获得这些行为。在真实显示器上，两者都尚**未经验证**。
 - 快捷键：**⌘Space** 菜单，**⌘W** 关闭 tile，**⌘F** tile 全屏，**⌘1…0** 切换工作区，**⌘Shift1…0** 移动 tile。在 macOS 上，**⌘A** 交给当前应用执行全选；**Ctrl+Alt+A** 仍用于窗口管理器的备用修饰层前缀。**Learn → Keybindings** 列出全部快捷键；见 [KEYBINDINGS.md](KEYBINDINGS.md)。
 - 状态保存在 `~/.octosense`（`OCTOSENSE_HOME`）；被托管的应用通过 `MAKEPAD_HOME` 获得它。
