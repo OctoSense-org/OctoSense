@@ -231,8 +231,9 @@ pub fn register() {
 }
 
 pub fn install(vm: &mut ScriptVm) {
-    #[cfg(any(target_os = "macos", target_os = "ios"))]
-    article_makepad::apple_fonts::install(vm);
+    // PingFang on macOS and iOS comes from Makepad's font policy, for every
+    // app alike (OctoSense-org/makepad#129); Rinx's own override is not
+    // installed here.
     article_makepad::script_mod(vm);
     table_picker::script_mod(vm);
     script_mod(vm);

@@ -4,7 +4,7 @@
     "base_revision": "d653bc4493619ab979ccff165cf48c0c63b77d19",
     "patch": "tools/runtime-patches/makepad-settings.patch",
     "sha256": "3a79cddddc89dc4d064a9f0bdd17dc8111dcab9c796a334d95f61ecb9d5011aa",
-    "tree": "d047e32fdfb91aa26b95a62464645020bfa6a4f7",
+    "tree": "90b364c1dea98fb385ae21aaeda88fc0e16ce099",
     "product_fixes": [
       "Settings integration: Android IME synchronization, accessibility and reduced motion, GLES program-cache validation, obscured-gesture cancellation and scroll-position observation.",
       "Contained-app isolation and secret-input restrictions come from the pinned upstream runtime; the Settings overlay preserves those gates.",
@@ -49,7 +49,8 @@
       "An OS resume restarts only the Video playback its pause stopped, including a start it cancelled; a player paused by the person, or paused or stopped by its app during the pause, stays paused (#406).",
       "Camera capture and recording use explicit per-call boolean audio/library options, defaulting to silent app-local output. Permission availability never opts into recording audio or exporting captures; async microphone checks retain capture intent and background provenance. Unsupported library export fails before capture.",
       "A hidden Android native composer remembers animated IME insets without requesting a root layout every frame; showing it applies the latest inset before its first visible frame.",
-      "Launch-input hardening: the Studio connection and the OCTOS_PROXY app HTTP proxy, which Makepad itself acts on from an Android Intent extra, are honoured only when the build opts into launch-time development input (debuggable, or the manifest meta-data dev.makepad.LAUNCH_STUDIO). A shipped build ignores them and drops any Studio host a development build saved. The exported activity would otherwise let another installed app point it at a host or a proxy."
+      "Launch-input hardening: the Studio connection and the OCTOS_PROXY app HTTP proxy, which Makepad itself acts on from an Android Intent extra, are honoured only when the build opts into launch-time development input (debuggable, or the manifest meta-data dev.makepad.LAUNCH_STUDIO). A shipped build ignores them and drops any Studio host a development build saved. The exported activity would otherwise let another installed app point it at a host or a proxy.",
+      "Apple UI typeface (OctoSense-org/makepad#129): on macOS and iOS every text role leads with PingFang SC, read from the system and never packaged (Regular for regular and italic, Semibold for bold), fitted to the theme's line box so layouts keep their size; the bundled IBM Plex, LXGW WenKai and emoji chain stays behind it, code and icon roles keep their faces, and MAKEPAD_SYSTEM_FONTS=0 or another platform keeps today's chains. A font member can name a face of a collection (PingFang.ttc's face 0 is PingFang HK)."
     ],
     "stacked": [
       {
@@ -195,6 +196,10 @@
       {
         "patch": "tools/runtime-patches/makepad-launch-input-hardening.patch",
         "sha256": "8eaafef3ef0591bec2a25c05d5187564d5dfb87a32e6b937b6d9c4e9f6fa5b84"
+      },
+      {
+        "patch": "tools/runtime-patches/makepad-apple-ui-font.patch",
+        "sha256": "eb6773f9f44681a89e43ffee45f3e6975d842fa5b0423e094ed1503859c953c1"
       }
     ]
   }
