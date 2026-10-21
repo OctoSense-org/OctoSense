@@ -24,6 +24,12 @@ The script apps share [responsive, theme-aware interface styles](apps/README.md#
 across desktop and phone. [Local native UX checks](tools/app-ux/README.md) cover
 saved state and actual interaction; phone-size previews remain separate from device acceptance.
 
+The [icon design system](docs/design/icon-family/README.md) defines a shared
+visual language and provides 28 SVG replacements plus the original Rinx icon, with before/after and size
+reviews. The approved icons are connected to the shared shell and system
+bundles in source builds, including Browser's C5 Night rose compass. A local
+catalog overlay keeps Makepad's icon files untouched and preserves new upstream identities.
+
 | Product | What it is | Where |
 | --- | --- | --- |
 | **OctoSense desktop** | The shell as one Makepad window on macOS, Windows or Linux; platform requirements and validation are recorded in the release notes | [`desktop/`](desktop/README.md) |

@@ -1275,6 +1275,13 @@ mod tests {
         if system_app_ids().contains(&"camera") {
             assert!(octosense_app_hub_app::system_icon("camera").is_some(), "Camera ships its own icon");
         }
+        for (id, title) in [("mail", "Mail"), ("calendar", "Calendar")] {
+            if !system_app_ids().contains(&id) { continue; }
+            let Some(octosense_app_hub_app::icons::IconData::Svg(svg)) = octosense_app_hub_app::system_icon(id) else {
+                panic!("{id} must ship its approved bundle SVG");
+            };
+            assert!(svg.contains(&format!("<title>{title}</title>")));
+        }
     }
 
     /// native-apps.json is the one declaration: every native module this
