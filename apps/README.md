@@ -268,8 +268,10 @@ See [capabilities and execution boundaries](../docs/capabilities.md).
   engine" and keep the draft; `writer/tests/ui.py` runs every screen there,
   light and dark (see Writer's tests, below). Writer is desktop only, so
   there is no phone run.
-- Camera and AI providers ship PNG launcher artwork; YouTube, Quick Deck and
-  Writer ship SVG artwork. The shell frames bundle icons for the selected platform style.
+- Camera and AI providers ship PNG launcher artwork; Mail, Calendar, YouTube,
+  Quick Deck, PDF Tools and Writer ship SVG artwork. The shell frames bundle
+  icons for the selected platform style. Native and optional app identities
+  use the [approved icon family](../docs/design/icon-family/README.md).
 
 ## How the shells pack them
 
@@ -426,6 +428,20 @@ element. The same frame policy masks bundle PNG/SVG artwork at draw time, so
 switching styles updates installed icons too. Review Android, macOS and iOS
 at launcher and badge sizes, on light and dark backgrounds. The shell's
 icon-frame/style tests run in the Phone workflow.
+
+OctoSense's [approved family](../docs/design/icon-family/README.md), including
+Browser's C5 Night rose compass, overlays the Makepad catalog by explicit app ID
+in `crates/shell/src/octosense/icon_family.rs`. These local replacements win over
+system bundle icons in every style. Other bundles and installed `hub:` apps keep
+their own artwork. Keep replacement assets under the shared shell's resources;
+updating Makepad must not require editing its theme icons or reapplying an icon patch.
+
+Every new app needs a distinct icon following the
+[new-icon authoring checklist](../docs/design/icon-family/README.md#authoring-a-new-app-icon).
+Use the same illustrated materials and safe area as the approved family; the
+template icon demonstrates the format and must be replaced before submission.
+Store apps declare their own bundle artwork in `listing.json`; they do not need
+an entry in the shell's built-in replacement list.
 
 For a visual regression check, build the `icon_shapes` example from `phone/`
 with `mobile-apps`. Run it with an isolated `OCTOSENSE_HOME`, hidden windows

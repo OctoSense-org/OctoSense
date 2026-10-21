@@ -201,7 +201,7 @@ WebView 页面、图库导出、邮件、新闻、Glance 或单次模型调用�
   切换后输入的文字也被保留并保存。`card-host` 没有 `word` 服务，保存和预览在那里回答
   “Writer can't … here: this device has no word engine”并保留草稿；`writer/tests/ui.py` 在那里以浅色和深色运行
   每个界面（见下文的 Writer 的测试）。Writer 只在桌面端，所以没有手机上的运行。
-- Camera 和 AI providers 自带 PNG 启动器图案，YouTube、Quick Deck 和 Writer 自带 SVG 图案；Shell 按当前平台风格统一绘制外形。
+- Camera 和 AI providers 自带 PNG 启动器图案，Mail、Calendar、YouTube、Quick Deck、PDF Tools 和 Writer 自带 SVG 图案；Shell 按当前平台风格统一绘制外形。原生和可选应用使用[已批准的图标家族](../docs/design/icon-family/README.zh-CN.md)。
 
 ## Shell 如何打包它们
 
@@ -339,6 +339,10 @@ Shell 自有 SVG 使用 `icon_frame::styled_svg` 和显式背景元素；bundle
 PNG/SVG 在绘制时使用同一外框策略，因此切换风格也会更新已安装应用的
 图标。检查 Android、macOS、iOS 风格下的启动器和小标识尺寸，以及明暗
 背景。外框和风格回归测试随 Phone 工作流执行。
+
+OctoSense 的[已批准图标家族](../docs/design/icon-family/README.zh-CN.md)（包括浏览器的 C5 夜色罗盘）通过 `crates/shell/src/octosense/icon_family.rs` 中的明确应用 ID 覆盖 Makepad 图标目录。这些本地替换在所有样式下均优先于系统应用包图标；其他应用包及已安装的 `hub:` 应用保留自己的图案。替换资源放在共享 Shell 的资源目录中；更新 Makepad 不应需要修改其主题图标或重新应用图标补丁。
+
+每个新应用都需要独立的图标，并遵循[新图标创作清单](../docs/design/icon-family/README.zh-CN.md#为新应用创作图标)。沿用已批准家族的插画材质与安全区域；模板图标只演示格式，提交前必须替换。商店应用在 `listing.json` 中声明自己随包发布的图案，无需加入 Shell 的内置替换清单。
 
 需要视觉回归检查时，在 `phone/` 中启用 `mobile-apps` 构建 `icon_shapes`
 示例。使用隔离的 `OCTOSENSE_HOME`、隐藏窗口和 Makepad 远程控制接口运行

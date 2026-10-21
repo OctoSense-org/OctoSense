@@ -1,0 +1,17 @@
+{
+  "repository": "https://github.com/hagency-org/Rinx.git",
+  "revision": "4b89097d8791a7190d01de1c576979c93df0013d",
+  "treatment": "Original upstream PNGs copied byte-for-byte; no recoloring or redraw.",
+  "files": [
+    {
+      "source": "resources/icon_1024.png",
+      "local": "assets/rinx.png",
+      "sha256": "a5db71934b2fd2e8177637527db2d925c01bbe9bb046aecf0d2eddc5bef43329"
+    },
+    {
+      "source": "resources/icon_128.png",
+      "local": "references/rinx/icon_128.png",
+      "sha256": "0d330fbe2635915f9e178a210c02524e428ff2d7ab19d432c4f352cd1445b001"
+    }
+  ]
+}
