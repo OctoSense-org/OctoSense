@@ -1,0 +1,42 @@
+diff --git a/apps/finance/src/db.rs b/apps/finance/src/db.rs
+index 507f5709a..5cf0a19e3 100644
+--- a/apps/finance/src/db.rs
++++ b/apps/finance/src/db.rs
+@@ -396,9 +396,20 @@ pub fn set_setting(&mut self, key: &str, value: &str) -> Result<(), String> {
+     pub fn transact<T>(
+         &mut self,
+         body: impl FnOnce(&mut Connection) -> Result<T, String>,
++    ) -> Result<T, String> {
++        self.transact_db(|db| body(&mut db.conn))
++    }
++
++    /// [`Db::transact`] for a body that writes through `Db`'s own methods.
++    /// The first-run seed writes thousands of rows; committed one by one,
++    /// each journaled and synced the file again, a freeze of seconds on the
++    /// UI thread.
++    pub(crate) fn transact_db<T>(
++        &mut self,
++        body: impl FnOnce(&mut Db) -> Result<T, String>,
+     ) -> Result<T, String> {
+         self.conn.execute("BEGIN", &[]).map_err(|e| format!("begin: {e:?}"))?;
+-        match body(&mut self.conn) {
++        match body(self) {
+             Ok(value) => {
+                 self.conn.execute("COMMIT", &[]).map_err(|e| format!("commit: {e:?}"))?;
+                 Ok(value)
+diff --git a/apps/finance/src/native.rs b/apps/finance/src/native.rs
+index 37f18e1bd..5b21458f7 100644
+--- a/apps/finance/src/native.rs
++++ b/apps/finance/src/native.rs
+@@ -34,7 +34,10 @@ fn start(&mut self, db_path: &Path) -> Start {
+         match db.is_empty() {
+             Ok(true) => {
+                 let ledger = crate::seed::generate(crate::seed::DEFAULT_YEARS, today);
+-                match persist(&mut db, &ledger) {
++                // One transaction for the whole household: one journal and
++                // one sync instead of one per row, and a failure leaves the
++                // file empty rather than half seeded.
++                match db.transact_db(|db| persist(db, &ledger)) {
+                     Ok(_) => {
+                         let start = date::month_start(date::add_months(
+                             today,

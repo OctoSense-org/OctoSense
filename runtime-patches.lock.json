@@ -4,7 +4,7 @@
     "base_revision": "d653bc4493619ab979ccff165cf48c0c63b77d19",
     "patch": "tools/runtime-patches/makepad-settings.patch",
     "sha256": "3a79cddddc89dc4d064a9f0bdd17dc8111dcab9c796a334d95f61ecb9d5011aa",
-    "tree": "90b364c1dea98fb385ae21aaeda88fc0e16ce099",
+    "tree": "c4cc8f6fd812d7bc6765f47dc43266ef687a1b95",
     "product_fixes": [
       "Settings integration: Android IME synchronization, accessibility and reduced motion, GLES program-cache validation, obscured-gesture cancellation and scroll-position observation.",
       "Contained-app isolation and secret-input restrictions come from the pinned upstream runtime; the Settings overlay preserves those gates.",
@@ -50,7 +50,8 @@
       "Camera capture and recording use explicit per-call boolean audio/library options, defaulting to silent app-local output. Permission availability never opts into recording audio or exporting captures; async microphone checks retain capture intent and background provenance. Unsupported library export fails before capture.",
       "A hidden Android native composer remembers animated IME insets without requesting a root layout every frame; showing it applies the latest inset before its first visible frame.",
       "Launch-input hardening: the Studio connection and the OCTOS_PROXY app HTTP proxy, which Makepad itself acts on from an Android Intent extra, are honoured only when the build opts into launch-time development input (debuggable, or the manifest meta-data dev.makepad.LAUNCH_STUDIO). A shipped build ignores them and drops any Studio host a development build saved. The exported activity would otherwise let another installed app point it at a host or a proxy.",
-      "Apple UI typeface (OctoSense-org/makepad#129): on macOS and iOS every text role leads with PingFang SC, read from the system and never packaged (Regular for regular and italic, Semibold for bold), fitted to the theme's line box so layouts keep their size; the bundled IBM Plex, LXGW WenKai and emoji chain stays behind it, code and icon roles keep their faces, and MAKEPAD_SYSTEM_FONTS=0 or another platform keeps today's chains. A font member can name a face of a collection (PingFang.ttc's face 0 is PingFang HK)."
+      "Apple UI typeface (OctoSense-org/makepad#129): on macOS and iOS every text role leads with PingFang SC, read from the system and never packaged (Regular for regular and italic, Semibold for bold), fitted to the theme's line box so layouts keep their size; the bundled IBM Plex, LXGW WenKai and emoji chain stays behind it, code and icon roles keep their faces, and MAKEPAD_SYSTEM_FONTS=0 or another platform keeps today's chains. A font member can name a face of a collection (PingFang.ttc's face 0 is PingFang HK).",
+      "Finance's first open (OctoSense-org/makepad#130): an empty file is seeded with the demo household in one transaction instead of one commit per row, so the first open no longer freezes the UI for seconds of per-row journal syncs (the first-start test: 1.8-3.3 s to 0.29 s in release); a failed seed leaves the file empty for the next start to seed again."
     ],
     "stacked": [
       {
@@ -200,6 +201,10 @@
       {
         "patch": "tools/runtime-patches/makepad-apple-ui-font.patch",
         "sha256": "eb6773f9f44681a89e43ffee45f3e6975d842fa5b0423e094ed1503859c953c1"
+      },
+      {
+        "patch": "tools/runtime-patches/makepad-finance-seed.patch",
+        "sha256": "100fb98976ede125f64a7c78d8f8d51a902de9bfd0502fa08b06dfee6c9ca0fe"
       }
     ]
   }
