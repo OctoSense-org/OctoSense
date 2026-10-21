@@ -121,7 +121,7 @@ App Hub 的模块没有进程形态，总是在进程内打开。
 | `--apps <file>` | 使用这个开发者程序目录。 |
 | `--module <id>` | 在进程内托管一个已链接的模块。 |
 | `--assistant`、`--prewarm` | 启动助手应用 / 预热应用（需要目录中有对应条目）。默认关闭。 |
-| `MAKEPAD_WM_NO_PREBUILD=1` | 从源码检出运行时，Shell 启动后不久会在后台构建目录中的原生应用（一次一个，以后台优先级进行；你打开的应用正在构建时会让路），这样首次打开不必等待 cargo。设置此变量即关闭。已安装的 Shell 不构建任何东西。 |
+| `MAKEPAD_WM_NO_PREBUILD=1` | 从源码检出运行时，Shell 启动后不久会在后台构建目录中的原生应用（一次一个，以后台优先级进行；你打开的应用正在构建时会让路），这样首次打开不必等待 cargo。设置此变量即关闭。无论是否预构建，Shell 构建过的应用只要其构建读取的文件此后没有变化，打开时完全不运行 cargo。已安装的 Shell 不构建任何东西。 |
 | `--demo-home`、`--download-wallpapers` | 生成演示文件系统；下载 Omarchy 主题的完整壁纸集。 |
 | `OCTOSENSE_HOME` | 状态目录（默认 `~/.octosense`；若已存在 `~/.makeos` 则回退到它，也支持 `MAKEOS_HOME`）。 |
 | `OCTOSENSE_APP_DATA` | App Hub 保存已安装应用的位置（默认为平台数据目录下的 `apps/`）。 |
