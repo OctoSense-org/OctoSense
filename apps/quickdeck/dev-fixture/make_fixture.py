@@ -17,12 +17,16 @@ storage folder (Quick Deck's jail) with:
 
 Every word on the slides is the approved designs' sample text (design/source/),
 the Northwind Cooperative's Q3 2026 board update, so a grab can be put beside
-its design. Usage: make_fixture.py <jail folder> [--states] [--empty] [--full]
+its design. Usage: make_fixture.py <jail folder> [--states] [--empty] [--full] [--media]
 
 --states adds the refusals the brief lists: a damaged deck, a protected, a held
 and an unsupported presentation brought in from this device. --empty leaves
 the library empty (the first run). --full makes the stand-in refuse saves and
-exports for room (the storage-full state).
+exports for room (the storage-full state). --media adds Launch Film, a deck
+with clips (playback): a video that plays by itself in a show, with the sample
+clip media/clip.mp4 copied to dev/media/; a sound linked to a file outside
+the deck (deck.media's unsupported:); a video whose file isn't there, which
+the player can't open; and one too big for the storage (storage_full:).
 """
 import json
 import sys
@@ -423,6 +427,98 @@ COVERS = {
 }
 
 
+# ---- a deck with clips (--media; playback, SERVICE.md "Playback") ------------------
+
+MEDIA_DECK = "Launch Film"
+# The sample clip: media/clip.mp4, the repository's synthetic five-second
+# H.264 clip with no sound (crates/video-api-smoke/resources/playback.mp4,
+# made by tools/generate-video-fixture.swift): red, green and blue thirds
+# with a white bar that crosses them.
+CLIP = Path(__file__).parent / "media" / "clip.mp4"
+
+
+def poster(sl, box):
+    """The clip's first frame, as the engine draws a clip's poster."""
+    x, y, w, h = box
+    sl.rect(x, y, w / 3, h, fill="#DC232D")
+    sl.rect(x + w / 3, y, w / 3, h, fill="#19B42D")
+    sl.rect(x + 2 * w / 3, y, w / 3, h, fill="#1923D7")
+    sl.rect(x, y, w * 16 / 320, h, fill="#F5F5F5")
+
+
+def film(sl, box):
+    """A clip without a poster: the engine's film glyph on dark."""
+    x, y, w, h = box
+    sl.rect(x, y, w, h, fill="#20252B")
+    cx, cy = x + w / 2, y + h / 2
+    sl.rect(cx - 34, cy - 24, 68, 48, outline="#9AA3AD", width=3, radius=6)
+    sl.d.polygon([(sl.p(cx - 9), sl.p(cy - 13)), (sl.p(cx - 9), sl.p(cy + 13)), (sl.p(cx + 14), sl.p(cy))], fill=rgb("#9AA3AD"))
+
+
+def speaker(sl, box):
+    """An audio object: the engine's speaker glyph."""
+    x, y, w, h = box
+    sl.rect(x, y, w, h, fill="#E8F1F5", radius=10)
+    cx, cy = x + w / 2, y + h / 2
+    s = w / 80
+    sl.d.polygon([(sl.p(cx - 22 * s), sl.p(cy - 9 * s)), (sl.p(cx - 9 * s), sl.p(cy - 9 * s)), (sl.p(cx + 6 * s), sl.p(cy - 22 * s)),
+                  (sl.p(cx + 6 * s), sl.p(cy + 22 * s)), (sl.p(cx - 9 * s), sl.p(cy + 9 * s)), (sl.p(cx - 22 * s), sl.p(cy + 9 * s))], fill=rgb(TEAL))
+    sl.d.arc([sl.p(cx + 2 * s), sl.p(cy - 14 * s), sl.p(cx + 22 * s), sl.p(cy + 14 * s)], -50, 50, fill=rgb(TEAL), width=max(1, int(3 * s * sl.k)))
+
+
+def clip_shape(i, name, box, video, autoplay=False, loop=False, **fixture):
+    """A video or audio shape as deck.slide reports it (media: {id, video,
+    autoplay, loop}); fixture_media is what the stand-in answers deck.media
+    with (engine.splash), never read by the app."""
+    sh = {"id": i, "name": name, "kind": "video" if video else "audio", "box": box, "rotation": 0,
+          "media": {"id": 9000 + i, "video": video, "autoplay": autoplay, "loop": loop}}
+    if fixture:
+        sh["fixture_media"] = fixture
+    return sh
+
+
+def media_slides():
+    """(title, layout, shapes, draw) per slide: a video that plays by itself,
+    a sound whose clip is linked, a video the player can't open and one too
+    big for the storage."""
+    out = []
+
+    def add(n, title, shapes, draw, notes=""):
+        out.append({"title": title, "layout": "Title Only", "shapes": [tbox(n * 100 + 1, "Title 1", [60, 36, 840, 58], title, ph="title", size=34,
+                                                                            color=NAVY, font="Merriweather")] + shapes,
+                    "draw": draw, "notes": notes})
+
+    film_box = [200, 120, 560, 315]
+
+    def s1(sl):
+        sl.title("Launch film")
+        poster(sl, film_box)
+        sl.text(480, 460, "Plays by itself in a show", "sans", 16, GREY, anchor="ma")
+    add(1, "Launch film", [clip_shape(102, "Launch film.mp4", film_box, True, autoplay=True)], s1,
+        "Let the film run, then take questions.")
+
+    sound_box = [440, 200, 80, 80]
+
+    def s2(sl):
+        sl.title("Soundtrack")
+        speaker(sl, sound_box)
+        sl.text(480, 310, "Theme music for the launch (linked to a file outside the deck)", "sans", 16, GREY, anchor="ma")
+    add(2, "Soundtrack", [clip_shape(202, "Theme.mp3", sound_box, False, answer="unsupported")], s2)
+
+    small_box = [260, 130, 440, 248]
+
+    def s3(sl):
+        sl.title("Behind the scenes")
+        film(sl, small_box)
+    add(3, "Behind the scenes", [clip_shape(302, "Behind the scenes.mov", small_box, True, path="dev/media/missing.mov", ext="mov")], s3)
+
+    def s4(sl):
+        sl.title("Full cut")
+        film(sl, small_box)
+    add(4, "Full cut", [clip_shape(402, "Full cut.mp4", small_box, True, answer="storage_full")], s4)
+    return out
+
+
 def layout_picture(lid):
     sl = Slide(LAYOUT_SCALE, "#FFFFFF")
     g, d = "#C9CBCF", "#E4E4E5"
@@ -529,6 +625,28 @@ def main():
                                       "slides": [{"id": 1001, "title": lines[0], "layout": "Title Slide", "hidden": False, "notes": "", "transition": "fade",
                                                   "builds": 0, "pic": 1, "shapes": [tbox(101, "Title 1", [60, 140, 700, 170], "\n".join(lines), ph="ctrTitle", size=60, color=ink),
                                                                                     tbox(102, "Subtitle 2", [60, 330, 600, 40], sub, ph="subTitle", size=22, color=ink)]}]}
+    if "--media" in sys.argv:
+        path = f"decks/{MEDIA_DECK}.deckcraft"
+        (jail / path).write_text("Quick Deck dev fixture: a stand-in deck\n")
+        key = MEDIA_DECK.lower().replace(" ", "-")
+        slides = media_slides()
+        index[path] = {"title": MEDIA_DECK, "slides": len(slides), "bytes": 1258291, "theme": "Harbor", "created": now - 7200, "edited": now - 600,
+                       "opened": now - 600}
+        deck_slides = []
+        for n, s in enumerate(slides, start=1):
+            sl = Slide()
+            s["draw"](sl)
+            sl.save(dev / "slides" / key / f"{n}@big.png")
+            sl.save(dev / "slides" / key / f"{n}@small.png", (536, 302))
+            sl.save(dev / "slides" / key / f"{n}@thumb.png", (400, 225))
+            if n == 1:
+                sl.save(dev / "covers" / f"{key}.png", (480, 270))
+            deck_slides.append({"id": 1000 + n, "title": s["title"], "layout": s["layout"], "hidden": False, "notes": s["notes"], "transition": "fade",
+                                "builds": 0, "shapes": [{k: v for k, v in sh.items() if v is not None} for sh in s["shapes"]], "pic": n})
+        fixture["decks"][path] = {"key": key, "title": MEDIA_DECK, "theme": "Harbor", "size": [960, 540], "slides": deck_slides, "sections": [],
+                                  "missing_fonts": []}
+        (dev / "media").mkdir(parents=True, exist_ok=True)
+        (dev / "media" / "clip.mp4").write_bytes(CLIP.read_bytes())
     if states:
         (jail / "imports").mkdir(parents=True, exist_ok=True)
         refusals = {

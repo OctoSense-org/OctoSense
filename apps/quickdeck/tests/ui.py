@@ -16,6 +16,16 @@ card-host runs serve no host services:
   states   the same stand-in: a damaged deck, a protected, a held and an
            unsupported presentation, the unsaved-changes bar, the storage-full
            bar, and the empty library of a first run, light and dark
+  playback the same stand-in with make_fixture.py --media's Launch Film: the
+           chosen clip's control, its Video widget playing the sample clip
+           over the clip's box (two grabs a second apart must differ there,
+           and the control's time move on), pause, play on, stop, a slide
+           change that stops it, a sound's control, the refusals' words
+           (unsupported:, storage_full:) and a clip the player can't open;
+           then Present: the clip that plays by itself, a tap that pauses it
+           and plays it on, the next slide; then a session where no clip has
+           played, which reads that failure as a system without a player;
+           light and dark
 
 Shell runs use the shell this checkout builds, with the real deck engine
 (`cargo build --locked -p octosense --no-default-features --features
@@ -29,13 +39,26 @@ bridge, saving original /g grabs. Every engine call is real.
   shell    a deck made from an outline, then edited: text in place, a format,
            a chart inserted and its data changed, a layout, a theme, the sorter
            (duplicate, hide, a section), notes, undo and redo, save, export
-           (.pptx, PDF and pictures), Present and its notes, light, then dark
+           (.pptx, PDF and pictures), Present and its notes (the show takes
+           the window full screen, window.fullscreen, and gives it back: by
+           Exit in the light pass, by Esc in the dark one), light, then dark
            through the shell's own style menu; in the light pass the
            inspector's states follow real changes and their undo: a box's
            anchor and autofit, a chart element, a table option, the colour set
            and the footer
   restart  the same home again: the library, the deck's slides and covers,
            the place it was left at, and its exports
+  playback a home of its own holding tests/media's Launch Film (a native deck
+           whose video plays by itself in a show, and a sound) and its .pptx
+           copy (whose clips play on a tap: deckcraft reads no autoplay from
+           a .pptx): deck.media writes each clip into the storage
+           (.cache/media/<sha256>.<ext>, checked against the clip's own
+           bytes) and the Video widget plays it where the system has a player
+           (a Mac: two grabs a second apart differ) or says "Playback isn't
+           available on this system" (Linux), in the editor and in Present
+           (which takes the window full screen, the clip playing on through
+           it), light, then dark; a closed deck's clips leave the cache. On a Mac
+           it never plays the sound (the runs open no audio device)
 
 Shell runs hold a lock folder, so one hidden shell runs on this machine at a
 time, and on macOS refuse to start while another OctoSense runs (on Linux each
@@ -73,6 +96,16 @@ DECK = "Q3 2026 Board Update"
 # The slide's size in points (the engine's default 16:9).
 SLIDE_W = 960
 LINUX = sys.platform.startswith("linux")
+# Playback: the fixture's deck with clips (make_fixture.py --media) and the
+# real-engine runs' (tests/media, make_media_decks.py), and the app's words.
+MEDIA_DECK = "Launch Film"
+MEDIA = APP_DIR / "tests/media"
+SAMPLE_CLIP = FIXTURE / "media/clip.mp4"
+CLIP_TIME = re.compile(r"\d+:\d\d / \d+:\d\d")
+NO_PLAYER = "Playback isn't available on this system"
+CLIP_FAILED = "This clip couldn't be played."
+CLIP_FULL = "There isn't room in Quick Deck's storage to play this clip."
+CLIP_UNSUPPORTED = "Quick Deck can't play this clip: it isn't stored in the deck, it's empty, or it isn't MP4, MOV, M4V, MP3, M4A, AAC or WAV."
 
 
 def port_free(port):
@@ -424,6 +457,25 @@ def wait_until(check, failure, timeout=30.0):
     raise AssertionError(failure)
 
 
+def window_rect(app):
+    """The whole window, in points: what a full-screen window covers."""
+    w, h = app.size()
+    return [0, 0, w, h]
+
+
+def same_rect(a, b):
+    return len(a) == len(b) and all(abs(x - y) < 1.5 for x, y in zip(a, b))
+
+
+def full_screen(app):
+    """Wait until the app covers the whole window: Present's tap asked the
+    shell for full screen (window.fullscreen). A hidden shell never asks the
+    host window itself, so the window is the screen here."""
+    wait_until(lambda: same_rect(app.area(), window_rect(app)),
+               f"the app did not go full screen: {app.area()} in {window_rect(app)}")
+    return app.area()
+
+
 def slide_rect(app):
     """The canvas's slide picture: [x, y, w, h] in points (the largest picture
     right of the navigator and left of the inspector)."""
@@ -441,7 +493,14 @@ def click_slide(app, px, py):
 
 
 def pill_label(app):
-    return next(w for w in app.widgets() if re.fullmatch(r"\d+ / \d+", w.get("t") or ""))
+    """The pill's (or Present's bar's) "5 / 12". A snapshot taken while the
+    bar is drawn again can miss it: look again for a moment."""
+    for _ in range(10):
+        found = [w for w in app.widgets() if re.fullmatch(r"\d+ / \d+", w.get("t") or "")]
+        if found:
+            return found[0]
+        time.sleep(0.3)
+    raise AssertionError("no \"n / N\" label (the pill or Present's bar)")
 
 
 def go_to(app, n):
@@ -852,6 +911,362 @@ def missing(app, out, dark):
     app.grab(out, f"{p}m03-missing-outline")
 
 
+# ---------------------------------------------------------------- playback (SERVICE.md "Playback")
+
+def clip_time(app):
+    """The chosen clip's control's time ("0:02 / 0:05"), or None."""
+    for w in app.widgets():
+        if w["ty"] == "Label" and CLIP_TIME.fullmatch(w.get("t") or ""):
+            return w["t"]
+    return None
+
+
+def stage_note(app):
+    """What the stage says about the clip in hand ("Paused  ·  0:02 / 0:05",
+    "Preparing the clip…", why it can't play), or None."""
+    for w in app.widgets():
+        t = w.get("t") or ""
+        if w["ty"] == "Label" and (t.startswith("Paused  ·  ") or t.startswith("Playing  ·  ") or t in (
+                "Preparing the clip…", NO_PLAYER, CLIP_FAILED, CLIP_FULL, CLIP_UNSUPPORTED)):
+            return t
+    return None
+
+
+def canvas_button(app, text):
+    """A button reading `text` on the canvas (the chosen clip's control),
+    not the inspector's of the same name."""
+    ax, ay, aw, ah = app.area()
+    found = [w for w in app.widgets() if w["ty"] in ("Button", "ButtonFlat") and w.get("t") == text and w["r"][0] < ax + aw - 360]
+    assert found, f"no {text!r} button on the canvas"
+    x, y, w, h = found[0]["r"]
+    app.click(x + w / 2, y + h / 2)
+
+
+def stage_rect(app):
+    """Present's slide picture, [x, y, w, h] in points."""
+    imgs = [w["r"] for w in app.pictures() if w["r"][2] > 300]
+    assert imgs, "no slide on the stage"
+    return max(imgs, key=lambda r: r[2] * r[3])
+
+
+def stage_settled(app, timeout=20.0):
+    """Present's slide picture once it stops moving: in a shell the show goes
+    full screen just after it starts, and the stage grows with the window."""
+    deadline = time.monotonic() + timeout
+    last, same = None, 0
+    while time.monotonic() < deadline:
+        try:
+            rect = stage_rect(app)
+        except AssertionError:
+            rect = None
+        same = same + 1 if rect is not None and rect == last else 0
+        if same >= 3:
+            return rect
+        last = rect
+        time.sleep(0.4)
+    raise AssertionError(f"Present's slide never settled; last {last}")
+
+
+def box_on(rect, box):
+    """A clip's box (slide points) on screen, in the slide picture `rect`."""
+    x, y, w, h = rect
+    k = w / SLIDE_W
+    return [x + box[0] * k, y + box[1] * k, box[2] * k, box[3] * k]
+
+
+def changed_pixels(app, a, b, rect):
+    """How many pixels of `rect` (window points) differ between two grabs."""
+    from PIL import Image, ImageChops
+    one, two = Image.open(a).convert("RGB"), Image.open(b).convert("RGB")
+    k = one.width / app.size()[0]
+    x, y, w, h = [int(round(v * k)) for v in rect]
+    diff = ImageChops.difference(one.crop((x, y, x + w, y + h)), two.crop((x, y, x + w, y + h))).convert("L")
+    return sum(1 for v in diff.getdata() if v > 24)
+
+
+def plays(app, out, name, rect, checks):
+    """Two grabs a second apart that differ where the clip plays."""
+    app.grab(out, f"{name}-a")
+    first = clip_time(app)
+    time.sleep(1.0)
+    app.grab(out, f"{name}-b")
+    second = clip_time(app)
+    changed = changed_pixels(app, out / f"{name}-a.png", out / f"{name}-b.png", rect)
+    checks[name] = {"pixels_changed": changed, "times": [first, second], "rect": [round(v, 1) for v in rect]}
+    assert changed > 200, f"{name}: the clip's picture didn't change in a second ({changed} pixels)"
+
+
+LAUNCH_FILM = [200, 120, 560, 315]  # slide 1's video, in slide points (both decks)
+SOUND = [440, 200, 80, 80]          # the sound's box (both decks)
+
+
+def playback_journey(app, out, dark):
+    """Playback on the fixture's Launch Film (make_fixture.py --media)."""
+    p = "d" if dark else ""
+    checks = {}
+    open_card(app, MEDIA_DECK)
+    app.find("Slide 1 of 4", "Label", exact=False, timeout=60)
+    app.images(2, timeout=60)
+    # The chosen clip: its control on the canvas, and how it plays in the inspector.
+    click_slide(app, 480, 280)
+    app.find("Starts by itself when its slide shows.", "Label", timeout=20)
+    app.grab(out, f"{p}p1-clip")
+    canvas_button(app, "Play")
+    wait_until(lambda: clip_time(app) is not None, "the clip never played", timeout=30)
+    app.find("Playing.", "Label")
+    plays(app, out, f"{p}p2-playing", box_on(slide_rect(app), LAUNCH_FILM), checks)
+    assert secs(checks[f"{p}p2-playing"]["times"][1]) > secs(checks[f"{p}p2-playing"]["times"][0]), checks
+    # Pause holds the picture and the time; Play goes on; Stop ends it.
+    app.tap("Pause")
+    app.find("Paused.", "Label", timeout=10)
+    held = clip_time(app)
+    time.sleep(1.2)
+    assert clip_time(app) == held, f"the time moved while paused: {held} then {clip_time(app)}"
+    app.grab(out, f"{p}p3-paused")
+    checks[f"{p}p3-paused"] = held
+    app.tap("Play")
+    app.find("Playing.", "Label", timeout=10)
+    app.tap("Stop")
+    app.find("Play it here to check it. Playing doesn't change the deck.", "Label", timeout=10)
+    assert clip_time(app) is None, "the control still tells a time after Stop"
+    # Another slide stops it.
+    canvas_button(app, "Play")
+    wait_until(lambda: clip_time(app) is not None, "the clip never played again", timeout=30)
+    go_to(app, 2)
+    wait_until(lambda: clip_time(app) is None and labels(app, "Playing.") == 0, "the clip played on on another slide", timeout=10)
+    # The sound: a small speaker control; its clip is linked (unsupported:).
+    click_slide(app, 480, 240)
+    app.find("Audio", "Label", timeout=20)
+    app.grab(out, f"{p}p4-sound")
+    canvas_button(app, "Play")
+    app.find(CLIP_UNSUPPORTED, "Label", timeout=20)
+    app.grab(out, f"{p}p5-unsupported")
+    # A clip the player can't open, once a clip has played here: that clip's words.
+    go_to(app, 3)
+    click_slide(app, 480, 250)
+    canvas_button(app, "Play")
+    app.find(CLIP_FAILED, "Label", timeout=40)
+    app.grab(out, f"{p}p6-failed")
+    # Too big for the storage (storage_full:).
+    go_to(app, 4)
+    click_slide(app, 480, 250)
+    canvas_button(app, "Play")
+    app.find(CLIP_FULL, "Label", timeout=20)
+    app.grab(out, f"{p}p7-storage-full")
+    # Present from slide 1: its clip plays by itself; a tap pauses it, another
+    # plays it on; the next slide stops it.
+    go_to(app, 1)
+    app.tap("Present", "Button")
+    app.find("Exit", "Button", timeout=60)
+    app.images(1, timeout=60)
+    stage = box_on(stage_rect(app), LAUNCH_FILM)
+    time.sleep(1.5)
+    plays(app, out, f"{p}p8-present", stage, checks)
+    app.click(stage[0] + stage[2] / 2, stage[1] + stage[3] / 2)
+    wait_until(lambda: (stage_note(app) or "").startswith("Paused  ·  "), "a tap didn't pause the clip", timeout=10)
+    app.grab(out, f"{p}p9-present-paused")
+    checks[f"{p}p9-present-paused"] = stage_note(app)
+    app.click(stage[0] + stage[2] / 2, stage[1] + stage[3] / 2)
+    wait_until(lambda: stage_note(app) is None, "a tap didn't play the clip on", timeout=10)
+    go_to(app, 2)
+    time.sleep(1.0)
+    assert stage_note(app) is None, f"the stage still speaks of a clip: {stage_note(app)}"
+    app.grab(out, f"{p}p10-present-next")
+    app.tap("Exit", "Button")
+    (out / f"{p}playback.json").write_text(json.dumps(checks, indent=1))
+
+
+def playback_fresh(app, out, dark):
+    """A session where no clip has played: the widget's failure reads as a
+    system without a player. In card-host on a Mac this is the fixture's clip
+    whose file isn't there, which fails with the error the widget gives where
+    no player takes a file (playback session unavailable)."""
+    p = "d" if dark else ""
+    open_card(app, MEDIA_DECK)
+    app.find("Slide 1 of 4", "Label", exact=False, timeout=60)
+    go_to(app, 3)
+    click_slide(app, 480, 250)
+    canvas_button(app, "Play")
+    app.find(NO_PLAYER, "Label", timeout=40)
+    app.find("The player said: playback session unavailable: no media plugin installed", "Label")
+    app.grab(out, f"{p}p11-unavailable")
+
+
+def secs(text):
+    m = re.match(r"(\d+):(\d\d)", text or "")
+    return int(m[1]) * 60 + int(m[2]) if m else -1
+
+
+def place_media_decks(home):
+    """tests/media's decks in a home's Quick Deck storage, before the shell
+    starts: the native deck in decks/, its .pptx copy as brought in."""
+    jail = home / "apps" / APP
+    (jail / "decks").mkdir(parents=True, exist_ok=True)
+    (jail / "imports").mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(MEDIA / "launch-film.deckcraft", jail / "decks" / f"{MEDIA_DECK}.deckcraft")
+    shutil.copyfile(MEDIA / "launch-film.pptx", jail / "imports" / f"{MEDIA_DECK} (PowerPoint).pptx")
+
+
+def media_cache(home):
+    """deck.media's clips in the storage: name -> (bytes, sha256)."""
+    import hashlib
+    folder = home / "apps" / APP / ".cache/media"
+    if not folder.is_dir():
+        return {}
+    return {f.name: (f.stat().st_size, hashlib.sha256(f.read_bytes()).hexdigest()) for f in sorted(folder.iterdir()) if f.is_file()}
+
+
+def clip_outcome(app, timeout=40.0):
+    """What became of a clip asked to play: "playing" (the control's time or
+    the stage's picture), or the words for why not."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if clip_time(app) is not None:
+            return "playing"
+        for words in (NO_PLAYER, CLIP_FAILED, CLIP_FULL, CLIP_UNSUPPORTED):
+            if labels(app, words):
+                return words
+        time.sleep(0.4)
+    raise AssertionError("the clip neither played nor said why not")
+
+
+def still_open(app, what):
+    """Quick Deck is still in its window: the shell removed no client (a
+    close of the app, by a person or not, logs "wm: removing client") and
+    no module fault was contained."""
+    log = app.log.read_text(errors="replace")
+    for sign in ("wm: removing client", "wm: contained a module panic", "failed module instance"):
+        assert sign not in log, f"{what}: the shell's log says {sign!r}"
+
+
+def shell_playback(app, out, dark, home):
+    """Playback with the real deck service (deck.media) and the shell's own
+    Video widget: a Mac plays the clips, Linux says it can't. After every
+    step Quick Deck must still be open (still_open)."""
+    import hashlib
+    p = "d" if dark else ""
+    sample = hashlib.sha256((ROOT / "crates/video-api-smoke/resources/playback.mp4").read_bytes()).hexdigest()
+    checks = {"platform": sys.platform}
+    seek(app, MEDIA_DECK, "Label", timeout=90)
+    if not dark:
+        app.grab(out, "p0-home")
+    open_card(app, MEDIA_DECK)
+    app.find(" of 2", "Label", exact=False, timeout=120)
+    app.images(2, timeout=120)
+    go_to(app, 1)  # a deck opens where it was left
+    # The native deck's video, in the editor.
+    click_slide(app, 480, 280)
+    app.find("Starts by itself when its slide shows.", "Label", timeout=30)
+    canvas_button(app, "Play")
+    outcome = clip_outcome(app)
+    checks["editor"] = outcome
+    cache = media_cache(home)
+    checks["cache"] = {name: size for name, (size, _) in cache.items()}
+    assert any(digest == sample and name == sample + ".mp4" for name, (_, digest) in cache.items()), \
+        f"deck.media didn't write the clip as .cache/media/<sha256>.mp4: {cache}"
+    if LINUX:
+        assert outcome == NO_PLAYER, f"Linux: {outcome!r}"
+        app.find(NO_PLAYER, "Label")
+        app.grab(out, f"{p}p1-editor-unavailable")
+    else:
+        assert outcome == "playing", f"macOS: {outcome!r}"
+        plays(app, out, f"{p}p1-editor-playing", box_on(slide_rect(app), LAUNCH_FILM), checks)
+        # Pause, play on, a tap on the video, the inspector's Play, Stop.
+        app.tap("Pause")
+        app.find("Paused.", "Label", timeout=10)
+        app.tap("Play")
+        app.find("Playing.", "Label", timeout=10)
+        rect = box_on(slide_rect(app), LAUNCH_FILM)
+        app.click(rect[0] + rect[2] / 2, rect[1] + rect[3] / 2)
+        app.find("Paused.", "Label", timeout=10)
+        app.tap("Stop")
+    still_open(app, "the editor's playback")
+    # Present: the video plays by itself (a native deck keeps autoplay), and
+    # keeps playing as the show takes the window full screen.
+    app.tap("Present", "Button")
+    app.find("Exit", "Button", timeout=60)
+    full_screen(app)
+    app.images(1, timeout=60)
+    stage = box_on(stage_settled(app), LAUNCH_FILM)
+    if LINUX:
+        wait_until(lambda: stage_note(app) == NO_PLAYER, "the show's clip never said it can't play", timeout=40)
+        app.grab(out, f"{p}p2-present-unavailable")
+        checks["present"] = stage_note(app)
+    else:
+        time.sleep(2.0)
+        plays(app, out, f"{p}p2-present-playing", stage, checks)
+        checks["present"] = "playing"
+        # Taps pause it and play it on, again and again, on the same slide.
+        taps = []
+        for _ in range(4):
+            app.click(stage[0] + stage[2] / 2, stage[1] + stage[3] / 2)
+            time.sleep(1.5)
+            taps.append([pill_label(app)["t"], stage_note(app)])
+        checks["present_taps"] = taps
+        assert all(t[0] == taps[0][0] for t in taps), f"a tap on the clip changed the slide: {taps}"
+        assert any((t[1] or "").startswith("Paused  ·  ") for t in taps), f"no tap paused the clip: {taps}"
+    still_open(app, "Present's playback")
+    app.tap("Exit", "Button")
+    # The sound (slide 2): never played on a Mac (no audio device in these runs).
+    if LINUX:
+        go_to(app, 2)
+        click_slide(app, 480, 240)
+        app.find("Audio", "Label", timeout=30)
+        canvas_button(app, "Play")
+        checks["sound"] = clip_outcome(app)
+        assert checks["sound"] == NO_PLAYER, checks
+        app.grab(out, f"{p}p3-sound-unavailable")
+        checks["cache_after_sound"] = {name: size for name, (size, _) in media_cache(home).items()}
+        assert any(name.endswith(".wav") for name in checks["cache_after_sound"]), checks
+    # Closing the deck takes its clips out of the cache.
+    close_tab(app, MEDIA_DECK)
+    wait_until(lambda: not media_cache(home), f"the closed deck's clips stayed: {media_cache(home)}", timeout=20)
+    # The .pptx copy: its clips play on a tap only (deckcraft reads no
+    # autoplay from a .pptx), in the editor and in Present.
+    open_card(app, MEDIA_DECK + " (PowerPoint)")
+    app.find(" of 2", "Label", exact=False, timeout=120)
+    app.images(2, timeout=120)
+    go_to(app, 1)
+    click_slide(app, 480, 280)
+    app.find("Starts when it's tapped.", "Label", timeout=30)
+    app.tap("Present", "Button")
+    app.find("Exit", "Button", timeout=60)
+    full_screen(app)
+    app.images(1, timeout=60)
+    time.sleep(2.0)
+    assert stage_note(app) is None, f"a .pptx clip started by itself: {stage_note(app)}"
+    stage = box_on(stage_settled(app), LAUNCH_FILM)
+    app.click(stage[0] + stage[2] / 2, stage[1] + stage[3] / 2)
+    if LINUX:
+        wait_until(lambda: stage_note(app) == NO_PLAYER, "the tapped clip never said it can't play", timeout=40)
+        app.grab(out, f"{p}p4-pptx-present-unavailable")
+        checks["pptx_present"] = stage_note(app)
+    else:
+        time.sleep(2.0)
+        plays(app, out, f"{p}p4-pptx-present-playing", stage, checks)
+        checks["pptx_present"] = "playing"
+    app.tap("Exit", "Button")
+    still_open(app, "the .pptx copy's playback")
+    close_tab(app, MEDIA_DECK + " (PowerPoint)")
+    (out / f"{p}playback.json").write_text(json.dumps(checks, indent=1))
+
+
+def tab_label(app, title):
+    """A deck's tab title in the tab row, or None."""
+    top = app.area()[1] + 70
+    found = [w["r"] for w in app.widgets() if w["ty"] == "Label" and w.get("t") == title and w["r"][1] < top]
+    return found[0] if found else None
+
+
+def close_tab(app, title):
+    """A deck's tab: its close cross, right of its title."""
+    tab = tab_label(app, title)
+    assert tab, f"no tab {title!r}"
+    x, y, w, h = tab
+    app.click(x + w + 22, y + h / 2)
+    wait_until(lambda: tab_label(app, title) is None, f"the tab {title!r} stayed open", timeout=20)
+
+
 # ---------------------------------------------------------------- shell journey (the real engine)
 
 def shell_journey(app, out, dark):
@@ -964,14 +1379,27 @@ def shell_journey(app, out, dark):
     app.grab(out, f"{p}08-export")
     app.scroll(-3000)
     app.tap("Export", "Button")
-    # present
+    # present: the tap takes the whole screen (window.fullscreen); the light
+    # pass leaves by Exit, the dark one by Esc, the shell's key in full
+    # screen (a script gets no keys), and the window comes back either way.
     go_to(app, 1)
+    windowed = app.area()
     app.tap("Present", "Button")
     app.find("Exit", "Button", timeout=60)
+    full = full_screen(app)
     app.images(1, timeout=60)
     app.grab(out, f"{p}09-present")
     app.click(app.area()[2] / 2, app.area()[3] / 2)
-    app.tap("Exit", "Button")
+    if dark:
+        app.key("Escape")
+    else:
+        app.tap("Exit", "Button")
+    app.find("Present", "Button", timeout=30)
+    app.gone("Exit")
+    wait_until(lambda: same_rect(app.area(), windowed),
+               f"the window did not come back after Present: {app.area()}, was {windowed}")
+    (out / f"{p}present-full-screen.json").write_text(json.dumps(
+        {"window": windowed, "full_screen": full, "after": app.area(), "left_by": "Escape" if dark else "Exit"}, indent=1))
 
 
 def states_follow(app, out):
@@ -1166,10 +1594,13 @@ def check_log(log):
     # saying a region's render answered after the region was made again (the
     # navigator's and the inspector's regions live inside regions that render
     # too): nothing is lost, so it doesn't fail a run.
+    # The player's own errors for a clip it can't play (the playback runs ask
+    # for them) are its words, not the script's.
+    player = ("Error decoding video with id", "AVPlayer failed to prepare", "VIDEO: ")
     errors = [line for line in log.read_text(errors="replace").splitlines()
               if ("[E]" in line and ("splash" in line.lower() or "script" in line.lower() or "quickdeck" in line.lower())
                   or "on_render closure failed" in line or "callback error" in line or "script time budget exceeded" in line)
-              and "not in the widget tree" not in line]
+              and "not in the widget tree" not in line and not any(word in line for word in player)]
     assert not errors, f"script errors in {log}:\n" + "\n".join(errors)
 
 
@@ -1251,6 +1682,9 @@ def card_host_runs(args, runs):
                 session("states", bundle, ["--states"], fixture_states, dark)
                 session("states-full", bundle, ["--full"], full, dark)
                 session("states-empty", bundle, ["--empty"], empty, dark)
+            if "playback" in runs:
+                session("playback", bundle, ["--media"], playback_journey, dark)
+                session("playback-fresh", bundle, ["--media"], playback_fresh, dark)
 
 
 def shell_runs(args, runs):
@@ -1291,6 +1725,15 @@ def shell_runs(args, runs):
             session("shell", home, light_then_dark)
         if "restart" in runs:
             session("restart", home, restart)
+        if "playback" in runs:
+            media_home = scratch / "home-playback"
+            place_media_decks(media_home)
+
+            def playback_light_then_dark(app, out):
+                shell_playback(app, out, False, media_home)
+                app.style("octosense-dark", "octosense dark")
+                shell_playback(app, out, True, media_home)
+            session("playback", media_home, playback_light_then_dark)
 
 
 def main():
@@ -1302,7 +1745,7 @@ def main():
     parser.add_argument("--port", type=int, default=0, help="the remote bridge's port (8916 for a shell, 8912 for card-host)")
     parser.add_argument("--output", type=Path, default=ROOT / "target/quickdeck-ui")
     parser.add_argument("--work", type=Path, help="where the runs' homes go (default: the system's temporary folder)")
-    parser.add_argument("--only", choices=["shell", "restart", "missing", "fixture", "states"], action="append")
+    parser.add_argument("--only", choices=["shell", "restart", "missing", "fixture", "states", "playback"], action="append")
     parser.add_argument("--budget-ms", type=int, help="MAKEPAD_SPLASH_BUDGET_MS for the hosts (default: the runtime's 64 ms); for a loaded machine")
     parser.add_argument("--grab-scale", type=float, default=0.5, help="the grabs' scale (the bridge's /g scale): 0.5 is one pixel per point on a 2x screen")
     parser.add_argument("--bundle", type=Path, help="another bundle for the card-host runs (default: apps/quickdeck/bundle), for a before/after comparison")
@@ -1312,16 +1755,18 @@ def main():
     Driver.budget_ms = args.budget_ms
     Driver.check_states = not args.grabs_only
     card_host_only = ("missing", "fixture", "states")
-    runs = args.only or (["shell", "restart"] if args.shell else []) + (list(card_host_only) if args.card_host else [])
+    shell_only = ("shell", "restart")
+    # playback runs in both: card-host on the stand-in, the shell on the real engine.
+    runs = args.only or (["shell", "restart", "playback"] if args.shell else []) + (list(card_host_only) + ["playback"] if args.card_host else [])
     assert runs, "give --shell, --card-host or both"
-    if any(run not in card_host_only for run in runs):
+    if any(run in shell_only for run in runs) or ("playback" in runs and args.shell):
         assert args.shell, "these runs need --shell"
         args.port = args.port or 8916
-        shell_runs(args, runs)
-    if any(run in card_host_only for run in runs):
+        shell_runs(args, [run for run in runs if run in shell_only or run == "playback"])
+    if any(run in card_host_only for run in runs) or ("playback" in runs and args.card_host):
         assert args.card_host, "the missing, fixture and states runs need --card-host"
         args.port = 8912 if args.port in (0, 8916) else args.port
-        card_host_runs(args, runs)
+        card_host_runs(args, [run for run in runs if run in card_host_only or run == "playback"])
     print("all journeys passed; grabs in", args.output)
 
 

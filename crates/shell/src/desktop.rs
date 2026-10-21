@@ -633,6 +633,18 @@ mod tests {
         assert_eq!(dock_slide(dock, bottom, 2.0), 0.0);
     }
 
+    /// While an app presents, no dock, taskbar or column shows, whatever the
+    /// edge reveal says; otherwise a dock shows as before.
+    #[test]
+    fn an_apps_presentation_keeps_the_dock_away() {
+        for (auto_hides, reveal) in [(false, 1.0), (false, 0.0), (true, 1.0), (true, 0.5), (true, 0.0)] {
+            assert!(!dock_shows(true, auto_hides, reveal), "presenting, auto_hides {auto_hides}, reveal {reveal}");
+        }
+        assert!(dock_shows(false, false, 0.0), "a dock that does not hide");
+        assert!(dock_shows(false, true, 0.5), "partway up");
+        assert!(!dock_shows(false, true, 0.0), "all the way down");
+    }
+
     #[test]
     fn the_top_edge_calls_a_full_screen_windows_top_and_leaving_it_sends_it_back() {
         let screen = rect(0.0, 0.0, 1440.0, 900.0);
@@ -1235,10 +1247,16 @@ pub fn top_pointer_wants(p: Vec2d, screen: Rect, depth: f64, out: bool) -> bool 
     let over = out && p.y <= screen.pos.y + depth + 8.0;
     inside && (on_edge || over)
 }
-/// Whether any of the dock is on screen this frame: one that does not hide,
-/// or one not all the way down.
+/// Whether any of the dock is on screen this frame (`dock_shows`).
 pub fn dock_showing(state: &WmState) -> bool {
-    !dock_auto_hides(state) || state.dock_reveal > 0.001
+    dock_shows(state.presentation.is_some(), dock_auto_hides(state), state.dock_reveal)
+}
+/// Whether any of a dock is on screen: none while an app presents
+/// (`presenting`: `WmState::presentation`), whatever the style and whatever
+/// the bottom edge says, as a slideshow's play mode keeps the Dock away; else
+/// one that does not hide (`auto_hides`), or one not all the way down.
+pub fn dock_shows(presenting: bool, auto_hides: bool, reveal: f64) -> bool {
+    !presenting && (!auto_hides || reveal > 0.001)
 }
 /// How far below its place a dock `reveal` of the way up is drawn: just past
 /// the bottom edge at 0, in place at 1, eased between.

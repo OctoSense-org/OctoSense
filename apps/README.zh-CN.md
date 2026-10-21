@@ -33,7 +33,7 @@ OctoSense-System-Apps 仓库（已归档）。
 - **`model` 媒体 API** 使用宿主持有的供应商配置，执行有上限的图片、语音、向量和异步
   视频请求。应用声明 `model` 和精确宿主 API 版本；调用时检查供应商权益。见
   [媒体契约与验证范围](ai-providers/host-service/MEDIA.zh-CN.md)。
-- **`deck` 宿主服务**（`deck/host-service`，ADR 0013）把 deckcraft 演示文稿引擎放在 `deck.*` 之后：检查幻灯片、提取大纲文本、渲染 PNG、按标题和要点新建演示文稿，以及格式转换（pptx、原生格式、大纲、PDF），全部限制在调用方自己的文件夹内。它的应用是 Quick Deck（`quickdeck/bundle`），其调用在 Quick Deck 自己的存储中运行。它还为 Quick Deck v2 保持打开的文档（`apps/quickdeck/design/SERVICE.md`）：`deck.open` 和 `deck.create` 返回一个句柄，作用于它的方法（幻灯片、对象、文本、格式、设计、备注、切换效果、撤销与重做、把幻灯片绘制到渲染缓存、放映的顺序与动画步骤、保存与导出）都通过与系统代理的 `deck.run` 相同的入口运行经过审查的引擎命令，每次调用合为一个撤销步骤。服务打开的每个文件都先通过它自己的导入检查：在引擎读取之前，拒绝超出界限的 zip、加密的 `.pptx` 以及旧版 `.ppt`。演示文稿中的音频和视频会原样保留：显示其海报图，保存和导出时不作改动，并且从不解码或播放。
+- **`deck` 宿主服务**（`deck/host-service`，ADR 0013）把 deckcraft 演示文稿引擎放在 `deck.*` 之后：检查幻灯片、提取大纲文本、渲染 PNG、按标题和要点新建演示文稿，以及格式转换（pptx、原生格式、大纲、PDF），全部限制在调用方自己的文件夹内。它的应用是 Quick Deck（`quickdeck/bundle`），其调用在 Quick Deck 自己的存储中运行。它还为 Quick Deck v2 保持打开的文档（`apps/quickdeck/design/SERVICE.md`）：`deck.open` 和 `deck.create` 返回一个句柄，作用于它的方法（幻灯片、对象、文本、格式、设计、备注、切换效果、撤销与重做、把幻灯片绘制到渲染缓存、放映的顺序与动画步骤、保存与导出）都通过与系统代理的 `deck.run` 相同的入口运行经过审查的引擎命令，每次调用合为一个撤销步骤。服务打开的每个文件都先通过它自己的导入检查：在引擎读取之前，拒绝超出界限的 zip、加密的 `.pptx` 以及旧版 `.ppt`。演示文稿中的音频和视频会原样保留：显示其海报图，保存和导出时不作改动，服务从不解码它们；`deck.media` 把剪辑的字节作为文件交给 Quick Deck 存储，由应用用运行时的 `Video` 控件（系统自己的播放器）播放。
 - **`cad` 引擎服务**（`cad/host-service`）：cadcraft 制图引擎，提供 `cad.*` 方法（ADR 0013，暂无 bundle）——在调用方自己的文件夹内检查、查询、测量、渲染和转换 DXF/DWG 图纸。
 - **`light` 引擎服务**（`light/host-service`）把 lightcraft 的 RAW 显影引擎
   放在 `light.*` 方法之后（ADR 0013）：EXIF/XMP 元数据、显影控制目录、单张与
@@ -108,7 +108,7 @@ OctoSense-System-Apps 仓库（已归档）。
 | [AI providers](ai-providers/bundle) | `os.ai-providers` | 助手的大模型服务商：一个主用与若干备用，每项都有来自 octos 模型目录的型号下拉菜单和“测试连接”；添加向导（系列、型号、线路、密钥、测试）；“为手机显示二维码”，以及通过相机、图片或粘贴导入 | `storage`、`llm` | 无（由服务联网，而不是应用） | [`llm`](ai-providers/host-service) |
 | [YouTube](youtube/bundle) | `os.youtube` | YouTube 搜索（运行时无需密钥的 `sys.video`，读取 YouTube 自己的搜索结果页），带缩略图和直播或时长角标的结果列表、话题标签，在 `WebReader` 中播放 YouTube 移动版观看页，以及本机播放记录 | `storage`、`net`、`glance` | `www.youtube.com`、`m.youtube.com`、`i.ytimg.com` | Shell 通知服务的 `youtube.notify` |
 | [Calendar](calendar/bundle) | `os.calendar` | 月历、按日列表、日程详情与编辑器；Glance 使用应用自有卡片，并能打开已保存日程 | `calendar`、`glance` | 无 | [`calendar`](calendar/host-service)（日历持有执行器；跨应用工具需授权） |
-| [Quick Deck](quickdeck/bundle) | `os.quickdeck`（桌面） | 演示文稿编辑器：带封面的演示文稿库，带幻灯片导航栏、画布和检查器（Format、Layout、Theme、Notes）的编辑器，原地编辑文本，图片、形状、表格和带数据的图表，带分节的幻灯片浏览视图，从大纲新建（手动输入，或由用户自己的 AI 提供方起草），放映和导出（.pptx、PDF、图片）；从本设备打开演示文稿。见[它的 README](quickdeck/README.zh-CN.md)，其中有测试它的各次运行 | `storage`、`files`、`deck`、`model` | 无 | [`deck`](deck/host-service) 引擎服务中 [design/SERVICE.md](quickdeck/design/SERVICE.md) 规定的打开文档方法，在应用自己的存储中运行；Shell 的 `files.status` 和 `files.import`；Draft with AI 使用 `model.complete` |
+| [Quick Deck](quickdeck/bundle) | `os.quickdeck`（桌面） | 演示文稿编辑器：带封面的演示文稿库，带幻灯片导航栏、画布和检查器（Format、Layout、Theme、Notes）的编辑器，原地编辑文本，图片、形状、表格和带数据的图表，带分节的幻灯片浏览视图，从大纲新建（手动输入，或由用户自己的 AI 提供方起草），放映和导出（.pptx、PDF、图片）；在系统有播放器时，于编辑器和放映中播放演示文稿的视频和音频；从本设备打开演示文稿。见[它的 README](quickdeck/README.zh-CN.md)，其中有测试它的各次运行 | `storage`、`files`、`deck`、`model` | 无 | [`deck`](deck/host-service) 引擎服务中 [design/SERVICE.md](quickdeck/design/SERVICE.md) 规定的打开文档方法，在应用自己的存储中运行；Shell 的 `files.status` 和 `files.import`；Draft with AI 使用 `model.complete` |
 | [PDF Tools](pdftools/bundle) | `os.pdftools`（桌面） | 管理自己存储中的 PDF：带首页预览的资料库，带页面缩略图、可查找的文字和信息的文档视图；单页视图；三步合并（选择、排序、完成），以及按固定页数或在指定页面处拆分；从设备打开 PDF（最大 64 MiB）和移除 PDF。见[它的 README](pdftools/README.zh-CN.md)，其中介绍了测试它的隐藏 Shell 流程 | `storage`、`files`、`pdf` | 无 | 在应用自己的存储中工作的 [`pdf`](pdf/host-service) 引擎服务：`pdf.info`、`pdf.render`、`pdf.text`、`pdf.merge`、`pdf.split`；Shell 的 `files.status` 和 `files.import` |
 | [Writer](writer/bundle) | `os.writer`（桌面端） | 白纸上的安静编辑器（以 `#` 开头的行是标题，`-` 是列表项，`>` 是引用）、文档列表、保存为 Word 文档、预览已保存的文档并按其标题生成大纲，以及导出为 PDF、Markdown、HTML 或 OpenDocument；草稿自动保存在应用自己的存储中 | `storage`、`word` | 无 | [`word`](word/host-service)（`word.convert`、`word.info`、`word.inspect`），在 Writer 自己的存储中 |
 | [AppCard](appcard) | 原生，需显式启用 | AppCard 助手：路由大脑选择或组合一个应用 Agent，由它生成实时的 Splash 或 webview 卡片。Shell 只在启用 `app-appcard` 时链接它；默认不发布 | 不适用（不是 bundle） | 不适用 | Shell 的 octos 内核 |
@@ -188,7 +188,10 @@ WebView 页面、图库导出、邮件、新闻、Glance 或单次模型调用�
   #503 的真实 `deck` 引擎：从大纲生成演示文稿、原地编辑文本、格式、图表、主题、备注、浏览视图、保存、导出和放映，先浅色后深色，然后重启。模型测试通过（`cargo test --locked
   -p octosense-shell --lib quickdeck_model`）。检查器的状态（#507：文本框的垂直对齐和自动调整、
   图表的元素、表格的选项、配色方案、字体搭配和页脚，以及它们跟随改动和撤销）于同日在
-  `card-host` 中和真实引擎上验证。
+  `card-host` 中和真实引擎上验证。播放（2026-10-13；#515 的 `deck.media`，运行时的 `Video` 控件）：
+  在 Mac 上的 `card-host` 中，示例剪辑在其框中播放、暂停和停止，放映中可自动开始或点按开始；
+  在 Linux 上用真实引擎时，`deck.media` 把每个剪辑写入存储，而每个剪辑都显示
+  "Playback isn't available on this system"（那里没有 MP4 解码器）；在 macOS 上使用真实引擎的 Shell 中，剪辑在编辑器和放映中都能播放。
 - **Writer**（2026-10-09）。在用本仓库构建的隐藏桌面 Shell 中（`MAKEPAD_WM_TEST_APP=writer`，
   隐藏窗口的 `--remote` 运行，浅色与深色），使用在 Writer 自己存储中工作的真实 `word` 引擎：
   通过 instrument 输入的文档被保存为 Word 文档（`word.convert` 转换 Writer 写到 `work/` 的
@@ -434,6 +437,26 @@ python3 apps/writer/tests/ui.py --card-host <App Hub>/target/release/card-host -
 - 携带密钥的方法位于 `<family>.sheet.*` 之下（`mail.sheet.submit`、
   `mail.sheet.cancel`），只有来自面板的调用才会被分发，且在任何服务看到之前就已检查；
 - 只有服务能打开面板，应用不能。
+
+### `window` 服务
+
+Shell 自己为应用窗口提供的服务。用户点按或点击应用窗口中的某个控件时（演示文稿的 Present、
+阅读器的 Read 模式），`window.fullscreen {on: true}` 让应用自己的窗口进入演示全屏，
+`{on: false}` 让它退出。在桌面上，窗口随即铺满整个桌面且没有标题栏，Shell 的栏和程序坞
+隐藏（演示期间屏幕边缘也不会把它们唤出），OctoSense 窗口如果还不在全屏中也会进入全屏。按 **Esc** 结束（这是 Shell 的按键：
+脚本应用收不到按键），`{on: false}`、⌘F、窗口失去焦点以及应用出错也会结束它；Shell 会显示
+"Press Esc to exit full screen" 三秒。回答是 `{applied, fullscreen, fills_screen}`。
+拒绝以下列前缀开头：`gesture_required:`（最近 5 秒内没有在这个窗口里按过应用本身；在应用上方
+的宿主面板里按下不算）、`foreground_required:`（窗口不在最前：焦点在别处，或窗口在另一个
+工作区、已最小化）、`agent_call:`（请求来自 Agent 的工具调用或它的回调）、`not_a_window:`
+（glance 卡片、面板或其他应用的窗口）、`invalid_arguments:`。`{on: false}` 不会因为前三种
+原因被拒绝。不需要任何能力：`prompt` 和其他声明一样，既不授予也不拒绝这个方法。演示全屏以
+应用自己的 `{on: false}` 以外的方式结束后（Esc、⌘F、焦点离开），再次进入全屏需要新的一次
+按下，所以应用在 `on_app_fullscreen(false)` 里再次请求会被拒绝。应用可以定义 `fn on_app_fullscreen(on)`，
+全屏开始和结束时 Shell 都会在应用的 isolate 中调用它。在手机上，每个应用本来就占满屏幕，
+所以什么都不会改变：`{applied: false, fullscreen: false, fills_screen: true}`。这个服务
+属于 Shell（`crates/shell/src/app_fullscreen.rs`），不属于 App Hub，`runtime.list` 目前还
+不列出它。
 
 ### `mail` 服务
 
