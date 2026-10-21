@@ -4,7 +4,7 @@
     "base_revision": "d653bc4493619ab979ccff165cf48c0c63b77d19",
     "patch": "tools/runtime-patches/makepad-settings.patch",
     "sha256": "3a79cddddc89dc4d064a9f0bdd17dc8111dcab9c796a334d95f61ecb9d5011aa",
-    "tree": "d047e32fdfb91aa26b95a62464645020bfa6a4f7",
+    "tree": "2eeb4b47ec8a8e8a095cbae7d1644727303b09b8",
     "product_fixes": [
       "Settings integration: Android IME synchronization, accessibility and reduced motion, GLES program-cache validation, obscured-gesture cancellation and scroll-position observation.",
       "Contained-app isolation and secret-input restrictions come from the pinned upstream runtime; the Settings overlay preserves those gates.",
@@ -49,7 +49,8 @@
       "An OS resume restarts only the Video playback its pause stopped, including a start it cancelled; a player paused by the person, or paused or stopped by its app during the pause, stays paused (#406).",
       "Camera capture and recording use explicit per-call boolean audio/library options, defaulting to silent app-local output. Permission availability never opts into recording audio or exporting captures; async microphone checks retain capture intent and background provenance. Unsupported library export fails before capture.",
       "A hidden Android native composer remembers animated IME insets without requesting a root layout every frame; showing it applies the latest inset before its first visible frame.",
-      "Launch-input hardening: the Studio connection and the OCTOS_PROXY app HTTP proxy, which Makepad itself acts on from an Android Intent extra, are honoured only when the build opts into launch-time development input (debuggable, or the manifest meta-data dev.makepad.LAUNCH_STUDIO). A shipped build ignores them and drops any Studio host a development build saved. The exported activity would otherwise let another installed app point it at a host or a proxy."
+      "Launch-input hardening: the Studio connection and the OCTOS_PROXY app HTTP proxy, which Makepad itself acts on from an Android Intent extra, are honoured only when the build opts into launch-time development input (debuggable, or the manifest meta-data dev.makepad.LAUNCH_STUDIO). A shipped build ignores them and drops any Studio host a development build saved. The exported activity would otherwise let another installed app point it at a host or a proxy.",
+      "CachedView can opt into an isolated depth buffer. Maps driving views use it so tilted terrain, roads and buildings are not hidden by host UI backgrounds, while route and navigation overlays retain normal composition."
     ],
     "stacked": [
       {
@@ -195,6 +196,10 @@
       {
         "patch": "tools/runtime-patches/makepad-launch-input-hardening.patch",
         "sha256": "8eaafef3ef0591bec2a25c05d5187564d5dfb87a32e6b937b6d9c4e9f6fa5b84"
+      },
+      {
+        "patch": "tools/runtime-patches/makepad-map-texture-depth.patch",
+        "sha256": "bf54076f55d8c501b0dda378e2ed9121aca3f47bc243f1b72256aa9f0844b6d8"
       }
     ]
   }

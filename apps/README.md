@@ -209,6 +209,14 @@ See [capabilities and execution boundaries](../docs/capabilities.md).
   the 2D view worked; the 3D drive view drew the route but no map tiles, on
   the phone and on the desktop, before and after the stops changed. The
   OnePlus 6T, iOS and OpenHarmony are **unverified**.
+  On macOS (2026-10-21, native Metal), the current runtime reproduced a
+  labels-only 3D drive view even after all visible tiles had loaded. The
+  driving maps now render in a texture with their own depth buffer, so host
+  backgrounds cannot hide tilted geometry. The same San Jose route then
+  showed roads, terrain and raised buildings beneath the navigation panels.
+  Switching 2D/3D, panning, resizing and ending navigation also worked.
+  The Pixel observations above predate this depth-buffer fix; the fix has
+  not been verified on a phone.
 - **News**: runs in `card-host` during development, but not exercised
   end to end in the shell PRs' test runs (the test phone had no network).
 - **Mail**: verified with the demo mailbox on desktop and on the OnePlus 6.
