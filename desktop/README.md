@@ -319,7 +319,7 @@ Catalog lookup: `--apps <file>` if given, else `~/.octosense/apps.json` if it ex
 ]
 ```
 
-- `"source": "makepad"` resolves through Cargo to the same Makepad checkout as the host (`.sources/makepad`); such builds go to `~/.octosense/build/makepad`.
+- `"source": "makepad"` resolves through Cargo to the same Makepad checkout as the host (`.sources/makepad`); such builds go to the checkout's `target/makepad` (`$CARGO_TARGET_DIR/makepad` when set), beside the native apps, and every OctoSense home run from that checkout shares them. Older shells built them into `~/.octosense/build/makepad`; that folder is no longer used and can be deleted.
 - Step-by-step guides (Chinese): [open a hosted app](docs/open-apps.md), including the fix for an empty catalog when `cargo metadata --offline` fails, and [open the full Makepad catalog](docs/add-all-makepad-apps.md).
 - Relative paths resolve from the catalog's directory. Arguments are passed literally, without a shell.
 - `policy`: `"new"` opens another instance; `"focus"` (default) focuses a running one.

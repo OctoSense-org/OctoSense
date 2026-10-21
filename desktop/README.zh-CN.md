@@ -304,7 +304,7 @@ OCTOSENSE_HUB_CATALOG=legacy \
 ]
 ```
 
-- `"source": "makepad"` 通过 Cargo 解析到与宿主相同的 Makepad 检出（`.sources/makepad`）；这类构建输出到 `~/.octosense/build/makepad`。
+- `"source": "makepad"` 通过 Cargo 解析到与宿主相同的 Makepad 检出（`.sources/makepad`）；这类构建输出到该检出的 `target/makepad`（设置了 `CARGO_TARGET_DIR` 时为 `$CARGO_TARGET_DIR/makepad`），与原生应用的构建放在一起，从该检出运行的每个 OctoSense 主目录都共用它们。旧版 Shell 把它们构建到 `~/.octosense/build/makepad`；该目录已不再使用，可以删除。
 - 分步指南：[打开托管应用](docs/open-apps.md)（包括 `cargo metadata --offline` 失败导致目录为空时的修复方法），以及[打开完整的 Makepad 目录](docs/add-all-makepad-apps.md)。
 - 相对路径相对于目录文件所在目录解析。参数按原样传递，不经过 shell。
 - `policy`：`"new"` 打开新实例；`"focus"`（默认）聚焦已运行的实例。
