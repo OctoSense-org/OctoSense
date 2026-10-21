@@ -6375,8 +6375,9 @@ impl MatchEvent for App {
             log!("octosense: background app prewarming disabled");
         }
         // A checkout run builds its catalog apps in the background, so their
-        // first open needn't wait for cargo (prebuild.rs).
-        prebuild::start(&cx.thread_spawner());
+        // first open needn't wait for cargo (prebuild.rs): those that open as
+        // a process, by the same rule `launch_app_with_args` applies.
+        prebuild::start(&cx.thread_spawner(), |id| self.apps.hosting(id) == Hosting::Module && self.apps.module(id).is_some());
 
         // `--gallery`: the shell surfaces with fixture data instead of a
         // desktop, so the port is verifiable over --remote (shell/gallery.rs).

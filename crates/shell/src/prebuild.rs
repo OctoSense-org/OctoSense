@@ -8,6 +8,9 @@
 //! builds once in the background, shortly after the shell starts, so a
 //! later open finds its binary built and starts at once.
 //!
+//! - Only apps that open as a process: a linked module the shell hosts
+//!   in-process (Calculator, Clock, Notes, Reminders and Weather on macOS)
+//!   never runs its process build, so the prebuild leaves it out.
 //! - One build at a time, in catalog order, each the exact command a launch
 //!   would run ([`clients::build_command`]), at background priority
 //!   (darwinbg on macOS, nice 19 elsewhere): it never competes with the
@@ -17,7 +20,11 @@
 //!   cargo and waits, then starts that build again; cargo keeps what it
 //!   finished.
 //! - Cargo returns at once for an app that is already built, so a later
-//!   start costs a few seconds of up-to-date checks.
+//!   start costs a few seconds of up-to-date checks. Each success is
+//!   recorded beside the binary ([`clients::note_built`]): an open then
+//!   starts that binary without cargo while nothing its build read has
+//!   changed ([`clients::build_is_fresh`]), and this run of the same build
+//!   catches what that comparison cannot see.
 //! - Quitting the shell stops it ([`shutdown`]): its cargo has a process
 //!   group of its own, so nothing else would end it.
 //! - An installed shell has no build to run and never starts it, and
@@ -80,9 +87,13 @@ pub fn enabled(no_prebuild: Option<&str>) -> bool {
 
 /// The builds to run: the launch build of every listed catalog app that has
 /// one, each identical build once, in catalog order. Empty for an installed
-/// shell (no checkout, so no app has a build).
-pub fn plan(apps: &[AppDef], root: Option<&Path>) -> Vec<(String, BuildStep)> {
-    plan_listed(apps, root, crate::apps::listed)
+/// shell (no checkout, so no app has a build). An app this shell opens
+/// in-process (`in_process`: a linked module it hosts, such as Calculator,
+/// Clock, Notes, Reminders and Weather on macOS) never runs that build, so
+/// it is left out: on a fresh checkout those were five release builds
+/// nothing would start.
+pub fn plan(apps: &[AppDef], root: Option<&Path>, in_process: impl Fn(&str) -> bool) -> Vec<(String, BuildStep)> {
+    plan_listed(apps, root, |id| crate::apps::listed(id) && !in_process(id))
 }
 
 fn plan_listed(apps: &[AppDef], root: Option<&Path>, listed: impl Fn(&str) -> bool) -> Vec<(String, BuildStep)> {
@@ -103,12 +114,13 @@ fn plan_listed(apps: &[AppDef], root: Option<&Path>, listed: impl Fn(&str) -> bo
 }
 
 /// Start the prebuild on a worker of its own, when this shell runs from a
-/// checkout and nothing turned it off.
-pub fn start(spawner: &ThreadSpawner) {
+/// checkout and nothing turned it off. `in_process`: whether a launch of an
+/// app id would open it in-process, as the WM decides it at launch.
+pub fn start(spawner: &ThreadSpawner, in_process: impl Fn(&str) -> bool) {
     if !crate::host::processes_available() || !enabled(std::env::var("MAKEPAD_WM_NO_PREBUILD").ok().as_deref()) {
         return;
     }
-    let steps = plan(&clients::available_apps(), clients::repo_root().as_deref());
+    let steps = plan(&clients::available_apps(), clients::repo_root().as_deref(), in_process);
     if steps.is_empty() {
         return;
     }
@@ -159,6 +171,7 @@ fn run(steps: Vec<(String, BuildStep)>) {
             match outcome {
                 Some(status) if status.success() => {
                     built += 1;
+                    clients::note_built(step);
                     makepad_widgets::log!("prebuild: {app} built ({:.0} s)", at.elapsed().as_secs_f64());
                 }
                 Some(status) => {
@@ -274,5 +287,18 @@ mod tests {
     fn an_app_the_launcher_hides_is_not_prebuilt() {
         let steps = plan_listed(&[files()], Some(Path::new("/checkout")), |id| id != "files");
         assert!(steps.is_empty(), "{steps:?}");
+    }
+
+    /// Calculator, Clock, Notes, Reminders and Weather open in-process on
+    /// macOS: their process build would never start, so it never runs.
+    #[test]
+    fn an_app_hosted_in_process_is_not_prebuilt() {
+        let clock = || AppDef::app("clock", "Clock", "makepad-clock", "", "clock", clients::LaunchPolicy::OrFocus);
+        let root = Path::new("/checkout");
+        assert_eq!(plan_listed(&[files(), clock()], Some(root), |_| true).len(), 2, "both have a launch build");
+        let steps: Vec<_> = plan_listed(&[files(), clock()], Some(root), |id| id != "clock");
+        assert_eq!(steps.iter().map(|(id, _)| id.as_str()).collect::<Vec<_>>(), ["files"]);
+        assert_eq!(plan(&[clock()], Some(root), |_| false).len(), 1, "as a process it is prebuilt");
+        assert!(plan(&[clock()], Some(root), |id| id == "clock").is_empty(), "in-process it is left out");
     }
 }

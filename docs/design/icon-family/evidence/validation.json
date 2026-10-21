@@ -1,0 +1,32 @@
+{
+  "status": "pass",
+  "host": "macOS",
+  "devices": "unverified",
+  "family_icons": 29,
+  "browser_design": "C5 Night rose",
+  "styles": [
+    "android",
+    "macos",
+    "ios",
+    "windows",
+    "nextstep",
+    "omarchy",
+    "windows-2000"
+  ],
+  "sizes": [
+    64,
+    24
+  ],
+  "opacities": [
+    1.0,
+    0.5
+  ],
+  "family_pixel_checks": 238,
+  "captures": [
+    "default.png",
+    "family-0.png",
+    "family-1.png",
+    "family-2.png",
+    "family-3.png"
+  ]
+}

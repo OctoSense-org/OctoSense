@@ -46,12 +46,14 @@ impl IconFrame {
 // These shell-owned SVGs share an explicit tile element. Keep foreground
 // identity and gradients intact; don't try to rewrite arbitrary store SVGs.
 const SOURCE_TILE: &str = r#"<rect x="3" y="3" width="58" height="58" rx="15" fill="url(#tile)"/>"#;
+const SOURCE_SQUARE_TILE: &str = r#"<rect x="0" y="0" width="64" height="64" rx="0" fill="url(#tile)" />"#;
 pub(super) const SHELL_ART_MARKER: &str = "<!-- OctoSense platform icon frame -->";
 
 pub(super) fn styled_svg(source: &str, style: DesktopStyle) -> String {
-    debug_assert!(source.contains(SOURCE_TILE), "shell icon needs the shared tile element");
+    let source_tile = if source.contains(SOURCE_SQUARE_TILE) { SOURCE_SQUARE_TILE } else { SOURCE_TILE };
+    debug_assert!(source.contains(source_tile), "shell icon needs the shared tile element");
     let tile = IconFrame::for_style(style).map_or_else(String::new, IconFrame::svg);
-    source.replacen(SOURCE_TILE, &format!("{SHELL_ART_MARKER}{tile}"), 1)
+    source.replacen(source_tile, &format!("{SHELL_ART_MARKER}{tile}"), 1)
 }
 
 script_mod! {
@@ -177,6 +179,19 @@ pub(super) fn placement(style: DesktopStyle, canvas: Rect) -> (Rect, f32, Vec4f)
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn approved_square_sources_use_the_shared_frame() {
+        let source = r##"<svg viewBox="0 0 64 64"><rect x="0" y="0" width="64" height="64" rx="0" fill="url(#tile)" /><circle cx="32" cy="32" r="10" fill="#fffdf7"/></svg>"##;
+        for style in DesktopStyle::ALL {
+            let framed = styled_svg(source, style);
+            assert!(!framed.contains(SOURCE_SQUARE_TILE));
+            assert!(framed.contains("r=\"10\" fill=\"#fffdf7\""), "the foreground identity must be preserved");
+            if style == DesktopStyle::Android {
+                assert!(framed.contains("r=\"31\" fill=\"url(#tile)\""));
+            }
+        }
+    }
 
     #[test]
     fn frames_match_the_platform_catalog_and_keep_freeform_themes() {

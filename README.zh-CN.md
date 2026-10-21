@@ -22,6 +22,8 @@ OctoSense 是运行在普通操作系统之上的 Agent Shell。从屏幕上看�
 
 脚本应用在桌面和手机端共用[自适应主题与布局](apps/README.zh-CN.md#共用外观)。[本机原生 UX 检查](tools/app-ux/README.zh-CN.md)验证真实交互和保存状态；手机尺寸预览与真机验收分别记录。
 
+[图标设计规范](docs/design/icon-family/README.zh-CN.md)定义共用的视觉语言，并提供 28 个 SVG 替换图标与 Rinx 原始图标，附前后对比、尺寸检查图。批准的图标已接入源码构建的共享 Shell 及系统应用包，包括浏览器的 C5 夜色罗盘。本地图标覆盖层保持 Makepad 图标文件原样，并保留上游新增的应用身份。
+
 | 产品 | 是什么 | 位置 |
 | --- | --- | --- |
 | **OctoSense 桌面端** | 在 macOS、Windows 或 Linux 上作为一个 Makepad 窗口运行的 Shell；各平台要求和验收范围见发行说明 | [`desktop/`](desktop/README.zh-CN.md) |

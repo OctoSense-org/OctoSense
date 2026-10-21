@@ -121,7 +121,7 @@ App Hub 的模块没有进程形态，总是在进程内打开。
 | `--apps <file>` | 使用这个开发者程序目录。 |
 | `--module <id>` | 在进程内托管一个已链接的模块。 |
 | `--assistant`、`--prewarm` | 启动助手应用 / 预热应用（需要目录中有对应条目）。默认关闭。 |
-| `MAKEPAD_WM_NO_PREBUILD=1` | 从源码检出运行时，Shell 启动后不久会在后台构建目录中的原生应用（一次一个，以后台优先级进行；你打开的应用正在构建时会让路），这样首次打开不必等待 cargo。设置此变量即关闭。已安装的 Shell 不构建任何东西。 |
+| `MAKEPAD_WM_NO_PREBUILD=1` | 从源码检出运行时，Shell 启动后不久会在后台构建目录中的原生应用（一次一个，以后台优先级进行；你打开的应用正在构建时会让路），这样首次打开不必等待 cargo。设置此变量即关闭。无论是否预构建，Shell 构建过的应用只要其构建读取的文件此后没有变化，打开时完全不运行 cargo。已安装的 Shell 不构建任何东西。 |
 | `--demo-home`、`--download-wallpapers` | 生成演示文件系统；下载 Omarchy 主题的完整壁纸集。 |
 | `OCTOSENSE_HOME` | 状态目录（默认 `~/.octosense`；若已存在 `~/.makeos` 则回退到它，也支持 `MAKEOS_HOME`）。 |
 | `OCTOSENSE_APP_DATA` | App Hub 保存已安装应用的位置（默认为平台数据目录下的 `apps/`）。 |
@@ -304,7 +304,7 @@ OCTOSENSE_HUB_CATALOG=legacy \
 ]
 ```
 
-- `"source": "makepad"` 通过 Cargo 解析到与宿主相同的 Makepad 检出（`.sources/makepad`）；这类构建输出到 `~/.octosense/build/makepad`。
+- `"source": "makepad"` 通过 Cargo 解析到与宿主相同的 Makepad 检出（`.sources/makepad`）；这类构建输出到该检出的 `target/makepad`（设置了 `CARGO_TARGET_DIR` 时为 `$CARGO_TARGET_DIR/makepad`），与原生应用的构建放在一起，从该检出运行的每个 OctoSense 主目录都共用它们。旧版 Shell 把它们构建到 `~/.octosense/build/makepad`；该目录已不再使用，可以删除。
 - 分步指南：[打开托管应用](docs/open-apps.md)（包括 `cargo metadata --offline` 失败导致目录为空时的修复方法），以及[打开完整的 Makepad 目录](docs/add-all-makepad-apps.md)。
 - 相对路径相对于目录文件所在目录解析。参数按原样传递，不经过 shell。
 - `policy`：`"new"` 打开新实例；`"focus"`（默认）聚焦已运行的实例。
