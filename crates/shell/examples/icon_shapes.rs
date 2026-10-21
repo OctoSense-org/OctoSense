@@ -1,5 +1,6 @@
 //! Visual regression sheet using the production shell renderer.
 //! Run from phone/ with mobile-apps so Camera is in the bundled catalog.
+//! --family-page=0 through 3 reviews the approved family through this same renderer.
 pub use makepad_widgets;
 use makepad_widgets::*;
 use octosense_shell::octosense::style::{AppIconDraw, DesktopStyle};
@@ -41,7 +42,7 @@ impl AppMain for App {
             let root = std::env::var_os("OCTOSENSE_HOME").expect("set an isolated OCTOSENSE_HOME for this preview");
             let root = std::path::PathBuf::from(root).join("icon-fixtures");
             for (id, icon) in [("shape-svg", "icon.svg"), ("shape-png", "icon.png")] {
-                let bundle = root.join(id).join("bundle");
+                let bundle = octosense_app_hub::installed_bundle_dir(&root, id);
                 std::fs::create_dir_all(&bundle).unwrap();
                 std::fs::write(bundle.join("listing.json"), serde_json::json!({
                     "schema":1, "description":"Icon shape regression fixture", "category":"utilities",
@@ -83,7 +84,7 @@ impl Widget for IconSheet {
     fn draw_walk(&mut self, cx: &mut Cx2d, _: &mut Scope, walk: Walk) -> DrawStep {
         let canvas = cx.walk_turtle(walk);
         self.background.draw_abs(cx, canvas);
-        let names = ["photos", "apphub", "assistant", "camera", "ai-providers", "youtube", "hub:shape-svg", "hub:shape-png"];
+        let names = preview_names();
         for (row, style) in [DesktopStyle::Android, DesktopStyle::Macos, DesktopStyle::Ios,
             DesktopStyle::Windows, DesktopStyle::NextStep, DesktopStyle::Omarchy, DesktopStyle::Windows2000].into_iter().enumerate() {
             let y = canvas.pos.y + 32. + row as f64 * 120.;
@@ -93,10 +94,26 @@ impl Widget for IconSheet {
                 if row == 0 { self.text.draw_abs(cx, dvec2(x - 8., canvas.pos.y + 8.), name.strip_prefix("hub:").unwrap_or(name)); }
                 for (size, dx, dy) in [(64., 0., 0.), (24., 0., 74.), (24., 34., 74.)] {
                     self.icons.draw(cx, name, style, Rect { pos: dvec2(x + dx, y + dy), size: dvec2(size, size) },
-                        if dx > 0. {0.5} else {1.}, vec4(0.9, 0.94, 1., 1.));
+                        if dx > 0. {0.5} else {1.},
+                        if dy > 0. {vec4(0.14, 0.19, 0.27, 1.)} else {vec4(0.9, 0.94, 1., 1.)});
                 }
             }
         }
         DrawStep::done()
     }
+}
+
+fn preview_names() -> [&'static str; 8] {
+    static NAMES: std::sync::OnceLock<[&'static str; 8]> = std::sync::OnceLock::new();
+    *NAMES.get_or_init(|| {
+        let pages = [
+            ["mail", "calendar", "calculator", "clock", "notes", "reminders", "weather", "sheets"],
+            ["settings", "updater", "terminal", "octoscode", "rinx", "reference", "appcard", "browser"],
+            ["files", "task", "finance", "route", "image", "pdf", "mixer", "fabric"],
+            ["score", "video", "vj", "fab", "studio", "photos", "apphub", "assistant"],
+        ];
+        let page = std::env::args().find_map(|arg| arg.strip_prefix("--family-page=").and_then(|n| n.parse::<usize>().ok()));
+        page.map(|n| *pages.get(n).expect("family page must be 0 through 3"))
+            .unwrap_or(["photos", "apphub", "assistant", "camera", "ai-providers", "youtube", "hub:shape-svg", "hub:shape-png"])
+    })
 }

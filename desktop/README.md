@@ -121,7 +121,7 @@ App Hub's modules have no process form and always open in-process.
 | `--apps <file>` | Use this developer-program catalog. |
 | `--module <id>` | Host a linked module in-process. |
 | `--assistant`, `--prewarm` | Start the assistant app / prewarm apps (need matching catalog entries). Off by default. |
-| `MAKEPAD_WM_NO_PREBUILD=1` | Run from a checkout, the shell builds the catalog's native apps in the background shortly after it starts (one at a time, at background priority, stepping aside while an app you open is building), so their first open needn't wait for cargo. This turns it off. An installed shell builds nothing. |
+| `MAKEPAD_WM_NO_PREBUILD=1` | Run from a checkout, the shell builds the catalog's native apps in the background shortly after it starts (one at a time, at background priority, stepping aside while an app you open is building), so their first open needn't wait for cargo. This turns it off. An app the shell has built, with nothing its build read changed since, opens without running cargo at all, prebuild or not. An installed shell builds nothing. |
 | `--demo-home`, `--download-wallpapers` | Generate a demo filesystem; fetch the Omarchy theme's full wallpaper set. |
 | `OCTOSENSE_HOME` | State directory (default `~/.octosense`; falls back to an existing `~/.makeos`, and `MAKEOS_HOME`). |
 | `OCTOSENSE_APP_DATA` | Where App Hub keeps installed apps (default `apps/` in the platform data directory). |
@@ -319,7 +319,7 @@ Catalog lookup: `--apps <file>` if given, else `~/.octosense/apps.json` if it ex
 ]
 ```
 
-- `"source": "makepad"` resolves through Cargo to the same Makepad checkout as the host (`.sources/makepad`); such builds go to `~/.octosense/build/makepad`.
+- `"source": "makepad"` resolves through Cargo to the same Makepad checkout as the host (`.sources/makepad`); such builds go to the checkout's `target/makepad` (`$CARGO_TARGET_DIR/makepad` when set), beside the native apps, and every OctoSense home run from that checkout shares them. Older shells built them into `~/.octosense/build/makepad`; that folder is no longer used and can be deleted.
 - Step-by-step guides (Chinese): [open a hosted app](docs/open-apps.md), including the fix for an empty catalog when `cargo metadata --offline` fails, and [open the full Makepad catalog](docs/add-all-makepad-apps.md).
 - Relative paths resolve from the catalog's directory. Arguments are passed literally, without a shell.
 - `policy`: `"new"` opens another instance; `"focus"` (default) focuses a running one.
