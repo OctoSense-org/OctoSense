@@ -417,6 +417,13 @@ system bundle icons in every style. Other bundles and installed `hub:` apps keep
 their own artwork. Keep replacement assets under the shared shell's resources;
 updating Makepad must not require editing its theme icons or reapplying an icon patch.
 
+Every new app needs a distinct icon following the
+[new-icon authoring checklist](../docs/design/icon-family/README.md#authoring-a-new-app-icon).
+Use the same illustrated materials and safe area as the approved family; the
+template icon demonstrates the format and must be replaced before submission.
+Store apps declare their own bundle artwork in `listing.json`; they do not need
+an entry in the shell's built-in replacement list.
+
 For a visual regression check, build the `icon_shapes` example from `phone/`
 with `mobile-apps`. Run it with an isolated `OCTOSENSE_HOME`, hidden windows
 and the Makepad remote control surface (see the root `AGENTS.md`). It shows

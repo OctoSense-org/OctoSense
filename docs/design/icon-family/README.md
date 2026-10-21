@@ -130,6 +130,42 @@ The retained original Rinx PNG is a legacy exception: its existing treatment
 is preserved, and the previews apply the selected frame without editing the PNG.
 See the [existing launcher artwork rules](../../../apps/README.md#launcher-icon-artwork).
 
+## Authoring a new app icon
+
+Apply this format when creating artwork for a new OctoSense app. The shared
+family is a visual language, not a set of generic icons for new apps to reuse.
+
+1. Choose one dominant object that represents the app's actual purpose. Give it
+   a distinctive silhouette, with at most one supporting cue. Keep established
+   app branding when it is yours to use; do not copy another app's icon or put
+   the OctoSense/App Hub mark on an unrelated app.
+2. Author one editable SVG master with `viewBox="0 0 64 64"` and square numeric
+   dimensions. Start with a full-bleed colored ground and a warm ivory object
+   (`#fffdf7`), ink (`#233d40`) for contrast, and restrained mint, apricot or coral
+   accents. Use broad shapes, rounded object edges and two or three overlapping
+   planes. Keep every foreground detail inside 10.88–53.12 on both axes. Ground
+   colors may vary by app; the objects must remain recognizable without color.
+3. Use self-contained paths, rectangles and circles, with explicit colors and
+   lettering converted to paths. Keep depth local to the object. Export square
+   artwork without platform corners, masks or an outer drop shadow. If the
+   original artwork is raster, use a square PNG and preserve intentional
+   transparency; follow App Hub's size and admission limits.
+4. Review 64, 40 and 24 px on light and dark grounds, alongside the family and
+   with Android, macOS and iOS frames. Inspect a real target-shell render before
+   claiming native acceptance. Record the master, provenance and review images
+   outside the release bundle unless the app needs them at runtime.
+5. For a store app, replace the starter artwork with this app's own identity,
+   ship `bundle/assets/icon.svg` (or PNG), and declare that exact bundle-relative
+   path in `listing.json`. The shell draws it automatically through `AppIconDraw`.
+   Do not add store apps to the built-in overlay or modify Makepad's icons.
+   Built-in family additions instead use the local generator, explicit registry
+   and Omarchy outline, with the existing resource and rendering checks.
+
+[App Hub's icon guide](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/main/docs/ICONS.md)
+owns packaging and gate limits; App Flow's starter instructions and publishing
+workflow carry these authoring rules into each new app. A gate pass checks file
+validity, not visual quality or conformity to this family.
+
 ## Integration and verification
 
 The shared shell embeds 28 approved SVG masters and their Omarchy outline

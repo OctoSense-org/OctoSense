@@ -332,6 +332,8 @@ PNG/SVG 在绘制时使用同一外框策略，因此切换风格也会更新已
 
 OctoSense 的[已批准图标家族](../docs/design/icon-family/README.zh-CN.md)（包括浏览器的 C5 夜色罗盘）通过 `crates/shell/src/octosense/icon_family.rs` 中的明确应用 ID 覆盖 Makepad 图标目录。这些本地替换在所有样式下均优先于系统应用包图标；其他应用包及已安装的 `hub:` 应用保留自己的图案。替换资源放在共享 Shell 的资源目录中；更新 Makepad 不应需要修改其主题图标或重新应用图标补丁。
 
+每个新应用都需要独立的图标，并遵循[新图标创作清单](../docs/design/icon-family/README.zh-CN.md#为新应用创作图标)。沿用已批准家族的插画材质与安全区域；模板图标只演示格式，提交前必须替换。商店应用在 `listing.json` 中声明自己随包发布的图案，无需加入 Shell 的内置替换清单。
+
 需要视觉回归检查时，在 `phone/` 中启用 `mobile-apps` 构建 `icon_shapes`
 示例。使用隔离的 `OCTOSENSE_HOME`、隐藏窗口和 Makepad 远程控制接口运行
 （参见根目录 `AGENTS.md`）。示例覆盖七种风格、内置和商店 PNG/SVG 图案、
