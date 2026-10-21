@@ -1,0 +1,57 @@
+diff --git a/widgets/src/view.rs b/widgets/src/view.rs
+index 838f1e4cf..9740c07ab 100644
+--- a/widgets/src/view.rs
++++ b/widgets/src/view.rs
+@@ -95,6 +95,10 @@ pub struct View {
+     #[live(false)]
+     pub texture_caching: bool,
+ 
++    /// Give a texture-cached subtree its own depth buffer for 3D content.
++    #[live(false)]
++    pub texture_depth: bool,
++
+     #[rust]
+     optimize: ViewOptimize,
+     #[live]
+@@ -293,6 +297,15 @@ fn on_after_apply(
+         if self.optimize.needs_draw_list() && self.draw_list.is_none() {
+             self.draw_list = Some(DrawList2d::script_new(vm));
+         }
++        if let Some(cache) = &self.texture_cache {
++            let cx = vm.cx_mut();
++            if self.texture_depth != cx.passes[cache.pass.draw_pass_id()].depth_texture.is_some() {
++                self.texture_cache = None;
++                if let Some(draw_list) = &mut self.draw_list {
++                    draw_list.redraw(cx);
++                }
++            }
++        }
+         if !self.scroll_bars.is_zero() {
+             if let Some(bars) = self.scroll_bars_obj.as_mut() {
+                 if apply.is_reload() {
+@@ -1181,11 +1194,23 @@ fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawSte
+                     if self.texture_cache.is_none() {
+                         self.texture_cache = Some(ViewTextureCache {
+                             pass: DrawPass::new(cx),
+-                            _depth_texture: Texture::new(cx),
++                            _depth_texture: Texture::new_with_format(
++                                cx,
++                                TextureFormat::DepthD32 {
++                                    size: TextureSize::Auto,
++                                    initial: true,
++                                },
++                            ),
+                             color_texture: Texture::new(cx),
+                         });
+                         let texture_cache = self.texture_cache.as_mut().unwrap();
+-                        //cache.pass.set_depth_texture(cx, &cache.depth_texture, PassClearDepth::ClearWith(1.0));
++                        if self.texture_depth {
++                            texture_cache.pass.set_depth_texture(
++                                cx,
++                                &texture_cache._depth_texture,
++                                DrawPassClearDepth::ClearWith(1.0),
++                            );
++                        }
+                         texture_cache.color_texture = Texture::new_with_format(
+                             cx,
+                             TextureFormat::RenderBGRAu8 {
