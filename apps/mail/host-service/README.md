@@ -74,6 +74,10 @@ fn save_reply(account, to, subject, body){
     })
 }
 fn review_reply(account, to, subject, body){
+    if compose_id == "" {
+        // Save first and wait for its successful callback before opening review.
+        return
+    }
     host.request("mail.review_send", {
         account: account, to: to, subject: subject, body: body,
         compose_id: compose_id, expected_revision: revision
@@ -83,6 +87,10 @@ fn review_reply(account, to, subject, body){
     })
 }
 ```
+
+Call `save_reply` and wait for its successful callback before `review_reply`.
+If saving fails, keep the person's text and do not open review: an empty
+`compose_id` and revision `0` do not satisfy the public composer schema.
 
 Declare `mail` to describe usage; omitting it does not deny a call. A new app
 can require the exact API majors through
