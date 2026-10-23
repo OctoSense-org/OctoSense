@@ -62,7 +62,7 @@ SINGLE_SOURCE = {"octos-core": "octos", "octos-cli": "octos", "octosense-appstor
 
 
 def git(path, *args, check=True):
-    result = subprocess.run(["git", "-C", str(path), *args], capture_output=True, text=True)
+    result = subprocess.run(["git", "-C", str(path), *args], capture_output=True, text=True, encoding="utf-8")
     if check and result.returncode:
         raise RuntimeError(result.stderr.strip() or f"git {' '.join(args)} failed in {path}")
     return result
@@ -152,8 +152,11 @@ def add_worktree(hub, path, name, revision, args):
     fetch_revision(hub, name, revision, args, is_shallow(hub))
     # A checkout deleted without `git worktree remove` leaves a stale entry
     # that blocks adding the same path again.
-    listed = git(hub, "worktree", "list", "--porcelain").stdout.splitlines()
-    if f"worktree {path.resolve()}" in listed or f"worktree {path}" in listed:
+    # NUL records keep paths unquoted; Path also normalizes Git's forward
+    # slashes on Windows before comparing them with the requested path.
+    listed = git(hub, "worktree", "list", "--porcelain", "-z").stdout.split("\0")
+    if any(Path(record[len("worktree "):]).resolve() == path.resolve()
+           for record in listed if record.startswith("worktree ")):
         git(hub, "worktree", "prune")
     path.parent.mkdir(parents=True, exist_ok=True)
     git(hub, "worktree", "add", "--quiet", "--detach", str(path), revision)

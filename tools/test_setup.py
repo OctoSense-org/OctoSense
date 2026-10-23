@@ -6,7 +6,9 @@ import io
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -236,9 +238,52 @@ class HubWorktrees(unittest.TestCase):
     def test_a_stale_registration_does_not_block_adding_again(self):
         self.args.hub = str(self.hubs)
         self.prepare()
-        subprocess.check_call(["rm", "-rf", str(self.path)])
+        shutil.rmtree(self.path)
         self.prepare()
         self.assert_worktree_of_hub(self.commits[0])
+
+    def test_a_stale_registration_with_unicode_and_spaces_does_not_block_adding_again(self):
+        self.root = self.product_dir / "sources 中文 with spaces"
+        self.path = self.root / "makepad"
+        self.args.hub = str(self.hubs)
+        self.prepare()
+        shutil.rmtree(self.path)
+        self.prepare()
+        self.assert_worktree_of_hub(self.commits[0])
+
+    def test_recovery_does_not_force_prune_a_locked_worktree(self):
+        self.args.hub = str(self.hubs)
+        self.prepare()
+        run("-C", str(self.hub), "worktree", "lock", str(self.path))
+        shutil.rmtree(self.path)
+        with self.assertRaisesRegex(RuntimeError, "locked|already registered"):
+            self.prepare()
+        self.assertFalse(self.path.exists())
+        self.assertIn(self.path, self.hub_worktrees())
+        self.assertIn("locked", run("-C", str(self.hub), "worktree", "list", "--porcelain"))
+
+    def test_git_paths_are_utf8_when_python_utf8_mode_is_disabled(self):
+        self.root = self.product_dir / "sources 中文 with spaces"
+        self.path = self.root / "makepad"
+        self.args.hub = str(self.hubs)
+        self.prepare()
+        code = "\n".join([
+            "import importlib.util, json, sys",
+            "spec = importlib.util.spec_from_file_location('setup_native', sys.argv[1])",
+            "native = importlib.util.module_from_spec(spec)",
+            "spec.loader.exec_module(native)",
+            "result = native.git(sys.argv[2], 'rev-parse', '--show-toplevel')",
+            "print(json.dumps({'utf8_mode': sys.flags.utf8_mode, 'path': result.stdout.strip()}))",
+        ])
+        result = subprocess.run(
+            [sys.executable, "-B", "-X", "utf8=0", "-c", code, str(ROOT / "tools/setup.py"), str(self.path)],
+            capture_output=True, text=True, encoding="utf-8",
+            env={**os.environ, "PYTHONUTF8": "0"},
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = json.loads(result.stdout)
+        self.assertEqual(output["utf8_mode"], 0)
+        self.assertEqual(Path(output["path"]).resolve(), self.path.resolve())
 
     def test_rejects_a_hub_of_another_repository(self):
         run("-C", str(self.hub), "remote", "set-url", "origin", "https://example.invalid/other.git")
