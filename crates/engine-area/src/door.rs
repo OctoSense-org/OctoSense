@@ -47,6 +47,13 @@
 //! What the commands then do to the open document is the service's to fence
 //! after each one (a document's links, an effect's file parameters), since
 //! no id check sees the data a command plants.
+//!
+//! A service's own typed methods (an app's open-document editing) build
+//! their commands themselves and pass the same gate with
+//! [`Door::admit_method`]: every command admitted as one of `run` would be,
+//! before any runs, but under the method's own most commands per call
+//! instead of [`MAX_COMMANDS`], and with a [`Refusal`] that says which kind
+//! of refusal it is, so the service can answer with its stable codes.
 
 use std::collections::BTreeMap;
 use std::path::{Component, Path, PathBuf};
@@ -193,6 +200,48 @@ pub struct Reviewed {
 
 impl Reviewed {
     pub const NONE: Reviewed = Reviewed { file_reads: &[], setters: &[], inner: &[], limits: &[], copies_per_call: 1.0, held: &[] };
+}
+
+/// A `file` command a service's own method may run without its file access:
+/// the command reaches a file only through the parameters `reads_through`
+/// name (a non-string `picture`, then its `path`), and a method's call,
+/// whose parameters the service builds itself, never names them. Only
+/// [`Door::admit_method`] honours it, with the service's list: `run` never
+/// runs such a command, and [`Door::runs`] and [`Door::runnable`] do not
+/// count it.
+pub struct Unread {
+    pub id: &'static str,
+    pub reads_through: &'static [&'static str],
+}
+
+/// Which kind of refusal a [`Refusal`] is.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Refused {
+    /// More commands than the call's ceiling.
+    Count,
+    /// Over a reviewed ceiling: a parameter that multiplies work, the files
+    /// the call reads, or the copies it makes.
+    Limit,
+    /// A command held back until the engine bounds hostile data ([`Held`]).
+    Held,
+    /// Anything else: an id the door does not run or does not know, a class
+    /// it never runs, a path outside the area, a parameter of the wrong
+    /// shape.
+    Other,
+}
+
+/// Why the door refused a call of a service's own method
+/// ([`Door::admit_method`]): the kind, and the words for a person.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Refusal {
+    pub kind: Refused,
+    pub words: String,
+}
+
+impl Refusal {
+    fn new(kind: Refused, words: String) -> Refusal {
+        Refusal { kind, words }
+    }
 }
 
 /// What one call has asked for so far.
@@ -361,6 +410,7 @@ impl Door {
     /// parameters to run it with.
     pub fn admit_all(&self, cmds: &Value, area: &Area) -> Result<Vec<(String, Value)>, String> {
         let family = self.family;
+        let who = format!("{family}.run");
         let cmds = cmds.as_array().ok_or_else(|| format!("{family}.run: `cmds` is a list of {{id, params?}}"))?;
         if cmds.len() > MAX_COMMANDS {
             return Err(format!("{family}.run: at most {MAX_COMMANDS} commands per call"));
@@ -369,7 +419,7 @@ impl Door {
         let mut admitted = Vec::with_capacity(cmds.len());
         for c in cmds {
             let id = c["id"].as_str().filter(|id| !id.is_empty()).ok_or_else(|| format!("{family}.run: each command has an `id`"))?;
-            admitted.push((id.to_string(), self.admit_at(id, &c["params"], area, 0, &mut budget)?));
+            admitted.push((id.to_string(), self.admit_at(&who, id, &c["params"], area, 0, &mut budget, &[]).map_err(|r| r.words)?));
         }
         Ok(admitted)
     }
@@ -379,7 +429,25 @@ impl Door {
     /// in turn, and its reviewed file parameters inside the area. Returns
     /// the parameters to run it with (file parameters made absolute).
     pub fn admit(&self, id: &str, params: &Value, area: &Area) -> Result<Value, String> {
-        self.admit_at(id, params, area, 0, &mut Budget::default())
+        self.admit_at(&format!("{}.run", self.family), id, params, area, 0, &mut Budget::default(), &[]).map_err(|r| r.words)
+    }
+
+    /// Admit a whole call of one of the service's own methods before any of
+    /// it runs: the commands `method` built itself from reviewed values, at
+    /// most `most` of them (the method's own ceiling, its reason beside it in
+    /// the service, in place of `run`'s [`MAX_COMMANDS`]), each admitted as
+    /// [`Door::admit`] admits a command of `run`: the same allowlist, held
+    /// commands, setter keys, inner ids, reviewed reads inside the area and
+    /// limits, the reads and copies of the call sharing one budget. Besides,
+    /// a `file` command of `unread` runs when the call names none of the
+    /// parameters it would read a file through ([`Unread`]). Refusals name
+    /// `method` where `run`'s name `<family>.run`, and say their kind.
+    pub fn admit_method(&self, method: &str, cmds: &[(&str, Value)], most: usize, area: &Area, unread: &[Unread]) -> Result<Vec<(String, Value)>, Refusal> {
+        if cmds.len() > most {
+            return Err(Refusal::new(Refused::Count, format!("{method}: {} engine commands, more than the {most} this method runs in one call", cmds.len())));
+        }
+        let mut budget = Budget::default();
+        cmds.iter().map(|(id, params)| Ok((id.to_string(), self.admit_at(method, id, params, area, 0, &mut budget, unread)?))).collect()
     }
 
     /// How many times an admitted command multiplies what the document
@@ -396,64 +464,74 @@ impl Door {
     }
 
     /// [`Door::admit`] at nesting `depth`, adding what it asks for to the
-    /// call's `budget`.
-    fn admit_at(&self, id: &str, params: &Value, area: &Area, depth: usize, budget: &mut Budget) -> Result<Value, String> {
+    /// call's `budget`; `who` names the call in a refusal (`<family>.run`,
+    /// or a service's own method), and `unread` is a method's reviewed list
+    /// ([`Unread`]; empty for `run`).
+    #[allow(clippy::too_many_arguments)]
+    fn admit_at(&self, who: &str, id: &str, params: &Value, area: &Area, depth: usize, budget: &mut Budget, unread: &[Unread]) -> Result<Value, Refusal> {
         let family = self.family;
+        let other = |words: String| Refusal::new(Refused::Other, words);
         if depth > MAX_DEPTH {
-            return Err(format!("{family}.run: `{id}`: commands nest too deep"));
+            return Err(other(format!("{who}: `{id}`: commands nest too deep")));
         }
-        let class = self.class(id).ok_or_else(|| format!("{family}.run: `{id}` is not a reviewed {family} command, so the door does not run it"))?;
+        let class = self.class(id).ok_or_else(|| other(format!("{who}: `{id}` is not a reviewed {family} command, so the door does not run it")))?;
         if let Some(held) = self.reviewed.held.iter().find(|h| h.id == id) {
-            return Err(format!("{family}.run: `{id}` is held back from the door: {}", held.why));
+            return Err(Refusal::new(Refused::Held, format!("{who}: `{id}` is held back from the door: {}", held.why)));
         }
         let mut params = if params.is_null() { Value::Object(Default::default()) } else { params.clone() };
         if !params.is_object() {
-            return Err(format!("{family}.run: `{id}`: `params` is an object"));
+            return Err(other(format!("{who}: `{id}`: `params` is an object")));
         }
         match class {
             Class::Safe => {}
+            Class::File if !self.reviewed.file_reads.iter().any(|r| r.id == id) && unread.iter().any(|u| u.id == id) => {
+                let u = unread.iter().find(|u| u.id == id).map(|u| u.reads_through).unwrap_or(&[]);
+                if let Some(key) = u.iter().find(|key| params.get(**key).is_some()) {
+                    return Err(other(format!("{who}: `{id}`: `{key}` would have it read a file, and the service never names it")));
+                }
+            }
             Class::File => {
                 let read = self.reviewed.file_reads.iter().find(|r| r.id == id).ok_or_else(|| {
-                    format!("{family}.run: `{id}` reads or writes files beyond the door's `path` and `out`, and is not reviewed to run through it")
+                    other(format!("{who}: `{id}` reads or writes files beyond the door's `path` and `out`, and is not reviewed to run through it"))
                 })?;
                 for key in read.params {
                     if let Some(rel) = params.get(*key).cloned() {
-                        let rel = rel.as_str().ok_or_else(|| format!("{family}.run: `{id}`: `{key}` is a relative path"))?;
-                        let (abs, len) = existing_file(area, rel).map_err(|e| format!("{family}.run: `{id}`: `{key}`: {e}"))?;
+                        let rel = rel.as_str().ok_or_else(|| other(format!("{who}: `{id}`: `{key}` is a relative path")))?;
+                        let (abs, len) = existing_file(area, rel).map_err(|e| other(format!("{who}: `{id}`: `{key}`: {e}")))?;
                         budget.read = budget.read.saturating_add(len);
                         if budget.read > MAX_READ_BYTES {
-                            return Err(format!("{family}.run: `{id}`: the files this call reads total more than {MAX_READ_BYTES} bytes"));
+                            return Err(Refusal::new(Refused::Limit, format!("{who}: `{id}`: the files this call reads total more than {MAX_READ_BYTES} bytes")));
                         }
                         params[*key] = Value::String(abs.to_string_lossy().into_owned());
                     }
                 }
             }
-            other => {
-                return Err(format!("{family}.run: `{id}` is classed {}: {}, so the door never runs it", other.name(), other.refusal()));
+            never => {
+                return Err(other(format!("{who}: `{id}` is classed {}: {}, so the door never runs it", never.name(), never.refusal())));
             }
         }
         if let Some(setter) = self.reviewed.setters.iter().find(|s| s.id == id) {
             let keys = (setter.keys_of)(&params);
             if setter.keys.is_empty() {
-                return Err(format!("{family}.run: `{id}` sets app-wide variables, and no key of it is reviewed for the door"));
+                return Err(other(format!("{who}: `{id}` sets app-wide variables, and no key of it is reviewed for the door")));
             }
             if keys.is_empty() {
-                return Err(format!("{family}.run: `{id}`: name the key it sets"));
+                return Err(other(format!("{who}: `{id}`: name the key it sets")));
             }
             if let Some(key) = keys.iter().find(|k| !setter.keys.contains(&k.as_str())) {
-                return Err(format!("{family}.run: `{id}`: `{key}` is not a key reviewed for the door"));
+                return Err(other(format!("{who}: `{id}`: `{key}` is not a key reviewed for the door")));
             }
         }
         for inner in self.reviewed.inner.iter().filter(|i| i.id == id) {
             let Some(named) = params.get(inner.param).cloned() else { continue };
             match &inner.rule {
                 InnerRule::Command { prefix, params: key } => {
-                    let inner_id = named.as_str().ok_or_else(|| format!("{family}.run: `{id}`: `{}` names a command", inner.param))?;
+                    let inner_id = named.as_str().ok_or_else(|| other(format!("{who}: `{id}`: `{}` names a command", inner.param)))?;
                     if !inner_id.starts_with(prefix) {
-                        return Err(format!("{family}.run: `{id}` runs only `{prefix}*` commands, not `{inner_id}`"));
+                        return Err(other(format!("{who}: `{id}` runs only `{prefix}*` commands, not `{inner_id}`")));
                     }
                     let inner_params = params.get(*key).cloned().unwrap_or(Value::Null);
-                    let admitted = self.admit_at(inner_id, &inner_params, area, depth + 1, budget)?;
+                    let admitted = self.admit_at(who, inner_id, &inner_params, area, depth + 1, budget, unread)?;
                     params[*key] = admitted;
                 }
                 InnerRule::Effect { builtin } => {
@@ -464,33 +542,38 @@ impl Door {
                     };
                     for name in names {
                         if !builtin(name) {
-                            return Err(format!(
-                                "{family}.run: `{id}`: `{name}` is not an effect the engine builds in (an effect plug-in never runs through the door)"
-                            ));
+                            return Err(other(format!(
+                                "{who}: `{id}`: `{name}` is not an effect the engine builds in (an effect plug-in never runs through the door)"
+                            )));
                         }
                     }
                 }
             }
         }
         for limit in self.reviewed.limits.iter().filter(|l| l.id == id) {
-            let Some(amount) = limit.measure.of(&params).map_err(|e| format!("{family}.run: `{id}`: {e}"))? else { continue };
+            let Some(amount) = limit.measure.of(&params).map_err(|e| other(format!("{who}: `{id}`: {e}")))? else { continue };
             if amount.is_nan() || amount > limit.max {
                 let (n, max, what) = (shown(amount), shown(limit.max), limit.what);
-                return Err(match &limit.measure {
-                    Measure::Product(_) => format!(
-                        "{family}.run: `{id}`: {} is {n}, more than the {max} {what} the door allows in one command",
-                        limit.measure.label()
-                    ),
-                    Measure::Custom(_) => format!("{family}.run: `{id}` asks for {n} {what}, more than the {max} the door allows in one command"),
-                });
+                return Err(Refusal::new(
+                    Refused::Limit,
+                    match &limit.measure {
+                        Measure::Product(_) => {
+                            format!("{who}: `{id}`: {} is {n}, more than the {max} {what} the door allows in one command", limit.measure.label())
+                        }
+                        Measure::Custom(_) => format!("{who}: `{id}` asks for {n} {what}, more than the {max} the door allows in one command"),
+                    },
+                ));
             }
             if limit.copies {
                 budget.copies *= amount.max(1.0);
                 if budget.copies.is_nan() || budget.copies > self.reviewed.copies_per_call {
-                    return Err(format!(
-                        "{family}.run: `{id}`: the copies this call makes multiply to {}, more than the {} the door allows in one call (a copy multiplies what the commands before it made)",
-                        shown(budget.copies),
-                        shown(self.reviewed.copies_per_call)
+                    return Err(Refusal::new(
+                        Refused::Limit,
+                        format!(
+                            "{who}: `{id}`: the copies this call makes multiply to {}, more than the {} the door allows in one call (a copy multiplies what the commands before it made)",
+                            shown(budget.copies),
+                            shown(self.reviewed.copies_per_call)
+                        ),
                     ));
                 }
             }
@@ -747,6 +830,92 @@ mod tests {
         assert_eq!(d.copies("shape.array", &json!({"rows": 4, "columns": 5})), 20.0);
         assert_eq!(d.copies("shape.rect", &json!({})), 1.0);
         assert_eq!(d.copies("canvas.new", &json!({"size": [10, 10]})), 1.0, "not a copy");
+    }
+
+    /// A service's own method passes the same gate under its own ceiling:
+    /// at the ceiling the call is admitted, one over is refused as a count,
+    /// before any command is looked at.
+    #[test]
+    fn a_methods_own_ceiling_counts_its_commands() {
+        let (_dir, area) = area();
+        let d = door();
+        let cmds: Vec<(&str, Value)> = (0..3).map(|_| ("edit.undo", json!({}))).collect();
+        assert_eq!(d.admit_method("demo.tidy", &cmds, 3, &area, &[]).unwrap().len(), 3);
+        let r = d.admit_method("demo.tidy", &cmds, 2, &area, &[]).unwrap_err();
+        assert_eq!(r, Refusal { kind: Refused::Count, words: "demo.tidy: 3 engine commands, more than the 2 this method runs in one call".into() });
+        // The count comes first: a call over its ceiling is refused even
+        // when every command would pass.
+        let many: Vec<(&str, Value)> = (0..MAX_COMMANDS + 10).map(|_| ("shape.rect", json!({}))).collect();
+        assert_eq!(d.admit_method("demo.tidy", &many, MAX_COMMANDS + 10, &area, &[]).unwrap().len(), MAX_COMMANDS + 10, "not `run`'s 64");
+        assert_eq!(d.admit_method("demo.tidy", &[], 0, &area, &[]).unwrap(), []);
+    }
+
+    /// Every command of a method passes the allowlist, the held commands,
+    /// the reviewed reads and the limits exactly as a `run` command does,
+    /// with the reads and copies of the call sharing one budget; each
+    /// refusal names the method and says its kind.
+    #[test]
+    fn a_methods_commands_pass_the_same_gate_and_say_why_they_are_refused() {
+        let (dir, area) = area();
+        let d = door();
+        let refused = |cmds: &[(&str, Value)]| d.admit_method("demo.edit", cmds, 10, &area, &[]).unwrap_err();
+        let r = refused(&[("shape.rect", json!({})), ("shape.ellipse", json!({}))]);
+        assert_eq!(r, Refusal { kind: Refused::Held, words: "demo.edit: `shape.ellipse` is held back from the door: the engine can abort on a huge one (#0)".into() });
+        let r = refused(&[("shape.array", json!({"rows": 11, "columns": 10}))]);
+        assert_eq!(r.kind, Refused::Limit);
+        assert_eq!(r.words, "demo.edit: `shape.array`: `rows` × `columns` is 110, more than the 100 copies the door allows in one command");
+        let r = refused(&[("shape.array", json!({"rows": 10, "columns": 10})), ("shape.array", json!({"rows": 10, "columns": 10}))]);
+        assert!(r.kind == Refused::Limit && r.words.contains("the copies this call makes multiply to 10000"), "{r:?}");
+        for (id, class) in [("plugin.install", "code"), ("help.online", "network"), ("media.play", "device"), ("prefs.set", "host")] {
+            let r = refused(&[(id, json!({}))]);
+            assert!(r.kind == Refused::Other && r.words.starts_with(&format!("demo.edit: `{id}` is classed {class}")), "{r:?}");
+        }
+        let r = refused(&[("file.saveAs", json!({"path": "x"}))]);
+        assert!(r.kind == Refused::Other && r.words.contains("not reviewed to run through it"), "{r:?}");
+        let r = refused(&[("brand.new", json!({}))]);
+        assert!(r.kind == Refused::Other && r.words.contains("not a reviewed demo command"), "{r:?}");
+        let r = refused(&[("insert.picture", json!({"path": "../outside.png"}))]);
+        assert!(r.kind == Refused::Other && r.words.starts_with("demo.edit: `insert.picture`: `path`: "), "a path outside the area: {r:?}");
+        let r = refused(&[("effect.apply", json!({"effect": "plugin.evil"}))]);
+        assert_eq!(r.kind, Refused::Other);
+        let r = refused(&[("perspective.draw", json!({"command": "shape.ellipse", "params": {}}))]);
+        assert_eq!(r.kind, Refused::Held, "held through an inner command too: {r:?}");
+        // A reviewed read comes back as the file's resolved path, and the
+        // reads of one call share the budget.
+        let big = std::fs::File::create(dir.path().join("big.png")).unwrap();
+        big.set_len(MAX_READ_BYTES / 2 + 1).unwrap();
+        let one = d.admit_method("demo.edit", &[("insert.picture", json!({"path": "big.png"}))], 1, &area, &[]).unwrap();
+        assert_eq!(one[0].1["path"], json!(dir.path().canonicalize().unwrap().join("big.png").to_string_lossy()));
+        let r = refused(&[("insert.picture", json!({"path": "big.png"})), ("insert.picture", json!({"path": "big.png"}))]);
+        assert!(r.kind == Refused::Limit && r.words.contains("total more than"), "{r:?}");
+        // `run`'s own words are unchanged.
+        assert!(d.admit("shape.ellipse", &json!({}), &area).unwrap_err().starts_with("demo.run: `shape.ellipse` is held back"));
+    }
+
+    /// A `file` command reviewed to run without its file access runs only
+    /// for a service's own method, only when the call names none of the
+    /// parameters it reads a file through (present at all, `null` too), and
+    /// never through `run`.
+    #[test]
+    fn an_unread_file_command_runs_only_for_a_method_and_only_without_its_reading_keys() {
+        let (_dir, area) = area();
+        let d = door();
+        static UNREAD: &[Unread] = &[Unread { id: "file.saveAs", reads_through: &["path"] }];
+        let ok = d.admit_method("demo.edit", &[("file.saveAs", json!({"format": "deck"}))], 1, &area, UNREAD).unwrap();
+        assert_eq!(ok[0].1, json!({"format": "deck"}), "nothing resolved: it reads no file");
+        for params in [json!({"path": "x.deck"}), json!({"path": null}), json!({"format": "deck", "path": "../out"})] {
+            let r = d.admit_method("demo.edit", &[("file.saveAs", params.clone())], 1, &area, UNREAD).unwrap_err();
+            assert_eq!(r, Refusal { kind: Refused::Other, words: "demo.edit: `file.saveAs`: `path` would have it read a file, and the service never names it".into() }, "{params}");
+        }
+        // Without the method's list, and through `run`, it stays refused.
+        let r = d.admit_method("demo.edit", &[("file.saveAs", json!({}))], 1, &area, &[]).unwrap_err();
+        assert!(r.words.contains("not reviewed to run through it"), "{r:?}");
+        assert!(d.admit("file.saveAs", &json!({}), &area).unwrap_err().contains("not reviewed to run through it"));
+        assert!(d.admit_all(&json!([{"id": "file.saveAs"}]), &area).unwrap_err().contains("not reviewed to run through it"));
+        assert!(!d.runs("file.saveAs") && !d.runnable().contains(&"file.saveAs"));
+        // The list widens no other class: a code command stays refused.
+        static WRONG: &[Unread] = &[Unread { id: "plugin.install", reads_through: &["path"] }];
+        assert!(d.admit_method("demo.edit", &[("plugin.install", json!({}))], 1, &area, WRONG).unwrap_err().words.contains("classed code"));
     }
 
     #[test]

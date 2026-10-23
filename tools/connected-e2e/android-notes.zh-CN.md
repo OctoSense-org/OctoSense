@@ -64,6 +64,10 @@ python3 tools/connected-e2e/android_notes.py \
 {"test_actions":["launch-hub:org.octosense.samples.githubnotes"]}
 ```
 
+测试动作之所以会执行，是因为上面的测试包是开发版（`--features dev-mode`）；任何应用
+都能带着 extra 启动 Home，所以发布版 Home 会忽略启动时的测试动作
+（`crates/shell/src/launch_input.rs`）。
+
 不能覆盖日常 Home 或传输个人配置。固定版本的 Makepad remote 在 Android 是空实现，
 设置 `MAKEPAD_REMOTE` 或 ADB 端口转发不会启用它。手机使用 ADB 输入和原始设备截图；
 Mac 浸泡使用 Makepad instrument，分别记录证据。

@@ -55,14 +55,14 @@ impl Destination {
 /// manifest ID crosses the script boundary, and opening one is navigation
 /// inside Home (the shell launcher), never an Android intent.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum SystemApp { AiProviders }
+pub enum SystemApp { AiProviders, Updater }
 impl SystemApp {
-    pub const ALL: [SystemApp; 1] = [SystemApp::AiProviders];
-    pub fn wire(self) -> &'static str { match self { Self::AiProviders => "ai_providers" } }
+    pub const ALL: [SystemApp; 2] = [SystemApp::AiProviders, SystemApp::Updater];
+    pub fn wire(self) -> &'static str { match self { Self::AiProviders => "ai_providers", Self::Updater => "updater" } }
     /// The launcher row the shell opens, as tapping its icon does.
-    pub fn launcher_id(self) -> &'static str { match self { Self::AiProviders => "ai-providers" } }
+    pub fn launcher_id(self) -> &'static str { match self { Self::AiProviders => "ai-providers", Self::Updater => "updater" } }
     /// The App Hub system bundle (ADR 0004) behind that row.
-    pub fn manifest_id(self) -> &'static str { match self { Self::AiProviders => "os.ai-providers" } }
+    pub fn manifest_id(self) -> Option<&'static str> { match self { Self::AiProviders => Some("os.ai-providers"), Self::Updater => None } }
 }
 
 /// No raw command, intent, settings key, path or module ID is accepted.
@@ -292,6 +292,7 @@ pub struct SettingsSnapshot {
     /// The AI providers system app ships in this build and the Card runner
     /// that hosts it is linked. Availability only: no provider data.
     pub ai_providers:bool,
+    pub updater:bool,
     /// Developer options (About phone), where this build offers them.
     pub developer:Option<DeveloperOptions>,
 }
@@ -300,7 +301,7 @@ impl SettingsSnapshot {
         self.android && self.connected && self.capabilities.contains(operation)
     }
     pub fn permits_device(&self, setting: &DeviceSetting) -> bool { self.android && self.device.as_ref().is_some_and(|state| state.permits(setting)) }
-    pub fn system_app(&self, app: SystemApp) -> bool { match app { SystemApp::AiProviders => self.ai_providers } }
+    pub fn system_app(&self, app: SystemApp) -> bool { match app { SystemApp::AiProviders => self.ai_providers, SystemApp::Updater => self.updater } }
 }
 
 script_mod! {

@@ -42,7 +42,7 @@ impl App {
     /// sits on the wallpaper with no flat wash beneath; under flat it is
     /// `mod.wm_theme.background` again, as the DSL resolved it.
     pub(super) fn apply_material_to_chrome(&mut self, cx: &mut Cx, material: shell::MaterialTokens, palette: Option<shell::ShellPalette>) {
-        if let Some(mut w) = self.ui.widget(cx, ids!(shell_bar)).borrow_mut::<shell::bar::ShellBar>() {
+        if let Some(mut w) = self.shell_bar(cx).borrow_mut::<shell::bar::ShellBar>() {
             w.set_material(material, palette);
         }
         if let Some(mut w) = self.ui.widget(cx, ids!(shell_menu)).borrow_mut::<ShellMenu>() {
@@ -81,7 +81,7 @@ impl App {
             w.set_material(material);
         }
         let bar_strip = bar_strip_color(&material, self.state_mut().bar_ground);
-        let mut bar = self.ui.widget(cx, ids!(bar));
+        let mut bar = self.bar_strip(cx);
         script_apply_eval!(cx, bar, { draw_bg +: { color: #(bar_strip) } });
     }
 
@@ -241,10 +241,10 @@ impl App {
     #[cfg(not(mobile_only))]
     pub(super) fn open_style_menu(&mut self, cx: &mut Cx) {
         let anchor = if self.state_mut().style.target.mobile() {
-            self.ui.widget(cx, ids!(phone_controls)).borrow::<crate::mobile_surface::PhoneSurface>()
+            self.bar_strip(cx).widget(cx, ids!(phone_controls)).borrow::<crate::mobile_surface::PhoneSurface>()
                 .and_then(|bar| bar.hit_rect(&crate::mobile::PhoneHit::Style))
         } else {
-            self.ui.widget(cx, ids!(shell_bar)).borrow::<crate::shell::bar::ShellBar>()
+            self.shell_bar(cx).borrow::<crate::shell::bar::ShellBar>()
                 .and_then(|bar| bar.module_rect(BarModule::Style))
         };
         self.open_shell_menu(cx, "desktop", MenuSkin::Menu);
@@ -291,6 +291,17 @@ impl App {
             self.focus_client(cx, next);
         }
         self.update_bar(cx);
+        self.redraw_all(cx);
+    }
+    /// macOS's green button: the window covers the desk, the top bar and a
+    /// floating dock hide until the pointer comes to their edge, and the
+    /// same press brings it back (`DesktopWindow::fullscreen`).
+    fn fullscreen_desktop(&mut self, cx: &mut Cx, client: ClientId) {
+        if let Some(w) = self.state_mut().layout.desktop.get_mut(client) {
+            w.fullscreen = !w.fullscreen;
+            w.minimized = false;
+        }
+        self.focus_client(cx, client);
         self.redraw_all(cx);
     }
     fn maximize_desktop(&mut self, cx: &mut Cx, client: ClientId) {
@@ -491,13 +502,31 @@ impl App {
             Event::Scroll(e) => e.abs,
             _ => return false,
         };
+        // A menu a hiding strip opened keeps that strip out: the launcher the
+        // dock, a bar menu the top of a full-screen window.
+        let menu = self.ui.widget(cx, ids!(shell_menu)).borrow::<ShellMenu>().map(|m| (m.model.open, m.model.skin));
+        let held = matches!(menu, Some((true, MenuSkin::Launcher)));
+        let bar_menu = matches!(menu, Some((true, MenuSkin::Menu)));
+        // While an app presents (`WmState::presentation`), no edge brings
+        // anything out: Esc and the app's own exit are the ways out.
+        let presenting = self.state.as_ref().is_some_and(|s| s.presentation.is_some());
         let shelf = self.ui.widget(cx, ids!(desktop_shelf));
         let (hit, inside) = if let Some(mut s) = shelf.borrow_mut::<DesktopShelf>() {
             s.hover_at(cx, p);
+            s.auto_hide_pointer(cx, (!presenting).then_some(p), held && !presenting);
             (s.hit(p), s.contains(p))
         } else {
             (None, false)
         };
+        // The top of a full-screen window comes out at the top edge: its
+        // title bar, as macOS shows it with the menu bar.
+        if self.front_fullscreen {
+            let screen = self.desk(cx).borrow::<WmDesk>().map(|d| d.desk_rect).unwrap_or_default();
+            // The bar coming out with it, then the title bar.
+            let depth = self.state_mut().top_bar + self.state_mut().style.target.title_height();
+            let wants = bar_menu || crate::desktop::top_pointer_wants(p, screen, depth, self.top_edge.out);
+            self.top_edge.want(cx, wants && !presenting);
+        }
         let chrome_hit = self.desk(cx).borrow_mut::<WmDesk>()
             .and_then(|mut d| d.chrome_pointer(cx, (!inside).then_some(p)));
         if let Event::MouseUp(e) = event {
@@ -509,6 +538,13 @@ impl App {
                         match control {
                             ChromeHit::Close => self.request_close(cx, client),
                             ChromeHit::Minimize => self.minimize_desktop(cx, client),
+                            // macOS's green button makes the window full
+                            // screen; with Option it zooms (maximizes).
+                            ChromeHit::Maximize
+                                if self.state_mut().style.target.mac_family() && !e.modifiers.alt =>
+                            {
+                                self.fullscreen_desktop(cx, client)
+                            }
                             ChromeHit::Maximize => self.maximize_desktop(cx, client),
                             _ => {}
                         }
@@ -568,6 +604,9 @@ impl App {
                                 desk.press_chrome(cx, (client, hit));
                             }
                         }
+                        // A full-screen window's title bar neither moves nor
+                        // zooms it; its buttons still work.
+                        ChromeHit::Title if self.state_mut().layout.is_fullscreen(client) => {}
                         ChromeHit::Title => {
                             let double = self.title_press.is_some_and(|(c, time, pos)| {
                                 c == client && e.time - time < 0.35 && (pos - p).length() < 5.0

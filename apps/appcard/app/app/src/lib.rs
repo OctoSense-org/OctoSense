@@ -30,6 +30,82 @@ use streaming_markdown_kit::{
 
 use crate::backend::OctosUiAgent;
 
+/// A launch-time `MAKEPAD_*` hook: the test, provisioning, seeding and
+/// measurement settings this app reads from its environment. On Android
+/// Makepad copies the launch extras `makepad.<NAME>` into `MAKEPAD_<NAME>`,
+/// and OpenHarmony entry abilities pass `makepad.*` launch parameters the
+/// same way, so on a phone another app can set them by starting this one.
+/// On a phone (`cfg(mobile)`: Android or OpenHarmony) only a development
+/// build reads them (`dev_mode`: debug assertions or feature `dev-mode`,
+/// build.rs); a release build behaves as if none were set. A desktop reads
+/// them, because its environment is the local user's, like a command-line
+/// flag. Read every `MAKEPAD_*` hook through this, never `std::env::var`.
+pub(crate) fn launch_var(name: &str) -> Option<String> {
+    launch_set_in(cfg!(mobile), cfg!(dev_mode), name).then(|| std::env::var(name).ok()).flatten()
+}
+
+/// [`launch_var`] for a variable whose presence is the setting.
+pub(crate) fn launch_flag(name: &str) -> bool {
+    launch_set_in(cfg!(mobile), cfg!(dev_mode), name)
+}
+
+/// Whether `name` is set and this build may read it. A phone release build
+/// notes once that it ignored a launch-time hook, without its value.
+fn launch_set_in(mobile: bool, development: bool, name: &str) -> bool {
+    if std::env::var_os(name).is_none() {
+        return false;
+    }
+    if mobile && !development {
+        static NOTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+        if !NOTED.swap(true, std::sync::atomic::Ordering::Relaxed) {
+            log::info!("launch input: {name} ignored; a release build on a phone reads no launch-time hooks");
+        }
+        return false;
+    }
+    true
+}
+
+#[cfg(test)]
+mod launch_input_tests {
+    use super::launch_set_in;
+
+    #[test]
+    fn only_a_phone_release_build_ignores_a_launch_hook() {
+        // A name no other test sets.
+        let name = "MAKEPAD_LAUNCH_INPUT_TEST_PROBE";
+        std::env::set_var(name, "/sdcard/Download/provision");
+        assert!(!launch_set_in(true, false, name), "a phone release build ignores it");
+        assert!(launch_set_in(true, true, name), "a phone development build reads it");
+        assert!(launch_set_in(false, false, name), "a desktop release build reads it");
+        assert!(launch_set_in(false, true, name), "a desktop development build reads it");
+        std::env::remove_var(name);
+        assert!(!launch_set_in(false, false, name), "unset is never read");
+    }
+
+    /// Every `MAKEPAD_*` hook goes through `launch_var`/`launch_flag`, so
+    /// none bypasses the build check.
+    #[test]
+    fn no_source_reads_a_makepad_hook_directly() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        let mut offenders = Vec::new();
+        let mut stack = vec![root.clone()];
+        while let Some(dir) = stack.pop() {
+            for entry in std::fs::read_dir(&dir).expect("read src") {
+                let path = entry.expect("entry").path();
+                if path.is_dir() {
+                    stack.push(path);
+                } else if path.extension().is_some_and(|e| e == "rs") {
+                    let text = std::fs::read_to_string(&path).expect("read source");
+                    if text.contains("env::var(\"MAKEPAD_") || text.contains("env::var_os(\"MAKEPAD_") {
+                        offenders.push(path.strip_prefix(&root).unwrap().display().to_string());
+                    }
+                }
+            }
+        }
+        assert!(offenders.is_empty(), "read MAKEPAD_* hooks through launch_var: {offenders:?}");
+    }
+}
+
 /// Octos profiles supply system prompts server-side, so the client ships an
 /// empty placeholder. Replaces aichat's `BackendType::system_prompt` (and the
 /// `splash.md` `include_str!`) which baked huge LLM-shaped diagram preambles
@@ -458,7 +534,7 @@ fn refresh_youtube_live_ids() {
         };
         rt.block_on(async {
             let mut builder = reqwest::Client::builder();
-            if let Ok(proxy) = std::env::var("MAKEPAD_OCTOS_PROXY") {
+            if let Some(proxy) = crate::launch_var("MAKEPAD_OCTOS_PROXY") {
                 let proxy = proxy.trim().to_owned();
                 if !proxy.is_empty() {
                     if let Ok(p) = reqwest::Proxy::all(&proxy) {
@@ -1485,8 +1561,7 @@ fn pin_fullbleed_root_height(body: &str) -> String {
     let attrs = &body[root_open + 1..attr_end];
     // The seed-render harness treats the card as THE SCREEN: a Fill root
     // means "the design frame", not the chat feed's tall fullbleed canvas.
-    let pin_h = std::env::var("MAKEPAD_SEED_L0_FILL_HEIGHT")
-        .ok()
+    let pin_h = crate::launch_var("MAKEPAD_SEED_L0_FILL_HEIGHT")
         .and_then(|v| v.parse::<u32>().ok())
         .unwrap_or(FULLBLEED_FALLBACK_HEIGHT);
     let fixed = format!("height: {pin_h}");
@@ -5606,7 +5681,7 @@ impl Widget for ChatList {
                         }
                         item_widget.draw_all_unscoped(cx);
                         // LOCAL DEBUG: where did this item actually land?
-                        if std::env::var_os("MAKEPAD_GL_DRAW_TRACE").is_some() {
+                        if crate::launch_flag("MAKEPAD_GL_DRAW_TRACE") {
                             let r = item_widget.area().rect(cx);
                             log::info!(
                                 "[CHATLIST] item {item_id} rect pos=({:.1},{:.1}) size=({:.1},{:.1})",
@@ -6194,7 +6269,7 @@ impl App {
     /// silent in M1. W04 follow-up #5 — `/api/version` probe runs
     /// off-thread so we don't stall the caller.
     fn connect_transport(&mut self, cx: &mut Cx) {
-        if std::env::var_os("MAKEPAD_L0_REVIEW").is_some() { return; }
+        if crate::launch_flag("MAKEPAD_L0_REVIEW") { return; }
         let transport_config = Self::placeholder_transport_config();
         log::info!(
             "connect transport: base_url={} profile_id={}",
@@ -6696,20 +6771,20 @@ impl App {
             // that embeds this app as a library (`default-features = false`,
             // no `standalone`) gets neither — nor does a standalone build
             // launched with `OCTOS_APP_DEVGOAL=0`. An explicit
-            // `MAKEPAD_DEV_GOAL_FILE` still runs anywhere.
+            // `MAKEPAD_DEV_GOAL_FILE` still runs anywhere (`launch_var`: on a
+            // phone a development build, a desktop always).
             #[cfg(target_os = "android")]
-            let mission: Option<(String, String)> = match std::env::var("MAKEPAD_DEV_GOAL_FILE") {
-                Ok(p) => std::fs::read_to_string(&p).ok().map(|g| (g, p)),
-                Err(_) if Self::bundled_mission_enabled() => {
+            let mission: Option<(String, String)> = match crate::launch_var("MAKEPAD_DEV_GOAL_FILE") {
+                Some(p) => std::fs::read_to_string(&p).ok().map(|g| (g, p)),
+                None if Self::bundled_mission_enabled() => {
                     let p = "/data/data/dev.makepad.octos_app/files/dev_goal.txt".to_owned();
                     let _ = std::fs::write(&p, BUNDLED_MISSION);
                     Some((BUNDLED_MISSION.to_owned(), p))
                 }
-                Err(_) => None,
+                None => None,
             };
             #[cfg(not(target_os = "android"))]
-            let mission: Option<(String, String)> = std::env::var("MAKEPAD_DEV_GOAL_FILE")
-                .ok()
+            let mission: Option<(String, String)> = crate::launch_var("MAKEPAD_DEV_GOAL_FILE")
                 .and_then(|p| std::fs::read_to_string(&p).ok().map(|g| (g, p)));
             if let Some((goal, goal_path)) = mission {
                     {
@@ -6993,9 +7068,10 @@ impl App {
     /// live LLM generation can be driven without touching the native composer via
     /// adb input. Fires once (clears the env var). Session/open and turn/start
     /// are ordered on the stdio pipe, so submitting right after `clear_chat` is
-    /// safe.
+    /// safe. On a phone a development build only; a desktop reads it
+    /// (`launch_var`).
     fn fire_auto_prompt(&mut self, cx: &mut Cx) {
-        if let Ok(p) = std::env::var("MAKEPAD_AUTO_PROMPT") {
+        if let Some(p) = crate::launch_var("MAKEPAD_AUTO_PROMPT") {
             std::env::remove_var("MAKEPAD_AUTO_PROMPT");
             let p = p.trim().to_string();
             if !p.is_empty() {
@@ -8279,7 +8355,7 @@ impl MatchEvent for App {
                             target_arch = "wasm32"
                         )))]
                         {
-                            std::env::var_os("MAKEPAD_MOBILE_PREVIEW").is_some()
+                            crate::launch_flag("MAKEPAD_MOBILE_PREVIEW")
                                 || modifiers.logo || modifiers.control
                         }
                     };
@@ -8974,13 +9050,19 @@ impl MatchEvent for App {
             }
         }
 
+        // On a phone the launch-time provisioning below is for development
+        // builds only (`launch_var`): any app can start this one with these
+        // extras, so a phone release build provisions only through the
+        // person's own QR scan and PIN, or the login screen. A desktop reads
+        // them, the way it reads a command-line flag.
+        //
         // Provisioning deploy (non-rooted devices): `makepad.PROVISION_DIR`
         // (→ env MAKEPAD_PROVISION_DIR) names a world-readable staging dir
         // (`adb push …/octos-provision`) whose tree is copied into the app's
         // octos-home BEFORE octos spawns — deploying the GLM profile + a2app
         // memory tree onto a device that can't be written via su/run-as.
         #[cfg(target_os = "android")]
-        if let Ok(src) = std::env::var("MAKEPAD_PROVISION_DIR") {
+        if let Some(src) = crate::launch_var("MAKEPAD_PROVISION_DIR") {
             let home = kernel_home();
             match deploy_provision(std::path::Path::new(&src), &home) {
                 Ok(n) => log::info!("provision: deployed {n} files from {src}"),
@@ -8995,7 +9077,7 @@ impl MatchEvent for App {
         // BEFORE the boot-auth decision, so a provisioned device lands
         // straight on the home shell — no LoginScreen typing. A QR-scan
         // onboarding can feed the same `apply_provision_string` entry later.
-        if let Ok(prov) = std::env::var("MAKEPAD_APP_CONFIG") {
+        if let Some(prov) = crate::launch_var("MAKEPAD_APP_CONFIG") {
             match crate::app::login::apply_provision_string(&prov) {
                 Ok(()) => log::info!("provisioned from launch intent"),
                 Err(e) => log::warn!("provisioning failed: {e}"),
@@ -9005,7 +9087,7 @@ impl MatchEvent for App {
         // payload `{"llm_family":..,"llm_model":..,"llm_key":..}`, the same content
         // the composer's QR scan yields) writes the provider + key into the octos
         // profile config BEFORE the kernel spawns below, so the first turn uses it.
-        if let Ok(cfg) = std::env::var("MAKEPAD_PROVISION_CONFIG") {
+        if let Some(cfg) = crate::launch_var("MAKEPAD_PROVISION_CONFIG") {
             match crate::app::login::apply_provision_config_json(&cfg) {
                 Ok(what) => log::info!("provisioned LLM from intent: {what}"),
                 Err(e) => log::warn!("LLM provisioning failed: {e}"),
@@ -9017,7 +9099,7 @@ impl MatchEvent for App {
         // A deployment may explicitly request re-admission after changing the
         // runtime bundle. Preserve previous receipts before opening any cards.
         // A stale receipt still fails closed during normal app launches.
-        if let Ok(migration) = std::env::var("MAKEPAD_REAPPROVE_CARDS") {
+        if let Some(migration) = crate::launch_var("MAKEPAD_REAPPROVE_CARDS") {
             std::env::remove_var("MAKEPAD_REAPPROVE_CARDS");
             let result = crate::app::login::config_dir()
                 .ok_or_else(|| "card approval directory unavailable".to_owned())
@@ -9076,7 +9158,7 @@ impl MatchEvent for App {
         // W04 / M2 — make sure the chat_screen / content_screen pair
         // matches the boot navigation state (defaults to Home → Chat).
         self.show_screen_for_nav(cx);
-        if std::env::var_os("MAKEPAD_L0_REVIEW").is_some() {
+        if crate::launch_flag("MAKEPAD_L0_REVIEW") {
             // Offline native review uses only the seeded ledger below.
         } else if authed {
             // Open the first session immediately so the composer is live.
@@ -9090,7 +9172,7 @@ impl MatchEvent for App {
         // generation. `--es makepad.SEED_CARD_FILE <app-readable path>` surfaces as
         // MAKEPAD_SEED_CARD_FILE. Push AFTER the boot decision above (clear_chat
         // wipes CHAT_DATA), then refresh the empty-state + redraw so it shows.
-        if let Ok(path) = std::env::var("MAKEPAD_SEED_CARD_FILE") {
+        if let Some(path) = crate::launch_var("MAKEPAD_SEED_CARD_FILE") {
             match std::fs::read_to_string(&path) {
                 Ok(body) => {
                     let body_trim = body.trim();
@@ -9123,8 +9205,8 @@ impl MatchEvent for App {
         // source and can re-realize it when a tap arrives. SEED_CARD_FILE above
         // pushes already-lowered DSL, which is inert by construction: nothing on
         // device knows what card produced it or what a tap would mean.
-        if let Ok(card_path) = std::env::var("MAKEPAD_SEED_L0_FILE") {
-            let data_path = std::env::var("MAKEPAD_SEED_L0_DATA").unwrap_or_default();
+        if let Some(card_path) = crate::launch_var("MAKEPAD_SEED_L0_FILE") {
+            let data_path = crate::launch_var("MAKEPAD_SEED_L0_DATA").unwrap_or_default();
             let builtin = card_path.strip_prefix("builtin:");
             let card = if let Some(name) = builtin {
                 bundled_l0_source(name)
@@ -9171,9 +9253,9 @@ impl MatchEvent for App {
                             // passed these all along and nothing read them, so
                             // every "detail view" capture was silently a capture
                             // of the list.
-                            if let Ok(event) = std::env::var("MAKEPAD_SEED_L0_EVENT") {
+                            if let Some(event) = crate::launch_var("MAKEPAD_SEED_L0_EVENT") {
                                 let value =
-                                    std::env::var("MAKEPAD_SEED_L0_VALUE").unwrap_or_default();
+                                    crate::launch_var("MAKEPAD_SEED_L0_VALUE").unwrap_or_default();
                                 match app::l0_card::tap(cx, item, "root", &event, &value) {
                                     Ok(Some(_)) => {
                                         log::info!("SEED_L0 event {event}({value}) applied")
@@ -9258,7 +9340,7 @@ impl MatchEvent for App {
         // by the path a real one does and bumps the same epoch. Nothing in the
         // language, the kit or the widgets knows the difference — which is the
         // point: it tests the real chain rather than a parallel one.
-        if let Some(track_path) = std::env::var("MAKEPAD_FAKE_GPS_FILE").ok().filter(|p| !p.is_empty()) {
+        if let Some(track_path) = crate::launch_var("MAKEPAD_FAKE_GPS_FILE").filter(|p| !p.is_empty()) {
             match std::fs::read_to_string(&track_path) {
                 Ok(text) => {
                     let track: Vec<(f64, f64)> = text
@@ -9268,8 +9350,7 @@ impl MatchEvent for App {
                             Some((a.trim().parse().ok()?, b.trim().parse().ok()?))
                         })
                         .collect();
-                    let step_ms: u64 = std::env::var("MAKEPAD_FAKE_GPS_MS")
-                        .ok()
+                    let step_ms: u64 = crate::launch_var("MAKEPAD_FAKE_GPS_MS")
                         .and_then(|v| v.parse().ok())
                         .unwrap_or(1000);
                     log::info!(
@@ -9671,7 +9752,7 @@ impl AppMain for App {
                 // phone's shape. Layout is the thing under test, and a card
                 // laid out at 900x700 is a different card — the desktop
                 // default is landscape and the device is not.
-                if let Ok(spec) = std::env::var("MAKEPAD_WINDOW_SIZE") {
+                if let Some(spec) = crate::launch_var("MAKEPAD_WINDOW_SIZE") {
                     if let Some((w, h)) = spec.split_once(['x', 'X']) {
                         if let (Ok(w), Ok(h)) = (w.trim().parse::<f64>(), h.trim().parse::<f64>()) {
                             self.ui.window(cx, ids!(main_window)).resize(cx, dvec2(w, h));
@@ -9707,12 +9788,11 @@ impl AppMain for App {
         // frames to let the card settle first; sources land asynchronously and
         // a dump taken too early measures the pending state.
         if let Event::Draw(_) = event {
-            if let Ok(path) = std::env::var("MAKEPAD_DUMP_GEOMETRY") {
+            if let Some(path) = crate::launch_var("MAKEPAD_DUMP_GEOMETRY") {
                 static DRAWS: std::sync::atomic::AtomicU32 =
                     std::sync::atomic::AtomicU32::new(0);
                 let n = DRAWS.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
-                let wait: u32 = std::env::var("MAKEPAD_DUMP_GEOMETRY_FRAMES")
-                    .ok()
+                let wait: u32 = crate::launch_var("MAKEPAD_DUMP_GEOMETRY_FRAMES")
                     .and_then(|v| v.parse().ok())
                     .unwrap_or(90);
                 if n >= wait {

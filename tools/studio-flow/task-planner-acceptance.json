@@ -1,0 +1,70 @@
+{
+  "schema": 1,
+  "app_id": "dev.studio.task-planner",
+  "app_name": "Task Planner",
+  "source_requirement": "fresh model-authored bundle; preserve generation transcript and final digest",
+  "storage_file": "tasks.json",
+  "capabilities": [
+    "storage"
+  ],
+  "selectors": {
+    "title_input": "task_title",
+    "add": "add_task",
+    "all": "filter_all",
+    "active": "filter_active",
+    "done": "filter_done",
+    "count": "task_count",
+    "validation": "task_error",
+    "list": "task_list"
+  },
+  "minimum_control_height_logical": 44,
+  "fixture_titles": [
+    "Buy oats",
+    "Call Sam",
+    "Read ten pages"
+  ],
+  "long_title": "Plan a quiet weekend walk and remember to bring water for everyone",
+  "completed_title": "Call Sam",
+  "expected_before_restart": {
+    "active_count": 2,
+    "all": [
+      "Buy oats",
+      "Call Sam",
+      "Read ten pages"
+    ],
+    "active": [
+      "Buy oats",
+      "Read ten pages"
+    ],
+    "done": [
+      "Call Sam"
+    ]
+  },
+  "required_checks": [
+    "model_authored_new_bundle",
+    "real_bundle_admission",
+    "native_empty_state",
+    "blank_title_validation",
+    "add_three_via_native_input",
+    "complete_via_native_input",
+    "all_active_done_filters",
+    "reopen_completed_task",
+    "preview_close_reopen_resets_disposable_data",
+    "developer_install",
+    "installed_storage_is_separate_from_preview",
+    "installed_app_process_restart_persistence",
+    "multilingual_native_input_and_restart",
+    "long_title_scroll_and_keyboard",
+    "real_native_capture_visual_review"
+  ],
+  "fault_checks": [
+    "malformed_saved_json_preserved",
+    "save_failure_reported"
+  ],
+  "excluded_claims": [
+    "public_store_approval",
+    "publisher_signing",
+    "model_image_delivery_from_filename_alone"
+  ],
+  "multilingual_title": "测试中文任务：买燕麦"
+}

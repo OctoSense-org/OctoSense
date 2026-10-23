@@ -1,18 +1,38 @@
 //! `octosense-deck-service` — the `deck` host service (ADR 0013).
 //!
-//! deckcraft's presentation engine behind typed `deck.*` methods. Every
-//! call is a fresh, stateless engine session. The service does all file
-//! I/O itself and feeds the engine bytes, so the engine never touches a
-//! path, and a link written inside a presentation (an external picture or
-//! media relationship) is kept as a string and never followed. Everything
-//! the service reads or writes lives in the call's area (ADR 0013,
-//! 2026-10-08): the caller's own folder from the shell's resolver
+//! deckcraft's presentation engine behind typed `deck.*` methods, in two
+//! shapes:
+//!
+//! - **Files** (v1, and the system agent's two tools): a call that names a
+//!   `path` is a fresh, stateless engine session over the file (below).
+//! - **Open documents** (Quick Deck v2, `apps/quickdeck/design/SERVICE.md`):
+//!   `deck.open` and `deck.create` keep the engine's session for a deck, its
+//!   edits and undo history, between calls under a handle that later calls
+//!   name as `doc`; `close`, `state`, `save`, `slides`, `slide`, `hit`,
+//!   `view`, `layouts`, `text`, `format_state`, `slides_op`, `notes`,
+//!   `transition`, `insert`, `set_text`, `format`, `shape`, `picture`,
+//!   `table`, `chart`, `design`, `undo`, `redo`, `show`, `export` and
+//!   `media` work on it, and `themes`, `fonts`, `shapes` and `cover` need
+//!   none. Who holds an open document, on which thread, and what releases
+//!   it: [`docs`]. How a method's engine commands reach it, through the same
+//!   door as `deck.run`, as one undo step: [`gate`]. `media` runs no engine
+//!   command: it writes a clip's bytes, as the deck stores them, for the
+//!   app's player ([`media`]).
+//!
+//! The service does all file I/O itself and feeds the engine bytes, so the
+//! engine never touches a path, and a link written inside a presentation
+//! (an external picture or media relationship) is kept as a string and never
+//! followed. Before the engine reads a byte of a file, on every path that
+//! opens one, the service's own import guard checks it ([`guard`], #448).
+//! Everything the service reads or writes lives in the call's area (ADR
+//! 0013, 2026-10-08): the caller's own folder from the shell's resolver
 //! ([`set_area_resolver`]), or without one the legacy `<host_dir>/deck`. A
 //! write that may not replace (an agent's) only creates new files, within
 //! the area's quota ([`Area::write`]). Everything is JSON at the boundary;
-//! the engine's types never cross it.
+//! the engine's types never cross it. The open-document methods, `cover`
+//! and the guard answer errors with stable codes ([`codes`]).
 //!
-//! Methods (all under the `deck` family; paths relative to the call's area):
+//! File methods (all under the `deck` family; paths relative to the call's area):
 //! - `info {path}` → the deck inspected: slides with titles, layouts,
 //!   shape counts, sections, theme (a `.pptx`, `.deckcraft` or outline text)
 //! - `text {path}` → `{outline, slides}` — titles unindented, bullets
@@ -45,7 +65,22 @@
 /// The system agent's skill for this engine (ADR 0013).
 pub mod skill;
 
+mod args;
+mod cache;
+mod codes;
+mod covers;
+mod docs;
+mod gate;
+mod guard;
+mod media;
+mod objects;
+mod pictures;
+mod reading;
+mod slides;
+mod writing;
+
 use std::collections::HashSet;
+use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::{Component, Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 
@@ -53,9 +88,11 @@ use deckcraft_engine::cmd::file as engine_file;
 use deckcraft_engine::Session;
 use deckcraft_model::{Presentation, Shape, ShapeKind, TextBody};
 use octosense_appstore::services::{register_host_service, HostService, Replier, ServiceCall, ServiceHost};
-use octosense_engine_area::door::{Door, FileRead, Held as HeldBack, Limit, Measure, Reviewed};
+use octosense_engine_area::door::{Door, FileRead, Held as HeldBack, Limit, Measure, Reviewed, Unread};
 use octosense_engine_area::{Area, Slot};
 use serde_json::{json, Value as Json};
+
+use codes::{fail, invalid, Code};
 
 /// The longest preview edge `render` produces.
 const MAX_RENDER_SIDE: u64 = 4096;
@@ -154,6 +191,20 @@ static HELD_BACK: &[HeldBack] = &[
     HeldBack { id: "media.info", why: MEDIA },
     HeldBack { id: "media.posterFrame", why: MEDIA },
     HeldBack { id: "file.openBytes", why: ZIP },
+];
+
+/// The two `file` commands an app's own method runs without their file
+/// access, which `deck.run` still refuses ([`Unread`]): `shape.fill`
+/// (`cmd/shape.rs` 259-283) and `design.background` (`cmd/design.rs`
+/// 151-184) read a file only when given a `picture` that is not a string,
+/// through `insert::media_bytes` and its `path`. The service builds their
+/// parameters itself (`deck.shape {op: "fill"}`, `deck.design
+/// {background}`: a colour, a gradient, none or reset, and `transparency`,
+/// `all` or `index`), so a method's call never names `picture` or `path`,
+/// and the door refuses one that would.
+static UNREAD: &[Unread] = &[
+    Unread { id: "shape.fill", reads_through: &["picture", "path"] },
+    Unread { id: "design.background", reads_through: &["picture", "path"] },
 ];
 
 /// `insert.table {rows, cols}`: rows × cols cells, each a text body every
@@ -356,9 +407,11 @@ mod warm;
 pub use warm::warm;
 
 /// Register the `deck` service with App Hub's host-service registry, and
-/// start paying the engine's first-call cost on a thread of its own
-/// ([`warm`]).
+/// its listener for closing isolates: the open documents an isolate holds go
+/// when it closes ([`docs`]). Then start paying the engine's first-call cost
+/// on a thread of its own ([`warm`]).
 pub fn register() {
+    octosense_appstore::services::on_isolate_closed(docs::isolate_closed);
     register_host_service(Box::new(DeckService));
     warm();
 }
@@ -383,29 +436,89 @@ impl HostService for DeckService {
     }
 
     fn call(&mut self, call: ServiceCall, reply: Replier, _host: &mut dyn ServiceHost) {
-        reply.send(serve(&AREAS, &call));
+        // App Hub calls this inline, holding its registry's lock: a panic
+        // in the engine must not unwind through it (and poison every
+        // service's registry), so it becomes this call's error.
+        let isolate = reply.isolate_key();
+        let answer = catch_unwind(AssertUnwindSafe(|| serve_from(&AREAS, &call, isolate)))
+            .unwrap_or_else(|_| Err(fail(Code::Damaged, "the deck engine failed unexpectedly")));
+        reply.send(answer);
     }
 }
 
-/// One call, in the area `areas` gives it.
+/// One call: where it works, who made it, and from which isolate.
+pub(crate) struct Ctx<'a> {
+    pub area: &'a Area,
+    pub app: &'a str,
+    /// The requesting isolate's heap key (App Hub's `Replier::isolate_key`;
+    /// a key no isolate has for an agent's or a component's call): what a
+    /// document it opens is bound to ([`docs`]).
+    pub isolate: usize,
+}
+
+/// One call with no isolate behind it, as an agent's or a test's.
+#[cfg(test)]
 fn serve(areas: &Slot, call: &ServiceCall) -> Result<Json, String> {
-    if !may_call(&call.app_id) {
-        return Err("The deck service serves system apps only.".into());
-    }
-    let area = areas.area(call, "deck").map_err(|e| format!("deck: {e}"))?;
-    dispatch_in(call.method(), &call.args, &area)
-        .map(|answer| area.relative_json(answer))
-        .map_err(|error| area.relative_text(&error))
+    serve_from(areas, call, 0)
 }
 
-fn dispatch_in(method: &str, args: &Json, area: &Area) -> Result<Json, String> {
+/// One call, from the isolate whose heap key is `isolate`, in the area
+/// `areas` gives it.
+fn serve_from(areas: &Slot, call: &ServiceCall, isolate: usize) -> Result<Json, String> {
+    if !may_call(&call.app_id) {
+        return Err(invalid("the deck service serves system apps only"));
+    }
+    // Documents whose isolate closed during a call, or whose caller's
+    // storage scope changed or went, go first, on every call ([`docs`]).
+    docs::sweep();
+    let area = areas.area(call, "deck").map_err(|e| invalid(format!("this call has no folder to work in: {e}")))?;
+    let cx = Ctx { area: &area, app: &call.app_id, isolate };
+    // The engine's fonts load on one thread at a time ([`warm`]).
+    warm::ready();
+    dispatch_in(call.method(), &call.args, &cx).map(|answer| area.relative_json(answer)).map_err(|error| area.relative_text(&error))
+}
+
+fn dispatch_in(method: &str, args: &Json, cx: &Ctx) -> Result<Json, String> {
+    let area = cx.area;
     match method {
         "info" => info(args, area),
+        "text" if args.get("doc").is_some_and(|d| !d.is_null()) => reading::text(args, cx),
         "text" => text(args, area),
         "render" => render(args, area),
         "new" => new_deck(args, area),
         "convert" => convert(args, area),
         "run" => run(args, area),
+        "open" => docs::open(args, cx),
+        "create" => docs::create(args, cx),
+        "close" => docs::close(args, cx),
+        "state" => docs::state(args, cx),
+        "save" => writing::save(args, cx),
+        "slides" => reading::slides(args, cx),
+        "slide" => reading::slide(args, cx),
+        "hit" => reading::hit(args, cx),
+        "view" => reading::view(args, cx),
+        "layouts" => reading::layouts(args, cx),
+        "themes" => reading::themes(args, cx),
+        "fonts" => reading::fonts(args, cx),
+        "shapes" => reading::shapes(args, cx),
+        "format_state" => reading::format_state(args, cx),
+        "cover" => covers::cover(args, cx),
+        "slides_op" => slides::slides_op(args, cx),
+        "notes" => slides::notes(args, cx),
+        "transition" => slides::transition(args, cx),
+        "insert" => objects::insert(args, cx),
+        "set_text" => objects::set_text(args, cx),
+        "format" => objects::format(args, cx),
+        "shape" => objects::shape(args, cx),
+        "picture" => objects::picture(args, cx),
+        "table" => objects::table(args, cx),
+        "chart" => objects::chart(args, cx),
+        "design" => slides::design(args, cx),
+        "undo" => slides::history(args, cx, false),
+        "redo" => slides::history(args, cx, true),
+        "show" => reading::show(args, cx),
+        "export" => writing::export(args, cx),
+        "media" => media::media(args, cx),
         other => Err(format!("deck.{other} is not a method of the deck service")),
     }
 }
@@ -416,7 +529,165 @@ fn dispatch_in(method: &str, args: &Json, area: &Area) -> Result<Json, String> {
 fn dispatch(method: &str, args: &Json, host_dir: &Path) -> Result<Json, String> {
     let area = Area::legacy(host_dir, "deck");
     std::fs::create_dir_all(&area.root).map_err(|e| format!("deck: {e}"))?;
-    dispatch_in(method, args, &area)
+    dispatch_in(method, args, &Ctx { area: &area, app: "os.fixture", isolate: 0 })
+}
+
+/// `rel` as the service names a path in an answer: its normal components
+/// joined with `/`.
+pub(crate) fn normal(rel: &str) -> String {
+    let parts: Vec<String> = Path::new(rel)
+        .components()
+        .filter_map(|c| match c {
+            Component::Normal(p) => Some(p.to_string_lossy().into_owned()),
+            _ => None,
+        })
+        .collect();
+    parts.join("/")
+}
+
+/// The open-document methods' containment (coded errors): a path strictly
+/// inside the call's area, relative, no `..`, no absolute or prefix
+/// component, its resolved deepest existing ancestor under the area even
+/// through symlinks.
+pub(crate) fn inside(area: &Area, rel: &str, key: &str, m: &str) -> Result<PathBuf, String> {
+    if rel.is_empty() {
+        return Err(invalid(format!("{m} needs `{key}`")));
+    }
+    let outside = || invalid(format!("{m}: `{key}` stays inside this app's storage"));
+    let rel_path = Path::new(rel);
+    if rel_path.is_absolute() || rel_path.components().any(|c| !matches!(c, Component::Normal(_))) {
+        return Err(outside());
+    }
+    let joined = area.root.join(rel_path);
+    let check_root = area.root.canonicalize().map_err(|e| invalid(format!("{m}: this call's folder: {e}")))?;
+    let deepest = {
+        let mut p = joined.clone();
+        while !p.exists() {
+            match p.parent() {
+                Some(parent) => p = parent.to_path_buf(),
+                None => break,
+            }
+        }
+        p
+    };
+    let resolved = deepest.canonicalize().map_err(|_| outside())?;
+    if !resolved.starts_with(&check_root) {
+        return Err(outside());
+    }
+    Ok(joined)
+}
+
+/// A new file the call may write at `rel`, checked before any work: inside
+/// the area, and nothing there (never replaced).
+pub(crate) fn new_file(area: &Area, rel: &str, key: &str, m: &str) -> Result<PathBuf, String> {
+    let path = inside(area, rel, key, m)?;
+    Area::new(area.root.clone(), area.room(), false).check(&path, 0).map_err(codes::area)?;
+    Ok(path)
+}
+
+/// A file the call reads at `rel`: inside the area, there, a file, and at
+/// most [`MAX_DECK_BYTES`]. Its path and length.
+pub(crate) fn input(area: &Area, rel: &str, key: &str, m: &str) -> Result<(PathBuf, u64), String> {
+    let path = inside(area, rel, key, m)?;
+    let meta = match std::fs::metadata(&path) {
+        Ok(meta) => meta,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Err(fail(Code::NotFound, format!("{rel} is not in this app's storage"))),
+        Err(e) => return Err(invalid(format!("{rel}: {e}"))),
+    };
+    if !meta.is_file() {
+        return Err(invalid(format!("{rel} is not a file")));
+    }
+    if meta.len() > MAX_DECK_BYTES {
+        return Err(fail(Code::TooLarge, format!("{rel} is larger than the {} MB the deck service opens", MAX_DECK_BYTES >> 20)));
+    }
+    Ok((path, meta.len()))
+}
+
+#[cfg(test)]
+thread_local! {
+    /// How many files this thread's calls handed the engine to read (tests:
+    /// a refusal of the import guard comes before any).
+    static ENGINE_READS: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+    /// How many staging folders this thread's calls made for the service's
+    /// own writes (tests: a write that can't fit stages nothing).
+    static STAGES: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+}
+
+/// A staging folder in `area` for one of the service's own writes
+/// ([`Area::stage`]).
+pub(crate) fn stage(area: &Area) -> Result<octosense_engine_area::Stage<'_>, String> {
+    #[cfg(test)]
+    STAGES.with(|n| n.set(n.get() + 1));
+    area.stage().map_err(codes::area)
+}
+
+/// How many staging folders this thread's calls made (tests).
+#[cfg(test)]
+pub(crate) fn stages() -> u32 {
+    STAGES.with(std::cell::Cell::get)
+}
+
+/// How many files this thread's calls handed the engine (tests).
+#[cfg(test)]
+pub(crate) fn engine_reads() -> u32 {
+    ENGINE_READS.with(std::cell::Cell::get)
+}
+
+/// The one place the engine reads a file's bytes, after the import guard
+/// passed them ([`guard::check`]), with the reader the guard's verdict
+/// names, not the engine's own sniffs: `deckcraft_pptx::sniff` looks for
+/// `[Content_Types].xml` in a package's first 4 KiB only, and LibreOffice
+/// writes that part far later, so `open_presentation` refuses every
+/// package LibreOffice writes; the guard finds it in the directory it
+/// verified.
+///
+/// Each branch is a step-for-step copy of what deckcraft's
+/// `cmd::file::open_presentation` does after its sniff
+/// (`crates/engine/src/cmd/file.rs` lines 58-78 at the pinned d0e57d7e;
+/// re-check them on every repin): a native deck through
+/// `deckcraft_format::load` (59-61), an Office package through
+/// `deckcraft_pptx::import` and then `deckcraft_format::repair` (62-66),
+/// outline text through `open_presentation` itself (67-77), whose sniffs
+/// pass over bytes that are no zip. `doc_tests::the_guards_reader_reads_
+/// as_open_presentation` compares the two on every format, so a step the
+/// pinned function grows fails there.
+fn engine_read(name: &str, bytes: &[u8], format: guard::Format) -> Result<Presentation, deckcraft_engine::EngineError> {
+    use deckcraft_engine::EngineError;
+    #[cfg(test)]
+    ENGINE_READS.with(|n| n.set(n.get() + 1));
+    match format {
+        guard::Format::Native => deckcraft_format::load(bytes).map_err(|e| EngineError::Other(e.to_string())),
+        guard::Format::Pptx => {
+            let mut p = deckcraft_pptx::import(bytes).map_err(|e| EngineError::Other(e.to_string()))?;
+            deckcraft_format::repair(&mut p);
+            Ok(p)
+        }
+        guard::Format::Outline => engine_file::open_presentation(name, bytes),
+    }
+}
+
+/// Read the deck at `rel` for an open-document method or a cover: checked
+/// ([`input`]), read by the service, passed by the import guard, then read
+/// by the engine. Its normal path, the deck, and how the engine read it.
+pub(crate) fn read_guarded(area: &Area, rel: &str, key: &str, m: &str) -> Result<(String, Presentation, guard::Format), String> {
+    let (path, _) = input(area, rel, key, m)?;
+    let bytes = std::fs::read(&path).map_err(|e| invalid(format!("{rel}: {e}")))?;
+    let name = normal(rel);
+    let format = guard::check(&name, &bytes)?;
+    let deck = engine_read(&name, &bytes, format).map_err(|e| {
+        let words = e.to_string();
+        if words.contains("not a presentation DeckCraft can read") {
+            fail(Code::Unsupported, "this is not a presentation the deck engine reads (.pptx, .deckcraft, or outline .txt or .md)")
+        } else if words.contains("is not a presentation part") {
+            // An Office package whose main part is a document or a workbook
+            // (`deckcraft_pptx::import`'s refusal of a .docx or a .xlsx).
+            fail(Code::Unsupported, "this is an Office document but not a presentation, which the deck engine doesn't read (.pptx, .deckcraft, or outline .txt or .md)")
+        } else {
+            fail(Code::Damaged, format!("the deck engine couldn't read it: {words}"))
+        }
+    })?;
+    media_ceiling(&deck)?;
+    Ok((name, deck, format))
 }
 
 /// A path strictly inside the call's area: relative, no `..`, no absolute
@@ -461,7 +732,8 @@ fn out_path(area: &Area, rel: &str, method: &str) -> Result<PathBuf, String> {
 
 /// Read `args.path` from the call's area and seat it in a fresh engine
 /// session (the engine gets bytes, never a path). Reads `.pptx`,
-/// `.deckcraft` and outline `.txt`/`.md`, by content.
+/// `.deckcraft` and outline `.txt`/`.md`, by content, once the import guard
+/// passed the bytes ([`guard`]; its refusal carries its code).
 fn read_deck(args: &Json, area: &Area, method: &str) -> Result<(Session, String), String> {
     let rel = args["path"].as_str().unwrap_or("").to_string();
     let path = contained(area, &rel, method, "path")?;
@@ -470,7 +742,9 @@ fn read_deck(args: &Json, area: &Area, method: &str) -> Result<(Session, String)
         return Err(format!("deck.{method}: the file is larger than the service reads"));
     }
     let bytes = std::fs::read(&path).map_err(|e| format!("deck.{method}: {rel}: {e}"))?;
-    let doc = engine_file::open_presentation(&rel, &bytes).map_err(|e| format!("deck.{method}: {e}"))?;
+    let format = guard::check(&rel, &bytes)?;
+    let doc = engine_read(&rel, &bytes, format).map_err(|e| format!("deck.{method}: {e}"))?;
+    media_ceiling(&doc)?;
     let mut s = Session::new();
     engine_file::add_opened(&mut s, &rel, None, doc);
     Ok((s, rel))
@@ -672,7 +946,7 @@ fn run(args: &Json, area: &Area) -> Result<Json, String> {
 /// shapes on slides, masters and layouts, inside groups too; table cells;
 /// chart data; text in shapes, cells and notes; media bytes; and the first
 /// shape or text whose geometry the renderer could not afford.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq)]
 struct Held {
     slides: usize,
     shapes: usize,
@@ -785,7 +1059,30 @@ impl Held {
         if let Some((n, max, what)) = counts.into_iter().find(|(n, max, _)| n > max) {
             return Some(format!("{n} {what}, more than the {max} the door allows"));
         }
-        (self.media > MAX_RUN_MEDIA).then(|| format!("{} bytes of media, more than the {MAX_RUN_MEDIA} the door allows", self.media))
+        media_over(self.media)
+    }
+}
+
+/// The media ceiling's words (the door's [`MAX_RUN_MEDIA`]), wherever it is
+/// met: before the engine reads (the import guard's declared total of a
+/// file's media and other binary parts), after it reads (the deck's media,
+/// on every path that opens a file), and in a session ([`Held::over`]).
+pub(crate) fn media_over(bytes: u64) -> Option<String> {
+    (bytes > MAX_RUN_MEDIA).then(|| format!("{bytes} bytes of media, more than the {MAX_RUN_MEDIA} the door allows"))
+}
+
+/// A deck past one of the session's ceilings, as every path answers it.
+pub(crate) fn too_large_deck(why: impl std::fmt::Display) -> String {
+    codes::too_large(format!("the deck holds {why}, more than the deck service opens"))
+}
+
+/// The media ceiling on a deck the engine has just read, before anything is
+/// done with it: the same words on all seven paths (`deck.open`,
+/// `deck.cover` and the file methods).
+fn media_ceiling(deck: &Presentation) -> Result<(), String> {
+    match media_over(deck.media.iter().map(|m| m.data.len() as u64).sum()) {
+        Some(why) => Err(too_large_deck(why)),
+        None => Ok(()),
     }
 }
 
@@ -823,7 +1120,13 @@ impl RunBudget {
                 return Err(format!("deck.run: the presentation holds {why}, so the door does not run commands on it"));
             }
         }
-        Ok(RunBudget { decks: decks(s), seen: deck_addresses(s), copied: Held::default(), raster: 0, result_bytes: 0 })
+        Ok(RunBudget::fresh(s))
+    }
+
+    /// The budget of a call on `s` as it is, whose ceilings the caller
+    /// checked (an app's method, `crate::gate`).
+    fn fresh(s: &Session) -> RunBudget {
+        RunBudget { decks: decks(s), seen: deck_addresses(s), copied: Held::default(), raster: 0, result_bytes: 0 }
     }
 
     /// Before command `id`: what it will raster or fragment, where the gate
@@ -848,7 +1151,13 @@ impl RunBudget {
     /// After command `id`: the session within the ceilings, its edits'
     /// copies within theirs, and its answer within the results budget.
     fn after(&mut self, s: &Session, id: &str, result: &Json) -> Result<(), String> {
-        if let Some(why) = Held::of(s).over() {
+        self.after_held(Held::of(s), s, id, result)
+    }
+
+    /// [`RunBudget::after`], with what `s` holds counted by the caller
+    /// (`crate::gate`'s per-slide cache gives the same [`Held`]).
+    fn after_held(&mut self, held: Held, s: &Session, id: &str, result: &Json) -> Result<(), String> {
+        if let Some(why) = held.over() {
             return Err(format!("deck.run: `{id}` leaves the presentation with {why}"));
         }
         let now = decks(s);
@@ -960,6 +1269,9 @@ fn json_len(v: &Json) -> u64 {
     let _ = serde_json::to_writer(&mut count, v);
     count.0
 }
+
+#[cfg(test)]
+mod doc_tests;
 
 #[cfg(test)]
 mod tests {

@@ -1,0 +1,2656 @@
+{
+ "schema_version": 1,
+ "image": "02-edit-text.png",
+ "image_sha256": "47bfc4679956f74e231ec4067d8b0908d0b670eebc85d5454287e50e948a82f0",
+ "script_sha256": "ea860507e32482b955d3ac577ab3cf9fc559f59ecc916c89175293932b54e0b7",
+ "size": [
+  1536,
+  1024
+ ],
+ "ocr_engine": "Apple Vision VNRecognizeTextRequest accurate, en-US (App Flow ocr.swift)",
+ "text": [
+  {
+   "text": "Home",
+   "bounds": [
+    49.1,
+    20.1,
+    38.0,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#545657",
+   "ground": "#eff0f0"
+  },
+  {
+   "text": "Q3 2026 Board Update x",
+   "bounds": [
+    142.9,
+    17.8,
+    167.4,
+    18.2
+   ],
+   "confidence": 1,
+   "ink": "#393b3d",
+   "ground": "#f5f5f5"
+  },
+  {
+   "text": "Northern Lights Field Trip X",
+   "bounds": [
+    361.7,
+    17.8,
+    176.4,
+    18.2
+   ],
+   "confidence": 1,
+   "ink": "#5f5f60",
+   "ground": "#f2f3f4"
+  },
+  {
+   "text": "E",
+   "bounds": [
+    562.6,
+    17.8,
+    15.6,
+    17.8
+   ],
+   "confidence": 1,
+   "ink": "#68696a",
+   "ground": "#efeff0"
+  },
+  {
+   "text": "Riverside Community Garden",
+   "bounds": [
+    587.2,
+    20.0,
+    171.9,
+    16.0
+   ],
+   "confidence": 1,
+   "ink": "#535455",
+   "ground": "#f1f2f2"
+  },
+  {
+   "text": "Welcome to the Team",
+   "bounds": [
+    835.0,
+    20.0,
+    127.3,
+    13.5
+   ],
+   "confidence": 1,
+   "ink": "#58585a",
+   "ground": "#f1f1f2"
+  },
+  {
+   "text": "+ New",
+   "bounds": [
+    1444.3,
+    17.3,
+    51.7,
+    16.8
+   ],
+   "confidence": 1,
+   "ink": "#67686a",
+   "ground": "#f2f3f4"
+  },
+  {
+   "text": "Slides",
+   "bounds": [
+    40.2,
+    69.2,
+    44.7,
+    15.6
+   ],
+   "confidence": 1,
+   "ink": "#2e6ad8",
+   "ground": "#eff4fb"
+  },
+  {
+   "text": "Sorter",
+   "bounds": [
+    118.3,
+    69.2,
+    46.9,
+    15.6
+   ],
+   "confidence": 1,
+   "ink": "#6e7175",
+   "ground": "#f8f9f9"
+  },
+  {
+   "text": "+ New slide",
+   "bounds": [
+    102.7,
+    133.9,
+    80.4,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#4e85dd",
+   "ground": "#f6f9fd"
+  },
+  {
+   "text": "v Highlights",
+   "bounds": [
+    17.9,
+    176.0,
+    78.1,
+    14
+   ],
+   "confidence": 1,
+   "ink": "#727476",
+   "ground": "#f7f8f8"
+  },
+  {
+   "text": "Q3 2026",
+   "bounds": [
+    84.8,
+    209.7,
+    58.0,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#303b4b",
+   "ground": "#f0f1f3"
+  },
+  {
+   "text": "Board Update",
+   "bounds": [
+    84.8,
+    225.1,
+    107.2,
+    18.3
+   ],
+   "confidence": 1,
+   "ink": "#354253",
+   "ground": "#f3f4f5"
+  },
+  {
+   "text": "Northwind Cooperative",
+   "bounds": [
+    82.6,
+    249.9,
+    89.3,
+    9.1
+   ],
+   "confidence": 1,
+   "ink": "#9aabb6",
+   "ground": "#f6f8f9"
+  },
+  {
+   "text": "zuuctober zuzb",
+   "bounds": [
+    82.6,
+    265.0,
+    62.5,
+    5
+   ],
+   "confidence": 0.3,
+   "ink": "#8e9da8",
+   "ground": "#f1f4f5"
+  },
+  {
+   "text": "Agenda",
+   "bounds": [
+    58.0,
+    314.6,
+    38.0,
+    11.2
+   ],
+   "confidence": 1,
+   "ink": "#4f5e71",
+   "ground": "#f1f3f4"
+  },
+  {
+   "text": "Mecbenh",
+   "bounds": [
+    67.0,
+    352.5,
+    33.5,
+    4.5
+   ],
+   "confidence": 1,
+   "ink": "#9ca2a8",
+   "ground": "#eef0f0"
+  },
+  {
+   "text": "\u2022 Comiteny",
+   "bounds": [
+    62.5,
+    361.0,
+    35.7,
+    5
+   ],
+   "confidence": 1,
+   "ink": "#9aa3ac",
+   "ground": "#f5f6f7"
+  },
+  {
+   "text": "\u2022 Outisea",
+   "bounds": [
+    58.0,
+    370.0,
+    31.3,
+    5
+   ],
+   "confidence": 1,
+   "ink": "#929fa6",
+   "ground": "#f5f7f7"
+  },
+  {
+   "text": "\u2022Quertiens",
+   "bounds": [
+    62.5,
+    377.0,
+    35.7,
+    11.2
+   ],
+   "confidence": 1,
+   "ink": "#99a2aa",
+   "ground": "#f9f9fa"
+  },
+  {
+   "text": "Quarter at a glance",
+   "bounds": [
+    55.8,
+    419.0,
+    89.3,
+    12
+   ],
+   "confidence": 1,
+   "ink": "#4e687d",
+   "ground": "#f2f4f6"
+  },
+  {
+   "text": "$28.7M",
+   "bounds": [
+    60.3,
+    452.9,
+    42.4,
+    11.2
+   ],
+   "confidence": 1,
+   "ink": "#487c94",
+   "ground": "#eff5f6"
+  },
+  {
+   "text": "revenus. \u202212%",
+   "bounds": [
+    60.3,
+    468.0,
+    44.7,
+    9.4
+   ],
+   "confidence": 1,
+   "ink": "#949ca4",
+   "ground": "#f6f8f8"
+  },
+  {
+   "text": "18,400",
+   "bounds": [
+    122.8,
+    452.9,
+    38.0,
+    11.2
+   ],
+   "confidence": 1,
+   "ink": "#457894",
+   "ground": "#f1f6f7"
+  },
+  {
+   "text": "96%",
+   "bounds": [
+    189.8,
+    452.9,
+    26.8,
+    11.2
+   ],
+   "confidence": 1,
+   "ink": "#4b8197",
+   "ground": "#f0f5f6"
+  },
+  {
+   "text": "ontndsor",
+   "bounds": [
+    178.6,
+    470.7,
+    46.9,
+    4.5
+   ],
+   "confidence": 0.3,
+   "ink": "#959ba3",
+   "ground": "#edeff0"
+  },
+  {
+   "text": "Revenue by region",
+   "bounds": [
+    53.6,
+    524.0,
+    80.4,
+    14
+   ],
+   "confidence": 1,
+   "ink": "#546f84",
+   "ground": "#f4f6f7"
+  },
+  {
+   "text": "Recnuse trrecmn 03 206 (u0mto",
+   "bounds": [
+    84.8,
+    542.0,
+    118.3,
+    5
+   ],
+   "confidence": 0.3,
+   "ink": "#818c98",
+   "ground": "#edeff1"
+  },
+  {
+   "text": "Revenue grew 12% year over year",
+   "bounds": [
+    53.6,
+    631.0,
+    158.5,
+    12
+   ],
+   "confidence": 1,
+   "ink": "#646d79",
+   "ground": "#f5f6f7"
+  },
+  {
+   "text": "\u2022 Northwert Ioe",
+   "bounds": [
+    51.3,
+    650.9,
+    53.7,
+    7.7
+   ],
+   "confidence": 1,
+   "ink": "#959da5",
+   "ground": "#f8f9f9"
+  },
+  {
+   "text": "\u2022Prices beld steady",
+   "bounds": [
+    51.3,
+    673.7,
+    67.0,
+    11.3
+   ],
+   "confidence": 1,
+   "ink": "#91999f",
+   "ground": "#f7f8f9"
+  },
+  {
+   "text": "in every regjon",
+   "bounds": [
+    62.4,
+    682.1,
+    47.1,
+    12.3
+   ],
+   "confidence": 1,
+   "ink": "#999ca3",
+   "ground": "#f6f7f7"
+  },
+  {
+   "text": "\u2022 Ontine orders",
+   "bounds": [
+    51.3,
+    696.0,
+    53.6,
+    11.2
+   ],
+   "confidence": 1,
+   "ink": "#939da4",
+   "ground": "#f8f9f9"
+  },
+  {
+   "text": "rote 18%",
+   "bounds": [
+    62.5,
+    709.0,
+    35.7,
+    5
+   ],
+   "confidence": 0.3,
+   "ink": "#999b9f",
+   "ground": "#f5f6f6"
+  },
+  {
+   "text": "250",
+   "bounds": [
+    165.2,
+    678.2,
+    15.6,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#6d929e",
+   "ground": "#f3f7f8"
+  },
+  {
+   "text": "06.305",
+   "bounds": [
+    131.7,
+    711.7,
+    29.0,
+    8.9
+   ],
+   "confidence": 0.3,
+   "ink": "#989b9f",
+   "ground": "#f8f9f9"
+  },
+  {
+   "text": "0:205",
+   "bounds": [
+    158.5,
+    711.7,
+    29.0,
+    8.9
+   ],
+   "confidence": 0.5,
+   "ink": "#999da3",
+   "ground": "#f7f8f8"
+  },
+  {
+   "text": "0220%",
+   "bounds": [
+    187.5,
+    711.7,
+    29.0,
+    8.9
+   ],
+   "confidence": 1,
+   "ink": "#9c9ea4",
+   "ground": "#f7f8f8"
+  },
+  {
+   "text": "Membership by region",
+   "bounds": [
+    53.6,
+    742.9,
+    109.4,
+    11.2
+   ],
+   "confidence": 1,
+   "ink": "#4f778b",
+   "ground": "#eef3f5"
+  },
+  {
+   "text": "Aecen",
+   "bounds": [
+    60.3,
+    758.5,
+    22.3,
+    8.9
+   ],
+   "confidence": 0.3,
+   "ink": "#717882",
+   "ground": "#dcdee0"
+  },
+  {
+   "text": "Mcobers",
+   "bounds": [
+    131.7,
+    758.5,
+    29.0,
+    8.9
+   ],
+   "confidence": 1,
+   "ink": "#757c86",
+   "ground": "#dcdedf"
+  },
+  {
+   "text": "Northacss",
+   "bounds": [
+    60.3,
+    774.1,
+    26.8,
+    4.5
+   ],
+   "confidence": 1,
+   "ink": "#95989f",
+   "ground": "#f0f2f2"
+  },
+  {
+   "text": "Cosst",
+   "bounds": [
+    60.3,
+    785.3,
+    15.6,
+    4.5
+   ],
+   "confidence": 1,
+   "ink": "#969a9e",
+   "ground": "#f0f1f2"
+  },
+  {
+   "text": "ChaNge",
+   "bounds": [
+    192.0,
+    758.5,
+    22.3,
+    11.2
+   ],
+   "confidence": 0.3,
+   "ink": "#757f8b",
+   "ground": "#dddfe0"
+  },
+  {
+   "text": "Outlook",
+   "bounds": [
+    35.7,
+    847.8,
+    46.9,
+    11.2
+   ],
+   "confidence": 1,
+   "ink": "#797b7e",
+   "ground": "#f5f6f6"
+  },
+  {
+   "text": "Operations",
+   "bounds": [
+    55.8,
+    872.2,
+    55.9,
+    11.3
+   ],
+   "confidence": 1,
+   "ink": "#4f768d",
+   "ground": "#eef3f5"
+  },
+  {
+   "text": "Edited",
+   "bounds": [
+    26.8,
+    988.3,
+    40.2,
+    15.6
+   ],
+   "confidence": 1,
+   "ink": "#858689",
+   "ground": "#f8f8f8"
+  },
+  {
+   "text": "E",
+   "bounds": [
+    1011.3,
+    17.8,
+    17.9,
+    17.8
+   ],
+   "confidence": 1,
+   "ink": "#6d6e6f",
+   "ground": "#f0f1f1"
+  },
+  {
+   "text": "Spring Fundraiser Pitch X",
+   "bounds": [
+    1035.9,
+    17.8,
+    165.2,
+    18.2
+   ],
+   "confidence": 1,
+   "ink": "#525354",
+   "ground": "#f2f2f3"
+  },
+  {
+   "text": "alD",
+   "bounds": [
+    859.5,
+    60.2,
+    29.0,
+    22.3
+   ],
+   "confidence": 1,
+   "ink": "#616263",
+   "ground": "#f6f6f6"
+  },
+  {
+   "text": "Text",
+   "bounds": [
+    571.5,
+    89.2,
+    26.8,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#7b7b7d",
+   "ground": "#f8f9f9"
+  },
+  {
+   "text": "Picture",
+   "bounds": [
+    638.5,
+    89.2,
+    42.4,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#6d6d71",
+   "ground": "#f6f6f7"
+  },
+  {
+   "text": "Shape",
+   "bounds": [
+    714.4,
+    89.1,
+    35.8,
+    13.7
+   ],
+   "confidence": 1,
+   "ink": "#7d7e81",
+   "ground": "#f9f9f9"
+  },
+  {
+   "text": "Table",
+   "bounds": [
+    788.1,
+    89.2,
+    33.5,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#747579",
+   "ground": "#f8f8f8"
+  },
+  {
+   "text": "Chart",
+   "bounds": [
+    859.5,
+    89.2,
+    33.5,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#77787c",
+   "ground": "#f8f8f8"
+  },
+  {
+   "text": "Revenue grew 12% year over year",
+   "bounds": [
+    384.0,
+    307.9,
+    611.7,
+    40.2
+   ],
+   "confidence": 1,
+   "ink": "#1c2d3f",
+   "ground": "#f8f9f9"
+  },
+  {
+   "text": "Quarterly revenue (USD millions)",
+   "bounds": [
+    763.5,
+    394.9,
+    225.5,
+    18.1
+   ],
+   "confidence": 1,
+   "ink": "#3f444c",
+   "ground": "#f5f6f6"
+  },
+  {
+   "text": "\u2022 Northwest led",
+   "bounds": [
+    363.9,
+    423.9,
+    183.1,
+    22.3
+   ],
+   "confidence": 1,
+   "ink": "#2e3b48",
+   "ground": "#f5f5f6"
+  },
+  {
+   "text": "with $12.4 million",
+   "bounds": [
+    392.9,
+    455.0,
+    194.2,
+    27
+   ],
+   "confidence": 1,
+   "ink": "#303742",
+   "ground": "#f7f7f8"
+  },
+  {
+   "text": "30",
+   "bounds": [
+    687.6,
+    426.1,
+    20.1,
+    15.6
+   ],
+   "confidence": 1,
+   "ink": "#59595b",
+   "ground": "#f7f7f8"
+  },
+  {
+   "text": "28",
+   "bounds": [
+    685.4,
+    468.5,
+    22.3,
+    17.8
+   ],
+   "confidence": 1,
+   "ink": "#5d5f61",
+   "ground": "#fafafa"
+  },
+  {
+   "text": "26.9",
+   "bounds": [
+    955.5,
+    477.4,
+    35.7,
+    17.8
+   ],
+   "confidence": 1,
+   "ink": "#383f4b",
+   "ground": "#f4f5f6"
+  },
+  {
+   "text": "\u2022 Prices held steady",
+   "bounds": [
+    363.9,
+    504.0,
+    221.0,
+    27
+   ],
+   "confidence": 1,
+   "ink": "#2b3744",
+   "ground": "#f6f7f7"
+  },
+  {
+   "text": "in every region",
+   "bounds": [
+    390.7,
+    537.5,
+    158.6,
+    27.2
+   ],
+   "confidence": 1,
+   "ink": "#313945",
+   "ground": "#f8f8f9"
+  },
+  {
+   "text": "26",
+   "bounds": [
+    687.6,
+    513.1,
+    20.1,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#4e4f52",
+   "ground": "#f5f5f5"
+  },
+  {
+   "text": "25.0",
+   "bounds": [
+    841.7,
+    517.6,
+    33.5,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#393e49",
+   "ground": "#f3f3f4"
+  },
+  {
+   "text": "24.1",
+   "bounds": [
+    734.5,
+    535.4,
+    29.0,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#2e3845",
+   "ground": "#f4f5f6"
+  },
+  {
+   "text": "24",
+   "bounds": [
+    687.6,
+    555.5,
+    20.1,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#535558",
+   "ground": "#f6f6f6"
+  },
+  {
+   "text": "\u2022 Online orders",
+   "bounds": [
+    363.9,
+    586.7,
+    176.4,
+    22.3
+   ],
+   "confidence": 1,
+   "ink": "#2f3c48",
+   "ground": "#f5f6f6"
+  },
+  {
+   "text": "rose 18%",
+   "bounds": [
+    392.6,
+    618.8,
+    98.8,
+    25.2
+   ],
+   "confidence": 1,
+   "ink": "#363e49",
+   "ground": "#f6f7f7"
+  },
+  {
+   "text": "22",
+   "bounds": [
+    685.4,
+    597.9,
+    22.3,
+    17.8
+   ],
+   "confidence": 1,
+   "ink": "#535356",
+   "ground": "#f9f9f9"
+  },
+  {
+   "text": "20",
+   "bounds": [
+    687.6,
+    640.3,
+    20.1,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#4c4e52",
+   "ground": "#f4f4f4"
+  },
+  {
+   "text": "\u2022\u2022",
+   "bounds": [
+    497.9,
+    660.4,
+    15.6,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#2268d9",
+   "ground": "#eff4fc"
+  },
+  {
+   "text": "Q4 2025",
+   "bounds": [
+    721.1,
+    655.9,
+    58.0,
+    16.1
+   ],
+   "confidence": 1,
+   "ink": "#57585a",
+   "ground": "#f5f5f5"
+  },
+  {
+   "text": "Q1 2026",
+   "bounds": [
+    830.3,
+    655.1,
+    60.7,
+    19.5
+   ],
+   "confidence": 1,
+   "ink": "#5d5e61",
+   "ground": "#f8f8f9"
+  },
+  {
+   "text": "Q2 2026",
+   "bounds": [
+    944.4,
+    655.9,
+    60.3,
+    18.1
+   ],
+   "confidence": 1,
+   "ink": "#606063",
+   "ground": "#f9f9f9"
+  },
+  {
+   "text": "Northwind Cooperative",
+   "bounds": [
+    370.6,
+    729.5,
+    134.0,
+    13.5
+   ],
+   "confidence": 1,
+   "ink": "#528d9d",
+   "ground": "#f3f8f9"
+  },
+  {
+   "text": "<",
+   "bounds": [
+    562.6,
+    890.1,
+    11.2,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#616263",
+   "ground": "#fafafb"
+  },
+  {
+   "text": "5 / 12",
+   "bounds": [
+    607.3,
+    890.0,
+    42.4,
+    14
+   ],
+   "confidence": 1,
+   "ink": "#717173",
+   "ground": "#f9f9f9"
+  },
+  {
+   "text": ">",
+   "bounds": [
+    678.7,
+    890.1,
+    11.2,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#595a5e",
+   "ground": "#fbfbfc"
+  },
+  {
+   "text": "-",
+   "bounds": [
+    739.0,
+    890.1,
+    17.9,
+    11.2
+   ],
+   "confidence": 1,
+   "ink": "#818185",
+   "ground": "#fcfcfc"
+  },
+  {
+   "text": "92%",
+   "bounds": [
+    783.6,
+    890.1,
+    31.3,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#6e6f71",
+   "ground": "#f5f5f6"
+  },
+  {
+   "text": "+",
+   "bounds": [
+    839.4,
+    885.7,
+    22.3,
+    22.3
+   ],
+   "confidence": 1,
+   "ink": "#67686c",
+   "ground": "#fcfcfd"
+  },
+  {
+   "text": "Fit",
+   "bounds": [
+    908.7,
+    890.1,
+    17.9,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#6a6b6e",
+   "ground": "#f5f5f5"
+  },
+  {
+   "text": "Slide 5 of 12 \u2022 16:9",
+   "bounds": [
+    683.2,
+    988.0,
+    127.3,
+    16
+   ],
+   "confidence": 1,
+   "ink": "#7a7b7d",
+   "ground": "#f9f9fa"
+  },
+  {
+   "text": "28.7",
+   "bounds": [
+    1064.9,
+    437.3,
+    31.3,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#343b45",
+   "ground": "#f4f4f5"
+  },
+  {
+   "text": "Q3 2026",
+   "bounds": [
+    1051.5,
+    655.7,
+    60.4,
+    18.2
+   ],
+   "confidence": 1,
+   "ink": "#5b5c5f",
+   "ground": "#f8f8f8"
+  },
+  {
+   "text": "5",
+   "bounds": [
+    1100.7,
+    727.3,
+    11.2,
+    15.6
+   ],
+   "confidence": 1,
+   "ink": "#2e7b90",
+   "ground": "#f5f9fa"
+  },
+  {
+   "text": "E",
+   "bounds": [
+    1223.4,
+    17.8,
+    17.9,
+    17.8
+   ],
+   "confidence": 1,
+   "ink": "#68696b",
+   "ground": "#f1f1f2"
+  },
+  {
+   "text": "Coastal Survey Findings x",
+   "bounds": [
+    1250.2,
+    15.6,
+    165.2,
+    20.4
+   ],
+   "confidence": 1,
+   "ink": "#5a5b5c",
+   "ground": "#f2f3f4"
+  },
+  {
+   "text": "Save",
+   "bounds": [
+    1234.6,
+    73.6,
+    31.3,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#6b6c6e",
+   "ground": "#f6f6f6"
+  },
+  {
+   "text": "Export",
+   "bounds": [
+    1330.6,
+    73.6,
+    42.4,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#6f7073",
+   "ground": "#f6f6f7"
+  },
+  {
+   "text": "Present",
+   "bounds": [
+    1448.9,
+    73.6,
+    49.1,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#c2daf5",
+   "ground": "#0d69da"
+  },
+  {
+   "text": "Format",
+   "bounds": [
+    1216.7,
+    131.6,
+    44.7,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#3973dc",
+   "ground": "#f2f6fc"
+  },
+  {
+   "text": "Layout",
+   "bounds": [
+    1299.3,
+    131.6,
+    42.4,
+    15.6
+   ],
+   "confidence": 1,
+   "ink": "#828386",
+   "ground": "#f9f9f9"
+  },
+  {
+   "text": "Theme",
+   "bounds": [
+    1382.0,
+    131.6,
+    42.4,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#838488",
+   "ground": "#f9f9f9"
+  },
+  {
+   "text": "Text",
+   "bounds": [
+    1210.0,
+    182.9,
+    31.3,
+    15.6
+   ],
+   "confidence": 1,
+   "ink": "#363d45",
+   "ground": "#f2f3f3"
+  },
+  {
+   "text": "Open Sans",
+   "bounds": [
+    1218.9,
+    222.9,
+    67.0,
+    13.7
+   ],
+   "confidence": 1,
+   "ink": "#67686b",
+   "ground": "#f6f6f7"
+  },
+  {
+   "text": "B",
+   "bounds": [
+    1236.8,
+    267.7,
+    11.2,
+    15.6
+   ],
+   "confidence": 1,
+   "ink": "#3d3f42",
+   "ground": "#eeefef"
+  },
+  {
+   "text": "Colour",
+   "bounds": [
+    1210.0,
+    310.1,
+    44.7,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#4d5055",
+   "ground": "#f4f4f5"
+  },
+  {
+   "text": "20 pt",
+   "bounds": [
+    1377.5,
+    223.0,
+    35.7,
+    13.5
+   ],
+   "confidence": 1,
+   "ink": "#6d6e70",
+   "ground": "#f7f7f8"
+  },
+  {
+   "text": "Alignment",
+   "bounds": [
+    1209.8,
+    380.6,
+    69.7,
+    19.7
+   ],
+   "confidence": 1,
+   "ink": "#454649",
+   "ground": "#f6f7f7"
+  },
+  {
+   "text": "Lists",
+   "bounds": [
+    1207.8,
+    457.3,
+    33.5,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#3d4045",
+   "ground": "#f2f3f3"
+  },
+  {
+   "text": "Line spacing",
+   "bounds": [
+    1207.5,
+    534.3,
+    80.9,
+    15.4
+   ],
+   "confidence": 1,
+   "ink": "#494d53",
+   "ground": "#f4f4f5"
+  },
+  {
+   "text": "Box",
+   "bounds": [
+    1210.0,
+    589.0,
+    29.0,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#393f48",
+   "ground": "#f3f4f4"
+  },
+  {
+   "text": "Shrink text when it overflows",
+   "bounds": [
+    1210.0,
+    618.0,
+    167.4,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#606367",
+   "ground": "#f5f5f6"
+  },
+  {
+   "text": "Vertical alignment",
+   "bounds": [
+    1207.8,
+    649.0,
+    113.9,
+    16.0
+   ],
+   "confidence": 1,
+   "ink": "#5d5f62",
+   "ground": "#f6f6f7"
+  },
+  {
+   "text": "I",
+   "bounds": [
+    1294.9,
+    682.7,
+    22.3,
+    20.1
+   ],
+   "confidence": 1,
+   "ink": "#555758",
+   "ground": "#f7f7f7"
+  },
+  {
+   "text": "Arrange",
+   "bounds": [
+    1209.9,
+    738.0,
+    53.8,
+    16.4
+   ],
+   "confidence": 1,
+   "ink": "#3c4148",
+   "ground": "#f3f3f4"
+  },
+  {
+   "text": "60 pt",
+   "bounds": [
+    1274.8,
+    778.6,
+    35.7,
+    15.6
+   ],
+   "confidence": 1,
+   "ink": "#77787b",
+   "ground": "#f8f8f8"
+  },
+  {
+   "text": "Y",
+   "bounds": [
+    1361.9,
+    776.4,
+    13.4,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#78797d",
+   "ground": "#fafafa"
+  },
+  {
+   "text": "W",
+   "bounds": [
+    1207.8,
+    818.8,
+    15.6,
+    15.6
+   ],
+   "confidence": 1,
+   "ink": "#818388",
+   "ground": "#fafafa"
+  },
+  {
+   "text": "400 pt",
+   "bounds": [
+    1268.1,
+    821.0,
+    42.4,
+    16.0
+   ],
+   "confidence": 1,
+   "ink": "#717174",
+   "ground": "#f7f7f7"
+  },
+  {
+   "text": "H",
+   "bounds": [
+    1361.9,
+    818.8,
+    11.2,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#838487",
+   "ground": "#fafafa"
+  },
+  {
+   "text": "Rotation",
+   "bounds": [
+    1207.8,
+    863.3,
+    55.9,
+    13.5
+   ],
+   "confidence": 1,
+   "ink": "#7a7c80",
+   "ground": "#f7f7f7"
+  },
+  {
+   "text": "0\u00b0",
+   "bounds": [
+    1310.5,
+    863.4,
+    15.6,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#65676b",
+   "ground": "#f7f7f7"
+  },
+  {
+   "text": "1.2",
+   "bounds": [
+    1390.9,
+    537.7,
+    22.3,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#515254",
+   "ground": "#f7f7f7"
+  },
+  {
+   "text": "Notes",
+   "bounds": [
+    1462.3,
+    131.6,
+    38.0,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#7d7e82",
+   "ground": "#f7f7f8"
+  },
+  {
+   "text": "+",
+   "bounds": [
+    1489.1,
+    220.9,
+    15.6,
+    15.6
+   ],
+   "confidence": 1,
+   "ink": "#7a7a7c",
+   "ground": "#fcfcfc"
+  },
+  {
+   "text": "S",
+   "bounds": [
+    1473.5,
+    267.7,
+    15.6,
+    17.8
+   ],
+   "confidence": 1,
+   "ink": "#58595d",
+   "ground": "#f9f9f9"
+  },
+  {
+   "text": "\u2192",
+   "bounds": [
+    1442.2,
+    493.0,
+    20.1,
+    11.2
+   ],
+   "confidence": 1,
+   "ink": "#838486",
+   "ground": "#fafafa"
+  },
+  {
+   "text": "132 pt",
+   "bounds": [
+    1422.1,
+    778.6,
+    42.4,
+    15.6
+   ],
+   "confidence": 1,
+   "ink": "#727375",
+   "ground": "#f8f8f8"
+  },
+  {
+   "text": "300 pt",
+   "bounds": [
+    1422.1,
+    821.0,
+    44.7,
+    16.0
+   ],
+   "confidence": 1,
+   "ink": "#747679",
+   "ground": "#f8f8f8"
+  },
+  {
+   "text": "Bring to front",
+   "bounds": [
+    1236.7,
+    909.7,
+    80.6,
+    16.6
+   ],
+   "confidence": 1,
+   "ink": "#7a7c7f",
+   "ground": "#f8f8f8"
+  },
+  {
+   "text": "Send to back",
+   "bounds": [
+    1399.8,
+    910.0,
+    75.9,
+    14
+   ],
+   "confidence": 1,
+   "ink": "#75777a",
+   "ground": "#f7f7f7"
+  },
+  {
+   "text": "24.8 of 64 MB used",
+   "bounds": [
+    1357.4,
+    988.0,
+    122.8,
+    16.0
+   ],
+   "confidence": 1,
+   "ink": "#797b7e",
+   "ground": "#f8f8f8"
+  }
+ ],
+ "surfaces": [
+  {
+   "bounds": [
+    295,
+    111,
+    901,
+    862
+   ],
+   "fill": "#fafbfb",
+   "border": "#e7e8e9",
+   "radius": 3
+  },
+  {
+   "bounds": [
+    322,
+    263,
+    843,
+    504
+   ],
+   "fill": "#fefefe",
+   "border": "#e7e8ea",
+   "radius": 8
+  },
+  {
+   "bounds": [
+    2,
+    113,
+    293,
+    858
+   ],
+   "fill": "#fefefe",
+   "border": "#fefefe",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    1194,
+    163,
+    341,
+    409
+   ],
+   "fill": "#fefefe",
+   "border": "#fefefe",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    1194,
+    722,
+    341,
+    249
+   ],
+   "fill": "#fefefe",
+   "border": "#fefefe",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    2,
+    973,
+    1533,
+    50
+   ],
+   "fill": "#fefefe",
+   "border": "#fefefe",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    1194,
+    574,
+    341,
+    146
+   ],
+   "fill": "#fefefe",
+   "border": "#fefefe",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    10,
+    619,
+    236,
+    114
+   ],
+   "fill": "#fdfdfd",
+   "border": "#f4f8fd",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    537,
+    866,
+    421,
+    60
+   ],
+   "fill": "#fefefe",
+   "border": "#f1f2f4",
+   "radius": 3
+  },
+  {
+   "bounds": [
+    40,
+    516,
+    205,
+    101
+   ],
+   "fill": "#fdfdfd",
+   "border": "#fefefe",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    540,
+    872,
+    414,
+    50
+   ],
+   "fill": "#fefefe",
+   "border": "#fdfdfd",
+   "radius": 10
+  },
+  {
+   "bounds": [
+    42,
+    734,
+    203,
+    100
+   ],
+   "fill": "#fbfbfc",
+   "border": "#fefefe",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    42,
+    410,
+    203,
+    100
+   ],
+   "fill": "#fdfdfe",
+   "border": "#fefefe",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    42,
+    304,
+    203,
+    99
+   ],
+   "fill": "#fefefe",
+   "border": "#f8fbf9",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    46,
+    626,
+    196,
+    99
+   ],
+   "fill": "#fdfdfd",
+   "border": "#fbfdfe",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    799,
+    2,
+    413,
+    45
+   ],
+   "fill": "#f4f5f6",
+   "border": "#f6f7f7",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    1194,
+    113,
+    341,
+    51
+   ],
+   "fill": "#fefefe",
+   "border": "#fefefe",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    48,
+    888,
+    185,
+    71
+   ],
+   "fill": "#909190",
+   "border": "#fafbfb",
+   "radius": 23
+  },
+  {
+   "bounds": [
+    1209,
+    406,
+    277,
+    37
+   ],
+   "fill": "#fefdfe",
+   "border": "#fdfdfe",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    1212,
+    2,
+    218,
+    45
+   ],
+   "fill": "#f4f5f6",
+   "border": "#f6f7f7",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    15,
+    122,
+    255,
+    37
+   ],
+   "fill": "#fefefe",
+   "border": "#fafbfe",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    1002,
+    2,
+    210,
+    43
+   ],
+   "fill": "#f4f5f6",
+   "border": "#f6f7f7",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    799,
+    2,
+    203,
+    43
+   ],
+   "fill": "#f4f5f6",
+   "border": "#f6f6f7",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    1200,
+    674,
+    210,
+    38
+   ],
+   "fill": "#fcfcfd",
+   "border": "#fdfdfd",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    18,
+    126,
+    248,
+    30
+   ],
+   "fill": "#fefefe",
+   "border": "#f6f8fc",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    113,
+    442,
+    120,
+    51
+   ],
+   "fill": "#fdfdfd",
+   "border": "#fefefe",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    1209,
+    209,
+    152,
+    39
+   ],
+   "fill": "#fefefe",
+   "border": "#fefefe",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    1361,
+    898,
+    147,
+    39
+   ],
+   "fill": "#fefefe",
+   "border": "#fefefe",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    1209,
+    898,
+    141,
+    39
+   ],
+   "fill": "#fefefe",
+   "border": "#fefefe",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    1209,
+    480,
+    142,
+    37
+   ],
+   "fill": "#fbfbfd",
+   "border": "#fdfdfd",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    1359,
+    480,
+    128,
+    37
+   ],
+   "fill": "#fefefe",
+   "border": "#fefefd",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    1365,
+    901,
+    140,
+    33
+   ],
+   "fill": "#fefefe",
+   "border": "#fefefe",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    1430,
+    2,
+    105,
+    43
+   ],
+   "fill": "#f4f5f6",
+   "border": "#f5f6f7",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    1212,
+    213,
+    145,
+    31
+   ],
+   "fill": "#fefefe",
+   "border": "#fefefe",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    1386,
+    810,
+    124,
+    36
+   ],
+   "fill": "#fefefe",
+   "border": "#fefefe",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    1212,
+    901,
+    135,
+    33
+   ],
+   "fill": "#fefefe",
+   "border": "#fefefe",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    1386,
+    768,
+    124,
+    34
+   ],
+   "fill": "#fefefe",
+   "border": "#fefefe",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    1409,
+    61,
+    112,
+    37
+   ],
+   "fill": "#0b69d9",
+   "border": "#f9fafd",
+   "radius": 4
+  },
+  {
+   "bounds": [
+    1237,
+    810,
+    113,
+    36
+   ],
+   "fill": "#fefefe",
+   "border": "#fefefe",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    1298,
+    856,
+    120,
+    33
+   ],
+   "fill": "#fefefe",
+   "border": "#fefefe",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    1237,
+    768,
+    113,
+    34
+   ],
+   "fill": "#fefefe",
+   "border": "#fdfdfe",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    1380,
+    527,
+    107,
+    35
+   ],
+   "fill": "#fefefe",
+   "border": "#fefefe",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    1306,
+    60,
+    93,
+    39
+   ],
+   "fill": "#fdfdfe",
+   "border": "#fdfdfd",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    1206,
+    60,
+    90,
+    39
+   ],
+   "fill": "#fefefe",
+   "border": "#fdfdfd",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    1389,
+    814,
+    118,
+    29
+   ],
+   "fill": "#fefefe",
+   "border": "#fdfdfd",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    1389,
+    771,
+    118,
+    28
+   ],
+   "fill": "#fefefe",
+   "border": "#fdfdfd",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    14,
+    623,
+    31,
+    106
+   ],
+   "fill": "#fefefe",
+   "border": "#f2f6fc",
+   "radius": 4
+  },
+  {
+   "bounds": [
+    1240,
+    814,
+    106,
+    29
+   ],
+   "fill": "#fefefe",
+   "border": "#fdfdfd",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    113,
+    442,
+    60,
+    51
+   ],
+   "fill": "#fdfdfd",
+   "border": "#fefefe",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    1302,
+    859,
+    113,
+    27
+   ],
+   "fill": "#fefefe",
+   "border": "#fefefe",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    53,
+    442,
+    59,
+    51
+   ],
+   "fill": "#fcfdfd",
+   "border": "#fdfefe",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    1441,
+    210,
+    79,
+    38
+   ],
+   "fill": "#fefefe",
+   "border": "#fdfdfd",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    1240,
+    771,
+    106,
+    28
+   ],
+   "fill": "#fefefe",
+   "border": "#fdfdfd",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    175,
+    442,
+    58,
+    51
+   ],
+   "fill": "#fdfdfd",
+   "border": "#fdfefe",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    1383,
+    531,
+    101,
+    28
+   ],
+   "fill": "#fefefe",
+   "border": "#f7f8f7",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    1367,
+    257,
+    73,
+    37
+   ],
+   "fill": "#fefefe",
+   "border": "#fdfdfd",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    1287,
+    257,
+    73,
+    37
+   ],
+   "fill": "#fefefe",
+   "border": "#fefdfd",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    1309,
+    64,
+    86,
+    31
+   ],
+   "fill": "#fdfdfd",
+   "border": "#fdfdfd",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    1448,
+    257,
+    72,
+    37
+   ],
+   "fill": "#fefefe",
+   "border": "#fefdfd",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    1367,
+    209,
+    68,
+    39
+   ],
+   "fill": "#fefdfe",
+   "border": "#fefefe",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    1209,
+    257,
+    71,
+    37
+   ],
+   "fill": "#fefefe",
+   "border": "#fefefe",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    1209,
+    64,
+    84,
+    31
+   ],
+   "fill": "#fefefe",
+   "border": "#fdfdfd",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    117,
+    446,
+    53,
+    43
+   ],
+   "fill": "#fcfdfd",
+   "border": "#fcfdfd",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    56,
+    446,
+    53,
+    43
+   ],
+   "fill": "#fbfcfc",
+   "border": "#fdfefe",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    178,
+    446,
+    52,
+    43
+   ],
+   "fill": "#fcfcfd",
+   "border": "#fdfdfe",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    1275,
+    483,
+    73,
+    30
+   ],
+   "fill": "#fefefe",
+   "border": "#fefefd",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    1275,
+    409,
+    73,
+    30
+   ],
+   "fill": "#fefefe",
+   "border": "#fefefe",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    1370,
+    260,
+    67,
+    31
+   ],
+   "fill": "#fefefe",
+   "border": "#fefdfd",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    1290,
+    260,
+    67,
+    31
+   ],
+   "fill": "#fefefe",
+   "border": "#fefefe",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    1451,
+    260,
+    65,
+    31
+   ],
+   "fill": "#fefefe",
+   "border": "#fefefe",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    1212,
+    260,
+    65,
+    31
+   ],
+   "fill": "#fefefe",
+   "border": "#fdfdfd",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    1275,
+    678,
+    67,
+    30
+   ],
+   "fill": "#fefdfe",
+   "border": "#fcfcfd",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    1350,
+    409,
+    67,
+    30
+   ],
+   "fill": "#fefdfe",
+   "border": "#fefefe",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    1420,
+    483,
+    64,
+    30
+   ],
+   "fill": "#fefefe",
+   "border": "#fefefe",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    1419,
+    409,
+    64,
+    30
+   ],
+   "fill": "#fefefe",
+   "border": "#fefefe",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    1370,
+    213,
+    61,
+    31
+   ],
+   "fill": "#fdfdfd",
+   "border": "#fefefe",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    1344,
+    678,
+    63,
+    30
+   ],
+   "fill": "#fefefe",
+   "border": "#fdfefd",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    1212,
+    678,
+    61,
+    30
+   ],
+   "fill": "#eff3fd",
+   "border": "#f3f4fd",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    1212,
+    483,
+    60,
+    30
+   ],
+   "fill": "#eff3fd",
+   "border": "#fbfcfe",
+   "radius": 1
+  },
+  {
+   "bounds": [
+    1212,
+    409,
+    60,
+    30
+   ],
+   "fill": "#eff4fd",
+   "border": "#fafbfe",
+   "radius": 1
+  },
+  {
+   "bounds": [
+    1363,
+    483,
+    55,
+    30
+   ],
+   "fill": "#fefefe",
+   "border": "#fefefe",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    892,
+    881,
+    50,
+    32
+   ],
+   "fill": "#fdfdfd",
+   "border": "#fefdfd",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    1444,
+    213,
+    36,
+    31
+   ],
+   "fill": "#fefdfe",
+   "border": "#fefdfe",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    1482,
+    213,
+    34,
+    31
+   ],
+   "fill": "#fefefe",
+   "border": "#fefefe",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    896,
+    885,
+    42,
+    25
+   ],
+   "fill": "#fdfdfd",
+   "border": "#fdfdfd",
+   "radius": 0
+  }
+ ],
+ "dividers": [
+  {
+   "axis": "h",
+   "at": 1,
+   "from": 6,
+   "to": 1530,
+   "color": "#e8e9ea"
+  },
+  {
+   "axis": "h",
+   "at": 46,
+   "from": 324,
+   "to": 795,
+   "color": "#f7f7f7"
+  },
+  {
+   "axis": "h",
+   "at": 111,
+   "from": 296,
+   "to": 1192,
+   "color": "#dedee1"
+  },
+  {
+   "axis": "h",
+   "at": 162,
+   "from": 1192,
+   "to": 1536,
+   "color": "#e5e5e5"
+  },
+  {
+   "axis": "h",
+   "at": 267,
+   "from": 329,
+   "to": 1158,
+   "color": "#d9dadc"
+  },
+  {
+   "axis": "h",
+   "at": 268,
+   "from": 327,
+   "to": 1160,
+   "color": "#f1f1f2"
+  },
+  {
+   "axis": "h",
+   "at": 357,
+   "from": 381,
+   "to": 1108,
+   "color": "#ebf3f4"
+  },
+  {
+   "axis": "h",
+   "at": 358,
+   "from": 381,
+   "to": 1108,
+   "color": "#0b5e73"
+  },
+  {
+   "axis": "h",
+   "at": 359,
+   "from": 381,
+   "to": 1108,
+   "color": "#c5dcdf"
+  },
+  {
+   "axis": "h",
+   "at": 572,
+   "from": 1193,
+   "to": 1536,
+   "color": "#eaeaeb"
+  },
+  {
+   "axis": "h",
+   "at": 573,
+   "from": 1193,
+   "to": 1535,
+   "color": "#f5f5f5"
+  },
+  {
+   "axis": "h",
+   "at": 647,
+   "from": 716,
+   "to": 1109,
+   "color": "#797b7c"
+  },
+  {
+   "axis": "h",
+   "at": 648,
+   "from": 717,
+   "to": 1109,
+   "color": "#c3c4c7"
+  },
+  {
+   "axis": "h",
+   "at": 720,
+   "from": 1193,
+   "to": 1536,
+   "color": "#e9e9ea"
+  },
+  {
+   "axis": "h",
+   "at": 762,
+   "from": 328,
+   "to": 1159,
+   "color": "#dbddde"
+  },
+  {
+   "axis": "h",
+   "at": 763,
+   "from": 328,
+   "to": 1159,
+   "color": "#cecfd2"
+  },
+  {
+   "axis": "h",
+   "at": 870,
+   "from": 561,
+   "to": 933,
+   "color": "#e3e4e6"
+  },
+  {
+   "axis": "h",
+   "at": 871,
+   "from": 561,
+   "to": 933,
+   "color": "#ededee"
+  },
+  {
+   "axis": "h",
+   "at": 971,
+   "from": 296,
+   "to": 1536,
+   "color": "#dfdfe1"
+  },
+  {
+   "axis": "v",
+   "at": 1,
+   "from": 112,
+   "to": 623,
+   "color": "#f5f5f5"
+  },
+  {
+   "axis": "v",
+   "at": 278,
+   "from": 200,
+   "to": 487,
+   "color": "#e4e5e6"
+  },
+  {
+   "axis": "v",
+   "at": 295,
+   "from": 112,
+   "to": 971,
+   "color": "#e4e4e6"
+  },
+  {
+   "axis": "v",
+   "at": 324,
+   "from": 272,
+   "to": 761,
+   "color": "#d1d2d5"
+  },
+  {
+   "axis": "v",
+   "at": 325,
+   "from": 278,
+   "to": 483,
+   "color": "#f6f7f7"
+  },
+  {
+   "axis": "v",
+   "at": 716,
+   "from": 434,
+   "to": 648,
+   "color": "#c5c6c7"
+  },
+  {
+   "axis": "v",
+   "at": 717,
+   "from": 434,
+   "to": 648,
+   "color": "#89898d"
+  },
+  {
+   "axis": "v",
+   "at": 1192,
+   "from": 112,
+   "to": 572,
+   "color": "#e5e5e7"
+  }
+ ],
+ "limits": [
+  "Evidence for review: roles and widgets are assigned in the semantic map, not here."
+ ]
+}

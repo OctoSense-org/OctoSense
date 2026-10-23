@@ -7,8 +7,10 @@
 # text and PDF — all file I/O done by the service itself, confined to
 # the call's area: the caller's own folder from the shell's resolver,
 # else the legacy `deck/` corner of the caller's host directory.
-# Headless by design: agents build and read decks with no deck UI
-# existing yet.
+# Quick Deck v2's open documents keep the engine's session, its edits and
+# undo history between calls (apps/quickdeck/design/SERVICE.md), and every
+# file is checked by the service's own import guard before the engine
+# reads a byte of it.
 [package]
 name = "octosense-deck-service"
 version = "0.1.0"
@@ -17,7 +19,9 @@ license = "Apache-2.0"
 publish = false
 
 [dependencies]
-# The same App Hub rev as Mail and News: one appstore, one service registry.
+# The same App Hub rev as Mail and News: one appstore, one service registry
+# (and, through it, Makepad's per-isolate storage scope an open document is
+# bound to).
 octosense-appstore = { workspace = true }
 # Where a call works: the caller's area and its write rules (ADR 0013).
 octosense-engine-area = { workspace = true }
@@ -26,10 +30,34 @@ serde_json = { workspace = true }
 deckcraft-engine = { workspace = true }
 deckcraft-format = { workspace = true }
 deckcraft-model = { workspace = true }
+# Present: the show order and a slide's build steps (src/reading.rs).
+deckcraft-anim = { workspace = true }
+# The font families the engine can draw (deck.fonts, deck.open's
+# missing_fonts).
+deckcraft-fonts = { workspace = true }
+# The import guard inflates every zip entry, bounded, to check it is no
+# bigger than its directory says before the engine reads it (src/guard.rs).
+flate2 = "1"
+# The engine's own zip reader, which the import guard asks to read every
+# directory it passes, so the two never read a zip differently
+# (src/guard.rs `read_alike`): deckcraft's own version and features
+# (its root Cargo.toml), which a test keeps the same crate in Cargo.lock.
+zip = { version = "3", default-features = false, features = ["deflate"] }
+# The engine's Office package reader, which the service calls itself for a
+# package the import guard classified (src/lib.rs `engine_read`, the steps
+# of the engine's `open_presentation`), since the engine's own sniff misses
+# a package whose content-type list comes late, as LibreOffice writes them.
+deckcraft-pptx = { workspace = true }
+# Names a clip in the media cache by a hash of its bytes (src/media.rs);
+# the workspace's sha2, as Mail's and the shell's.
+sha2 = "0.10"
 
 [dev-dependencies]
 # Generates and checks the skill's references (tests/skill.rs).
 octosense-skill-gen = { workspace = true }
 # Its tool manifest is checked with App Hub's own loader (tools.json).
 octosense-app-policy = { workspace = true }
+# A real app isolate with a storage scope, whose closing releases the
+# documents it opened (src/doc_tests.rs).
+makepad-widgets = { workspace = true }
 tempfile = "3"

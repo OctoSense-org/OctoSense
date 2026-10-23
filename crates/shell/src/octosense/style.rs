@@ -1,8 +1,9 @@
 //! OctoSense's additional desktop style, layered on the upstream widget API.
 use makepad_widgets::{app_icon, desktop_style::{DesktopStyle as UpstreamStyle, StyleSheet}, *};
-use super::icon_frame;
+use super::{icon_family, icon_frame};
+use super::icon_frame::DrawIconImage;
 #[cfg(any(feature = "app-hub", native_mobile))]
-use super::icon_frame::{DrawIconImage, SvgIconTexture};
+use super::icon_frame::SvgIconTexture;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum DesktopStyle {
@@ -86,8 +87,7 @@ pub fn load_sheet(style: DesktopStyle, dark: bool) -> StyleSheet {
     }
 }
 
-/// The framework's artwork for a style with this shell's own laid over it:
-/// News as redrawn here, and OctosMap, which the framework has no art for.
+/// The framework's artwork with approved OctoSense identities laid over it.
 pub fn icon_assets(style: UpstreamStyle) -> Vec<app_icon::IconAsset> {
     fn wear(assets: &mut Vec<app_icon::IconAsset>, name: &str, svg: String) {
         match assets.iter_mut().find(|asset| asset.name == name) {
@@ -110,6 +110,7 @@ pub fn icon_assets(style: UpstreamStyle) -> Vec<app_icon::IconAsset> {
             }
         }
     }
+    icon_family::apply(&mut assets, style);
     wear(&mut assets, "apphub", icon_frame::styled_svg(apphub_svg(), style));
     // The system chat's dock entry and home chip (#143): its own art, so it
     // never reads as the AI pane's app.
@@ -157,6 +158,7 @@ fn own_artwork(style: UpstreamStyle) -> Option<[&'static str; 2]> {
 #[derive(Default)]
 pub struct AppIconDraw {
     draw: app_icon::AppIconDraw,
+    original_png: Option<(DrawIconImage, Texture)>,
     #[cfg(any(feature = "app-hub", native_mobile))]
     library: InstalledIcons,
     /// The styles whose catalog this drawer has seen to, by discriminant.
@@ -165,7 +167,25 @@ pub struct AppIconDraw {
 impl AppIconDraw {
     pub fn draw(&mut self, cx: &mut Cx2d, name: &str, style: DesktopStyle, rect: Rect, opacity: f32, ink: Vec4f) {
         #[cfg(any(feature = "app-hub", native_mobile))]
-        if self.library.draw(cx, name, style.framework(), rect, opacity) { return; }
+        if !icon_family::owns_svg(name)
+            && self.library.draw(cx, name, style.framework(), rect, opacity) { return; }
+        if let Some(bytes) = icon_family::png(name) {
+            let (draw, texture) = self.original_png.get_or_insert_with(|| {
+                let buffer = image_cache::ImageBuffer::from_png(bytes).expect("bundled Rinx icon is valid PNG");
+                let size = vec2(buffer.width as f32, buffer.height as f32);
+                let texture = buffer.into_new_texture(cx);
+                let mut draw = cx.with_vm(|vm| DrawIconImage::script_new_with_default(vm));
+                draw.source_size = size;
+                (draw, texture)
+            });
+            let (rect, radius, backing) = icon_frame::placement(style.framework(), rect);
+            draw.draw_vars.set_texture(0, texture);
+            draw.radius = radius;
+            draw.backing = backing;
+            draw.opacity = opacity;
+            draw.draw_abs(cx, rect);
+            return;
+        }
         let style = style.framework();
         // A style can be drawn before its sheet is applied (a crossfade's
         // target, the first frame); the framework would then fall back to
@@ -257,6 +277,57 @@ mod tests {
     }
 
     #[test]
+    fn approved_family_replaces_generic_catalog_artwork() {
+        for style in UpstreamStyle::ALL {
+            let assets = icon_assets(style);
+            for (name, title) in [
+                ("clock", "Clock"), ("sheets", "Sheets"), ("settings", "Settings"),
+                ("updater", "OctoSense Updates"), ("octoscode", "OctosCode"),
+                ("reference", "Reference"), ("appcard", "AppCard"),
+                ("mail", "Mail"), ("calendar", "Calendar"),
+            ] {
+                assert!(svg_of(&assets, name).contains(&format!("<title>{title}</title>")),
+                    "{} {name} must use the approved family", style.id());
+            }
+            assert_eq!(svg_of(&assets, "photos"), svg_of(&app_icon::load_assets(style), "photos"));
+        }
+    }
+
+    #[test]
+    fn approved_family_is_complete_and_parses_in_the_production_renderer() {
+        assert_eq!(icon_family::ICONS.len(), 28);
+        for style in UpstreamStyle::ALL {
+            let assets = icon_assets(style);
+            for &(name, _, _) in icon_family::ICONS {
+                let svg = svg_of(&assets, name);
+                let doc = makepad_widgets::makepad_draw::svg::parse_svg(svg);
+                assert_eq!(doc.logical_size(), (64., 64.), "{} {name}", style.id());
+                assert!(!doc.root.is_empty(), "{} {name}", style.id());
+                for unsupported in ["<clipPath", "<mask", "<filter", "<text", "<image", "<use"] {
+                    assert!(!svg.contains(unsupported), "{} {name}: {unsupported}", style.id());
+                }
+            }
+        }
+        let bytes = icon_family::png("rinx").unwrap();
+        assert_eq!(bytes, include_bytes!("../../../../docs/design/icon-family/assets/rinx.png"));
+        let image = image_cache::ImageBuffer::from_png(bytes).unwrap();
+        assert_eq!((image.width, image.height), (1024, 1024));
+        assert!(icon_family::png("hub:rinx").is_none());
+    }
+
+    #[test]
+    fn owned_family_icons_win_in_every_style_without_intercepting_other_apps() {
+        for style in UpstreamStyle::ALL {
+            for name in ["mail", "calendar", "browser", "makepad-browser"] {
+                assert!(icon_family::owns_svg(name), "{} {name}", style.id());
+            }
+            for name in ["camera", "youtube", "ai-providers", "future-makepad-app", "hub:mail", "hub:calendar", "hub:browser"] {
+                assert!(!icon_family::owns_svg(name));
+            }
+        }
+    }
+
+    #[test]
     fn added_app_icons_follow_the_selected_platform_shape() {
         for name in ["apphub", "assistant"] {
             let android = icon_assets(UpstreamStyle::Android);
@@ -277,13 +348,18 @@ mod tests {
             let framework = app_icon::load_assets(style);
             let assets = icon_assets(style);
             // Nothing the framework draws is lost, and the list stays sorted
-            // by name as the framework's is. Added: OctosMap, App Hub and the
-            // system chat's Assistant (#143).
-            assert_eq!(assets.len(), framework.len() + 3, "{}", style.id());
+            // by name as the framework's is. Existing custom art stays intact.
+            // Upstream may add IDs, including ones the family already owns.
+            // Assert the union, rather than a fixed delta from today's catalog.
+            let mut expected: std::collections::BTreeSet<&str> = framework.iter().map(|asset| asset.name.as_str()).collect();
+            expected.extend(icon_family::ICONS.iter().map(|&(name, _, _)| name));
+            expected.extend(["maps", "apphub", "assistant"]);
+            assert_eq!(assets.iter().map(|asset| asset.name.as_str()).collect::<std::collections::BTreeSet<_>>(), expected, "{}", style.id());
+            assert_eq!(assets.len(), expected.len(), "identities must not be duplicated");
             assert!(svg_of(&assets, "assistant").contains("OctoSense #143"), "{}", style.id());
             assert!(assets.windows(2).all(|pair| pair[0].name < pair[1].name), "{}", style.id());
             for asset in &framework {
-                if asset.name != "news" {
+                if asset.name != "news" && !icon_family::ICONS.iter().any(|&(name, _, _)| name == asset.name) {
                     assert_eq!(svg_of(&assets, &asset.name), asset.svg, "{} {}", style.id(), asset.name);
                 }
             }

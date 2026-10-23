@@ -1,6 +1,6 @@
 {
   "engine": "pdfcraft",
-  "method": "I read the tool table (crates/automation/src/tools.rs), Automation::call (lib.rs) and every handler module, following each into the engine (engine/src/lib.rs Session::open/apply/run_edit, js.rs, xfa.rs, actions.rs, ocr.rs), print::spool, sign (keychain, windows, pdf) and the js crate, and mapped every self.resolve, std::fs and write_atomic call to its tool; greps for std::net, HTTP/TLS clients and std::process found no network client (FormCalc get/post/put are refused) and only lpstat/lp in print::spool. PDF JavaScript/FormCalc execution counts as code although pdfcraft-js is a sandbox: it is on by default and runs on doc_open/doc_open_revision of laid-out XFA forms, on form_fill/form_reset/form_set_script edits, and in the fresh JavaScript-on sessions that action_run and ocr_recognize_files create; tools that install script text which the engine or other viewers run later are code too. Root confinement and the table's read_only/destructive flags were ignored (printers, sign_keychain_ids and ocr_status are flagged read_only). With JavaScript forced off and js_enabled denied, doc_open would drop to file and form_fill, form_reset and doc_open_revision to safe.",
+  "method": "I read the tool table (crates/automation/src/tools.rs), Automation::call (lib.rs) and every handler module, following each into the engine (engine/src/lib.rs Session::open/apply/run_edit, js.rs, xfa.rs, actions.rs, ocr.rs), print::spool, sign (keychain, windows, pdf) and the js crate, and mapped every self.resolve, std::fs and write_atomic call to its tool; greps for std::net, HTTP/TLS clients and std::process found no network client (FormCalc get/post/put are refused) and only lpstat/lp in print::spool. PDF JavaScript/FormCalc execution counts as code although pdfcraft-js is a sandbox: it is on by default and runs on doc_open/doc_open_revision of laid-out XFA forms, on form_fill/form_reset/form_set_script edits, and in the fresh JavaScript-on sessions that action_run and ocr_recognize_files create; tools that install script text which the engine or other viewers run later are code too. Root confinement and the table's read_only/destructive flags were ignored (printers, sign_keychain_ids and ocr_status are flagged read_only). With JavaScript forced off and js_enabled denied, doc_open would drop to file and form_fill, form_reset and doc_open_revision to safe. Updated for the upstream sync (ymote/pdfcraft merging storytold/pdfcraft main f22b5d4): the twelve new tools (bookmark_from_structure, command_batch, command_run, comment_image_preview, doc_create_multiple, doc_inspect, fill_sign_date_format, object_list, object_move, page_enhance_camera, printer_options, render_preview) were traced the same way, every changed tool schema was compared with the previous pin's, and the diff of the crates automation links was searched for new std::fs, std::process, std::net and environment reads. New reach past the document: fill_sign_add's image `path`, doc_create_multiple's files, and printer_options' PPD read and lpoptions call; doc_combine's files may now be images or text, write_atomic's staging names changed, and the rest (the Windows printer-preferences window, the desktop theme read) is reached only from the desktop UI. fill_sign_add moves from safe to file.",
   "rules": [
     {
       "ids": [
@@ -99,6 +99,18 @@
     },
     {
       "ids": [
+        "command_run",
+        "command_batch"
+      ],
+      "class": "code",
+      "why": "They run other commands. command_run maps a registry command id to the tool that automates it (tools::tool_for_command: 79 tools carry a command id, among them doc_open, doc_save, sign_document, js_run, action_run and ocr_recognize_files) and calls that tool through Automation::call with the caller's `params`, dropping unknown keys with a warning; command_batch runs up to 1,000 such steps in order (MAX_BATCH_STEPS). The inner tool keeps its own argument checks and root confinement, but a deny-list keyed on these two ids cannot see it, as with action_run.",
+      "evidence": [
+        "crates/automation/src/conventions.rs: command_run (tools::tool_for_command, self.call), command_batch (MAX_BATCH_STEPS, command_run per step)",
+        "crates/automation/src/tools.rs: tool_for_command, the tools' .cmd() registry ids"
+      ]
+    },
+    {
+      "ids": [
         "ocr_recognize_files"
       ],
       "class": "code",
@@ -130,6 +142,17 @@
       "evidence": [
         "crates/automation/src/printing.rs: printers",
         "crates/print/src/spool.rs: lpstat_command, printers"
+      ]
+    },
+    {
+      "ids": [
+        "printer_options"
+      ],
+      "class": "device",
+      "why": "spool::printer_options reads the queue's PPD from /etc/cups/ppd/<printer>.ppd (at most 16 MiB; a name that isn't a PPD keyword, such as one with `/`, reads nothing) and spawns `lpoptions -p <printer> -l` (CUPS, looked up on PATH) for the current choices; empty on Windows and where there is no spooler. Flagged read_only in the table, but it queries the print system, like printers.",
+      "evidence": [
+        "crates/automation/src/printing.rs: printer_options",
+        "crates/print/src/spool.rs: printer_options (is_ppd_keyword, PPD_CAP, lpoptions), parse_ppd, parse_lpoptions"
       ]
     },
     {
@@ -194,9 +217,10 @@
         "doc_save"
       ],
       "class": "file",
-      "why": "write_atomic writes `.<name>.pdfcraft-tmp` beside the target and renames it over `path`, or over the path the document was opened from when `path` is omitted (an incremental update by default).",
+      "why": "write_atomic creates a staging file `.<name>.<16 hex digits>.pdfcraft-tmp` beside the target (create_new, so a file or link planted at that name is never written through) and renames it over `path`, or over the path the document was opened from when `path` is omitted (an incremental update by default). flatten_fill_sign first applies Edit::FlattenFillSign to the open document.",
       "evidence": [
-        "crates/automation/src/lib.rs: doc_save, write_atomic"
+        "crates/automation/src/lib.rs: doc_save, write_atomic, write_atomic_with",
+        "crates/platform/src/staging.rs: create_staging (StagingName::SuffixThenTag), staging_suffixes"
       ]
     },
     {
@@ -224,14 +248,26 @@
     },
     {
       "ids": [
-        "doc_combine",
-        "doc_create"
+        "fill_sign_add"
       ],
       "class": "file",
-      "why": "doc_combine std::fs::reads every PDF in `paths` (parsed with open_source, not Session::open) and writes the result to `out` or opens it as a new document; doc_create reads image files, or a text file when `path` is given, into a new unsaved document (from: blank touches no file).",
+      "why": "Since this pin a signature or initials can be an image: with `path`, fill_sign_add resolves the caller's path, std::fs opens it and SignatureImage::read takes a PNG or JPEG of at most 4 MiB and 4 megapixels into a new annotation in the open document. Without `path` it is a plain document edit, as before: typed text, a check, cross, dot or line, today's date (in the session's date format, or `format` and `language`), or a typed signature in the script font baked in at build time.",
       "evidence": [
-        "crates/automation/src/lib.rs: doc_combine, deliver, doc_create",
-        "crates/engine/src/lib.rs: combine_ranges (open_source)"
+        "crates/automation/src/comments.rs: fill_sign_add (self.resolve, std::fs::File::open, SignatureImage::read)",
+        "crates/engine/src/signature_image.rs: SignatureImage::read (MAX_SIGNATURE_IMAGE_BYTES, MAX_PIXELS)"
+      ]
+    },
+    {
+      "ids": [
+        "doc_combine",
+        "doc_create",
+        "doc_create_multiple"
+      ],
+      "class": "file",
+      "why": "doc_combine std::fs::reads every file in `paths` (PDFs with their `passwords`, and images or .txt files made into PDFs first by Session::as_pdf; PDFs are parsed with open_source, not Session::open) and writes the result to `out` or opens it as a new document; doc_create reads image files, or a text file when `path` is given, into a new unsaved document (from: blank touches no file); doc_create_multiple reads up to 1,000 files the same way (Session::convert_to_pdf) and either combines them like doc_combine or, in mode separate, writes one PDF per image or text file into `out_dir`, under a name not already taken.",
+      "evidence": [
+        "crates/automation/src/lib.rs: doc_combine, deliver, doc_create, doc_create_multiple, create_separate, unused",
+        "crates/engine/src/lib.rs: combine_unlocked, combine_grouped (open_source_with), as_pdf, convert_to_pdf (open_source, pdfcraft_create)"
       ]
     },
     {
@@ -300,12 +336,19 @@
         "doc_hidden_info",
         "command_list",
         "edit_undo",
-        "edit_redo"
+        "edit_redo",
+        "doc_inspect",
+        "render_preview",
+        "comment_image_preview",
+        "object_list"
       ],
       "class": "safe",
-      "why": "They read the open documents or the static command registry, close a document in the session, or move along the session's undo stacks; page_render returns PNG bytes and the text tools return text, nothing is written (doc_revisions only reads although the table does not flag it read_only).",
+      "why": "They read the open documents or the static command registry, close a document in the session, or move along the session's undo stacks; page_render, render_preview (at most 4,096 pixels a side, never above 72 dpi) and comment_image_preview (an image signature's picture, or its page rendered without it at up to 600 dpi) return PNG bytes, doc_inspect returns doc_info for one or every open document, object_list lists a page's editable objects, and the text tools return text; nothing is written (doc_revisions only reads although the table does not flag it read_only).",
       "evidence": [
         "crates/automation/src/lib.rs: Automation::call arms for doc_list, doc_info (info()), page_render, text_extract, text_find, text_lines, text_paragraphs, page_images, doc_audit_space, edit_undo, edit_redo; doc_close, doc_revisions, command_list",
+        "crates/automation/src/conventions.rs: doc_inspect, render_preview",
+        "crates/automation/src/comments.rs: comment_image_preview; crates/engine/src/signature_image.rs: image_signature_preview",
+        "crates/automation/src/content.rs: object_list (Document::editable_objects)",
         "crates/automation/src/redact.rs: doc_hidden_info",
         "crates/engine/src/commands.rs: is_enabled reads only session state"
       ]
@@ -329,13 +372,16 @@
         "text_edit",
         "page_add_text",
         "content_list",
-        "content_delete"
+        "content_delete",
+        "page_enhance_camera",
+        "object_move"
       ],
       "class": "safe",
-      "why": "Undoable edits of the open document through Session::apply (pages, page boxes, labels, metadata, the initial view and viewer preferences stored in the file, header/footer text, flattening, encryption settings applied by the next save, text edits in built-in fonts) or listings of added content. None reads or writes a path or runs scripts.",
+      "why": "Undoable edits of the open document through Session::apply (pages, page boxes, labels, metadata, the initial view and viewer preferences stored in the file, header/footer text, flattening, encryption settings applied by the next save, text edits in fonts built into the engine, moving listed objects) or listings of added content. page_enhance_camera renders the page (at most 600 dpi and 40 megapixels), finds the document's edges when no corners are given, warps the quadrilateral upright and replaces the page's picture with it: pixels only, no camera or other device. None reads or writes a path or runs scripts.",
       "evidence": [
-        "crates/automation/src/lib.rs: arms for page_rotate, page_delete, page_move, insert_blank, page_duplicate, page_set_box, page_number, doc_set_info, doc_initial_view, marks() (doc_header_footer, doc_remove_marks), doc_flatten, doc_protect, doc_unprotect, text_edit",
-        "crates/automation/src/content.rs: content_list, page_add_text, content_delete"
+        "crates/automation/src/lib.rs: arms for page_rotate, page_enhance_camera, page_delete, page_move, insert_blank, page_duplicate, page_set_box, page_number, doc_set_info, doc_initial_view, marks() (doc_header_footer, doc_remove_marks), doc_flatten, doc_protect, doc_unprotect, text_edit",
+        "crates/automation/src/content.rs: content_list, page_add_text, content_delete, object_move (Edit::MoveObjects)",
+        "crates/engine/src/camera.rs: detect_camera_corners, enhance_camera_page (MAX_SCALE, MAX_PIXELS, warp)"
       ]
     },
     {
@@ -345,12 +391,13 @@
         "bookmark_rename",
         "bookmark_delete",
         "bookmark_move",
-        "bookmark_set_page"
+        "bookmark_set_page",
+        "bookmark_from_structure"
       ],
       "class": "safe",
-      "why": "Bookmark (outline) tree listing and edits in the open document.",
+      "why": "Bookmark (outline) tree listing, a page of at most 1,000 at a time, and edits in the open document; bookmark_from_structure adds bookmarks made from the document's own tagged headings.",
       "evidence": [
-        "crates/automation/src/lib.rs: bookmark_* arms (Edit::AddBookmark, RenameBookmark, DeleteBookmark, MoveBookmark, SetBookmarkPage)"
+        "crates/automation/src/lib.rs: bookmark_* arms (Edit::AddBookmark, RenameBookmark, DeleteBookmark, MoveBookmark, SetBookmarkPage, BookmarksFromStructure), bookmark_listing (MAX_BOOKMARK_PAGE)"
       ]
     },
     {
@@ -429,13 +476,13 @@
         "comments_hide",
         "comment_edit",
         "comment_delete",
-        "fill_sign_add"
+        "fill_sign_date_format"
       ],
       "class": "safe",
-      "why": "Comment annotations and Fill & Sign marks in the open document (typed signatures use the script font baked in at build time); comments_hide only sets a per-document view flag in the session. comment_add (attachments from a path) and comments_summarize (writes a PDF) are in file rules.",
+      "why": "Comment annotations in the open document; comments_hide only sets a per-document view flag in the session, and fill_sign_date_format only sets or reads the session's Fill & Sign date format and name language (two fields in session memory, checked against fixed patterns and languages; nothing is saved) and returns today's date in them. comment_add (attachments from a path), comments_summarize (writes a PDF) and fill_sign_add (an image signature from a path) are in file rules.",
       "evidence": [
-        "crates/automation/src/comments.rs: comment_list, comment_reply, comment_set_status, comment_mark, comment_lock, comments_hide (session.set_hide_comments), comment_edit, comment_delete, fill_sign_add",
-        "crates/fonts/build.rs: fonts are embedded at build time"
+        "crates/automation/src/comments.rs: comment_list, comment_reply, comment_set_status, comment_mark, comment_lock, comments_hide (session.set_hide_comments), comment_edit, comment_delete, fill_sign_date_format",
+        "crates/engine/src/dates.rs: Session::set_date_format, set_date_language, today_text (session fields date_format, date_language)"
       ]
     },
     {

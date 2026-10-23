@@ -138,21 +138,26 @@ const MOODS: &[(&str, &str)] = &[
 /// general translation re-lowered chips the Material way and dropped their
 /// text, and drew the shipping card's tiles light under white text).
 pub fn lower(source: &str, data: &serde_json::Value) -> Result<String, String> {
-    lower_report(source, octoscript_ui_l0::realize(source, data, Default::default()), true)
+    lower_in_mode(source, data, dark())
+}
+
+/// Studio selects a palette without changing the live shell's mode.
+pub fn lower_in_mode(source: &str, data: &serde_json::Value, dark: bool) -> Result<String, String> {
+    lower_report(source, octoscript_ui_l0::realize(source, data, Default::default()), true, dark)
 }
 
 /// [`lower`], realized against a card's local state (its `InstanceStore`),
 /// for the card window.
 pub fn lower_with_state(source: &str, data: &serde_json::Value, store: &octoscript_ui_l0::InstanceStore) -> Result<String, String> {
-    lower_report(source, octoscript_ui_l0::realize_with_state(source, data, store, Default::default()), true)
+    lower_report(source, octoscript_ui_l0::realize_with_state(source, data, store, Default::default()), true, dark())
 }
 
-fn lower_report(source: &str, report: octoscript_ui_l0::RealizeReport, l0_ui: bool) -> Result<String, String> {
+fn lower_report(source: &str, report: octoscript_ui_l0::RealizeReport, l0_ui: bool, dark: bool) -> Result<String, String> {
     let root = report.complete_root()?;
     if octoscript_ui_l0::kit_pack::contains(root) {
         return Err("native kit components are not offered on a glance tile".into());
     }
-    let mood = octoscript_ui_l0::card_theme(source).unwrap_or_else(|| if dark() { "dark" } else { "light" }.into());
+    let mood = octoscript_ui_l0::card_theme(source).unwrap_or_else(|| if dark { "dark" } else { "light" }.into());
     let delta = MOODS.iter().find(|(name, _)| *name == mood).map(|(_, d)| *d).ok_or_else(|| format!("theme {mood:?} is not offered on a glance tile"))?;
     for (axis, value) in octoscript_ui_l0::card_theme_axes(source) {
         if !matches!(value.as_str(), "neutral" | "regular" | "none" | "soft" | "sans") {
@@ -1385,7 +1390,7 @@ pub const CAN_RENDER: bool = cfg!(any(feature = "app-hub", native_mobile));
 
 /// Give every Splash isolate the Card runner's vocabulary, once: the same
 /// registration the `card` module makes before it runs an app.
-fn ensure_vocabulary(cx: &mut Cx) {
+pub(crate) fn ensure_vocabulary(cx: &mut Cx) {
     thread_local! {
         static DONE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     }
@@ -1523,6 +1528,45 @@ mod tests {
         let mut requests = splash_host::take_splash_host_requests_for(&[heap]);
         assert_eq!(requests.len(), 1);
         requests.pop().unwrap()
+    }
+
+    #[test]
+    #[cfg(feature = "app-hub")]
+    fn native_d3_charts_reach_glance_workspace() {
+        use makepad_widgets::makepad_draw::cx_draw::CxDraw;
+        let mut cx = tile_cx();
+        cx.with_vm(crate::charts::register);
+        let mut tiles = GlanceTiles::scrolling();
+        tiles.viewport_layout = true;
+        let body: std::sync::Arc<str> = r#"
+            height: Fill flow: Down
+            line := d3.LineChart {height: 130 data: [[0 2], [1 6], [2 4]]}
+            bars := d3.BarChart {height: 130 data: [2 6 4] labels: ["A" "B" "C"]}
+            heat := d3.Heatmap {height: 130 data: [[1 2], [3 4]]}
+        "#.into();
+        let card = tiles.open(&mut cx, "chart-fixture", "test.charts", false, &body);
+        let pass = DrawPass::new(&mut cx);
+        let mut list = DrawList2d::new(&mut cx);
+        let size = dvec2(400.0, 500.0);
+        pass.set_size(&mut cx, size);
+        for _ in 0..2 {
+            let event = DrawEvent::default();
+            let mut draw = CxDraw::new(&mut cx, &event);
+            let mut draw = Cx2d::new(&mut draw);
+            draw.begin_pass(&pass, Some(1.0));
+            list.begin_always(&mut draw);
+            draw.begin_root_turtle(size, Layout::default());
+            tiles.draw_workspace(&mut draw, "chart-fixture", "test.charts", false, &body, Rect {pos: dvec2(0.0, 0.0), size});
+            draw.end_turtle();
+            list.end(&mut draw);
+            draw.end_pass(&pass);
+        }
+        for id in [ids!(line), ids!(bars), ids!(heat)] {
+            let widget = card.widget(&cx, id);
+            assert!(!widget.is_empty(), "Glance instantiated the native chart");
+            assert!(widget.area().rect(&cx).size.y > 100.0, "Chart contributed its draw area");
+        }
+        tiles.sweep(&mut cx, &[]);
     }
 
     #[test]

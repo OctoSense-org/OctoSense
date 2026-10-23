@@ -48,22 +48,38 @@ rom/scripts/build-home.sh --variant standalone --development \
 
 需要一个 `cargo-makepad` 的 Android SDK/NDK 目录（`cargo-makepad makepad android --sdk-path=<dir> install-toolchain`）、带 platform 35 和 build-tools 35.0.0 的 Android SDK、完整的 JDK 17+ 以及 Gradle 8.11.1；脚本不会安装其中任何一项。加上 `--dry-run` 可打印构建计划；发布版请把 `--development` 换成指向现有签名者的 `--sign-key` 和 `--sign-cert`，签名文件放在检出目录之外。请使用锁定版本的打包工具，而不是上游的：它带有本应用的 Java activity（[docs/build-tool.md（英文）](docs/build-tool.md)）。签名、回执和 ROM 变体见 [rom/docs/home-build.md（英文）](../rom/docs/home-build.md)。
 
-**包名。** Home 的应用 ID 是 `dev.makepad.octosense`，独立版和 ROM 版相同。运行 OctoSense ROM 的手机上已经有这个 ID，并由平台密钥签名，因此开发版无法替换它。要在旁边安装测试版，请在 `phone/` 中以另一个包名直接调用打包工具：
+**开发者选项与测试包。** `--development` 只选择签名方式。另加 `--dev-mode` 才会编译设置中的开发者选项；仍使用 `--release` 优化，也不会自动开启开发者模式。默认构建不包含该 feature。构建回执记录 `development`、`dev_mode` 和 `home_package`，ROM 暂存会拒绝包含开发者模式的产物。
 
-```sh
-../.sources/makepad/target/release/cargo-makepad makepad android \
-  --sdk-path=/path/to/makepad-android \
-  --package-name=dev.makepad.octosense.scriptapps \
-  build -p octosense-home --release
-```
+Home 默认使用 `dev.makepad.octosense`。要在已安装的应用旁构建测试 Home，请给上面的独立版命令加上 `--package-name dev.makepad.octosense.studio`。同时使用两个选项时，默认输出为 `rom/out/home/standalone-dev-mode/dev.makepad.octosense.studio/`。只安装测试 Home APK；配套 Bridge 保持原包名，不能替换设备上已安装的 Bridge。独立测试 Home 仍须满足现有包名与签名检查，才可访问 ROM 的特权服务。
 
-把 `build` 换成 `run` 会同时安装并启动它；用它自己的名字访问，例如 `adb shell am start -n dev.makepad.octosense.scriptapps/.MakepadApp`。
+新增构建计划和回执路径已通过单元测试与 dry-run 检查；APK 和设备验证另行进行。[App Studio 里程碑 1](../docs/adr/0006-app-studio-on-the-phone.md) 已合并：开发版让系统 Agent（以及应用自己的 Agent，仅限该应用）拥有 `studio.*` 工具；完整的手机应用创作循环尚不可用。
+
+**目前如何使用 App Studio。** 它只存在于开发版中（发布版 Home 在编译时就去掉了它），因此手机上需要一个开发版 Home：按上文构建，用 `adb install` 把它的 Home APK 装在商店版 Home 旁边，然后在这个开发版 Home 里开启开发者模式（设置 → 关于手机，连点七次版本号，进入开发者选项，输入 `turn on developer mode` 并选择 Turn on）。此后一切都在手机上进行。在系统 Agent 的聊天中让它处理其工作区里的某个应用包：借助 studio 工具，它生成一张可据以构建的设计图（需已配置图像提供方）、检查应用包、打开实时预览、在其中点按和输入、读取截图和控件树、修正脚本、把应用安装为重启后状态仍在的启动器磁贴，并按要求卸载（[代码导读](../docs/architecture-walkthrough.zh-CN.md#从-agent-调用跟到-app-studio-中可运行的应用)列出了这些工具）。只有两件事需要电脑：构建并安装那个开发版 Home，以及需要设备证据时运行 `tools/` 中的两个设备测试工具（下文的 Studio 设备探针和 `studio-flow-device-test.py`）。如果某次 Home 发布附带开发者模式的 Home APK，就可以省去构建这一步；但那仍是下载后安装，而不是更新，因为更新器拒绝测试包。目前还没有任何构建提供面向非开发者的体验：在手机上描述一个应用，然后拿到做好的应用；这是 ADR 0006 余下几个阶段要做的事。
+
+[Studio 设备探针](../tools/studio-device-probe.py) 在该独立测试包中检查权限拒绝、浅色/深色 PNG 输出和切入后台后的取消。它需要使用 `MAKEPAD_FORCE_DEBUGGABLE=1` 构建的 `--dev-mode` APK，让 `run-as` 能写入测试夹具。探针会恢复开发者设置并返回主屏；它不安装 APK，也不测试模型能否收到图片。运行前须先处理首次启动的权限提示；渲染不需要定位权限，可以保持拒绝。启动夹具（`studio-render:` 与 `studio-flow:` 测试动作）只接受位于该包私有目录 `files/studio-fixture/` 下的文件，探针也把夹具写在那里。这些设备检查已于 2026 年 10 月在一部普通小米手机上通过（见[证据](../docs/studio/xiaomi-revalidation.md)）。
 
 清单中的 `dev.makepad.android.APPLICATION_EXTENSION` 元数据让应用 ID 改变后
 仍使用同一个 Java 集成类。准备好运行时补丁后，应重新构建锁定版本的打包工具；
 旧加载器可能忽略此设置，导致自定义包名的测试版未加载 Android 返回操作及其他
 平台集成功能。安装测试版后，打开 News 或 Photos，检查从屏幕边缘向内滑动返回
 是否回到 OctoSense Home。
+
+**启动时的测试钩子。** 手机上的任何应用都能带着 intent extra 启动 Home，因此发布版 Home 会忽略 `makepad.*` 测试和配置 extra：`makepad.APP_CONFIG` 中的 `test_actions` 和演示设置、AppCard 的 `makepad.PROVISION_CONFIG` 和预置卡片钩子，以及内核的 `makepad.OCTOS_PROXY`。只有开发版（调试构建，或使用 `--features dev-mode`）才读取它们（[`launch_input.rs`](../crates/shell/src/launch_input.rs)）。`--dev-mode`（见上文）构建开发版：请为它指定测试用的 `--package-name`，并且只安装其中的 Home APK（**未在设备上验证**）：
+
+```sh
+rom/scripts/build-home.sh --variant standalone --development --dev-mode \
+  --package-name dev.makepad.octosense.devtest \
+  --sdk /path/to/makepad-android \
+  --android-sdk /path/to/android-sdk \
+  --gradle-home /path/to/gradle-8.11.1 \
+  --java-home /path/to/full-jdk \
+  --packager .sources/makepad/target/release/cargo-makepad
+adb install rom/out/home/standalone-dev-mode/dev.makepad.octosense.devtest/OctoSenseHome.apk
+adb shell am start -n dev.makepad.octosense.devtest/.MakepadApp \
+  --es makepad.APP_CONFIG '{"test_actions":["launch-mail"]}'
+```
+
+在 OpenHarmony 上，`rom/scripts/build-home-ohos.py --dev-mode` 以另一个 `--bundle-id` 做同样的事；发布版 Home 的入口 ability 不转发任何启动参数。桌面上的 `--test-action` 是命令行参数，只有本机用户能传入，所有构建都支持。
 
 **OpenHarmony：** `python3 rom/scripts/build-home-ohos.py --deveco-home ... --packager ... --signing-config ...` 使用现有的 DevEco 签名配置构建普通的 OpenHarmony 应用（[rom/docs/home-build.md（英文）](../rom/docs/home-build.md#openharmony-home)）。**iOS 模拟器：** 在 `phone/` 中运行 `../.sources/makepad/target/release/cargo-makepad makepad apple ios --org=dev.makepad --app=octosense run-sim -p octosense-home --features mobile-only`。两者都不在 CI 中构建。
 
@@ -145,6 +161,10 @@ Home 贡献卡片。启动器验收必须从 Android 实际指定的 Home 开始
 
 ## 手势
 
+主屏翻页将手指松开时的速度带入吸附弹簧。搜索和 Glance 列表越过边界时阻力逐渐增大，松手后回弹。未完成的主屏搜索下拉会平滑收回；确认打开后，搜索界面接近停稳时再聚焦键盘。“减少动态效果”跳过装饰性的吸附与回弹，保留直接拖动和边界内的惯性。这套共享 Rust 运动模型已通过 OnePlus 6 独立测试包 `dev.makepad.octosense.fluidtest` 验证；此验收确认手势行为，不代表所有设备上的呈现均无卡顿。导航会利用主屏静止帧，分批准备搜索输入框、有限的结果字形及首屏 Glance 摘要；触屏操作会暂停准备。完全位于屏幕外的应用格子会在加载图标、绘制文字之前剔除，包括回弹时仅露出边缘的相邻页面。
+
+搜索和 Glance 会合并互不重叠的绘制，减少 GPU 提交。搜索界面停稳后，主屏可保存其画面，在 Android 收起键盘时用它做关闭淡出；输入、选区和滚动仍实时绘制。查询、应用目录、尺寸、外观或编辑操作变化时，旧画面失效。快速关闭且尚无有效画面时，继续正常绘制。
+
 | 位置 | 手势 | 作用 |
 |---|---|---|
 | 桌面页面中部 | 下拉 | 打开搜索，输入框已获得焦点，键盘随即弹出 |
@@ -192,9 +212,11 @@ Mail 通过 `mail` 宿主服务（[`apps/mail/host-service`](../apps/mail/host-s
 ```sh
 # desktop, from phone/
 MAKEPAD_APP_CONFIG='{"mail_demo":true}' cargo run --release -p octosense-home --features mobile-only
-# phone
-adb shell am start -n <package>/.MakepadApp --es makepad.APP_CONFIG '{"mail_demo":true}'
+# 手机：开发版测试包（见“启动时的测试钩子”）
+adb shell am start -n <test package>/.MakepadApp --es makepad.APP_CONFIG '{"mail_demo":true}'
 ```
+
+桌面命令会把 `MAKEPAD_APP_CONFIG` 当作本机设置读取；手机发布版会忽略它，所以手机那行需要开发版测试包（这一改动后**未验证**）。
 
 早期的原生 News、Photos 和 Maps 模块已删除（原生应用 ADR 0004 §1，[#113](https://github.com/OctoSense-org/OctoSense/pull/113)）；所有系统应用都不再有原生模块。
 

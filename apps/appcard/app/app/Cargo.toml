@@ -28,6 +28,13 @@ default = ["standalone"]
 # dev monitor. A host that mounts the app as a widget (`octos_app::AppShell`)
 # builds with `default-features = false` and brings its own.
 standalone = []
+# A development build (build.rs sets `dev_mode`; debug builds are development
+# builds without it). Only a development build reads the launch-time hooks:
+# the `MAKEPAD_*` settings an Android intent extra or OpenHarmony launch
+# parameter can carry (provisioning, seeding, auto prompt, fake GPS, proxy,
+# dumps; `launch_var` in src/lib.rs). The shell's `dev-mode` turns it on for
+# the hosted app.
+dev-mode = ["octosense-kernel/dev-mode"]
 
 [dependencies]
 # One framework source, locked by Octoscript-Makepad/runtime.json.

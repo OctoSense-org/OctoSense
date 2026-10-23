@@ -33,8 +33,10 @@ How it starts, per platform (`src/launch.rs`):
 
 - **Android**: `<nativeLibraryDir>/liboctos.so serve --stdio`, `HOME=<core
   dir's parent>` (the octos home), with AppCard's environment
-  (`OCTOS_SKILLS_PATH`, `OCTOS_OMIT_WORKSPACE_HINT`, `RUST_LOG`, the
-  `makepad.OCTOS_PROXY` proxy) and the kernel config's memory budget. The APK
+  (`OCTOS_SKILLS_PATH`, `OCTOS_OMIT_WORKSPACE_HINT`, `RUST_LOG`, and in a
+  development build only the launch extra `makepad.OCTOS_PROXY` as the proxy:
+  feature `dev-mode` or a debug build, since any app can start Home with
+  extras) and the kernel config's memory budget. The APK
   must bundle the kernel: `MAKEPAD_ANDROID_EXTRA_LIBS=liboctos.so=<octos>`
   (the shells' build scripts do it).
 - **OpenHarmony**: the canonical core in-process,

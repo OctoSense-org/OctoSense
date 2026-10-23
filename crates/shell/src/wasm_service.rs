@@ -30,24 +30,26 @@
 //! names; `octosense_wasm_host::component` maps the values). Unlike a
 //! module's, a component's instance lives on in the worker between calls,
 //! so it can keep a document or a cache; a trap, a deadline, a changed grant
-//! or the worker's exit (a minute without calls) ends it. Its filesystem is
+//! or the worker's exit (its last calling isolate closes, or a minute without
+//! calls) ends it. Socket handles share a per-app budget across components.
+//! Its filesystem is
 //! the app's storage, the jail its script's `fs.*` sees, decided per call by
 //! the same rules as an engine's ([`crate::host_tools::areas::app_area`]):
 //! none without an available app storage area or required signed-in account; what
 //! is left of the quota is what a call may add (a write past it fails inside
 //! the component, as a full disk).
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::mpsc::{sync_channel, Receiver, SyncSender, TrySendError};
+use std::sync::mpsc::{sync_channel, Receiver, RecvTimeoutError, SyncSender, TrySendError};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use octosense_appstore::services::{HostService, Replier, ServiceCall, ServiceHost};
 use octosense_wasm_host::component::{
-    self, ComponentInstance, ComponentProgram, Grants, HostCalls,
+    self, ComponentInstance, ComponentProgram, Grants, HostCalls, SocketBudget,
 };
 use octosense_wasm_host::{Limits, Program, Runtime};
 use serde_json::{json, Value};
@@ -114,6 +116,8 @@ const WORKER_IDLE: Duration = Duration::from_secs(5);
 /// How long a worker that holds a component's live instance waits for the
 /// next call before it exits (and the instance with it).
 const COMPONENT_IDLE: Duration = Duration::from_secs(60);
+/// Closing an app must not leave its sockets open for the component idle grace.
+const RETIRE_POLL: Duration = Duration::from_millis(100);
 
 /// Where an app's component works: the shell's own rules, or a test's.
 static AREA_ENV: Mutex<Option<Arc<dyn AreaEnv>>> = Mutex::new(None);
@@ -136,13 +140,14 @@ static RUNTIME: OnceLock<Result<Runtime, String>> = OnceLock::new();
 struct HostCall {
     call: ServiceCall,
     deadline: Instant,
+    parent: Replier,
     done: SyncSender<Result<String, String>>,
 }
 
 static HOST_CALLS: Mutex<Vec<HostCall>> = Mutex::new(Vec::new());
 /// Dispatched calls by their request key, until answered or past their
 /// deadline.
-type Waiting = HashMap<usize, (SyncSender<Result<String, String>>, Instant)>;
+type Waiting = HashMap<usize, (SyncSender<Result<String, String>>, Instant, Replier)>;
 static HOST_WAITING: Mutex<Option<Waiting>> = Mutex::new(None);
 /// Component calls are dispatched under keys of their own, apart from any
 /// isolate's.
@@ -156,6 +161,7 @@ static NEXT_HOST_KEY: AtomicUsize = AtomicUsize::new(1 << 50);
 struct AppHostCalls {
     app: String,
     host_dir: PathBuf,
+    parent: Replier,
 }
 
 impl HostCalls for AppHostCalls {
@@ -169,6 +175,11 @@ impl HostCalls for AppHostCalls {
         }
         let args: Value = serde_json::from_str(args)
             .map_err(|e| format!("{service}: the arguments are not JSON: {e}"))?;
+        let cancelled = || format!("{service}: wasm invocation cancelled or past its deadline");
+        let live = || self.parent.is_pending() && Instant::now() < deadline;
+        if !live() {
+            return Err(cancelled());
+        }
         let (done, answer) = sync_channel(1);
         HOST_CALLS
             .lock()
@@ -183,16 +194,24 @@ impl HostCalls for AppHostCalls {
                     host_dir: self.host_dir.clone(),
                 },
                 deadline,
+                parent: self.parent.clone(),
                 done,
             });
         makepad_widgets::makepad_platform::thread::SignalToUI::set_ui_signal();
-        answer
-            .recv_timeout(deadline.saturating_duration_since(Instant::now()))
-            .unwrap_or_else(|_| {
-                Err(format!(
-                    "{service} did not answer before the call's deadline"
-                ))
-            })
+        loop {
+            if !live() {
+                return Err(cancelled());
+            }
+            match answer.recv_timeout(
+                deadline
+                    .saturating_duration_since(Instant::now())
+                    .min(RETIRE_POLL),
+            ) {
+                Ok(result) if live() => return result,
+                Ok(_) | Err(RecvTimeoutError::Disconnected) => return Err(cancelled()),
+                Err(RecvTimeoutError::Timeout) => {}
+            }
+        }
     }
 }
 
@@ -210,14 +229,15 @@ pub fn pump_host_calls() {
     for HostCall {
         call,
         deadline,
+        parent,
         done,
     } in queued
     {
-        if Instant::now() >= deadline {
+        if Instant::now() >= deadline || !parent.is_pending() {
             continue;
         }
         let key = NEXT_HOST_KEY.fetch_add(1, Ordering::Relaxed);
-        waiting.insert(key, (done, deadline));
+        waiting.insert(key, (done, deadline, parent));
         octosense_appstore::services::dispatch(call, key, 1, &mut NoSheets);
     }
     if waiting.is_empty() {
@@ -225,15 +245,17 @@ pub fn pump_host_calls() {
     }
     let keys: Vec<usize> = waiting.keys().copied().collect();
     for (key, _, result) in octosense_appstore::services::take_replies_for(&keys) {
-        if let Some((done, _)) = waiting.remove(&key) {
-            let _ = done.try_send(result);
+        if let Some((done, deadline, parent)) = waiting.remove(&key) {
+            if Instant::now() < deadline && parent.is_pending() {
+                let _ = done.try_send(result);
+            }
         }
     }
     // A call whose component stopped waiting goes nowhere.
     let now = Instant::now();
     let expired: Vec<usize> = waiting
         .iter()
-        .filter(|(_, (_, deadline))| *deadline <= now)
+        .filter(|(_, (_, deadline, parent))| *deadline <= now || !parent.is_pending())
         .map(|(key, _)| *key)
         .collect();
     for key in expired {
@@ -248,6 +270,23 @@ struct Worker {
     jobs: SyncSender<Job>,
     retired: Arc<AtomicBool>,
     admission: Arc<AdmissionEpoch>,
+    /// Every isolate whose call reached this worker. A second window keeps
+    /// the app's components alive when the first window closes.
+    isolates: HashSet<usize>,
+}
+
+/// The dispatcher has already cancelled this isolate's replies. Do not call
+/// services from this callback: only signal retirement; the worker drops its
+/// instances and then releases its registry slot on its own thread.
+fn isolate_closed(key: usize) {
+    let mut registry = WORKERS.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(workers) = registry.as_mut() {
+        for worker in workers.values_mut() {
+            if worker.isolates.remove(&key) && worker.isolates.is_empty() {
+                worker.retired.store(true, Ordering::Release);
+            }
+        }
+    }
 }
 
 /// Enqueue only clones this host-owned identity. Bundle IO, signature checks
@@ -449,6 +488,12 @@ impl HostService for WasmService {
             return;
         }
         let mut registry = WORKERS.lock().unwrap_or_else(|e| e.into_inner());
+        // A close may have happened after the first live check, before this
+        // lock. It must not be followed by a newly retained owner for that key.
+        if !job.live() {
+            return;
+        }
+        let isolate = job.reply.isolate_key();
         let workers = registry.get_or_insert_with(HashMap::new);
         if let Some(worker) = workers.get_mut(&app) {
             if worker.retired.load(Ordering::Acquire) {
@@ -461,7 +506,10 @@ impl HostService for WasmService {
             }
             job.admission = worker.admission.clone();
             match worker.jobs.try_send(job) {
-                Ok(()) => return,
+                Ok(()) => {
+                    worker.isolates.insert(isolate);
+                    return;
+                }
                 Err(TrySendError::Full(job)) => {
                     job.reply
                         .send(Err("wasm app queue is full; try again later".into()));
@@ -495,6 +543,7 @@ impl HostService for WasmService {
                 jobs,
                 retired: retired.clone(),
                 admission,
+                isolates: HashSet::from([isolate]),
             },
         );
         // Keep ownership outside the spawn closure too, so a spawn failure
@@ -545,12 +594,20 @@ impl WasmService {
 }
 
 pub fn register() {
+    // Compatibility metadata for the WASI component linker, not a JSON
+    // wasm.sockets endpoint or a permission check.
+    octosense_appstore::host_api::register_runtime_feature("wasm.sockets", 1);
+    octosense_appstore::services::on_isolate_closed(isolate_closed);
     octosense_appstore::services::register_host_service(Box::new(WasmService));
 }
 
 fn work(app: String, jobs: Receiver<Job>, retired: &Arc<AtomicBool>) {
     let mut lab: Option<Lab> = None;
+    let mut idle_since = Instant::now();
     loop {
+        if retired.load(Ordering::Acquire) {
+            return;
+        }
         // A component's live instance keeps its state: give the app longer
         // to come back before it is dropped.
         let idle = if lab.as_ref().is_some_and(Lab::holds_instances) {
@@ -558,8 +615,10 @@ fn work(app: String, jobs: Receiver<Job>, retired: &Arc<AtomicBool>) {
         } else {
             WORKER_IDLE
         };
-        let job = match jobs.recv_timeout(idle) {
+        let remaining = idle.saturating_sub(idle_since.elapsed());
+        let job = match jobs.recv_timeout(remaining.min(RETIRE_POLL)) {
             Ok(job) => job,
+            Err(RecvTimeoutError::Timeout) if idle_since.elapsed() < idle => continue,
             Err(_) => {
                 // Serialize idle retirement with enqueue. A sender that won
                 // the timeout race still gets its accepted request processed.
@@ -574,12 +633,16 @@ fn work(app: String, jobs: Receiver<Job>, retired: &Arc<AtomicBool>) {
                 }
             }
         };
+        if retired.load(Ordering::Acquire) {
+            return;
+        }
         let result = process(&app, &mut lab, &job);
         // Cancellation can win while admission is being checked. Replier's
         // pending-request check remains the final isolate boundary.
         if job.live() {
             job.reply.send(result);
         }
+        idle_since = Instant::now();
     }
 }
 
@@ -649,8 +712,8 @@ struct Lab {
     owner: BTreeMap<String, usize>,
     stats: BTreeMap<String, Stats>,
     admission: Admission,
-    /// Its host services, as its components reach them (`octosense:host`).
-    host_calls: Arc<dyn HostCalls>,
+    /// Own and shared components consume the same app-wide socket budget.
+    socket_budget: SocketBudget,
 }
 
 /// Compile an installed or updated app's functions into the disk cache in
@@ -803,11 +866,8 @@ impl Lab {
             modules: Vec::new(),
             owner: BTreeMap::new(),
             stats: BTreeMap::new(),
-            host_calls: Arc::new(AppHostCalls {
-                app: app.to_string(),
-                host_dir: admission.root.join(".host"),
-            }),
             admission: admission.clone(),
+            socket_budget: SocketBudget::default(),
         };
         for (path, shared) in sources {
             check()?;
@@ -993,7 +1053,13 @@ impl Lab {
             read_only: false,
         };
         let app = self.app.clone();
-        let host_calls = self.host_calls.clone();
+        // Rebind the host bridge for every call: a kept component must not
+        // wait on a previous invocation's reply or outlive the current one.
+        let host_calls = Arc::new(AppHostCalls {
+            app: app.clone(),
+            host_dir: self.admission.root.join(".host"),
+            parent: reply.clone(),
+        });
         let module = &mut self.modules[index];
         let Code::Component {
             program,
@@ -1014,18 +1080,18 @@ impl Lab {
             let pending = reply.clone();
             let instance = self
                 .runtime
-                .instantiate_component(
+                .instantiate_component_with_sockets(
                     program,
                     &grants,
                     Some((deadline, Box::new(move || pending.is_pending()))),
+                    self.socket_budget.clone(),
                 )
                 .map_err(|error| error.to_string())?;
-            let mut instance = instance;
-            instance.set_host_calls(Some(host_calls));
             *instances += 1;
             *live = Some((instance, grants.clone()));
         }
         let (instance, _) = live.as_mut().expect("made above");
+        instance.set_host_calls(Some(host_calls));
         module.invocations += 1;
         let export = match &module.shared {
             Some(component) => name
@@ -1317,6 +1383,7 @@ mod tests {
                     jobs: cold_sender,
                     retired: Arc::new(AtomicBool::new(false)),
                     admission: cold_epoch.clone(),
+                    isolates: HashSet::new(),
                 },
             );
         let cold_heap = NEXT_HEAP.fetch_add(1, Ordering::Relaxed);
@@ -1444,6 +1511,7 @@ mod tests {
                     admitted: OnceLock::from(Ok(Admission::current("os.wasmstate").unwrap())),
                     obsolete: AtomicBool::new(false),
                 }),
+                isolates: HashSet::new(),
             },
         );
         let mut heaps = Vec::new();
@@ -1530,6 +1598,7 @@ mod tests {
                     // release a slot merely because retirement has started.
                     retired: Arc::new(AtomicBool::new(n == 0)),
                     admission: Arc::default(),
+                    isolates: HashSet::new(),
                 },
             );
         }
@@ -1798,6 +1867,259 @@ mod tests {
         env!("CARGO_MANIFEST_DIR"),
         "/../wasm-host/tests/fixtures/notes.component.wasm"
     );
+
+    /// Real dispatch and isolate close: retaining one window preserves the
+    /// app's listeners, while closing the last frees both idle and blocked
+    /// components without waiting for the 60-second idle grace.
+    #[test]
+    fn closing_the_last_isolate_releases_idle_and_blocked_sockets() {
+        const CHILD: &str = "OCTOSENSE_TEST_WASM_SOCKET_CLOSE";
+        if std::env::var_os(CHILD).is_none() {
+            let output = std::process::Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "--exact",
+                    "wasm_service::tests::closing_the_last_isolate_releases_idle_and_blocked_sockets",
+                    "--nocapture",
+                ])
+                .env(CHILD, "1")
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "{}\n{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+            return;
+        }
+        use octosense_appstore::services;
+        use std::io::{ErrorKind, Read};
+        use std::net::TcpListener;
+
+        const APP: &str = "os.wasmsockets";
+        let root = std::env::temp_dir().join(format!("wasm-socket-close-{}", uuid::Uuid::new_v4()));
+        let host_dir = root.join(".host");
+        std::env::set_var("OCTOSENSE_APP_DATA", &root);
+        octosense_appstore::set_data_root(root.clone());
+        register();
+        ship(APP, "socket-close", |dir, manifest| {
+            manifest["capabilities"] = json!([]);
+            manifest["requires"] = json!(["host-api-v1", "wasm-components-v1"]);
+            manifest["host_api"] = json!({"required":{"wasm.sockets":1}});
+            manifest.as_object_mut().unwrap().remove("agent");
+            std::fs::remove_file(dir.join("tools.json")).unwrap();
+            std::fs::remove_file(dir.join("AGENT.md")).unwrap();
+            std::fs::remove_file(dir.join("fns/wasmlab.wasm")).unwrap();
+            std::fs::copy(
+                concat!(
+                    env!("CARGO_MANIFEST_DIR"),
+                    "/../wasm-host/tests/fixtures/netprobe.component.wasm"
+                ),
+                dir.join("fns/netprobe.wasm"),
+            )
+            .unwrap();
+        });
+        let dispatch = |heap, method: &str, args| {
+            services::dispatch(
+                ServiceCall {
+                    app_id: APP.into(),
+                    service: format!("wasm.{method}"),
+                    args,
+                    from_sheet: false,
+                    may_prompt: false,
+                    host_dir: host_dir.clone(),
+                },
+                heap,
+                1,
+                &mut NoSheet,
+            );
+        };
+        let receive = |heap| {
+            let deadline = Instant::now() + REQUEST_TIMEOUT;
+            loop {
+                if let Some((_, _, answer)) = services::take_replies_for(&[heap]).pop() {
+                    return serde_json::from_str::<Value>(&answer.unwrap()).unwrap();
+                }
+                assert!(Instant::now() < deadline, "socket fixture did not answer");
+                std::thread::sleep(Duration::from_millis(5));
+            }
+        };
+        let wait_closed = || {
+            let deadline = Instant::now() + Duration::from_secs(2);
+            loop {
+                if !WORKERS.lock().unwrap().as_ref().unwrap().contains_key(APP) {
+                    break;
+                }
+                assert!(
+                    Instant::now() < deadline,
+                    "last close must release the worker promptly"
+                );
+                std::thread::sleep(Duration::from_millis(5));
+            }
+        };
+
+        let first = NEXT_HEAP.fetch_add(1, Ordering::Relaxed);
+        let second = NEXT_HEAP.fetch_add(1, Ordering::Relaxed);
+        dispatch(first, "hold_listener", json!(null));
+        let first_port = receive(first).as_u64().unwrap() as u16;
+        dispatch(second, "hold_listener", json!(null));
+        let second_port = receive(second).as_u64().unwrap() as u16;
+        services::cancel_heap(first);
+        {
+            let registry = WORKERS.lock().unwrap();
+            let worker = &registry.as_ref().unwrap()[APP];
+            assert_eq!(worker.isolates, HashSet::from([second]));
+            assert!(!worker.retired.load(Ordering::Acquire));
+        }
+        assert!(TcpListener::bind(("127.0.0.1", first_port)).is_err());
+        assert!(TcpListener::bind(("127.0.0.1", second_port)).is_err());
+        services::cancel_heap(second);
+        wait_closed();
+        TcpListener::bind(("127.0.0.1", first_port)).expect("first listener released");
+        TcpListener::bind(("127.0.0.1", second_port)).expect("second listener released");
+
+        // A replacement reusing an old heap address gets a fresh worker.
+        dispatch(first, "hold_listener", json!(null));
+        let retained_port = receive(first).as_u64().unwrap() as u16;
+        let server = TcpListener::bind("127.0.0.1:0").unwrap();
+        server.set_nonblocking(true).unwrap();
+        dispatch(
+            first,
+            "read_forever",
+            json!(server.local_addr().unwrap().to_string()),
+        );
+        let deadline = Instant::now() + Duration::from_secs(2);
+        let mut peer = loop {
+            match server.accept() {
+                Ok((peer, _)) => break peer,
+                Err(error) if error.kind() == ErrorKind::WouldBlock => {
+                    assert!(Instant::now() < deadline, "guest did not connect");
+                    std::thread::sleep(Duration::from_millis(5));
+                }
+                Err(error) => panic!("accept: {error}"),
+            }
+        };
+        services::cancel_heap(first);
+        wait_closed();
+        peer.set_read_timeout(Some(Duration::from_secs(1))).unwrap();
+        assert_eq!(
+            peer.read(&mut [0]).unwrap(),
+            0,
+            "cancelled read releases TCP stream"
+        );
+        TcpListener::bind(("127.0.0.1", retained_port))
+            .expect("blocked invocation releases retained listener");
+        assert!(services::take_replies_for(&[first, second]).is_empty());
+
+        // The shell must pass one budget to its own and its pinned shared
+        // components. Separate budgets here would silently double the limit.
+        let (_, bundle) = script_apps::admitted_bundle(APP).unwrap();
+        let shared = Shared {
+            alias: "other".into(),
+            id: "org.example.socket-fixture".into(),
+            version: "1.0.0".into(),
+            blake3: "0".repeat(64),
+            path: bundle.join("fns/netprobe.wasm"),
+        };
+        *SHARED_RESOLVER.lock().unwrap() = Some(Arc::new(move |_, _| Ok(vec![shared.clone()])));
+        let admission = Admission {
+            root: root.clone(),
+            bundle,
+            manifest: json!({"components":[{"as":"other","id":"org.example.socket-fixture",
+                "version":"1.0.0","blake3":"0".repeat(64)}]}),
+        };
+        let mut lab =
+            Lab::from_bundle(APP, runtime(&host_dir).unwrap(), admission, || Ok(())).unwrap();
+        let (heap, reply) = pending_reply(APP, &host_dir);
+        let call = |lab: &mut Lab, method| {
+            lab.answer(
+                method,
+                b"null",
+                false,
+                Instant::now() + REQUEST_TIMEOUT,
+                reply.clone(),
+            )
+        };
+        let mut ports = Vec::new();
+        for _ in 0..16 {
+            ports.push(call(&mut lab, "hold_listener").unwrap().as_u64().unwrap() as u16);
+            ports.push(
+                call(&mut lab, "other.hold_listener")
+                    .unwrap()
+                    .as_u64()
+                    .unwrap() as u16,
+            );
+        }
+        assert!(
+            call(&mut lab, "other.hold_listener").is_err(),
+            "shared component cannot exceed its app's 32 socket handles"
+        );
+        call(&mut lab, "close_listeners").unwrap();
+        ports.push(
+            call(&mut lab, "other.hold_listener")
+                .unwrap()
+                .as_u64()
+                .unwrap() as u16,
+        );
+        drop(lab);
+        for port in ports {
+            TcpListener::bind(("127.0.0.1", port))
+                .expect("dropping the Lab releases every component's listener");
+        }
+        services::cancel_heap(heap);
+
+        // A socket-owning component can also wait on another host service.
+        // Cancellation must release that wait even if the UI is not pumping,
+        // and a later pump must not execute the cancelled request.
+        struct Count(Arc<AtomicUsize>);
+        impl HostService for Count {
+            fn family(&self) -> &'static str {
+                "socketclosehost"
+            }
+            fn call(&mut self, _: ServiceCall, reply: Replier, _: &mut dyn ServiceHost) {
+                self.0.fetch_add(1, Ordering::Relaxed);
+                reply.send(Ok(json!(null)));
+            }
+        }
+        let dispatched = Arc::new(AtomicUsize::new(0));
+        services::register_host_service(Box::new(Count(dispatched.clone())));
+        let (heap, parent) = pending_reply(APP, &host_dir);
+        let bridge = AppHostCalls {
+            app: APP.into(),
+            host_dir: host_dir.clone(),
+            parent,
+        };
+        let (finished, answer) = sync_channel(1);
+        let waiter = std::thread::spawn(move || {
+            finished
+                .send(bridge.request(
+                    "socketclosehost.get",
+                    "{}",
+                    Instant::now() + REQUEST_TIMEOUT,
+                ))
+                .unwrap();
+        });
+        let deadline = Instant::now() + Duration::from_secs(1);
+        while HOST_CALLS.lock().unwrap().is_empty() {
+            assert!(Instant::now() < deadline, "host call was not queued");
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        services::cancel_heap(heap);
+        assert!(answer
+            .recv_timeout(Duration::from_secs(1))
+            .unwrap()
+            .unwrap_err()
+            .contains("cancelled"));
+        waiter.join().unwrap();
+        pump_host_calls();
+        assert_eq!(
+            dispatched.load(Ordering::Relaxed),
+            0,
+            "late pump must not dispatch cancelled work"
+        );
+        assert!(HOST_CALLS.lock().unwrap().is_empty());
+        std::fs::remove_dir_all(root).unwrap();
+    }
 
     /// A component's functions, in a process of its own (the area env and
     /// the registries are process-wide): they answer with typed JSON under

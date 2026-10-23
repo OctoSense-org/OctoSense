@@ -85,21 +85,48 @@ signer, kept outside the checkout. Use the pinned packager, not upstream's: it
 carries this app's Java activity ([docs/build-tool.md](docs/build-tool.md)).
 Signing, receipts and the ROM variant: [rom/docs/home-build.md](../rom/docs/home-build.md).
 
-**Package name.** Home's application ID is `dev.makepad.octosense`, in both
-the standalone and the ROM variant. A phone running the OctoSense ROM already
-has that ID, signed with the platform key, so a development build cannot
-replace it. To install a test build beside it, call the packager with another
-package name, from `phone/`:
+**Developer options and a test package.** `--development` selects signing
+only. Add `--dev-mode` to compile Settings' developer options; this preserves
+`--release` optimization and does not turn developer mode on. Normal builds
+omit the feature. The build receipt records `development`, `dev_mode` and
+`home_package`; ROM staging refuses developer-enabled artifacts.
 
-```sh
-../.sources/makepad/target/release/cargo-makepad makepad android \
-  --sdk-path=/path/to/makepad-android \
-  --package-name=dev.makepad.octosense.scriptapps \
-  build -p octosense-home --release
-```
+Home normally uses `dev.makepad.octosense`. To build a test Home beside the
+installed app, add `--package-name dev.makepad.octosense.studio` to the
+standalone command above. The default output becomes
+`rom/out/home/standalone-dev-mode/dev.makepad.octosense.studio/` when both options
+are used. Install only that test Home APK; the accompanying Bridge retains its
+existing package ID and must not replace the device's Bridge. The separate
+Home does not receive privileged ROM services without satisfying their existing
+package/signature checks.
 
-`run` in place of `build` also installs and starts it; address it with its own
-name, for example `adb shell am start -n dev.makepad.octosense.scriptapps/.MakepadApp`.
+The new build-plan and receipt paths are unit tested and dry-run checked.
+APK and device validation remain separate. [App Studio milestone 1](../docs/adr/0006-app-studio-on-the-phone.md)
+is merged: a development build gives the `studio.*` tools to the system
+agent, and to an app's own agent for that app alone; the full phone authoring
+loop is not yet available.
+
+**Using App Studio today.** It exists in development builds only (a release
+Home compiles it out), so it takes a developer Home on the phone: build one as
+above, install its Home APK beside the store Home with `adb install`, then turn
+developer mode on in that build (Settings → About phone, tap Build number seven
+times, open Developer options, type `turn on developer mode` and choose Turn
+on). From then on everything happens on the phone. In the system agent's chat,
+ask it to work on an app bundle in its workspace: with the studio tools it
+generates a design image to build from (when an image provider is configured),
+checks the bundle, opens a live preview, taps and types into it, reads the
+screenshots and the widget tree, fixes the script, installs the app as a
+launcher tile whose state survives a restart, and uninstalls it on request
+([the walkthrough](../docs/architecture-walkthrough.md#follow-app-studio-from-the-agent-to-a-working-app) lists the tools). A computer is needed only to build
+and install that developer Home and, if you want device evidence, to run the
+two device harnesses in `tools/` (the studio device probe below and
+`studio-flow-device-test.py`). A developer-mode Home APK published with a Home
+release would remove the build step; it would still be a download and an
+install, since the updater refuses test packages. What no build offers yet is
+the experience for someone who is not a developer: describing an app and
+getting one made on the phone. That is what ADR 0006's remaining slices cover.
+
+The [studio device probe](../tools/studio-device-probe.py) checks denial, light/dark PNG output and background cancellation in that separate package. It needs a `--dev-mode` APK built with `MAKEPAD_FORCE_DEBUGGABLE=1` so `run-as` can provision test fixtures. The probe restores developer settings and returns to Home; it neither installs APKs nor tests model image delivery. Resolve startup permission prompts before running the probe; rendering does not need location access, which can remain denied. Launch fixtures (the `studio-render:` and `studio-flow:` test actions) are accepted only from the package's private `files/studio-fixture/` folder, where the probe writes them. Device execution was verified on a stock Xiaomi in October 2026 ([evidence](../docs/studio/xiaomi-revalidation.md)).
 
 The manifest's `dev.makepad.android.APPLICATION_EXTENSION` metadata keeps
 the Java integration class fixed when the application ID changes. Rebuild the
@@ -107,6 +134,33 @@ pinned packager after preparing runtime patches: an older loader may ignore
 this setting and silently omit Android Back handling and other platform
 integration in a custom package. After installing a test build, open News or
 Photos and verify that an edge Back swipe returns to OctoSense Home.
+
+**Launch-time test hooks.** Any app on the phone can start Home with intent
+extras, so a release Home ignores the `makepad.*` test and provisioning
+extras: the `test_actions` and demo settings in `makepad.APP_CONFIG`,
+AppCard's `makepad.PROVISION_CONFIG` and seeding hooks, and the kernel's
+`makepad.OCTOS_PROXY`. Only a development build (a debug build, or
+`--features dev-mode`) reads them ([`launch_input.rs`](../crates/shell/src/launch_input.rs)).
+`--dev-mode` (above) builds one. Give it a test `--package-name` and install
+only its Home APK (**unverified** on a device):
+
+```sh
+rom/scripts/build-home.sh --variant standalone --development --dev-mode \
+  --package-name dev.makepad.octosense.devtest \
+  --sdk /path/to/makepad-android \
+  --android-sdk /path/to/android-sdk \
+  --gradle-home /path/to/gradle-8.11.1 \
+  --java-home /path/to/full-jdk \
+  --packager .sources/makepad/target/release/cargo-makepad
+adb install rom/out/home/standalone-dev-mode/dev.makepad.octosense.devtest/OctoSenseHome.apk
+adb shell am start -n dev.makepad.octosense.devtest/.MakepadApp \
+  --es makepad.APP_CONFIG '{"test_actions":["launch-mail"]}'
+```
+
+On OpenHarmony, `rom/scripts/build-home-ohos.py --dev-mode` does the same
+with a separate `--bundle-id`; a release Home's entry ability passes no
+launch parameters on. Desktop `--test-action` flags are command-line
+arguments, which only the local user can pass, and work in every build.
 
 **OpenHarmony:** `python3 rom/scripts/build-home-ohos.py --deveco-home ...
 --packager ... --signing-config ...` builds a normal OpenHarmony app with an
@@ -209,6 +263,10 @@ does not establish that integration.
 
 ## Gestures
 
+Home paging carries finger velocity into its settling spring. Search and Glance lists progressively resist pulling beyond an edge and rebound after release. A cancelled Home search pull retracts; a committed pull finishes opening before the keyboard takes focus. Reduced motion skips decorative settling while keeping direct dragging and in-bounds inertia. The shared Rust motion model has been exercised on a OnePlus 6 in a separate `dev.makepad.octosense.fluidtest` build; this is gesture validation, not a claim of hitch-free presentation on every device. Navigation prepares the search editor, a bounded set of result glyphs and the first Glance summaries across quiet Home frames; touching the screen suspends preparation. Offscreen launcher cells are culled before their icons or labels are resolved, including the neighboring page briefly exposed by spring overshoot.
+
+Search and Glance group non-overlapping drawing to reduce GPU submissions. Once a search sheet is still, Home can retain its image for the closing fade while Android hides the keyboard; typing, selection and scrolling remain live. Query, catalog, geometry, appearance and editing changes retire the old image. A fast dismissal without a current capture uses normal drawing.
+
 | Where | Gesture | Does |
 |---|---|---|
 | Home page, middle | pull down | Search, with its input focused and keyboard ready |
@@ -277,9 +335,13 @@ never holds a socket or a password. For a demo mailbox (password `demo`):
 ```sh
 # desktop, from phone/
 MAKEPAD_APP_CONFIG='{"mail_demo":true}' cargo run --release -p octosense-home --features mobile-only
-# phone
-adb shell am start -n <package>/.MakepadApp --es makepad.APP_CONFIG '{"mail_demo":true}'
+# phone: a development test package (see Launch-time test hooks)
+adb shell am start -n <test package>/.MakepadApp --es makepad.APP_CONFIG '{"mail_demo":true}'
 ```
+
+The desktop command reads `MAKEPAD_APP_CONFIG` as a local setting; a phone
+release build ignores it, so the phone line needs a development test package
+(**unverified** since that change).
 
 The earlier native News, Photos and Maps modules are deleted (native-apps ADR 0004 §1, [#113](https://github.com/OctoSense-org/OctoSense/pull/113));
 none of the system apps has a native module any more.

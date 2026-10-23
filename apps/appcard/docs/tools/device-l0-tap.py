@@ -20,6 +20,9 @@ what the reference implementation produces. That is a much stronger claim than
 
     device-l0-tap.py            # seed, tap, compare against the stock-detail golden
 
+Needs a development build of the app (`DEV_MODE=1 tools/build-android.sh`),
+the only kind that reads the launch-time `makepad.SEED_L0_*` extras.
+
 Exit 1 on any failure.
 """
 
@@ -88,7 +91,8 @@ def seed_ledger(card, data):
     log = wait_for("SEED_L0 injected")
     if log is None:
         print("  the app never reported seeding the ledger.")
-        print("  Most likely: this APK predates SEED_L0_FILE. Rebuild and reinstall.")
+        print("  Most likely: this APK predates SEED_L0_FILE or is a release build, which")
+        print("  ignores launch-time extras. Rebuild with DEV_MODE=1 tools/build-android.sh.")
         return None
     H.dismiss_ime()
     return settle()

@@ -73,6 +73,10 @@ the test package's `files/apps` using `run-as`, and launch `.MakepadApp` with th
 {"test_actions":["launch-hub:org.octosense.samples.githubnotes"]}
 ```
 
+The test action runs because the package above is a development build
+(`--features dev-mode`); a release Home ignores launch-time test actions,
+since any app can start it with extras (`crates/shell/src/launch_input.rs`).
+
 Never install over the regular Home package or transfer an existing personal
 profile. The pinned Makepad remote implementation is a no-op on Android;
 `MAKEPAD_REMOTE` and ADB port forwarding do not enable it. Phone verification

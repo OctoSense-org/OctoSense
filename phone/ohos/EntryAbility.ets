@@ -5,16 +5,25 @@ import { BusinessError } from '@kit.BasicServicesKit';
 import makepad from 'libmakepad.so'
 import {ArkGlue} from '../makepad/makepad'
 
+// Any app can start this exported ability with any parameters, and Makepad
+// turns each `makepad.<NAME>` launch parameter into the environment variables
+// MAKEPAD_<NAME> and <NAME>: test hooks, provisioning, a Studio connection,
+// or any other variable Home reads. Only a development build passes them on;
+// rom/scripts/build-home-ohos.py --dev-mode stages this file with `true`.
+const FORWARD_LAUNCH_PARAMETERS: boolean = false;
+
 export default class EntryAbility extends UIAbility {
   private studioReview: boolean = false;
 
   onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): void {
     let x = ArkGlue.initInstance(this.context);
     const parameters: Record<string, string> = {};
-    for (const key of Object.keys(want.parameters ?? {})) {
-      const value = want.parameters?.[key];
-      if (key.startsWith('makepad.') && typeof value === 'string') {
-        parameters[key] = value;
+    if (FORWARD_LAUNCH_PARAMETERS) {
+      for (const key of Object.keys(want.parameters ?? {})) {
+        const value = want.parameters?.[key];
+        if (key.startsWith('makepad.') && typeof value === 'string') {
+          parameters[key] = value;
+        }
       }
     }
     x.launchParameters = JSON.stringify(parameters);

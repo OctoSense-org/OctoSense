@@ -34,6 +34,10 @@ def verify(build):
     receipt = json.loads((build / "build.json").read_text())
     if receipt.get("schema_version") != 1 or receipt.get("variant") != "rom" or receipt.get("development") is not False:
         raise ValueError("ROM staging requires a ROM build signed with the existing platform certificate")
+    if receipt.get("dev_mode", False) is not False:
+        raise ValueError("ROM staging refuses Home builds with developer mode compiled in")
+    if receipt.get("home_package", "dev.makepad.octosense") != "dev.makepad.octosense":
+        raise ValueError("ROM staging refuses a Home test package")
     certificates = set()
     for name in (HOME_APK, BRIDGE_APK):
         item = receipt["artifacts"][name]

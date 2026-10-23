@@ -261,6 +261,9 @@ pub struct HostToolCall {
     // --- stamped by the host (the broker, or the system chat) ---
     /// The app whose agent calls (`system` for the system agent).
     pub calling_app: String,
+    /// Kernel-confirmed peer workspace, stamped by the broker, never parsed
+    /// from tool arguments or wire caller fields. Context folders are below it.
+    pub peer_workspace: Option<std::path::PathBuf>,
     /// The calling peer's account (`None`: signed out, or the system agent).
     pub account: Option<String>,
     /// The client of the calling request context (a Rinx mini app), from
@@ -302,6 +305,7 @@ impl HostToolCall {
             turn_id: s("turn_id").or_else(|| caller.get("turn_id").and_then(Value::as_str).map(str::to_owned)).unwrap_or_default(),
             caller_kind,
             calling_app: String::new(),
+            peer_workspace: None,
             account: None,
             client: None,
             origin: if caller_kind == CallerKind::System { CallOrigin::System } else { CallOrigin::PeerOwn },
@@ -1116,6 +1120,9 @@ mod tests {
             "args": {"room": "!r", "text": "hi"}, "risk": "act", "confirm_required": true, "timeout_ms": 5000, "tools_version": 3
         });
         let call = HostToolCall::parse(&params).unwrap();
+        let mut forged = params.clone();
+        forged["peer_workspace"] = json!("/other/app");
+        assert!(HostToolCall::parse(&forged).unwrap().peer_workspace.is_none(), "only the broker may stamp the workspace");
         assert_eq!(call.caller_kind, CallerKind::AppPeer);
         assert!(call.confirm_required);
         assert_eq!(call.context_id.as_deref(), Some("ab-mini"));

@@ -1,0 +1,27 @@
+{
+ "page_label": "1 / 7",
+ "zenity_args": [
+  "--file-selection",
+  "--title=Import a file into this app"
+ ],
+ "library": [
+  "Apartment lease.pdf",
+  "Board minutes.pdf",
+  "Damaged scan.pdf",
+  "Field guide.pdf",
+  "Imported PDF.pdf",
+  "Quarterly report.pdf"
+ ],
+ "imported_file": {
+  "name": "Imported PDF.pdf",
+  "bytes": 16477,
+  "same_bytes_as_chosen": true
+ },
+ "library_json_entry": {
+  "pages": 7,
+  "bytes": 16477,
+  "title": "Lease 2026",
+  "opened": 1791729898.686883,
+  "cover": ".cache/covers/9bbd32ca74ee02a3-16477-1791729898675883482@48.png"
+ }
+}

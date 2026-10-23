@@ -8,6 +8,9 @@ like when it was good", so the diff is a WORKLIST, not a verdict.
 
     l0-visual.py            capture all three and report drift
     l0-visual.py weather    just one
+
+Needs a development build of the app (`DEV_MODE=1 tools/build-android.sh`),
+the only kind that reads the launch-time `makepad.SEED_L0_*` extras.
 """
 import importlib.util, subprocess, sys
 from pathlib import Path

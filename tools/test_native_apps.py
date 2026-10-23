@@ -31,7 +31,7 @@ class TheRepository(unittest.TestCase):
 
     def test_the_manifest_declares_todays_native_apps(self):
         apps = native_apps.load(ROOT)
-        self.assertEqual([app["id"] for app in apps], ["rinx", "reference", "sheets", "terminal", "appcard", "apphub",
+        self.assertEqual([app["id"] for app in apps], ["updater", "rinx", "reference", "sheets", "terminal", "appcard", "apphub",
                                                        "calculator", "clock", "notes", "reminders", "weather",
                                                        "octoscode", "task"])
         hosting = {app["id"]: app["hosting"] for app in apps}

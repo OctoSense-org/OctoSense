@@ -33,6 +33,10 @@ enum Turn {
     /// The host took the approval (the shell's router): the app hears only
     /// that, then the turn completes with this value.
     HostHasItThenReply(&'static str, Value),
+    /// Sleep for this long, then complete with this value. Used to prove
+    /// the universal 60s service-timeout default is bypassed for the
+    /// services that override `HostService::timeout` (e.g. `octos.turn.start`).
+    DelayedReply(Duration, Value),
 }
 
 struct FakeContext {
@@ -66,6 +70,18 @@ impl OctosContext for FakeContext {
                         "params": {"approval_id": id, "title": "Write notes.md", "body": ""},
                     })));
                     sink(ContextEvent::Complete(Ok(v.clone())));
+                }
+                Turn::DelayedReply(delay, v) => {
+                    // Hand the sink to a background thread so this turn
+                    // outlives any caller-side timeout, the way a real
+                    // model turn on a slow provider would.
+                    let delay = *delay;
+                    let v = v.clone();
+                    let sink = sink.clone();
+                    std::thread::spawn(move || {
+                        std::thread::sleep(delay);
+                        sink(ContextEvent::Complete(Ok(v)));
+                    });
                 }
             },
             _ => sink(ContextEvent::Complete(Ok(json!({"open": true})))),
@@ -689,4 +705,79 @@ fn declaration_changes_never_bypass_consent_or_verified_caller_identity() {
     let (_, _, result) = take_replies_for(&[heap]).pop().expect("synchronous identity refusal");
     assert_eq!(result.unwrap_err(), NOT_ADMITTED);
     assert!(peers.ids().is_empty(), "wrong host profile never creates a peer");
+}
+
+/// `ContainedOctos::timeout` must return [`TURN_START_TIMEOUT`] for
+/// `octos.turn.start` and the dispatcher's [`DEFAULT_TIMEOUT`] for every
+/// other `octos.*` method. Asserted directly so the test does not have to
+/// sleep for 62s while holding the file's `serial()` lock. The real-time
+/// version is below; it stays under `#[ignore]` and is run with
+/// `cargo test -- --ignored`.
+#[test]
+fn contained_turn_start_timeout_returns_extended_budget() {
+    let peers = Peers::new(Turn::Reply(json!({})));
+    let bridge = ContainedOctos::new(true, peers);
+    let host_dir = std::env::temp_dir().join("octosense-contained-tests");
+
+    let turn_start = ServiceCall {
+        app_id: APP.into(),
+        service: "octos.turn.start".into(),
+        args: json!({}),
+        from_sheet: false,
+        may_prompt: true,
+        host_dir: host_dir.clone(),
+    };
+    assert_eq!(bridge.timeout(&turn_start), TURN_START_TIMEOUT, "octos.turn.start must override the universal service timeout");
+
+    let session_open = ServiceCall {
+        app_id: APP.into(),
+        service: "octos.session.open".into(),
+        args: json!({}),
+        from_sheet: false,
+        may_prompt: true,
+        host_dir,
+    };
+    assert_eq!(bridge.timeout(&session_open), DEFAULT_TIMEOUT, "every other octos.* call keeps the default service timeout");
+}
+
+/// Real-time version of the per-service timeout regression. The fake
+/// peer waits 62s, comfortably above the default 60s and below the 240s
+/// override. Run explicitly with `cargo test -- --ignored`.
+#[ignore]
+#[test]
+fn contained_turn_start_outlives_default_service_timeout_real() {
+    let _g = serial();
+    let peers = Peers::new(Turn::DelayedReply(
+        Duration::from_secs(62),
+        json!({"text": "ok"}),
+    ));
+    register(true, &peers);
+    let heap = NEXT_HEAP.fetch_add(1, Ordering::SeqCst);
+    let call = ServiceCall {
+        app_id: APP.into(),
+        service: "octos.turn.start".into(),
+        args: json!({"text": "hi"}),
+        from_sheet: false,
+        may_prompt: true,
+        host_dir: std::env::temp_dir().join("octosense-contained-tests"),
+    };
+    dispatch(call, heap, 1, &mut NoSheets);
+    // Wait up to 80s for the reply. The `ask` helper only waits 5s, so
+    // poll `take_replies_for` ourselves with a longer deadline.
+    let deadline = Instant::now() + Duration::from_secs(80);
+    let mut received: Option<Result<Value, String>> = None;
+    while Instant::now() < deadline {
+        if let Some((_, _, result)) = take_replies_for(&[heap]).pop() {
+            received = Some(result.map(|s| serde_json::from_str(&s).expect("a JSON reply")));
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    let value = received.expect(
+        "dispatch did not return within 80s — the per-service timeout \
+         override for octos.turn.start has regressed and the universal \
+         60s service timeout killed a legitimate turn",
+    );
+    let v: Value = value.expect("dispatch refused a long but legitimate turn");
+    assert_eq!(v, json!({"text": "ok"}));
 }

@@ -10,7 +10,7 @@
 2. 在单独终端运行 `python3 tools/backend-login-fixture.py --directory "$LAB/server"` 并保持运行。metadata 只有本地公开端点；不要整体发布运行目录。
 3. 按英文页的三个命令运行 `android_backend_lab.py prepare`、`android_backend.py` 和 `android_backend_lab.py deploy`。准备过程通过普通签名目录／安装校验，包含两个固定测试应用 ID。设置已有 JDK 的 `JAVA_HOME` 供 apksigner 使用；多设备时只选择指定的 `--serial`，不得公开设备编号。
 
-部署拒绝已存在的包，只传输新建的已签名测试目录，建立一个 ADB loopback reverse，并通过一次性 `makepad.APP_CONFIG` Intent extra 启动。Android 会清除只有环境变量的 app config，因此不能省略 Intent。需要新后缀时，APK 构建、封装和部署必须使用同一包名。准备脚本会嵌入已跟踪的 `backend-login/glance.splash`，发布仍经过普通应用 Glance 权限校验。测试插图和界面不是生产应用素材。
+部署拒绝已存在的包，只传输新建的已签名测试目录，建立一个 ADB loopback reverse，并通过一次性 `makepad.APP_CONFIG` Intent extra 启动。Android 会清除只有环境变量的 app config，因此不能省略 Intent。其中的 `test_actions` 之所以会执行，是因为第 1 步构建的是开发版（`--features dev-mode`）：任何应用都能带着 extra 启动 Home，所以发布版 Home 会忽略启动时的测试动作（`crates/shell/src/launch_input.rs`）。需要新后缀时，APK 构建、封装和部署必须使用同一包名。准备脚本会嵌入已跟踪的 `backend-login/glance.splash`，发布仍经过普通应用 Glance 权限校验。测试插图和界面不是生产应用素材。
 
 实际手机操作，不重放结果未知的输入：
 

@@ -1,0 +1,1151 @@
+{
+ "schema_version": 1,
+ "image": "02-reading.png",
+ "image_sha256": "a1b56c1e0f54c0b0db9a5d1f4e465041b6d67a44efa36180f7da1d57f79c0ef2",
+ "script_sha256": "ea860507e32482b955d3ac577ab3cf9fc559f59ecc916c89175293932b54e0b7",
+ "size": [
+  1536,
+  1024
+ ],
+ "ocr_engine": "Apple Vision VNRecognizeTextRequest accurate, en-US (App Flow ocr.swift)",
+ "text": [
+  {
+   "text": "Read",
+   "bounds": [
+    31.3,
+    73.6,
+    35.7,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#3c7ae8",
+   "ground": "#f2f6fd"
+  },
+  {
+   "text": "Pages",
+   "bounds": [
+    22.3,
+    171.8,
+    38.0,
+    15.6
+   ],
+   "confidence": 1,
+   "ink": "#5973a6",
+   "ground": "#e7f0fb"
+  },
+  {
+   "text": "Outline",
+   "bounds": [
+    20.1,
+    258.8,
+    42.4,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#6c6d6e",
+   "ground": "#f6f6f6"
+  },
+  {
+   "text": "Comments",
+   "bounds": [
+    13.4,
+    345.8,
+    55.8,
+    11.2
+   ],
+   "confidence": 1,
+   "ink": "#808082",
+   "ground": "#f7f7f7"
+  },
+  {
+   "text": "Search",
+   "bounds": [
+    20.1,
+    428.3,
+    42.4,
+    11.2
+   ],
+   "confidence": 1,
+   "ink": "#6c6d6f",
+   "ground": "#f4f4f4"
+  },
+  {
+   "text": "Q3 2026 Board Report.pdf",
+   "bounds": [
+    58.0,
+    24.5,
+    180.8,
+    15.6
+   ],
+   "confidence": 1,
+   "ink": "#414142",
+   "ground": "#f4f4f4"
+  },
+  {
+   "text": "Riverside Lease 2026.pdf x",
+   "bounds": [
+    308.1,
+    24.5,
+    189.8,
+    15.6
+   ],
+   "confidence": 1,
+   "ink": "#898a8c",
+   "ground": "#f3f3f3"
+  },
+  {
+   "text": "Field Guide to Garden Birds.pdf x",
+   "bounds": [
+    551.4,
+    24.5,
+    218.8,
+    15.6
+   ],
+   "confidence": 1,
+   "ink": "#898a8b",
+   "ground": "#f2f2f3"
+  },
+  {
+   "text": "Invoice INV-2041.pdf",
+   "bounds": [
+    821.6,
+    24.5,
+    134.0,
+    15.6
+   ],
+   "confidence": 1,
+   "ink": "#858688",
+   "ground": "#f2f2f2"
+  },
+  {
+   "text": "Site Survey Photos.pdf",
+   "bounds": [
+    1035.9,
+    24.5,
+    147.3,
+    15.6
+   ],
+   "confidence": 1,
+   "ink": "#8a8b8d",
+   "ground": "#f2f3f3"
+  },
+  {
+   "text": "Comment",
+   "bounds": [
+    100.4,
+    73.4,
+    69.3,
+    13.7
+   ],
+   "confidence": 1,
+   "ink": "#636465",
+   "ground": "#f7f7f7"
+  },
+  {
+   "text": "Fill & Sign",
+   "bounds": [
+    200.9,
+    73.3,
+    69.3,
+    16.2
+   ],
+   "confidence": 1,
+   "ink": "#5c5d5e",
+   "ground": "#f6f6f7"
+  },
+  {
+   "text": "Pages",
+   "bounds": [
+    301.4,
+    73.6,
+    44.7,
+    15.6
+   ],
+   "confidence": 1,
+   "ink": "#666667",
+   "ground": "#f8f8f8"
+  },
+  {
+   "text": "Combine",
+   "bounds": [
+    379.4,
+    73.0,
+    62.8,
+    14.7
+   ],
+   "confidence": 1,
+   "ink": "#636464",
+   "ground": "#f6f6f7"
+  },
+  {
+   "text": "Edit",
+   "bounds": [
+    477.8,
+    73.6,
+    29.0,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#6d6d6e",
+   "ground": "#f7f7f7"
+  },
+  {
+   "text": "Q Search in document",
+   "bounds": [
+    944.4,
+    71.0,
+    158.5,
+    16.0
+   ],
+   "confidence": 1,
+   "ink": "#9c9d9f",
+   "ground": "#fafafa"
+  },
+  {
+   "text": "Pages",
+   "bounds": [
+    100.4,
+    124.7,
+    47.1,
+    18.3
+   ],
+   "confidence": 1,
+   "ink": "#38393b",
+   "ground": "#f3f3f3"
+  },
+  {
+   "text": "NORTHWING",
+   "bounds": [
+    156.3,
+    171.8,
+    58.0,
+    6.7
+   ],
+   "confidence": 1,
+   "ink": "#6886aa",
+   "ground": "#f1f4f7"
+  },
+  {
+   "text": "hthewtooath",
+   "bounds": [
+    149.6,
+    198.6,
+    67.0,
+    4.5
+   ],
+   "confidence": 0.3,
+   "ink": "#97989a",
+   "ground": "#f0f1f1"
+  },
+  {
+   "text": "03 2025 Sourd Roport",
+   "bounds": [
+    149.6,
+    203.0,
+    71.4,
+    11.2
+   ],
+   "confidence": 1,
+   "ink": "#959597",
+   "ground": "#f7f7f7"
+  },
+  {
+   "text": "Contorts",
+   "bounds": [
+    156.3,
+    312.3,
+    22.3,
+    11.2
+   ],
+   "confidence": 1,
+   "ink": "#8399be",
+   "ground": "#f8f9fb"
+  },
+  {
+   "text": "Q3 2026 Board Report",
+   "bounds": [
+    984.6,
+    147.0,
+    116.1,
+    14
+   ],
+   "confidence": 1,
+   "ink": "#a0a0a2",
+   "ground": "#f8f8f9"
+  },
+  {
+   "text": "+ Open",
+   "bounds": [
+    1444.5,
+    22.0,
+    58.0,
+    16
+   ],
+   "confidence": 1,
+   "ink": "#525254",
+   "ground": "#f5f5f5"
+  },
+  {
+   "text": "Save",
+   "bounds": [
+    1446.7,
+    75.9,
+    33.5,
+    11.2
+   ],
+   "confidence": 1,
+   "ink": "#b3d5f6",
+   "ground": "#156edf"
+  },
+  {
+   "text": "Lin.",
+   "bounds": [
+    147.3,
+    508.7,
+    73.7,
+    31.2
+   ],
+   "confidence": 0.3,
+   "ink": "#1064cc",
+   "ground": "#f5f7f9"
+  },
+  {
+   "text": "3",
+   "bounds": [
+    234.4,
+    539.9,
+    17.9,
+    17.8
+   ],
+   "confidence": 1,
+   "ink": "#296fe7",
+   "ground": "#f4f8fd"
+  },
+  {
+   "text": "Northwind Cooperative",
+   "bounds": [
+    616.2,
+    147.0,
+    127.3,
+    14
+   ],
+   "confidence": 1,
+   "ink": "#4668a6",
+   "ground": "#f4f6fa"
+  },
+  {
+   "text": "Revenue",
+   "bounds": [
+    616.2,
+    189.6,
+    147.3,
+    31.2
+   ],
+   "confidence": 1,
+   "ink": "#174790",
+   "ground": "#f4f6f9"
+  },
+  {
+   "text": "Revenue for the third quarter of 2026 was $28.7 million, up from",
+   "bounds": [
+    618.4,
+    265.0,
+    473.3,
+    18.3
+   ],
+   "confidence": 1,
+   "ink": "#444545",
+   "ground": "#f6f5f6"
+  },
+  {
+   "text": "$25.6 million in Q3 2025. Revenue grew 12% year over year, led",
+   "bounds": [
+    616.2,
+    290.0,
+    466.6,
+    18
+   ],
+   "confidence": 1,
+   "ink": "#f8f7f3",
+   "ground": "#c8b24e"
+  },
+  {
+   "text": "by the Northwest region.",
+   "bounds": [
+    616.2,
+    314.6,
+    183.1,
+    17.8
+   ],
+   "confidence": 1,
+   "ink": "#524519",
+   "ground": "#f6df6c"
+  },
+  {
+   "text": "Strong customer demand and disciplined pricing supported",
+   "bounds": [
+    616.2,
+    350.0,
+    448.7,
+    18.1
+   ],
+   "confidence": 1,
+   "ink": "#4d4d4e",
+   "ground": "#f6f6f6"
+  },
+  {
+   "text": "broad-based growth across all regions.",
+   "bounds": [
+    616.2,
+    374.8,
+    285.8,
+    18.2
+   ],
+   "confidence": 1,
+   "ink": "#4c4c4c",
+   "ground": "#f7f7f7"
+  },
+  {
+   "text": "Revenue by region, Q3 2026",
+   "bounds": [
+    618.4,
+    415.0,
+    234.4,
+    20.1
+   ],
+   "confidence": 1,
+   "ink": "#2a4d91",
+   "ground": "#f3f5f9"
+  },
+  {
+   "text": "Millions of USD",
+   "bounds": [
+    616.2,
+    439.0,
+    87.1,
+    12
+   ],
+   "confidence": 1,
+   "ink": "#a2a3a5",
+   "ground": "#f9f9f9"
+  },
+  {
+   "text": "14",
+   "bounds": [
+    616.2,
+    459.6,
+    17.9,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#7c7c7d",
+   "ground": "#f9f9fa"
+  },
+  {
+   "text": "12.4",
+   "bounds": [
+    685.4,
+    470.7,
+    29.0,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#47484a",
+   "ground": "#f5f5f5"
+  },
+  {
+   "text": "12",
+   "bounds": [
+    616.2,
+    488.6,
+    17.9,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#797a7c",
+   "ground": "#fafafa"
+  },
+  {
+   "text": "10",
+   "bounds": [
+    614.0,
+    515.3,
+    20.1,
+    15.6
+   ],
+   "confidence": 1,
+   "ink": "#68696a",
+   "ground": "#f8f8f8"
+  },
+  {
+   "text": "8",
+   "bounds": [
+    622.9,
+    544.3,
+    11.2,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#6c6e6f",
+   "ground": "#f7f7f7"
+  },
+  {
+   "text": "7.1",
+   "bounds": [
+    799.3,
+    542.1,
+    20.1,
+    15.6
+   ],
+   "confidence": 1,
+   "ink": "#585859",
+   "ground": "#f8f8f8"
+  },
+  {
+   "text": "5.6",
+   "bounds": [
+    913.1,
+    564.4,
+    24.6,
+    15.6
+   ],
+   "confidence": 1,
+   "ink": "#4c4c4f",
+   "ground": "#f7f7f7"
+  },
+  {
+   "text": "3.6",
+   "bounds": [
+    1027.0,
+    593.4,
+    24.6,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#4f5051",
+   "ground": "#f7f7f7"
+  },
+  {
+   "text": "Northwest",
+   "bounds": [
+    667.5,
+    675.7,
+    67.1,
+    14.0
+   ],
+   "confidence": 1,
+   "ink": "#4e4f51",
+   "ground": "#f2f2f2"
+  },
+  {
+   "text": "Coast",
+   "bounds": [
+    792.6,
+    676.0,
+    38.0,
+    15.6
+   ],
+   "confidence": 1,
+   "ink": "#5f6163",
+   "ground": "#f7f7f7"
+  },
+  {
+   "text": "Valley",
+   "bounds": [
+    904.9,
+    675.3,
+    42.9,
+    19.6
+   ],
+   "confidence": 1,
+   "ink": "#58595b",
+   "ground": "#f8f8f8"
+  },
+  {
+   "text": "Metro",
+   "bounds": [
+    1020.3,
+    676.0,
+    38.0,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#535456",
+   "ground": "#f2f2f3"
+  },
+  {
+   "text": "3",
+   "bounds": [
+    1087.3,
+    705.0,
+    11.2,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#606264",
+   "ground": "#f8f7f8"
+  },
+  {
+   "text": "Q3 2026 Board Report",
+   "bounds": [
+    984.6,
+    789.8,
+    116.1,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#a5a6a8",
+   "ground": "#f9f9fa"
+  },
+  {
+   "text": "5",
+   "bounds": [
+    236.7,
+    807.6,
+    11.2,
+    15.6
+   ],
+   "confidence": 1,
+   "ink": "#757679",
+   "ground": "#f7f8f8"
+  },
+  {
+   "text": "Northwind Cooperative",
+   "bounds": [
+    616.2,
+    789.8,
+    127.3,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#4669a8",
+   "ground": "#f2f5f9"
+  },
+  {
+   "text": "Operations",
+   "bounds": [
+    616.0,
+    829.0,
+    192.4,
+    39.7
+   ],
+   "confidence": 1,
+   "ink": "#18478f",
+   "ground": "#f7f8fb"
+  },
+  {
+   "text": "Operational performance remained strong in Q3 2026. We",
+   "bounds": [
+    618.4,
+    896.8,
+    392.9,
+    18.2
+   ],
+   "confidence": 1,
+   "ink": "#555656",
+   "ground": "#f5f5f5"
+  },
+  {
+   "text": "3 / 24",
+   "bounds": [
+    656.4,
+    932.5,
+    51.3,
+    15.6
+   ],
+   "confidence": 1,
+   "ink": "#626364",
+   "ground": "#f9f9f9"
+  },
+  {
+   "text": "-",
+   "bounds": [
+    808.2,
+    934.8,
+    22.3,
+    11.2
+   ],
+   "confidence": 1,
+   "ink": "#777779",
+   "ground": "#fdfdfd"
+  },
+  {
+   "text": "100%",
+   "bounds": [
+    868.5,
+    932.5,
+    40.2,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#6a6b6c",
+   "ground": "#f8f8f8"
+  },
+  {
+   "text": "+",
+   "bounds": [
+    946.6,
+    930.3,
+    17.9,
+    20.1
+   ],
+   "confidence": 1,
+   "ink": "#767778",
+   "ground": "#fdfdfd"
+  },
+  {
+   "text": "Saved",
+   "bounds": [
+    55.8,
+    992.8,
+    40.2,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#79797b",
+   "ground": "#f8f8f8"
+  },
+  {
+   "text": "14.6 of 64 MB used",
+   "bounds": [
+    1390.9,
+    992.8,
+    116.1,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#6d6d6e",
+   "ground": "#f6f6f6"
+  }
+ ],
+ "surfaces": [
+  {
+   "bounds": [
+    288,
+    107,
+    1247,
+    873
+   ],
+   "fill": "#eceded",
+   "border": "#eeefef",
+   "radius": 3
+  },
+  {
+   "bounds": [
+    561,
+    120,
+    588,
+    633
+   ],
+   "fill": "#fefefe",
+   "border": "#e9eaeb",
+   "radius": 4
+  },
+  {
+   "bounds": [
+    85,
+    109,
+    204,
+    869
+   ],
+   "fill": "#fefefe",
+   "border": "#fdfdfe",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    564,
+    766,
+    581,
+    212
+   ],
+   "fill": "#fefefe",
+   "border": "#fefefe",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    1,
+    1,
+    1535,
+    53
+   ],
+   "fill": "#f4f4f5",
+   "border": "#f2f3f4",
+   "radius": 3
+  },
+  {
+   "bounds": [
+    137,
+    430,
+    100,
+    132
+   ],
+   "fill": "#fdfdfd",
+   "border": "#f8fafd",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    932,
+    62,
+    344,
+    35
+   ],
+   "fill": "#fefefe",
+   "border": "#fdfdfe",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    141,
+    294,
+    91,
+    126
+   ],
+   "fill": "#fefefe",
+   "border": "#fdfdfe",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    141,
+    152,
+    91,
+    125
+   ],
+   "fill": "#fdfdfd",
+   "border": "#fdfdfd",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    141,
+    574,
+    90,
+    122
+   ],
+   "fill": "#fcfcfd",
+   "border": "#fefefe",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    141,
+    710,
+    90,
+    118
+   ],
+   "fill": "#fefdfe",
+   "border": "#fefefe",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    144,
+    437,
+    85,
+    118
+   ],
+   "fill": "#fdfdfd",
+   "border": "#fafbfc",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    141,
+    842,
+    90,
+    108
+   ],
+   "fill": "#fdfdfd",
+   "border": "#fefefe",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    935,
+    66,
+    337,
+    28
+   ],
+   "fill": "#fefefe",
+   "border": "#fcfdfd",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    676,
+    490,
+    51,
+    178
+   ],
+   "fill": "#146ad9",
+   "border": "#4e72db",
+   "radius": 4
+  },
+  {
+   "bounds": [
+    142,
+    156,
+    86,
+    99
+   ],
+   "fill": "#fefefe",
+   "border": "#e0e1f0",
+   "radius": 3
+  },
+  {
+   "bounds": [
+    7,
+    120,
+    69,
+    77
+   ],
+   "fill": "#e9f2fe",
+   "border": "#fefdfe",
+   "radius": 4
+  },
+  {
+   "bounds": [
+    787,
+    564,
+    49,
+    104
+   ],
+   "fill": "#156ad9",
+   "border": "#5476de",
+   "radius": 1
+  },
+  {
+   "bounds": [
+    148,
+    868,
+    76,
+    57
+   ],
+   "fill": "#f5f5f5",
+   "border": "#fefefe",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    1389,
+    64,
+    128,
+    33
+   ],
+   "fill": "#116cdc",
+   "border": "#f7fafd",
+   "radius": 4
+  },
+  {
+   "bounds": [
+    903,
+    586,
+    49,
+    82
+   ],
+   "fill": "#166bda",
+   "border": "#4a78de",
+   "radius": 4
+  },
+  {
+   "bounds": [
+    1429,
+    11,
+    93,
+    37
+   ],
+   "fill": "#f8f8f8",
+   "border": "#f4f4f4",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    1431,
+    13,
+    88,
+    32
+   ],
+   "fill": "#f8f8f8",
+   "border": "#ececec",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    1017,
+    615,
+    47,
+    53
+   ],
+   "fill": "#166cd9",
+   "border": "#3274d9",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    153,
+    624,
+    66,
+    36
+   ],
+   "fill": "#86b2d3",
+   "border": "#f6f6f6",
+   "radius": 14
+  },
+  {
+   "bounds": [
+    154,
+    625,
+    64,
+    26
+   ],
+   "fill": "#94beda",
+   "border": "#417bba",
+   "radius": 8
+  },
+  {
+   "bounds": [
+    151,
+    603,
+    69,
+    18
+   ],
+   "fill": "#f6f7f7",
+   "border": "#fdfdfd",
+   "radius": 0
+  }
+ ],
+ "dividers": [
+  {
+   "axis": "h",
+   "at": 52,
+   "from": 268,
+   "to": 1536,
+   "color": "#e1e2e3"
+  },
+  {
+   "axis": "h",
+   "at": 94,
+   "from": 935,
+   "to": 1270,
+   "color": "#dcdcde"
+  },
+  {
+   "axis": "h",
+   "at": 106,
+   "from": 288,
+   "to": 1536,
+   "color": "#ecedee"
+  },
+  {
+   "axis": "h",
+   "at": 107,
+   "from": 288,
+   "to": 1536,
+   "color": "#dedfe0"
+  },
+  {
+   "axis": "h",
+   "at": 237,
+   "from": 618,
+   "to": 1099,
+   "color": "#e6e7e8"
+  },
+  {
+   "axis": "h",
+   "at": 238,
+   "from": 618,
+   "to": 1100,
+   "color": "#9c9ea4"
+  },
+  {
+   "axis": "h",
+   "at": 667,
+   "from": 639,
+   "to": 1099,
+   "color": "#a4a6ad"
+  },
+  {
+   "axis": "h",
+   "at": 749,
+   "from": 565,
+   "to": 1144,
+   "color": "#c1c2c3"
+  },
+  {
+   "axis": "h",
+   "at": 750,
+   "from": 565,
+   "to": 1144,
+   "color": "#d0d0d2"
+  },
+  {
+   "axis": "h",
+   "at": 879,
+   "from": 618,
+   "to": 1098,
+   "color": "#e2e3e5"
+  },
+  {
+   "axis": "h",
+   "at": 880,
+   "from": 618,
+   "to": 1098,
+   "color": "#adafb6"
+  },
+  {
+   "axis": "h",
+   "at": 965,
+   "from": 589,
+   "to": 1091,
+   "color": "#ededee"
+  },
+  {
+   "axis": "h",
+   "at": 966,
+   "from": 589,
+   "to": 1091,
+   "color": "#e4e5e6"
+  },
+  {
+   "axis": "h",
+   "at": 978,
+   "from": 564,
+   "to": 1146,
+   "color": "#e1e1e3"
+  },
+  {
+   "axis": "v",
+   "at": 83,
+   "from": 107,
+   "to": 978,
+   "color": "#e3e3e3"
+  },
+  {
+   "axis": "v",
+   "at": 288,
+   "from": 107,
+   "to": 978,
+   "color": "#ececec"
+  },
+  {
+   "axis": "v",
+   "at": 289,
+   "from": 107,
+   "to": 978,
+   "color": "#dedfe0"
+  },
+  {
+   "axis": "v",
+   "at": 642,
+   "from": 466,
+   "to": 668,
+   "color": "#b6b6b6"
+  }
+ ],
+ "limits": [
+  "Evidence for review: roles and widgets are assigned in the semantic map, not here."
+ ]
+}

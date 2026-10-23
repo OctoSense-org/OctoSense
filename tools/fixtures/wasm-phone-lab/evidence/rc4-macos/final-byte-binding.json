@@ -1,0 +1,74 @@
+{
+  "schema": 1,
+  "record_kind": "final_draft_byte_binding",
+  "recorded_at": "2026-10-10T18:25:09.538498+00:00",
+  "tag": "desktop-v0.1.0-rc.4",
+  "source_commit": "9266b0083544d86bd7636543b5ff60c61b26460f",
+  "source_tree": "eade406807c20587801a5bfb2169f454dc4e43f7",
+  "workflow_run": 38065627444,
+  "workflow_url": "https://github.com/OctoSense-org/OctoSense/actions/runs/38065627444",
+  "workflow_conclusion": "success",
+  "release_url": "https://github.com/OctoSense-org/OctoSense/releases/tag/untagged-8faee2ec9b985050d35a",
+  "draft_at_asset_verification": true,
+  "prerelease_at_asset_verification": false,
+  "publication_verified_by_this_record": false,
+  "final_asset_verification": {
+    "file": "verified-assets.json",
+    "sha256": "c8da6cf90c7c10cf3860d231baaec42cde8af399ae538466e1c369e0fc2ceed8",
+    "all_checksums_verified": true
+  },
+  "preserved_evidence": [
+    {
+      "file": "receipt.json",
+      "sha256": "3ccd0ce94533a3c92d0e3d6330d4ed812566fbc5711844b1223ce034d05d7531",
+      "unchanged": true
+    },
+    {
+      "file": "acceptance.public.json",
+      "sha256": "a2d52f02e47a9e06909804fa307a27321ffb1d4b7e1d93c21a7ceff1948c8bd8",
+      "unchanged": true
+    }
+  ],
+  "macos_assets": [
+    {
+      "name": "OctoSense_0.1.0-rc.4_macos_aarch64.app.zip",
+      "size": 280369251,
+      "sha256": "a58fe9efdece0fa6a58c51a5767b368127a9713a1c7048509366427eead2837e",
+      "identical_to_tested_candidate": true
+    },
+    {
+      "name": "OctoSense_0.1.0-rc.4_aarch64.dmg",
+      "size": 279893779,
+      "sha256": "cb1b4f64cef34be94fcd7590dcbdb69e89215282cb0a0bc04e7064e1826dfa6e",
+      "identical_to_tested_candidate": true
+    },
+    {
+      "name": "OctoSense_0.1.0-rc.4_macos-arm64.receipt.json",
+      "size": 850,
+      "sha256": "bc27c27f161216083c8ec4ab3d054b634c6a85c2c3f2edc9a8c6585d45f6a4ef",
+      "identical_to_tested_candidate": true
+    }
+  ],
+  "actual_signing_result": {
+    "job_id": 114280076963,
+    "job_conclusion": "success",
+    "annotation_source": "https://api.github.com/repos/OctoSense-org/OctoSense/check-runs/114280076963/annotations",
+    "warning": "no Apple signing secrets in the release environment: the macOS packages stay unsigned",
+    "developer_id_signed": false,
+    "notarized": false,
+    "candidate_adhoc_signature_inspection_applies_to_identical_final_bytes": true
+  },
+  "acceptance_applies_to_final_bytes": true,
+  "ui_checks_passed": 11,
+  "ui_checks_total": 11,
+  "ui_test_repeated": false,
+  "repeat_not_needed_reason": "Final app ZIP, DMG, and package receipt are byte-identical to the tested candidate.",
+  "privacy_scan_applies_to_final_zip_and_mounted_dmg": true,
+  "personal_accounts_used": false,
+  "public_catalog_modified": false,
+  "limits": [
+    "This additive record binds the preserved candidate acceptance to final workflow package bytes; it does not establish public publication or anonymous downloads.",
+    "The macOS package is unsigned by Developer ID and unnotarized; signed hardened-runtime behavior was not tested.",
+    "No personal account or live model was used. OS installation/upgrade and Windows/Linux GUI acceptance were not tested."
+  ]
+}

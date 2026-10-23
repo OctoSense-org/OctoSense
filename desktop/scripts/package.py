@@ -13,6 +13,10 @@ One command does the whole release build, from the repository root after
    `crate_resource(...)` is read from the package, never from `.sources/` or
    the checkout. Paths in the binary are remapped (`--remap-path-prefix` for
    the home directory, `CARGO_HOME` and the checkout) and debug info stripped (symbol names stay, so backtraces and `[ui-hang]` reports remain readable).
+   The build explicitly selects this machine's Rust target and the repository's
+   `target/` directory; packaging and identity checks use that exact
+   `target/<host-triple>/release/` executable, regardless of inherited Cargo
+   target or output-directory settings.
 2. **Stage resources**: the `resources/` directory of every git or path crate
    the app links (Makepad's widgets and fonts, the shell's icons, App Hub,
    Rinx, ...) into `target/octosense-package/resources/<crate_name>/`, the
@@ -50,6 +54,7 @@ Run `python3 tools/release-scan.py <artifacts>` on the output before
 publishing anything.
 """
 import argparse
+import hashlib
 import importlib.util
 import json
 import os
@@ -66,6 +71,7 @@ PACKAGING = DESKTOP / "packaging"
 PACKAGE = "octosense"
 KERNEL_NAME = "octos-kernel"
 RECEIPT_NAME = "octos-kernel.json"
+UPDATER_NAME = "octosense-update-helper"
 # cargo-packager signs when these are set; the build never does (see above).
 SIGNING_ENV = ("APPLE_SIGNING_IDENTITY", "APPLE_CERTIFICATE", "APPLE_CERTIFICATE_PASSWORD", "APPLE_API_KEY",
                "APPLE_API_ISSUER", "APPLE_API_KEY_PATH", "APPLE_API_KEY_P8", "APPLE_ID", "APPLE_PASSWORD", "APPLE_TEAM_ID",
@@ -86,10 +92,53 @@ def version_from_tag(tag):
     """`desktop-v1.2.3` (or a ref ending in it) -> `1.2.3`. Installers need a
     numeric version, so anything else is refused."""
     name = tag.rsplit("/", 1)[-1]
-    match = re.fullmatch(r"desktop-v(\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?)", name)
+    number = r"(?:0|[1-9][0-9]*)"
+    match = re.fullmatch(rf"desktop-v({number}\.{number}\.{number}(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?)", name)
     if not match:
         raise ValueError(f"{tag!r} is not a desktop release tag (desktop-v<major>.<minor>.<patch>[-<pre>])")
+    if "-" in match.group(1):
+        prerelease = match.group(1).split("-", 1)[1]
+        if any(part.isdigit() and len(part) > 1 and part.startswith("0") for part in prerelease.split(".")):
+            raise ValueError("Numeric prerelease identifiers cannot have leading zeroes")
     return match.group(1)
+
+
+def release_identity(version=None, tag=None):
+    """Only explicit release packaging gets an updater identity. A generic
+    Cargo build must not accidentally advertise its 0.1.0 as a release."""
+    if tag:
+        tagged_version = version_from_tag(tag)
+        if version and version != tagged_version:
+            raise ValueError("--version and --version-from-tag must name the same release")
+        return f"desktop-v{tagged_version}"
+    if version:
+        version_from_tag(f"desktop-v{version}")
+        return f"desktop-v{version}"
+    return ""
+
+
+def binary_sha256(path):
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        for chunk in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def record_release_identity(binary, tag):
+    """Keep tagged --skip-build packaging bound to the binary actually built
+    with that tag, instead of silently relabeling an earlier executable."""
+    receipt = {"release_tag": tag, "sha256": binary_sha256(binary)}
+    binary.with_name(binary.name + ".release-identity.json").write_text(json.dumps(receipt) + "\n")
+
+
+def verify_release_identity(binary, tag):
+    try:
+        receipt = json.loads(binary.with_name(binary.name + ".release-identity.json").read_text())
+    except (OSError, ValueError) as error:
+        raise RuntimeError("Tagged --skip-build requires a release-identity receipt from an earlier package.py build; rebuild without --skip-build") from error
+    if receipt != {"release_tag": tag, "sha256": binary_sha256(binary)}:
+        raise RuntimeError("The reused binary does not match the requested release tag; rebuild without --skip-build")
 
 
 def remap_flags(root, home=None, cargo_home=None):
@@ -157,6 +206,17 @@ def linked_packages(features, env):
 def host_triple():
     out = subprocess.run(["rustc", "-vV"], check=True, capture_output=True, text=True).stdout
     return re.search(r"^host: (\S+)$", out, re.M).group(1)
+
+
+def native_build_layout(root, os_name, triple):
+    """Build and package the same native artifact even when Cargo config or
+    environment selects another target/target-dir. An explicit --target puts
+    release output below that triple, not directly in target/release."""
+    target_dir = root / "target"
+    binaries_dir = target_dir / triple / "release"
+    binary = binaries_dir / (PACKAGE + (".exe" if os_name == "windows" else ""))
+    options = ["--target", triple, "--target-dir", str(target_dir)]
+    return binaries_dir, binary, options
 
 
 def resource_crates(metadata, linked):
@@ -232,6 +292,15 @@ def stage_kernel(kernel, source, out, resources):
     return sidecar, receipt
 
 
+def stage_updater(binary, out, resources, triple):
+    """The helper is copied out before shutdown, so it survives bundle exchange."""
+    sidecar = out / "bin" / UPDATER_NAME
+    sidecar.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(binary, sidecar.with_name(f"{UPDATER_NAME}-{triple}"))
+    (resources / "octosense-updater.json").write_text('{"protocol":1}\n')
+    return sidecar, {"protocol": 1, "sha256": hashlib.sha256(binary.read_bytes()).hexdigest()}
+
+
 def debian_depends(binaries):
     """The shared-library packages the binaries link, from dpkg-shlibdeps."""
     if not shutil.which("dpkg-shlibdeps"):
@@ -245,7 +314,7 @@ def debian_depends(binaries):
     return [d.strip() for d in line.split("=", 1)[-1].split(",") if d.strip()]
 
 
-def packager_config(base, *, version, binaries_dir, out_dir, resources, kernel):
+def packager_config(base, *, version, binaries_dir, out_dir, resources, kernel, updater=None):
     """release.json with this build's version, paths and kernel (never
     signing: see the module docstring)."""
     config = json.loads(json.dumps(base))
@@ -253,10 +322,10 @@ def packager_config(base, *, version, binaries_dir, out_dir, resources, kernel):
     config["binariesDir"] = str(binaries_dir)
     config["outDir"] = str(out_dir)
     config["resources"] = [{"src": str(resources), "target": "."}]
-    if kernel:
+    if kernel or updater:
         # cargo-packager copies `<path>-<target triple>[.exe]` beside the
         # main binary as `<name>[.exe]`.
-        config["externalBinaries"] = [str(kernel)]
+        config["externalBinaries"] = [str(p) for p in (kernel, updater) if p]
     return config
 
 
@@ -295,7 +364,10 @@ def main(argv=None):
     os_name = host_os()
     formats = args.formats.split(",") if args.formats else DEFAULT_FORMATS[os_name]
     version = version_from_tag(args.version_from_tag) if args.version_from_tag else (args.version or cargo_version())
+    release_tag = release_identity(args.version, args.version_from_tag)
     added = package_env(os_name, ROOT, os.environ)
+    # Override a stray inherited value even for a non-release build.
+    added["OCTOSENSE_RELEASE_TAG"] = release_tag
     if args.print_env:
         print(json.dumps(added, indent=2))
         return
@@ -304,11 +376,25 @@ def main(argv=None):
     out.mkdir(parents=True, exist_ok=True)
     offline = ["--offline"] if args.offline else []
     features = feature_args(args.features)
+    triple = host_triple()
+    binaries_dir, binary, build_options = native_build_layout(ROOT, os_name, triple)
 
     if not args.skip_build:
         print(f"==> cargo build --release -p {PACKAGE} (MAKEPAD_PACKAGE_DIR={added['MAKEPAD_PACKAGE_DIR']})", flush=True)
-        subprocess.run(["cargo", "build", "--locked", "--release", "-p", PACKAGE, *features, *offline],
+        subprocess.run(["cargo", "build", "--locked", "--release", "-p", PACKAGE, *build_options, *features, *offline],
                        cwd=ROOT, env=env, check=True)
+        record_release_identity(binary, release_tag)
+    elif release_tag:
+        verify_release_identity(binary, release_tag)
+
+    updater_binary = binaries_dir / UPDATER_NAME
+    if os_name == "macos":
+        if not args.skip_build:
+            subprocess.run(["cargo", "build", "--locked", "--release", "-p", "octosense-updater",
+                            "--bin", UPDATER_NAME, *build_options, *offline], cwd=ROOT, env=env, check=True)
+            record_release_identity(updater_binary, release_tag)
+        elif release_tag:
+            verify_release_identity(updater_binary, release_tag)
 
     print("==> staging resources", flush=True)
     metadata = json.loads(cargo_json(["metadata", "--locked", "--format-version", "1"], env))
@@ -318,7 +404,10 @@ def main(argv=None):
         size = sum(f.stat().st_size for f in (resources / name).rglob("*") if f.is_file())
         print(f"    {name:<28} {size / 1e6:7.1f} MB  <- {src.relative_to(ROOT) if ROOT in src.parents else name}")
 
-    triple = host_triple()
+    updater_sidecar, updater_receipt = None, None
+    if os_name == "macos":
+        updater_sidecar, updater_receipt = stage_updater(updater_binary, out, resources, triple)
+
     kernel_receipt = None
     sidecar = None
     if not args.no_kernel:
@@ -333,9 +422,8 @@ def main(argv=None):
         print("==> no kernel: this package runs without an assistant", flush=True)
 
     base = json.loads((PACKAGING / "release.json").read_text())
-    binaries_dir = ROOT / "target" / "release"
     config = packager_config(base, version=version, binaries_dir=binaries_dir, out_dir=out / "dist",
-                             resources=resources, kernel=sidecar)
+                             resources=resources, kernel=sidecar, updater=updater_sidecar)
     if os_name == "linux":
         depends = debian_depends([binaries_dir / PACKAGE, *([sidecar.with_name(f"{KERNEL_NAME}-{triple}")] if sidecar else [])])
         if depends:
@@ -350,13 +438,13 @@ def main(argv=None):
     receipt_path = out / "receipt.json"
     receipt_path.unlink(missing_ok=True)  # A failed restage must not leave an old success receipt.
     receipt = {
-        "version": version, "target": triple, "formats": formats,
-        "resources": [name for name, _ in crates], "kernel": kernel_receipt,
+        "version": version, "release_tag": release_tag or None, "target": triple, "formats": formats,
+        "resources": [name for name, _ in crates], "kernel": kernel_receipt, "updater": updater_receipt,
         "makepad_package_dir": added["MAKEPAD_PACKAGE_DIR"],
     }
     print(f"==> cargo packager --formats {','.join(formats)}", flush=True)
     try:
-        subprocess.run(["cargo", "packager", "--release", "--config", str(generated), "--formats", ",".join(formats)],
+        subprocess.run(["cargo", "packager", "--release", "--target", triple, "--config", str(generated), "--formats", ",".join(formats)],
                        cwd=PACKAGING, env=env, check=True)
     finally:
         generated.unlink(missing_ok=True)

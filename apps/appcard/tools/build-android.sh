@@ -17,6 +17,7 @@
 #   tools/build-android.sh            # build the APK
 #   tools/build-android.sh run        # build, install and launch
 #   SKIP_KERNEL=1 tools/build-android.sh   # reuse an already-built kernel
+#   DEV_MODE=1 tools/build-android.sh # a development build (launch-time hooks)
 #
 set -euo pipefail
 
@@ -96,4 +97,11 @@ cd "$ROOT/app"
 # Android renders through the Vulkan backend (like the OpenHarmony build): the
 # map's compact vertex formats only exist there. `MAKEPAD=gles` forces OpenGL.
 export MAKEPAD="${MAKEPAD:-vulkan}"
+# DEV_MODE=1 makes a development build, the only kind that reads the
+# launch-time `makepad.*` hooks (provisioning, seeding, the auto prompt; see
+# `launch_var` in app/app/src/lib.rs): any app on the phone can start this one
+# with extras, so a release build ignores them.
+if [[ "${DEV_MODE:-}" == 1 ]]; then
+  exec "$CARGO_MAKEPAD" makepad android "$ACTION" -p octos-app --release --features dev-mode
+fi
 exec "$CARGO_MAKEPAD" makepad android "$ACTION" -p octos-app --release

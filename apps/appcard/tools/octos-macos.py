@@ -92,6 +92,9 @@ def main():
         empty_data.write_text('{}\n')
         env['MAKEPAD_SEED_L0_DATA'] = str(empty_data)
     if not request.get('skip_build', False):
+        # A desktop build reads the MAKEPAD_* hooks set above as local
+        # settings (`launch_var` in app/app/src/lib.rs), so no feature is
+        # needed; only a phone gates them behind `dev-mode`.
         subprocess.run(['cargo', 'build', '-p', 'octos-app', '--bin', 'octos-app',
                         '--release', '--message-format=json'], cwd=root / 'app', env=env, check=True)
     if not Path(env['OCTOS_APP_CORE_BIN']).is_file():

@@ -18,7 +18,7 @@ OctoSense 仓库的决策：Shell、Shell 服务、系统应用，以及桌面�
 | [0008](0008-quiet-android-mail-jobs.zh-CN.md) | Android 静默邮件后台任务与原生卡片通知 | 本次变更已实现；设备验收进行中 |
 | [0010](0010-shared-oauth-and-connected-apps.zh-CN.md) | 共享 OAuth 与独立安装的连接账户应用 | 实现中；真实账户登录已在 macOS 上通过；GitHub 写入、Gmail 发信和设备验收待完成 |
 | [0011](0011-apps-own-functions-in-webassembly.zh-CN.md) | 应用自带的 WebAssembly 函数 | 已接受，有限支持：在 macOS、Linux 和 Android 的标准构建中开启 |
-| [0012](0012-app-host-api-discovery.zh-CN.md) | 面向已安装应用的可发现宿主 API | 源码已实现；契约 1.6.0 已发布；宿主发布和手机验收待完成 |
+| [0012](0012-app-host-api-discovery.zh-CN.md) | 面向已安装应用的可发现宿主 API | 已实现；契约 1.11.0 已发布；最终源码通过 Mac/OnePlus 验收；RC4 已发布，Mac 归档包 11/11 |
 | [0013](0013-craft-engines-as-pinned-services.zh-CN.md) | Craft 引擎作为固定修订版服务接入 | 提议中；引擎已实测（gridcraft 内核重算 243×，photocraft 1,203 项测试），服务尚未实现 |
 
 ## Home（手机 Shell）的决策，2026-09-16 至 2026-09-25

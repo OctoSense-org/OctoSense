@@ -1,0 +1,111 @@
+{
+ "result": "passed",
+ "date": "2026-10-11",
+ "platform": "Linux x86_64 (the build host), weston 14.0.2 headless (pixman, --idle-time=0), Makepad's Wayland backend",
+ "commit": "c50104da",
+ "binary": {
+  "build": "cargo build --locked -p octosense --no-default-features --features app-hub,craft-engines",
+  "sha256": "412d3570bebd2ca29041ca801b23ebab1bd30d9e25d61d3ea7b6eb7e0845abd8"
+ },
+ "source_sha256": {
+  "apps/pdftools/bundle/main.splash": "d91831ea9125355df5bdd74f6c8f5b05e58923e745404b2ff29bd64e2a0bc6a0"
+ },
+ "sample": "cargo run --locked -p octosense-pdf-service --example pdftools_fixture -- --edit-sample <home>/apps/os.pdftools/accounts/device/library/Launch flyer.pdf",
+ "launch": "a fresh OCTOSENSE_HOME (OCTOS_APP_CORE_DIR and MAKEPAD_HOME inside it), MAKEPAD_REMOTE=127.0.0.1:8937, MAKEPAD_WM_TEST_APP=pdftools, on its own weston; one instance; ended with /quit",
+ "driver": "a scratch driver over the Linux launch of apps/pdftools/tests/ui.py from #495 (Shell, click_page); not in the repository",
+ "script_budget_ms": 64,
+ "script_budget_overruns": 0,
+ "steps": [
+  "Home: open Launch flyer.pdf; Edit",
+  "click the title's first piece (page point 128, 111): Paragraph 2, the five-pieces note, Apply",
+  "type ' Beta' at its end: the font and room warnings, Apply anyway (e02)",
+  "Cancel; click the piece 季 (253, 111), type 夏: the red refusal (e03); Apply: the banner repeats it (e04)",
+  "Cancel; switch to OctoSense dark; the same steps (de01-de04)",
+  "the title piece again, ' Beta', Apply anyway: the edit made, over 春 and 季 (e05)",
+  "the Helvetica paragraph (100, 200), ' Lunch is at one.' appended, Apply: made at once (e06)"
+ ],
+ "panel_labels_seen": {
+  "title": [
+   "Launch flyer.pdf",
+   "Pages",
+   "Outline",
+   "Comments",
+   "1 / 1",
+   "100%",
+   "Edit text",
+   "Paragraph 2",
+   "Font",
+   "Unnamed font  ·  27.8 pt",
+   "Set in Helvetica: this paragraph's font can't show all of this text.",
+   "Longer than its box: it runs into 2 lines of text nearby.",
+   "The PDF stores this line in 5 pieces: only this one changes.",
+   "Alignment",
+   "Saved",
+   "80 KB of 64 MB used"
+  ],
+  "cjk": [
+   "Launch flyer.pdf",
+   "Pages",
+   "Outline",
+   "Comments",
+   "1 / 1",
+   "100%",
+   "Edit text",
+   "Paragraph 4",
+   "Font",
+   "Unnamed font  ·  27.8 pt",
+   "PDF Tools can't edit Chinese, Japanese or Korean text yet.",
+   "The PDF stores this line in 5 pieces: only this one changes.",
+   "Alignment",
+   "Colour",
+   "Its own colour",
+   "Saved",
+   "80 KB of 64 MB used"
+  ],
+  "dtitle": [
+   "Launch flyer.pdf",
+   "Pages",
+   "Outline",
+   "Comments",
+   "1 / 1",
+   "100%",
+   "Edit text",
+   "Paragraph 2",
+   "Font",
+   "Unnamed font  ·  27.8 pt",
+   "Set in Helvetica: this paragraph's font can't show all of this text.",
+   "Longer than its box: it runs into 2 lines of text nearby.",
+   "The PDF stores this line in 5 pieces: only this one changes.",
+   "Alignment",
+   "Saved",
+   "80 KB of 64 MB used"
+  ],
+  "dcjk": [
+   "Launch flyer.pdf",
+   "Pages",
+   "Outline",
+   "Comments",
+   "1 / 1",
+   "100%",
+   "Edit text",
+   "Paragraph 4",
+   "Font",
+   "Unnamed font  ·  27.8 pt",
+   "PDF Tools can't edit Chinese, Japanese or Korean text yet.",
+   "The PDF stores this line in 5 pieces: only this one changes.",
+   "Alignment",
+   "Colour",
+   "Its own colour",
+   "Saved",
+   "80 KB of 64 MB used"
+  ]
+ },
+ "findings": [
+  "fixed in c50104da: the notes pushed Apply and Cancel out of the card in the 1292 x 662 app area; a card with notes now takes the panel's height, its fields scroll, Apply and Cancel stay at its foot",
+  "follow-up, older than this change: the edit box over the page is sized at the click and doesn't grow while typing, so a longer draft shows only its last line"
+ ],
+ "not_verified": [
+  "macOS (another session was running OctoSense on the Mac)",
+  "a person's eyes on a phone-sized window (desktop only)"
+ ]
+}

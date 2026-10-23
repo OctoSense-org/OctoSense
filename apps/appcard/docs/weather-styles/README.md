@@ -56,5 +56,7 @@ To make the choices live on-device, rebuild + deploy the app memory:
 1. Author one `style-<name>.splash` (copy the closest existing one; keep every
    number a `sys.weather` binding).
 2. Verify on device via `--es makepad.SEED_CARD_FILE /data/local/tmp/x.splash`
-   (raw DSL → auto-wrapped in `runsplash`; no APK rebuild needed).
+   (raw DSL → auto-wrapped in `runsplash`; no APK rebuild needed once a
+   development build, `DEV_MODE=1 tools/build-android.sh`, is installed: a
+   release build ignores launch-time extras).
 3. Add a row to the catalog table + a keyword to the selection rule in `app.md`.

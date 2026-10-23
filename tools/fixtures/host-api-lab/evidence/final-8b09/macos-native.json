@@ -1,0 +1,1097 @@
+{
+  "bundle_digest": "d95d47a8c2a84afa7ebb22e17987d89dd4cb7b2c01804d6f6ea35d8da5a25878",
+  "checks": {
+    "audio_playback_discovery": true,
+    "background_audio_playback_refused": true,
+    "background_calendar_permission_refused": true,
+    "background_calendar_selection_refused": true,
+    "background_calendar_write_refused": true,
+    "background_export_refused": true,
+    "background_import_refused": true,
+    "background_mail_send_refused": true,
+    "background_microphone_recording_refused": true,
+    "background_photo_picker_refused": true,
+    "background_text_share_refused": true,
+    "calendar_choices_without_consent_refused": true,
+    "calendar_status_without_data_access": true,
+    "contained_binary_roundtrip": true,
+    "files_export_discovery": true,
+    "files_import_discovery": true,
+    "files_status_discovery": true,
+    "files_status_truthful": true,
+    "location_sample_discovery": true,
+    "location_without_consent_refused": true,
+    "mail_compose_without_account_refused": true,
+    "microphone_recording_discovery": true,
+    "native_storage_identity_scoped": true,
+    "photo_picker_discovery": true,
+    "public_calendar_read_discovery": true,
+    "public_calendar_write_discovery": true,
+    "public_mail_compose_discovery": true,
+    "public_mail_send_discovery": true,
+    "storage_binary_write_discovery": true,
+    "text_share_discovery_truthful": true,
+    "video_controls_discovery": true
+  },
+  "closed_app": "app_not_running: open this app before calling its script tools",
+  "host_sheet_visible": false,
+  "not_verified": [
+    "model or peer relay consent",
+    "physical OS permission approval",
+    "camera capture",
+    "interactive file selection/export",
+    "live location sampling",
+    "Calendar event reads/writes",
+    "SMTP delivery",
+    "native photo/share choosers",
+    "live audio recording/playback",
+    "Video playback (separate fixture)"
+  ],
+  "platform": "macos",
+  "proof": "signed app -> app_tool -> host.request -> native OS permission status",
+  "refusals": {
+    "invalid_arguments": "invalid_arguments: $: injected is not a declared field",
+    "undeclared_tool": "tool_not_declared: the running bundle does not implement this tool",
+    "wrong_account": "account_scope: app account changed"
+  },
+  "schema": 1,
+  "signed_install": true,
+  "tool_result": {
+    "Ok": {
+      "account": "device",
+      "background_error": "camera.permission.request is unavailable to agents/background surfaces",
+      "background_prompt_allowed": false,
+      "calls": 1,
+      "camera": {
+        "app_consent": false,
+        "app_policy_granted": true,
+        "background_permission": false,
+        "capability": "camera",
+        "location_read_supported": false,
+        "location_sample_supported": false,
+        "os_permission": "granted",
+        "scope": "host_api_v1_device_access",
+        "supported": true
+      },
+      "discovery": {
+        "authorization": "checked-on-call",
+        "configured": null,
+        "descriptor": {
+          "agent_access": "allowed",
+          "capability": "camera",
+          "input_schema": {
+            "additionalProperties": false,
+            "type": "object"
+          },
+          "name": "camera.permission.status",
+          "output_schema": {
+            "properties": {
+              "app_consent": {
+                "type": "boolean"
+              },
+              "app_policy_granted": {
+                "type": "boolean"
+              },
+              "background_permission": {
+                "const": false
+              },
+              "capability": {
+                "type": "string"
+              },
+              "location_read_supported": {
+                "type": "boolean"
+              },
+              "location_sample_supported": {
+                "type": "boolean"
+              },
+              "os_permission": {
+                "enum": [
+                  "granted",
+                  "not_determined",
+                  "denied",
+                  "settings_required",
+                  "unsupported"
+                ]
+              },
+              "scope": {
+                "const": "host_api_v1_device_access"
+              },
+              "supported": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "capability",
+              "supported",
+              "app_policy_granted",
+              "app_consent",
+              "os_permission"
+            ],
+            "type": "object"
+          },
+          "platforms": [
+            "android",
+            "macos"
+          ],
+          "summary": "Read this app's device consent and the OS permission without prompting",
+          "version": 1
+        },
+        "implemented": true,
+        "supported": true
+      },
+      "microphone": {
+        "app_consent": false,
+        "app_policy_granted": true,
+        "background_permission": false,
+        "capability": "microphone",
+        "location_read_supported": false,
+        "location_sample_supported": false,
+        "os_permission": "granted",
+        "scope": "host_api_v1_device_access",
+        "supported": true
+      },
+      "missing": {
+        "authorization": "unavailable",
+        "configured": null,
+        "implemented": false,
+        "method": "apilab.custom_rust",
+        "supported": false
+      },
+      "os_batch": {
+        "background_export_allowed": false,
+        "background_export_error": "files.export is unavailable to agents/background surfaces",
+        "background_import_allowed": false,
+        "background_import_error": "files.import is unavailable to agents/background surfaces",
+        "background_location_allowed": false,
+        "background_location_error": "location.sample is unavailable to agents/background surfaces",
+        "binary": {
+          "length": 4,
+          "values": [
+            0,
+            127,
+            128,
+            255
+          ]
+        },
+        "files_export_discovery": {
+          "authorization": "checked-on-call",
+          "configured": null,
+          "descriptor": {
+            "agent_access": "foreground-only",
+            "capability": "files",
+            "input_schema": {
+              "additionalProperties": false,
+              "properties": {
+                "name": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "path": {
+                  "maxLength": 2048,
+                  "minLength": 1,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "path"
+              ],
+              "type": "object"
+            },
+            "name": "files.export",
+            "output_schema": {
+              "properties": {
+                "bytes": {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "cancelled": {
+                  "type": "boolean"
+                },
+                "mime": {
+                  "enum": [
+                    "image/png",
+                    "image/jpeg",
+                    "image/webp"
+                  ]
+                },
+                "name": {
+                  "maxLength": 128,
+                  "type": "string"
+                },
+                "path": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "cancelled"
+              ],
+              "type": "object"
+            },
+            "platforms": [
+              "macos",
+              "windows",
+              "linux",
+              "android"
+            ],
+            "summary": "Save a snapshot of one app file to a native destination; requires storage",
+            "version": 1
+          },
+          "implemented": true,
+          "supported": true
+        },
+        "files_import_discovery": {
+          "authorization": "checked-on-call",
+          "configured": null,
+          "descriptor": {
+            "agent_access": "foreground-only",
+            "capability": "files",
+            "input_schema": {
+              "additionalProperties": false,
+              "properties": {
+                "path": {
+                  "maxLength": 2048,
+                  "minLength": 1,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "path"
+              ],
+              "type": "object"
+            },
+            "name": "files.import",
+            "output_schema": {
+              "properties": {
+                "bytes": {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "cancelled": {
+                  "type": "boolean"
+                },
+                "mime": {
+                  "enum": [
+                    "image/png",
+                    "image/jpeg",
+                    "image/webp"
+                  ]
+                },
+                "name": {
+                  "maxLength": 128,
+                  "type": "string"
+                },
+                "path": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "cancelled"
+              ],
+              "type": "object"
+            },
+            "platforms": [
+              "macos",
+              "windows",
+              "linux",
+              "android"
+            ],
+            "summary": "Select one document and copy it into a new app file; at most 64 MiB (16 MiB on Android) and the app's free storage, requires storage",
+            "version": 1
+          },
+          "implemented": true,
+          "supported": true
+        },
+        "files_status": {
+          "export_supported": true,
+          "foreground_required": true,
+          "import_supported": true,
+          "max_file_bytes": 1048576,
+          "max_import_bytes": 67108864,
+          "max_share_text_bytes": 8192,
+          "photo_pick_supported": true,
+          "storage_granted": true,
+          "text_share_supported": false
+        },
+        "files_status_discovery": {
+          "authorization": "checked-on-call",
+          "configured": null,
+          "descriptor": {
+            "agent_access": "allowed",
+            "capability": "files",
+            "input_schema": {
+              "additionalProperties": false,
+              "type": "object"
+            },
+            "name": "files.status",
+            "output_schema": {
+              "properties": {
+                "export_supported": {
+                  "type": "boolean"
+                },
+                "foreground_required": {
+                  "const": true
+                },
+                "import_supported": {
+                  "type": "boolean"
+                },
+                "max_file_bytes": {
+                  "type": "integer"
+                },
+                "max_import_bytes": {
+                  "type": "integer"
+                },
+                "max_share_text_bytes": {
+                  "type": "integer"
+                },
+                "photo_pick_supported": {
+                  "type": "boolean"
+                },
+                "storage_granted": {
+                  "type": "boolean"
+                },
+                "text_share_supported": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "import_supported",
+                "export_supported",
+                "max_file_bytes",
+                "max_import_bytes",
+                "storage_granted",
+                "foreground_required"
+              ],
+              "type": "object"
+            },
+            "platforms": [
+              "macos",
+              "windows",
+              "linux",
+              "android",
+              "ios",
+              "openharmony",
+              "web"
+            ],
+            "summary": "Discover file transfer support without opening a dialog",
+            "version": 1
+          },
+          "implemented": true,
+          "supported": true
+        },
+        "location_discovery": {
+          "authorization": "checked-on-call",
+          "configured": null,
+          "descriptor": {
+            "agent_access": "foreground-only",
+            "capability": "location",
+            "input_schema": {
+              "additionalProperties": false,
+              "properties": {
+                "max_accuracy_m": {
+                  "exclusiveMinimum": 0,
+                  "maximum": 100000,
+                  "type": "number"
+                },
+                "max_age_ms": {
+                  "default": 5000,
+                  "maximum": 60000,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "timeout_ms": {
+                  "default": 10000,
+                  "maximum": 30000,
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              },
+              "type": "object"
+            },
+            "name": "location.sample",
+            "output_schema": {
+              "properties": {
+                "accuracy_m": {
+                  "minimum": 0,
+                  "type": "number"
+                },
+                "age_ms": {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "freshness": {
+                  "const": "fresh"
+                },
+                "latitude": {
+                  "maximum": 90,
+                  "minimum": -90,
+                  "type": "number"
+                },
+                "longitude": {
+                  "maximum": 180,
+                  "minimum": -180,
+                  "type": "number"
+                },
+                "source": {
+                  "const": "platform"
+                },
+                "timestamp": {
+                  "description": "Unix seconds",
+                  "type": "number"
+                }
+              },
+              "required": [
+                "latitude",
+                "longitude",
+                "accuracy_m",
+                "timestamp",
+                "age_ms",
+                "source",
+                "freshness"
+              ],
+              "type": "object"
+            },
+            "platforms": [
+              "android",
+              "macos"
+            ],
+            "summary": "Wait for a bounded fresh foreground location fix after existing app consent and OS authorization; never opens permission UI",
+            "version": 1
+          },
+          "implemented": true,
+          "supported": true
+        },
+        "storage_discovery": {
+          "authorization": "checked-on-use",
+          "callable_via_host_request": false,
+          "implemented": true,
+          "kind": "runtime-abi",
+          "method": "storage.binary_write",
+          "supported": true,
+          "version": 1
+        }
+      },
+      "public_services": {
+        "audio_discovery": {
+          "data": {
+            "authorization": "checked-on-call",
+            "configured": null,
+            "descriptor": {
+              "agent_access": "foreground-only",
+              "capability": "audio",
+              "input_schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "path": {
+                    "maxLength": 2048,
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "path"
+                ],
+                "type": "object"
+              },
+              "name": "audio.play",
+              "output_schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "error": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "format": {
+                    "enum": [
+                      "wav",
+                      null
+                    ]
+                  },
+                  "frames": {
+                    "description": "Device frames received or rendered; not delivery or audibility confirmation",
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "path": {
+                    "description": "App-relative output path only after recording has been saved",
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "session": {
+                    "maxLength": 36,
+                    "minLength": 36,
+                    "type": "string"
+                  },
+                  "status": {
+                    "enum": [
+                      "preparing",
+                      "checking_permission",
+                      "waiting_device",
+                      "starting",
+                      "recording",
+                      "playing",
+                      "stopping",
+                      "saved",
+                      "stopped",
+                      "completed",
+                      "failed",
+                      "cancelled"
+                    ]
+                  }
+                },
+                "required": [
+                  "session",
+                  "status",
+                  "path",
+                  "error",
+                  "frames",
+                  "format"
+                ],
+                "type": "object"
+              },
+              "platforms": [
+                "macos",
+                "android"
+              ],
+              "summary": "Play a bounded WAV, MP3, FLAC or Ogg file from this app's storage while the app stays in the foreground",
+              "version": 1
+            },
+            "implemented": true,
+            "supported": true
+          },
+          "error": null,
+          "ok": true
+        },
+        "audio_play": {
+          "data": null,
+          "error": "audio.play is unavailable to agents/background surfaces",
+          "ok": false
+        },
+        "calendar_choices": {
+          "data": null,
+          "error": "authorization_required: Request calendar permission in the foreground app",
+          "ok": false
+        },
+        "calendar_create": {
+          "data": null,
+          "error": "device_calendar.events.create is unavailable to agents/background surfaces",
+          "ok": false
+        },
+        "calendar_discovery": {
+          "data": {
+            "authorization": "checked-on-call",
+            "configured": null,
+            "descriptor": {
+              "agent_access": "allowed",
+              "capability": "device_calendar",
+              "input_schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "end_ms": {
+                    "maximum": 4102444800000,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "handle": {
+                    "maxLength": 64,
+                    "type": "string"
+                  },
+                  "limit": {
+                    "maximum": 200,
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "start_ms": {
+                    "maximum": 4102444800000,
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "handle",
+                  "start_ms",
+                  "end_ms",
+                  "limit"
+                ],
+                "type": "object"
+              },
+              "name": "device_calendar.events.list",
+              "output_schema": {
+                "type": "object"
+              },
+              "platforms": [
+                "macos",
+                "android"
+              ],
+              "summary": "List up to 200 occurrences in at most 93 days",
+              "version": 1
+            },
+            "implemented": true,
+            "supported": true
+          },
+          "error": null,
+          "ok": true
+        },
+        "calendar_permission": {
+          "data": null,
+          "error": "device_calendar.permission.request is unavailable to agents/background surfaces",
+          "ok": false
+        },
+        "calendar_select": {
+          "data": null,
+          "error": "device_calendar.calendars.select is unavailable to agents/background surfaces",
+          "ok": false
+        },
+        "calendar_status": {
+          "data": {
+            "app_consent": false,
+            "os_permission": "not_determined",
+            "supported": true
+          },
+          "error": null,
+          "ok": true
+        },
+        "calendar_write_discovery": {
+          "data": {
+            "authorization": "checked-on-call",
+            "configured": null,
+            "descriptor": {
+              "agent_access": "foreground-only",
+              "capability": "device_calendar",
+              "input_schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "event": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "all_day": {
+                        "default": false,
+                        "type": "boolean"
+                      },
+                      "end_ms": {
+                        "maximum": 4102444800000,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "location": {
+                        "maxLength": 2048,
+                        "type": "string"
+                      },
+                      "notes": {
+                        "maxLength": 8192,
+                        "type": "string"
+                      },
+                      "start_ms": {
+                        "maximum": 4102444800000,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "timezone": {
+                        "description": "IANA timezone, e.g. America/Los_Angeles",
+                        "maxLength": 128,
+                        "type": "string"
+                      },
+                      "title": {
+                        "maxLength": 512,
+                        "minLength": 1,
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "title",
+                      "start_ms",
+                      "end_ms",
+                      "timezone"
+                    ],
+                    "type": "object"
+                  },
+                  "handle": {
+                    "maxLength": 64,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "handle",
+                  "event"
+                ],
+                "type": "object"
+              },
+              "name": "device_calendar.events.create",
+              "output_schema": {
+                "type": "object"
+              },
+              "platforms": [
+                "macos",
+                "android"
+              ],
+              "summary": "Review and physically approve a new non-recurring event",
+              "version": 1
+            },
+            "implemented": true,
+            "supported": true
+          },
+          "error": null,
+          "ok": true
+        },
+        "mail_compose": {
+          "data": null,
+          "error": "The app agent must use its active Mail account",
+          "ok": false
+        },
+        "mail_discovery": {
+          "data": {
+            "authorization": "checked-on-call",
+            "configured": null,
+            "descriptor": {
+              "agent_access": "allowed",
+              "capability": "mail",
+              "input_schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "account": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "body": {
+                    "maxLength": 8192,
+                    "type": "string"
+                  },
+                  "compose_id": {
+                    "pattern": "^compose-[a-zA-Z0-9-]+$",
+                    "type": "string"
+                  },
+                  "expected_revision": {
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "folder": {
+                    "maxLength": 256,
+                    "type": "string"
+                  },
+                  "message": {
+                    "maxLength": 128,
+                    "type": "string"
+                  },
+                  "subject": {
+                    "maxLength": 512,
+                    "type": "string"
+                  },
+                  "to": {
+                    "maxLength": 254,
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "account",
+                  "to",
+                  "subject",
+                  "body"
+                ],
+                "type": "object"
+              },
+              "name": "mail.compose",
+              "output_schema": {
+                "type": "object"
+              },
+              "platforms": [
+                "macos",
+                "android",
+                "linux",
+                "windows"
+              ],
+              "summary": "Save an app/account-bound draft; never send or prompt",
+              "version": 1
+            },
+            "implemented": true,
+            "supported": true
+          },
+          "error": null,
+          "ok": true
+        },
+        "mail_send": {
+          "data": null,
+          "error": "mail.send is unavailable to agents/background surfaces",
+          "ok": false
+        },
+        "mail_send_discovery": {
+          "data": {
+            "authorization": "checked-on-call",
+            "configured": null,
+            "descriptor": {
+              "agent_access": "foreground-only",
+              "capability": "mail",
+              "input_schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "account": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "body": {
+                    "maxLength": 8192,
+                    "type": "string"
+                  },
+                  "compose_id": {
+                    "pattern": "^compose-[a-zA-Z0-9-]+$",
+                    "type": "string"
+                  },
+                  "expected_revision": {
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "folder": {
+                    "maxLength": 256,
+                    "type": "string"
+                  },
+                  "message": {
+                    "maxLength": 128,
+                    "type": "string"
+                  },
+                  "subject": {
+                    "maxLength": 512,
+                    "type": "string"
+                  },
+                  "to": {
+                    "maxLength": 254,
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "account",
+                  "to",
+                  "subject",
+                  "body"
+                ],
+                "type": "object"
+              },
+              "name": "mail.send",
+              "output_schema": {
+                "type": "object"
+              },
+              "platforms": [
+                "macos",
+                "android"
+              ],
+              "summary": "Compatibility review request; returns acceptance only after physical approval and SMTP response",
+              "version": 1
+            },
+            "implemented": true,
+            "supported": true
+          },
+          "error": null,
+          "ok": true
+        },
+        "photo_discovery": {
+          "data": {
+            "authorization": "checked-on-call",
+            "configured": null,
+            "descriptor": {
+              "agent_access": "foreground-only",
+              "capability": "files",
+              "input_schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "path": {
+                    "maxLength": 2048,
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "path"
+                ],
+                "type": "object"
+              },
+              "name": "files.pick_photo",
+              "output_schema": {
+                "properties": {
+                  "bytes": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "cancelled": {
+                    "type": "boolean"
+                  },
+                  "mime": {
+                    "enum": [
+                      "image/png",
+                      "image/jpeg",
+                      "image/webp"
+                    ]
+                  },
+                  "name": {
+                    "maxLength": 128,
+                    "type": "string"
+                  },
+                  "path": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "cancelled"
+                ],
+                "type": "object"
+              },
+              "platforms": [
+                "macos",
+                "windows",
+                "linux",
+                "android"
+              ],
+              "summary": "Choose one PNG, JPEG or WebP image into a new app file; at most 1 MiB, requires storage",
+              "version": 1
+            },
+            "implemented": true,
+            "supported": true
+          },
+          "error": null,
+          "ok": true
+        },
+        "photo_pick": {
+          "data": null,
+          "error": "files.pick_photo is unavailable to agents/background surfaces",
+          "ok": false
+        },
+        "record_discovery": {
+          "data": {
+            "authorization": "checked-on-call",
+            "configured": null,
+            "descriptor": {
+              "agent_access": "foreground-only",
+              "capability": "microphone",
+              "input_schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "max_duration_ms": {
+                    "maximum": 30000,
+                    "minimum": 100,
+                    "type": "integer"
+                  },
+                  "path": {
+                    "maxLength": 2048,
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "path"
+                ],
+                "type": "object"
+              },
+              "name": "microphone.record_start",
+              "output_schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "error": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "format": {
+                    "enum": [
+                      "wav",
+                      null
+                    ]
+                  },
+                  "frames": {
+                    "description": "Device frames received or rendered; not delivery or audibility confirmation",
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "path": {
+                    "description": "App-relative output path only after recording has been saved",
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "session": {
+                    "maxLength": 36,
+                    "minLength": 36,
+                    "type": "string"
+                  },
+                  "status": {
+                    "enum": [
+                      "preparing",
+                      "checking_permission",
+                      "waiting_device",
+                      "starting",
+                      "recording",
+                      "playing",
+                      "stopping",
+                      "saved",
+                      "stopped",
+                      "completed",
+                      "failed",
+                      "cancelled"
+                    ]
+                  }
+                },
+                "required": [
+                  "session",
+                  "status",
+                  "path",
+                  "error",
+                  "frames",
+                  "format"
+                ],
+                "type": "object"
+              },
+              "platforms": [
+                "macos",
+                "android"
+              ],
+              "summary": "Start a foreground mono WAV recording in app storage after existing app and OS microphone consent; maximum 30 seconds",
+              "version": 1
+            },
+            "implemented": true,
+            "supported": true
+          },
+          "error": null,
+          "ok": true
+        },
+        "record_start": {
+          "data": null,
+          "error": "microphone.record_start is unavailable to agents/background surfaces",
+          "ok": false
+        },
+        "share_discovery": {
+          "data": {
+            "authorization": "unavailable",
+            "configured": null,
+            "implemented": false,
+            "method": "files.share",
+            "supported": false
+          },
+          "error": null,
+          "ok": true
+        },
+        "text_share": {
+          "data": null,
+          "error": "foreground_required: Open the app to choose a file",
+          "ok": false
+        },
+        "video_discovery": {
+          "data": {
+            "authorization": "checked-on-use",
+            "callable_via_host_request": false,
+            "implemented": true,
+            "kind": "runtime-abi",
+            "method": "video.playback_controls",
+            "supported": true,
+            "version": 1
+          },
+          "error": null,
+          "ok": true
+        }
+      }
+    }
+  }
+}

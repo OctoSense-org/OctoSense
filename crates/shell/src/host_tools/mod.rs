@@ -40,6 +40,11 @@ pub mod dev_run;
 pub mod files;
 pub mod relay;
 pub mod schema;
+pub mod studio;
+#[cfg(all(unix, any(feature = "app-hub", native_mobile)))]
+pub mod studio_bundles;
+#[cfg(all(unix, any(feature = "app-hub", native_mobile)))]
+pub mod studio_image;
 #[cfg(any(feature = "app-hub", native_mobile))]
 pub(crate) mod admission;
 #[cfg(feature = "toolbox-peers")]
@@ -124,6 +129,10 @@ pub fn pump() {
     // Components' calls to their apps' host services (ADR 0014).
     #[cfg(wasm_functions)]
     crate::wasm_service::pump_host_calls();
+    // The studio's image generations (ADR 0006 slice 2): `model.image`
+    // calls under the calling agent's identity.
+    #[cfg(all(unix, any(feature = "app-hub", native_mobile)))]
+    studio_image::pump();
     for _ in 0..8 {
         let events = std::mem::take(&mut *INBOX.lock().unwrap_or_else(|e| e.into_inner()));
         if events.is_empty() {
@@ -390,6 +399,7 @@ impl ToolHost for ShellToolHost {
 /// with it and are withdrawn the moment it ends (the relay also refuses a
 /// late call). The peers asked.
 pub fn developer_mode_changed() -> usize {
+    crate::system_chat::sync_host_tools();
     #[cfg(kernel)]
     {
         crate::ai_host::app_peers::broker::reregister_tools_where(|_| true)
@@ -406,16 +416,20 @@ pub fn developer_mode_changed() -> usize {
 pub struct HostExecutor {
     dev_run: dev_run::DevRunExecutor,
     workspace: fn(&str, &str) -> Option<PathBuf>,
+    studio: studio::StudioExecutor,
 }
 
 impl HostExecutor {
     pub fn new(workspace: fn(&str, &str) -> Option<PathBuf>) -> HostExecutor {
-        HostExecutor { dev_run: dev_run::DevRunExecutor::new(workspace), workspace }
+        HostExecutor { dev_run: dev_run::DevRunExecutor::new(workspace), workspace, studio: studio::StudioExecutor::default() }
     }
 }
 
 impl ToolExecutor for HostExecutor {
     fn execute(&self, call: HostToolCall, reply: ToolReply) {
+        if studio::is_tool(&call.name) {
+            return self.studio.execute(call, reply);
+        }
         if call.name == relay::DEV_RUN {
             return self.dev_run.execute(call, reply);
         }
@@ -435,6 +449,7 @@ impl ToolExecutor for HostExecutor {
 
     fn cancel(&self, call_id: &str) {
         self.dev_run.cancel(call_id);
+        self.studio.cancel(call_id);
     }
 }
 
