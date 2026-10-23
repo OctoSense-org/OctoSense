@@ -481,3 +481,7 @@ python3 ../rom/scripts/build-home.py --help                     # the Home and B
 ## 许可证
 
 Apache License 2.0（[LICENSE](LICENSE)、[NOTICE](NOTICE)）。从 Makepad 复制的源码保留其 MIT 声明（[LICENSES/](LICENSES)）。依赖项保留各自的许可证。
+
+## 可恢复的原生动作
+
+可选的 [action-receipts 执行记录库](crates/action-receipts/README.zh-CN.md)为经过审核的原生适配器提供授权绑定、持久化执行与只读恢复。它单独验证，不改变默认 Shell。

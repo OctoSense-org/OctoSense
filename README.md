@@ -497,3 +497,7 @@ Each product is tagged on its own: `desktop-v*`, `home-v*` (the APK) and `rom-v*
 ## License
 
 Apache License 2.0 ([LICENSE](LICENSE), [NOTICE](NOTICE)). Source copied from Makepad keeps its MIT notice ([LICENSES/](LICENSES)). Dependencies keep their own licenses.
+
+## Recoverable native actions
+
+The optional [action-receipts journal](crates/action-receipts/README.md) provides consent-bound durable actions and read-only recovery for reviewed native adapters. It is separately tested and does not alter the default Shell.
