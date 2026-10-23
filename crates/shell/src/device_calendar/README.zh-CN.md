@@ -83,3 +83,5 @@ macOS 打包包含 Calendar 使用说明及 entitlement。缺少使用说明的�
 - `macos.rs`：EventKit；`phone/resources/android/java/dev/makepad/octosense/DeviceCalendarClient.java`：CalendarProvider。
 
 合成 Rust 测试覆盖范围、时区/夏令时、授权隔离和撤销、旧版本冲突、单次审核，以及拒绝合成批准。编译不代表真实 OS 权限及 provider 行为已验收。测试不读取个人日历、不授予 OS 权限。
+
+macOS 适配器在回读事件时将 Foundation 的零偏移 `GMT` 名称规范为 `UTC`：用 `UTC` 创建时，Foundation 会返回 `GMT`。毫秒时间和其他时区保持不变，已批准的 UTC 全天事件可以回读核验，无须再次写入。
