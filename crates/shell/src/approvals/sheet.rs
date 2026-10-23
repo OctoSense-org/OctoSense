@@ -95,9 +95,13 @@ pub struct Sheet {
     pub opened: u64,
 }
 
-/// `os.mail` → `Mail`.
+/// `os.mail` → `Mail`; a native app's `name` where it declares one
+/// (`octobuddy` → `OctoBuddy`).
 pub fn app_label(app: &str) -> String {
     let id = app.strip_prefix("os.").unwrap_or(app);
+    if let Some(name) = crate::native_apps::find(id).and_then(|native| native.name) {
+        return name.to_string();
+    }
     let mut chars = id.chars();
     match chars.next() {
         Some(c) => c.to_uppercase().collect::<String>() + chars.as_str(),

@@ -118,6 +118,7 @@ makepad-aichat = { workspace = true, optional = true }
 octosense-updater-ui = { workspace = true, optional = true }
 rinx = { workspace = true, features = ["octosense-module"], optional = true }
 octosense-reference = { workspace = true, optional = true }
+octosense-octobuddy = { workspace = true, features = ["octosense-module"], optional = true }
 makepad-sheets = { workspace = true, optional = true }
 makepad-terminal = { workspace = true, optional = true }
 octosense-appcard = { workspace = true, optional = true }
@@ -180,6 +181,7 @@ mobile-apps = ["app-updater", "app-rinx", "app-reference", "app-sheets", "app-hu
 app-updater = ["dep:octosense-updater-ui"]
 app-rinx = ["dep:rinx", "octos-core"]
 app-reference = ["dep:octosense-reference"]
+app-octobuddy = ["dep:octosense-octobuddy"]
 app-sheets = ["dep:makepad-sheets"]
 app-terminal = ["dep:makepad-terminal"]
 app-appcard = ["dep:octosense-appcard", "octos-core"]
