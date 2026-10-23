@@ -6239,6 +6239,16 @@ impl MatchEvent for App {
     fn handle_startup(&mut self, cx: &mut Cx) {
         runtime_host::init(cx.get_data_dir(), None);
         self.dev_generation = dev_mode::generation();
+        // Host services must be registered before `agents::start()` spawns
+        // `prepare_allowed`: that thread observes each agent's manifest and
+        // the manifest is gated by `check_manifest`, which dereferences the
+        // host services table. Without this, a cold launch races and the
+        // first system dispatch fails with "required host APIs missing"
+        // until the user retries via `agents.ask`. `register_host_services`
+        // is idempotent and cfg-gated by `app-hub` / `native_mobile`, so we
+        // match that gate here.
+        #[cfg(any(feature = "app-hub", native_mobile))]
+        apps::register_host_services();
         // An agent for every app that declares one (ADR 0004 §4): the ones
         // the person already allowed get their peer now, so the system
         // agent's peer_list shows them.
