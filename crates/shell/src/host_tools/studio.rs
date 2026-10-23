@@ -77,7 +77,7 @@ fn app_declaration(app: &str, name: &str) -> Value {
     // The system agent has the app-studio skill (`skill`); the first live run
     // showed it needs telling before it writes a bundle.
     let description = if name == "studio.bundle_check" && app == SYSTEM && skill::OFFERED {
-        format!("{description} Read the app-studio skill first (SKILL.md, then reference.md in parts): main.splash is Splash, not Swift or JavaScript, and bundle_path is the folder.")
+        format!("{description} Read the app-studio skill first (SKILL.md, then reference.md in parts): main.splash is Splash, not Swift or JavaScript.")
     } else {
         description.to_owned()
     };
