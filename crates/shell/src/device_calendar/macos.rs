@@ -36,10 +36,15 @@ unsafe fn property(object: ObjcId, selector: Sel) -> String {
 unsafe fn auth() -> i64 {
     msg_send![class!(EKEventStore),authorizationStatusForEntityType:0usize]
 }
+/// macOS 14+ reports full access as 5 and write-only as 4. Status 3 is the
+/// older authorized value. Creating an event needs any of these.
+fn access_granted(status: i64) -> bool {
+    matches!(status, 3 | 4 | 5)
+}
 fn auth_name(status: i64) -> &'static str {
     match status {
-        3 => "granted",
         0 => "not_determined",
+        status if access_granted(status) => "granted",
         _ => "denied",
     }
 }
@@ -145,7 +150,7 @@ pub(super) fn execute(
             return Err("platform_error: Cannot open EventKit".into());
         }
         if matches!(command, Command::Permission) {
-            if auth() == 3 {
+            if access_granted(auth()) {
                 return Ok(json!({"os_permission":"granted"}));
             }
             // Never trigger Apple's privacy termination for a developer executable
@@ -163,22 +168,46 @@ pub(super) fn execute(
                 return Err("host_not_configured: Install the packaged app with Calendar usage descriptions".into());
             }
             let (tx, rx) = mpsc::sync_channel(1);
-            let completion = objc_block!(move |granted: BOOL, _error: ObjcId| {
-                let _ = tx.try_send(granted == YES);
-            });
             guard()?;
-            if modern == YES {
-                let _: () = msg_send![store.0,requestFullAccessToEventsWithCompletion:&completion];
-            } else {
-                let _: () =
-                    msg_send![store.0,requestAccessToEntityType:0usize completion:&completion];
-            }
+            // EventKit completes a full-access request made off the main thread
+            // immediately, with granted = false, and leaves status at
+            // notDetermined. The worker only waits; the request itself runs
+            // on the main queue.
+            let modern_full = modern == YES;
+            let request = objc_block!(move || {
+                let live = Owned(unsafe { msg_send![class!(EKEventStore), new] });
+                if live.0 == nil {
+                    let _ = tx.try_send(false);
+                    return;
+                }
+                let kept = live.0 as usize;
+                std::mem::forget(live);
+                let tx_done = tx.clone();
+                let completion = objc_block!(move |granted: BOOL, _error: ObjcId| {
+                    unsafe {
+                        let object = kept as ObjcId;
+                        let _: () = msg_send![object, release];
+                    }
+                    let _ = tx_done.try_send(granted == YES);
+                });
+                unsafe {
+                    let object = kept as ObjcId;
+                    if modern_full {
+                        let _: () = msg_send![object,requestFullAccessToEventsWithCompletion:&completion];
+                    } else {
+                        let _: () = msg_send![object,requestAccessToEntityType:0usize completion:&completion];
+                    }
+                }
+            });
+            let queue: ObjcId = msg_send![class!(NSOperationQueue), mainQueue];
+            let _: () = msg_send![queue, addOperationWithBlock:&request];
             let granted = rx
                 .recv_timeout(Duration::from_secs(40))
                 .map_err(|_| "timeout: Calendar OS permission still unanswered")?;
-            return Ok(json!({"os_permission":if granted&&auth()==3{"granted"}else{"denied"}}));
+            let allowed = granted || access_granted(auth());
+            return Ok(json!({"os_permission":if allowed{"granted"}else{"denied"}}));
         }
-        if auth() != 3 {
+        if !access_granted(auth()) {
             return Err("authorization_required: OS calendar permission is not granted".into());
         }
         match command {

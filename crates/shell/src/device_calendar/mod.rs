@@ -560,6 +560,7 @@ fn approve(ticket: &str, contained: bool, down: bool, up: bool) -> Result<(), St
             calendar,
         }),
     };
+    FOREGROUND.store(true, Ordering::Release);
     if let Err(error) = enqueue(context.clone(), command, Purpose::Commit(ticket.into())) {
         finish_review(ticket, &context, Err(error.clone()));
         return Err(error);
@@ -770,8 +771,16 @@ pub fn handle_event(cx: &mut Cx, event: &Event) {
         }
     }
     let mut s = state().lock().unwrap_or_else(|e| e.into_inner());
+    // The OS permission dialog and this review sheet take focus after Approve.
+    // That must not cancel the commit the person just confirmed.
+    let confirming = s
+        .reviews
+        .values()
+        .any(|review| matches!(review.phase, Phase::Submitted));
     match event {
-        Event::Pause | Event::Background | Event::WindowLostFocus(_) => s.background = true,
+        Event::Pause | Event::Background | Event::WindowLostFocus(_) if !confirming => {
+            s.background = true
+        }
         Event::Resume | Event::Foreground | Event::WindowGotFocus(_) => s.background = false,
         _ => {}
     }
