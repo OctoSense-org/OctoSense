@@ -1145,6 +1145,30 @@ fn no_rule_matches_an_external_client_even_if_the_caller_is_mislabelled() {
 // ---------------------------------------------------------------- consent (G10, G5)
 
 #[test]
+fn closing_an_app_dismisses_only_its_prompt_and_does_not_decide_consent() {
+    let mut c = ConsentStore::memory();
+    let summary = |app: &str| AgentSummary { app: app.into(), name: app.into(), ..Default::default() };
+    c.ask(summary("calculator"), false);
+    c.ask(summary("clock"), false);
+    let generation = c.generation();
+    c.cancel_prompt("calculator");
+    assert_eq!(c.generation(), generation + 1);
+    assert_eq!(c.state("calculator"), State::Undecided);
+    assert_eq!(c.prompt().unwrap().app, "clock");
+    assert!(c.take_allowed().is_empty());
+    assert!(c.take_revoked().is_empty());
+    c.cancel_prompt("calculator");
+    assert_eq!(c.generation(), generation + 1, "already closed: no redraw");
+    c.cancel_prompt("clock");
+    c.ask(summary("calculator"), false);
+    assert_eq!(c.prompt().unwrap().app, "calculator", "reopen asks again");
+    c.set(&ApprovalGesture::sheet_tap(), "calculator", false, T0);
+    c.cancel_prompt("calculator");
+    assert_eq!(c.ask(summary("calculator"), false), State::Denied);
+    assert!(c.prompt().is_none(), "a saved answer is unchanged");
+}
+
+#[test]
 fn turning_an_agent_off_queues_its_revocation_once() {
     let mut c = ConsentStore::memory();
     c.set(&ApprovalGesture::settings_tap(), "rinx", true, T0);
