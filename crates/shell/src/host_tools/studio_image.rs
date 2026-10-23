@@ -72,13 +72,13 @@ const NO_SUCH_JOB: &str = "no such image job in this conversation";
 pub fn declaration(app: &str) -> Value {
     json!({
         "name": TOOL, "app": app,
-        "description": "Developer mode only; the system agent's tool. Generate one image with the person's configured image provider and write it into your workspace, for an app's artwork or a design to build from. Give prompt (and optionally size, seed, class) to start; the reply has path, width, height and format, or, when the provider needs longer than this call, a job id: call again with only that job until state is done. Each generation spends the daily image budget and is approved by developer mode without asking; some providers refuse seed or 512x512; the image never leaves the workspace by itself.",
+        "description": "Developer mode only; the system agent's tool. Generate one image with the person's configured image provider and write it into your workspace, for an app's artwork or a design to build from. To start, give prompt (and optionally size, seed, class) and nothing else: the tool assigns the job id itself. The reply has path, width, height and format, or, when the provider needs longer than this call, {job, state: \"running\"}: then call again with only that job value, repeating until state is done. A call with a prompt always starts a new generation, whatever else it carries. Each generation spends the daily image budget and is approved by developer mode without asking; some providers refuse seed or 512x512; the image never leaves the workspace by itself.",
         "input_schema": {"type":"object","properties":{
-            "prompt":{"type":"string","minLength":1,"maxLength":4096},
-            "size":{"type":"string","enum":SIZES},
-            "seed":{"type":"integer","minimum":0,"maximum":4294967295u64},
-            "class":{"type":"string","enum":["fast","strong"]},
-            "job":{"type":"string","minLength":1,"maxLength":100}
+            "prompt":{"type":"string","minLength":1,"maxLength":4096,"description":"What to generate. Starts a new generation; leave job out."},
+            "size":{"type":"string","enum":SIZES,"description":"Pixel size; default 1024x1024."},
+            "seed":{"type":"integer","minimum":0,"maximum":4294967295u64,"description":"Optional seed; some providers refuse it."},
+            "class":{"type":"string","enum":["fast","strong"],"description":"Model class; default fast."},
+            "job":{"type":"string","minLength":1,"maxLength":100,"description":"Only to poll: the job value a previous reply returned. Never invent one, and do not send it with a prompt."}
         },"additionalProperties":false},
         "output_schema": {"type":"object","properties":{
             "job":{"type":"string"},"state":{"type":"string","enum":["running","done"]},
@@ -590,9 +590,13 @@ pub fn execute(
     let run = || -> Result<Value, String> {
         let scope = scoped::Workspace::open(root, call.context_id.as_deref())?;
         let owner = Owner::of(app, call);
+        // A prompt starts a generation, whatever else the call carries: a
+        // model that fills every field sends a `job` of its own making with
+        // its prompt, and a refusal here taught it nothing (observed on the
+        // first live runs). Only a call without a prompt polls.
         let (id, started) = match (call.args["job"].as_str(), call.args["prompt"].as_str()) {
             (Some(job), None) => (job.to_string(), None),
-            (None, Some(_)) => {
+            (_, Some(_)) => {
                 // Built before a slot is taken: an invalid request holds none.
                 let service_call = service_call(app, &call.args)?;
                 let key = NEXT_KEY.fetch_add(1, Ordering::Relaxed);
@@ -628,7 +632,7 @@ pub fn execute(
                 makepad_widgets::makepad_platform::thread::SignalToUI::set_ui_signal();
                 (id, Some(key))
             }
-            _ => return Err("give prompt to start an image, or job alone to poll one".into()),
+            (None, None) => return Err("give prompt to start an image, or the job value a reply returned to poll one".into()),
         };
         // Wait for this call's share of the deadline; a running job outlives
         // the call and is polled with its id.
@@ -874,9 +878,12 @@ mod tests {
         DELAY_MS.store(1500, Ordering::SeqCst);
         let calls = CALLS.load(Ordering::SeqCst);
         let cancel = Arc::new(AtomicBool::new(false));
-        let first = run(call("h1", "sys", json!({"prompt": "a red square"}), 2000), &workspace, cancel.clone(), || {}).unwrap();
+        // The job a model invents beside its prompt is ignored: the call
+        // starts a generation and the reply names the real job.
+        let first = run(call("h1", "sys", json!({"prompt": "a red square", "job": "new"}), 2000), &workspace, cancel.clone(), || {}).unwrap();
         assert_eq!(first["state"], "running");
         let job = first["job"].as_str().unwrap().to_string();
+        assert_ne!(job, "new");
         // Another conversation cannot collect it.
         let other = run(call("o1", "other", json!({"job": job}), 2000), &workspace, cancel.clone(), || {});
         assert!(other.unwrap_err().contains(NO_SUCH_JOB));
@@ -1201,6 +1208,8 @@ mod tests {
         assert!(super::super::schema::check(schema, &json!({"job":"j"})).is_ok());
         assert!(super::super::schema::check(schema, &json!({"prompt":"x","size":"640x480"})).is_err());
         assert!(super::super::schema::check(schema, &json!({"prompt":"x","output_path":"a.png"})).is_err());
+        // A prompt with a made-up job is a start, not a refusal (see execute).
+        assert!(super::super::schema::check(schema, &json!({"prompt":"x","job":"new"})).is_ok());
         assert_eq!(decl["risk"], "act");
         let request = service_call_in(SYSTEM, &json!({"prompt":"p","size":"512x512","seed":3}), std::env::temp_dir(), SERVICE);
         assert_eq!(request.service, "model.image");
