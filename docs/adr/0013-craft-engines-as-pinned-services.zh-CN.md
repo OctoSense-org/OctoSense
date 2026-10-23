@@ -137,7 +137,8 @@ vector、pdf）现已有代理工具，系统代理可以调用：
   每个服务都嵌入自己的技能（`src/skill.rs`），因此构建发布的技能总与其引擎一致。
   Shell 用与服务相同的条件注册已链接引擎的技能
   （`crates/shell/src/system_chat/skills.rs`）：sheet 随 `app-hub`，photo 和
-  另外十个随 `craft-engines`。
+  另外十个随 `craft-engines`。开发构建中 App Studio 的 `app-studio` 技能也走
+  同一机制（[ADR 0006](0006-app-studio-on-the-phone.md)）。
 - **每次内核启动前安装。** 内核服务（`crates/kernel/src/skills.rs`）把它们写入
   octos 为系统代理的 profile 读取的技能目录 `<core dir>/profiles/_main/data/skills`，
   每个都带 `.octosense-managed` 标记。它刷新有变化的技能，删除不再注册的受管理
