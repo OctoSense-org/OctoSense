@@ -33,6 +33,20 @@ unsafe fn property(object: ObjcId, selector: Sel) -> String {
             .unwrap(),
     )
 }
+
+unsafe fn timezone_name(zone: ObjcId) -> String {
+    if zone == nil {
+        return "UTC".into();
+    }
+    let name = property(zone, sel!(name));
+    // Foundation canonicalizes NSTimeZone("UTC") to "GMT". Keep the
+    // host API's UTC spelling on readback; dates and other zones are unchanged.
+    if name == "GMT" {
+        "UTC".into()
+    } else {
+        name
+    }
+}
 unsafe fn auth() -> i64 {
     msg_send![class!(EKEventStore),authorizationStatusForEntityType:0usize]
 }
@@ -95,7 +109,7 @@ unsafe fn event_data(object: ObjcId) -> Result<EventData, String> {
     let recurring: BOOL = msg_send![object, hasRecurrenceRules];
     let attendees: BOOL = msg_send![object, hasAttendees];
     let all_day = all_day == YES;
-    let mut zone = property(timezone, sel!(name));
+    let mut zone = timezone_name(timezone);
     let mut first = (start * 1000.).round() as i64;
     let mut last = (end * 1000.).round() as i64;
     if all_day {
@@ -122,6 +136,33 @@ unsafe fn event_data(object: ObjcId) -> Result<EventData, String> {
         return Err("limit: Event content exceeds public API bounds".into());
     }
     Ok(data)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn foundation_utc_readback_preserves_all_day_contract_and_other_zones() {
+        unsafe {
+            let _pool = Owned(msg_send![class!(NSAutoreleasePool), new]);
+            let utc: ObjcId =
+                msg_send![class!(NSTimeZone), timeZoneWithName:str_to_nsstring("UTC")];
+            let name = timezone_name(utc);
+            assert_eq!(name, "UTC");
+            assert!(super::super::model::event(&json!({
+                "title":"Synthetic day", "start_ms":86400000,
+                "end_ms":172800000, "timezone":name, "all_day":true
+            }))
+            .is_ok());
+            let shanghai: ObjcId =
+                msg_send![class!(NSTimeZone), timeZoneWithName:str_to_nsstring("Asia/Shanghai")];
+            assert_eq!(timezone_name(shanghai), "Asia/Shanghai");
+            let offset: ObjcId =
+                msg_send![class!(NSTimeZone), timeZoneWithName:str_to_nsstring("Etc/GMT+8")];
+            assert_eq!(timezone_name(offset), "Etc/GMT+8");
+        }
+    }
 }
 unsafe fn get(store: ObjcId, expected: &Calendar, id: &str) -> Result<(ObjcId, EventData), String> {
     selected(store, expected, false)?;

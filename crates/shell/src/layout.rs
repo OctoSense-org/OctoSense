@@ -506,6 +506,17 @@ impl WmLayout {
         self.insert_on(self.active, client, area, gap);
     }
 
+    /// [`insert`](Self::insert) for a client whose app asks its desktop
+    /// window to open at `preferred` (width, height) points: a script app's
+    /// manifest `window`, or the size a native module asks for a window it
+    /// opens, which the desk clamps, above a dock that covers `dock` points
+    /// of the desk's bottom (`DesktopWindows::ensure_sized`). `None` is
+    /// `insert`.
+    pub fn insert_sized(&mut self, client: ClientId, area: LRect, gap: f64, preferred: Option<(f64, f64)>, dock: f64) {
+        self.desktop.ensure_sized(client, area, preferred, dock);
+        self.insert(client, area, gap);
+    }
+
     pub fn insert_on(&mut self, ws: usize, client: ClientId, area: LRect, gap: f64) {
         self.desktop.ensure(client, area);
         self.insert_at(ws, client, area, gap, !self.desktop.enabled);
@@ -717,6 +728,13 @@ impl WmLayout {
         if self.desktop.enabled && ws < WORKSPACES {
             let clients = self.clients_on(ws);
             let mut out = self.desktop.rects(&clients, area);
+            // A full-screen window reaches past the outer gap: the whole desk.
+            let outer = self.outer_rect(area, gap);
+            for (client, rect) in out.iter_mut() {
+                if self.desktop.get(*client).is_some_and(|w| w.fullscreen) {
+                    *rect = outer;
+                }
+            }
             // Native preview floats keep their explicit geometry and focus policy.
             for f in &self.floats {
                 if (f.ws == ws || f.pinned) && !self.desktop.minimized(f.client) && (f.pinned || self.desktop.get(f.client).is_none()) {
@@ -1455,9 +1473,17 @@ impl WmLayout {
     /// SUPER+F / SUPER+ALT+F. Toggling the same mode clears it; a different
     /// mode replaces it.
     pub fn toggle_fullscreen_mode(&mut self, mode: FullscreenMode) {
+        // On a floating desk SUPER+F is macOS's full screen and SUPER+ALT+F
+        // its zoom, the window's own maximize.
         if self.desktop.enabled {
             if let Some(client) = self.focused_client() {
-                if let Some(w) = self.desktop.get_mut(client) { w.maximized = !w.maximized; }
+                if let Some(w) = self.desktop.get_mut(client) {
+                    match mode {
+                        FullscreenMode::Fullscreen => w.fullscreen = !w.fullscreen,
+                        _ => w.maximized = !w.maximized,
+                    }
+                    w.minimized = false;
+                }
             }
             return;
         }
@@ -1485,6 +1511,77 @@ impl WmLayout {
 
     pub fn fullscreen_mode(&self) -> FullscreenMode {
         self.workspaces[self.active].fullscreen_mode
+    }
+
+    /// Whether `client` is full screen: its floating window
+    /// (`DesktopWindow::fullscreen`) on a floating desk, the workspace's
+    /// SUPER+F fullscreen on a tiling one.
+    pub fn is_fullscreen(&self, client: ClientId) -> bool {
+        if self.desktop.enabled {
+            return self.desktop.get(client).is_some_and(|w| w.fullscreen);
+        }
+        self.workspaces.iter().any(|w| w.fullscreen == Some(client) && w.fullscreen_mode == FullscreenMode::Fullscreen)
+    }
+
+    /// Put `client` in full screen or take it out, set rather than toggled:
+    /// an app's presentation (`window.fullscreen`, app_fullscreen.rs) names
+    /// its own window, where SUPER+F toggles the focused one. On a floating
+    /// desk it is the window's `DesktopWindow::fullscreen` (a minimized window
+    /// is shown again; its rect, its zoom and its place in the stack stay as
+    /// they are); on a tiling desk it is the workspace's SUPER+F fullscreen,
+    /// which a tiled float does not take. False when nothing changed.
+    pub fn set_fullscreen(&mut self, client: ClientId, on: bool) -> bool {
+        if self.desktop.enabled {
+            let Some(w) = self.desktop.get_mut(client) else {
+                return false;
+            };
+            if w.fullscreen == on {
+                return false;
+            }
+            w.fullscreen = on;
+            if on {
+                w.minimized = false;
+            }
+            return true;
+        }
+        let Some(ws) = self.workspace_of(client) else {
+            return false;
+        };
+        if on && self.is_float(client) {
+            return false;
+        }
+        let w = &mut self.workspaces[ws];
+        let full = w.fullscreen == Some(client) && w.fullscreen_mode == FullscreenMode::Fullscreen;
+        if full == on {
+            return false;
+        }
+        if on {
+            w.fullscreen = Some(client);
+            w.fullscreen_mode = FullscreenMode::Fullscreen;
+        } else {
+            w.fullscreen = None;
+            w.fullscreen_mode = FullscreenMode::None;
+        }
+        true
+    }
+
+    /// Take `client` out of full screen on both desks, the floating one and
+    /// the tiling one, whichever is up: a presentation ends this way even
+    /// after a style switch. True when anything changed.
+    pub fn clear_fullscreen(&mut self, client: ClientId) -> bool {
+        let mut changed = false;
+        if let Some(w) = self.desktop.get_mut(client).filter(|w| w.fullscreen) {
+            w.fullscreen = false;
+            changed = true;
+        }
+        for w in &mut self.workspaces {
+            if w.fullscreen == Some(client) && w.fullscreen_mode == FullscreenMode::Fullscreen {
+                w.fullscreen = None;
+                w.fullscreen_mode = FullscreenMode::None;
+                changed = true;
+            }
+        }
+        changed
     }
 
     /// SUPER+CTRL+F — `fullscreenstate 0 2`: the client is TOLD it is
@@ -1961,6 +2058,104 @@ mod tests {
         l.insert(2, AREA, 0.0);
         l.insert(3, AREA, 0.0);
         l
+    }
+
+    #[test]
+    fn on_a_floating_desk_super_f_is_full_screen_and_super_alt_f_zoom() {
+        let mut l = WmLayout::new();
+        l.desktop.enabled = true;
+        l.insert(1, AREA, 0.0);
+        l.toggle_fullscreen_mode(FullscreenMode::Fullscreen);
+        let w = l.desktop.get(1).unwrap();
+        assert!(w.fullscreen && !w.maximized);
+        assert!(l.is_fullscreen(1));
+        // The workspace's own (tiling) fullscreen is not touched.
+        assert_eq!(l.fullscreen_mode(), FullscreenMode::None);
+        l.toggle_fullscreen_mode(FullscreenMode::Maximized);
+        let w = l.desktop.get(1).unwrap();
+        assert!(w.fullscreen && w.maximized, "zoom is independent of full screen");
+        l.toggle_fullscreen_mode(FullscreenMode::Fullscreen);
+        assert!(!l.is_fullscreen(1));
+        assert!(l.desktop.get(1).unwrap().maximized, "leaving full screen keeps the zoom");
+    }
+
+    #[test]
+    fn a_full_screen_window_reaches_past_the_outer_gap() {
+        let mut l = WmLayout::new();
+        l.desktop.enabled = true;
+        let area = LRect::new(10.0, 10.0, 980.0, 580.0);
+        l.insert(1, area, 0.0);
+        l.toggle_fullscreen_mode(FullscreenMode::Fullscreen);
+        let r = l.rects(area, 10.0).into_iter().find(|(c, _)| *c == 1).unwrap().1;
+        assert_eq!(r, LRect::new(0.0, 0.0, 1000.0, 600.0));
+    }
+
+    #[test]
+    fn on_a_tiling_desk_only_super_f_counts_as_full_screen() {
+        let mut l = abc();
+        l.set_focus(2);
+        l.toggle_fullscreen_mode(FullscreenMode::Maximized);
+        assert!(!l.is_fullscreen(2));
+        l.toggle_fullscreen_mode(FullscreenMode::Fullscreen);
+        assert!(l.is_fullscreen(2) && !l.is_fullscreen(1));
+    }
+
+    /// An app's presentation sets its own window's full screen rather than
+    /// toggling the focused one's, on a floating desk and a tiling one, and
+    /// a closed window leaves none behind.
+    #[test]
+    fn set_fullscreen_sets_a_named_window_and_a_closed_window_ends_it() {
+        let mut l = WmLayout::new();
+        l.desktop.enabled = true;
+        let desk = LRect::new(-10.0, -10.0, 1020.0, 620.0);
+        l.set_outer(desk);
+        for client in 1..=3 {
+            l.insert(client, AREA, 10.0);
+        }
+        let before = l.rects(AREA, 10.0);
+        l.desktop.get_mut(1).unwrap().minimized = true;
+        assert!(l.set_fullscreen(1, true), "not the focused window (3)");
+        assert!(!l.set_fullscreen(1, true), "already");
+        assert!(!l.desktop.get(1).unwrap().minimized, "shown again");
+        assert!(l.is_fullscreen(1) && !l.is_fullscreen(3));
+        assert_eq!(l.rect_of(1, AREA, 10.0), Some(desk));
+        assert_eq!(l.focused_client(), Some(3), "focus is the caller's business");
+        assert!(l.set_fullscreen(1, false));
+        assert!(!l.set_fullscreen(1, false));
+        assert_eq!(l.rects(AREA, 10.0), before, "everything back as it was");
+        assert!(l.set_fullscreen(2, true));
+        l.remove(2);
+        assert!(!l.is_fullscreen(2));
+        assert!(!l.set_fullscreen(2, true), "no such window");
+
+        // Tiling: the workspace's SUPER+F fullscreen, which Full width
+        // (maximized) gives way to; a float takes none.
+        let mut l = abc();
+        l.toggle_fullscreen_mode(FullscreenMode::Maximized);
+        assert!(l.set_fullscreen(2, true));
+        assert_eq!(l.rects(AREA, 8.0), vec![(2, LRect::new(-8.0, -8.0, 1016.0, 616.0))]);
+        assert!(l.is_fullscreen(2) && !l.is_fullscreen(3));
+        assert!(l.set_fullscreen(2, false));
+        assert_eq!(l.rects(AREA, 0.0).len(), 3);
+        l.toggle_float(3, AREA, 0.0);
+        assert!(!l.set_fullscreen(3, true));
+    }
+
+    /// A presentation ends in whichever style is up now: the window's
+    /// floating full screen and its workspace's tiled one both go.
+    #[test]
+    fn clear_fullscreen_clears_both_desks() {
+        let mut l = abc();
+        l.desktop.enabled = true;
+        assert!(l.set_fullscreen(3, true));
+        l.desktop.enabled = false;
+        assert!(!l.is_fullscreen(3), "tiling, a floating full screen covers nothing");
+        assert!(l.set_fullscreen(3, true));
+        assert!(l.clear_fullscreen(3));
+        assert!(!l.desktop.get(3).unwrap().fullscreen && !l.is_fullscreen(3));
+        l.desktop.enabled = true;
+        assert!(!l.is_fullscreen(3));
+        assert!(!l.clear_fullscreen(3), "nothing left to clear");
     }
 
     fn rect_of(l: &WmLayout, c: ClientId) -> LRect {

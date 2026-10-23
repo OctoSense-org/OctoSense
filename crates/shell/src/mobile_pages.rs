@@ -181,6 +181,7 @@ pub struct PagesState {
     /// The settle's speed (pages per second): a lightly damped spring, so a
     /// page lands with a hint of overshoot instead of a dead stop.
     velocity: f64,
+    held: bool,
     /// Where `index` is heading (a page position).
     target: i64,
     /// A commit or a jump reached the library: the shell opens it once.
@@ -194,6 +195,8 @@ pub struct PagesState {
     /// Stable return anchor; opening a workspace never changes feed item sizes.
     pub workspace_source: Option<String>,
     glance_velocity: f64,
+    pub glance_stretch: f64,
+    glance_stretch_velocity: f64,
     glance_track: Vec<(f64, f64)>,
     /// Today's date as the glance header shows it.
     pub date: String,
@@ -201,7 +204,7 @@ pub struct PagesState {
 
 impl Default for PagesState {
     fn default() -> Self {
-        Self { pages: Vec::new(), index: 0.0, drag: 0.0, velocity: 0.0, target: 0, open_library: false, pending: None, feed: GlanceFeed::default(), glance_scroll: 0.0, workspace_source: None, glance_velocity: 0.0, glance_track: Vec::new(), date: String::new() }
+        Self { pages: Vec::new(), index: 0.0, drag: 0.0, velocity: 0.0, held: false, target: 0, open_library: false, pending: None, feed: GlanceFeed::default(), glance_scroll: 0.0, workspace_source: None, glance_velocity: 0.0, glance_stretch: 0.0, glance_stretch_velocity: 0.0, glance_track: Vec::new(), date: String::new() }
     }
 }
 
@@ -281,7 +284,8 @@ impl PagesState {
         pages.pop();
         pages.extend(widgets.iter().take(16).map(|id|HomePage::Widget{id:*id}));
         pages.push(HomePage::Library);
-        if pages != self.pages {
+        let changed = pages != self.pages;
+        if changed {
             if let Some(id)=current_widget {
                 if let Some(position)=pages.iter().position(|page|matches!(page,HomePage::Widget{id:other} if *other==id)) {
                     self.index+=(position as i64-1-self.current()) as f64;
@@ -298,7 +302,7 @@ impl PagesState {
             self.index = self.target as f64;
         }
         self.target = self.target.clamp(-1, last);
-        self.index = self.index.clamp(-1.0, last as f64);
+        if changed { self.index = self.index.clamp(-1.0, last as f64); }
     }
 
     /// Go to page `n` (-1 is the glance page; the library's position and
@@ -306,14 +310,25 @@ impl PagesState {
     /// jump waits for `sync`, and lands on an apps page.
     pub fn jump(&mut self, n: i64) {
         self.drag = 0.0;
+        self.held = false;
         if !self.known() { self.pending = Some(n); return; }
         let lib = self.library_index();
         self.target = n.clamp(-1, lib);
         if self.target == lib { self.open_library = true; }
     }
 
-    /// Drive the pager one frame from the shell gesture (None when there is
-    /// none, or the home page is not the screen). True while animating.
+    /// Grab at the currently displayed position, including an unfinished settle.
+    pub fn touch(&mut self) {
+        self.index += self.drag;
+        self.drag = 0.0;
+        self.target = self.index.round().clamp(-1.0, self.library_index() as f64) as i64;
+        self.velocity = 0.0;
+        self.held = true;
+    }
+    pub fn release(&mut self, finger_velocity: f64, width: f64) {
+        self.held = false;
+        self.velocity = (-finger_velocity / width.max(1.0)).clamp(-8.0, 8.0);
+    }
     pub fn step(&mut self, dt: f64, gesture: Option<ShellGesture>) -> bool {
         self.step_with_motion(dt, gesture, false)
     }
@@ -342,23 +357,21 @@ impl PagesState {
                 if self.known() && self.target == lib as i64 { self.open_library = true; }
             }
             Some(ShellGesture::Cancel(GestureKind::Page(_))) => {
-                self.target = self.index.round() as i64;
+                self.target = self.index.round().clamp(-1.0, lib) as i64;
+                self.index += self.drag;
+                self.drag = 0.0;
             }
             _ => {}
         }
-        if dragging { self.velocity = 0.0; return true; }
+        if dragging { return true; }
+        if self.held { return false; }
         let t = if reduced {1.0} else {1.0 - (-dt * 16.0).exp()};
         self.drag += (0.0 - self.drag) * t;
         if self.drag.abs() < 0.001 { self.drag = 0.0; }
         let target = self.target as f64;
         if reduced { self.index = target; self.velocity = 0.0; self.drag = 0.0; return false; }
-        // Damping ratio 0.8: about a third of a page per second of overshoot
-        // at most, gone within a quarter second.
-        let k: f64 = 420.0;
-        let c = 2.0 * k.sqrt() * 0.8;
-        let dt = dt.min(1.0 / 30.0);
-        self.velocity += ((target - self.index) * k - self.velocity * c) * dt;
-        self.index += self.velocity * dt;
+        // A small overshoot, with release momentum and exact time integration.
+        crate::mobile_motion::spring(&mut self.index, &mut self.velocity, target, dt, 420.0, 0.85);
         if (target - self.index).abs() < 0.0015 && self.velocity.abs() < 0.03 { self.index = target; self.velocity = 0.0; }
         self.drag != 0.0 || self.index != target
     }
@@ -378,6 +391,7 @@ impl PagesState {
     pub fn anchor_card(&mut self, key: &str) {
         self.workspace_source = Some(key.into());
         self.glance_velocity = 0.0;
+        self.glance_stretch_velocity = 0.0;
         self.glance_track.clear();
     }
     pub fn clear_card_anchor(&mut self, height: f64) {
@@ -386,7 +400,7 @@ impl PagesState {
     }
     fn glance_height(&self, _height: f64) -> f64 { self.feed.column_height(GLANCE_GAP) }
     fn card_rect(&self, key: &str, screen: Rect) -> Option<Rect> {
-        let mut y = screen.pos.y + GLANCE_HEADER - self.glance_scroll;
+        let mut y = screen.pos.y + GLANCE_HEADER - self.glance_scroll + self.glance_stretch;
         for item in self.feed.items() {
             if matches!(item, GlanceItem::Card(card) if card.key() == key) {
                 return Some(rect(screen.pos.x + 20.0, y, screen.size.x - 40.0, item.height()));
@@ -403,6 +417,7 @@ impl PagesState {
     fn anchor_rect(&self, screen: Rect) -> Option<Rect> { self.card_rect(self.workspace_source.as_deref()?, screen) }
     pub fn glance_touch(&mut self, y: f64, time: f64) {
         self.glance_velocity = 0.0;
+        self.glance_stretch_velocity = 0.0;
         self.glance_track.clear();
         self.glance_sample(y, time);
     }
@@ -417,26 +432,24 @@ impl PagesState {
             _ => 0.0,
         };
         if self.glance_velocity.abs() < 250.0 { self.glance_velocity = 0.0; }
+        if self.glance_stretch != 0.0 {
+            self.glance_stretch_velocity = crate::mobile_motion::stretch_velocity(self.glance_stretch, -self.glance_velocity);
+            self.glance_velocity = 0.0;
+        }
         self.glance_track.clear();
     }
-    pub fn step_glance(&mut self, dt: f64, height: f64, idle: bool, _reduced: bool) -> bool {
-        let mut active = false;
-        if self.glance_velocity != 0.0 {
-            if idle && self.on_glance() {
-                let before = self.glance_scroll;
-                self.scroll_glance(self.glance_velocity * dt.min(0.05), height);
-                self.glance_velocity *= (-dt * 5.0).exp();
-                if self.glance_velocity.abs() < 30.0 || before == self.glance_scroll { self.glance_velocity = 0.0; }
-                active |= self.glance_velocity != 0.0;
-            } else { self.glance_velocity = 0.0; }
-        }
-        active
+    pub fn step_glance(&mut self, dt: f64, height: f64, idle: bool, reduced: bool) -> bool {
+        if !idle || !self.on_glance() { return false; }
+        let max = self.glance_scroll_max(height);
+        crate::mobile_motion::scroll(&mut self.glance_scroll, &mut self.glance_velocity,
+            &mut self.glance_stretch, &mut self.glance_stretch_velocity, max, dt, 4.0, reduced)
     }
 
     /// Scroll the glance column by `dy` points on a screen `height` tall.
     pub fn scroll_glance(&mut self, dy: f64, height: f64) {
         let max = self.glance_scroll_max(height);
         self.glance_scroll = (self.glance_scroll + dy).clamp(0.0, max);
+        if dy != 0.0 { self.glance_stretch=0.0; self.glance_stretch_velocity=0.0; self.glance_velocity=0.0; }
     }
 
     fn glance_scroll_max(&self, height: f64) -> f64 {
@@ -462,7 +475,8 @@ impl PagesState {
             gesture.shell = false;
             -delta.y
         };
-        self.scroll_glance(dy, screen.size.y);
+        let max = self.glance_scroll_max(screen.size.y);
+        crate::mobile_motion::drag(&mut self.glance_scroll, &mut self.glance_stretch, dy, max);
         true
     }
 
@@ -491,6 +505,14 @@ const GLANCE_GAP: f64 = 12.0;
 pub(crate) fn glance_column(screen: Rect, dx: f64) -> Rect {
     rect(screen.pos.x + dx, screen.pos.y + GLANCE_HEADER, screen.size.x,
         (screen.size.y - GLANCE_HEADER - GLANCE_BOTTOM).max(0.0))
+}
+
+/// Cull before resolving icons or drawing labels. GPU clipping happens too
+/// late to avoid their first-use CPU work on a barely overlapping page.
+pub(crate) fn intersects_screen(item: Rect, screen: Rect) -> bool {
+    item.pos.x < screen.pos.x + screen.size.x && item.pos.x + item.size.x > screen.pos.x
+        && item.pos.y < screen.pos.y + screen.size.y && item.pos.y + item.size.y > screen.pos.y
+        && item.size.x > 0.0 && item.size.y > 0.0
 }
 
 /// Refresh the page model from the shell each frame before the home draws:
@@ -640,7 +662,7 @@ impl PhoneSurface {
         // navigation bands match the page instead of showing bare wallpaper.
         let i = &phone.insets;
         let dimmed = rect(page.pos.x, page.pos.y - i.top, page.size.x, page.size.y + i.top + i.bottom);
-        self.rounded(cx, dimmed, 0.0, alpha(self.theme_ground(if dark { rgb(8, 9, 16) } else { rgb(228, 231, 242) }), 0.86 * opacity));
+        self.d.solid(cx, dimmed, alpha(self.theme_ground(if dark { rgb(8, 9, 16) } else { rgb(228, 231, 242) }), 0.86 * opacity));
         let ink = alpha(self.theme_ink(if dark { rgb(255, 255, 255) } else { rgb(26, 26, 32) }), opacity);
         let top = page.pos.y + 36.0;
         let left = page.pos.x + 20.0;
@@ -650,16 +672,27 @@ impl PhoneSurface {
         self.d.label_elided(cx, rect(left, top + 32.0, heading_width, 20.0), false, 13.0, alpha(ink, 0.7 * opacity), HAlign::Left, &phone.pages.date);
         let column = glance_column(screen, dx).clip((screen.pos, screen.pos + screen.size));
         let bottom = column.pos.y + column.size.y;
-        let mut y = page.pos.y + GLANCE_HEADER - phone.pages.glance_scroll;
+        let mut y = page.pos.y + GLANCE_HEADER - phone.pages.glance_scroll + phone.pages.glance_stretch;
         // Painting and hit testing use the same viewport. Previously only
         // hits were clipped, so text painted behind the launcher controls.
         cx.begin_turtle(Walk::abs_rect(column), Layout::default());
+        let mut visible = Vec::new();
         for item in phone.pages.feed.items() {
             let h = item.height();
             if y + h > column.pos.y && y < bottom {
-                self.draw_glance_card(cx, rect(left, y, width, h), column, item, style, dark, ink, opacity);
+                let r = rect(left, y, width, h);
+                visible.push((item, r));
+                // Cards do not overlap. Their backgrounds can be one batch
+                // below all the text instead of splitting each text batch.
+                let (radius, fill_alpha) = if matches!(item, GlanceItem::Card(_)) {
+                    (10.0, if dark { 0.18 } else { 0.92 })
+                } else { (18.0, if dark { 0.10 } else { 0.55 }) };
+                self.rounded(cx, r, radius, alpha(self.theme_face(rgb(255,255,255)), fill_alpha * opacity));
             }
             y += h + GLANCE_GAP;
+        }
+        for (item, r) in visible {
+            self.draw_glance_card(cx, r, column, item, style, ink, opacity);
         }
         cx.end_turtle();
         if dx == 0.0 && phone.gesture.is_none() && phone.pages.glance_velocity == 0.0 {
@@ -667,9 +700,22 @@ impl PhoneSurface {
         }
     }
 
-    fn draw_glance_card(&mut self, cx: &mut Cx2d, r: Rect, column: Rect, item: &GlanceItem, style: DesktopStyle, dark: bool, ink: Vec4f, opacity: f32) {
+    /// A bounded preview through the same glyph/icon paths, outside the
+    /// viewport. Dynamic summaries keep their normal draw-time fallback.
+    pub(super) fn prewarm_glance(&mut self, cx: &mut Cx2d, phone: &PhoneState,
+        screen: Rect, style: DesktopStyle, step: usize) {
+        let clear = vec4(0.0, 0.0, 0.0, 0.0);
+        if step == 0 {
+            self.d.label_elided(cx, rect(screen.pos.x, screen.pos.y, screen.size.x, 30.0),
+                true, 24.0, clear, HAlign::Left, "At a glance");
+        } else if let Some(item) = phone.pages.feed.items().take(4).nth(step - 1) {
+            self.draw_glance_card(cx, rect(screen.pos.x + 20.0, screen.pos.y,
+                screen.size.x - 40.0, item.height()), screen, item, style, clear, 0.0);
+        }
+    }
+
+    fn draw_glance_card(&mut self, cx: &mut Cx2d, r: Rect, column: Rect, item: &GlanceItem, style: DesktopStyle, ink: Vec4f, opacity: f32) {
         if let GlanceItem::Card(card) = item {
-            self.rounded(cx, r, 10.0, alpha(self.theme_face(rgb(255, 255, 255)), if dark { 0.18 } else { 0.92 } * opacity));
             self.glance_cards.record(card, rect(r.pos.x, r.pos.y, r.size.x, SUMMARY_HEIGHT), column);
             let pad = 16.0;
             let w = r.size.x - pad * 2.0;
@@ -682,7 +728,6 @@ impl PhoneSurface {
             }
             return;
         }
-        self.rounded(cx, r, 18.0, alpha(self.theme_face(rgb(255, 255, 255)), if dark { 0.10 } else { 0.55 } * opacity));
         let pad = 16.0;
         let inner = rect(r.pos.x + pad, r.pos.y + pad, r.size.x - pad * 2.0, r.size.y - pad * 2.0);
         let dim = alpha(ink, 0.65 * opacity);
@@ -790,6 +835,31 @@ mod tests {
     }
 
     #[test]
+    fn spring_overshoot_does_not_prepare_offscreen_spill_page_cells() {
+        let screen = rect(0.0, 28.0, 384.0, 760.0);
+        let mut pages = PagesState::default();
+        pages.sync(&ids(40), 8, 20);
+        let layout = mobile_tiles::home_layout_for_apps(screen,
+            PhoneSurface::home_top(DesktopStyle::Android, screen),
+            PhoneSurface::home_dock(screen), &[]);
+        let cell = layout.favorites.size.x / layout.columns as f64;
+        // The first return from Glance reached +0.0027 pages: the page
+        // overlaps by one point, but none of its actual cells is visible.
+        pages.index = 0.0027;
+        assert!(pages.page_visible(1, screen.size.x));
+        for column in 0..layout.columns {
+            let r = rect(layout.favorites.pos.x + column as f64 * cell
+                + pages.page_offset(1, screen.size.x), layout.favorites.pos.y, cell, layout.row_height);
+            assert!(!intersects_screen(r, screen));
+        }
+        // A deliberate swipe must draw a cell as soon as it enters.
+        pages.index = 0.3;
+        let first = rect(layout.favorites.pos.x + pages.page_offset(1, screen.size.x),
+            layout.favorites.pos.y, cell, layout.row_height);
+        assert!(intersects_screen(first, screen));
+    }
+
+    #[test]
     fn overflow_favorites_spill_to_page_1_and_the_library_stays_last() {
         let pages = assign_pages(&ids(12), 8, 12);
         assert_eq!(pages.len(), 4, "glance, page 0, page 1, library");
@@ -837,6 +907,29 @@ mod tests {
         state.sync_widgets(&ids(12),8,12,&[]);
         assert_eq!(state.library_index(),2);
         assert_eq!(state.current(),1);
+    }
+
+    #[test]
+    fn release_keeps_speed_and_a_new_touch_grabs_the_displayed_position() {
+        let simulate = |speed| {
+            let mut p = PagesState::default(); p.sync(&ids(24),8,12); p.touch();
+            p.step(1.0/60.0,Some(ShellGesture::PageSwipe{dir:Dir::Left,progress:0.35}));
+            p.release(speed,400.0);
+            p.step(1.0/60.0,Some(ShellGesture::Commit(GestureKind::Page(Dir::Left))));
+            p
+        };
+        let slow=simulate(-100.0); let mut fast=simulate(-1800.0);
+        assert!(fast.position()>slow.position()+0.03,"a fast release must retain more momentum");
+        let displayed=fast.position(); fast.touch();
+        assert_eq!(fast.position(),displayed);
+        fast.step(1.0/60.0,None);
+        assert_eq!(fast.position(),displayed,"a new finger holds the in-flight spring");
+        fast.step(1.0/60.0,Some(ShellGesture::PageSwipe{dir:Dir::Right,progress:0.1}));
+        assert!((fast.position()-(displayed-0.1)).abs()<1e-9);
+        fast.release(200.0,400.0);
+        fast.step(1.0/60.0,Some(ShellGesture::Cancel(GestureKind::Page(Dir::Right))));
+        settle(&mut fast);
+        assert_eq!(fast.position().fract(),0.0);
     }
 
     #[test]

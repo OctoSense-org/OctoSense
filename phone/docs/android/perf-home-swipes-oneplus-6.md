@@ -29,7 +29,10 @@ scripts can still incur their loading cost.
 ## Measurement method
 
 Use Makepad's `Cx::perf_monitor` and `PerfGraph` for diagnosis, enabled by
-`makepad.APP_CONFIG='{"test_actions":["perf:on"]}'`. The retained diagnostic
+`makepad.APP_CONFIG='{"test_actions":["perf:on"]}'`. Launch-time test actions
+run only in a development build (`--features dev-mode`) installed as a
+separate test package (`rom/scripts/build-home.py --dev-mode`); a release Home
+ignores them. The retained diagnostic
 log separates `home`, `event`, `draw`, and `wait` costs. Whole-session monitor
 FPS includes deliberate idle periods and is not the swipe FPS.
 

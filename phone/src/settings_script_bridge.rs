@@ -44,7 +44,7 @@ pub fn observation(state: &SettingsSnapshot, pending: bool) -> Result<Value, Str
         dnd_settings, dnd_error, permissions, permissions_error, roles, roles_error,
         display_options, display_error, advanced_network, network_error, sounds,
         sounds_loading, sounds_error, notification_history, history_loading, history_error,
-        ai_providers, developer);
+        ai_providers, updater, developer);
     fields.push(("theme".into(), state.theme.encode()));
     fields.push(("pending".into(), Value::Bool(pending)));
     // Allocate transport lease identities without exposing a native effect to scripts.

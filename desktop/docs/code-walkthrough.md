@@ -119,6 +119,89 @@ tests installation into the shell before publication.
 `agent_apps` and `register_host_services`. App Hub's native `CARD_MODULE` hosts
 these interpreted programs. The optional AppCard assistant has its own module.
 
+On the desktop, a script app's window opens at the size its manifest asks
+for in `window`, App Hub's optional hint, which needs `"schema_minor": 1`.
+`App::launch_module_as` in [`lib.rs`](../../crates/shell/src/lib.rs) reads it
+with `apps::window_hint`, from the bundle the Card runner opens, and
+`preferred_size` in
+[`desktop_layout.rs`](../../crates/shell/src/desktop_layout.rs) clamps it to
+the desk minus the margins every new window keeps (42 points left and right,
+32 top and bottom), never below 80 x 60. Where the dock floats over the desk
+instead of reserving a strip (the macOS and OctoSense styles), the bottom
+margin is kept above the dock (`desktop::dock_overlay`), so the window's
+bottom edge is never behind it. Without `window`, a window opens at
+72% of the desk's width and 76% of its height, at most 1000 x 720 points.
+The person can resize either, and phones ignore the hint. PDF Tools asks for
+its designs' 1536 x 1024.
+
+A native module that opens an extra window (makepad's `ModuleWindows::open`)
+may name a size for it too. `App::drain_module_windows` clamps that size the
+same way, through `desktop_layout::requested_size`; a size of zero, a
+negative one or one that is not finite counts as none, and the window then
+opens at the default size. No native app OctoSense ships names a size today:
+Rinx's Moments and Article editor windows pass none, and the other native apps
+open no extra windows.
+
+A maximized window, from its title-bar button, a double-click on its title
+or the maximize shortcut, fills the work area. So does a snapped window,
+which fills its part of the work area. Both stop at the top edge of a dock
+that floats over the desk: `DesktopWindows::rects` fills the
+`desktop_layout::room` above it, with the dock's height that the shell sets
+before every draw (`DesktopWindows::dock`) from `App::dock_overlay`, the same
+lookup a new window's size uses. While the dock hides because the shell is
+full screen (`desktop::dock_auto_hides`), that height is 0, so a maximized
+window fills the whole work area. Restoring brings back the
+window's own rect. With a dock that reserves its strip (Windows) or no dock,
+a maximized window fills the whole work area, as before.
+
+A full-screen window, from ⌘F or the green button in the macOS-family
+styles, covers the whole desk. `DesktopWindow::fullscreen` is kept apart from
+`maximized`, and `WmLayout::rects_of` gives the window the rect past the
+outer gap, which `WmDesk::draw_walk` sets from the desk's own rect every
+frame. `WmDesk::draw_tile` draws it as content alone. The bar and a floating
+dock hide (`desktop::front_fullscreen`) until the pointer rests on the top or
+bottom edge (`edge_reveal.rs`, `App::top_edge`, `App::place_bar`). Leaving
+full screen gives back the window's rect, zoom and place in the stack, which
+never changed.
+
+A script app puts its own window in presentation full screen with
+`host.request("window.fullscreen", {on: true}, fn(r){…})`, from the handler
+of the person's tap or click ([`app_fullscreen.rs`](../../crates/shell/src/app_fullscreen.rs)).
+The shell's `window` host service queues the request. After the event,
+`App::serve_window_requests` looks for the window whose Card runner runs the
+isolate that asked, for that app (`App::window_of`), so an app reaches only
+its own window. It refuses a request when the person has not pressed the app
+in that window in the last five seconds (`Activation`): makepad cannot tell
+which handler made a `host.request`, so the shell keeps a transient
+activation, as a browser does. Only `MpRunViewAction::Pressed` counts, which
+`MpModuleView` sends for a press on the module's live root with no host
+service's sheet up over it; a group tab, a stopped app's face and a process
+tile send only `Clicked`, which focuses. A presentation that ends any other
+way than the app's own `{on: false}` drops the window's press
+(`Presenter::finish`), so the app cannot bounce back from its hook. It
+refuses `{on: true}` from an agent's tool call too: App Hub's Card runner
+takes a request's surface authority (`ServiceCall::may_prompt`) away while
+one of the app's tool calls runs, and never because of a capability.
+`WmLayout::set_fullscreen` then makes that window full
+screen, and `WmState::presentation` keeps every edge from bringing the bar,
+the title bar or the dock out (`desktop::dock_shows`, `App::desktop_pointer`),
+as in a slideshow's play mode. The shell's own window enters the host's full
+screen if it is not there already (`HostFullscreen`, through the call the
+bar's own window control makes: macOS's native full screen, makepad's
+maximize elsewhere; makepad's `Window::fullscreen` does nothing on macOS
+yet), and the OSD says "Press Esc to exit full screen" for three seconds.
+These end it: Esc, `{on: false}`, ⌘F, the window closing or losing the
+focus, the app's module failing, a style switch, or the person leaving the
+host's full screen. `App::sync_presentation` checks after every event, and
+the host window leaves full screen only if the presentation entered it, even
+when it gets there up to 20 seconds after the presentation ended
+(`PENDING_LEAVE_SECONDS`). The answer is
+`{applied, fullscreen, fills_screen}`, and the app's optional
+`on_app_fullscreen(on)` hook hears both ends. On a phone the request changes
+nothing (`fills_screen: true`). A hidden shell (`MAKEPAD_HIDE_WINDOWS`) never
+asks the host window to go full screen, so entering macOS's full screen on a
+real display is **unverified**; so is the maximize on Windows and Linux.
+
 Admission verifies the bundle and resolves its metadata and resource limits.
 Capability names disclose usage, not execution permission. A script's
 `host.request(...)` runs under that app's identity. App Hub's
@@ -320,3 +403,18 @@ independently of AppCard. AppCard's legacy `personal-data` integration reads the
 older native Mail format; current Mail owns its cache in a host service. Start
 with Reference for native hosting, Calendar/News for app tools, and AppCard's
 own docs when changing its routing and card-generation product.
+
+## Application update and restart
+
+`crates/updater-ui` is a native module without agent tools. On macOS, its worker
+verifies and stages a release, then hands a waiting helper to
+`crates/shell/src/update_restart.rs`. The shell asks hosted modules and process
+apps to close; cancellation and unanswered requests never force them to exit
+for an update. Only an agreed shutdown commits the helper. After the old process
+exits, the helper checks the new app's code signature against the installed
+app's own identity (`crates/updater/src/macos/codesign.rs`, Apple's Security
+framework), exchanges bundles atomically and starts the same profile.
+`crates/updater/src/macos` validates the new startup or restores the retained
+previous bundle, and any failure after the commit reopens the previous app;
+[the updater guide](../../docs/updater.md) explains the compatibility check for
+older releases and the manual recovery path.

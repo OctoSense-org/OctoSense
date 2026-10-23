@@ -1,0 +1,315 @@
+{
+  "schema": 1,
+  "status": "pass",
+  "primary": 15,
+  "optional": 14,
+  "new_svg_icons": 28,
+  "restored_original_png_icons": 1,
+  "unique_new_foregrounds": 28,
+  "new_svg_full_bleed_square_sources": true,
+  "new_svg_foreground_within_central_66_percent": true,
+  "rinx_original_hashes_verified": true,
+  "clock_colors": 2,
+  "sheets_uniform_cell_color": "#b9d9c7",
+  "review_styles": [
+    "macos",
+    "android",
+    "ios"
+  ],
+  "review_sizes": [
+    64,
+    40,
+    24
+  ],
+  "rendering": "librsvg static review",
+  "shipping_renderer": "unverified",
+  "devices": "unverified",
+  "icons": [
+    {
+      "id": "mail",
+      "foreground_bounds": [
+        14.0,
+        14.0,
+        50.0,
+        49.125
+      ],
+      "sha256": "9e0ca48953bb4f1b521e2f5871b596ab5e452c5aa8c8f0ebfa44d348a07ac2b6"
+    },
+    {
+      "id": "calendar",
+      "foreground_bounds": [
+        14.875,
+        12.625,
+        49.125,
+        51.812
+      ],
+      "sha256": "40dfe49bc2386c9ac87d33a6b2567bf57635c33866fb1880aacb1486dd7eb5c2"
+    },
+    {
+      "id": "calculator",
+      "foreground_bounds": [
+        18.5,
+        12.188,
+        47.312,
+        51.812
+      ],
+      "sha256": "5941a697e1b8eb77aeef59b83786e04802ea3a9006fc5e62fa17636e6178e778"
+    },
+    {
+      "id": "clock",
+      "foreground_bounds": [
+        13.062,
+        13.062,
+        50.938,
+        50.938
+      ],
+      "sha256": "f0fc86e6f147663dcd5db3208f8afe906884d8331acf6245043d2cf92dc3f732"
+    },
+    {
+      "id": "notes",
+      "foreground_bounds": [
+        15.5,
+        12.375,
+        52.312,
+        52.562
+      ],
+      "sha256": "f9a09f1a5c1b3a9d3b9ea1d3c6369144f9a0ebb99509d74e42f21e7f8c6a123b"
+    },
+    {
+      "id": "reminders",
+      "foreground_bounds": [
+        17.562,
+        12.188,
+        47.312,
+        51.812
+      ],
+      "sha256": "a504231d5e231baa1b0f3509bd96a58c4e2254c3ce0a2d2e900f65a9687f84d6"
+    },
+    {
+      "id": "weather",
+      "foreground_bounds": [
+        11.938,
+        11.938,
+        49.875,
+        52.062
+      ],
+      "sha256": "3827f15f756b8aedc9a9c692e952a1cb05c738c6b1e06f460db484730980f22b"
+    },
+    {
+      "id": "sheets",
+      "foreground_bounds": [
+        14.0,
+        13.062,
+        49.125,
+        50.938
+      ],
+      "sha256": "01f31178f77528c2569ad5dac414419ab20266bfbe333a3302935b08095a3dc3"
+    },
+    {
+      "id": "settings",
+      "foreground_bounds": [
+        14.0,
+        14.0,
+        50.0,
+        50.938
+      ],
+      "sha256": "5ef7f16076563c8a2b945c5630cfbd6ea9cdd640653f708a563dfb213d2596ad"
+    },
+    {
+      "id": "updater",
+      "foreground_bounds": [
+        12.125,
+        12.625,
+        51.875,
+        51.375
+      ],
+      "sha256": "7d7f2c4f49531c45e1b1b53cc2a08e17355ae0e16f768abfedb0a64ae68048e4"
+    },
+    {
+      "id": "terminal",
+      "foreground_bounds": [
+        13.062,
+        14.875,
+        50.938,
+        49.125
+      ],
+      "sha256": "cceb2b05033d8e3f8c1f1dd1ce045197e11771167ccf0d939ff825a3e45629dc"
+    },
+    {
+      "id": "octoscode",
+      "foreground_bounds": [
+        13.062,
+        14.0,
+        50.938,
+        49.125
+      ],
+      "sha256": "687d8566e64de05b4fd21e70e959579b86e64bf15ba418b5a26128f24c8bedf5"
+    },
+    {
+      "id": "rinx",
+      "treatment": "restore-original",
+      "foreground_bounds": "legacy artwork; retained unchanged",
+      "sha256": "a5db71934b2fd2e8177637527db2d925c01bbe9bb046aecf0d2eddc5bef43329"
+    },
+    {
+      "id": "reference",
+      "foreground_bounds": [
+        16.688,
+        13.062,
+        47.312,
+        51.812
+      ],
+      "sha256": "712554b37bddc36debc669b6587c960a29cc93af5b6efd43a7f4ab32cf3d2e40"
+    },
+    {
+      "id": "appcard",
+      "foreground_bounds": [
+        14.625,
+        14.0,
+        48.25,
+        52.625
+      ],
+      "sha256": "91d9be38b8236ec1446aed9242270ac3631eca5dc313a881815f74234e9628af"
+    },
+    {
+      "id": "browser",
+      "foreground_bounds": [
+        13.062,
+        12.625,
+        50.938,
+        52.25
+      ],
+      "sha256": "f1ce7503eefa8aa82816665d68d9215131adde5b638332b7bb644a7719543eca"
+    },
+    {
+      "id": "files",
+      "foreground_bounds": [
+        14.0,
+        12.438,
+        50.0,
+        50.0
+      ],
+      "sha256": "ec792a0e44eb242c84eaf36ea0f91ee3241b10f5d02cf2bfcf250f64b8d951de"
+    },
+    {
+      "id": "task",
+      "foreground_bounds": [
+        14.0,
+        16.688,
+        50.0,
+        51.375
+      ],
+      "sha256": "9188acf953106e0fd9391aff6f9784ea1c5dbb4406bc35ec816d834f6167f81a"
+    },
+    {
+      "id": "finance",
+      "foreground_bounds": [
+        17.562,
+        13.062,
+        50.938,
+        50.938
+      ],
+      "sha256": "6d2f590628ed3e545dd33b44f6d781f2fcce80e8c6cdea1973cfe7b09c42af83"
+    },
+    {
+      "id": "route",
+      "foreground_bounds": [
+        14.875,
+        16.688,
+        51.062,
+        48.25
+      ],
+      "sha256": "a33d944e226f1c3c9dde51775cce6a5176ae7c3da4f90ae17822483f5788ecae"
+    },
+    {
+      "id": "image",
+      "foreground_bounds": [
+        13.25,
+        14.875,
+        49.125,
+        50.0
+      ],
+      "sha256": "9d5a57ef0f26412f2ed61c85d9054c8c648c9adfc8148f7367e8a27b197617d2"
+    },
+    {
+      "id": "pdf",
+      "foreground_bounds": [
+        18.5,
+        13.062,
+        44.625,
+        50.0
+      ],
+      "sha256": "d76504ba4fabab59d87ddde77ea0aae7358f9ccd472c5baf79d7cbf605c637c7"
+    },
+    {
+      "id": "mixer",
+      "foreground_bounds": [
+        15.75,
+        14.875,
+        48.25,
+        48.25
+      ],
+      "sha256": "d8707e9a1e0ed7293c82e36dfde43e8a325584fb2f3886575b34277ec3c8bcaa"
+    },
+    {
+      "id": "fabric",
+      "foreground_bounds": [
+        12.188,
+        14.875,
+        51.812,
+        49.125
+      ],
+      "sha256": "25e8dace8505f4a658bdee9c356c062d110761b7f4be29018a601913406af272"
+    },
+    {
+      "id": "score",
+      "foreground_bounds": [
+        15.875,
+        14.875,
+        46.875,
+        51.375
+      ],
+      "sha256": "8c2b24d4aab49766190aae603b0b9aa6f9822cce03ccdced88eac62555170fad"
+    },
+    {
+      "id": "video",
+      "foreground_bounds": [
+        14.125,
+        11.0,
+        48.812,
+        47.125
+      ],
+      "sha256": "af938619614a3e0d2dfadf8566f94616e70b57e23ae4b1205583f6919858fab9"
+    },
+    {
+      "id": "vj",
+      "foreground_bounds": [
+        11.25,
+        14.0,
+        49.562,
+        51.812
+      ],
+      "sha256": "43bc51bf45c694affe7966ce331dd2c9e478419c30330eb558e3accd059b1a44"
+    },
+    {
+      "id": "fab",
+      "foreground_bounds": [
+        14.875,
+        12.188,
+        49.125,
+        51.812
+      ],
+      "sha256": "bc6e4427bae228534f4dedac84af7ecbea05967ecd9900fe5f193080751e8318"
+    },
+    {
+      "id": "studio",
+      "foreground_bounds": [
+        15.25,
+        10.875,
+        47.875,
+        50.062
+      ],
+      "sha256": "cc88979f772fe6d55fc469db6f185c48615f07e48d6ded01d456245929084f46"
+    }
+  ]
+}

@@ -634,9 +634,11 @@ fn the_allow_list_never_admits_a_secret_shaped_name() {
 
 #[test]
 fn a_program_inside_the_octosense_home_stays_readable() {
-    // The desktop builds process apps into `<OctoSense home>/build`: the
-    // private deny must not take the app's own program away (the Terminal
-    // crashed at start, unable to read its own bundle).
+    // A process app's program can sit inside the OctoSense home (the
+    // desktop built Makepad's catalog apps into `<OctoSense home>/build`
+    // until they moved to the checkout's target dir): the private deny must
+    // not take the app's own program away (the Terminal crashed at start,
+    // unable to read its own bundle).
     let root = Path::new("/nonexistent/home");
     let mut p = home_rw_with_octosense_home(root);
     let build = root.join(".octosense/build/makepad");

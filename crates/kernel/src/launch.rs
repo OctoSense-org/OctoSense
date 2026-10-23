@@ -441,16 +441,26 @@ pub(crate) fn phone_stdio(program: PathBuf, core_dir: &Path, extra: &[(String, S
     env.extend(PHONE_KERNEL_ENV.iter().map(|(k, v)| ((*k).to_owned(), (*v).to_owned())));
     // Route the kernel's HTTPS through a proxy when the device has no route
     // of its own (an `adb reverse` tunnel): launch extra `makepad.OCTOS_PROXY`.
-    if let Ok(proxy) = std::env::var("MAKEPAD_OCTOS_PROXY") {
-        let proxy = proxy.trim().to_owned();
-        if !proxy.is_empty() {
-            for k in ["HTTPS_PROXY", "HTTP_PROXY", "https_proxy", "http_proxy", "ALL_PROXY"] {
-                env.push((k.to_owned(), proxy.clone()));
-            }
+    if let Some(proxy) = launch_proxy(cfg!(dev_mode), std::env::var("MAKEPAD_OCTOS_PROXY").ok()) {
+        for k in ["HTTPS_PROXY", "HTTP_PROXY", "https_proxy", "http_proxy", "ALL_PROXY"] {
+            env.push((k.to_owned(), proxy.clone()));
         }
     }
     env.extend(extra.iter().cloned());
     Launch::Stdio { program, args, env, cwd: Some(home) }
+}
+
+/// The kernel's proxy from the launch extra `makepad.OCTOS_PROXY`
+/// (`MAKEPAD_OCTOS_PROXY`), in a development build only (`dev_mode`: a
+/// debug build or feature `dev-mode`, build.rs). Any app on the phone can
+/// start Home with that extra, so a release build never routes the kernel's
+/// traffic through it.
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+fn launch_proxy(development: bool, value: Option<String>) -> Option<String> {
+    if !development {
+        return None;
+    }
+    value.map(|proxy| proxy.trim().to_owned()).filter(|proxy| !proxy.is_empty())
 }
 
 /// Make what a start needs: the core dir, the cwd (a missing cwd fails the
@@ -676,6 +686,15 @@ mod tests {
             panic!("stdio")
         };
         assert_eq!(args, ["serve", "--stdio", "--data-dir", "/f/core"]);
+    }
+
+    #[test]
+    fn only_a_development_build_takes_the_launch_proxy() {
+        let proxy = Some(" http://127.0.0.1:8899 ".to_owned());
+        assert_eq!(launch_proxy(false, proxy.clone()), None, "a release build ignores the launch extra");
+        assert_eq!(launch_proxy(true, proxy).as_deref(), Some("http://127.0.0.1:8899"));
+        assert_eq!(launch_proxy(true, Some("  ".into())), None);
+        assert_eq!(launch_proxy(true, None), None);
     }
 
     #[test]

@@ -1,0 +1,376 @@
+[
+  {
+    "id": "mail",
+    "name": "Mail",
+    "scope": "primary",
+    "colors": [
+      "#30a8b2",
+      "#007080"
+    ],
+    "concept": "Ivory envelope, mint letter, coral seal",
+    "current_source": ".sources/makepad/widgets/themes/macos/icons/mail.svg",
+    "proposed_source": "assets/mail.svg",
+    "treatment": "new-artwork"
+  },
+  {
+    "id": "calendar",
+    "name": "Calendar",
+    "scope": "primary",
+    "colors": [
+      "#ff7e6f",
+      "#d94d4d"
+    ],
+    "concept": "Coral flip calendar with two binding rings",
+    "current_source": ".sources/makepad/widgets/themes/macos/icons/calendar.svg",
+    "proposed_source": "assets/calendar.svg",
+    "treatment": "new-artwork"
+  },
+  {
+    "id": "calculator",
+    "name": "Calculator",
+    "scope": "primary",
+    "colors": [
+      "#54b49c",
+      "#208673"
+    ],
+    "concept": "Ivory calculator, sage display, coral equals key",
+    "current_source": ".sources/makepad/widgets/themes/macos/icons/calculator.svg",
+    "proposed_source": "assets/calculator.svg",
+    "treatment": "new-artwork"
+  },
+  {
+    "id": "clock",
+    "name": "Clock",
+    "scope": "primary",
+    "colors": [
+      "#304b55",
+      "#304b55"
+    ],
+    "concept": "Two-color ivory dial and dark hands; no rim, feet or second hand",
+    "current_source": ".sources/makepad/widgets/themes/macos/icons/clock.svg",
+    "proposed_source": "assets/clock.svg",
+    "treatment": "new-artwork"
+  },
+  {
+    "id": "notes",
+    "name": "Notes",
+    "scope": "primary",
+    "colors": [
+      "#f1c654",
+      "#d99a2a"
+    ],
+    "concept": "Pocket notebook with a mint pencil",
+    "current_source": ".sources/makepad/widgets/themes/macos/icons/notes.svg",
+    "proposed_source": "assets/notes.svg",
+    "treatment": "new-artwork"
+  },
+  {
+    "id": "reminders",
+    "name": "Reminders",
+    "scope": "primary",
+    "colors": [
+      "#47bea0",
+      "#00866f"
+    ],
+    "concept": "Ivory clipboard with a coral completed task",
+    "current_source": ".sources/makepad/widgets/themes/macos/icons/reminders.svg",
+    "proposed_source": "assets/reminders.svg",
+    "treatment": "new-artwork"
+  },
+  {
+    "id": "weather",
+    "name": "Weather",
+    "scope": "primary",
+    "colors": [
+      "#4bc4e7",
+      "#167ebf"
+    ],
+    "concept": "Butter sun behind an ivory rain cloud",
+    "current_source": ".sources/makepad/widgets/themes/macos/icons/weather.svg",
+    "proposed_source": "assets/weather.svg",
+    "treatment": "new-artwork"
+  },
+  {
+    "id": "sheets",
+    "name": "Sheets",
+    "scope": "primary",
+    "colors": [
+      "#42ba79",
+      "#0a854c"
+    ],
+    "concept": "Ivory workbook with a green formula tab and uniformly colored cells",
+    "current_source": ".sources/makepad/widgets/themes/macos/icons/sheets.svg",
+    "proposed_source": "assets/sheets.svg",
+    "treatment": "new-artwork"
+  },
+  {
+    "id": "settings",
+    "name": "Settings",
+    "scope": "primary",
+    "colors": [
+      "#6da7a8",
+      "#3a717b"
+    ],
+    "concept": "Ivory control plate with three tactile sliders",
+    "current_source": ".sources/makepad/widgets/themes/macos/icons/app.svg",
+    "proposed_source": "assets/settings.svg",
+    "treatment": "new-artwork"
+  },
+  {
+    "id": "updater",
+    "name": "OctoSense Updates",
+    "scope": "primary",
+    "colors": [
+      "#6cad83",
+      "#367651"
+    ],
+    "concept": "Upward install arrow between two mint cycle arcs",
+    "current_source": ".sources/makepad/widgets/themes/macos/icons/app.svg",
+    "proposed_source": "assets/updater.svg",
+    "treatment": "new-artwork"
+  },
+  {
+    "id": "terminal",
+    "name": "Terminal",
+    "scope": "primary",
+    "colors": [
+      "#506769",
+      "#2b4148"
+    ],
+    "concept": "Ink command window with mint prompt and apricot cursor",
+    "current_source": ".sources/makepad/widgets/themes/macos/icons/terminal.svg",
+    "proposed_source": "assets/terminal.svg",
+    "treatment": "new-artwork"
+  },
+  {
+    "id": "octoscode",
+    "name": "OctosCode",
+    "scope": "primary",
+    "colors": [
+      "#9c75dc",
+      "#6943b0"
+    ],
+    "concept": "Ivory code window with violet brackets and amber tab",
+    "current_source": ".sources/makepad/widgets/themes/macos/icons/app.svg",
+    "proposed_source": "assets/octoscode.svg",
+    "treatment": "new-artwork"
+  },
+  {
+    "id": "rinx",
+    "name": "Rinx",
+    "scope": "primary",
+    "colors": [],
+    "concept": "Original Rinx cube icon, preserved byte-for-byte from the pinned dependency",
+    "current_source": ".sources/makepad/widgets/themes/macos/icons/app.svg",
+    "proposed_source": "assets/rinx.png",
+    "treatment": "restore-original"
+  },
+  {
+    "id": "reference",
+    "name": "Reference",
+    "scope": "primary",
+    "colors": [
+      "#ac9ec7",
+      "#74648e"
+    ],
+    "concept": "Ivory reference book with an apricot bookmark",
+    "current_source": ".sources/makepad/widgets/themes/macos/icons/app.svg",
+    "proposed_source": "assets/reference.svg",
+    "treatment": "new-artwork"
+  },
+  {
+    "id": "appcard",
+    "name": "AppCard",
+    "scope": "primary",
+    "colors": [
+      "#b08ada",
+      "#7c50b0"
+    ],
+    "concept": "Layered ivory cards with an inset chat panel",
+    "current_source": ".sources/makepad/widgets/themes/macos/icons/app.svg",
+    "proposed_source": "assets/appcard.svg",
+    "treatment": "new-artwork"
+  },
+  {
+    "id": "browser",
+    "name": "Browser",
+    "scope": "optional",
+    "colors": [
+      "#45aec2",
+      "#227a94"
+    ],
+    "concept": "C5 Night rose: ink compass dial, mint rim and four-spoke rose with an ivory northeast point",
+    "current_source": ".sources/makepad/widgets/themes/macos/icons/browser.svg",
+    "proposed_source": "assets/browser.svg",
+    "treatment": "new-artwork"
+  },
+  {
+    "id": "files",
+    "name": "Files",
+    "scope": "optional",
+    "colors": [
+      "#89cfc8",
+      "#4d999c"
+    ],
+    "concept": "Sea-glass folder holding an angled ivory sheet",
+    "current_source": ".sources/makepad/widgets/themes/macos/icons/files.svg",
+    "proposed_source": "assets/files.svg",
+    "treatment": "new-artwork"
+  },
+  {
+    "id": "task",
+    "name": "Task Manager",
+    "scope": "optional",
+    "colors": [
+      "#3ba78e",
+      "#1b715e"
+    ],
+    "concept": "Ivory monitor with a mint performance trace",
+    "current_source": ".sources/makepad/widgets/themes/macos/icons/task.svg",
+    "proposed_source": "assets/task.svg",
+    "treatment": "new-artwork"
+  },
+  {
+    "id": "finance",
+    "name": "Finance",
+    "scope": "optional",
+    "colors": [
+      "#93b95e",
+      "#608438"
+    ],
+    "concept": "Ivory ledger and a warm gold coin",
+    "current_source": ".sources/makepad/widgets/themes/macos/icons/finance.svg",
+    "proposed_source": "assets/finance.svg",
+    "treatment": "new-artwork"
+  },
+  {
+    "id": "route",
+    "name": "Route",
+    "scope": "optional",
+    "colors": [
+      "#afc77d",
+      "#7d9b4b"
+    ],
+    "concept": "Folded route map with a small terracotta destination pin",
+    "current_source": ".sources/makepad/widgets/themes/macos/icons/route.svg",
+    "proposed_source": "assets/route.svg",
+    "treatment": "new-artwork"
+  },
+  {
+    "id": "image",
+    "name": "Image Viewer",
+    "scope": "optional",
+    "colors": [
+      "#60bdc5",
+      "#37879b"
+    ],
+    "concept": "Stacked landscape prints with a pale yellow sun",
+    "current_source": ".sources/makepad/widgets/themes/macos/icons/image.svg",
+    "proposed_source": "assets/image.svg",
+    "treatment": "new-artwork"
+  },
+  {
+    "id": "pdf",
+    "name": "PDF Viewer",
+    "scope": "optional",
+    "colors": [
+      "#e08e78",
+      "#b4584e"
+    ],
+    "concept": "Ivory page with an inked coral ribbon curve",
+    "current_source": ".sources/makepad/widgets/themes/macos/icons/pdf.svg",
+    "proposed_source": "assets/pdf.svg",
+    "treatment": "new-artwork"
+  },
+  {
+    "id": "mixer",
+    "name": "Mixer",
+    "scope": "optional",
+    "colors": [
+      "#c489b1",
+      "#935381"
+    ],
+    "concept": "Ivory perspective mixing desk with apricot fader",
+    "current_source": ".sources/makepad/widgets/themes/macos/icons/mixer.svg",
+    "proposed_source": "assets/mixer.svg",
+    "treatment": "new-artwork"
+  },
+  {
+    "id": "fabric",
+    "name": "Fabric",
+    "scope": "optional",
+    "colors": [
+      "#70bea6",
+      "#3f907c"
+    ],
+    "concept": "Ivory garment with a sea-glass stitched pocket",
+    "current_source": ".sources/makepad/widgets/themes/macos/icons/fabric.svg",
+    "proposed_source": "assets/fabric.svg",
+    "treatment": "new-artwork"
+  },
+  {
+    "id": "score",
+    "name": "Score",
+    "scope": "optional",
+    "colors": [
+      "#e7a25e",
+      "#c07138"
+    ],
+    "concept": "Ivory connected notes with a warm score band",
+    "current_source": ".sources/makepad/widgets/themes/macos/icons/score.svg",
+    "proposed_source": "assets/score.svg",
+    "treatment": "new-artwork"
+  },
+  {
+    "id": "video",
+    "name": "Video Player",
+    "scope": "optional",
+    "colors": [
+      "#a27bda",
+      "#7548b0"
+    ],
+    "concept": "Ivory clapperboard with a lifted striped slate",
+    "current_source": ".sources/makepad/widgets/themes/macos/icons/video.svg",
+    "proposed_source": "assets/video.svg",
+    "treatment": "new-artwork"
+  },
+  {
+    "id": "vj",
+    "name": "VJ",
+    "scope": "optional",
+    "colors": [
+      "#b575ba",
+      "#80498e"
+    ],
+    "concept": "Plum record deck, rose center and ivory pickup arm",
+    "current_source": ".sources/makepad/widgets/themes/macos/icons/vj.svg",
+    "proposed_source": "assets/vj.svg",
+    "treatment": "new-artwork"
+  },
+  {
+    "id": "fab",
+    "name": "Fab",
+    "scope": "optional",
+    "colors": [
+      "#dfb36a",
+      "#b17e3e"
+    ],
+    "concept": "Folded kraft cube with a diagonal packing band",
+    "current_source": ".sources/makepad/widgets/themes/macos/icons/fab.svg",
+    "proposed_source": "assets/fab.svg",
+    "treatment": "new-artwork"
+  },
+  {
+    "id": "studio",
+    "name": "Director",
+    "scope": "optional",
+    "colors": [
+      "#8d9fa2",
+      "#596f7b"
+    ],
+    "concept": "Ivory director monitor with two amber film reels",
+    "current_source": ".sources/makepad/widgets/themes/macos/icons/studio.svg",
+    "proposed_source": "assets/studio.svg",
+    "treatment": "new-artwork"
+  }
+]

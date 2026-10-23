@@ -1,6 +1,6 @@
 {
   "engine": "vectorcraft",
-  "revision": "85dcb28e411db4271f3b726d6502b78e1375cbba",
+  "revision": "2cd3a1ca8fbcc5b2e40de47588194798a9f8e497",
   "regenerate": "OCTOSENSE_SKILL_REGEN=1 cargo test --locked -p octosense-vector-service --test skill",
   "rules": "safety-rules.json",
   "classes": {

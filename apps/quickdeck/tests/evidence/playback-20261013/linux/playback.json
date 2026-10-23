@@ -1,0 +1,14 @@
+{
+ "platform": "linux",
+ "editor": "Playback isn't available on this system",
+ "cache": {
+  "66ed412a780d9114a6eb0c732114f1566724e655c6cf161c7be900cfae99971c.mp4": 26739
+ },
+ "present": "Playback isn't available on this system",
+ "sound": "Playback isn't available on this system",
+ "cache_after_sound": {
+  "66ed412a780d9114a6eb0c732114f1566724e655c6cf161c7be900cfae99971c.mp4": 26739,
+  "e9dabf6257fc45f120e97bffd895209c5506909fd10a541f22cd2418f90f67a6.wav": 32044
+ },
+ "pptx_present": "Playback isn't available on this system"
+}

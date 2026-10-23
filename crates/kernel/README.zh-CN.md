@@ -31,7 +31,8 @@ Shell（`phone/` 中的 Home、`desktop/` 中的桌面）拥有它；**AI provid
 
 - **Android**：`<nativeLibraryDir>/liboctos.so serve --stdio`，`HOME=<core 目录的上级目录>`
   （octos home），使用 AppCard 的环境变量（`OCTOS_SKILLS_PATH`、
-  `OCTOS_OMIT_WORKSPACE_HINT`、`RUST_LOG`、`makepad.OCTOS_PROXY` 代理）以及内核配置的
+  `OCTOS_OMIT_WORKSPACE_HINT`、`RUST_LOG`，以及仅在开发版中作为代理的启动 extra
+  `makepad.OCTOS_PROXY`：feature `dev-mode` 或调试构建，因为任何应用都能带着 extra 启动 Home）以及内核配置的
   内存预算。APK 必须打包内核：`MAKEPAD_ANDROID_EXTRA_LIBS=liboctos.so=<octos>`
   （Shell 的构建脚本会这样做）。
 - **OpenHarmony**：在进程内运行标准内核 `octos_cli::embedded::serve_io(<octos home>, ..)`，

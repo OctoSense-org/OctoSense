@@ -64,7 +64,13 @@ Then, if you don't already have the NDK, `cargo makepad android install-toolchai
 tools/build-android.sh          # APK only
 tools/build-android.sh run      # APK, install, launch, stream logcat
 SKIP_KERNEL=1 tools/build-android.sh   # reuse the kernel already built
+DEV_MODE=1 tools/build-android.sh      # a development build (launch-time extras)
 ```
+
+Only a development build (`DEV_MODE=1`, i.e. `--features dev-mode`, or a debug
+build) reads the launch-time `makepad.*` extras in step 5: any app on the phone
+can start this one with extras, so a release build ignores them (`launch_var`
+in `app/app/src/lib.rs`). The `DEV_MODE=1` line is **unverified**.
 
 That script is the supported path and it does both halves: it cross-compiles the
 `octos` submodule for `aarch64-linux-android` and hands the binary to
@@ -114,7 +120,7 @@ cargo makepad android build -p octos-app --release
 ADB=adb   # or /mnt/c/.../adb.exe on WSL
 $ADB install -r app/target/android/makepad-android-apk/octos_app/apk/octos_app.apk
 
-# launch. Extras (all optional):
+# launch. Extras (all optional; read only by a development build, DEV_MODE=1):
 #   makepad.OCTOS_PROXY  http proxy for the LLM + data fetches (phones w/o direct net)
 #   makepad.APP_CONFIG   'base_url|profile|token'  (headless auth provisioning)
 #   makepad.AUTO_PROMPT  auto-submit one prompt on boot (for testing)
@@ -171,5 +177,5 @@ The per-profile LLM provider + key live in `_main.json` (`config.llm` +
   to talk to USB phones; the SDK's Linux `adb` can't see them.
 - Phones without a direct internet route reach out through a host proxy: run an
   HTTP CONNECT proxy on the host, `adb reverse tcp:8899 tcp:8899`, and pass
-  `--es makepad.OCTOS_PROXY 'http://127.0.0.1:8899'`. This routes both the LLM
+  `--es makepad.OCTOS_PROXY 'http://127.0.0.1:8899'` to a development build. This routes both the LLM
   (`api.z.ai` / provider) and the card data fetches (open-meteo, Yahoo, HN).

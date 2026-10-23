@@ -1,0 +1,1331 @@
+{
+ "schema": 1,
+ "screen": "01-home",
+ "state": "Home with six recent decks, the theme row, both ways to start",
+ "image": "source/01-home.png",
+ "image_sha256": "1ec1d9108e57673181e15a6d72b083268960331a9a0f853b8d9dbed478d94920",
+ "measured": "source/01-home.measured.json",
+ "measured_sha256": "d49e54d536bc111c8cf1922e06828e7c43aded956732b78a2e4a4437d09d059f",
+ "units": "1 image pixel = 1 layout point (the designs are a 1536 x 1024 window)",
+ "built_in": "apps/quickdeck/bundle/main.splash (v2)",
+ "runtime": "OctoSense-org/makepad d653bc44 with runtime-patches.lock.json, as tools/setup.py prepares .sources/makepad",
+ "type_rule": "size in theme units: the ink height for runs without descenders, ink / 1.23 with them (PDF Tools' rule, calibrated in card-host on the runtime's own text); the build rounds to the region's size",
+ "colours": "light from this screen (or the light screens), dark from 10-dark-notes; tokens below, selected by the shared interface's ui_light",
+ "tokens": {
+  "qd_accent": {
+   "light": "#116cdc",
+   "dark": "#0f6de6",
+   "from": "BRIEF's accent #116cdc; 02 s037 Present #0b69d9, 03 s046 #0163e3; 10 s032 Present #076ce8"
+  },
+  "qd_link": {
+   "light": "#1c6ce0",
+   "dark": "#3a8ee0",
+   "from": "02 t007 'Slides' #2e6ad8, t009 '+ New slide' #4e85dd, t093 'Format' #3973dc (anti-aliased); 10 t004 'Slides' #227eca, t035 'Notes' #2684cd"
+  },
+  "qd_tabs": {
+   "light": "#f4f5f6",
+   "dark": "#141719",
+   "from": "02 s019 tab row #f4f5f6; 10 sample (1300,40) #141719"
+  },
+  "qd_tab_on": {
+   "light": "#ffffff",
+   "dark": "#1c2023",
+   "from": "02 open tab (220,40) #fefdfe; 10 open tab (200,25) #111316 inside an outline, lifted for contrast"
+  },
+  "qd_tab_line": {
+   "light": "#dedfe1",
+   "dark": "#3a3e41",
+   "from": "02 open tab's border; 10 tab outlines"
+  },
+  "qd_bar": {
+   "light": "#ffffff",
+   "dark": "#15191b",
+   "from": "02 toolbar (300,80) #fefefe; 10 (300,80) #15191b"
+  },
+  "qd_nav": {
+   "light": "#ffffff",
+   "dark": "#151a1d",
+   "from": "02 s002 #fefefe; 10 (280,300) #151a1d"
+  },
+  "qd_desk": {
+   "light": "#f2f4f5",
+   "dark": "#1b1e22",
+   "from": "01 s000 #f2f4f5, 02 (700,180) #f3f4f6, 04 #f1f2f4, 05 #f2f4f5; 10 (700,180) #1b1e22. The brief named #eceded; the approved images are lighter"
+  },
+  "qd_insp": {
+   "light": "#ffffff",
+   "dark": "#161b1f",
+   "from": "02 s003 #fefefe; 10 (1350,600) #161b1f"
+  },
+  "qd_status": {
+   "light": "#ffffff",
+   "dark": "#151b1d",
+   "from": "02 s005 #fefefe; 10 s006 #151b1d"
+  },
+  "qd_pill": {
+   "light": "#ffffff",
+   "dark": "#f4f4f5",
+   "from": "02 s010 #fefefe; 10 s018 #f7f7f7: the dark design keeps the canvas pill light"
+  },
+  "qd_pill_ink": {
+   "light": "#55575b",
+   "dark": "#3b3e42",
+   "from": "02 t078 '5 / 12' #717173, t081 '92%' #6e6f71; 10 dark text on the light pill"
+  },
+  "qd_pill_icon": {
+   "light": "#5b5d61",
+   "dark": "#45484c",
+   "from": "02 t077 '<' #616263; 10 derived for the light pill"
+  },
+  "qd_pill_line": {
+   "light": "#e2e3e5",
+   "dark": "#d2d4d6",
+   "from": "02 d016 #e3e4e6; 10 d029 edge"
+  },
+  "qd_home": {
+   "light": "#f2f4f5",
+   "dark": "#1b1e22",
+   "from": "01 s000 #f2f4f5; 07 page (40,500) #f2f4f6; dark Home is not designed: 10's desk"
+  },
+  "qd_card": {
+   "light": "#ffffff",
+   "dark": "#22272b",
+   "from": "01 cards #fcfcfc, 07 s001 #fefefe, 09 s001 #fdfdfd; dark cards are not designed: a step above 10's inspector"
+  },
+  "qd_line": {
+   "light": "#e2e3e5",
+   "dark": "#33383b",
+   "from": "02 d021 #e4e4e6, d002 #dedee1, d026 #e5e5e7; 10 d002 #3c4042, d039 #2c3134"
+  },
+  "qd_line_soft": {
+   "light": "#ececee",
+   "dark": "#2a2e31",
+   "from": "02 d003 #e5e5e5, d009 #eaeaeb; 10 d004/d005 #656869/#2c3032"
+  },
+  "qd_thumb_line": {
+   "light": "#d3d5d9",
+   "dark": "#3a3f43",
+   "from": "the thumbnails' edge (02 (44,250) #f1f2f2 at 1x, darker for the page edge); dark derived"
+  },
+  "qd_tint": {
+   "light": "#eaf2fd",
+   "dark": "#17304d",
+   "from": "02 s077-s079 chosen segments #eff3fd/#eff4fd, 03 s051 chosen chip #e7f2fe, s045 Chart button #e9f3fd; dark derived (10 draws none)"
+  },
+  "qd_tint_line": {
+   "light": "#b9d3f7",
+   "dark": "#2c5a92",
+   "from": "03 the Column chip's border (386,146) #bfdafc; dark derived"
+  },
+  "qd_select": {
+   "light": "#2f6fdf",
+   "dark": "#3b82f0",
+   "from": "02 the selection frame (349,470) #74a0ea anti-aliased, t072 handle ink #2268d9; 03 d019 #0d6bf0"
+  },
+  "qd_field": {
+   "light": "#ffffff",
+   "dark": "#161c1f",
+   "from": "02 s026 the font box #fefefe; 10 the notes box (1300,500) #161c1f"
+  },
+  "qd_field_line": {
+   "light": "#dcdde0",
+   "dark": "#383d40",
+   "from": "02 the fields' borders; 10 the notes box's border (1208,500) #31363a"
+  },
+  "qd_hover": {
+   "light": "#f1f2f3",
+   "dark": "#22272b",
+   "from": "derived"
+  },
+  "qd_ink": {
+   "light": "#36393d",
+   "dark": "#c9cbcd",
+   "from": "02 t096 'Text' #363d45, t104 'Box' #393f48; 10 t036 'Speaker notes' #bcbec0, t037 #cacccd"
+  },
+  "qd_ink2": {
+   "light": "#55585c",
+   "dark": "#b0b2b4",
+   "from": "02 t105 #606367, t097 'Open Sans' #67686b; 10 t005 'Sorter' #b1b2b4, t027 'Save' #b5b6b8"
+  },
+  "qd_muted": {
+   "light": "#76787c",
+   "dark": "#868a8d",
+   "from": "02 t084 #7a7b7d, t125 #797b7e; 10 t090 #878b8d, t096 #868b8d"
+  },
+  "qd_faint": {
+   "light": "#9c9da0",
+   "dark": "#63676a",
+   "from": "03 t051 'Redo' unavailable #9fa1a5; 10 t031 'Redo' #5f6364"
+  },
+  "qd_icon": {
+   "light": "#5b5d61",
+   "dark": "#a3a6a9",
+   "from": "02 the toolbar's icons; 10 (576,76) #96999c"
+  },
+  "qd_green": {
+   "light": "#3fa95a",
+   "dark": "#20b376",
+   "from": "03 the 'Saved' dot (78,999) #43a955; 10 (84,991) #20b376"
+  },
+  "qd_orange": {
+   "light": "#f2a20d",
+   "dark": "#e39a1c",
+   "from": "02 the 'Edited' dot (89,997) #f4a30f"
+  },
+  "qd_red": {
+   "light": "#e5534f",
+   "dark": "#f06a66",
+   "from": "PDF Tools' red: no Quick Deck design draws a refusal"
+  },
+  "qd_toggle_on": {
+   "light": "#0f68d8",
+   "dark": "#1678e7",
+   "from": "02 the Shrink toggle (1465,626) #0968d7; 10 s046 #0d72ed"
+  },
+  "qd_toggle_off": {
+   "light": "#c5c9cc",
+   "dark": "#3b4043",
+   "from": "03 the Legend toggle, off (1498,637) #c5c9cc"
+  },
+  "qd_track": {
+   "light": "#d2d2d3",
+   "dark": "#34393c",
+   "from": "01 the storage bar's track (330,993) #d2d2d3"
+  },
+  "qd_shadow": {
+   "light": "#00000022",
+   "dark": "#00000070",
+   "from": "the slide's soft shadow (02 (1162,500) #dadbdc beside the slide)"
+  },
+  "qd_stage": {
+   "light": "#08090b",
+   "dark": "#08090b",
+   "from": "08 the stage (50,500) #08090b, the same in both"
+  },
+  "qd_stage_pill": {
+   "light": "#14181a",
+   "dark": "#14181a",
+   "from": "08 s001 #14181a"
+  },
+  "qd_stage_line": {
+   "light": "#34383b",
+   "dark": "#34383b",
+   "from": "08 d011 #37393a"
+  },
+  "qd_stage_ink": {
+   "light": "#d4d5d6",
+   "dark": "#d4d5d6",
+   "from": "08 t017 '4 / 12' #d4d5d6"
+  }
+ },
+ "regions": [
+  {
+   "id": "covers",
+   "role": "Home card covers: the engine's renders",
+   "page_content": true,
+   "widget": "Image (binary_resource of deck.cover's PNG, 480 px) at the card's width, its top shown in a frame 0.405 of the card's width tall; a deck mark until it lands (a lock or a warning for a refused deck)",
+   "cite": [
+    "makepad widgets/src/image.rs:71 (Image), ImageFit image_cache.rs:4; binary_resource platform/src/script/res.rs:1398; fs.read_bytes splash_storage.rs:446",
+    "makepad widgets/src/splash_host.rs:292 (host.request); App Flow docs/SCRIPT-API.md 'Host services: host.request'; apps/quickdeck/design/SERVICE.md"
+   ],
+   "colors": {},
+   "decision": "Covers are sample content: each is the engine's render of the deck's first slide (deck.cover), kept across closes in the service's cache.",
+   "notes": "Photos in the covers are sample art; the cover is whatever the deck's first slide holds.",
+   "image_rect": [
+    72,
+    425,
+    1390,
+    440
+   ],
+   "status": "built",
+   "source": {
+    "text": [
+     9,
+     10,
+     11,
+     12,
+     16,
+     17,
+     18,
+     29,
+     30,
+     31,
+     35,
+     36,
+     37,
+     50,
+     51,
+     52,
+     56,
+     57,
+     58
+    ],
+    "surfaces": [
+     1,
+     2,
+     4,
+     7,
+     9,
+     10,
+     13,
+     28
+    ],
+    "dividers": [
+     15,
+     16,
+     21,
+     22
+    ],
+    "note": "sample art inside the slide: not rebuilt"
+   }
+  },
+  {
+   "id": "tabs",
+   "role": "document tabs: Home, one tab per open deck (and the outline page), New",
+   "widget": "SolidView tabs (TAB_H 53, on_render tabs_view): home_tab and doc_tab are GestureViews holding a Tab (RoundedView radius 6; the open one qd_tab_on with a border) with Svg home/deck/outline 16, Label title 11 (tab_title_cap: an ellipsis once the row is full), IconBtn close 13; Flat 'New' (Svg plus) after the last tab, which goes Home",
+   "cite": [
+    "makepad widgets/src/view_ui.rs:85 (SolidView); App Flow docs/SCRIPT-API.md 'Backgrounds' (a plain View paints nothing in the contained host)",
+    "makepad widgets/src/gesture_view.rs:44 (GestureView), on_tap/on_double_tap/on_long_press/on_swipe/on_pan gesture_view.rs:186-196, pan deltas from the press gesture_view.rs:250-275",
+    "makepad widgets/src/view_ui.rs:308 (RoundedView: border_size, border_color, border_radius)",
+    "makepad widgets/src/svg.rs:10 (Svg), draw_svg.svg from http_resource('{{assets}}/icons/…'): App Flow docs/SCRIPT-API.md 'Shape of a program'; apps/pdftools/bundle/main.splash icon()",
+    "makepad widgets/src/label.rs:11 (Label), max_lines label.rs:258, text_overflow Ellipsis (draw_text.rs)",
+    "makepad widgets/src/button.rs:20 (ButtonFlat: text, icon_walk, draw_icon, draw_bg, draw_text, on_click)",
+    "makepad widgets/src/view.rs:904 (render() re-runs a region's on_render); an on_render result is built fresh, view.rs:248"
+   ],
+   "geometry": {
+    "height": 53,
+    "tab": "Fit, 48 tall from y 11; the row clips its last 6 so the open tab joins the toolbar (PDF Tools' shared chrome)",
+    "gap": 2,
+    "title_room": "each title takes what it needs (about 8.2 points a character at 11) while the row has room: the window less 232 and 80 a tab; past that the longest titles are cut to one common width, filled from the shortest up"
+   },
+   "colors": {
+    "light": {
+     "qd_tabs": "#f4f5f6",
+     "qd_tab_on": "#ffffff",
+     "qd_tab_line": "#dedfe1",
+     "qd_ink": "#36393d",
+     "qd_muted": "#76787c"
+    },
+    "dark": {
+     "qd_tabs": "#141719",
+     "qd_tab_on": "#1c2023",
+     "qd_tab_line": "#3a3e41",
+     "qd_ink": "#c9cbcd",
+     "qd_muted": "#868a8d"
+    }
+   },
+   "font": "theme.font_regular",
+   "size": 11,
+   "decision": null,
+   "notes": "01 has one deck open, so New sits after its tab; the white band under the tabs (46-75) is Home's own ground in the build.",
+   "image_rect": [
+    0,
+    0,
+    1536,
+    76
+   ],
+   "status": "built",
+   "source": {
+    "text": [
+     {
+      "i": 0,
+      "text": "n Home",
+      "ocr_height": 17.9,
+      "ink": "#3c3c3d",
+      "ground": "#f6f7f7",
+      "ink_px": 16,
+      "size": 16.0
+     },
+     {
+      "i": 1,
+      "text": "Q3 2026 Board Update X+ New",
+      "ocr_height": 20.4,
+      "ink": "#525253",
+      "ground": "#f2f2f3",
+      "ink_px": 14,
+      "size": 11.5
+     }
+    ],
+    "surfaces": [
+     {
+      "i": 11,
+      "bounds": [
+       374,
+       2,
+       1161,
+       45
+      ],
+      "fill": "#f4f5f6",
+      "border": "#f5f6f7",
+      "radius": 0
+     },
+     {
+      "i": 25,
+      "bounds": [
+       120,
+       2,
+       254,
+       45
+      ],
+      "fill": "#f4f4f5",
+      "border": "#f5f6f6",
+      "radius": 0
+     },
+     {
+      "i": 29,
+      "bounds": [
+       374,
+       2,
+       92,
+       45
+      ],
+      "fill": "#f4f5f6",
+      "border": "#f6f7f8",
+      "radius": 0
+     }
+    ],
+    "dividers": [
+     0,
+     1,
+     2,
+     3
+    ]
+   }
+  },
+  {
+   "id": "header",
+   "role": "Home header: Quick Deck's mark and name",
+   "widget": "View (Fit, flow Right): Svg decks 50 x 42 (accent) and Label 'Quick Deck' 24",
+   "cite": [
+    "makepad widgets/src/view_ui.rs:5 (View); flow: Overlay children placed by margin from the parent's origin (draw/src/turtle.rs)",
+    "makepad widgets/src/svg.rs:10 (Svg), draw_svg.svg from http_resource('{{assets}}/icons/…'): App Flow docs/SCRIPT-API.md 'Shape of a program'; apps/pdftools/bundle/main.splash icon()",
+    "makepad widgets/src/label.rs:11 (Label), max_lines label.rs:258, text_overflow Ellipsis (draw_text.rs)"
+   ],
+   "geometry": {
+    "left": 72,
+    "top": 30,
+    "gap": 22
+   },
+   "colors": {
+    "light": {
+     "qd_accent": "#116cdc",
+     "qd_ink": "#36393d"
+    },
+    "dark": {
+     "qd_accent": "#0f6de6",
+     "qd_ink": "#c9cbcd"
+    }
+   },
+   "font": "theme.font_regular",
+   "size": 24,
+   "decision": null,
+   "notes": "",
+   "image_rect": [
+    60,
+    95,
+    290,
+    70
+   ],
+   "status": "built",
+   "source": {
+    "text": [
+     {
+      "i": 2,
+      "text": "Quick Deck",
+      "ocr_height": 31.3,
+      "ink": "#343537",
+      "ground": "#edeff0",
+      "ink_px": 27,
+      "size": 22.0
+     }
+    ],
+    "surfaces": [
+     {
+      "i": 30,
+      "bounds": [
+       73,
+       112,
+       50,
+       40
+      ],
+      "fill": "#f0f3f5",
+      "border": "#f0f2f4",
+      "radius": 0
+     }
+    ],
+    "dividers": []
+   }
+  },
+  {
+   "id": "actions",
+   "role": "ways to start: New from an outline, Open a presentation from this device (.pptx, up to 64 MB)",
+   "widget": "Outline 'New from an outline' (Svg outline 22, 50 tall) → open_outline; Outline 'Open a presentation from this device' (Svg folder) → files.import into imports/, then deck.open; Label under it: '.pptx, up to <max_import_bytes>' from files.status, 'Not available here' when the host can't import",
+   "cite": [
+    "makepad widgets/src/button.rs:20 (ButtonFlat: text, icon_walk, draw_icon, draw_bg, draw_text, on_click)",
+    "makepad widgets/src/svg.rs:10 (Svg), draw_svg.svg from http_resource('{{assets}}/icons/…'): App Flow docs/SCRIPT-API.md 'Shape of a program'; apps/pdftools/bundle/main.splash icon()",
+    "makepad widgets/src/label.rs:11 (Label), max_lines label.rs:258, text_overflow Ellipsis (draw_text.rs)",
+    "OctoSense crates/shell/src/files_service/mod.rs (files.status, files.import {path}); used as in apps/pdftools/bundle/main.splash open_from_device",
+    "makepad widgets/src/splash_host.rs:292 (host.request); App Flow docs/SCRIPT-API.md 'Host services: host.request'; apps/quickdeck/design/SERVICE.md"
+   ],
+   "geometry": {
+    "height": 50,
+    "gap": 16,
+    "caption": "8 below, centred"
+   },
+   "colors": {
+    "light": {
+     "qd_card": "#ffffff",
+     "qd_field_line": "#dcdde0",
+     "qd_ink": "#36393d",
+     "qd_icon": "#5b5d61",
+     "qd_muted": "#76787c"
+    },
+    "dark": {
+     "qd_card": "#22272b",
+     "qd_field_line": "#383d40",
+     "qd_ink": "#c9cbcd",
+     "qd_icon": "#a3a6a9",
+     "qd_muted": "#868a8d"
+    }
+   },
+   "font": "theme.font_regular",
+   "size": 13,
+   "decision": null,
+   "notes": "files.import takes its destination first, so the file lands as imports/Imported presentation.pptx and is titled with the chosen file's name.",
+   "image_rect": [
+    955,
+    100,
+    530,
+    85
+   ],
+   "status": "built",
+   "source": {
+    "text": [
+     {
+      "i": 41,
+      "text": "E New from an outline",
+      "ocr_height": 20.3,
+      "ink": "#3c3e3f",
+      "ground": "#eeeff1",
+      "ink_px": 20,
+      "size": 20.0
+     },
+     {
+      "i": 46,
+      "text": "Open a presentation from this device",
+      "ocr_height": 18.1,
+      "ink": "#424344",
+      "ground": "#eef0f1",
+      "ink_px": 15,
+      "size": 12.0
+     },
+     {
+      "i": 47,
+      "text": ".pptx, up to 64 MB",
+      "ocr_height": 15.6,
+      "ink": "#95989b",
+      "ground": "#f0f2f3",
+      "ink_px": 13,
+      "size": 10.5
+     }
+    ],
+    "surfaces": [
+     {
+      "i": 23,
+      "bounds": [
+       1160,
+       108,
+       318,
+       51
+      ],
+      "fill": "#f1f3f4",
+      "border": "#edeff1",
+      "radius": 0
+     },
+     {
+      "i": 24,
+      "bounds": [
+       1176,
+       111,
+       299,
+       44
+      ],
+      "fill": "#f1f3f4",
+      "border": "#eff1f2",
+      "radius": 1
+     },
+     {
+      "i": 26,
+      "bounds": [
+       962,
+       108,
+       197,
+       51
+      ],
+      "fill": "#f1f3f4",
+      "border": "#eeeff1",
+      "radius": 0
+     },
+     {
+      "i": 27,
+      "bounds": [
+       965,
+       111,
+       191,
+       44
+      ],
+      "fill": "#f1f3f5",
+      "border": "#f1f3f4",
+      "radius": 0
+     }
+    ],
+    "dividers": [
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11
+    ]
+   }
+  },
+  {
+   "id": "start",
+   "role": "Start a new deck: the engine's eight themes as cards, each named",
+   "widget": "Label 'Start a new deck' 15; View (Flow.Right wrap, spacing 12) of theme_card per deck.themes theme: GestureView → deck.create {out, theme}; RoundedView 156 x 108 in the theme's light 1 with Label 'Title' in its dark 2 and a SolidView rule in its accent 1; Label name (Default for the engine's DeckCraft)",
+   "cite": [
+    "makepad widgets/src/label.rs:11 (Label), max_lines label.rs:258, text_overflow Ellipsis (draw_text.rs)",
+    "makepad widgets/src/view_ui.rs:5 (View); flow: Overlay children placed by margin from the parent's origin (draw/src/turtle.rs)",
+    "makepad widgets/src/gesture_view.rs:44 (GestureView), on_tap/on_double_tap/on_long_press/on_swipe/on_pan gesture_view.rs:186-196, pan deltas from the press gesture_view.rs:250-275",
+    "makepad widgets/src/view_ui.rs:308 (RoundedView: border_size, border_color, border_radius)",
+    "makepad widgets/src/view_ui.rs:85 (SolidView); App Flow docs/SCRIPT-API.md 'Backgrounds' (a plain View paints nothing in the contained host)",
+    "makepad platform/script/src/mod_pod.rs:201 (vec4 builds a colour at run time, from the engine's hex: card-host probe, 11 Oct 2026)",
+    "makepad widgets/src/splash_host.rs:292 (host.request); App Flow docs/SCRIPT-API.md 'Host services: host.request'; apps/quickdeck/design/SERVICE.md"
+   ],
+   "geometry": {
+    "heading_top": 20,
+    "card": [
+     156,
+     108
+    ],
+    "gap": 12,
+    "name_gap": 5
+   },
+   "colors": {
+    "light": {
+     "qd_ink": "#36393d",
+     "qd_ink2": "#55585c",
+     "qd_thumb_line": "#d3d5d9"
+    },
+    "dark": {
+     "qd_ink": "#c9cbcd",
+     "qd_ink2": "#b0b2b4",
+     "qd_thumb_line": "#3a3f43"
+    }
+   },
+   "font": "theme.font_regular",
+   "size": 15,
+   "decision": "Theme previews are sample art: the row is the engine's real themes (deck.themes), each drawn from its own colours; a theme's own fonts are not drawn (OctoSense bundles none, SERVICE.md decision 7).",
+   "notes": "With no engine the row gives way to 'The deck engine isn't available here'. A first run (empty library) shows this row and both buttons, and no Recent.",
+   "image_rect": [
+    60,
+    185,
+    1410,
+    185
+   ],
+   "status": "built",
+   "source": {
+    "text": [
+     {
+      "i": 3,
+      "text": "Start a new deck",
+      "ocr_height": 20.1,
+      "ink": "#37383a",
+      "ground": "#edeff0",
+      "ink_px": 15,
+      "size": 15.0
+     },
+     {
+      "i": 4,
+      "text": "Title",
+      "ocr_height": 29.0,
+      "ink": "#202121",
+      "ground": "#f6f5f6",
+      "ink_px": 24,
+      "size": 24.0
+     },
+     {
+      "i": 5,
+      "text": "Title",
+      "ocr_height": 29.0,
+      "ink": "#1d2b3d",
+      "ground": "#f3f4f5",
+      "ink_px": 25,
+      "size": 25.0
+     },
+     {
+      "i": 6,
+      "text": "Default",
+      "ocr_height": 15.6,
+      "ink": "#5e6062",
+      "ground": "#eceeef",
+      "ink_px": 12,
+      "size": 12.0
+     },
+     {
+      "i": 7,
+      "text": "Harbor",
+      "ocr_height": 15.9,
+      "ink": "#5d5f61",
+      "ground": "#eceeef",
+      "ink_px": 13,
+      "size": 13.0
+     },
+     {
+      "i": 23,
+      "text": "Title",
+      "ocr_height": 29.0,
+      "ink": "#4b301d",
+      "ground": "#f6eddf",
+      "ink_px": 25,
+      "size": 25.0
+     },
+     {
+      "i": 24,
+      "text": "Ember",
+      "ocr_height": 15.6,
+      "ink": "#5b5d5f",
+      "ground": "#ecedef",
+      "ink_px": 12,
+      "size": 12.0
+     },
+     {
+      "i": 25,
+      "text": "Title",
+      "ocr_height": 31.2,
+      "ink": "#345535",
+      "ground": "#f7f8f7",
+      "ink_px": 24,
+      "size": 24.0
+     },
+     {
+      "i": 26,
+      "text": "Meadow",
+      "ocr_height": 15.8,
+      "ink": "#636567",
+      "ground": "#eef0f1",
+      "ink_px": 13,
+      "size": 13.0
+     },
+     {
+      "i": 27,
+      "text": "Title",
+      "ocr_height": 31.2,
+      "ink": "#e0e1e4",
+      "ground": "#081d2d",
+      "ink_px": 25,
+      "size": 25.0
+     },
+     {
+      "i": 28,
+      "text": "Nocturne",
+      "ocr_height": 15.9,
+      "ink": "#616365",
+      "ground": "#eef0f1",
+      "ink_px": 13,
+      "size": 13.0
+     },
+     {
+      "i": 42,
+      "text": "Title",
+      "ocr_height": 31.2,
+      "ink": "#616161",
+      "ground": "#f8f8f8",
+      "ink_px": 28,
+      "size": 28.0
+     },
+     {
+      "i": 43,
+      "text": "Paper",
+      "ocr_height": 17.8,
+      "ink": "#646667",
+      "ground": "#eeeff1",
+      "ink_px": 15,
+      "size": 12.0
+     },
+     {
+      "i": 44,
+      "text": "Title",
+      "ocr_height": 29.0,
+      "ink": "#1c6d79",
+      "ground": "#f4f8f8",
+      "ink_px": 27,
+      "size": 27.0
+     },
+     {
+      "i": 45,
+      "text": "Coral Reef",
+      "ocr_height": 17.0,
+      "ink": "#5c5e61",
+      "ground": "#edeff0",
+      "ink_px": 13,
+      "size": 13.0
+     },
+     {
+      "i": 48,
+      "text": "Title",
+      "ocr_height": 31.2,
+      "ink": "#373d42",
+      "ground": "#f6f6f6",
+      "ink_px": 27,
+      "size": 27.0
+     },
+     {
+      "i": 49,
+      "text": "Slate",
+      "ocr_height": 15.6,
+      "ink": "#646769",
+      "ground": "#edeff0",
+      "ink_px": 13,
+      "size": 13.0
+     }
+    ],
+    "surfaces": [
+     {
+      "i": 15,
+      "bounds": [
+       72,
+       221,
+       167,
+       116
+      ],
+      "fill": "#fdfdfd",
+      "border": "#f2f4f6",
+      "radius": 7
+     },
+     {
+      "i": 16,
+      "bounds": [
+       1299,
+       221,
+       161,
+       117
+      ],
+      "fill": "#fdfdfc",
+      "border": "#f1f4f5",
+      "radius": 6
+     },
+     {
+      "i": 17,
+      "bounds": [
+       1127,
+       221,
+       161,
+       117
+      ],
+      "fill": "#fdfdfd",
+      "border": "#f2f4f5",
+      "radius": 6
+     },
+     {
+      "i": 18,
+      "bounds": [
+       953,
+       221,
+       160,
+       117
+      ],
+      "fill": "#fdfcfc",
+      "border": "#f1f3f5",
+      "radius": 6
+     },
+     {
+      "i": 19,
+      "bounds": [
+       257,
+       222,
+       162,
+       115
+      ],
+      "fill": "#fdfdfd",
+      "border": "#f2f4f6",
+      "radius": 7
+     },
+     {
+      "i": 20,
+      "bounds": [
+       608,
+       222,
+       160,
+       116
+      ],
+      "fill": "#fdfdfd",
+      "border": "#f1f3f5",
+      "radius": 6
+     },
+     {
+      "i": 21,
+      "bounds": [
+       437,
+       222,
+       158,
+       115
+      ],
+      "fill": "#fcf2e1",
+      "border": "#f2f4f6",
+      "radius": 6
+     },
+     {
+      "i": 22,
+      "bounds": [
+       780,
+       223,
+       159,
+       113
+      ],
+      "fill": "#031b2c",
+      "border": "#e7eaee",
+      "radius": 4
+     }
+    ],
+    "dividers": []
+   }
+  },
+  {
+   "id": "recent",
+   "role": "Recent: deck cards with their cover, title, slides and size, when edited",
+   "widget": "Label 'Recent' 15; per row a View (flow Right, spacing 17) of deck_card: GestureView → open_deck; RoundedView (radius 4, border) with the cover frame, a soft line, Label title 13 (ellipsis), Label '12 slides · 3.4 MB' 11.5 and 'Edited today' 11.5, IconBtn duplicate and trash (Remove asks once more, inline)",
+   "cite": [
+    "makepad widgets/src/label.rs:11 (Label), max_lines label.rs:258, text_overflow Ellipsis (draw_text.rs)",
+    "makepad widgets/src/view_ui.rs:5 (View); flow: Overlay children placed by margin from the parent's origin (draw/src/turtle.rs)",
+    "makepad widgets/src/gesture_view.rs:44 (GestureView), on_tap/on_double_tap/on_long_press/on_swipe/on_pan gesture_view.rs:186-196, pan deltas from the press gesture_view.rs:250-275",
+    "makepad widgets/src/view_ui.rs:308 (RoundedView: border_size, border_color, border_radius)",
+    "makepad widgets/src/button.rs:20 (ButtonFlat: text, icon_walk, draw_icon, draw_bg, draw_text, on_click)",
+    "makepad widgets/src/image.rs:71 (Image), ImageFit image_cache.rs:4; binary_resource platform/src/script/res.rs:1398; fs.read_bytes splash_storage.rs:446"
+   ],
+   "geometry": {
+    "columns": "3 (2 under 900 points)",
+    "card": "(min(window, 1536) - 144 - 34) / 3 wide",
+    "gap": [
+     17,
+     14
+    ],
+    "cover": "0.405 of the card's width"
+   },
+   "colors": {
+    "light": {
+     "qd_card": "#ffffff",
+     "qd_line": "#e2e3e5",
+     "qd_line_soft": "#ececee",
+     "qd_ink": "#36393d",
+     "qd_muted": "#76787c",
+     "qd_faint": "#9c9da0"
+    },
+    "dark": {
+     "qd_card": "#22272b",
+     "qd_line": "#33383b",
+     "qd_line_soft": "#2a2e31",
+     "qd_ink": "#c9cbcd",
+     "qd_muted": "#868a8d",
+     "qd_faint": "#63676a"
+    }
+   },
+   "font": "theme.font_regular",
+   "size": 13,
+   "decision": null,
+   "notes": "Duplicate and Remove are the brief's library jobs (job 9); the design shows neither, so each is a quiet icon after the date.",
+   "image_rect": [
+    60,
+    385,
+    1410,
+    545
+   ],
+   "status": "built",
+   "source": {
+    "text": [
+     {
+      "i": 8,
+      "text": "Recent",
+      "ocr_height": 19.2,
+      "ink": "#313336",
+      "ground": "#eceef0",
+      "ink_px": 14,
+      "size": 14.0
+     },
+     {
+      "i": 13,
+      "text": "Q3 2026 Board Update",
+      "ocr_height": 18.0,
+      "ink": "#303133",
+      "ground": "#f1f2f2",
+      "ink_px": 16,
+      "size": 13.0
+     },
+     {
+      "i": 14,
+      "text": "12 slides • 3.4 MB",
+      "ocr_height": 15.6,
+      "ink": "#95969a",
+      "ground": "#f9f9fa",
+      "ink_px": 11,
+      "size": 11.0
+     },
+     {
+      "i": 15,
+      "text": "Edited today",
+      "ocr_height": 16.1,
+      "ink": "#959698",
+      "ground": "#f8f8f8",
+      "ink_px": 13,
+      "size": 10.5
+     },
+     {
+      "i": 19,
+      "text": "Welcome to the Team",
+      "ocr_height": 16,
+      "ink": "#353739",
+      "ground": "#f2f2f3",
+      "ink_px": 13,
+      "size": 13.0
+     },
+     {
+      "i": 20,
+      "text": "9 slides • 1.9 MB",
+      "ocr_height": 13.4,
+      "ink": "#95979a",
+      "ground": "#f8f8f9",
+      "ink_px": 11,
+      "size": 11.0
+     },
+     {
+      "i": 21,
+      "text": "Edited 3 Oct",
+      "ocr_height": 14.0,
+      "ink": "#8f9193",
+      "ground": "#f7f7f7",
+      "ink_px": 10,
+      "size": 10.0
+     },
+     {
+      "i": 32,
+      "text": "Northern Lights Field Trip",
+      "ocr_height": 18.0,
+      "ink": "#353639",
+      "ground": "#f3f3f3",
+      "ink_px": 16,
+      "size": 13.0
+     },
+     {
+      "i": 33,
+      "text": "8 slides • 6.2 MB",
+      "ocr_height": 13.4,
+      "ink": "#8f9295",
+      "ground": "#f8f8f8",
+      "ink_px": 11,
+      "size": 11.0
+     },
+     {
+      "i": 34,
+      "text": "Edited yesterday",
+      "ocr_height": 15.6,
+      "ink": "#939497",
+      "ground": "#f7f8f8",
+      "ink_px": 13,
+      "size": 10.5
+     },
+     {
+      "i": 38,
+      "text": "Spring Fundraiser Pitch",
+      "ocr_height": 18.1,
+      "ink": "#343638",
+      "ground": "#f3f3f4",
+      "ink_px": 16,
+      "size": 13.0
+     },
+     {
+      "i": 39,
+      "text": "6 slides . 840 KB",
+      "ocr_height": 13.4,
+      "ink": "#8e9094",
+      "ground": "#f7f7f7",
+      "ink_px": 11,
+      "size": 11.0
+     },
+     {
+      "i": 40,
+      "text": "Edited 28 Sep",
+      "ocr_height": 16.5,
+      "ink": "#8f9092",
+      "ground": "#f8f8f8",
+      "ink_px": 12,
+      "size": 10.0
+     },
+     {
+      "i": 53,
+      "text": "Riverside Community Garden",
+      "ocr_height": 18.0,
+      "ink": "#313236",
+      "ground": "#f2f3f3",
+      "ink_px": 16,
+      "size": 13.0
+     },
+     {
+      "i": 54,
+      "text": "10 slides • 2.7 MB",
+      "ocr_height": 15.6,
+      "ink": "#888a8d",
+      "ground": "#f8f8f8",
+      "ink_px": 10,
+      "size": 10.0
+     },
+     {
+      "i": 55,
+      "text": "Edited 6 Oct",
+      "ocr_height": 15.8,
+      "ink": "#929598",
+      "ground": "#f8f8f9",
+      "ink_px": 11,
+      "size": 11.0
+     },
+     {
+      "i": 59,
+      "text": "Coastal Survey Findings",
+      "ocr_height": 18.1,
+      "ink": "#303235",
+      "ground": "#f2f2f2",
+      "ink_px": 16,
+      "size": 13.0
+     },
+     {
+      "i": 60,
+      "text": "14 slides • 8.8 MB",
+      "ocr_height": 13.4,
+      "ink": "#999b9e",
+      "ground": "#f8f8f8",
+      "ink_px": 11,
+      "size": 11.0
+     },
+     {
+      "i": 61,
+      "text": "Edited 22 Sep",
+      "ocr_height": 15.9,
+      "ink": "#96989a",
+      "ground": "#f8f8f8",
+      "ink_px": 11,
+      "size": 9.0
+     }
+    ],
+    "surfaces": [
+     {
+      "i": 3,
+      "bounds": [
+       994,
+       684,
+       466,
+       239
+      ],
+      "fill": "#fafafb",
+      "border": "#f2f4f6",
+      "radius": 0
+     },
+     {
+      "i": 5,
+      "bounds": [
+       72,
+       683,
+       450,
+       240
+      ],
+      "fill": "#fcfcfc",
+      "border": "#f3f5f7",
+      "radius": 7
+     },
+     {
+      "i": 6,
+      "bounds": [
+       542,
+       683,
+       434,
+       240
+      ],
+      "fill": "#fcf5e7",
+      "border": "#f3f5f7",
+      "radius": 11
+     },
+     {
+      "i": 12,
+      "bounds": [
+       75,
+       862,
+       444,
+       58
+      ],
+      "fill": "#fcfcfc",
+      "border": "#f2f2f2",
+      "radius": 1
+     },
+     {
+      "i": 14,
+      "bounds": [
+       75,
+       612,
+       444,
+       55
+      ],
+      "fill": "#fcfcfc",
+      "border": "#fdfcfc",
+      "radius": 0
+     }
+    ],
+    "dividers": [
+     12,
+     13,
+     14,
+     17,
+     18,
+     19,
+     20,
+     23,
+     24,
+     25,
+     26,
+     27,
+     28,
+     29
+    ]
+   }
+  },
+  {
+   "id": "status",
+   "role": "status line: Saved or Edited with its dot, the slide and size (or the sorter's count), storage used",
+   "widget": "SolidView status (STATUS_H 44, on_render status_view): Label state + RoundedView 11 dot (green Saved, amber Edited/Saving), centred Label 'Slide 5 of 12 · 16:9', Label '<x> of 64 MB used' from files.status; on Home the label and a RoundedView bar; red ground and words when the storage is full",
+   "cite": [
+    "makepad widgets/src/view_ui.rs:85 (SolidView); App Flow docs/SCRIPT-API.md 'Backgrounds' (a plain View paints nothing in the contained host)",
+    "makepad widgets/src/view_ui.rs:308 (RoundedView: border_size, border_color, border_radius)",
+    "makepad widgets/src/label.rs:11 (Label), max_lines label.rs:258, text_overflow Ellipsis (draw_text.rs)",
+    "OctoSense crates/shell/src/files_service/mod.rs (files.status, files.import {path}); used as in apps/pdftools/bundle/main.splash open_from_device"
+   ],
+   "geometry": {
+    "height": 44,
+    "padding": [
+     26,
+     34
+    ],
+    "dot": 11
+   },
+   "colors": {
+    "light": {
+     "qd_status": "#ffffff",
+     "qd_muted": "#76787c",
+     "qd_green": "#3fa95a",
+     "qd_orange": "#f2a20d",
+     "qd_red": "#e5534f",
+     "qd_track": "#d2d2d3",
+     "qd_accent": "#116cdc"
+    },
+    "dark": {
+     "qd_status": "#151b1d",
+     "qd_muted": "#868a8d",
+     "qd_green": "#20b376",
+     "qd_orange": "#e39a1c",
+     "qd_red": "#f06a66",
+     "qd_track": "#34393c",
+     "qd_accent": "#0f6de6"
+    }
+   },
+   "font": "theme.font_regular",
+   "size": 12,
+   "decision": null,
+   "notes": "On Home: the storage words and a 188-point bar (01: 24.8 of 64 MB used, the bar a third full).",
+   "image_rect": [
+    0,
+    965,
+    1536,
+    59
+   ],
+   "status": "built",
+   "source": {
+    "text": [
+     {
+      "i": 22,
+      "text": "24.8 of 64 MB used",
+      "ocr_height": 13.5,
+      "ink": "#838688",
+      "ground": "#f6f6f6",
+      "ink_px": 12,
+      "size": 12.0
+     }
+    ],
+    "surfaces": [
+     {
+      "i": 8,
+      "bounds": [
+       2,
+       970,
+       1533,
+       53
+      ],
+      "fill": "#fcfcfc",
+      "border": "#fdfcfc",
+      "radius": 0
+     }
+    ],
+    "dividers": []
+   }
+  },
+  {
+   "id": "window",
+   "role": "Home's ground",
+   "widget": "SolidView root (flow Overlay, qd_desk) and the region's own ground",
+   "cite": [
+    "makepad widgets/src/view_ui.rs:85 (SolidView); App Flow docs/SCRIPT-API.md 'Backgrounds' (a plain View paints nothing in the contained host)"
+   ],
+   "geometry": {
+    "size": "the app's window"
+   },
+   "colors": {
+    "light": {
+     "qd_home": "#f2f4f5"
+    },
+    "dark": {
+     "qd_home": "#1b1e22"
+    }
+   },
+   "decision": null,
+   "notes": "",
+   "image_rect": [
+    0,
+    0,
+    1536,
+    1024
+   ],
+   "status": "built",
+   "source": {
+    "text": [],
+    "surfaces": [
+     {
+      "i": 0,
+      "bounds": [
+       2,
+       77,
+       1533,
+       890
+      ],
+      "fill": "#f2f4f5",
+      "border": "#f2f4f6",
+      "radius": 0
+     }
+    ],
+    "dividers": []
+   }
+  }
+ ],
+ "coverage": {
+  "text": 62,
+  "surfaces": 31,
+  "dividers": 30,
+  "unmapped": 0
+ }
+}

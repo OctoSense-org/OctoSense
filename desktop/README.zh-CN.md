@@ -2,7 +2,11 @@
 
 [English](README.md) | 简体中文
 
-**下载**：[桌面版 0.1.0-rc.2](https://github.com/OctoSense-org/OctoSense/releases/tag/desktop-v0.1.0-rc.2) 支持当前的 App Hub 签名目录、带 GitHub 证明的应用包及 SDK 1.10.0 公开宿主 API。各平台支持范围与验收限制见[宿主 OS API 状态](../docs/host-os-api-status.zh-CN.md)。请选择与操作系统和架构对应的文件，并核对发行说明及校验和。内嵌网页还需要满足[各平台浏览器前置条件](../docs/desktop-embedded-browser.zh-CN.md#运行条件)。
+**预发布版下载：** [桌面版 0.1.0-rc.6](https://github.com/OctoSense-org/OctoSense/releases/tag/desktop-v0.1.0-rc.6) 包含应用契约 1.12.0、WASI TCP/UDP/DNS、共享组件、能力仅用于声明的公开 API 及 OctoSense Updates。请核对带签名的校验和，并查看发行说明中的各平台验收范围。RC5 用户须先手动升级一次。内嵌网页需要满足[各平台浏览器前置条件](../docs/desktop-embedded-browser.zh-CN.md#运行条件)；其他平台限制见[宿主 OS API 状态](../docs/host-os-api-status.zh-CN.md)。
+
+源码构建还会打包一个小型 macOS 更新辅助程序和启动协议标记。**Install & Restart** 沿用应用关闭确认、保留旧应用包，并使用相同配置重新启动。RC6 仍需手动替换，详见[更新器指南](../docs/updater.zh-CN.md)。
+
+**服务商登录**：GitHub 和 Google 登录仍需[发行方提供注册信息](../crates/oauth-service/README.zh-CN.md#配置发行版本维护者)。发布工作流未配置这些信息；从 App Hub 安装连接账户的应用也不会补上。
 
 **初次阅读源码**？先读[桌面、Home、ROM 与系统应用导读](docs/code-walkthrough.zh-CN.md)，再读 [Agent 与 Tokio 导读](../docs/architecture-walkthrough.zh-CN.md)。前者追踪启动、原生托管、脚本 bundle、应用数据和 Android 平台边界。
 
@@ -93,7 +97,7 @@ cargo run --release -p octosense
 | --- | --- | --- |
 | `app-hub` | 开 | 链接 `octosense-app-hub-app`（商店 `apphub`、Card 运行器 `card`、系统应用）；Mail、News、Calendar 和 AI providers 宿主服务；已连接账户服务（`auth`、`github`、`gmail`、`gcalendar`）；以及 GitHub Notes 使用的 Markdown 编辑器（`octosense-markdown-editor`）。没有它，构建中既没有 App Hub 也没有系统应用。 |
 | `octos-core` | 开 | octos 内核服务（`octosense-kernel`，来自 `../crates/kernel`）和应用与 Agent 之间的代理（`octosense-app-peers`）：AppCard、Rinx 等使用方共享的唯一内核，由 AI 提供商配置。Android 和 iOS 上始终开启。用 `--no-default-features --features app-hub`（再加上需要的其他 feature）可以去掉它。 |
-| `wasm-functions` | 开 | `wasm` 宿主服务：应用自带的 WebAssembly 函数（[ADR 0011](../docs/adr/0011-apps-own-functions-in-webassembly.zh-CN.md)、[OctoSense 中的 WebAssembly](../docs/wasm.zh-CN.md)），由 `../crates/wasm-host` 运行（Wasmtime，由 Cranelift 编译）。在 macOS 和 Linux 上运行；Windows 构建不包含这个运行时。`wasm-lab` 是它以前的名字。 |
+| `wasm-functions` | 开 | `wasm` 宿主服务：应用自带的 WebAssembly 函数（[ADR 0011](../docs/adr/0011-apps-own-functions-in-webassembly.zh-CN.md)、[OctoSense 中的 WebAssembly](../docs/wasm.zh-CN.md)），由 `../crates/wasm-host` 运行（Wasmtime，由 Cranelift 编译）。当前源码在 macOS、Windows、Linux 以及 Android 和 OpenHarmony Home 构建中包含此运行时（OpenHarmony 使用 Pulley）；OpenHarmony 真机执行仍未验证，平台验收与编译分别记录。`wasm-lab` 是它以前的名字。 |
 | `app-rinx` | 开 | 以模块形式链接 Matrix 客户端 [Rinx](https://github.com/hagency-org/Rinx)；隐含 `octos-core`（它的助手就是 Shell 的助手）。 |
 | `app-reference` | 关 | 以模块形式链接 Reference（`../apps/reference`）。 |
 | `app-sheets` | 关 | 以模块形式链接 Makepad 的 Sheets。 |
@@ -117,6 +121,7 @@ App Hub 的模块没有进程形态，总是在进程内打开。
 | `--apps <file>` | 使用这个开发者程序目录。 |
 | `--module <id>` | 在进程内托管一个已链接的模块。 |
 | `--assistant`、`--prewarm` | 启动助手应用 / 预热应用（需要目录中有对应条目）。默认关闭。 |
+| `MAKEPAD_WM_NO_PREBUILD=1` | 从源码检出运行时，Shell 启动后不久会在后台构建目录中的原生应用（一次一个，以后台优先级进行；你打开的应用正在构建时会让路），这样首次打开不必等待 cargo。设置此变量即关闭。无论是否预构建，Shell 构建过的应用只要其构建读取的文件此后没有变化，打开时完全不运行 cargo。已安装的 Shell 不构建任何东西。 |
 | `--demo-home`、`--download-wallpapers` | 生成演示文件系统；下载 Omarchy 主题的完整壁纸集。 |
 | `OCTOSENSE_HOME` | 状态目录（默认 `~/.octosense`；若已存在 `~/.makeos` 则回退到它，也支持 `MAKEOS_HOME`）。 |
 | `OCTOSENSE_APP_DATA` | App Hub 保存已安装应用的位置（默认为平台数据目录下的 `apps/`）。 |
@@ -188,13 +193,14 @@ python3 tools/release-scan.py target/octosense-package/dist/*   # refuse private
 2. 给提交打标签并推送：`git tag desktop-v0.1.0 <commit> && git push origin desktop-v0.1.0`。版本号取自标签（`desktop-v<major>.<minor>.<patch>[-<pre>]`）。从 `main` 手动运行并设置 `tag`、关闭 `dry_run`，对已有标签效果相同；两种方式都会检出**该标签**而不是分支，并在附加任何文件前核对提交。
 3. `package` 任务（macOS 14 arm64、Windows 2022、Ubuntu 22.04 x86_64，较旧的 glibc 让 `.deb` 和 AppImage 能在旧发行版上使用）运行 `tools/setup.py`、依赖图检查、在中性目录中运行 `package.py` 和扫描，并上传**未签名**的包。这些任务没有任何密钥。
 4. `sign-macos` 和 `sign-windows` 在 `release` 环境中运行，只下载这些包：用 codesign（hardened runtime，`entitlements.plist`）签名内核和应用、把内核收据更新为签名后的字节、重新生成 `.dmg`、notarytool 公证并装订；用 signtool 签名安装包。它们从不检出或构建代码。
-5. `release` 检出标签，核对 HEAD 就是标签的提交，再扫描一次，把所有包、每个平台的收据和 `SHA256SUMS` 附加到该标签的**草稿** release（不标记为 latest，`home-v*` 和 `rom-v*` 也在本仓库）。检查草稿、试用安装包后手动发布。
+5. `release` 检出标签，核对 HEAD 就是标签的提交，再扫描一次，把所有包、每个平台的收据和 `SHA256SUMS` 附加到该标签的**草稿** release（不标记为 latest，`home-v*` 和 `rom-v*` 也在本仓库）。检查草稿并试用安装包。
+6. 为应用内更新器签名：`gh workflow run sign-desktop-release.yml --ref main -f tag=desktop-v0.1.0`。该运行需等 `desktop-release-signing` 环境的审核人批准。它检查 `SHA256SUMS` 是否恰好列出该发布的所有文件及其 GitHub 摘要；随后 GitHub 为 `SHA256SUMS` 签名，运行把签名作为 `SHA256SUMS.sigstore.json` 附到发布中。[OctoSense Updates](../docs/updater.zh-CN.md#校验与隐私) 会拒绝没有此签名的桌面版发布。之后再手动发布草稿。[RC6 签名运行](https://github.com/OctoSense-org/OctoSense/actions/runs/38137543497) 经正常审核人批准后通过。RC6 原版更新器验证了该签名，并拒绝篡改校验和与其他发布标签；[验证范围](../docs/updater.zh-CN.md#验证范围)区分了这些检查与实际安装更新。
 
 修改打包的 pull request 只运行 `package` 任务：没有密钥、不签名、不发布。不构建 x86_64 macOS 版本（macOS 运行器是 arm64）。
 
 ### 签名
 
-没有密钥时，签名任务会把包原样以**未签名**状态传下去并给出警告：macOS Gatekeeper 首次打开时要求确认（右键 → 打开），Windows SmartScreen 会提示警告。要签名，请创建名为 `release` 的 GitHub 环境（**Settings → Environments**），限制为 `main` 和 `desktop-v*` 标签（需要时添加必需的审批人），并把下面这些作为该环境的密钥添加，而不是仓库密钥：
+没有密钥时，签名任务会把包原样以**未签名**状态传下去并给出警告。macOS Gatekeeper 可能阻止首次启动；核对下载来源和校验和后，若决定运行，可按 [Apple 的说明](https://support.apple.com/102445)使用仅针对该应用的**系统设置 → 隐私与安全性 → 仍要打开**。Windows SmartScreen 会提示警告。要签名，请创建名为 `release` 的 GitHub 环境（**Settings → Environments**），限制为 `main` 和 `desktop-v*` 标签（需要时添加必需的审批人），并把下面这些作为该环境的密钥添加，而不是仓库密钥：
 
 | 密钥 | 用途 |
 | --- | --- |
@@ -212,7 +218,7 @@ launcher 把四类应用列在一起：
 
 | 类别 | 来源 | 运行方式 | Launcher id |
 | --- | --- | --- | --- |
-| **系统应用**：新闻、相册、地图、相机、邮件、日历（仅桌面）、AI 提供商、YouTube、Quick Deck、PDF Tools 和 Writer（三者均仅桌面：它们使用的 `deck`、`pdf` 和 `word` 引擎在 `craft-engines` 之后） | `../apps/<name>/bundle`，由 `system-apps.json` 选择，打包进构建 | App Hub 的 Card 运行器中隔离运行的 Splash 程序，每个应用一个 isolate，只拥有其清单申请的能力 | `<name>`（清单 id `os.<name>`） |
+| **系统应用**：新闻、相册、地图、相机、邮件、日历（仅桌面）、AI 提供商、YouTube、Quick Deck、PDF Tools 和 Writer（三者均仅桌面：它们使用的 `deck`、`pdf` 和 `word` 引擎在 `craft-engines` 之后） | `../apps/<name>/bundle`，由 `system-apps.json` 选择，打包进构建 | App Hub 的 Card 运行器中隔离运行的 Splash 程序，每个应用一个 isolate，绑定已验证的应用身份、独立存储及宿主同意边界 | `<name>`（清单 id `os.<name>`） |
 | **商店应用** | 签名的 App Hub 目录，从商店（`apphub`）安装 | 同一个 Card 运行器。每次打开都会对照目录检查；更新会关闭旧实例。 | `hub:<manifest-id>` |
 | **原生模块** | 链接进本二进制的 Rust crate | 进程内的 `AppModule`。只允许受信任的代码：App Hub、AppCard、Rinx、Reference 以及各 `app-*` feature。 | 模块 id |
 | **开发者程序** | `config/apps.json` | tile 中的独立进程，通过 Makepad 的 `--stdin-loop` 托管协议运行，首次启动时构建 | 目录 `id` |
@@ -221,11 +227,11 @@ launcher 把四类应用列在一起：
 
 ### 隔离与权限
 
-隔离运行的应用是一个包：`manifest.json`（id、版本、能力）加上 `main.splash`。Card 运行器只授予清单中列出的能力（邮件申请 `storage` 和 `mail`）。固定的 Makepad（[makepad#30](https://github.com/OctoSense-org/makepad/pull/30)）在 isolate 的每个出口执行这一约束：网络请求和 web socket 受应用的主机列表约束，原始 socket 和服务端被拒绝，文件访问限制在应用的存储沙箱内，密码和一次性验证码输入框在受约束的 isolate 中不起作用。
+隔离运行的应用是一个包：`manifest.json`（id、版本、能力）加上 `main.splash`。能力家族与 `network.hosts` 说明用途，不授予或拒绝公开 API。Card 运行器在执行源码前绑定已准入的应用身份。文件仍限制在应用/账户存储隔离目录及配额内；设备调用仍需用户同意和 OS 权限；私密写操作仍需可信宿主审核。密码及一次性验证码输入框在隔离应用中仍不起作用，所需宿主 ABI 版本仍用于兼容性检查。详见[能力声明与执行边界](../docs/capabilities.zh-CN.md)。
 
 ### 宿主服务与宿主自有面板
 
-密钥属于宿主。需要账户的应用通过 `host.request` 调用**宿主服务**；服务在 Shell 中持有凭据运行，应用永远拿不到 socket，也拿不到密码。
+密钥属于宿主。需要账户的应用通过 `host.request` 调用**宿主服务**；服务在 Shell 中持有凭据运行，应用不会得到该账户的密码。
 
 邮件是完整的示例（`octosense-mail-service`，来自 [`../apps/mail/host-service`](../apps/mail/host-service)）：
 
@@ -298,7 +304,7 @@ OCTOSENSE_HUB_CATALOG=legacy \
 ]
 ```
 
-- `"source": "makepad"` 通过 Cargo 解析到与宿主相同的 Makepad 检出（`.sources/makepad`）；这类构建输出到 `~/.octosense/build/makepad`。
+- `"source": "makepad"` 通过 Cargo 解析到与宿主相同的 Makepad 检出（`.sources/makepad`）；这类构建输出到该检出的 `target/makepad`（设置了 `CARGO_TARGET_DIR` 时为 `$CARGO_TARGET_DIR/makepad`），与原生应用的构建放在一起，从该检出运行的每个 OctoSense 主目录都共用它们。旧版 Shell 把它们构建到 `~/.octosense/build/makepad`；该目录已不再使用，可以删除。
 - 分步指南：[打开托管应用](docs/open-apps.md)（包括 `cargo metadata --offline` 失败导致目录为空时的修复方法），以及[打开完整的 Makepad 目录](docs/add-all-makepad-apps.md)。
 - 相对路径相对于目录文件所在目录解析。参数按原样传递，不经过 shell。
 - `policy`：`"new"` 打开新实例；`"focus"`（默认）聚焦已运行的实例。
@@ -400,6 +406,9 @@ cargo makepad android run -p octosense --release
 ## 桌面样式与设置
 
 - 八种桌面样式。桌面构建启动时使用 **OctoSense** 样式，带 Liquid Glass 窗框，顶栏有 **Light / Dark** 切换；其余样式为 Omarchy、macOS、Windows、Windows 2000、NeXTSTEP、iOS 和 Android。主题源文件在 `../crates/shell/resources/themes/`，壁纸来源见 [crates/shell/resources/wallpapers/README.md](../crates/shell/resources/wallpapers/README.md)。
+- **全屏。** 点窗口的绿色按钮或按 ⌘F，窗口会像在 macOS 上一样进入全屏：它覆盖整个屏幕，顶栏、它自己的标题栏和程序坞都会隐藏。把指针停在屏幕顶边，顶栏和窗口标题栏就会出现（标题栏上的绿色按钮可退出全屏）；停在底边，程序坞就会升起。指针离开后不久它们会再次收起，而它们打开的菜单显示期间会保持出现。若想改为最大化（停在程序坞之上），可按住 Option 点绿色按钮、按 ⌘⌥F 或双击标题栏。
+- **应用的演示全屏。** 应用可以在用户点按或点击时让自己的窗口进入全屏，用于幻灯片放映或阅读模式（`window.fullscreen`）。此时屏幕边缘不会唤出顶栏、标题栏或程序坞；OctoSense 窗口如果还不在全屏中，也会进入全屏，结束后再退出。按 **Esc** 结束演示全屏，提示会显示三秒。以这种方式在真实显示器上进入全屏尚**未经验证**。
+- **全屏时的程序坞。** OctoSense 窗口本身全屏时（在 macOS 上点绿色按钮或按 ⌃⌘F），OctoSense 和 macOS 样式也会这样隐藏程序坞，就像 macOS 在全屏应用旁隐藏 Dock 一样；此时新窗口可以占用全部高度。没有任何全屏时，程序坞始终显示。在 Wayland 下，最大化的窗口也算全屏；makepad 在 Windows 和 X11 上不报告全屏，所以在那里只有 OctoSense 内的全屏窗口会让程序坞隐藏。隐藏窗口运行的 shell 可用 `MAKEPAD_HIDE_WINDOWS=1 MAKEPAD_REMOTE=127.0.0.1:8932 target/debug/octosense --test-action launch-calculator --test-action fullscreen`（窗口全屏）或 `--test-action host-fullscreen`（OctoSense 窗口全屏）获得这些行为。在真实显示器上，两者都尚**未经验证**。
 - 快捷键：**⌘Space** 菜单，**⌘W** 关闭 tile，**⌘F** tile 全屏，**⌘1…0** 切换工作区，**⌘Shift1…0** 移动 tile。在 macOS 上，**⌘A** 交给当前应用执行全选；**Ctrl+Alt+A** 仍用于窗口管理器的备用修饰层前缀。**Learn → Keybindings** 列出全部快捷键；见 [KEYBINDINGS.md](KEYBINDINGS.md)。
 - 状态保存在 `~/.octosense`（`OCTOSENSE_HOME`）；被托管的应用通过 `MAKEPAD_HOME` 获得它。
 - AI 面板（**F10**）的本地模型：[docs/local-ai.md](docs/local-ai.md)。没有模型桌面也能正常工作。

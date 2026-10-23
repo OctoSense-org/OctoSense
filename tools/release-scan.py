@@ -105,6 +105,22 @@ RINX_MIME_SOURCE_SEAM = re.compile(
     rb"(?P<home>/home/room_screen\.rsapplication/)octet-stream"
 )
 
+# The pinned Rinx filename, Matrix authorization-metadata route and response
+# field are adjacent literals in the optimized Linux RC3 host. Together they
+# make /home/chat_actions.rs_matrix/ look like an account directory. Require
+# the complete source/route/field context; the apparent home span alone, a
+# different neighbor or a private path beside it must still fail.
+# Public source proof:
+# https://github.com/hagency-org/Rinx/blob/4b89097d8791a7190d01de1c576979c93df0013d/src/home/chat_actions.rs
+# https://github.com/project-robius/ruma/blob/7a912c8579871e72468ee5a4deecc16615e73099/crates/ruma-client-api/src/discovery/get_authorization_server_metadata.rs#L31
+# The response field is declared at line 171 of the same Ruma source file.
+RINX_MATRIX_SOURCE_SEAM = re.compile(
+    rb"/cargo/git/checkouts/rinx-[0-9a-f]{16}/"
+    rb"(?:4b89097|4b89097d8791a7190d01de1c576979c93df0013d)/src"
+    rb"(?P<home>/home/chat_actions\.rs_matrix/)client/v1/auth_metadata"
+    rb"prompt_values_supported"
+)
+
 # The Windows linker pools these public Mail literals without NULs:
 # `Mail service is not registered`, `attempts`, `send`, `octosense.local`
 # (apps/mail/host-service/src/drafts.rs: configured() and add_attempt()).
@@ -232,6 +248,7 @@ def scan_bytes(data, where, patterns, findings):
                 for seam in RINX_SOURCE_SEAM.finditer(data)
             }
             source_seams.update(seam.span("home") for seam in RINX_MIME_SOURCE_SEAM.finditer(data))
+            source_seams.update(seam.span("home") for seam in RINX_MATRIX_SOURCE_SEAM.finditer(data))
             source_seams.update(
                 seam.span(group)
                 for pattern in OCTOSCODE_PLACEHOLDER_SEAMS

@@ -10,9 +10,11 @@
 //!   the host's filesystem.
 //! - stdout and stderr, which become its log lines.
 //!
-//! No sockets, environment, arguments or stdin: a component that imports
-//! `wasi:sockets`, `wasi:http` or anything outside WASI is refused when it
-//! loads ([`LoadError::Import`]).
+//! - Outgoing HTTP, ordinary TCP/UDP sockets and DNS through WASI.
+//! - Reviewed app host services through `octosense:host`.
+//!
+//! No host environment, arguments or stdin. Imports outside the listed
+//! WASI packages and `octosense:host` are refused ([`LoadError::Import`]).
 //!
 //! # How a function is called
 //!
@@ -47,11 +49,14 @@ use wasmtime_wasi::{FsPerms, WasiCtx, WasiCtxBuilder, WasiCtxView, WasiView};
 
 use crate::{trap, CallError, InvocationGuard, LoadError, Runtime, Ticker, LOG_LINE, LOG_LINES};
 
+mod dns;
 mod files;
 mod host;
 mod net;
+mod sockets;
 
 pub use host::HostCalls;
+pub use sockets::SocketBudget;
 
 /// The WASI packages a component may import. Every interface of these is
 /// linked; what each can reach is set per instance ([`Grants`]).
@@ -62,6 +67,7 @@ const ALLOWED_PACKAGES: &[&str] = &[
     "wasi:http/",
     "wasi:io/",
     "wasi:random/",
+    "wasi:sockets/",
     // The app's host services, as its script reaches them (`host`).
     "octosense:host/",
 ];
@@ -130,7 +136,7 @@ impl ComponentProgram {
         self.from_cache
     }
 
-    /// Whether it imports `wasi:http`: it may reach any host, and its calls
+    /// Whether it imports HTTP or sockets: it may reach the device network; calls
     /// get the network deadline.
     pub fn uses_network(&self) -> bool {
         self.uses_network
@@ -151,6 +157,7 @@ struct State {
     /// Its app's host services (`octosense:host`), when the embedder gives
     /// them.
     host_calls: host::Calls,
+    sockets: sockets::Resources,
 }
 
 impl WasiView for State {
@@ -217,7 +224,7 @@ impl Runtime {
         let uses_network = component
             .component_type()
             .imports(&self.engine)
-            .any(|(name, _)| name.starts_with("wasi:http/"));
+            .any(|(name, _)| name.starts_with("wasi:http/") || name.starts_with("wasi:sockets/"));
         Ok(ComponentProgram {
             component,
             exports,
@@ -251,6 +258,17 @@ impl Runtime {
         grants: &Grants,
         guard: Option<(Instant, Box<dyn Fn() -> bool + Send + Sync>)>,
     ) -> Result<ComponentInstance, LoadError> {
+        self.instantiate_component_with_sockets(program, grants, guard, SocketBudget::default())
+    }
+
+    /// Instantiate with the app's socket budget, shared by all its components.
+    pub fn instantiate_component_with_sockets(
+        &self,
+        program: &ComponentProgram,
+        grants: &Grants,
+        guard: Option<(Instant, Box<dyn Fn() -> bool + Send + Sync>)>,
+        socket_budget: SocketBudget,
+    ) -> Result<ComponentInstance, LoadError> {
         if guard
             .as_ref()
             .is_some_and(|(deadline, pending)| Instant::now() >= *deadline || !pending())
@@ -264,9 +282,10 @@ impl Runtime {
         let mut wasi = WasiCtxBuilder::new();
         wasi.stdout(stdout.clone())
             .stderr(stderr.clone())
-            .allow_tcp(false)
-            .allow_udp(false)
-            .allow_ip_name_lookup(false)
+            .allow_tcp(true)
+            .allow_udp(true)
+            .allow_ip_name_lookup(true)
+            .inherit_network()
             // Calls run on their app's own worker thread, synchronously: a
             // file operation blocks it directly rather than round-tripping
             // through a thread pool.
@@ -297,7 +316,7 @@ impl Runtime {
                 Box::new(|| true) as Box<dyn Fn() -> bool + Send + Sync>,
             ),
         };
-        // A component that imports wasi:http waits for replies: its calls
+        // A component that imports HTTP or sockets waits for replies: its calls
         // get the longer deadline.
         let call_deadline = if program.uses_network {
             self.limits.network_deadline.max(self.limits.deadline)
@@ -311,11 +330,13 @@ impl Runtime {
         let network = net::Network {
             deadline: Some(guard.deadline),
         };
+        let mut table = ResourceTable::new();
+        table.set_max_capacity(sockets::MAX_RESOURCES);
         let mut store = Store::new(
             &self.engine,
             State {
                 wasi: wasi.build(),
-                table: ResourceTable::new(),
+                table,
                 limits,
                 guard: Some(guard),
                 // Start-up code may read the folder, not grow it.
@@ -323,6 +344,7 @@ impl Runtime {
                 http: wasmtime_wasi_http::WasiHttpCtx::new(),
                 network,
                 host_calls: None,
+                sockets: sockets::Resources::new(socket_budget),
             },
         );
         store.data().budget.set(Some(0));
@@ -341,6 +363,8 @@ impl Runtime {
             .and_then(|()| wasmtime_wasi_http::p2::add_only_http_to_linker_sync(&mut linker))
             .and_then(|()| files::link(&mut linker))
             .and_then(|()| host::link(&mut linker))
+            .and_then(|()| sockets::link(&mut linker))
+            .and_then(|()| dns::link(&mut linker))
             .map_err(|e| LoadError::Invalid(format!("{e:#}")))?;
         let instance = linker
             .instantiate(&mut store, &program.component)
@@ -653,6 +677,10 @@ impl ComponentInstance {
         if let Err(error) = outcome {
             if matches!(error, CallError::Deadline | CallError::Trap(_)) {
                 self.spent = true;
+                // A spent instance cannot be called again. Release sockets,
+                // DNS tasks and streams now, even if its owner keeps it alive.
+                self.store.data_mut().table = ResourceTable::new();
+                self.store.data_mut().sockets.clear();
             }
             return Err(error);
         }

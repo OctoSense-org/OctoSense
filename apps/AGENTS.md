@@ -30,7 +30,8 @@ app's own agent and `tools.json`, the system toolbox, `glance.publish` and
   takes `--static photos=<dir>`). `--system` lets an `os.*` id and an empty
   digest through, as the shell does. These flags are on App Hub `main`.
   `card-host` registers no host services: run Mail in a shell with
-  `MAKEPAD_APP_CONFIG='{"mail_demo":true}'`.
+  `MAKEPAD_APP_CONFIG='{"mail_demo":true}'` (a desktop reads it; on a phone it
+  needs a development build).
 - Validate on a phone through Home (`phone/`) built as a separate test
   package; never replace the device's installed Home.
 - Text on a page follows the host's appearance. On a phone, a page drawn by a
@@ -41,6 +42,21 @@ app's own agent and `tools.json`, the system toolbox, `glance.publish` and
   a white card or the tab bar. News's title and then Photos' headings
   shipped in a fixed `ink` and vanished in dark mode, so check every page you
   change in dark mode as well as light.
+- Presentation full screen (a deck's Present, a reader's Read mode): call
+  `host.request("window.fullscreen", {on: true}, fn(r){…})` from the tap or
+  click handler that starts it, and `{on: false}` to leave. The shell refuses
+  a request with no press on the app in its window in the last 5 seconds
+  (`gesture_required:`; a press on a host sheet does not count, and after Esc
+  or any ending but the app's own `{on: false}` it takes a new press), one
+  while the window is not in front (`foreground_required:`), one from an
+  agent's tool call or a callback of one (`agent_call:`), and one from
+  anything but the app's own window (`not_a_window:`). No capability is
+  needed. While it presents, no screen edge brings the shell's bar,
+  the title bar or the dock out. Esc is the shell's key there, and ⌘F or the
+  window losing the focus also ends it. Define `fn on_app_fullscreen(on)` to follow both ends,
+  so the app leaves its Present or Read layout when the person presses Esc. A
+  phone answers `{applied: false, fullscreen: false, fills_screen: true}`.
+  The contract is in `../crates/shell/src/app_fullscreen.rs`.
 - Mail's service: change `apps/mail/host-service` and run
   `cargo test --locked -p octosense-mail-service`. Calendar's and News's:
   `apps/calendar/host-service`, `apps/news/host-service`, and
@@ -59,6 +75,103 @@ app's own agent and `tools.json`, the system toolbox, `glance.publish` and
   Deck, `apps/quickdeck/bundle`, desktop only, whose own `deck.*` calls work
   in its storage; its dev fixture is in apps/README.md):
   `apps/deck/host-service` and `cargo test --locked -p octosense-deck-service`.
+  Besides the file methods (`info`, `text`, `render`, `new`, `convert`,
+  `run`; the system agent's two tools, `deck.info` and `deck.run`, stay as
+  they are), it serves Quick Deck v2's open documents to apps' own
+  requests, as `apps/quickdeck/design/SERVICE.md` specifies; change that
+  contract and the service together. `deck.open` and `deck.create` keep
+  the engine's session for a deck, its edits and undo history, under a
+  handle, on the pdf service's terms (`src/docs.rs`): a document belongs to
+  the caller app, its storage scope and the handle (anyone else's is
+  `unknown_doc:`), a caller keeps at most 8 open and the process 32, the
+  table is a `thread_local` on the UI thread, the listener on App Hub's
+  `services::on_isolate_closed` releases a closing isolate's documents and
+  their renders, every call sweeps for a changed storage scope, and a
+  caller with no isolate gets a 15-minute idle bound. Each method builds
+  every engine command and its parameters itself and refuses a key it does
+  not take, then runs them through one gate (`src/gate.rs`): the door
+  `deck.run` uses, with the same `REVIEWED` limits, held commands and run
+  ceilings, admits the whole call before any command runs
+  (`Door::admit_method` in `crates/engine-area`, with the method's own most
+  commands a call, its reason beside its constant), the ceilings on the
+  session hold after every command, and a refused command puts the
+  document back as it was. `shape.fill` and `design.background` (`file`)
+  run for a method only without `picture` or `path` (`UNREAD`,
+  `door::Unread`), so the service never has them read a file, and
+  `deck.run` still refuses them; `insert.picture` and `picture.change`
+  read a picture inside the storage only, checked first
+  (`src/pictures.rs`). A change method is one undo step, labelled, of at
+  most 100: the engine's own steps for its commands are folded through its
+  `History`, and a call that changes nothing adds none. `rev` and
+  `changed` come from the engine's copy-on-write slide pointers, compared
+  by content where the engine copied a slide it did not change. Text is
+  exact (the session's autocorrect and smart quotes are off), and
+  `deck.set_text` replaces only the span that changed, so the rest keeps
+  its formatting. Before the engine reads a byte of a file (`deck.open`,
+  `deck.cover`, the file methods, the agent's tools), the import guard
+  (`src/guard.rs`, #448) reads the zip's central directory within bounds
+  (10,000 entries, names of 1,024 bytes, 64 MiB an entry, 256 MiB in all,
+  100:1 past 100 KiB) and only in a shape the engine's own zip reader
+  takes the same way (one end record, ending the file; entry counts that
+  agree; a directory filling exactly the space it declares; nothing before
+  the first entry; every extra field as that reader reads it, refusing
+  whatever it would refuse), then has that reader, the `zip` crate
+  deckcraft opens decks with, read the directory too and refuses any
+  difference (`damaged:`), so the guard checks exactly what the engine
+  will read. Its verdict (a native deck by deckcraft's own marker, an
+  Office package by its `[Content_Types].xml` entry, which LibreOffice
+  writes late, past where the engine's own sniff looks) picks the
+  engine's reader (`engine_read`, the steps of the pinned
+  `open_presentation` after its sniff, compared by a test). It inflates
+  every entry against its declared size and
+  refuses a nested zip (`held:`), an encrypted
+  `.pptx` (`protected:`) and a legacy `.ppt` or any other file it does not
+  know (`unsupported:`); engine-side bounds stay with #448. Audio and video
+  open like any other part: the service carries them as bytes (drawn with
+  their poster, or a film or speaker glyph; saved and exported unchanged)
+  and nothing it runs decodes or plays them, since deckcraft's decoders
+  (`deckcraft-media`) are reached only through `media.info`,
+  `media.posterFrame`, `insert.audio` and `insert.video`, which stay held;
+  a deck's media counts against the session's 128 MiB (`too_large:`). The one nested
+  zip it lets through is an Office package's embedded object under
+  `ppt/embeddings/` (a chart's workbook, an embedded document), which
+  neither the service nor deckcraft ever unzips; it still counts against
+  every bound, and a zip anywhere else stays `held:`. Present's order
+  and build steps (`deck.show`, `deck.view {step}`) come from
+  deckcraft-anim at the engine's pin. Caps: drawing 48–3840 px wide, 4096
+  a side and 16 MP, 500 shapes or slides named a call, 1,024 table cells
+  filled, 20,000 characters of notes, 50 MP a picture, a PDF ≤ 160 MP and
+  an image export ≤ 64 slides and 256 MP (checked before anything is
+  written), and a render cache of 16 MiB and 64 files: slide drawings in
+  `.cache/slides/<handle>/`, and, from `deck.cover` (a file method for
+  apps, no agent tool), each deck's first slide in `.cache/covers/`, at
+  most 32, kept across closes and named by the file's name, size and
+  modification time (`src/covers.rs`). Slide drawings go before covers,
+  each oldest first, and the whole cache is cleared before a write would
+  fail with `storage_full:`. Playback (`deck.media`, `src/media.rs`) runs
+  no engine command: it writes a video or audio clip's bytes from the open
+  document's model, as the deck stores them and never decoded, to
+  `.cache/media/<SHA-256>.<ext>` for the app's `Video` widget (`ext` from
+  the deck's own name for the clip or its declared type, from SERVICE.md's
+  list, else `unsupported:`), staged and create-only, reused by hash, in a
+  media cache of 32 MiB and 8 clips (clips no open document uses go first,
+  then the one used longest ago); a document's clips go when it closes or
+  is released, unless another open document uses them, and before a clip
+  would not fit, the render cache and then the media cache are cleared
+  (`storage_full:`, refused before anything is staged). What the inspector
+  shows beyond the commands' answers (a box's anchor and autofit, a
+  chart's and a table's options, the deck's colour and font schemes and
+  its footer, the engine's
+  colour schemes with their colours) the service reads from the open
+  document's model, read-only (`src/reading.rs`, `docs::design_state`).
+  Errors start with a stable code
+  (`src/codes.rs`). Every call first waits for a warm-up that is still
+  running (`src/warm.rs`): deckcraft's font database cannot load one
+  family on two threads at once, and a slide drawn during that race kept
+  the last-resort face. `src/doc_tests.rs` holds its tests, and
+  `cargo test --release --locked -p octosense-deck-service --lib --
+  --ignored timings` times a 30-slide deck's open, first drawing and
+  edits.
   The cad engine's (cadcraft behind `cad.*`, same ADR, no bundle yet):
   `apps/cad/host-service` and `cargo test --locked -p octosense-cad-service`.
   The light engine's (lightcraft behind `light.*`, same ADR, no bundle yet):
@@ -81,6 +194,56 @@ app's own agent and `tools.json`, the system toolbox, `glance.publish` and
   shell by `apps/pdftools/tests/ui.py` on the sample PDFs its
   `pdftools_fixture` example writes, see `apps/pdftools/README.md`):
   `apps/pdf/host-service` and `cargo test --locked -p octosense-pdf-service`.
+  Besides the file methods (`info`, `text`, `render`, `merge`, `split`: the
+  system agent's five tools, which stay as they are), it serves PDF Tools
+  v2's open documents to apps' own requests, as
+  `apps/pdftools/design/SERVICE.md` specifies; change that contract and the
+  service together. `pdf.open` keeps the engine's document, its edits and
+  undo history, under a handle; a document belongs to the caller app, its
+  storage scope (the area's root) and the handle, so another app's or
+  scope's handle is `unknown_doc:`, and a caller keeps at most 8 open
+  (`src/docs.rs`). The table is a `thread_local`, because every call reaches
+  the service on the UI thread (App Hub's `services::pump` inline from the
+  card runner, the relay's and components' calls from `host_tools::pump`),
+  which must take no lock another thread can hold. `pdf.close` releases a
+  document, and so does its app closing: a document is bound to the opening
+  isolate, and the service's listener on App Hub's
+  `services::on_isolate_closed` (called from `cancel_heap`, which every host
+  calls for a closing isolate) releases its documents and their renders
+  before the isolate's heap key, an address, can be reused. Every call also
+  sweeps for a changed storage scope (Makepad's
+  `splash_storage::storage_for_heap` for `Replier::isolate_key()`), and a
+  caller with no isolate gets a 15-minute idle bound. Each method runs
+  reviewed engine commands, its
+  review beside it (`src/reading.rs`, `src/review.rs`, `src/change.rs`): the
+  service builds every engine argument itself and each v2 method refuses a
+  key it does not take, so `comment_add` (`file`) never sees its attachment
+  type or a path; `file` commands that write get a staging path inside the
+  storage only; `doc_open` and `form_fill` (`code`) run with JavaScript off,
+  proven by `doc_tests::a_forms_own_scripts_never_run`. Caps: 24–300 dpi and
+  16 MP a render, `find` ≤ 500 matches, 512 pages a call, an image export
+  ≤ 64 pages and 256 MP in all (checked before anything is written), and a
+  render cache of 16 MiB and 64 files (an app's storage holds at most 256
+  entries for its own writes): page renders in `.cache/pages/`, and, from
+  `pdf.cover` (a file method for apps, no agent tool), each PDF's first page
+  in `.cache/covers/`, at most 32 of them, kept across closes and runs and
+  named by the file's name, size and modification time (`src/covers.rs`).
+  Page renders go before covers, each oldest first, and the whole cache is
+  cleared before a write would fail with `storage_full:`. `pdf.comments`
+  reads each date with its zone from the file once per version of the
+  document (`src/review.rs`). `pdf.fields` marks
+  read-only fields, and `pdf.fill` refuses one. `pdf.edit_check` takes
+  `pdf.edit_text`'s arguments and says what that edit would do before PDF
+  Tools makes it (the font it would be drawn in, the lines of text it would
+  run into, text off the page), by running the engine's own editor
+  (pdfcraft-edit) on a copy opened from the open document's working bytes
+  and dropping it (`src/fit.rs`): no engine command, nothing written. Both
+  refuse an edit the engine won't make in plain words (text no available
+  font shows, such as Chinese, Japanese or Korean without the engine's
+  fallback face; a read-only or locked document; a stale paragraph number),
+  still `invalid:` (`codes::edit_refused`); the `--edit-sample` page of
+  `pdftools_fixture` reproduces the real-world cases. Errors start with a
+  stable code (`src/codes.rs`).
 - Declare an app's agent in its manifest and `bundle/tools.json`. Keep the
   input/output schemas consistent with the executor (octos requires an object
   output schema), and select the actual risk, sharing and confirmation policy.
@@ -93,7 +256,9 @@ app's own agent and `tools.json`, the system toolbox, `glance.publish` and
   Mail/News/Photos install `on_notify` callbacks; the shell's `NoticeService`
   serves Maps, YouTube and Camera. The fixed notice template lives in
   `../crates/shell/resources/glance/notice.card`; Calendar keeps its own event
-  and agenda templates. Grant `glance` in the manifest and publish as the app.
+  and agenda templates. Declare `glance` usage in the manifest and publish as
+  the admitted app; preserve publisher/account identity and actual consent.
+  The declaration itself does not grant or deny publication.
 - For richer app-owned cards, use `glance.publish` with either L0 `source` and
   optional `data`, or a Splash `script`. Preserve app attribution, policy and
   the distinction between app UI actions and agent tool calls. See

@@ -29,6 +29,12 @@ const CARD_ALPHA: f32 = 0.97;
 pub const DEFAULT_DURATION: f64 = 1.2;
 /// The fill's `Behavior on width`.
 const FILL_EASE: f64 = 0.14;
+/// The widest a message line gets before it is elided (`Osd.qml`).
+const MESSAGE_WIDTH: f64 = 190.0;
+/// The full-screen hint's line, which must read whole.
+const HINT_WIDTH: f64 = 360.0;
+/// How long the full-screen hint stays up.
+pub const FULLSCREEN_HINT_DURATION: f64 = 3.0;
 
 /// What the OSD is showing.
 #[derive(Clone, Debug, PartialEq)]
@@ -39,6 +45,8 @@ pub struct OsdShow {
     /// The readout — omarchy defaults it to `percent + "%"`.
     pub message: String,
     pub duration: f64,
+    /// The widest a message-only OSD's line gets before it is elided.
+    pub line_width: f64,
 }
 
 impl OsdShow {
@@ -52,6 +60,7 @@ impl OsdShow {
                 format!("{}%", level)
             },
             duration: DEFAULT_DURATION,
+            line_width: MESSAGE_WIDTH,
         }
     }
 
@@ -61,6 +70,7 @@ impl OsdShow {
             value: Some(level as f64 / 100.0),
             message: format!("{}%", level),
             duration: DEFAULT_DURATION,
+            line_width: MESSAGE_WIDTH,
         }
     }
 
@@ -74,6 +84,20 @@ impl OsdShow {
                 "Microphone live".to_string()
             },
             duration: DEFAULT_DURATION,
+            line_width: MESSAGE_WIDTH,
+        }
+    }
+
+    /// The shell's word when an app's window goes full screen
+    /// (app_fullscreen.rs): how to leave, for a few seconds. Esc is the
+    /// shell's own key there, since a script app gets no keys.
+    pub fn fullscreen_hint() -> Self {
+        Self {
+            icon: Ico::Keyboard,
+            value: None,
+            message: "Press Esc to exit full screen".to_string(),
+            duration: FULLSCREEN_HINT_DURATION,
+            line_width: HINT_WIDTH,
         }
     }
 }
@@ -161,7 +185,7 @@ impl ShellOsd {
         } else {
             self.d
                 .measure(cx, true, tok.font.title, &show.message)
-                .min(190.0)
+                .min(show.line_width)
         };
         let content = if show.value.is_some() {
             icon + gap + BAR_WIDTH + gap + text_w
@@ -322,5 +346,17 @@ mod tests {
         let s = OsdShow::mic(true);
         assert!(s.value.is_none());
         assert_eq!(s.icon, Ico::MicOff);
+        assert_eq!(s.line_width, MESSAGE_WIDTH);
+    }
+
+    /// The full-screen hint says how to leave, briefly, on a line wide
+    /// enough to read whole.
+    #[test]
+    fn the_full_screen_hint_names_esc_and_goes_away() {
+        let s = OsdShow::fullscreen_hint();
+        assert_eq!(s.message, "Press Esc to exit full screen");
+        assert!(s.value.is_none());
+        assert!(s.duration > DEFAULT_DURATION && s.duration <= 5.0);
+        assert!(s.line_width > MESSAGE_WIDTH);
     }
 }

@@ -1,0 +1,425 @@
+{
+  "schema": 1,
+  "status": "pass",
+  "recorded_at_utc": "2026-10-21T07:00:13.866946+00:00",
+  "base_commit": "8b985967352fc9b7503601217895d30fe030b482",
+  "source_state": "uncommitted working tree; runtime sources bound by hashes below",
+  "new_svg_icons": 28,
+  "restored_original_png_icons": 1,
+  "shipping_resources": 63,
+  "checks": [
+    {
+      "name": "shell unit tests",
+      "cwd": "phone",
+      "command": "cargo test --locked --features mobile-apps -p octosense-shell --lib",
+      "status": "pass",
+      "result": "1280 passed; 0 failed, including synthetic upstream-change/new-ID and ownership regressions"
+    },
+    {
+      "name": "desktop build",
+      "cwd": ".",
+      "command": "cargo check --locked -p octosense",
+      "status": "pass",
+      "result": "Finished `dev` profile"
+    },
+    {
+      "name": "desktop mobile-apps build",
+      "cwd": ".",
+      "command": "cargo check --locked -p octosense --features mobile-apps",
+      "status": "pass",
+      "result": "Finished `dev` profile"
+    },
+    {
+      "name": "Home build",
+      "cwd": "phone",
+      "command": "cargo check --locked -p octosense-home --features mobile-apps",
+      "status": "pass",
+      "result": "Finished `dev` profile"
+    },
+    {
+      "name": "desktop dependency graph",
+      "cwd": ".",
+      "command": "bash tools/check-shell-graph.sh -p octosense",
+      "status": "pass",
+      "result": "ok: one octos"
+    },
+    {
+      "name": "Home dependency graph",
+      "cwd": "phone",
+      "command": "bash ../tools/check-shell-graph.sh -p octosense-home",
+      "status": "pass",
+      "result": "ok: one octos"
+    },
+    {
+      "name": "production preview build",
+      "cwd": "phone",
+      "command": "cargo build --locked --features mobile-apps -p octosense-shell --example icon_shapes",
+      "status": "pass",
+      "result": "Finished dev profile"
+    }
+  ],
+  "gpu": {
+    "status": "pass",
+    "host": "macOS",
+    "devices": "unverified",
+    "family_icons": 29,
+    "browser_design": "C5 Night rose",
+    "styles": [
+      "android",
+      "macos",
+      "ios",
+      "windows",
+      "nextstep",
+      "omarchy",
+      "windows-2000"
+    ],
+    "sizes": [
+      64,
+      24
+    ],
+    "opacities": [
+      1.0,
+      0.5
+    ],
+    "family_pixel_checks": 238,
+    "captures": [
+      "default.png",
+      "family-0.png",
+      "family-1.png",
+      "family-2.png",
+      "family-3.png"
+    ],
+    "fixture_pixel_checks": 34
+  },
+  "python_checks": {
+    "shipping_sync": "pass",
+    "app_icon_tests": 5,
+    "personal_path_tests": 1,
+    "omarchy_safe_area_icons": 28
+  },
+  "devices": "unverified; no device assigned",
+  "model_calls": "not exercised; unit and GPU fixture validation",
+  "runtime_source_hashes": [
+    {
+      "path": "apps/calendar/bundle/icon.svg",
+      "sha256": "40dfe49bc2386c9ac87d33a6b2567bf57635c33866fb1880aacb1486dd7eb5c2"
+    },
+    {
+      "path": "apps/calendar/bundle/manifest.json",
+      "sha256": "828e45d8a27b6e9e1f28936a31f8172ec0b92fce537f90ce2bede9e9650af7e3"
+    },
+    {
+      "path": "apps/mail/bundle/icon.svg",
+      "sha256": "9e0ca48953bb4f1b521e2f5871b596ab5e452c5aa8c8f0ebfa44d348a07ac2b6"
+    },
+    {
+      "path": "apps/mail/bundle/manifest.json",
+      "sha256": "1acd49ecc22beef001e6053c9f5369d11f306c828c72e78f2a6d9643ff20ed5d"
+    },
+    {
+      "path": "crates/shell/resources/icons/apps/family/appcard.svg",
+      "sha256": "91d9be38b8236ec1446aed9242270ac3631eca5dc313a881815f74234e9628af"
+    },
+    {
+      "path": "crates/shell/resources/icons/apps/family/browser.svg",
+      "sha256": "f1ce7503eefa8aa82816665d68d9215131adde5b638332b7bb644a7719543eca"
+    },
+    {
+      "path": "crates/shell/resources/icons/apps/family/calculator.svg",
+      "sha256": "5941a697e1b8eb77aeef59b83786e04802ea3a9006fc5e62fa17636e6178e778"
+    },
+    {
+      "path": "crates/shell/resources/icons/apps/family/calendar.svg",
+      "sha256": "40dfe49bc2386c9ac87d33a6b2567bf57635c33866fb1880aacb1486dd7eb5c2"
+    },
+    {
+      "path": "crates/shell/resources/icons/apps/family/clock.svg",
+      "sha256": "f0fc86e6f147663dcd5db3208f8afe906884d8331acf6245043d2cf92dc3f732"
+    },
+    {
+      "path": "crates/shell/resources/icons/apps/family/fab.svg",
+      "sha256": "bc6e4427bae228534f4dedac84af7ecbea05967ecd9900fe5f193080751e8318"
+    },
+    {
+      "path": "crates/shell/resources/icons/apps/family/fabric.svg",
+      "sha256": "25e8dace8505f4a658bdee9c356c062d110761b7f4be29018a601913406af272"
+    },
+    {
+      "path": "crates/shell/resources/icons/apps/family/files.svg",
+      "sha256": "ec792a0e44eb242c84eaf36ea0f91ee3241b10f5d02cf2bfcf250f64b8d951de"
+    },
+    {
+      "path": "crates/shell/resources/icons/apps/family/finance.svg",
+      "sha256": "6d2f590628ed3e545dd33b44f6d781f2fcce80e8c6cdea1973cfe7b09c42af83"
+    },
+    {
+      "path": "crates/shell/resources/icons/apps/family/image.svg",
+      "sha256": "9d5a57ef0f26412f2ed61c85d9054c8c648c9adfc8148f7367e8a27b197617d2"
+    },
+    {
+      "path": "crates/shell/resources/icons/apps/family/mail.svg",
+      "sha256": "9e0ca48953bb4f1b521e2f5871b596ab5e452c5aa8c8f0ebfa44d348a07ac2b6"
+    },
+    {
+      "path": "crates/shell/resources/icons/apps/family/mixer.svg",
+      "sha256": "d8707e9a1e0ed7293c82e36dfde43e8a325584fb2f3886575b34277ec3c8bcaa"
+    },
+    {
+      "path": "crates/shell/resources/icons/apps/family/notes.svg",
+      "sha256": "f9a09f1a5c1b3a9d3b9ea1d3c6369144f9a0ebb99509d74e42f21e7f8c6a123b"
+    },
+    {
+      "path": "crates/shell/resources/icons/apps/family/octoscode.svg",
+      "sha256": "687d8566e64de05b4fd21e70e959579b86e64bf15ba418b5a26128f24c8bedf5"
+    },
+    {
+      "path": "crates/shell/resources/icons/apps/family/omarchy/appcard.svg",
+      "sha256": "c67971f238d43fef90767a4618e235d2930529c02ae309b5462e1f217fc080b6"
+    },
+    {
+      "path": "crates/shell/resources/icons/apps/family/omarchy/browser.svg",
+      "sha256": "d6ae7fdb5c2360a7248c6b1e263dc7a91b847e44e82c5a027fdf2e38d4522841"
+    },
+    {
+      "path": "crates/shell/resources/icons/apps/family/omarchy/calculator.svg",
+      "sha256": "97e699410640e09c11a0bf3aa6a36772c457aa606fe037b584782f264b9214e6"
+    },
+    {
+      "path": "crates/shell/resources/icons/apps/family/omarchy/calendar.svg",
+      "sha256": "d29cb7658688be2443a4d33fd5ead9614432b52f5b98c8458bf44e2e8f5b33a8"
+    },
+    {
+      "path": "crates/shell/resources/icons/apps/family/omarchy/clock.svg",
+      "sha256": "2afa3f1660e6d2af5033807f8eaf4c258af934166b33c7c78a7feedb659912d7"
+    },
+    {
+      "path": "crates/shell/resources/icons/apps/family/omarchy/fab.svg",
+      "sha256": "b803493202699b4168f48924787ae6cd808a056e81854a50df06d90d790ffaf8"
+    },
+    {
+      "path": "crates/shell/resources/icons/apps/family/omarchy/fabric.svg",
+      "sha256": "4d69c1eb8c1f46c927daafbaa803873f2939ef10cfc2f71371ec6f79dc361016"
+    },
+    {
+      "path": "crates/shell/resources/icons/apps/family/omarchy/files.svg",
+      "sha256": "00a7fb70c772c7b38d5431a5e5545bbd040c8fa4354876dca29e90ec51871386"
+    },
+    {
+      "path": "crates/shell/resources/icons/apps/family/omarchy/finance.svg",
+      "sha256": "340d54337200150d8b1c54eb988958bdc5d8325862d8abcd1ddfd3dc65ef05ad"
+    },
+    {
+      "path": "crates/shell/resources/icons/apps/family/omarchy/image.svg",
+      "sha256": "131454e17f5dcf75221937dce3141e739246c055b447ef2715b646154ffab641"
+    },
+    {
+      "path": "crates/shell/resources/icons/apps/family/omarchy/mail.svg",
+      "sha256": "5e4160d5bf13f758d8adf8dea5c0ee09d9919577430e19e1b6e29d6260428aa6"
+    },
+    {
+      "path": "crates/shell/resources/icons/apps/family/omarchy/mixer.svg",
+      "sha256": "46cc67284e0c98a2c44cf7e36363279cdb649adeb766d660b390b2a9183f8403"
+    },
+    {
+      "path": "crates/shell/resources/icons/apps/family/omarchy/notes.svg",
+      "sha256": "c8837272443d8c824206ce25c7c9a335c177f5817f758080cbceac507a71f902"
+    },
+    {
+      "path": "crates/shell/resources/icons/apps/family/omarchy/octoscode.svg",
+      "sha256": "1ce91bf0286397ca4ce1c180c26fece42a0966ba56ae96ae82cc1b2176b8690c"
+    },
+    {
+      "path": "crates/shell/resources/icons/apps/family/omarchy/pdf.svg",
+      "sha256": "0454158ae0bceff1c52ffbb414ad556e733bc382928ef725f55b049b8127c4c9"
+    },
+    {
+      "path": "crates/shell/resources/icons/apps/family/omarchy/reference.svg",
+      "sha256": "51ef3f5963ed57759e7165d4ca7c981112614913e902ab883cdb1263c12625d0"
+    },
+    {
+      "path": "crates/shell/resources/icons/apps/family/omarchy/reminders.svg",
+      "sha256": "589648b6bd835ca88ecee1b142b24361a27e77f62672e4ccd5420e97d3d8ce8f"
+    },
+    {
+      "path": "crates/shell/resources/icons/apps/family/omarchy/route.svg",
+      "sha256": "961b1f35e5b3b7f447dd22223733099d5f46519d38ff9126b9257daea96257f1"
+    },
+    {
+      "path": "crates/shell/resources/icons/apps/family/omarchy/score.svg",
+      "sha256": "c0830deedb606517acbc5af4d5b442167cb80121e3c1f0e47506fe5a50b18867"
+    },
+    {
+      "path": "crates/shell/resources/icons/apps/family/omarchy/settings.svg",
+      "sha256": "af443538ab7becf7b4f96a9542c290e10b245697420f94d5cbc283145afd32a9"
+    },
+    {
+      "path": "crates/shell/resources/icons/apps/family/omarchy/sheets.svg",
+      "sha256": "b6dd51067ee84a5b39d61930ddff74c32a1bb13f9fd5a4e398faf9ddc228f8a6"
+    },
+    {
+      "path": "crates/shell/resources/icons/apps/family/omarchy/studio.svg",
+      "sha256": "cd826691663bcb586a5d36f88b813673f10ed3f06f1438f66b8ac83a797e7f6a"
+    },
+    {
+      "path": "crates/shell/resources/icons/apps/family/omarchy/task.svg",
+      "sha256": "2941ee42d90df0cd8ec26f8aca3403a6c9d33e9c0a84f7f997c4a2bee23d0e3d"
+    },
+    {
+      "path": "crates/shell/resources/icons/apps/family/omarchy/terminal.svg",
+      "sha256": "bf315674a9df87abfc133d1af098af42f48b7088365a36f665b747d7d7103da4"
+    },
+    {
+      "path": "crates/shell/resources/icons/apps/family/omarchy/updater.svg",
+      "sha256": "56f2abb47dd3657c0b6e43ffd179b6704a012e807c7e5a0f49f4752f478d0549"
+    },
+    {
+      "path": "crates/shell/resources/icons/apps/family/omarchy/video.svg",
+      "sha256": "0d25f412408633ee4db3e7d7da27180d3e3a346cd3f4386bf2cd54b527f9907d"
+    },
+    {
+      "path": "crates/shell/resources/icons/apps/family/omarchy/vj.svg",
+      "sha256": "8398793892e6586e4164e0c16c4dc8e07471862c665fd5b9d72f24e04b92059a"
+    },
+    {
+      "path": "crates/shell/resources/icons/apps/family/omarchy/weather.svg",
+      "sha256": "a9c9f7a963d3025506338e911c633540f5c3426b34267ef8d6a8f4e8f7e26670"
+    },
+    {
+      "path": "crates/shell/resources/icons/apps/family/pdf.svg",
+      "sha256": "d76504ba4fabab59d87ddde77ea0aae7358f9ccd472c5baf79d7cbf605c637c7"
+    },
+    {
+      "path": "crates/shell/resources/icons/apps/family/reference.svg",
+      "sha256": "712554b37bddc36debc669b6587c960a29cc93af5b6efd43a7f4ab32cf3d2e40"
+    },
+    {
+      "path": "crates/shell/resources/icons/apps/family/reminders.svg",
+      "sha256": "a504231d5e231baa1b0f3509bd96a58c4e2254c3ce0a2d2e900f65a9687f84d6"
+    },
+    {
+      "path": "crates/shell/resources/icons/apps/family/rinx-attribution/LICENSE",
+      "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+    },
+    {
+      "path": "crates/shell/resources/icons/apps/family/rinx-attribution/LICENSE-MIT",
+      "sha256": "7c370204a7507a3c33398d6377aa69691991b0582a3d92ace8d27d8819b223f7"
+    },
+    {
+      "path": "crates/shell/resources/icons/apps/family/rinx-attribution/NOTICE",
+      "sha256": "f6914c103bae7fcf5bf6bfef9cb54654e6a744b8f9128fae8ef3a273f04513bf"
+    },
+    {
+      "path": "crates/shell/resources/icons/apps/family/rinx-attribution/provenance.json",
+      "sha256": "53416f7e04f9327ca09e060e5942c963f97f26dc01207aa69a64d16a54c3333d"
+    },
+    {
+      "path": "crates/shell/resources/icons/apps/family/rinx.png",
+      "sha256": "a5db71934b2fd2e8177637527db2d925c01bbe9bb046aecf0d2eddc5bef43329"
+    },
+    {
+      "path": "crates/shell/resources/icons/apps/family/route.svg",
+      "sha256": "a33d944e226f1c3c9dde51775cce6a5176ae7c3da4f90ae17822483f5788ecae"
+    },
+    {
+      "path": "crates/shell/resources/icons/apps/family/score.svg",
+      "sha256": "8c2b24d4aab49766190aae603b0b9aa6f9822cce03ccdced88eac62555170fad"
+    },
+    {
+      "path": "crates/shell/resources/icons/apps/family/settings.svg",
+      "sha256": "5ef7f16076563c8a2b945c5630cfbd6ea9cdd640653f708a563dfb213d2596ad"
+    },
+    {
+      "path": "crates/shell/resources/icons/apps/family/sheets.svg",
+      "sha256": "01f31178f77528c2569ad5dac414419ab20266bfbe333a3302935b08095a3dc3"
+    },
+    {
+      "path": "crates/shell/resources/icons/apps/family/studio.svg",
+      "sha256": "cc88979f772fe6d55fc469db6f185c48615f07e48d6ded01d456245929084f46"
+    },
+    {
+      "path": "crates/shell/resources/icons/apps/family/task.svg",
+      "sha256": "9188acf953106e0fd9391aff6f9784ea1c5dbb4406bc35ec816d834f6167f81a"
+    },
+    {
+      "path": "crates/shell/resources/icons/apps/family/terminal.svg",
+      "sha256": "cceb2b05033d8e3f8c1f1dd1ce045197e11771167ccf0d939ff825a3e45629dc"
+    },
+    {
+      "path": "crates/shell/resources/icons/apps/family/updater.svg",
+      "sha256": "7d7f2c4f49531c45e1b1b53cc2a08e17355ae0e16f768abfedb0a64ae68048e4"
+    },
+    {
+      "path": "crates/shell/resources/icons/apps/family/video.svg",
+      "sha256": "af938619614a3e0d2dfadf8566f94616e70b57e23ae4b1205583f6919858fab9"
+    },
+    {
+      "path": "crates/shell/resources/icons/apps/family/vj.svg",
+      "sha256": "43bc51bf45c694affe7966ce331dd2c9e478419c30330eb558e3accd059b1a44"
+    },
+    {
+      "path": "crates/shell/resources/icons/apps/family/weather.svg",
+      "sha256": "3827f15f756b8aedc9a9c692e952a1cb05c738c6b1e06f460db484730980f22b"
+    },
+    {
+      "path": "crates/shell/src/octosense/icon_family.rs",
+      "sha256": "857db0fde6497deca89399f8461056eaacc23b27a3d04af3b14b7b84eb19660d"
+    },
+    {
+      "path": "crates/shell/src/octosense/icon_frame.rs",
+      "sha256": "281bb4c44e45f8a11d1512dbf3c00f53ac88edf44aedc8b9abfc0a278c3b516e"
+    },
+    {
+      "path": "crates/shell/src/octosense/mod.rs",
+      "sha256": "9a440292de5aaf4586b0f71ff926888f3bd32d4a797e46ced517ebc7150a239b"
+    },
+    {
+      "path": "crates/shell/src/octosense/style.rs",
+      "sha256": "7a5fd4667b2d52ecf1e1172b0bc408999796826d3a1324fc6465a162840a7b93"
+    }
+  ],
+  "code_review": "Original family: freeform precedence defect fixed; follow-up review found no actionable issues. Current C5/overlay changes: self-reviewed, with shell regression and production GPU validation; no new independent review claimed.",
+  "gpu_capture_hashes": [
+    {
+      "path": "evidence/default.png",
+      "sha256": "70665163325ef6b469b60a72bea6c4c9b4c1e0a623e30f1b3b818262dc28b84c"
+    },
+    {
+      "path": "evidence/family-0.png",
+      "sha256": "d53456bf9f41b83c9eed366ee7b78befb7d9081cebb8fd72d43319f4ae7c8ba1"
+    },
+    {
+      "path": "evidence/family-1.png",
+      "sha256": "ec3c9eb0767790cc683b9ca27ef333ef9925a5665fde60c9f96ce4266e8150bc"
+    },
+    {
+      "path": "evidence/family-2.png",
+      "sha256": "948608743276ffab434a3c7800e29615a12aa0cfa7b811560bdc1439a809b009"
+    },
+    {
+      "path": "evidence/family-3.png",
+      "sha256": "57437e52d80a667e5f7997f5a1b30bfeb5d27ecb7494b0482cd6c2c9ae395de2"
+    }
+  ],
+  "browser_design": "C5 Night rose",
+  "override_policy": "Makepad catalog plus explicit OctoSense app-ID overlay; owned built-ins win in every style; hub: identities and unowned upstream artwork are preserved",
+  "upstream_icon_files_modified": false,
+  "test_isolation": "Separate temporary Home and Rinx directories; hidden windows",
+  "validation_source_hashes": [
+    {
+      "path": "tools/build_icon_family.py",
+      "sha256": "69e609910614a8e58a8dcd5ec20f97da999775ecdff575ab2db80dc461430abd"
+    },
+    {
+      "path": "tools/check_icon_family_preview.py",
+      "sha256": "52367c65919c80cda223f9b52e9fee0350924d02d14f55dd497274eeb8be18dc"
+    },
+    {
+      "path": "crates/shell/examples/icon_shapes.rs",
+      "sha256": "8496fc6397c41ef116959953108488fccefea9545eb6149895616333e35dab21"
+    },
+    {
+      "path": "docs/design/icon-family/assets/browser.svg",
+      "sha256": "f1ce7503eefa8aa82816665d68d9215131adde5b638332b7bb644a7719543eca"
+    }
+  ]
+}

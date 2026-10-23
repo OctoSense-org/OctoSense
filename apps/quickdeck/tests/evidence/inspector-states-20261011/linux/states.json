@@ -1,0 +1,27 @@
+{
+ "box": {
+  "anchor": "top",
+  "shrink": true,
+  "set_anchor": "bottom",
+  "set_shrink": false
+ },
+ "chart": {
+  "title": true,
+  "legend": true,
+  "data_labels": false,
+  "gridlines": true
+ },
+ "table": {
+  "header_row": true,
+  "total_row": false,
+  "banded_rows": true,
+  "first_column": false
+ },
+ "colours": [
+  "Ember"
+ ],
+ "footer": {
+  "slide_numbers": false,
+  "date": false
+ }
+}

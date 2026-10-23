@@ -27,8 +27,9 @@ The released-shell test does not establish live-model behavior or an OS upgrade.
 2. Download the draft's macOS `.app.zip`, platform receipt and `SHA256SUMS`.
    Verify the workflow's source commit and all published asset hashes. Run
    `tools/release-scan.py` on the downloaded package. The local packaging script
-   expects its standard `target/release` output; use the workflow's clean build
-   environment, without an alternate Cargo target directory or build target.
+   builds for the native host explicitly and reads the executable from
+   `target/<native-target-triple>/release/`; it overrides inherited Cargo build
+   targets and target directories so packaging uses the binary it built.
 3. Obtain the genuine signed mirror produced by the protected Hub catalog
    dry-run. It contains `catalog-v2.json` and the exact approved artifacts. Do
    not add a trust-anchor override, fake a proof or substitute a legacy catalog.

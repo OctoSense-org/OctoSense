@@ -1,0 +1,253 @@
+{
+  "provider": "OpenAI Image API",
+  "model": "gpt-image-2",
+  "requested_size": [
+    1536,
+    1024
+  ],
+  "quality": "high",
+  "generated_at": "2026-10-11T15:55:47+00:00",
+  "authorized_by": "the maintainer, 11 Oct 2026 (\"go\")",
+  "screens": [
+    {
+      "name": "01-home",
+      "image": "01-home.png",
+      "prompt": "01-home.prompt.txt",
+      "image_sha256": "1ec1d9108e57673181e15a6d72b083268960331a9a0f853b8d9dbed478d94920",
+      "prompt_sha256": "04f1b333304e996e662f8c67cd5f2b2f2c1908b22da7bbae03c8a5ca65924252",
+      "bytes": 1486455,
+      "seconds": 76.0,
+      "revised_prompt": null,
+      "usage": {
+        "input_tokens": 2167,
+        "input_tokens_details": {
+          "image_tokens": 0,
+          "text_tokens": 2167
+        },
+        "output_tokens": 5488,
+        "output_tokens_details": {
+          "image_tokens": 5488,
+          "text_tokens": 0
+        },
+        "total_tokens": 7655
+      },
+      "created": 1791733923
+    },
+    {
+      "name": "02-edit-text",
+      "image": "02-edit-text.png",
+      "prompt": "02-edit-text.prompt.txt",
+      "image_sha256": "47bfc4679956f74e231ec4067d8b0908d0b670eebc85d5454287e50e948a82f0",
+      "prompt_sha256": "60cd59e26a2ed981f73edecfd073913e7cbb314dfa825fc58edc5329adefee8b",
+      "bytes": 1411787,
+      "seconds": 84.3,
+      "revised_prompt": null,
+      "usage": {
+        "input_tokens": 2067,
+        "input_tokens_details": {
+          "image_tokens": 0,
+          "text_tokens": 2067
+        },
+        "output_tokens": 5488,
+        "output_tokens_details": {
+          "image_tokens": 5488,
+          "text_tokens": 0
+        },
+        "total_tokens": 7555
+      },
+      "created": 1791733932
+    },
+    {
+      "name": "03-chart",
+      "image": "03-chart.png",
+      "prompt": "03-chart.prompt.txt",
+      "image_sha256": "d7e06bd9e9d66480d7fe0ca16e04c268c1b715a212a1be57cb0cbf0357a29eb2",
+      "prompt_sha256": "746ac732a2365fec8c33ce3bf2d8510407f54ed7bd56e821ac2731b84b24d248",
+      "bytes": 1271226,
+      "seconds": 80.5,
+      "revised_prompt": null,
+      "usage": {
+        "input_tokens": 2004,
+        "input_tokens_details": {
+          "image_tokens": 0,
+          "text_tokens": 2004
+        },
+        "output_tokens": 5488,
+        "output_tokens_details": {
+          "image_tokens": 5488,
+          "text_tokens": 0
+        },
+        "total_tokens": 7492
+      },
+      "created": 1791733928
+    },
+    {
+      "name": "04-layout",
+      "image": "04-layout.png",
+      "prompt": "04-layout.prompt.txt",
+      "image_sha256": "5364c590d1c34fff2e53d81f7e4acf55846e6306cf6c74b5e2b1d997ba556c41",
+      "prompt_sha256": "13a74e28f6bf67862b197ea3c01c5fc4945d45687924494ee716087e0a9939e4",
+      "bytes": 1497082,
+      "seconds": 81.8,
+      "revised_prompt": null,
+      "usage": {
+        "input_tokens": 1974,
+        "input_tokens_details": {
+          "image_tokens": 0,
+          "text_tokens": 1974
+        },
+        "output_tokens": 5488,
+        "output_tokens_details": {
+          "image_tokens": 5488,
+          "text_tokens": 0
+        },
+        "total_tokens": 7462
+      },
+      "created": 1791734005
+    },
+    {
+      "name": "05-theme",
+      "image": "05-theme.png",
+      "prompt": "05-theme.prompt.txt",
+      "image_sha256": "f744286bcba93761324c6322f0ba3045b74e06f99ac35c1cde2e64ad6cadcfc2",
+      "prompt_sha256": "b71a5a763a09aa1d3990a839ba84680bf535d1a5d3d682baee1198b1d192bfe0",
+      "bytes": 1289650,
+      "seconds": 79.4,
+      "revised_prompt": null,
+      "usage": {
+        "input_tokens": 1989,
+        "input_tokens_details": {
+          "image_tokens": 0,
+          "text_tokens": 1989
+        },
+        "output_tokens": 5488,
+        "output_tokens_details": {
+          "image_tokens": 5488,
+          "text_tokens": 0
+        },
+        "total_tokens": 7477
+      },
+      "created": 1791734008
+    },
+    {
+      "name": "06-sorter",
+      "image": "06-sorter.png",
+      "prompt": "06-sorter.prompt.txt",
+      "image_sha256": "ff47de53acd257dcad89deef1dca4e5f8e663288657d30c8192a63fffdcb3c70",
+      "prompt_sha256": "b3e4f77680275a7fa5ab2b550823a0bf51a080a238e6905da245c1b378efd300",
+      "bytes": 1355206,
+      "seconds": 80.8,
+      "revised_prompt": null,
+      "usage": {
+        "input_tokens": 1907,
+        "input_tokens_details": {
+          "image_tokens": 0,
+          "text_tokens": 1907
+        },
+        "output_tokens": 5488,
+        "output_tokens_details": {
+          "image_tokens": 5488,
+          "text_tokens": 0
+        },
+        "total_tokens": 7395
+      },
+      "created": 1791734013
+    },
+    {
+      "name": "07-outline",
+      "image": "07-outline.png",
+      "prompt": "07-outline.prompt.txt",
+      "image_sha256": "ac3e9570db459f76a4d7241b3539269f6e2e0cf90685f41162ca19cb62804015",
+      "prompt_sha256": "28dab4b3d4fe0a6db9001c451508758e32a3771cdad1fe08a408afeeaffb69cc",
+      "bytes": 1192378,
+      "seconds": 71.4,
+      "revised_prompt": null,
+      "usage": {
+        "input_tokens": 2109,
+        "input_tokens_details": {
+          "image_tokens": 0,
+          "text_tokens": 2109
+        },
+        "output_tokens": 5488,
+        "output_tokens_details": {
+          "image_tokens": 5488,
+          "text_tokens": 0
+        },
+        "total_tokens": 7597
+      },
+      "created": 1791734077
+    },
+    {
+      "name": "08-present",
+      "image": "08-present.png",
+      "prompt": "08-present.prompt.txt",
+      "image_sha256": "6e68592adb7a29500dcc964005f3af328e3d4f32840c0965dc9d5fb991f46884",
+      "prompt_sha256": "0b57fd2d3663a554c709ff7d38676cd53d2b6e1a5b53532d4e8e4119866bc988",
+      "bytes": 1195385,
+      "seconds": 63.5,
+      "revised_prompt": null,
+      "usage": {
+        "input_tokens": 1821,
+        "input_tokens_details": {
+          "image_tokens": 0,
+          "text_tokens": 1821
+        },
+        "output_tokens": 5488,
+        "output_tokens_details": {
+          "image_tokens": 5488,
+          "text_tokens": 0
+        },
+        "total_tokens": 7309
+      },
+      "created": 1791734071
+    },
+    {
+      "name": "09-export",
+      "image": "09-export.png",
+      "prompt": "09-export.prompt.txt",
+      "image_sha256": "891fe00ade7ec8a7619eb9dc983d61fc32b2d53e30b4572e8e0d1812c868eb99",
+      "prompt_sha256": "a79f59f5b032ea0810920d4dddbee3a0875f6698d4a68e297f85c41438c203e5",
+      "bytes": 1223668,
+      "seconds": 68.0,
+      "revised_prompt": null,
+      "usage": {
+        "input_tokens": 1985,
+        "input_tokens_details": {
+          "image_tokens": 0,
+          "text_tokens": 1985
+        },
+        "output_tokens": 5488,
+        "output_tokens_details": {
+          "image_tokens": 5488,
+          "text_tokens": 0
+        },
+        "total_tokens": 7473
+      },
+      "created": 1791734081
+    },
+    {
+      "name": "10-dark-notes",
+      "image": "10-dark-notes.png",
+      "prompt": "10-dark-notes.prompt.txt",
+      "image_sha256": "3cd71d833e38c776dcc025afe1439ff8032be5b90c7654e5ec7ffe0bf6f8af87",
+      "prompt_sha256": "d15af02e2bd0c7cfbb49345430cab109974d5f81bc2c33e5dafc2b0a6deccdaf",
+      "bytes": 1384311,
+      "seconds": 75.6,
+      "revised_prompt": null,
+      "usage": {
+        "input_tokens": 1896,
+        "input_tokens_details": {
+          "image_tokens": 0,
+          "text_tokens": 1896
+        },
+        "output_tokens": 5488,
+        "output_tokens_details": {
+          "image_tokens": 5488,
+          "text_tokens": 0
+        },
+        "total_tokens": 7384
+      },
+      "created": 1791734146
+    }
+  ]
+}

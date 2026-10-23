@@ -22,6 +22,14 @@ fn main() {
     {
         println!("cargo:rustc-cfg=mobile");
     }
+    // `dev_mode` — a development build, as the shell's build.rs decides it:
+    // debug assertions, or feature `dev-mode`. Only then does the app read
+    // its launch-time `MAKEPAD_*` hooks (`launch_var` in src/lib.rs): on a
+    // phone another app can set them when it starts this one.
+    println!("cargo:rustc-check-cfg=cfg(dev_mode)");
+    if env::var_os("CARGO_FEATURE_DEV_MODE").is_some() || env::var_os("CARGO_CFG_DEBUG_ASSERTIONS").is_some() {
+        println!("cargo:rustc-cfg=dev_mode");
+    }
 }
 
 // Pin source contents, resources and lockfiles, including local path patches.

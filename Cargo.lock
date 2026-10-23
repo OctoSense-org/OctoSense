@@ -1215,6 +1215,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "bp256"
+version = "0.14.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "46f98c2d9e8e0796b24f84b7ae14159b91ae6ae4b85f74f7655a678a56ad5e1e"
+dependencies = [
+ "ecdsa",
+ "elliptic-curve",
+ "primefield",
+ "primeorder",
+]
+
+[[package]]
+name = "bp384"
+version = "0.14.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bc61f3a96b44a33fbb971e9917b81f4207d6dae9a6b0715845c785a48e73d9c2"
+dependencies = [
+ "ecdsa",
+ "elliptic-curve",
+ "primefield",
+ "primeorder",
+]
+
+[[package]]
 name = "brotli"
 version = "8.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2667,6 +2691,16 @@ name = "decancer"
 version = "3.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a9244323129647178bf41ac861a2cdb9d9c81b9b09d3d0d1de9cd302b33b8a1d"
+
+[[package]]
+name = "deckcraft-anim"
+version = "0.3.0"
+source = "git+https://github.com/ymote/deckcraft.git?rev=d0e57d7e25f9852179cc66be12dd6188f1c05535#d0e57d7e25f9852179cc66be12dd6188f1c05535"
+dependencies = [
+ "deckcraft-geom",
+ "deckcraft-model",
+ "serde",
+]
 
 [[package]]
 name = "deckcraft-av1"
@@ -4248,12 +4282,6 @@ name = "fearless_simd"
 version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b97b65636e5b9ef369943878ac74335ba1c55c1cb6adbf1e2c293c624248d693"
-
-[[package]]
-name = "fearless_simd"
-version = "1.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3296eb97d869113eaf148a6bdf01884e90b3828ad7ae2340b0f93362fc158611"
 
 [[package]]
 name = "ff"
@@ -6508,12 +6536,13 @@ dependencies = [
 [[package]]
 name = "hayro"
 version = "0.7.1"
-source = "git+https://github.com/ymote/pdfcraft.git?rev=d801407a9f956281d612dee3d2d72c76d43ef399#d801407a9f956281d612dee3d2d72c76d43ef399"
+source = "git+https://github.com/ymote/pdfcraft.git?rev=51f09eea27c56e8e033f8234fa7f4072ba7846d3#51f09eea27c56e8e033f8234fa7f4072ba7846d3"
 dependencies = [
  "bytemuck 1.25.2",
  "hayro-interpret",
  "image",
  "kurbo",
+ "log",
  "pic-scale",
  "vello_cpu 0.0.8",
 ]
@@ -6523,12 +6552,6 @@ name = "hayro-ccitt"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9f4d0e94ddd48749f06bbe4e5389fb9799a0c45bcaf00495042076ef05e3241a"
-
-[[package]]
-name = "hayro-ccitt"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2866f0d976e76497480b853d5e258dab6e4b89ecfe991124e08f15dfa8fd03ad"
 
 [[package]]
 name = "hayro-cmap"
@@ -6543,7 +6566,7 @@ dependencies = [
 [[package]]
 name = "hayro-interpret"
 version = "0.7.0"
-source = "git+https://github.com/ymote/pdfcraft.git?rev=d801407a9f956281d612dee3d2d72c76d43ef399#d801407a9f956281d612dee3d2d72c76d43ef399"
+source = "git+https://github.com/ymote/pdfcraft.git?rev=51f09eea27c56e8e033f8234fa7f4072ba7846d3#51f09eea27c56e8e033f8234fa7f4072ba7846d3"
 dependencies = [
  "bitflags 2.13.2",
  "hayro-cmap",
@@ -6560,12 +6583,11 @@ dependencies = [
 
 [[package]]
 name = "hayro-jbig2"
-version = "0.3.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "000e025850f4592ddcaee85640db70704151f2bafd43b6f431aa5b6a2c6a35a9"
+version = "0.3.0"
+source = "git+https://github.com/ymote/pdfcraft.git?rev=51f09eea27c56e8e033f8234fa7f4072ba7846d3#51f09eea27c56e8e033f8234fa7f4072ba7846d3"
 dependencies = [
- "fearless_simd 1.1.0",
- "hayro-ccitt 0.4.0",
+ "fearless_simd",
+ "hayro-ccitt",
 ]
 
 [[package]]
@@ -6574,7 +6596,7 @@ version = "0.3.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c75ab947623ef4ccaa7acf0579edf7cbb5a73838e3839a7be73335e522f433a1"
 dependencies = [
- "fearless_simd 0.4.1",
+ "fearless_simd",
 ]
 
 [[package]]
@@ -6586,10 +6608,10 @@ checksum = "885c5ef0654933139a9b9546fc2c69e18d37f38aa2520f079092b1be18f1fcaa"
 [[package]]
 name = "hayro-syntax"
 version = "0.7.2"
-source = "git+https://github.com/ymote/pdfcraft.git?rev=d801407a9f956281d612dee3d2d72c76d43ef399#d801407a9f956281d612dee3d2d72c76d43ef399"
+source = "git+https://github.com/ymote/pdfcraft.git?rev=51f09eea27c56e8e033f8234fa7f4072ba7846d3#51f09eea27c56e8e033f8234fa7f4072ba7846d3"
 dependencies = [
  "flate2",
- "hayro-ccitt 0.3.0",
+ "hayro-ccitt",
  "hayro-jbig2",
  "hayro-jpeg2000",
  "memchr 2.8.3",
@@ -7863,6 +7885,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "keccak"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d8f198d1db720e4940b5a493201d199d9f24f568f8f746bd13706243a2f71598"
+dependencies = [
+ "cfg-if 1.0.4 (registry+https://github.com/rust-lang/crates.io-index)",
+ "cpufeatures 0.3.1",
+]
+
+[[package]]
 name = "keyring"
 version = "3.6.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8448,7 +8480,7 @@ dependencies = [
 [[package]]
 name = "lopdf"
 version = "0.45.0"
-source = "git+https://github.com/ymote/pdfcraft.git?rev=d801407a9f956281d612dee3d2d72c76d43ef399#d801407a9f956281d612dee3d2d72c76d43ef399"
+source = "git+https://github.com/ymote/pdfcraft.git?rev=51f09eea27c56e8e033f8234fa7f4072ba7846d3#51f09eea27c56e8e033f8234fa7f4072ba7846d3"
 dependencies = [
  "aes 0.9.3",
  "bitflags 2.13.2",
@@ -8808,6 +8840,17 @@ name = "makepad-code-editor"
 version = "2.0.0"
 dependencies = [
  "makepad-widgets",
+]
+
+[[package]]
+name = "makepad-d3"
+version = "0.2.0"
+dependencies = [
+ "chrono",
+ "makepad-widgets",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
 ]
 
 [[package]]
@@ -11383,8 +11426,8 @@ dependencies = [
 
 [[package]]
 name = "octosense-app-contract"
-version = "1.11.0"
-source = "git+https://github.com/OctoSense-org/OctoSense-App-Hub?rev=8347a489141c0e24cab564883db7c4592935a8b2#8347a489141c0e24cab564883db7c4592935a8b2"
+version = "1.12.0"
+source = "git+https://github.com/OctoSense-org/OctoSense-App-Hub?rev=386359153ed6377b5f047bd9ed2767a6a2ac2bc7#386359153ed6377b5f047bd9ed2767a6a2ac2bc7"
 dependencies = [
  "blake3",
  "serde",
@@ -11395,7 +11438,7 @@ dependencies = [
 [[package]]
 name = "octosense-app-hub"
 version = "0.1.0"
-source = "git+https://github.com/OctoSense-org/OctoSense-App-Hub?rev=8347a489141c0e24cab564883db7c4592935a8b2#8347a489141c0e24cab564883db7c4592935a8b2"
+source = "git+https://github.com/OctoSense-org/OctoSense-App-Hub?rev=386359153ed6377b5f047bd9ed2767a6a2ac2bc7#386359153ed6377b5f047bd9ed2767a6a2ac2bc7"
 dependencies = [
  "base64 0.22.1",
  "blake3",
@@ -11422,7 +11465,7 @@ dependencies = [
 [[package]]
 name = "octosense-app-hub-app"
 version = "0.1.0"
-source = "git+https://github.com/OctoSense-org/OctoSense-App-Hub?rev=8347a489141c0e24cab564883db7c4592935a8b2#8347a489141c0e24cab564883db7c4592935a8b2"
+source = "git+https://github.com/OctoSense-org/OctoSense-App-Hub?rev=386359153ed6377b5f047bd9ed2767a6a2ac2bc7#386359153ed6377b5f047bd9ed2767a6a2ac2bc7"
 dependencies = [
  "makepad-app-module",
  "makepad-widgets",
@@ -11450,7 +11493,7 @@ dependencies = [
 [[package]]
 name = "octosense-app-policy"
 version = "0.1.0"
-source = "git+https://github.com/OctoSense-org/OctoSense-App-Hub?rev=8347a489141c0e24cab564883db7c4592935a8b2#8347a489141c0e24cab564883db7c4592935a8b2"
+source = "git+https://github.com/OctoSense-org/OctoSense-App-Hub?rev=386359153ed6377b5f047bd9ed2767a6a2ac2bc7#386359153ed6377b5f047bd9ed2767a6a2ac2bc7"
 dependencies = [
  "makepad-widgets",
  "octosense-app-contract",
@@ -11472,7 +11515,7 @@ dependencies = [
 [[package]]
 name = "octosense-appstore"
 version = "0.1.0"
-source = "git+https://github.com/OctoSense-org/OctoSense-App-Hub?rev=8347a489141c0e24cab564883db7c4592935a8b2#8347a489141c0e24cab564883db7c4592935a8b2"
+source = "git+https://github.com/OctoSense-org/OctoSense-App-Hub?rev=386359153ed6377b5f047bd9ed2767a6a2ac2bc7#386359153ed6377b5f047bd9ed2767a6a2ac2bc7"
 dependencies = [
  "makepad-app-module",
  "makepad-widgets",
@@ -11522,15 +11565,22 @@ dependencies = [
 name = "octosense-deck-service"
 version = "0.1.0"
 dependencies = [
+ "deckcraft-anim",
  "deckcraft-engine",
+ "deckcraft-fonts",
  "deckcraft-format",
  "deckcraft-model",
+ "deckcraft-pptx",
+ "flate2",
+ "makepad-widgets",
  "octosense-app-policy",
  "octosense-appstore",
  "octosense-engine-area",
  "octosense-skill-gen",
  "serde_json",
+ "sha2 0.10.9",
  "tempfile",
+ "zip 3.0.0",
 ]
 
 [[package]]
@@ -11782,11 +11832,17 @@ dependencies = [
 name = "octosense-pdf-service"
 version = "0.1.0"
 dependencies = [
+ "chrono",
+ "libc",
+ "makepad-widgets",
  "octosense-app-policy",
  "octosense-appstore",
  "octosense-engine-area",
  "octosense-skill-gen",
+ "pdfcraft-annot",
  "pdfcraft-automation",
+ "pdfcraft-cos",
+ "pdfcraft-edit",
  "pdfcraft-xfa",
  "serde_json",
  "tempfile",
@@ -11852,6 +11908,7 @@ dependencies = [
 name = "octosense-shell"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
  "chrono",
  "chrono-tz",
  "crossbeam-queue",
@@ -11864,6 +11921,7 @@ dependencies = [
  "makepad-audio-decode",
  "makepad-calculator",
  "makepad-clock",
+ "makepad-d3",
  "makepad-network",
  "makepad-notes",
  "makepad-reminders",
@@ -11903,6 +11961,7 @@ dependencies = [
  "octosense-reference",
  "octosense-sheets-service",
  "octosense-sound-service",
+ "octosense-updater-ui",
  "octosense-vector-service",
  "octosense-wasm-host",
  "octosense-word-service",
@@ -11959,6 +12018,37 @@ dependencies = [
 ]
 
 [[package]]
+name = "octosense-updater"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "libc",
+ "reqwest 0.12.28",
+ "semver",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "sigstore-trust-root",
+ "sigstore-types",
+ "sigstore-verify",
+ "tempfile",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
+name = "octosense-updater-ui"
+version = "0.1.0"
+dependencies = [
+ "makepad-app-module",
+ "makepad-widgets",
+ "octosense-updater",
+ "serde_json",
+ "sha2 0.10.9",
+ "tempfile",
+]
+
+[[package]]
 name = "octosense-vector-service"
 version = "0.1.0"
 dependencies = [
@@ -11991,8 +12081,11 @@ dependencies = [
  "http",
  "http-body-util",
  "libc",
+ "rustls",
  "serde_json",
  "sha2 0.10.9",
+ "tokio",
+ "url",
  "wasmlab-functions",
  "wasmtime",
  "wasmtime-wasi",
@@ -12225,6 +12318,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "p521"
+version = "0.14.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4ad64cc32c2dc466317c12ee5853e61f159f9eab1fe7efade0395dc2e7b43449"
+dependencies = [
+ "base16ct",
+ "ecdsa",
+ "elliptic-curve",
+ "primefield",
+ "primeorder",
+ "sha2 0.11.0",
+]
+
+[[package]]
 name = "parking"
 version = "2.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -12366,32 +12473,35 @@ dependencies = [
 
 [[package]]
 name = "pdfcraft-a11y"
-version = "0.4.0"
-source = "git+https://github.com/ymote/pdfcraft.git?rev=d801407a9f956281d612dee3d2d72c76d43ef399#d801407a9f956281d612dee3d2d72c76d43ef399"
+version = "0.6.0"
+source = "git+https://github.com/ymote/pdfcraft.git?rev=51f09eea27c56e8e033f8234fa7f4072ba7846d3#51f09eea27c56e8e033f8234fa7f4072ba7846d3"
 dependencies = [
  "pdfcraft-content",
  "pdfcraft-cos",
+ "pdfcraft-fonts",
  "pdfcraft-model",
  "thiserror 2.0.20",
 ]
 
 [[package]]
 name = "pdfcraft-annot"
-version = "0.4.0"
-source = "git+https://github.com/ymote/pdfcraft.git?rev=d801407a9f956281d612dee3d2d72c76d43ef399#d801407a9f956281d612dee3d2d72c76d43ef399"
+version = "0.6.0"
+source = "git+https://github.com/ymote/pdfcraft.git?rev=51f09eea27c56e8e033f8234fa7f4072ba7846d3#51f09eea27c56e8e033f8234fa7f4072ba7846d3"
 dependencies = [
  "pdfcraft-cos",
  "pdfcraft-fonts",
+ "pdfcraft-model",
  "thiserror 2.0.20",
 ]
 
 [[package]]
 name = "pdfcraft-automation"
-version = "0.4.0"
-source = "git+https://github.com/ymote/pdfcraft.git?rev=d801407a9f956281d612dee3d2d72c76d43ef399#d801407a9f956281d612dee3d2d72c76d43ef399"
+version = "0.6.0"
+source = "git+https://github.com/ymote/pdfcraft.git?rev=51f09eea27c56e8e033f8234fa7f4072ba7846d3#51f09eea27c56e8e033f8234fa7f4072ba7846d3"
 dependencies = [
  "pdfcraft-engine",
  "pdfcraft-organize",
+ "pdfcraft-platform",
  "pdfcraft-render",
  "png 0.18.1",
  "serde_json",
@@ -12399,21 +12509,21 @@ dependencies = [
 
 [[package]]
 name = "pdfcraft-compare"
-version = "0.4.0"
-source = "git+https://github.com/ymote/pdfcraft.git?rev=d801407a9f956281d612dee3d2d72c76d43ef399#d801407a9f956281d612dee3d2d72c76d43ef399"
+version = "0.6.0"
+source = "git+https://github.com/ymote/pdfcraft.git?rev=51f09eea27c56e8e033f8234fa7f4072ba7846d3#51f09eea27c56e8e033f8234fa7f4072ba7846d3"
 
 [[package]]
 name = "pdfcraft-content"
-version = "0.4.0"
-source = "git+https://github.com/ymote/pdfcraft.git?rev=d801407a9f956281d612dee3d2d72c76d43ef399#d801407a9f956281d612dee3d2d72c76d43ef399"
+version = "0.6.0"
+source = "git+https://github.com/ymote/pdfcraft.git?rev=51f09eea27c56e8e033f8234fa7f4072ba7846d3#51f09eea27c56e8e033f8234fa7f4072ba7846d3"
 dependencies = [
  "pdfcraft-cos",
 ]
 
 [[package]]
 name = "pdfcraft-cos"
-version = "0.4.0"
-source = "git+https://github.com/ymote/pdfcraft.git?rev=d801407a9f956281d612dee3d2d72c76d43ef399#d801407a9f956281d612dee3d2d72c76d43ef399"
+version = "0.6.0"
+source = "git+https://github.com/ymote/pdfcraft.git?rev=51f09eea27c56e8e033f8234fa7f4072ba7846d3#51f09eea27c56e8e033f8234fa7f4072ba7846d3"
 dependencies = [
  "pdfcraft-crypt",
  "pdfcraft-filters",
@@ -12422,9 +12532,10 @@ dependencies = [
 
 [[package]]
 name = "pdfcraft-create"
-version = "0.4.0"
-source = "git+https://github.com/ymote/pdfcraft.git?rev=d801407a9f956281d612dee3d2d72c76d43ef399#d801407a9f956281d612dee3d2d72c76d43ef399"
+version = "0.6.0"
+source = "git+https://github.com/ymote/pdfcraft.git?rev=51f09eea27c56e8e033f8234fa7f4072ba7846d3#51f09eea27c56e8e033f8234fa7f4072ba7846d3"
 dependencies = [
+ "encoding_rs",
  "image",
  "pdfcraft-cos",
  "pdfcraft-fonts",
@@ -12436,8 +12547,8 @@ dependencies = [
 
 [[package]]
 name = "pdfcraft-crypt"
-version = "0.4.0"
-source = "git+https://github.com/ymote/pdfcraft.git?rev=d801407a9f956281d612dee3d2d72c76d43ef399#d801407a9f956281d612dee3d2d72c76d43ef399"
+version = "0.6.0"
+source = "git+https://github.com/ymote/pdfcraft.git?rev=51f09eea27c56e8e033f8234fa7f4072ba7846d3#51f09eea27c56e8e033f8234fa7f4072ba7846d3"
 dependencies = [
  "aes 0.9.3",
  "md-5 0.11.0",
@@ -12448,22 +12559,26 @@ dependencies = [
 
 [[package]]
 name = "pdfcraft-edit"
-version = "0.4.0"
-source = "git+https://github.com/ymote/pdfcraft.git?rev=d801407a9f956281d612dee3d2d72c76d43ef399#d801407a9f956281d612dee3d2d72c76d43ef399"
+version = "0.6.0"
+source = "git+https://github.com/ymote/pdfcraft.git?rev=51f09eea27c56e8e033f8234fa7f4072ba7846d3#51f09eea27c56e8e033f8234fa7f4072ba7846d3"
 dependencies = [
+ "pdfcraft-annot",
  "pdfcraft-content",
  "pdfcraft-cos",
  "pdfcraft-fonts",
  "pdfcraft-model",
  "thiserror 2.0.20",
+ "unicode-bidi 0.3.18 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
 name = "pdfcraft-engine"
-version = "0.4.0"
-source = "git+https://github.com/ymote/pdfcraft.git?rev=d801407a9f956281d612dee3d2d72c76d43ef399#d801407a9f956281d612dee3d2d72c76d43ef399"
+version = "0.6.0"
+source = "git+https://github.com/ymote/pdfcraft.git?rev=51f09eea27c56e8e033f8234fa7f4072ba7846d3#51f09eea27c56e8e033f8234fa7f4072ba7846d3"
 dependencies = [
  "chrono",
+ "icu_properties",
+ "idna",
  "image",
  "pdfcraft-a11y",
  "pdfcraft-annot",
@@ -12474,6 +12589,7 @@ dependencies = [
  "pdfcraft-export",
  "pdfcraft-fonts",
  "pdfcraft-forms",
+ "pdfcraft-geom",
  "pdfcraft-js",
  "pdfcraft-measure",
  "pdfcraft-model",
@@ -12489,20 +12605,21 @@ dependencies = [
  "pdfcraft-xfdf",
  "png 0.18.1",
  "thiserror 2.0.20",
+ "url",
 ]
 
 [[package]]
 name = "pdfcraft-export"
-version = "0.4.0"
-source = "git+https://github.com/ymote/pdfcraft.git?rev=d801407a9f956281d612dee3d2d72c76d43ef399#d801407a9f956281d612dee3d2d72c76d43ef399"
+version = "0.6.0"
+source = "git+https://github.com/ymote/pdfcraft.git?rev=51f09eea27c56e8e033f8234fa7f4072ba7846d3#51f09eea27c56e8e033f8234fa7f4072ba7846d3"
 dependencies = [
  "flate2",
 ]
 
 [[package]]
 name = "pdfcraft-filters"
-version = "0.4.0"
-source = "git+https://github.com/ymote/pdfcraft.git?rev=d801407a9f956281d612dee3d2d72c76d43ef399#d801407a9f956281d612dee3d2d72c76d43ef399"
+version = "0.6.0"
+source = "git+https://github.com/ymote/pdfcraft.git?rev=51f09eea27c56e8e033f8234fa7f4072ba7846d3#51f09eea27c56e8e033f8234fa7f4072ba7846d3"
 dependencies = [
  "flate2",
  "thiserror 2.0.20",
@@ -12510,17 +12627,18 @@ dependencies = [
 
 [[package]]
 name = "pdfcraft-fonts"
-version = "0.4.0"
-source = "git+https://github.com/ymote/pdfcraft.git?rev=d801407a9f956281d612dee3d2d72c76d43ef399#d801407a9f956281d612dee3d2d72c76d43ef399"
+version = "0.6.0"
+source = "git+https://github.com/ymote/pdfcraft.git?rev=51f09eea27c56e8e033f8234fa7f4072ba7846d3#51f09eea27c56e8e033f8234fa7f4072ba7846d3"
 dependencies = [
+ "harfrust 0.12.0",
  "pdfcraft-cos",
  "skrifa 0.44.0",
 ]
 
 [[package]]
 name = "pdfcraft-forms"
-version = "0.4.0"
-source = "git+https://github.com/ymote/pdfcraft.git?rev=d801407a9f956281d612dee3d2d72c76d43ef399#d801407a9f956281d612dee3d2d72c76d43ef399"
+version = "0.6.0"
+source = "git+https://github.com/ymote/pdfcraft.git?rev=51f09eea27c56e8e033f8234fa7f4072ba7846d3#51f09eea27c56e8e033f8234fa7f4072ba7846d3"
 dependencies = [
  "pdfcraft-content",
  "pdfcraft-cos",
@@ -12530,17 +12648,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "pdfcraft-geom"
+version = "0.6.0"
+source = "git+https://github.com/ymote/pdfcraft.git?rev=51f09eea27c56e8e033f8234fa7f4072ba7846d3#51f09eea27c56e8e033f8234fa7f4072ba7846d3"
+
+[[package]]
 name = "pdfcraft-js"
-version = "0.4.0"
-source = "git+https://github.com/ymote/pdfcraft.git?rev=d801407a9f956281d612dee3d2d72c76d43ef399#d801407a9f956281d612dee3d2d72c76d43ef399"
+version = "0.6.0"
+source = "git+https://github.com/ymote/pdfcraft.git?rev=51f09eea27c56e8e033f8234fa7f4072ba7846d3#51f09eea27c56e8e033f8234fa7f4072ba7846d3"
 dependencies = [
  "boa_engine",
 ]
 
 [[package]]
 name = "pdfcraft-measure"
-version = "0.4.0"
-source = "git+https://github.com/ymote/pdfcraft.git?rev=d801407a9f956281d612dee3d2d72c76d43ef399#d801407a9f956281d612dee3d2d72c76d43ef399"
+version = "0.6.0"
+source = "git+https://github.com/ymote/pdfcraft.git?rev=51f09eea27c56e8e033f8234fa7f4072ba7846d3#51f09eea27c56e8e033f8234fa7f4072ba7846d3"
 dependencies = [
  "pdfcraft-annot",
  "pdfcraft-content",
@@ -12552,16 +12675,16 @@ dependencies = [
 
 [[package]]
 name = "pdfcraft-model"
-version = "0.4.0"
-source = "git+https://github.com/ymote/pdfcraft.git?rev=d801407a9f956281d612dee3d2d72c76d43ef399#d801407a9f956281d612dee3d2d72c76d43ef399"
+version = "0.6.0"
+source = "git+https://github.com/ymote/pdfcraft.git?rev=51f09eea27c56e8e033f8234fa7f4072ba7846d3#51f09eea27c56e8e033f8234fa7f4072ba7846d3"
 dependencies = [
  "pdfcraft-cos",
 ]
 
 [[package]]
 name = "pdfcraft-ocr"
-version = "0.4.0"
-source = "git+https://github.com/ymote/pdfcraft.git?rev=d801407a9f956281d612dee3d2d72c76d43ef399#d801407a9f956281d612dee3d2d72c76d43ef399"
+version = "0.6.0"
+source = "git+https://github.com/ymote/pdfcraft.git?rev=51f09eea27c56e8e033f8234fa7f4072ba7846d3#51f09eea27c56e8e033f8234fa7f4072ba7846d3"
 dependencies = [
  "ocrs",
  "pdfcraft-fonts",
@@ -12571,8 +12694,8 @@ dependencies = [
 
 [[package]]
 name = "pdfcraft-optimize"
-version = "0.4.0"
-source = "git+https://github.com/ymote/pdfcraft.git?rev=d801407a9f956281d612dee3d2d72c76d43ef399#d801407a9f956281d612dee3d2d72c76d43ef399"
+version = "0.6.0"
+source = "git+https://github.com/ymote/pdfcraft.git?rev=51f09eea27c56e8e033f8234fa7f4072ba7846d3#51f09eea27c56e8e033f8234fa7f4072ba7846d3"
 dependencies = [
  "image",
  "pdfcraft-annot",
@@ -12584,8 +12707,8 @@ dependencies = [
 
 [[package]]
 name = "pdfcraft-organize"
-version = "0.4.0"
-source = "git+https://github.com/ymote/pdfcraft.git?rev=d801407a9f956281d612dee3d2d72c76d43ef399#d801407a9f956281d612dee3d2d72c76d43ef399"
+version = "0.6.0"
+source = "git+https://github.com/ymote/pdfcraft.git?rev=51f09eea27c56e8e033f8234fa7f4072ba7846d3#51f09eea27c56e8e033f8234fa7f4072ba7846d3"
 dependencies = [
  "pdfcraft-content",
  "pdfcraft-cos",
@@ -12593,9 +12716,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "pdfcraft-platform"
+version = "0.6.0"
+source = "git+https://github.com/ymote/pdfcraft.git?rev=51f09eea27c56e8e033f8234fa7f4072ba7846d3#51f09eea27c56e8e033f8234fa7f4072ba7846d3"
+dependencies = [
+ "zbus 5.19.0",
+]
+
+[[package]]
 name = "pdfcraft-preflight"
-version = "0.4.0"
-source = "git+https://github.com/ymote/pdfcraft.git?rev=d801407a9f956281d612dee3d2d72c76d43ef399#d801407a9f956281d612dee3d2d72c76d43ef399"
+version = "0.6.0"
+source = "git+https://github.com/ymote/pdfcraft.git?rev=51f09eea27c56e8e033f8234fa7f4072ba7846d3#51f09eea27c56e8e033f8234fa7f4072ba7846d3"
 dependencies = [
  "pdfcraft-cos",
  "pdfcraft-model",
@@ -12603,8 +12734,8 @@ dependencies = [
 
 [[package]]
 name = "pdfcraft-print"
-version = "0.4.0"
-source = "git+https://github.com/ymote/pdfcraft.git?rev=d801407a9f956281d612dee3d2d72c76d43ef399#d801407a9f956281d612dee3d2d72c76d43ef399"
+version = "0.6.0"
+source = "git+https://github.com/ymote/pdfcraft.git?rev=51f09eea27c56e8e033f8234fa7f4072ba7846d3#51f09eea27c56e8e033f8234fa7f4072ba7846d3"
 dependencies = [
  "pdfcraft-content",
  "pdfcraft-cos",
@@ -12614,8 +12745,8 @@ dependencies = [
 
 [[package]]
 name = "pdfcraft-redact"
-version = "0.4.0"
-source = "git+https://github.com/ymote/pdfcraft.git?rev=d801407a9f956281d612dee3d2d72c76d43ef399#d801407a9f956281d612dee3d2d72c76d43ef399"
+version = "0.6.0"
+source = "git+https://github.com/ymote/pdfcraft.git?rev=51f09eea27c56e8e033f8234fa7f4072ba7846d3#51f09eea27c56e8e033f8234fa7f4072ba7846d3"
 dependencies = [
  "pdfcraft-annot",
  "pdfcraft-content",
@@ -12629,61 +12760,75 @@ dependencies = [
 
 [[package]]
 name = "pdfcraft-render"
-version = "0.4.0"
-source = "git+https://github.com/ymote/pdfcraft.git?rev=d801407a9f956281d612dee3d2d72c76d43ef399#d801407a9f956281d612dee3d2d72c76d43ef399"
+version = "0.6.0"
+source = "git+https://github.com/ymote/pdfcraft.git?rev=51f09eea27c56e8e033f8234fa7f4072ba7846d3#51f09eea27c56e8e033f8234fa7f4072ba7846d3"
 dependencies = [
+ "bytemuck 1.25.2",
  "getrandom 0.4.3",
  "hayro",
  "hayro-syntax",
  "kurbo",
  "log",
  "lopdf 0.45.0",
+ "pdfcraft-cos",
+ "pdfcraft-fonts",
  "thiserror 2.0.20",
 ]
 
 [[package]]
 name = "pdfcraft-sign"
-version = "0.4.0"
-source = "git+https://github.com/ymote/pdfcraft.git?rev=d801407a9f956281d612dee3d2d72c76d43ef399#d801407a9f956281d612dee3d2d72c76d43ef399"
+version = "0.6.0"
+source = "git+https://github.com/ymote/pdfcraft.git?rev=51f09eea27c56e8e033f8234fa7f4072ba7846d3#51f09eea27c56e8e033f8234fa7f4072ba7846d3"
 dependencies = [
  "aes 0.9.3",
  "aws-lc-rs",
  "base64 0.22.1",
+ "bp256",
+ "bp384",
  "cbc 0.2.1",
+ "crypto-bigint",
  "des",
+ "ecdsa",
+ "ed25519-dalek",
  "getrandom 0.4.3",
  "hmac 0.13.0",
  "p256",
  "p384",
+ "p521",
  "pbkdf2 0.13.0",
  "pdfcraft-annot",
  "pdfcraft-cos",
  "pdfcraft-fonts",
  "rc2",
+ "ripemd",
  "rsa",
  "rustls-cng",
  "security-framework 3.7.0",
  "sha1 0.11.0",
  "sha2 0.11.0",
+ "sha3",
  "thiserror 2.0.20",
 ]
 
 [[package]]
 name = "pdfcraft-xfa"
-version = "0.4.0"
-source = "git+https://github.com/ymote/pdfcraft.git?rev=d801407a9f956281d612dee3d2d72c76d43ef399#d801407a9f956281d612dee3d2d72c76d43ef399"
+version = "0.6.0"
+source = "git+https://github.com/ymote/pdfcraft.git?rev=51f09eea27c56e8e033f8234fa7f4072ba7846d3#51f09eea27c56e8e033f8234fa7f4072ba7846d3"
 dependencies = [
  "base64 0.22.1",
+ "image",
  "pdfcraft-cos",
  "pdfcraft-fonts",
+ "png 0.18.1",
  "roxmltree 0.20.0",
+ "sha2 0.11.0",
  "thiserror 2.0.20",
 ]
 
 [[package]]
 name = "pdfcraft-xfdf"
-version = "0.4.0"
-source = "git+https://github.com/ymote/pdfcraft.git?rev=d801407a9f956281d612dee3d2d72c76d43ef399#d801407a9f956281d612dee3d2d72c76d43ef399"
+version = "0.6.0"
+source = "git+https://github.com/ymote/pdfcraft.git?rev=51f09eea27c56e8e033f8234fa7f4072ba7846d3#51f09eea27c56e8e033f8234fa7f4072ba7846d3"
 dependencies = [
  "pdfcraft-annot",
  "pdfcraft-cos",
@@ -14225,6 +14370,7 @@ dependencies = [
  "pin-project-lite",
  "quinn",
  "rustls",
+ "rustls-native-certs",
  "rustls-pki-types",
  "serde",
  "serde_json",
@@ -14483,6 +14629,15 @@ dependencies = [
  "octosense-app-contract",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "ripemd"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4dd4211456b4172d7e44261920c25acf07367c4f04bb5f5d54fc21b090d9b159"
+dependencies = [
+ "digest 0.11.3",
 ]
 
 [[package]]
@@ -15984,6 +16139,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "sha3"
+version = "0.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bc9bad02c26382724b2d2692c6f179285e4b54eeecd7968f52a50059c3c11759"
+dependencies = [
+ "digest 0.11.3",
+ "keccak",
+ "sponge-cursor",
+]
+
+[[package]]
 name = "sharded-slab"
 version = "0.1.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -16390,6 +16556,12 @@ dependencies = [
  "base64ct",
  "der 0.8.2",
 ]
+
+[[package]]
+name = "sponge-cursor"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3a0219bd7d979d58245a4f41f695e1ac9f8befdffadd7f61f1bae9e39abc6620"
 
 [[package]]
 name = "sqlite-wasm-rs"
@@ -18145,7 +18317,7 @@ checksum = "accd4ea62f7bb7a82fe23066fb0957d48ef677f6eeb8215f372f52e48bb32426"
 [[package]]
 name = "vectorcraft-brush"
 version = "0.6.0"
-source = "git+https://github.com/ymote/vectorcraft.git?rev=85dcb28e411db4271f3b726d6502b78e1375cbba#85dcb28e411db4271f3b726d6502b78e1375cbba"
+source = "git+https://github.com/ymote/vectorcraft.git?rev=2cd3a1ca8fbcc5b2e40de47588194798a9f8e497#2cd3a1ca8fbcc5b2e40de47588194798a9f8e497"
 dependencies = [
  "kurbo",
  "serde",
@@ -18158,7 +18330,7 @@ dependencies = [
 [[package]]
 name = "vectorcraft-cad"
 version = "0.6.0"
-source = "git+https://github.com/ymote/vectorcraft.git?rev=85dcb28e411db4271f3b726d6502b78e1375cbba#85dcb28e411db4271f3b726d6502b78e1375cbba"
+source = "git+https://github.com/ymote/vectorcraft.git?rev=2cd3a1ca8fbcc5b2e40de47588194798a9f8e497#2cd3a1ca8fbcc5b2e40de47588194798a9f8e497"
 dependencies = [
  "image",
  "kurbo",
@@ -18174,7 +18346,7 @@ dependencies = [
 [[package]]
 name = "vectorcraft-color"
 version = "0.6.0"
-source = "git+https://github.com/ymote/vectorcraft.git?rev=85dcb28e411db4271f3b726d6502b78e1375cbba#85dcb28e411db4271f3b726d6502b78e1375cbba"
+source = "git+https://github.com/ymote/vectorcraft.git?rev=2cd3a1ca8fbcc5b2e40de47588194798a9f8e497#2cd3a1ca8fbcc5b2e40de47588194798a9f8e497"
 dependencies = [
  "kurbo",
  "moxcms 0.8.1",
@@ -18186,7 +18358,7 @@ dependencies = [
 [[package]]
 name = "vectorcraft-doc"
 version = "0.6.0"
-source = "git+https://github.com/ymote/vectorcraft.git?rev=85dcb28e411db4271f3b726d6502b78e1375cbba#85dcb28e411db4271f3b726d6502b78e1375cbba"
+source = "git+https://github.com/ymote/vectorcraft.git?rev=2cd3a1ca8fbcc5b2e40de47588194798a9f8e497#2cd3a1ca8fbcc5b2e40de47588194798a9f8e497"
 dependencies = [
  "image",
  "kurbo",
@@ -18202,7 +18374,7 @@ dependencies = [
 [[package]]
 name = "vectorcraft-effects"
 version = "0.6.0"
-source = "git+https://github.com/ymote/vectorcraft.git?rev=85dcb28e411db4271f3b726d6502b78e1375cbba#85dcb28e411db4271f3b726d6502b78e1375cbba"
+source = "git+https://github.com/ymote/vectorcraft.git?rev=2cd3a1ca8fbcc5b2e40de47588194798a9f8e497#2cd3a1ca8fbcc5b2e40de47588194798a9f8e497"
 dependencies = [
  "kurbo",
  "serde_json",
@@ -18216,7 +18388,7 @@ dependencies = [
 [[package]]
 name = "vectorcraft-engine"
 version = "0.6.0"
-source = "git+https://github.com/ymote/vectorcraft.git?rev=85dcb28e411db4271f3b726d6502b78e1375cbba#85dcb28e411db4271f3b726d6502b78e1375cbba"
+source = "git+https://github.com/ymote/vectorcraft.git?rev=2cd3a1ca8fbcc5b2e40de47588194798a9f8e497#2cd3a1ca8fbcc5b2e40de47588194798a9f8e497"
 dependencies = [
  "flate2",
  "image",
@@ -18246,7 +18418,7 @@ dependencies = [
 [[package]]
 name = "vectorcraft-eps"
 version = "0.6.0"
-source = "git+https://github.com/ymote/vectorcraft.git?rev=85dcb28e411db4271f3b726d6502b78e1375cbba#85dcb28e411db4271f3b726d6502b78e1375cbba"
+source = "git+https://github.com/ymote/vectorcraft.git?rev=2cd3a1ca8fbcc5b2e40de47588194798a9f8e497#2cd3a1ca8fbcc5b2e40de47588194798a9f8e497"
 dependencies = [
  "flate2",
  "image",
@@ -18264,7 +18436,7 @@ dependencies = [
 [[package]]
 name = "vectorcraft-format"
 version = "0.6.0"
-source = "git+https://github.com/ymote/vectorcraft.git?rev=85dcb28e411db4271f3b726d6502b78e1375cbba#85dcb28e411db4271f3b726d6502b78e1375cbba"
+source = "git+https://github.com/ymote/vectorcraft.git?rev=2cd3a1ca8fbcc5b2e40de47588194798a9f8e497#2cd3a1ca8fbcc5b2e40de47588194798a9f8e497"
 dependencies = [
  "flate2",
  "serde",
@@ -18276,7 +18448,7 @@ dependencies = [
 [[package]]
 name = "vectorcraft-geom"
 version = "0.6.0"
-source = "git+https://github.com/ymote/vectorcraft.git?rev=85dcb28e411db4271f3b726d6502b78e1375cbba#85dcb28e411db4271f3b726d6502b78e1375cbba"
+source = "git+https://github.com/ymote/vectorcraft.git?rev=2cd3a1ca8fbcc5b2e40de47588194798a9f8e497#2cd3a1ca8fbcc5b2e40de47588194798a9f8e497"
 dependencies = [
  "kurbo",
  "serde",
@@ -18286,7 +18458,7 @@ dependencies = [
 [[package]]
 name = "vectorcraft-metafile"
 version = "0.6.0"
-source = "git+https://github.com/ymote/vectorcraft.git?rev=85dcb28e411db4271f3b726d6502b78e1375cbba#85dcb28e411db4271f3b726d6502b78e1375cbba"
+source = "git+https://github.com/ymote/vectorcraft.git?rev=2cd3a1ca8fbcc5b2e40de47588194798a9f8e497#2cd3a1ca8fbcc5b2e40de47588194798a9f8e497"
 dependencies = [
  "image",
  "kurbo",
@@ -18301,7 +18473,7 @@ dependencies = [
 [[package]]
 name = "vectorcraft-pathops"
 version = "0.6.0"
-source = "git+https://github.com/ymote/vectorcraft.git?rev=85dcb28e411db4271f3b726d6502b78e1375cbba#85dcb28e411db4271f3b726d6502b78e1375cbba"
+source = "git+https://github.com/ymote/vectorcraft.git?rev=2cd3a1ca8fbcc5b2e40de47588194798a9f8e497#2cd3a1ca8fbcc5b2e40de47588194798a9f8e497"
 dependencies = [
  "kurbo",
  "linesweeper",
@@ -18312,7 +18484,7 @@ dependencies = [
 [[package]]
 name = "vectorcraft-pdf"
 version = "0.6.0"
-source = "git+https://github.com/ymote/vectorcraft.git?rev=85dcb28e411db4271f3b726d6502b78e1375cbba#85dcb28e411db4271f3b726d6502b78e1375cbba"
+source = "git+https://github.com/ymote/vectorcraft.git?rev=2cd3a1ca8fbcc5b2e40de47588194798a9f8e497#2cd3a1ca8fbcc5b2e40de47588194798a9f8e497"
 dependencies = [
  "aes 0.8.4",
  "flate2",
@@ -18340,7 +18512,7 @@ dependencies = [
 [[package]]
 name = "vectorcraft-plugins"
 version = "0.6.0"
-source = "git+https://github.com/ymote/vectorcraft.git?rev=85dcb28e411db4271f3b726d6502b78e1375cbba#85dcb28e411db4271f3b726d6502b78e1375cbba"
+source = "git+https://github.com/ymote/vectorcraft.git?rev=2cd3a1ca8fbcc5b2e40de47588194798a9f8e497#2cd3a1ca8fbcc5b2e40de47588194798a9f8e497"
 dependencies = [
  "serde",
  "serde_json",
@@ -18354,7 +18526,7 @@ dependencies = [
 [[package]]
 name = "vectorcraft-render"
 version = "0.6.0"
-source = "git+https://github.com/ymote/vectorcraft.git?rev=85dcb28e411db4271f3b726d6502b78e1375cbba#85dcb28e411db4271f3b726d6502b78e1375cbba"
+source = "git+https://github.com/ymote/vectorcraft.git?rev=2cd3a1ca8fbcc5b2e40de47588194798a9f8e497#2cd3a1ca8fbcc5b2e40de47588194798a9f8e497"
 dependencies = [
  "flate2",
  "gif",
@@ -18375,7 +18547,7 @@ dependencies = [
 [[package]]
 name = "vectorcraft-svg"
 version = "0.6.0"
-source = "git+https://github.com/ymote/vectorcraft.git?rev=85dcb28e411db4271f3b726d6502b78e1375cbba#85dcb28e411db4271f3b726d6502b78e1375cbba"
+source = "git+https://github.com/ymote/vectorcraft.git?rev=2cd3a1ca8fbcc5b2e40de47588194798a9f8e497#2cd3a1ca8fbcc5b2e40de47588194798a9f8e497"
 dependencies = [
  "flate2",
  "image",
@@ -18396,7 +18568,7 @@ dependencies = [
 [[package]]
 name = "vectorcraft-text"
 version = "0.6.0"
-source = "git+https://github.com/ymote/vectorcraft.git?rev=85dcb28e411db4271f3b726d6502b78e1375cbba#85dcb28e411db4271f3b726d6502b78e1375cbba"
+source = "git+https://github.com/ymote/vectorcraft.git?rev=2cd3a1ca8fbcc5b2e40de47588194798a9f8e497#2cd3a1ca8fbcc5b2e40de47588194798a9f8e497"
 dependencies = [
  "harfrust 0.13.3",
  "kurbo",
@@ -18414,7 +18586,7 @@ dependencies = [
 [[package]]
 name = "vectorcraft-tools"
 version = "0.6.0"
-source = "git+https://github.com/ymote/vectorcraft.git?rev=85dcb28e411db4271f3b726d6502b78e1375cbba#85dcb28e411db4271f3b726d6502b78e1375cbba"
+source = "git+https://github.com/ymote/vectorcraft.git?rev=2cd3a1ca8fbcc5b2e40de47588194798a9f8e497#2cd3a1ca8fbcc5b2e40de47588194798a9f8e497"
 dependencies = [
  "kurbo",
  "serde",
@@ -18429,7 +18601,7 @@ dependencies = [
 [[package]]
 name = "vectorcraft-trace"
 version = "0.6.0"
-source = "git+https://github.com/ymote/vectorcraft.git?rev=85dcb28e411db4271f3b726d6502b78e1375cbba#85dcb28e411db4271f3b726d6502b78e1375cbba"
+source = "git+https://github.com/ymote/vectorcraft.git?rev=2cd3a1ca8fbcc5b2e40de47588194798a9f8e497#2cd3a1ca8fbcc5b2e40de47588194798a9f8e497"
 dependencies = [
  "image",
  "kurbo",
@@ -18446,7 +18618,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3361bff7f7d82c0c496b92048db83846691f0e844cc28dee92b1c824291b55ee"
 dependencies = [
  "bytemuck 1.25.2",
- "fearless_simd 0.4.1",
+ "fearless_simd",
  "guillotiere",
  "hashbrown 0.17.1",
  "log",
@@ -18463,7 +18635,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "19d672facaa2d697285a786cd9d44d614cd2ce54cdc022504bf339f8fff3b750"
 dependencies = [
  "bytemuck 1.25.2",
- "fearless_simd 0.4.1",
+ "fearless_simd",
  "guillotiere",
  "hashbrown 0.17.1",
  "log",
@@ -18480,7 +18652,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bbb2141a2bca6e6d598e471fd4d1d7eed8e020aad6a28187edda07f091a325dd"
 dependencies = [
  "bytemuck 1.25.2",
- "fearless_simd 0.4.1",
+ "fearless_simd",
  "guillotiere",
  "log",
  "peniko",
@@ -20967,8 +21139,3 @@ dependencies = [
  "syn 3.0.5",
  "winnow 1.0.4",
 ]
-
-[[patch.unused]]
-name = "hayro-jbig2"
-version = "0.3.0"
-source = "git+https://github.com/ymote/pdfcraft.git?rev=d801407a9f956281d612dee3d2d72c76d43ef399#d801407a9f956281d612dee3d2d72c76d43ef399"

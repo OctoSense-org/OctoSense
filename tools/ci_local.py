@@ -87,6 +87,9 @@ NOT_LOCAL = {
     "release-desktop.yml": "a release workflow (tag push or manual run): signed packages for three OSes, "
                            "with a matrix, environments, secrets and artifacts; nothing a pull request merges "
                            "on depends on it, and its packaging scripts' tests run in desktop.yml",
+    "sign-desktop-release.yml": "a release step (manual run on main, in a reviewed environment): GitHub signs a "
+                                "desktop release's SHA256SUMS; nothing a pull request merges on depends on it, "
+                                "and the updater's tests in apps.yml check what it signs",
 }
 KERNEL_BINARY = "octos-kernel/target/release/octos"
 EXIT_BUSY = 75

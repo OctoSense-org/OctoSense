@@ -196,6 +196,49 @@ class PatternTests(unittest.TestCase):
         scan.scan_bytes(known, "public", identity, out)
         self.assertTrue(out, "identity checks must not be exempted")
 
+    def test_pinned_rinx_filename_and_complete_matrix_route_context_is_ignored(self):
+        root = b"/cargo/git/checkouts/rinx-cf0dcd4e7b4d3fa8/"
+        for revision in (b"4b89097", b"4b89097d8791a7190d01de1c576979c93df0013d"):
+            known = (root + revision + b"/src/home/chat_actions.rs_matrix/client/v1/auth_metadata"
+                     b"prompt_values_supported")
+            self.assertEqual(findings(known), [])
+            self.assertEqual(findings(b"prefix" + known + b"state_keyjoin_rule"), [])
+
+    def test_unproven_rinx_matrix_route_contexts_remain_findings(self):
+        known = (b"/cargo/git/checkouts/rinx-cf0dcd4e7b4d3fa8/4b89097"
+                 b"/src/home/chat_actions.rs_matrix/client/v1/auth_metadataprompt_values_supported")
+        for leak in (
+            b"/home/chat_actions.rs_matrix/private",
+            b"/home/chat_actions.rs_matrix/client/v1/auth_metadataprompt_values_supported",
+            known.replace(b"/cargo/", b"/private/"),
+            known.replace(b"rinx-", b"other-"),
+            known.replace(b"4b89097", b"1234567"),
+            known.replace(b"4b89097", b"4b890970"),
+            known.replace(b"4b89097", b"4b89097d8791a7190d01de1c576979c93df0013e"),
+            known.replace(b"chat_actions", b"another_screen"),
+            known.replace(b"client/v1/auth_metadata", b"client/v3/login"),
+            known.replace(b"auth_metadata", b"auth_metadata_private"),
+            known.replace(b"prompt_values_supported", b"another_field"),
+            known[:-1],
+        ):
+            self.assertTrue(findings(leak), leak)
+
+    def test_rinx_matrix_exception_is_span_and_pattern_scoped(self):
+        known = (b"/cargo/git/checkouts/rinx-cf0dcd4e7b4d3fa8/4b89097"
+                 b"/src/home/chat_actions.rs_matrix/client/v1/auth_metadataprompt_values_supported")
+        apparent_home = b"/home/chat_actions.rs_matrix/"
+        self.assertTrue(findings(apparent_home))
+        for leak in (apparent_home + b"private", b"/home/someone/private"):
+            for separator in (b"", b"\x00"):
+                for combined in (leak + separator + known, known + separator + leak):
+                    self.assertTrue(findings(combined), combined)
+        self.assertTrue(findings(known, extra=[scan.re.escape(apparent_home.decode())]),
+                        "explicit extra patterns must not be exempted")
+        identity = [("the scanning account's name", scan.re.compile(scan.re.escape(apparent_home)))]
+        out = []
+        scan.scan_bytes(known, "public", identity, out)
+        self.assertTrue(out, "identity checks must not be exempted")
+
     def test_only_the_proven_mail_literal_seam_is_ignored(self):
         prefix = b"Mail service is not "
         apparent_host = b"registeredattemptssendoctosense.local"

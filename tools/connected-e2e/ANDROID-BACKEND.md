@@ -23,7 +23,7 @@ python3 tools/connected-e2e/android_backend_lab.py deploy \
   --registrations "$LAB/prepared/backend-registrations.json"
 ```
 
-`JAVA_HOME` must point to the existing JDK for `apksigner`. For multiple attached devices, supply the assigned `--serial` to deploy; never publish it. Deployment refuses an already installed package. It transfers only the fresh signed fixture profile, configures one ADB loopback reverse, and passes the one-shot `makepad.APP_CONFIG` Intent extra. Android intentionally ignores a startup environment-only app config. A fresh suffix can be used consistently at APK build, packaging and deployment.
+`JAVA_HOME` must point to the existing JDK for `apksigner`. For multiple attached devices, supply the assigned `--serial` to deploy; never publish it. Deployment refuses an already installed package. It transfers only the fresh signed fixture profile, configures one ADB loopback reverse, and passes the one-shot `makepad.APP_CONFIG` Intent extra. Android intentionally ignores a startup environment-only app config. Its `test_actions` run only because step 1 builds a development build (`--features dev-mode`): a release Home ignores launch-time test actions, since any app can start it with extras (`crates/shell/src/launch_input.rs`). A fresh suffix can be used consistently at APK build, packaging and deployment.
 
 The tracked `backend-login/glance.splash` is embedded by the preparation helper. Its publication is subject to the normal app's Glance grant. This source is test artwork and fixture UI, not a production listing.
 

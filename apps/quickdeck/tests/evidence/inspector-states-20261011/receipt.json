@@ -1,0 +1,93 @@
+{
+ "date": "2026-10-11",
+ "branch": "feat/quickdeck-inspector-states, from main eb2fd5d1 (#507 merged)",
+ "files": {
+  "apps/quickdeck/bundle/main.splash": "c25773fc6d539d7a464ef0c79ef90684dac9be7ccff53f17d54d9b2fd62ee52b",
+  "apps/quickdeck/bundle/manifest.json": "375c02131477e08ceef11383a384527ea2eab5cb005fbe097e423a8d866cec4e",
+  "apps/quickdeck/dev-fixture/engine.splash": "1bbb6c33ce05f4d3247992f8d06c149a7518d95c7fd50d7b20b5ceff5b105d88",
+  "apps/quickdeck/dev-fixture/make_fixture.py": "ed65854751bbefb8f952c7a69f2e44c52bae38de6d7c63bee86507e896d31776",
+  "apps/quickdeck/tests/ui.py": "9b8c7ab329789c1130fd425fcd186ded8c6b9a84a190a2fcd2d9b096432ba16d",
+  "crates/shell/src/quickdeck_model_tests.rs": "5c73d74f96082304d3616f96420c6119614e6e2cd102f54e196e02c594c43fec"
+ },
+ "before_bundle": "main eb2fd5d1's apps/quickdeck/bundle (main.splash cfa14f27f09f12b8…, the same as #506's aead68f3)",
+ "service": "the deck service on main eb2fd5d1: #503 and #507 (inspector states, read from the model)",
+ "card_host": {
+  "machine": "macOS 26.6.2, Apple silicon (arm64)",
+  "binary_sha256": "7b8c302d57e092f999fdc60f7b7e3e0bb762345525642edc3a51e38affdce275",
+  "budget": "the runtime's 64 ms (this card-host's runtime has no MAKEPAD_SPLASH_BUDGET_MS)",
+  "after": {
+   "command": "python3 apps/quickdeck/tests/ui.py --card-host <App Hub>/target/release/card-host --output <dir> --work <dir> --only fixture --only states",
+   "window": "22:11 to 22:15 UTC",
+   "fixture": "passed, light and dark: the ten designed screens, then 11-table and 12-footer; checked against the stand-in: the box's shrink on and top anchor (02), the chart's title, data labels and gridlines on, legend off, colourful (03), Harbor's colour set and Classic's fonts marked (05), the table's header, total and banded rows on and the rest off (11), slide numbers on, no date, the footer text (12); then the first column on and off again after Undo, and the date on and off again after Undo",
+   "states": "passed, light and dark: damaged, protected, held, unsupported, unsaved changes, storage full, empty library"
+  },
+  "before": {
+   "command": "the same, with --bundle <main's bundle> --grabs-only --only fixture",
+   "result": "the same journey's frames of main's app on the same fixture, states not checked"
+  },
+  "log": "no script error and no budget overrun in any log of the final runs"
+ },
+ "shell": {
+  "machine": "Ubuntu 26.04 LTS, x86_64, 72 CPUs, no GPU; weston 14.0.2 headless (pixman)",
+  "build": "cargo build --locked -p octosense --no-default-features --features app-hub,craft-engines (dev profile), from this branch's tree on main eb2fd5d1",
+  "binary_sha256": "6de3a0fb1e090310b7ed0a60167dffe643e563802013e17df091895e3985bde3",
+  "window": "1296 x 698 points (an app area of 1292 x 662)",
+  "budget": "the runtime's 64 ms",
+  "runs": {
+   "shell": "passed (22:11 to 22:15 UTC), light, then dark through the shell's style menu, then restart. In the light pass, each state read, changed, read back from the engine (the shape chosen again, or deck.state asked again after the change) and undone: {\"box\": {\"anchor\": \"top\", \"shrink\": true, \"set_anchor\": \"bottom\", \"set_shrink\": false}, \"chart\": {\"title\": true, \"legend\": true, \"data_labels\": false, \"gridlines\": true}, \"table\": {\"header_row\": true, \"total_row\": false, \"banded_rows\": true, \"first_column\": false}, \"colours\": [\"Ember\"], \"footer\": {\"slide_numbers\": false, \"date\": false}}",
+   "restart": "passed",
+   "note": "shell run 5 used the final ui.py; shell run 4, on the same shell binary with ui.py before its open_card retry, passed too"
+  },
+  "log": "no script error and no budget overrun; four 'script_result dropped' warnings (a nested region answered after its holder was drawn again), as in #506",
+  "model_tests": "on the same tree: cargo test --locked -p octosense-shell --lib quickdeck_model: 27 passed; with --features app-hub: 28 passed"
+ },
+ "rounds": [
+  {
+   "round": "card-host 1",
+   "result": "failed: the test's switch lookup skipped a switch that starts where a full-width label ends; fixed in ui.py"
+  },
+  {
+   "round": "card-host 2",
+   "result": "light passed with every check; the dark log had one 'script time budget exceeded' right after a PNG decode, early in the session"
+  },
+  {
+   "round": "card-host 3",
+   "result": "fixture light passed; the states-full log had the same overrun after a PNG decode (the Mac's load averages were 3 to 8)"
+  },
+  {
+   "round": "card-host 4",
+   "result": "stopped: superseded by the missing-fonts change"
+  },
+  {
+   "round": "shell 1",
+   "result": "failed: after an Undo the inspector was drawn again from the top, so the Box section was below the fold; fixed in the app (refresh_view keeps the inspector's scroll after a design change or an undo) and in ui.py (seek after each change)"
+  },
+  {
+   "round": "shell 2",
+   "result": "every state check passed; the sorter step then failed because the state checks left slide 3 current; fixed in ui.py"
+  },
+  {
+   "round": "shell 3",
+   "result": "passed: shell (with the state checks), dark and restart; found: the Fonts hint kept deck.open's missing fonts after a theme change; fixed (missing_now)"
+  },
+  {
+   "round": "shell 4",
+   "result": "passed: shell (with the state checks), dark and restart, on the shell with the missing-fonts change"
+  },
+  {
+   "round": "card-host 5",
+   "result": "failed: the bridge dropped a card's click while the app drew the covers (states-full), so the deck never opened; fixed in ui.py (open_card tries again until the deck's tab shows)"
+  },
+  {
+   "round": "card-host 6, before run, shell 5",
+   "result": "the evidence: card-host fixture and states passed, light and dark, with no overrun; main's bundle's frames on the same fixture; the shell journey passed again with the final ui.py"
+  }
+ ],
+ "not_verified": [
+  "An imported deck whose own colour set or fonts aren't among the engine's (the hint that names them): no such deck was opened with the real engine",
+  "A box whose anchor is justified or distributed, or whose autofit is resize, with the real engine (their hints)",
+  "Present, export and the other screens this PR doesn't touch, beyond the journey",
+  "Opening a .docx or .xlsx from the device (unsupported:): the file dialog can't be driven in a hidden window",
+  "A hidden shell on macOS; windows narrower than 1180 points; phones"
+ ]
+}

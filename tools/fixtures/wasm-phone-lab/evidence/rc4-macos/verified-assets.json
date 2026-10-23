@@ -1,0 +1,215 @@
+{
+  "schema": 1,
+  "tag": "desktop-v0.1.0-rc.4",
+  "source_commit": "9266b0083544d86bd7636543b5ff60c61b26460f",
+  "source_tree": "eade406807c20587801a5bfb2169f454dc4e43f7",
+  "workflow_run": 38065627444,
+  "workflow_url": "https://github.com/OctoSense-org/OctoSense/actions/runs/38065627444",
+  "workflow_conclusion": "success",
+  "release_id": 409124391,
+  "release_url": "https://github.com/OctoSense-org/OctoSense/releases/tag/untagged-8faee2ec9b985050d35a",
+  "draft_at_verification": true,
+  "prerelease_at_verification": false,
+  "assets": [
+    {
+      "id": 628673264,
+      "name": "OctoSense_0.1.0-rc.4_aarch64.dmg",
+      "size": 279893779,
+      "sha256": "cb1b4f64cef34be94fcd7590dcbdb69e89215282cb0a0bc04e7064e1826dfa6e",
+      "url": "https://github.com/OctoSense-org/OctoSense/releases/download/untagged-8faee2ec9b985050d35a/OctoSense_0.1.0-rc.4_aarch64.dmg"
+    },
+    {
+      "id": 628673290,
+      "name": "octosense_0.1.0-rc.4_amd64.deb",
+      "size": 301619718,
+      "sha256": "fb8b75442390abce28955421f5d145b32b6e2429672b9a41408b542980e70203",
+      "url": "https://github.com/OctoSense-org/OctoSense/releases/download/untagged-8faee2ec9b985050d35a/octosense_0.1.0-rc.4_amd64.deb"
+    },
+    {
+      "id": 628673271,
+      "name": "OctoSense_0.1.0-rc.4_linux-x64.receipt.json",
+      "size": 2494,
+      "sha256": "9c05b6c2142d420c7be7113745e29f491462162505b03e970616d56dbebce0f5",
+      "url": "https://github.com/OctoSense-org/OctoSense/releases/download/untagged-8faee2ec9b985050d35a/OctoSense_0.1.0-rc.4_linux-x64.receipt.json"
+    },
+    {
+      "id": 628673274,
+      "name": "OctoSense_0.1.0-rc.4_macos-arm64.receipt.json",
+      "size": 850,
+      "sha256": "bc27c27f161216083c8ec4ab3d054b634c6a85c2c3f2edc9a8c6585d45f6a4ef",
+      "url": "https://github.com/OctoSense-org/OctoSense/releases/download/untagged-8faee2ec9b985050d35a/OctoSense_0.1.0-rc.4_macos-arm64.receipt.json"
+    },
+    {
+      "id": 628673270,
+      "name": "OctoSense_0.1.0-rc.4_macos_aarch64.app.zip",
+      "size": 280369251,
+      "sha256": "a58fe9efdece0fa6a58c51a5767b368127a9713a1c7048509366427eead2837e",
+      "url": "https://github.com/OctoSense-org/OctoSense/releases/download/untagged-8faee2ec9b985050d35a/OctoSense_0.1.0-rc.4_macos_aarch64.app.zip"
+    },
+    {
+      "id": 628673272,
+      "name": "OctoSense_0.1.0-rc.4_windows-x64.receipt.json",
+      "size": 874,
+      "sha256": "bcb0016590ac00e2b3f633e65add2c649e27bf52e48fdf313e81bf44e3e6171e",
+      "url": "https://github.com/OctoSense-org/OctoSense/releases/download/untagged-8faee2ec9b985050d35a/OctoSense_0.1.0-rc.4_windows-x64.receipt.json"
+    },
+    {
+      "id": 628673295,
+      "name": "octosense_0.1.0-rc.4_x64-setup.exe",
+      "size": 193917384,
+      "sha256": "0a5d4dfdc4a08cf5aadebb8f0d60867b4771e7af65b5e73facb94121a2d25344",
+      "url": "https://github.com/OctoSense-org/OctoSense/releases/download/untagged-8faee2ec9b985050d35a/octosense_0.1.0-rc.4_x64-setup.exe"
+    },
+    {
+      "id": 628673310,
+      "name": "octosense_0.1.0-rc.4_x86_64.AppImage",
+      "size": 282301692,
+      "sha256": "0c69363fdf386639634401970bef9778c8ebdff8fdba9ffc19b434398201ef35",
+      "url": "https://github.com/OctoSense-org/OctoSense/releases/download/untagged-8faee2ec9b985050d35a/octosense_0.1.0-rc.4_x86_64.AppImage"
+    },
+    {
+      "id": 628673287,
+      "name": "SHA256SUMS",
+      "size": 843,
+      "sha256": "32caafb719215eae0e8b41426b5389bfb7a2fdeb4163df11341ac3de60a6b7ee",
+      "url": "https://github.com/OctoSense-org/OctoSense/releases/download/untagged-8faee2ec9b985050d35a/SHA256SUMS"
+    }
+  ],
+  "receipts": {
+    "macos-arm64": {
+      "version": "0.1.0-rc.4",
+      "target": "aarch64-apple-darwin",
+      "formats": [
+        "app",
+        "dmg"
+      ],
+      "resources": [
+        "article_core",
+        "article_makepad",
+        "makepad_calculator",
+        "makepad_clock",
+        "makepad_notes",
+        "makepad_reminders",
+        "makepad_terminal",
+        "makepad_weather",
+        "makepad_widgets",
+        "octoscode_module",
+        "octosense",
+        "octosense_app_hub_app",
+        "octosense_calendar_service",
+        "octosense_markdown_editor",
+        "octosense_shell",
+        "rinx"
+      ],
+      "kernel": {
+        "source": "https://github.com/octos-org/octos.git@b0759a57719fd35b3a2da1c5d969bc67538ed516",
+        "revision": "b0759a57719fd35b3a2da1c5d969bc67538ed516",
+        "version": "octos 2.0.3-rc.13 (b0759a5 2026-10-10)",
+        "sha256": "c3fed7836f3056cf865ba866e1edca2fcf5f0ea110dd5ee87e41e9bace909944"
+      },
+      "makepad_package_dir": "."
+    },
+    "windows-x64": {
+      "version": "0.1.0-rc.4",
+      "target": "x86_64-pc-windows-msvc",
+      "formats": [
+        "nsis"
+      ],
+      "resources": [
+        "article_core",
+        "article_makepad",
+        "makepad_calculator",
+        "makepad_clock",
+        "makepad_notes",
+        "makepad_reminders",
+        "makepad_terminal",
+        "makepad_weather",
+        "makepad_widgets",
+        "octoscode_module",
+        "octosense",
+        "octosense_app_hub_app",
+        "octosense_calendar_service",
+        "octosense_markdown_editor",
+        "octosense_shell",
+        "rinx"
+      ],
+      "kernel": {
+        "source": "https://github.com/octos-org/octos.git@b0759a57719fd35b3a2da1c5d969bc67538ed516",
+        "revision": "b0759a57719fd35b3a2da1c5d969bc67538ed516",
+        "version": "octos 2.0.3-rc.13 (b0759a5 2026-10-10)",
+        "sha256": "92093b6894233c346a41dc8ad77257e0c93a053c17ad36abbde178e570b8d788"
+      },
+      "makepad_package_dir": "."
+    },
+    "linux-x64": {
+      "version": "0.1.0-rc.4",
+      "target": "x86_64-unknown-linux-gnu",
+      "formats": [
+        "deb",
+        "appimage"
+      ],
+      "resources": [
+        "article_core",
+        "article_makepad",
+        "makepad_calculator",
+        "makepad_clock",
+        "makepad_notes",
+        "makepad_reminders",
+        "makepad_terminal",
+        "makepad_weather",
+        "makepad_widgets",
+        "octoscode_module",
+        "octosense",
+        "octosense_app_hub_app",
+        "octosense_calendar_service",
+        "octosense_markdown_editor",
+        "octosense_shell",
+        "rinx"
+      ],
+      "kernel": {
+        "source": "https://github.com/octos-org/octos.git@b0759a57719fd35b3a2da1c5d969bc67538ed516",
+        "revision": "b0759a57719fd35b3a2da1c5d969bc67538ed516",
+        "version": "octos 2.0.3-rc.13 (b0759a5 2026-10-10)",
+        "sha256": "54381cdf80e2724cf06b34eaa5711655db437ebdeb040a7f35a8b2e95bca7d59"
+      },
+      "makepad_package_dir": "../lib/octosense",
+      "kernel_scope": "staged_before_packaging",
+      "packages": [
+        {
+          "file": "octosense_0.1.0-rc.4_amd64.deb",
+          "format": "deb",
+          "sha256": "fb8b75442390abce28955421f5d145b32b6e2429672b9a41408b542980e70203",
+          "kernel": {
+            "source": "https://github.com/octos-org/octos.git@b0759a57719fd35b3a2da1c5d969bc67538ed516",
+            "revision": "b0759a57719fd35b3a2da1c5d969bc67538ed516",
+            "version": "octos 2.0.3-rc.13 (b0759a5 2026-10-10)",
+            "sha256": "54381cdf80e2724cf06b34eaa5711655db437ebdeb040a7f35a8b2e95bca7d59"
+          }
+        },
+        {
+          "file": "octosense_0.1.0-rc.4_x86_64.AppImage",
+          "format": "appimage",
+          "sha256": "0c69363fdf386639634401970bef9778c8ebdff8fdba9ffc19b434398201ef35",
+          "kernel": {
+            "source": "https://github.com/octos-org/octos.git@b0759a57719fd35b3a2da1c5d969bc67538ed516",
+            "revision": "b0759a57719fd35b3a2da1c5d969bc67538ed516",
+            "version": "octos 2.0.3-rc.13 (b0759a5 2026-10-10)",
+            "sha256": "df9ebdb260b2af2dc37ea383872cef986689d6e582831a1173a6b1f2022c13d2"
+          },
+          "finalization": {
+            "input_sha256": "e6f00296e2a7449e79b2194e35fc38a88ab436d51b76efca596cb64cda23429b",
+            "runtime_prefix_sha256": "53dfda6b7909e67a06aa581cebfad25b41502037ec0c3ded34b63668c180c3ca",
+            "receipt_updated": true,
+            "artifact_executed": false,
+            "excluded_host_libraries": {},
+            "payload_before_sha256": "81097b919179e46491dc5a150332b83b1ac7b56e943150d298669eb9bc2028b8",
+            "payload_after_sha256": "810483febac8487383c5a6eaf15600684633aca8553ae0696d6fd84e0ba22274"
+          }
+        }
+      ]
+    }
+  },
+  "all_checksums_verified": true,
+  "gui_acceptance_included": false,
+  "signing_verified_by_this_script": false
+}

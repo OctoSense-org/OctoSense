@@ -9,9 +9,17 @@ Splash 文件系统；导出会保存已有应用文件的快照。应用只收�
 
 | 方法 | 参数 | 返回值 |
 | --- | --- | --- |
-| `files.status` | `{}` | `import_supported`、`export_supported`、`storage_granted`、`max_file_bytes`、`max_import_bytes`、`foreground_required` |
+| `files.status` | `{}` | `import_supported`、`export_supported`、`photo_pick_supported`、`text_share_supported`、`storage_granted`、`max_file_bytes`、`max_import_bytes`、`max_share_text_bytes`、`foreground_required`；有可用存储时另有 `used_bytes`、`quota_bytes` |
 | `files.import` | `{"path":"/documents/report.pdf"}` | `{"cancelled":false,"path":"/documents/report.pdf","bytes":123,"name":"Q3 report.pdf"}` |
 | `files.export` | `{"path":"/documents/report.pdf","name":"Report.pdf"}` | 相同的成功字段；可选的 `name` 是建议给系统对话框的文件名，不含目录 |
+
+有可用的应用存储时，`files.status` 还会说明应用存储已用多少、最多可用多少，应用无需
+自行统计文件即可显示“已用 14.6 MB，共 64 MB”。`used_bytes` 是宿主对应用 jail 的测量
+值，即 App Hub 交给该应用各隔离实例的存储根（`app_storage::Storage::usage`，与引擎
+检查剩余空间时用的是同一种测量）：统计其下全部普通文件，从不跟随符号链接。
+`quota_bytes` 是调用方隔离实例的存储配额，即该应用自身写入和导入时检查的配额。
+调用方隔离实例没有可用存储、或宿主不保存应用存储时，两者都不返回。两者在查询时
+读取，不会主动推送：发生变化后请再次查询。状态查询不会打开对话框，也不要求前台。
 
 `name` 是所选文档的显示名称，供应用展示：去掉文件夹、控制字符和不可见的方向标记后的
 文件名，最多 128 字节。副本仍存放在应用指定的 `path`。清理后为空时不返回；Android 的
@@ -60,7 +68,9 @@ qarma、matedialog 或 kdialog。不支持时状态返回 false，发现接口�
 集成点：在 `apps.rs` 的平台服务注册旁调用 `files_service::register()`；在
 `lib.rs` 的平台事件处理旁调用 `files_service::handle_event(cx, event)`，并保持
 在 App Hub 服务互斥锁外执行。将原生音频使用的宿主焦点应用或展开 Glance 归属
-同时传给 `files_service::set_foreground_app`。App Hub 合约需要认识 `files` 并提供
+同时传给 `files_service::set_foreground_app`：即焦点窗口的脚本应用清单 ID
+（`ClientSlot::foreground_app`，在窗口打开时记录），系统应用的 `os.<name>`
+与已安装应用自己的 ID 同样有效。App Hub 合约需要认识 `files` 并提供
 `Replier::isolate_key`；Makepad 需要包含对应的存储和选择器适配器。
 运行时可为原生 `fs.write_bytes` 声明 `storage.binary_write@1` 特性。
 
@@ -72,6 +82,12 @@ JNI 传输使用分配检查和有界复制，将 Java 异常转为错误并清�
 系统对话框交互和 Android 提供器真机行为仍为 **未验证**。全部 16 个合并后的
 Android Java 模板已编译通过，有 23 条已有的弃用警告。
 
+
+`files.status` 的存储用量（2026 年 10 月 10 日）：在 macOS 上于 `phone/` 目录运行
+`cargo test --locked --features mobile-apps -p octosense-shell --lib files_service`，
+`files_service::tests::status_reports_the_storage_used_and_its_quota`（在子进程中使用宿主应用存储上的
+存活隔离实例：jail 字节数、写入后下一次查询即反映、该实例的配额）与
+`status_without_storage_reports_no_use_or_quota` 均已通过。
 
 ## 图片选择与文本分享
 

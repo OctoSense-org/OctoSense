@@ -72,3 +72,16 @@ fn notifications()->SettingsSnapshot{
  let f=step(&mut c,&o,"entry_resolved","app_notifications",entry("9223372036854775806"));assert!(f.handled);assert_eq!(f.requests[0].get("domain").and_then(Value::as_str),Some("app_notifications"));
  step(&mut c,&o,"entry","app_notifications",entry("2"));step(&mut c,&o,"back","",Value::Null);let f=step(&mut c,&o,"entry_resolved","app_notifications",entry("2"));assert!(!f.handled);assert_eq!(page(&f),"Apps");
 }
+
+#[test]
+fn updater_navigation_does_not_depend_on_rom_service_or_authorize_installation() {
+    for android in [false, true] {
+        let mut controller = new();
+        let mut observed = SettingsSnapshot { android, updater: true, ..Default::default() };
+        step(&mut controller, &observed, "navigate", "updates", Value::Null);
+        let frame = click(&mut controller, &observed, "updates_app");
+        assert_eq!(frame.requests, vec![obj(vec![("kind", s("open_app")), ("app", s("updater"))])]);
+        observed.updater = false;
+        assert!(click(&mut controller, &observed, "updates_app").requests.is_empty());
+    }
+}

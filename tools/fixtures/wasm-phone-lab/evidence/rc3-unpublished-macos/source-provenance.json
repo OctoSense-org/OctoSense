@@ -1,0 +1,166 @@
+{
+  "schema": 1,
+  "publication_status": "unpublished_actions_candidate",
+  "published_release": false,
+  "release_workflow_succeeded": false,
+  "workflow": {
+    "repository": "OctoSense-org/OctoSense",
+    "run_id": 38031827821,
+    "url": "https://github.com/OctoSense-org/OctoSense/actions/runs/38031827821",
+    "event": "push",
+    "tag": "desktop-v0.1.0-rc.3",
+    "head_sha": "40ca21da68cc05ae930931adcfcf6d382d49ec26",
+    "source_tree": "703c30ecfdc6f2fa2db6323dafd526c9e0c9610c",
+    "conclusion": "failure",
+    "macos_package": "success",
+    "windows_package": "success",
+    "linux_package": "failure",
+    "macos_signing": "skipped",
+    "windows_signing": "skipped",
+    "draft_release": "skipped"
+  },
+  "artifact": {
+    "artifact_id": 11664670422,
+    "artifact_sha256": "81e8350f1dea5df213b2d49082509d7cb4fcaaf651366529ef1269cf0d8311bf",
+    "artifact_size": 558632692,
+    "workflow_run_id": 38031827821,
+    "workflow_head_sha": "40ca21da68cc05ae930931adcfcf6d382d49ec26",
+    "files": [
+      {
+        "file": "packages/OctoSense_0.1.0-rc.3_aarch64.dmg",
+        "size": 279893786,
+        "sha256": "44ba1927ad20ca4818d21720bca1845b790f1cfc1d298568c4c81ad0d713c064"
+      },
+      {
+        "file": "packages/OctoSense_0.1.0-rc.3_macos-arm64.receipt.json",
+        "size": 850,
+        "sha256": "8be1a87bf1811d0b4695de67e3b7338193a938eca1d1fd807901bc3471059f98"
+      },
+      {
+        "file": "packages/OctoSense_0.1.0-rc.3_macos_aarch64.app.zip",
+        "size": 280369245,
+        "sha256": "e0fda0bcf1d8627d33a53650d47249ce6559fd742185669e73fdda4e42609713"
+      },
+      {
+        "file": "signing/entitlements.plist",
+        "size": 598,
+        "sha256": "cea88c53e4a9ffdcf8f1416b73ca91c10e430d60a1a25ff49e9162bef97f36c2"
+      }
+    ]
+  },
+  "archive_sha256": "e0fda0bcf1d8627d33a53650d47249ce6559fd742185669e73fdda4e42609713",
+  "host_binary_sha256": "0887c7ccd0aeae0e04cddcfca9f93aaf7fea2ff929a63683420638c2fcaed164",
+  "package_validation": {
+    "version": "0.1.0-rc.3",
+    "target": "aarch64-apple-darwin",
+    "bundle_identifier": "org.octosense.desktop",
+    "external_embedded_kernel_receipts_match": true,
+    "kernel_sha256_verified": true,
+    "kernel_revision": "b0759a57719fd35b3a2da1c5d969bc67538ed516"
+  },
+  "signing_status": "unsigned_workflow_artifact; Developer ID signing and notarization were skipped",
+  "driver_receipt_note": "release_archive_tested:true in the unchanged driver means an app ZIP was tested; it does not establish release publication. This run tests an unpublished GitHub Actions candidate.",
+  "personal_accounts_used": false,
+  "public_catalog_modified": false,
+  "live_model_tested": false,
+  "privacy_scan": {
+    "exit_code": 0,
+    "artifacts": [
+      "app.zip",
+      "dmg"
+    ],
+    "dmg_contents_scanned": true,
+    "identity_scan_enabled": true
+  },
+  "acceptance_attempts": [
+    {
+      "directory_label": "octosense-rc3-actions-acceptance",
+      "passed": false,
+      "stage": "first screenshot before any interaction",
+      "error": "HTTP404 body unavailable in unchanged helper"
+    },
+    {
+      "directory_label": "octosense-rc3-capture-diagnostic",
+      "diagnostic_only": true,
+      "fresh_profile": true,
+      "captures_succeeded": 3,
+      "consent_clicked": false
+    },
+    {
+      "directory_label": "octosense-rc3-actions-acceptance-2",
+      "fresh_profile": true,
+      "driver_unchanged": true,
+      "initial_capture": "blank first frame retained",
+      "observed_refusal_frame": "apphub-agent-consent-observed.png",
+      "observation": "Additional real /s and /g requests produced the fully drawn consent sheet before any click. No consent state was preseeded."
+    }
+  ],
+  "signing_inspection": {
+    "codesign_signature": "adhoc",
+    "flags": "0x20002 (adhoc,linker-signed)",
+    "team_identifier": null,
+    "sealed_resources": false,
+    "developer_id_signed": false,
+    "hardened_runtime": false
+  },
+  "acceptance_result": {
+    "passed": true,
+    "checks_passed": 11,
+    "checks_total": 11,
+    "all_observed_owned_processes_stopped": true,
+    "forced_cleanup": false,
+    "frame_review": "Actual refusal, post-refusal store, both installed Open screens and both completed app screens reviewed; counters 3 \u2192 4 and own HTML notes visible.",
+    "reviewed_frames": [
+      {
+        "file": "apphub-agent-consent-observed.png",
+        "sha256": "5612b72afa3fa511bd6eb1f511957693fd61dc30ad8353f51b160e663652074f"
+      },
+      {
+        "file": "apphub-agent-refused.png",
+        "sha256": "03b928c8e109e34ba0086c21eb49903845ba1ff154a3d245156991d598bc4bb1"
+      },
+      {
+        "file": "org.ymote.componentdemo.first-installed.png",
+        "sha256": "149c81a4bde1c60455104485e2fd317a5035773acacb6fa25da138fd8ab6be4d"
+      },
+      {
+        "file": "org.ymote.componentdemo.second-installed.png",
+        "sha256": "79d724f5a9f4430f0b8255515ecb5095cc793c7d49e623f6c19c54c40ba56c0d"
+      },
+      {
+        "file": "org.ymote.componentdemo.first-completed.png",
+        "sha256": "4093910157fea56c9b201b2e5d88caa1a86b5586186dcd14e24b0d65aec23366"
+      },
+      {
+        "file": "org.ymote.componentdemo.second-completed.png",
+        "sha256": "9dd2a33956f21b77a965c5dbf44eacfea873b09d270fe442a175a2ef721f4d0f"
+      }
+    ]
+  },
+  "component_load_timings": [
+    {
+      "app": "first",
+      "alias": "md",
+      "from_cache": true,
+      "load_ms": 1.7
+    },
+    {
+      "app": "first",
+      "alias": "bridge",
+      "from_cache": true,
+      "load_ms": 0.4
+    },
+    {
+      "app": "second",
+      "alias": "md",
+      "from_cache": true,
+      "load_ms": 1.3
+    },
+    {
+      "app": "second",
+      "alias": "bridge",
+      "from_cache": true,
+      "load_ms": 0.5
+    }
+  ]
+}

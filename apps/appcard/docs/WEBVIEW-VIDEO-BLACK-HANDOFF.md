@@ -214,6 +214,10 @@ $ADB -s bf0a4730 forward tcp:9222 localabstract:$(… webview_devtools_remote_<p
 Note: `screencap` cannot capture the video surface, so verify visually on the
 physical device (or via the player API), not via screenshots.
 
+`makepad.AUTO_PROMPT` now works only in a development build (add
+`--features dev-mode`, or `DEV_MODE=1 tools/build-android.sh`); a release
+build ignores launch-time extras.
+
 ## State of the tree at handoff
 
 - **FU (done):** youtube routes now serve `docs/youtube-player-reference.html`
