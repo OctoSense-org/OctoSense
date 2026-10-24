@@ -166,6 +166,16 @@ impl ConsentStore {
     pub fn prompt(&self) -> Option<&AgentSummary> {
         self.asking.first().and_then(|a| self.known.get(a))
     }
+    /// The last window of an app closed before the person answered. Dismiss
+    /// only its pending sheet; closing is neither consent nor revocation.
+    /// A later launch may ask again, and Settings still lists the app.
+    pub fn cancel_prompt(&mut self, app: &str) {
+        let before = self.asking.len();
+        self.asking.retain(|a| a != app);
+        if self.asking.len() != before {
+            self.generation += 1;
+        }
+    }
     /// The person chose, on the first-use sheet or Settings' switch.
     pub fn set(&mut self, _gesture: &ApprovalGesture, app: &str, allowed: bool, now: u64) {
         if !allowed {

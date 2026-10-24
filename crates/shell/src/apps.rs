@@ -512,7 +512,15 @@ pub struct AgentApp {
 /// whose admitted bundle ships `tools.json` ([`script_agent_app`]), whether
 /// or not they have asked yet.
 pub fn agent_apps() -> Vec<AgentApp> {
-    let mut out: Vec<AgentApp> = crate::native_apps::APPS
+    let mut out = native_agent_apps();
+    out.extend(script_agent_apps());
+    out
+}
+
+/// Native agent metadata is compiled into the host. Looking up an open
+/// native window must not wait for script bundle admission or its cache lock.
+pub fn native_agent_apps() -> Vec<AgentApp> {
+    crate::native_apps::APPS
         .iter()
         .filter(|a| !a.octos.is_empty())
         .map(|a| AgentApp {
@@ -522,9 +530,7 @@ pub fn agent_apps() -> Vec<AgentApp> {
             manifest: serde_json::json!({ "agent": { "octos": a.octos } }),
             native: true,
         })
-        .collect();
-    out.extend(script_agent_apps());
-    out
+        .collect()
 }
 
 /// The `octos.*` services script app `app_id`'s manifest declares (`None`:

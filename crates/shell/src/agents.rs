@@ -104,7 +104,9 @@ pub fn all() -> Vec<AgentApp> {
 /// display name (any case), or a launcher id (`news` for `os.news`,
 /// `hub:<id>` for an installed app).
 pub fn find(name: &str) -> Option<AgentApp> {
-    find_in(&all(), name)
+    // Preserve the catalog's native-first matching order without reading
+    // every script bundle to label a native window's Ask button.
+    find_in(&crate::apps::native_agent_apps(), name).or_else(|| find_in(&all(), name))
 }
 
 pub fn find_in(apps: &[AgentApp], name: &str) -> Option<AgentApp> {
