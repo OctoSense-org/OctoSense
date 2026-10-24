@@ -125,7 +125,7 @@ pub fn pump() {
     static PUMP: std::sync::Mutex<()> = std::sync::Mutex::new(());
     let Ok(_pump) = PUMP.try_lock() else { return };
     #[cfg(any(feature = "app-hub", native_mobile))]
-    script_apps::poll();
+    { script_apps::poll(); read_bridge::poll(); }
     // Components' calls to their apps' host services (ADR 0014).
     #[cfg(wasm_functions)]
     crate::wasm_service::pump_host_calls();
@@ -189,6 +189,8 @@ pub fn declare(app: &str, entries: Vec<Value>) {
 }
 
 /// A cross-app grant: `owning_app`'s shareable `tool` for `caller`'s agent.
+pub fn clear_script_grants(app: &str) { with_relay(|r| r.catalog.clear_grants(app)); }
+
 pub fn grant(caller: &str, owning_app: &str, tool: &str) {
     with_relay(|r| r.catalog.grant(caller, owning_app, tool));
 }
@@ -738,3 +740,9 @@ pub fn outcome_of(result: &makepad_ai_services::wire::ToolResult) -> ToolOutcome
         other => ToolOutcome::error(&format!("{other:?}"), result.text.clone()),
     }
 }
+
+mod installed_owner;
+#[cfg(any(feature = "app-hub", native_mobile))]
+pub mod activation;
+#[cfg(any(feature = "app-hub", native_mobile))]
+pub mod read_bridge;

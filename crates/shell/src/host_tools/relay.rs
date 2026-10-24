@@ -293,6 +293,8 @@ impl Catalog {
     }
 
     /// A grant of `owner`'s shareable `tool` to `caller`'s agent.
+    pub fn clear_grants(&mut self, caller: &str) { self.grants.remove(caller); }
+
     pub fn grant(&mut self, caller: &str, owner: &str, tool: &str) {
         self.grants.entry(caller.to_string()).or_default().insert((owner.to_string(), tool.to_string()));
     }
@@ -347,7 +349,17 @@ impl Catalog {
         if crate::native_apps::find(ns).is_some() {
             return Some(ns.to_string());
         }
-        Some(format!("os.{ns}"))
+        // System/native namespaces keep their reviewed owner. An installed
+        // app can only own its admitted short namespace and exact declaration;
+        // two installed owners are an error, never registration-order wins.
+        let system = format!("os.{ns}");
+        if self.tools.contains_key(&system) { return Some(system); }
+        match super::installed_owner::resolve(ns, self.tools.iter().map(|(app, entries)|
+            (app.as_str(), entries.iter().any(|entry| entry["name"] == tool)))) {
+            super::installed_owner::Resolution::Unique(app) => Some(app),
+            super::installed_owner::Resolution::Ambiguous => None,
+            super::installed_owner::Resolution::Missing => Some(system),
+        }
     }
 
     fn shareable(entry: &Value) -> bool {
