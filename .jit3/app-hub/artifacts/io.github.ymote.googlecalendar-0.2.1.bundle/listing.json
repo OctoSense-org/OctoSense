@@ -1,0 +1,29 @@
+{
+  "schema": 1,
+  "subtitle": "Calendar drafts, review and event advice",
+  "description": "MacOS developer preview: view a bounded Google agenda, keep event drafts, review changes in the host and discuss a selected event with a read-only assistant. Uses host-managed Google authorization and optional consented app-agent tools; credentials stay in the host. Fresh GitHub-published app identity with separate storage/account grants from the legacy sample. Requires contract 1.8.0 / publisher-github-v1 and compatible connected services. Includes fictional local UI states. Publishing and local UI tests do not validate live Google login, provider writes, model behavior or physical approval. Android Google authorization is unavailable; only macOS is advertised.",
+  "category": "productivity",
+  "keywords": [
+    "calendar",
+    "Google",
+    "OAuth",
+    "sample"
+  ],
+  "screenshots": [
+    "screenshots/01-local-draft.png",
+    "screenshots/02-notes.png",
+    "screenshots/03-host-required.png"
+  ],
+  "icon": "assets/icon.svg",
+  "platforms": [
+    "macos"
+  ],
+  "publisher": {
+    "name": "ymote",
+    "support": "https://github.com/ymote/octosense-google-calendar/issues",
+    "privacy_policy_url": "https://github.com/ymote/octosense-google-calendar/blob/main/PRIVACY.md"
+  },
+  "release_notes": "0.2.1: generated release receipts now distinguish release creation from App Hub admission, and direct publishers to open or update the existing submission issue. App UI, tool permissions and storage layout are unchanged from 0.2.0. This immutable update supports verified install/update and local-draft retention checks; live Google/model/provider writes remain outside the test scope.",
+  "age_rating": "all",
+  "license": "Apache-2.0"
+}

@@ -1,0 +1,34 @@
+# octosense-card-host — the contained tier, end to end (ADR 0002).
+#
+# Runs ONE card bundle: admits it against its manifest, resolves the policy,
+# applies it to a splash isolate, and evaluates the card inside that isolate.
+# It is the reference for how a card should be mounted, and the harness the
+# later phases (capability checks, network allowlist, budgets) are tested in.
+#
+# Note the difference from kit-host's `beauty` preview, which evaluates a card
+# in the MAIN vm and swaps the resulting view into a Splash: that is a trusted
+# developer tool and gives a card no containment at all. This host uses the
+# same path the shipping AppCard does — hand the card's source to the isolate.
+[package]
+name = "octosense-card-host"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+publish = false
+description = "Runs one card bundle inside a policy-configured splash isolate (ADR 0002 reference host)"
+
+[dependencies]
+octosense-app-policy = { path = "../app-policy", features = ["splash"] }
+makepad-widgets = { git = "https://github.com/OctoSense-org/makepad.git", rev = "d653bc4493619ab979ccff165cf48c0c63b77d19", features = ["maps"] }
+octoscript-makepad = { git = "https://github.com/OctoSense-org/Octoscript-Makepad.git", rev = "6cf2d90aa33ff4ae603f49c7557f3ecf986207f0" }
+# The lint and realize report card-host logs for card-studio; the workspace
+# patch resolves it to the same checkout octoscript-makepad uses.
+octoscript-ui-l0 = { git = "https://github.com/OctoSense-org/Octoscript.git", rev = "2e37d9e657a246f16718d9a475e167ccd2d5b5fa" }
+octoscript-widgets = { git = "https://github.com/OctoSense-org/Octoscript-Makepad.git", rev = "6cf2d90aa33ff4ae603f49c7557f3ecf986207f0" }
+serde_json = "1"
+# The documented standalone runtime has no OctoSense IME overlay.
+octosense-appstore = { path = "../appstore", default-features = false }
+
+[[bin]]
+name = "card-host"
+path = "src/main.rs"

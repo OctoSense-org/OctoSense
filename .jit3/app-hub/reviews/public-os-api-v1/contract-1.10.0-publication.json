@@ -1,0 +1,31 @@
+{
+  "schema": 1,
+  "crate": "octosense-app-contract",
+  "version": "1.10.0",
+  "published": true,
+  "yanked": false,
+  "publication_workflow": "https://github.com/OctoSense-org/OctoSense-App-Hub/actions/runs/37901486707",
+  "workflow_conclusion": "success",
+  "publication_source_commit": "4b6515e8ef92331650d0cee3fdc1c54e76fe1924",
+  "workflow_completed_at": "2026-10-09T07:52:37Z",
+  "reviewed_head": "95e4831afca7227b640f075b252c04355bb63865",
+  "contract_ci": "https://github.com/OctoSense-org/OctoSense-App-Hub/actions/runs/37900169978",
+  "native_tools_ci": "https://github.com/OctoSense-org/OctoSense-App-Hub/actions/runs/37900169971",
+  "index_url": "https://index.crates.io/oc/to/octosense-app-contract",
+  "archive_url": "https://static.crates.io/crates/octosense-app-contract/octosense-app-contract-1.10.0.crate",
+  "registry_checksum": "25fcd222965723c00e2fab721ec56c9102129c256e426413d8bc9299f0ec94f6",
+  "downloaded_archive_sha256": "25fcd222965723c00e2fab721ec56c9102129c256e426413d8bc9299f0ec94f6",
+  "downloaded_archive_bytes": 88066,
+  "checks": [
+    "Official publication workflow passed from the merged source commit.",
+    "The crates.io sparse index lists non-yanked version 1.10.0.",
+    "The downloaded crate archive SHA-256 matches the registry checksum.",
+    "The reviewed head passed contract tests, semver checks and macOS/Linux/Windows native-authoring CI."
+  ],
+  "limits": [
+    "This establishes contract package publication and SDK source validation only.",
+    "Version 1.9.0 remains unpublished; 1.10.0 includes its selected-file capability changes.",
+    "Publishing capability declarations does not install native adapters or prove a compatible OctoSense release or hardware acceptance.",
+    "Existing immutable publishing and catalog acceptance receipts are unchanged."
+  ]
+}

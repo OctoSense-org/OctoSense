@@ -1,0 +1,22 @@
+# octosense-card-studio — inspect a card before anyone sees it (ADR 0002 §7).
+#
+# Renders an L0 card (or a bundle) in a hidden `card-host --remote` at the
+# target sizes, collects the frame, the widget snapshot, the tree, the log and
+# the realize report, runs the measured checks, and prepares the request a
+# vision model critiques. It drives card-host over HTTP and never links
+# makepad, so the checks build and test in seconds with no GPU.
+[package]
+name = "octosense-card-studio"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+publish = false
+description = "Render a card in card-host --remote at glance/phone/desktop sizes, run measured checks, prepare a vision critique (ADR 0002 §7)"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[[bin]]
+name = "card-studio"
+path = "src/main.rs"

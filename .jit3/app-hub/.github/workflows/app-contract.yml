@@ -1,0 +1,108 @@
+name: App contract
+
+# crates/app-contract (octosense-app-contract, OctoSense ADR 0005): the crate
+# apps and hosts depend on by version. It is checked on its own, the way
+# crates.io builds it: copied out of the workspace, whose [patch] tables name
+# sibling checkouts (../makepad, ../octoscript…) the contract does not use.
+#
+#   test    the unit tests, the fixture corpus, the doc tests, clippy and a
+#           publish dry run (no git or path dependency can slip in)
+#   semver  cargo semver-checks against the latest published 1.x: within 1.x
+#           the contract only grows, so a non-additive change fails here and
+#           not in an app. Skipped, with a notice, until 1.0.0 is published.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'crates/app-contract/**'
+      - '.github/workflows/app-contract.yml'
+  pull_request:
+    paths:
+      - 'crates/app-contract/**'
+      - '.github/workflows/app-contract.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ format('app-contract-{0}', github.ref) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CARGO_TERM_COLOR: always
+  CRATE: octosense-app-contract
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - name: Copy the crate out of the workspace
+        shell: bash
+        run: cp -R crates/app-contract "$RUNNER_TEMP/app-contract"
+      - name: Tests and the fixture corpus
+        working-directory: ${{ runner.temp }}/app-contract
+        run: cargo test --all-targets && cargo test --doc
+      - name: Clippy
+        working-directory: ${{ runner.temp }}/app-contract
+        run: cargo clippy --all-targets --no-deps -- -D warnings
+      - name: Package and publish dry run
+        working-directory: ${{ runner.temp }}/app-contract
+        run: |
+          cargo package --list --allow-dirty
+          cargo publish --dry-run --allow-dirty
+
+  semver:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Find the latest published version
+        id: published
+        shell: bash
+        run: |
+          set -euo pipefail
+          # crates.io's sparse index: one JSON line per published version.
+          status=$(curl --proto '=https' --tlsv1.2 --silent --show-error --location \
+            --output "$RUNNER_TEMP/index" --write-out '%{http_code}' \
+            "https://index.crates.io/oc/to/$CRATE")
+          case "$status" in
+            200)
+              latest=$(jq -r 'select(.yanked | not) | .vers' "$RUNNER_TEMP/index" | sort -V | tail -n 1)
+              echo "latest=$latest" >> "$GITHUB_OUTPUT"
+              echo "Diffing the public API against $CRATE $latest."
+              ;;
+            404)
+              echo "latest=" >> "$GITHUB_OUTPUT"
+              echo "::notice::$CRATE is not published on crates.io yet, so there is no version to diff against: skipping cargo semver-checks. The check runs from the first published release on."
+              ;;
+            *)
+              echo "::error::crates.io index answered HTTP $status for $CRATE; cannot tell whether a version is published."
+              exit 1
+              ;;
+          esac
+      - name: Install cargo-semver-checks
+        if: steps.published.outputs.latest != ''
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-semver-checks
+      - name: API diff (cargo semver-checks)
+        if: steps.published.outputs.latest != ''
+        shell: bash
+        env:
+          BASELINE: ${{ steps.published.outputs.latest }}
+        run: |
+          set -euo pipefail
+          cp -R crates/app-contract "$RUNNER_TEMP/app-contract"
+          cd "$RUNNER_TEMP/app-contract"
+          if ! cargo semver-checks check-release --manifest-path Cargo.toml --baseline-version "$BASELINE"; then
+            echo "::error::octosense-app-contract changed its public API in a way 1.x does not allow (ADR 0005 section 2). Make the change additive, or bump the version deliberately if this is a 2.0 decided in an ADR."
+            exit 1
+          fi

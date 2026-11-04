@@ -1,0 +1,16 @@
+{
+  "name": "incoming-mail-triage",
+  "version": "1.0.0",
+  "description": "Quiet personal-mail relevance decisions with durable event and publication receipts.",
+  "uses": [
+    "inboxassistant.message",
+    "inboxassistant.event_status",
+    "inboxassistant.event_decide",
+    "inboxassistant.notify"
+  ],
+  "prompts": {
+    "include": [
+      "SKILL.md"
+    ]
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "digest": "729bc3dfe1ef9ae2e49cb86f82db670adc09282c4aaadc65d58ed804d6255c26",
+  "limits": "default",
+  "refused": "app forecast is unsigned and this host requires a signature",
+  "source": "App Hub app-policy admission tests: unsigned under a host that requires signing"
+}

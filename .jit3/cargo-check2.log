@@ -1,0 +1,194 @@
+start 2026-11-04T18:42:36Z
+warning: /Users/ychen/home/octosense-org/.worktrees/jit3-octosense/desktop/Cargo.toml: file `/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/desktop/src/main.rs` found to be present in multiple build targets:
+  * `lib` target `octosense`
+  * `bin` target `octosense`
+warning: patch `makepad-code-editor v2.0.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/code_editor)` was not used in the crate graph
+warning: patch `ruma v0.16.0 (https://github.com/project-robius/ruma.git?branch=tsp#7a912c85)` was not used in the crate graph
+warning: patch `makepad-ai v0.0.1 (/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/.jit3/shims/makepad-ai)` was not used in the crate graph
+warning: patch `makepad-code-editor v2.0.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/code_editor)` was not used in the crate graph
+warning: patch `makepad-markdown v0.0.1 (/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/.jit3/shims/makepad-markdown)` was not used in the crate graph
+warning: patch `makepad-markdown-widgets v0.0.1 (/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/.jit3/shims/makepad-markdown-widgets)` was not used in the crate graph
+warning: patch `makepad-task v0.0.1 (/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/.jit3/shims/makepad-task)` was not used in the crate graph
+help: Check that the patched package version and available features are compatible
+      with the dependency requirements. If the patch has a different version from
+      what is locked in the Cargo.lock file, run `cargo update` to use the new
+      version. This may also occur with an optional dependency that is not enabled.
+    Checking makepad-platform v2.0.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/platform)
+    Checking aws-lc-sys v0.45.0
+   Compiling aws-lc-rs v1.18.1
+    Checking tinystr v0.8.4
+    Checking potential_utf v0.1.6
+    Checking x509-cert v0.2.5
+    Checking moxcms v0.8.1
+    Checking toml v0.8.23
+    Checking octoscript-render v0.1.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/.sources/octoscript-makepad/crates/octoscript-render)
+    Checking octosense-l0-chat v0.1.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/crates/l0-chat)
+    Checking keyring v3.6.3
+   Compiling chrono-tz v0.10.4
+   Compiling octosense-ai-host v0.1.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/crates/ai-host)
+   Compiling octosense-shell v0.1.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/crates/shell)
+   Compiling octosense v0.1.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/desktop)
+    Checking crossbeam-utils v0.8.23
+    Checking icu_collections v2.3.0
+.sources/octoscript-makepad/crates/octoscript-render/src/eval.rs:23:15: error[E0308]: mismatched types: expected `ScriptHostContext<'_>`, found `&mut ScriptVmHost`
+.sources/octoscript-makepad/crates/octoscript-render/src/eval.rs:45:20: error[E0599]: no method named `eval_checked` found for mutable reference `&mut makepad_script::ScriptVm<'_>` in the current scope: method not found in `&mut makepad_script::ScriptVm<'_>`
+    Checking icu_locale_core v2.3.0
+error: could not compile `octoscript-render` (lib) due to 2 previous errors
+warning: build failed, waiting for other jobs to finish...
+    Checking crossbeam-queue v0.3.14
+    Checking icu_provider v2.3.1
+    Checking icu_normalizer v2.3.0
+    Checking icu_properties v2.3.0
+    Checking cms v0.2.3
+    Checking rustls-webpki v0.103.15
+    Checking sigstore-crypto v0.14.0
+    Checking sigstore-merkle v0.14.0
+    Checking sigstore-trust-root v0.14.0
+    Checking sigstore-rekor v0.14.0
+    Checking rustls v0.23.44
+    Checking sigstore-tsa v0.14.0
+    Checking idna_adapter v1.2.2
+    Checking idna v1.1.0
+    Checking url v2.5.8
+    Checking sigstore-verify v0.14.0
+    Checking image v0.25.10
+    Checking octosense-app-contract v1.12.0 (https://github.com/OctoSense-org/OctoSense-App-Hub?rev=386359153ed6377b5f047bd9ed2767a6a2ac2bc7#38635915)
+    Checking octosense-llm-config v0.1.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/apps/ai-providers/config)
+    Checking tokio-rustls v0.26.5
+    Checking tungstenite v0.24.0
+    Checking ureq v3.4.2
+    Checking tokio-tungstenite v0.24.0
+    Checking octosense-kernel v0.1.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/crates/kernel)
+    Checking octosense-app-peers v0.1.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/crates/app-peers)
+    Checking makepad-draw v2.0.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/draw)
+    Checking makepad-ai-services v0.1.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/libs/ai/services)
+    Checking makepad-widgets-core v2.0.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/widgets/core)
+    Checking makepad-widgets-fab v2.0.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/widgets/families/fab)
+    Checking makepad-widgets-data v2.0.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/widgets/families/data)
+    Checking makepad-widgets-collections v2.0.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/widgets/families/collections)
+    Checking makepad-widgets-catalog v2.0.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/widgets/families/catalog)
+    Checking makepad-widgets-rich-text v2.0.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/widgets/families/rich_text)
+    Checking makepad-widgets-menus v2.0.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/widgets/families/menus)
+    Checking makepad-widgets-maps v2.0.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/widgets/families/maps)
+    Checking makepad-widgets-ai v2.0.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/widgets/families/ai)
+    Checking makepad-widgets-media v2.0.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/widgets/families/media)
+    Checking makepad-widgets-editors v2.0.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/widgets/families/editors)
+    Checking makepad-widgets-pickers v2.0.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/widgets/families/pickers)
+    Checking makepad-widgets-hotkeys v2.0.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/widgets/families/hotkeys)
+    Checking makepad-widgets-extras v2.0.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/widgets/families/extras)
+    Checking makepad-app-module v0.1.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/libs/app_module)
+    Checking makepad-wm-api v0.1.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/libs/wm_api)
+    Checking makepad-widgets-tweaker v2.0.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/widgets/families/tweaker)
+    Checking makepad-widgets v2.0.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/widgets)
+    Checking makepad-app-aichat v0.1.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/apps/aichat)
+    Checking octosense-app-policy v0.1.0 (https://github.com/OctoSense-org/OctoSense-App-Hub?rev=386359153ed6377b5f047bd9ed2767a6a2ac2bc7#38635915)
+    Checking octoscript-widgets v0.1.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/.sources/octoscript-makepad/crates/octoscript-widgets)
+    Checking makepad-wm-theme v0.1.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/.jit3/wm_theme)
+    Checking makepad-d3 v0.2.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/.sources/octoscript-makepad/crates/makepad-d3)
+.sources/octoscript-makepad/crates/octoscript-widgets/src/design.rs:687:5: error[E0407]: method `selected_value` is not a member of trait `Widget`: not a member of trait `Widget`
+.sources/octoscript-makepad/crates/octoscript-widgets/src/design.rs:713:5: error[E0407]: method `checked` is not a member of trait `Widget`: not a member of trait `Widget`
+.sources/octoscript-makepad/crates/octoscript-widgets/src/kit_shared.rs:302:13: error[E0407]: method `selected_value` is not a member of trait `Widget`: not a member of trait `Widget`
+.sources/octoscript-makepad/crates/octoscript-widgets/src/design.rs:655:19: error[E0609]: no field `selected` on type `makepad_widgets::View`: unknown field
+.sources/octoscript-makepad/crates/octoscript-widgets/src/design.rs:688:19: error[E0609]: no field `selected` on type `makepad_widgets::View`: unknown field
+.sources/octoscript-makepad/crates/octoscript-widgets/src/kit_shared.rs:109:19: error[E0609]: no field `selected` on type `RefMut<'_, makepad_widgets::View>`: unknown field
+.sources/octoscript-makepad/crates/octoscript-widgets/src/kit_shared.rs:113:24: error[E0609]: no field `selected` on type `makepad_widgets::View`: unknown field
+.sources/octoscript-makepad/crates/octoscript-widgets/src/kit_shared.rs:306:31: error[E0609]: no field `selected` on type `makepad_widgets::View`: unknown field
+.sources/octoscript-makepad/crates/octoscript-widgets/src/tap.rs:125:27: error[E0004]: non-exhaustive patterns: `TouchState::Cancel` not covered: pattern `TouchState::Cancel` not covered
+/Users/ychen/.cargo/git/checkouts/octosense-app-hub-3222614192ecfbf8/3863591/crates/app-policy/src/splash_adapter.rs:35:12: error[E0599]: no method named `set_policy` found for reference `&SplashRef` in the current scope: method not found in `&SplashRef`
+/Users/ychen/.cargo/git/checkouts/octosense-app-hub-3222614192ecfbf8/3863591/crates/app-policy/src/splash_adapter.rs:36:12: error[E0599]: no method named `set_memory_bytes` found for reference `&SplashRef` in the current scope: method not found in `&SplashRef`
+error: could not compile `octoscript-widgets` (lib) due to 19 previous errors
+error: could not compile `octosense-app-policy` (lib) due to 2 previous errors
+.sources/octoscript-makepad/crates/makepad-d3/src/data/chart_data.rs:3:13: warning: unused import: `DataPoint`
+.sources/octoscript-makepad/crates/makepad-d3/src/geo/path.rs:5:22: warning: unused imports: `FeatureCollection` and `Feature`
+    Checking makepad-app-weather v0.1.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/apps/weather)
+    Checking makepad-app-reminders v0.1.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/apps/reminders)
+    Checking makepad-app-terminal v0.1.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/apps/terminal)
+    Checking makepad-app-calculator v0.1.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/apps/calculator)
+    Checking makepad-app-notes v0.1.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/apps/notes)
+    Checking makepad-app-clock v0.1.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/apps/clock)
+    Checking makepad-calculator v0.0.1 (/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/.jit3/shims/makepad-calculator)
+    Checking makepad-reminders v0.0.1 (/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/.jit3/shims/makepad-reminders)
+    Checking makepad-weather v0.0.1 (/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/.jit3/shims/makepad-weather)
+    Checking makepad-clock v0.0.1 (/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/.jit3/shims/makepad-clock)
+    Checking makepad-notes v0.0.1 (/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/.jit3/shims/makepad-notes)
+.sources/octoscript-makepad/crates/makepad-d3/src/scale/sequential.rs:242:18: warning: use of deprecated method `scale::sequential::SequentialScale::<T>::domain`: Use `with_domain` instead for consistent builder pattern
+.sources/octoscript-makepad/crates/makepad-d3/src/scale/sequential.rs:243:18: warning: use of deprecated method `scale::sequential::SequentialScale::<T>::clamp`: Use `with_clamp` instead for consistent builder pattern
+    Checking makepad-terminal v0.0.1 (/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/.jit3/shims/makepad-terminal)
+.sources/octoscript-makepad/crates/makepad-d3/src/render3d/surface.rs:303:21: warning: unused variable: `v11`: help: if this is intentional, prefix it with an underscore: `_v11`
+.sources/octoscript-makepad/crates/makepad-d3/src/data/source.rs:336:5: warning: field `state` is never read
+.sources/octoscript-makepad/crates/makepad-d3/src/geo/path.rs:448:12: warning: struct `GeoPathBuilder` is never constructed
+.sources/octoscript-makepad/crates/makepad-d3/src/geo/path.rs:455:12: warning: associated items `new`, `point_radius`, and `build` are never used
+.sources/octoscript-makepad/crates/makepad-d3/src/interaction/brush.rs:233:5: warning: field `keyboard_modifiers` is never read
+.sources/octoscript-makepad/crates/makepad-d3/src/interaction/zoom.rs:9:12: warning: struct `Point2D` is never constructed
+.sources/octoscript-makepad/crates/makepad-d3/src/interaction/zoom.rs:18:12: warning: associated functions `new` and `zero` are never used
+.sources/octoscript-makepad/crates/makepad-d3/src/layout/delaunay.rs:331:5: warning: field `bounds` is never read
+.sources/octoscript-makepad/crates/makepad-d3/src/layout/force/forces.rs:40:5: warning: field `theta` is never read
+.sources/octoscript-makepad/crates/makepad-d3/src/layout/force/simulation.rs:192:5: warning: field `random_seed` is never read
+.sources/octoscript-makepad/crates/makepad-d3/src/layout/hierarchy/node.rs:272:12: warning: struct `PositionedNode` is never constructed
+.sources/octoscript-makepad/crates/makepad-d3/src/layout/hierarchy/node.rs:295:12: warning: associated items `from_node` and `contains` are never used
+.sources/octoscript-makepad/crates/makepad-d3/src/layout/hierarchy/tree.rs:194:12: warning: struct `ClusterLayout` is never constructed
+.sources/octoscript-makepad/crates/makepad-d3/src/layout/hierarchy/tree.rs:211:12: warning: multiple associated items are never used
+.sources/octoscript-makepad/crates/makepad-d3/src/scale/utils.rs:115:8: warning: function `lerp` is never used
+.sources/octoscript-makepad/crates/makepad-d3/src/scale/utils.rs:120:8: warning: function `unlerp` is never used
+.sources/octoscript-makepad/crates/makepad-d3/src/data/dataset.rs:10:5: warning: missing documentation for a variant
+.sources/octoscript-makepad/crates/makepad-d3/src/data/dataset.rs:11:5: warning: missing documentation for a variant
+.sources/octoscript-makepad/crates/makepad-d3/src/data/dataset.rs:12:5: warning: missing documentation for a variant
+.sources/octoscript-makepad/crates/makepad-d3/src/data/dataset.rs:13:5: warning: missing documentation for a variant
+.sources/octoscript-makepad/crates/makepad-d3/src/data/dataset.rs:14:5: warning: missing documentation for a variant
+.sources/octoscript-makepad/crates/makepad-d3/src/data/dataset.rs:15:5: warning: missing documentation for a variant
+.sources/octoscript-makepad/crates/makepad-d3/src/data/dataset.rs:16:5: warning: missing documentation for a variant
+.sources/octoscript-makepad/crates/makepad-d3/src/data/dataset.rs:22:5: warning: missing documentation for a struct field
+.sources/octoscript-makepad/crates/makepad-d3/src/data/dataset.rs:23:5: warning: missing documentation for a struct field
+.sources/octoscript-makepad/crates/makepad-d3/src/data/dataset.rs:24:5: warning: missing documentation for a struct field
+.sources/octoscript-makepad/crates/makepad-d3/src/data/dataset.rs:25:5: warning: missing documentation for a struct field
+.sources/octoscript-makepad/crates/makepad-d3/src/data/dataset.rs:63:5: warning: missing documentation for an associated constant
+.sources/octoscript-makepad/crates/makepad-d3/src/data/dataset.rs:69:5: warning: missing documentation for an associated constant
+.sources/octoscript-makepad/crates/makepad-d3/src/data/dataset.rs:75:5: warning: missing documentation for an associated constant
+.sources/octoscript-makepad/crates/makepad-d3/src/data/dataset.rs:81:5: warning: missing documentation for an associated constant
+.sources/octoscript-makepad/crates/makepad-d3/src/data/dataset.rs:87:5: warning: missing documentation for an associated constant
+.sources/octoscript-makepad/crates/makepad-d3/src/data/observable.rs:30:14: warning: missing documentation for a struct field
+.sources/octoscript-makepad/crates/makepad-d3/src/data/observable.rs:30:34: warning: missing documentation for a struct field
+.sources/octoscript-makepad/crates/makepad-d3/src/data/observable.rs:32:14: warning: missing documentation for a struct field
+.sources/octoscript-makepad/crates/makepad-d3/src/data/observable.rs:32:28: warning: missing documentation for a struct field
+.sources/octoscript-makepad/crates/makepad-d3/src/data/observable.rs:34:14: warning: missing documentation for a struct field
+.sources/octoscript-makepad/crates/makepad-d3/src/data/observable.rs:34:28: warning: missing documentation for a struct field
+.sources/octoscript-makepad/crates/makepad-d3/src/data/observable.rs:36:15: warning: missing documentation for a struct field
+.sources/octoscript-makepad/crates/makepad-d3/src/data/observable.rs:36:33: warning: missing documentation for a struct field
+.sources/octoscript-makepad/crates/makepad-d3/src/data/observable.rs:38:13: warning: missing documentation for a struct field
+.sources/octoscript-makepad/crates/makepad-d3/src/data/observable.rs:42:24: warning: missing documentation for a struct field
+.sources/octoscript-makepad/crates/makepad-d3/src/data/pipeline.rs:46:14: warning: missing documentation for a struct field
+.sources/octoscript-makepad/crates/makepad-d3/src/data/pipeline.rs:46:24: warning: missing documentation for a struct field
+.sources/octoscript-makepad/crates/makepad-d3/src/data/source.rs:34:9: warning: missing documentation for a struct field
+.sources/octoscript-makepad/crates/makepad-d3/src/data/source.rs:35:9: warning: missing documentation for a struct field
+.sources/octoscript-makepad/crates/makepad-d3/src/data/source.rs:38:14: warning: missing documentation for a struct field
+.sources/octoscript-makepad/crates/makepad-d3/src/data/source.rs:38:28: warning: missing documentation for a struct field
+.sources/octoscript-makepad/crates/makepad-d3/src/error.rs:12:21: warning: missing documentation for a struct field
+.sources/octoscript-makepad/crates/makepad-d3/src/error.rs:16:20: warning: missing documentation for a struct field
+.sources/octoscript-makepad/crates/makepad-d3/src/error.rs:20:19: warning: missing documentation for a struct field
+.sources/octoscript-makepad/crates/makepad-d3/src/error.rs:20:31: warning: missing documentation for a struct field
+.sources/octoscript-makepad/crates/makepad-d3/src/error.rs:20:41: warning: missing documentation for a struct field
+.sources/octoscript-makepad/crates/makepad-d3/src/error.rs:24:19: warning: missing documentation for a struct field
+.sources/octoscript-makepad/crates/makepad-d3/src/error.rs:28:18: warning: missing documentation for a struct field
+.sources/octoscript-makepad/crates/makepad-d3/src/error.rs:32:19: warning: missing documentation for a struct field
+.sources/octoscript-makepad/crates/makepad-d3/src/layout/delaunay.rs:9:5: warning: missing documentation for a struct field
+.sources/octoscript-makepad/crates/makepad-d3/src/layout/delaunay.rs:10:5: warning: missing documentation for a struct field
+.sources/octoscript-makepad/crates/makepad-d3/src/layout/delaunay.rs:14:5: warning: missing documentation for an associated function
+.sources/octoscript-makepad/crates/makepad-d3/src/layout/delaunay.rs:18:5: warning: missing documentation for a method
+.sources/octoscript-makepad/crates/makepad-d3/src/render3d/camera.rs:59:5: warning: missing documentation for a struct field
+.sources/octoscript-makepad/crates/makepad-d3/src/render3d/camera.rs:803:19: warning: missing documentation for a struct field
+.sources/octoscript-makepad/crates/makepad-d3/src/render3d/camera.rs:803:34: warning: missing documentation for a struct field
+.sources/octoscript-makepad/crates/makepad-d3/src/render3d/camera.rs:805:19: warning: missing documentation for a struct field
+.sources/octoscript-makepad/crates/makepad-d3/src/render3d/camera.rs:805:34: warning: missing documentation for a struct field
+.sources/octoscript-makepad/crates/makepad-d3/src/render3d/camera.rs:809:14: warning: missing documentation for a struct field
+.sources/octoscript-makepad/crates/makepad-d3/src/render3d/camera.rs:811:15: warning: missing documentation for a struct field
+.sources/octoscript-makepad/crates/makepad-d3/src/render3d/camera.rs:813:13: warning: missing documentation for a struct field
+.sources/octoscript-makepad/crates/makepad-d3/src/render3d/types.rs:11:5: warning: missing documentation for a struct field
+.sources/octoscript-makepad/crates/makepad-d3/src/render3d/types.rs:12:5: warning: missing documentation for a struct field
+.sources/octoscript-makepad/crates/makepad-d3/src/render3d/types.rs:13:5: warning: missing documentation for a struct field
+.sources/octoscript-makepad/crates/makepad-d3/src/render3d/types.rs:128:5: warning: missing documentation for a struct field
+.sources/octoscript-makepad/crates/makepad-d3/src/render3d/types.rs:129:5: warning: missing documentation for a struct field
+.sources/octoscript-makepad/crates/makepad-d3/src/render3d/types.rs:130:5: warning: missing documentation for a struct field
+.sources/octoscript-makepad/crates/makepad-d3/src/render3d/types.rs:131:5: warning: missing documentation for a struct field
+warning: `makepad-d3` (lib) generated 79 warnings (run `cargo fix --lib -p makepad-d3` to apply 3 suggestions)
+exit=101
+end 2026-11-04T18:42:52Z

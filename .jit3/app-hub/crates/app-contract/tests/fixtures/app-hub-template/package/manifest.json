@@ -1,0 +1,10 @@
+{
+  "schema": 1,
+  "id": "my-app",
+  "version": "0.1.0",
+  "name": "My App",
+  "integrity": {
+    "bundle_blake3": "e5c87ad13b02be2dcd8d33d095b9cd3bbc05240ae94321e79353a01c8bcb266a"
+  },
+  "capabilities": []
+}

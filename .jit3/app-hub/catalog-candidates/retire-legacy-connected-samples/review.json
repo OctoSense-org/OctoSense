@@ -1,0 +1,63 @@
+{
+  "scope": "Retire duplicate legacy connected samples after GitHub publisher migration",
+  "base_sequence": 13,
+  "candidate_sequence": 14,
+  "payload_sha256": "d87b486cd4f861c9ef4b8d254592daad0ce568c77370f44c7c83426ee0ce7907",
+  "native_prepare": "passed",
+  "changes": [
+    {
+      "app_id": "org.octosense.samples.githubnotes",
+      "version": "0.1.0",
+      "new_status": {
+        "state": "withdrawn",
+        "reason": "Legacy sample retired. Install io.github.ymote.githubnotes (0.2.1) from App Hub. Existing local data is retained; the replacement uses a separate app ID."
+      }
+    },
+    {
+      "app_id": "org.octosense.samples.inbox",
+      "version": "0.1.0",
+      "new_status": {
+        "state": "withdrawn",
+        "reason": "Legacy sample retired. Install io.github.ymote.inboxassistant (0.2.1) from App Hub. Existing local data is retained; the replacement uses a separate app ID."
+      }
+    },
+    {
+      "app_id": "org.octosense.samples.googlecalendar",
+      "version": "0.1.0",
+      "new_status": {
+        "state": "withdrawn",
+        "reason": "Legacy sample retired. Install io.github.ymote.googlecalendar (0.2.1) from App Hub. Existing local data is retained; the replacement uses a separate app ID."
+      }
+    },
+    {
+      "app_id": "org.octosense.samples.inbox",
+      "version": "0.1.1",
+      "new_status": {
+        "state": "withdrawn",
+        "reason": "Legacy sample retired. Install io.github.ymote.inboxassistant (0.2.1) from App Hub. Existing local data is retained; the replacement uses a separate app ID."
+      }
+    },
+    {
+      "app_id": "org.octosense.samples.githubnotes",
+      "version": "0.1.1",
+      "new_status": {
+        "state": "withdrawn",
+        "reason": "Legacy sample retired. Install io.github.ymote.githubnotes (0.2.1) from App Hub. Existing local data is retained; the replacement uses a separate app ID."
+      }
+    },
+    {
+      "app_id": "org.octosense.samples.googlecalendar",
+      "version": "0.1.1",
+      "new_status": {
+        "state": "withdrawn",
+        "reason": "Legacy sample retired. Install io.github.ymote.googlecalendar (0.2.1) from App Hub. Existing local data is retained; the replacement uses a separate app ID."
+      }
+    }
+  ],
+  "unchanged_entries": 8,
+  "new_or_modified_artifacts": 0,
+  "history_retained": true,
+  "existing_local_data_deleted": false,
+  "installed_legacy_launch": "refused after accepting withdrawal; replacement uses separate app ID",
+  "release_compatibility": "RC1 honors withdrawal but still shows unavailable entries. The accompanying discovery fix hides withdrawn entries while retaining installed copies in Library. A host release containing that fix is required to remove duplicate rows."
+}

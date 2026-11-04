@@ -1,0 +1,28 @@
+{
+  "schema": 1,
+  "subtitle": "Markdown drafts with reviewed GitHub saves",
+  "description": "Write Markdown with the Rinx article editor in a compatible OctoSense host. Recover local drafts after restart; connect GitHub through host OAuth, choose a repository and file, and review exact Markdown before saving. Requires a host with contract 1.8.0 / GitHub publisher support and the native Markdown editor; beta.2 cannot install this keyless release. Live GitHub OAuth and remote commits remain unverified. Optional Ask GitHub Notes requires separate agent consent and may send questions, context and permitted repository reads to your configured model. No agent write or approval tools are exposed; manual editing works without a model.",
+  "category": "productivity",
+  "keywords": [
+    "markdown",
+    "github",
+    "notes",
+    "sample"
+  ],
+  "screenshots": [
+    "screenshots/01-preview.png",
+    "screenshots/02-editor.png"
+  ],
+  "icon": "assets/icon.svg",
+  "platforms": [
+    "macos"
+  ],
+  "publisher": {
+    "name": "ymote",
+    "support": "https://github.com/ymote/octosense-github-notes/issues",
+    "privacy_policy_url": "https://github.com/ymote/octosense-github-notes/blob/main/PRIVACY.md"
+  },
+  "release_notes": "0.2.2: redesign GitHub sign-in on Repository & file: one Connect GitHub action with a plain-language choice between public and public-and-private access; an account card showing who is connected and with what access, with Use another account and a confirmed Disconnect; sign-in failures in plain words with Try again; repositories that load after connecting, where 0.2.1 still said No GitHub connection; and visible carets in the branch, path and commit fields. Editor, permissions, tools and draft format are unchanged. Live GitHub OAuth and remote commits remain unverified.",
+  "age_rating": "all",
+  "license": "Apache-2.0"
+}

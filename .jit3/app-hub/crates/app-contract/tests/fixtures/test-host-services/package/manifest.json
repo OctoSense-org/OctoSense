@@ -1,0 +1,17 @@
+{
+  "schema": 1,
+  "id": "forecast",
+  "version": "1.0.0",
+  "name": "Forecast",
+  "integrity": {
+    "bundle_blake3": "729bc3dfe1ef9ae2e49cb86f82db670adc09282c4aaadc65d58ed804d6255c26"
+  },
+  "capabilities": [
+    "matrix.read_messages",
+    "matrix.send_message",
+    "octos.session.open",
+    "octos.session.history",
+    "glance",
+    "model"
+  ]
+}

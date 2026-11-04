@@ -1,0 +1,38 @@
+{
+  "bundle_digests": {
+    "org.octosense.samples.githubnotes": "d5565438b78e01b98baf268661087b7efd0f5c01799f4841daa140955f82a13b",
+    "org.octosense.samples.googlecalendar": "3e262601ebb6092fda6bb10862b92d05a641cb76f84c9e037f25296eda69459a",
+    "org.octosense.samples.inbox": "dc8c4d215e1aa28b86752f8632d028588d30e8775ebad6f52a48a943b7780040"
+  },
+  "catalog_sequence": 7,
+  "catalog_sha256": "bc03502649724e6a603ea5d99e62981a3387a5b07d5e8f1195ea340036b61f2d",
+  "checked_at": "2026-10-07T00:56:56.956404+00:00",
+  "default_anchor_verified": true,
+  "http_statuses": {
+    "artifacts/org.octosense.samples.githubnotes-0.1.0.bundle.pack.json": 200,
+    "artifacts/org.octosense.samples.githubnotes-0.1.0.bundle/assets/icon.svg": 200,
+    "artifacts/org.octosense.samples.githubnotes-0.1.0.bundle/manifest.json": 200,
+    "artifacts/org.octosense.samples.githubnotes-0.1.0.bundle/screenshots/01-preview.png": 200,
+    "artifacts/org.octosense.samples.githubnotes-0.1.0.bundle/screenshots/02-editor.png": 200,
+    "artifacts/org.octosense.samples.googlecalendar-0.1.0.bundle.pack.json": 200,
+    "artifacts/org.octosense.samples.googlecalendar-0.1.0.bundle/assets/icon.svg": 200,
+    "artifacts/org.octosense.samples.googlecalendar-0.1.0.bundle/manifest.json": 200,
+    "artifacts/org.octosense.samples.googlecalendar-0.1.0.bundle/screenshots/01-local-draft.png": 200,
+    "artifacts/org.octosense.samples.googlecalendar-0.1.0.bundle/screenshots/02-notes.png": 200,
+    "artifacts/org.octosense.samples.googlecalendar-0.1.0.bundle/screenshots/03-host-required.png": 200,
+    "artifacts/org.octosense.samples.googlecalendar-0.1.0.bundle/screenshots/04-glance-template.png": 200,
+    "artifacts/org.octosense.samples.inbox-0.1.0.bundle.pack.json": 200,
+    "artifacts/org.octosense.samples.inbox-0.1.0.bundle/assets/icon.svg": 200,
+    "artifacts/org.octosense.samples.inbox-0.1.0.bundle/manifest.json": 200,
+    "artifacts/org.octosense.samples.inbox-0.1.0.bundle/screenshots/01-main.png": 200,
+    "artifacts/org.octosense.samples.inbox-0.1.0.bundle/screenshots/02-chat.png": 200,
+    "catalog.json": 200,
+    "index/org.octosense.samples.githubnotes-0.1.0.json": 200,
+    "index/org.octosense.samples.googlecalendar-0.1.0.json": 200,
+    "index/org.octosense.samples.inbox-0.1.0.json": 200
+  },
+  "publication_in_main": true,
+  "result": "pass",
+  "schema": 1,
+  "scope": "Default production HTTP Hub and official anchor; not native Store or live-provider acceptance"
+}

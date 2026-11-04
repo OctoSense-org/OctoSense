@@ -1,0 +1,31 @@
+{
+  "digest": "47c95ab7e15b3727ddee7bcc4b6fbead423fae6a91098a4c6bd7280aa189c342",
+  "entry": "card",
+  "ignored_fields": [],
+  "limits": "unsigned",
+  "policy": {
+    "app_id": "org.octosense.article-editor",
+    "capabilities": [
+      "images",
+      "matrix.event",
+      "matrix.send_message",
+      "storage"
+    ],
+    "display_name": "Article editor",
+    "hosts": [],
+    "instruction_budget": 20000000,
+    "may_prompt": false,
+    "memory_bytes": 67108864,
+    "research": null,
+    "storage": {
+      "accounts": false,
+      "agent_workspace": "account",
+      "cache_max_bytes": null,
+      "max_bytes": 16777216
+    },
+    "storage_bytes": 16777216,
+    "version": "2.0.0"
+  },
+  "signing_blake3": "b3fc4de3eb8e7b61075b5e9fea8dd7f7762f4ce278b713b523b0afe8bb1f2fb6",
+  "source": "Rinx apps/article-editor/bundle (hagency-org/Rinx b857702), digest filled in"
+}

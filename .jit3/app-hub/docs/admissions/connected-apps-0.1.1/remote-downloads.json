@@ -1,0 +1,63 @@
+{
+  "schema": 1,
+  "result": "pass",
+  "apps": [
+    {
+      "app_id": "org.octosense.samples.inbox",
+      "version": "0.1.1",
+      "source": {
+        "commit": "72311b5e1c902d32f77fb0be20f5fb01d8518491",
+        "repository": "https://github.com/ymote/octosense-inbox-assistant"
+      },
+      "bundle_digest": "af1ea9d980e45ef22dc566b3ed5855abe3006cc0a557cbb9b61c9fcfad47c1f7",
+      "release": "https://github.com/ymote/octosense-inbox-assistant/releases/tag/v0.1.1",
+      "download_sha256": {
+        "SHA256SUMS": "8f1f6bfe8bc59bcd150ffde530534bdca39ec31365d0460491cbb5c50eb8fe86",
+        "octosense-inbox-assistant-0.1.1.pack.json": "a2592a0f7257afc791eca68c87e65d157e79d32821cc4e3495a5b40001e6bb6b",
+        "octosense-inbox-assistant-0.1.1.tar.gz": "b4e75ff1af9562838368ffca221129197730d8258eba0c9db1fb6528365690f2"
+      },
+      "files": 11,
+      "anonymous_https_download": true,
+      "archive_pack_tag_and_catalog_bytes_match": true,
+      "immutable_privacy_url_http_200": true
+    },
+    {
+      "app_id": "org.octosense.samples.githubnotes",
+      "version": "0.1.1",
+      "source": {
+        "commit": "77a1a98b53d5665385ead239d9d8ad0dfee7ebc0",
+        "repository": "https://github.com/ymote/octosense-github-notes"
+      },
+      "bundle_digest": "81dd860d3a1bea9dae5efa45e130f88c86edb99db9df84305622b972472db965",
+      "release": "https://github.com/ymote/octosense-github-notes/releases/tag/v0.1.1",
+      "download_sha256": {
+        "SHA256SUMS": "2082f37eef9912708f3395cb3bc2339c9a69a90c42198ae59ca4449089902cd3",
+        "octosense-github-notes-0.1.1.pack.json": "7a32c4585fd60744a5d111a4df568eaa184327b6d3d0fc2e570463af07e36122",
+        "octosense-github-notes-0.1.1.tar.gz": "6417b621b117fa1ccf61f883c2fa3ab8d9db66fa3b8150703588f49d2a46c48e"
+      },
+      "files": 8,
+      "anonymous_https_download": true,
+      "archive_pack_tag_and_catalog_bytes_match": true,
+      "immutable_privacy_url_http_200": true
+    },
+    {
+      "app_id": "org.octosense.samples.googlecalendar",
+      "version": "0.1.1",
+      "source": {
+        "commit": "d79d98960642a7e368b9d0f2be8943dcec2bcd95",
+        "repository": "https://github.com/ymote/octosense-google-calendar"
+      },
+      "bundle_digest": "700134563765275dd272ef49587e4e473737a84f8c15538fb96a419c178c7143",
+      "release": "https://github.com/ymote/octosense-google-calendar/releases/tag/v0.1.1",
+      "download_sha256": {
+        "SHA256SUMS": "7e747bcafe2cc19ceb9052f335aa1fe6d76e13d36f04f7b96c4c54b818268334",
+        "octosense-google-calendar-0.1.1.pack.json": "150ecdf8be79a6318db32bde30bfb7b01dc53335934dea73b72b14d359513ec4",
+        "octosense-google-calendar-0.1.1.tar.gz": "80c14341f82e452d14eb3c015d6fb109d7ad4c91d1db7a53bfabdd0aa8a3a799"
+      },
+      "files": 10,
+      "anonymous_https_download": true,
+      "archive_pack_tag_and_catalog_bytes_match": true,
+      "immutable_privacy_url_http_200": true
+    }
+  ]
+}

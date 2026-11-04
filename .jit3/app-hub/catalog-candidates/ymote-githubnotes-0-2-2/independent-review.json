@@ -1,0 +1,53 @@
+{
+  "schema": 1,
+  "candidate_head": "adea9e01f139b74d1d040d7835eec5eecb6e8bcd",
+  "native_prepare": "passed: locally with hub at App Hub 9743178 and again at 4b6515e (after #176), and in publish-catalog validate (run 37901301940)",
+  "payload_sha256": "51b1c03bdcbfa500c6c62fe89a8514ba51b38dc4811a41b55b7475ff38deb1f7",
+  "base_sequence": 14,
+  "candidate_sequence": 15,
+  "unchanged_historical_entries": 14,
+  "added_updates": 1,
+  "changed_paths": "candidate-directory-only",
+  "public_release_identity": [
+    {
+      "app_id": "io.github.ymote.githubnotes",
+      "version": "0.2.2",
+      "repository": "ymote/octosense-github-notes",
+      "public_repo_id": "1408036635",
+      "public_owner_id": "151983",
+      "tag": "v0.2.2",
+      "commit": "e3f1e81105bf3d3e6c8acf731605b08b55720983",
+      "release_url": "https://github.com/ymote/octosense-github-notes/releases/tag/v0.2.2",
+      "pack_sha256": "08061d70c4650298ead15ef7fb6b1d10702996fd5063195433ffa8f8e4349ff5",
+      "release_asset_digest": "sha256:08061d70c4650298ead15ef7fb6b1d10702996fd5063195433ffa8f8e4349ff5",
+      "release_exact_bytes": true,
+      "attestation": "gh attestation verify passed online and offline for octosense-app-manifest.json: publish-app.yml@refs/tags/v0.2.2, source e3f1e811, repository 1408036635, owner 151983, GitHub-hosted runner, run 37900013646 attempt 1",
+      "native_publisher_verify": "passed",
+      "identity_continuity": "unchanged repository, repository ID, owner ID and workflow; publish-app.yml byte-identical at v0.2.1 and v0.2.2 (blob 7f533de0)",
+      "changed_bundle_files": [
+        "listing.json",
+        "main.splash",
+        "manifest.json"
+      ],
+      "capabilities_unchanged": true,
+      "tools_agent_unchanged": true,
+      "host_methods_unchanged": true,
+      "bundle_blake3_independently_recomputed": "f0babb6539e4f8106e51fb40a8d7b63709908cc12029ddbf7982497ab91b2da4",
+      "release_receipt_sha256": "6f70865186fef08854e26e49cecf5125427f1f4a87ef2bb9c840c685bc2a32a9",
+      "release_receipt_admission_wording": "not granted by this workflow",
+      "links_http_200": true
+    }
+  ],
+  "source_scope_review": "Only main.splash, listing.json (release_notes) and manifest.json (version and provenance) change. main.splash redesigns the GitHub account section: one Connect GitHub with an access choice, an account card, Use another account, a confirmed Disconnect, plain-word sign-in errors with Try again, repositories that load after connecting, and dark field carets. It has the same nine host methods, payloads and OAuth scope sets as 0.2.1, and no credential fields; the device code appears only on the host-owned sheet. tools.json, AGENT.md, the icon and the screenshots are byte-identical to 0.2.1. No AI-directed text outside AGENT.md, deceptive UI or abusive wording.",
+  "observations_non_blocking": [
+    "Listing screenshots are unchanged from 0.2.1 and show only the (unchanged) editor, not the new account card.",
+    "The private-access hint ('Also reaches your private repositories') understates that the repo scope grants full read and write to private repositories. PRIVACY.md and GitHub's consent page disclose it; a later release should say so in the app too.",
+    "The release's immutable flag is false, as for v0.2.0 and v0.2.1. Integrity rests on the pinned commit, the digests and the Sigstore attestation.",
+    "The reviewer recomputed BLAKE3 independently and verified attestations with gh; the native hub checks were run separately by the submitter."
+  ],
+  "limits": [
+    "macOS-only listing. The account screen was verified headlessly on Linux against a synthetic signed-out GitHub; live OAuth, remote commits, physical approval and a packaged macOS update from 0.2.1 are unverified."
+  ],
+  "production_catalog_changed_by_this_commit": false,
+  "review_result": "candidate approved for protected admin catalog publication; public update/restart acceptance follows publication"
+}

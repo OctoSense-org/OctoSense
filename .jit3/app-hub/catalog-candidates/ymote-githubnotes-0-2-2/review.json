@@ -1,0 +1,39 @@
+{
+  "schema": 1,
+  "scope": "Review GitHub Notes 0.2.2, the redesigned GitHub account section of the GitHub-authenticated sample identity",
+  "sequence": 15,
+  "base_sequence": 14,
+  "base_envelope_sha256": "00c8142398e9958f1f3637cb2ec1f0b524cd014bdfd23a8c7396acd574efdb8a",
+  "payload_sha256": "51b1c03bdcbfa500c6c62fe89a8514ba51b38dc4811a41b55b7475ff38deb1f7",
+  "native_catalog_prepare": "passed; all fourteen prior entries preserved and the publisher continuity verified",
+  "release_bytes": "The pack was downloaded from the successful v0.2.2 release workflow (run 37900013646). Its sha256 equals GitHub's asset digest and the release receipt. Native publisher unpack/verify and the gate passed against authenticated catalog sequence 14",
+  "privacy_scan": {
+    "status": "passed",
+    "files": 11,
+    "patterns": 8
+  },
+  "publication_gate": "Dispatch as a dry run first; publish only after the dry-run proof verifies. Public update/restart acceptance follows actual publication.",
+  "limits": [
+    "macOS-only listing",
+    "No live GitHub OAuth, remote commits, physical approval or model behavior claimed",
+    "The account screen was verified headlessly on Linux against OctoSense's synthetic signed-out GitHub (OctoSense #416: notes_signin.py, check-connected-oauth.py); a packaged macOS update from 0.2.1 has not run yet",
+    "The redesigned host sign-in sheet needs a host with OctoSense #416; older compatible hosts show their older sheet. The app calls no new host methods"
+  ],
+  "production_catalog_changed_by_this_commit": false,
+  "apps": [
+    {
+      "app_id": "io.github.ymote.githubnotes",
+      "version": "0.2.2",
+      "submission": "https://github.com/OctoSense-org/OctoSense-App-Hub/issues/158",
+      "source": {
+        "repository": "https://github.com/ymote/octosense-github-notes",
+        "commit": "e3f1e81105bf3d3e6c8acf731605b08b55720983"
+      },
+      "pack_sha256": "08061d70c4650298ead15ef7fb6b1d10702996fd5063195433ffa8f8e4349ff5",
+      "platforms": [
+        "macos"
+      ],
+      "publisher": "github:1408036635"
+    }
+  ]
+}

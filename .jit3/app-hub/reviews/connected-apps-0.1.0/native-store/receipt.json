@@ -1,0 +1,421 @@
+{
+  "schema": 1,
+  "candidate_status": "Final tested release candidate; publication controlled by release gate",
+  "scope": "Official production macOS Store installation, local UI and cold-restored drafts; no provider fixtures",
+  "runtime_commit": "84e3438b7ee25b43ba945bfe063db594a71e61ba",
+  "binary_sha256": "c1e6b8974eb245e31244ab1bfd92925d2dc320f421839d08790d7742a41879be",
+  "driver_sha256": "9cabca42fe18f36108c797f1768d8d1cba2a54d6317f5488e59ea116c2777613",
+  "resume_driver_sha256": "1e00d72414b1067a80322522a6494850ca1b6ba253eaf8add51e2cbaac3bc476",
+  "interruptions": [
+    {
+      "status": "failed",
+      "error": "Native state did not settle",
+      "ended": "2026-10-07T02:08:26.384610+00:00",
+      "process_stopped": true,
+      "resume_from": "authoritatively observed local installed and draft state; no uncertain input replay"
+    }
+  ],
+  "platform": "macOS Apple Silicon",
+  "package_receipt_sha256": "8c679e0ec677a214e6c866570f5b8c0e77d2383a4f17ec9d307612cdd40ce26d",
+  "kernel": {
+    "revision": "39e22d457c47df57d7c7c9fa64539979c9da93fd",
+    "version": "octos 2.0.3-rc.13 (39e22d4 2026-10-06)",
+    "sha256": "fb67a580b5fa4db38bd2161dedeeb97f73f064ad43beaf628c4888701e9d447a"
+  },
+  "catalog": {
+    "sequence": 7,
+    "published": "2026-10-07",
+    "sha256": "bc03502649724e6a603ea5d99e62981a3387a5b07d5e8f1195ea340036b61f2d"
+  },
+  "catalog_origin": "https://raw.githubusercontent.com/OctoSense-org/OctoSense-App-Hub/main/",
+  "catalog_override": false,
+  "anchor_override": false,
+  "apps": [
+    {
+      "id": "org.octosense.samples.githubnotes",
+      "manifest_sha256": "425594fff3ddca732312c2c4e341ff8a4bbd14e34cec57d9a0a03131b0fbf30a",
+      "version": "0.1.0",
+      "bundle_blake3": "d5565438b78e01b98baf268661087b7efd0f5c01799f4841daa140955f82a13b",
+      "publisher": "ymote"
+    },
+    {
+      "id": "org.octosense.samples.inbox",
+      "manifest_sha256": "13e18cadb3f3648f80fb87bfbd5b3e57cb22e3a4f5bda0c8e94dc133ff6eb66b",
+      "version": "0.1.0",
+      "bundle_blake3": "dc8c4d215e1aa28b86752f8632d028588d30e8775ebad6f52a48a943b7780040",
+      "publisher": "ymote"
+    },
+    {
+      "id": "org.octosense.samples.googlecalendar",
+      "manifest_sha256": "efa87357f06a96994ff5c6632eaf02b4dab6a661b48b79052cfdec0049cb41cc",
+      "version": "0.1.0",
+      "bundle_blake3": "3e262601ebb6092fda6bb10862b92d05a641cb76f84c9e037f25296eda69459a",
+      "publisher": "ymote"
+    }
+  ],
+  "functional_checks": [
+    {
+      "app": "org.octosense.samples.githubnotes",
+      "installed_signed_manifest_exact": true
+    },
+    {
+      "app": "org.octosense.samples.githubnotes",
+      "native_local_journey": true
+    },
+    {
+      "app": "org.octosense.samples.inbox",
+      "installed_signed_manifest_exact": true
+    },
+    {
+      "app": "org.octosense.samples.inbox",
+      "native_local_journey": true
+    },
+    {
+      "app": "org.octosense.samples.googlecalendar",
+      "installed_signed_manifest_exact": true
+    },
+    {
+      "app": "org.octosense.samples.googlecalendar",
+      "native_local_journey": true
+    },
+    {
+      "app": "org.octosense.samples.githubnotes",
+      "cold_restore": true
+    },
+    {
+      "app": "org.octosense.samples.inbox",
+      "cold_restore": true
+    },
+    {
+      "app": "org.octosense.samples.googlecalendar",
+      "cold_restore": true
+    }
+  ],
+  "original_pixel_reviews": [
+    {
+      "phase": "cold-restart",
+      "app_review": "github-notes-original-pixels-reviewed.json",
+      "review": {
+        "pass": true,
+        "reviewer": "calendar_sample",
+        "scope": "Original cold Preview and Split pixels, exact unchanged Unicode Markdown including final newline; Library lists all three installed apps"
+      }
+    },
+    {
+      "phase": "cold-restart",
+      "app_review": "google-calendar-original-pixels-reviewed.json",
+      "review": {
+        "pass": true,
+        "reviewer": "calendar_sample",
+        "scope": "Original cold title/date/time/timezone and retained agenda pixels, exact unchanged fields, visible footer; no provider booking"
+      }
+    },
+    {
+      "phase": "cold-restart",
+      "app_review": "inbox-assistant-original-pixels-reviewed.json",
+      "review": {
+        "pass": true,
+        "reviewer": "calendar_sample",
+        "scope": "Original cold Reply/Chat/Reply pixels; exact unchanged two-line Unicode reply, saved revision 2, visible composer and controls; no model/send"
+      }
+    },
+    {
+      "phase": "continuation-fresh-1",
+      "app_review": "google-calendar-original-pixels-reviewed.json",
+      "review": {
+        "pass": true,
+        "reviewer": "calendar_sample",
+        "scope": "Original title/date/time/timezone and retained agenda pixels with exact native fields; local draft only, no provider save"
+      }
+    },
+    {
+      "phase": "fresh-install",
+      "app_review": "github-notes-original-pixels-reviewed.json",
+      "review": {
+        "pass": true,
+        "reviewer": "calendar_sample",
+        "scope": "Original Preview and Split/source pixels; exact complete NOTE in TextInput t/val, readable Chinese, Saved locally, no overlap"
+      }
+    },
+    {
+      "phase": "fresh-install",
+      "app_review": "inbox-assistant-original-pixels-reviewed.json",
+      "review": {
+        "pass": true,
+        "reviewer": "calendar_sample",
+        "scope": "Original Chat and Reply pixels plus exact native draft state; fictional local state only; no model or send"
+      }
+    }
+  ],
+  "instrumentation": {
+    "mode": "Default native input acknowledgement, bounded read-only observations; no wait=1 frame timing claim",
+    "errors": [
+      {
+        "phase": "fresh-install",
+        "route": "g",
+        "http_status": 404,
+        "body": "{\"err\":\"grab frame could not be submitted at arming; retry\"}",
+        "error": "Read-only instrument request failed"
+      },
+      {
+        "phase": "fresh-install",
+        "route": "g",
+        "http_status": 404,
+        "body": "{\"err\":\"grab frame could not be submitted at arming; retry\"}",
+        "error": "Read-only instrument request failed"
+      },
+      {
+        "phase": "fresh-install",
+        "route": "g",
+        "http_status": 404,
+        "body": "{\"err\":\"grab frame could not be submitted at arming; retry\"}",
+        "error": "Read-only instrument request failed"
+      },
+      {
+        "phase": "fresh-install",
+        "route": "g",
+        "http_status": 404,
+        "body": "{\"err\":\"grab frame could not be submitted at arming; retry\"}",
+        "error": "Read-only instrument request failed"
+      },
+      {
+        "phase": "fresh-install",
+        "route": "g",
+        "http_status": 404,
+        "body": "{\"err\":\"grab frame could not be submitted at arming; retry\"}",
+        "error": "Read-only instrument request failed"
+      },
+      {
+        "phase": "cold-restart",
+        "route": "g",
+        "http_status": 404,
+        "body": "{\"err\":\"grab frame could not be submitted at arming; retry\"}",
+        "error": "Read-only instrument request failed"
+      },
+      {
+        "phase": "continuation-fresh-1",
+        "route": "g",
+        "http_status": 404,
+        "body": "{\"err\":\"grab frame could not be submitted at arming; retry\"}",
+        "error": "Read-only instrument request failed"
+      },
+      {
+        "phase": "continuation-fresh-1",
+        "route": "g",
+        "http_status": 404,
+        "body": "{\"err\":\"grab frame could not be submitted at arming; retry\"}",
+        "error": "Read-only instrument request failed"
+      },
+      {
+        "phase": "continuation-fresh-1",
+        "route": "g",
+        "http_status": 404,
+        "body": "{\"err\":\"grab frame could not be submitted at arming; retry\"}",
+        "error": "Read-only instrument request failed"
+      },
+      {
+        "phase": "continuation-fresh-1",
+        "route": "g",
+        "http_status": 404,
+        "body": "{\"err\":\"grab frame could not be submitted at arming; retry\"}",
+        "error": "Read-only instrument request failed"
+      },
+      {
+        "phase": "continuation-fresh-1",
+        "route": "g",
+        "http_status": 404,
+        "body": "{\"err\":\"grab frame could not be submitted at arming; retry\"}",
+        "error": "Read-only instrument request failed"
+      },
+      {
+        "phase": "continuation-fresh-1",
+        "route": "g",
+        "http_status": 404,
+        "body": "{\"err\":\"grab frame could not be submitted at arming; retry\"}",
+        "error": "Read-only instrument request failed"
+      },
+      {
+        "phase": "continuation-fresh-1",
+        "route": "g",
+        "http_status": 404,
+        "body": "{\"err\":\"grab frame could not be submitted at arming; retry\"}",
+        "error": "Read-only instrument request failed"
+      },
+      {
+        "phase": "continuation-fresh-1",
+        "route": "g",
+        "http_status": 404,
+        "body": "{\"err\":\"grab frame could not be submitted at arming; retry\"}",
+        "error": "Read-only instrument request failed"
+      }
+    ],
+    "input_replays": 0,
+    "input_error_count": 0,
+    "read_only_error_count": 14
+  },
+  "onboarding": {
+    "optional_apphub_agent": "Declined via visible native control",
+    "sample_agent_or_chat_model": "Not invoked; no provider configuration or credentials"
+  },
+  "provider_and_effect_limits": {
+    "google_github_oauth_tested": false,
+    "real_provider_reads_tested": false,
+    "model_turns": 0,
+    "remote_writes": 0,
+    "physical_send_or_save_approval_tested": false
+  },
+  "result": "PASS for the stated functional and original-pixel scope; not a clean instrumentation or UX soak claim",
+  "captures": [
+    {
+      "file": "official-store.png",
+      "sha256": "70c07891af4b534f0b87aded970717b4482d06578f60ec47cdb5a4c4556aeed5",
+      "original_pixels": true
+    },
+    {
+      "file": "notes-restored-preview.png",
+      "sha256": "2bd07ff13b0522a5d9b9476397e26d1028139c87d4d92ae8dcbddd21fc44ce0d",
+      "original_pixels": true
+    },
+    {
+      "file": "inbox-restored-reply.png",
+      "sha256": "5e22f1b7951397062e4a3465ecf21b2985d2cf62d7731af9cb2f1fd7093a2832",
+      "original_pixels": true
+    },
+    {
+      "file": "calendar-restored-draft.png",
+      "sha256": "097a8dbf7841aa3ea376fa6d8d95fa28e0bfd9ef056670926aae07760cf723ed",
+      "original_pixels": true
+    },
+    {
+      "file": "calendar-restored-timezone.png",
+      "sha256": "3b345f5eef3dea2aea072d2380c438b4503ddc60db1c1f70036860df43dc541c",
+      "original_pixels": true
+    },
+    {
+      "file": "installed-library.png",
+      "sha256": "81be6f274f23181bd84b614dd378e9ea29faa274948823d8087ce86c76666f8f",
+      "original_pixels": true
+    }
+  ],
+  "superseded_candidate_findings": {
+    "not_final_release_acceptance": true,
+    "attempts": [
+      {
+        "run": 1,
+        "classification": "Driver clicked underlying Search while optional agent consent was active; no install.",
+        "binary_sha256": "4bcbf5416724a8110ee651dcd11bbfa0c8894056d85bde9e4fdc8f744b0426ae",
+        "source": "4109d59d",
+        "status": "failed",
+        "input_failure_count": 0,
+        "read_only_error_count": 0,
+        "input_replays": 0,
+        "operator_shutdown_error_count": 0
+      },
+      {
+        "run": 2,
+        "classification": "Initial read-only instrument snapshot timed out; no input.",
+        "binary_sha256": "4bcbf5416724a8110ee651dcd11bbfa0c8894056d85bde9e4fdc8f744b0426ae",
+        "source": "4109d59d",
+        "status": "failed",
+        "input_failure_count": 0,
+        "read_only_error_count": 1,
+        "input_replays": 0,
+        "operator_shutdown_error_count": 0
+      },
+      {
+        "run": 3,
+        "classification": "GitHub Notes installed; driver failed to scroll back to offscreen Open.",
+        "binary_sha256": "4bcbf5416724a8110ee651dcd11bbfa0c8894056d85bde9e4fdc8f744b0426ae",
+        "source": "4109d59d",
+        "status": "failed",
+        "input_failure_count": 0,
+        "read_only_error_count": 2,
+        "input_replays": 0,
+        "operator_shutdown_error_count": 0
+      },
+      {
+        "run": 4,
+        "classification": "Notes installed/opened and draft written; wait=1 input frame acknowledgement failed; exact text saved, no replay.",
+        "binary_sha256": "4bcbf5416724a8110ee651dcd11bbfa0c8894056d85bde9e4fdc8f744b0426ae",
+        "source": "4109d59d",
+        "status": "failed",
+        "input_failure_count": 1,
+        "read_only_error_count": 0,
+        "input_replays": 0,
+        "operator_shutdown_error_count": 0
+      },
+      {
+        "run": 5,
+        "classification": "Operator stopped during search to add stricter review gate; capture connection closed by intentional quit.",
+        "binary_sha256": "4bcbf5416724a8110ee651dcd11bbfa0c8894056d85bde9e4fdc8f744b0426ae",
+        "source": "4109d59d",
+        "status": "failed",
+        "input_failure_count": 0,
+        "read_only_error_count": 7,
+        "input_replays": 0,
+        "operator_shutdown_error_count": 2
+      },
+      {
+        "run": 6,
+        "classification": "Notes Source-mode click applied but wait=1 input frame acknowledgement failed; stopped without replay.",
+        "binary_sha256": "4bcbf5416724a8110ee651dcd11bbfa0c8894056d85bde9e4fdc8f744b0426ae",
+        "source": "4109d59d",
+        "status": "failed",
+        "input_failure_count": 1,
+        "read_only_error_count": 0,
+        "input_replays": 0,
+        "operator_shutdown_error_count": 0
+      },
+      {
+        "run": 7,
+        "classification": "Initial read-only capture frame could not be submitted; no input.",
+        "binary_sha256": "4bcbf5416724a8110ee651dcd11bbfa0c8894056d85bde9e4fdc8f744b0426ae",
+        "source": "4109d59d",
+        "status": "failed",
+        "input_failure_count": 0,
+        "read_only_error_count": 1,
+        "input_replays": 0,
+        "operator_shutdown_error_count": 0
+      },
+      {
+        "run": 8,
+        "classification": "Notes local journey passed; Command-A swallowed by host binding caused known wrong next search value.",
+        "binary_sha256": "4bcbf5416724a8110ee651dcd11bbfa0c8894056d85bde9e4fdc8f744b0426ae",
+        "source": "4109d59d",
+        "status": "failed",
+        "input_failure_count": 0,
+        "read_only_error_count": 0,
+        "input_replays": 0,
+        "operator_shutdown_error_count": 0
+      },
+      {
+        "run": 9,
+        "classification": "Reproduced real Command-A defect despite focus and selection captures; separate continuation completed remaining apps using Home/Shift-End.",
+        "binary_sha256": "4bcbf5416724a8110ee651dcd11bbfa0c8894056d85bde9e4fdc8f744b0426ae",
+        "source": "4109d59d",
+        "status": "failed",
+        "input_failure_count": 0,
+        "read_only_error_count": 4,
+        "input_replays": 0,
+        "operator_shutdown_error_count": 0
+      }
+    ]
+  },
+  "current_driver_interruption": {
+    "cause": "A permission-list scroll had not drawn before the driver read button coordinates; the click landed below Install. Calendar remained uninstalled on the unchanged permission screen.",
+    "recovery": "Stopped the owned process; independently verified original pixels and absent installed bundle; resumed the same profile with successful frame observation and a fresh snapshot after every button-search scroll.",
+    "uncertain_input_replayed": false,
+    "scope": "Test-driver interruption, not an uninterrupted-run claim"
+  },
+  "earlier_functional_candidate": {
+    "runtime_commit": "372d1c81d770936fe096c09d47e501e7e6b8e295",
+    "binary_sha256": "15315f32cb8aa5481e8379e89f4fcbc216f185019d6ff531bc3ef7251eb059ef",
+    "receipt_sha256": "b2f2b6c7dc45892d14a2a6913f00bb08767ebd5a5a3cbcfc429b25cac411a4ac",
+    "functional_checks_passed": 9,
+    "original_pixel_reviews_passed": 6,
+    "read_only_instrument_errors": 22,
+    "input_replays": 0,
+    "process_interruptions": 2,
+    "release_status": "superseded, not published as the final runtime"
+  }
+}

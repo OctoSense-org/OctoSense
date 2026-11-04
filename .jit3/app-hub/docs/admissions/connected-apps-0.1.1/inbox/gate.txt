@@ -1,0 +1,2 @@
+org.octosense.samples.inbox 0.1.1 — PASSED
+  grants: capabilities {"auth", "glance", "gmail", "model", "octos.session.open", "octos.turn.start", "storage"}, hosts {}, storage 16777216 bytes, agent read-only

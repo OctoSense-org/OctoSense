@@ -1,0 +1,131 @@
+{
+  "components": {
+    "detail": {
+      "props": {
+        "text": "text"
+      },
+      "slot": false,
+      "style": {
+        "alignx": 0,
+        "color": 4294967295,
+        "font_src": "makepad_widgets:resources/Inter.ttf",
+        "line_height": 22.5,
+        "size": 15,
+        "t": "text",
+        "weight": 400
+      }
+    },
+    "footer": {
+      "props": {
+        "text": "text"
+      },
+      "slot": false,
+      "style": {
+        "alignx": 0,
+        "color": 4283656034,
+        "font_src": "makepad_widgets:resources/Inter.ttf",
+        "line_height": 21.0,
+        "size": 14,
+        "t": "text",
+        "weight": 400
+      }
+    },
+    "panel": {
+      "props": {},
+      "slot": false,
+      "style": {
+        "bg": 4281622421,
+        "radius": 24,
+        "t": "stack",
+        "variant": "surface"
+      }
+    },
+    "permission": {
+      "props": {
+        "text": "text"
+      },
+      "slot": false,
+      "style": {
+        "alignx": 0,
+        "color": 4283656034,
+        "font_src": "makepad_widgets:resources/Inter.ttf",
+        "line_height": 19.5,
+        "size": 13,
+        "t": "text",
+        "weight": 500
+      }
+    },
+    "subtitle": {
+      "props": {
+        "text": "text"
+      },
+      "slot": false,
+      "style": {
+        "alignx": 0,
+        "color": 4283656034,
+        "font_src": "makepad_widgets:resources/Inter.ttf",
+        "line_height": 24.0,
+        "size": 16,
+        "t": "text",
+        "weight": 400
+      }
+    },
+    "surface": {
+      "props": {},
+      "slot": true,
+      "style": {
+        "bg": 4294244341,
+        "t": "stack",
+        "variant": "surface"
+      }
+    },
+    "tag": {
+      "props": {
+        "text": "text"
+      },
+      "slot": false,
+      "style": {
+        "alignx": 0,
+        "color": 4283526245,
+        "font_src": "makepad_widgets:resources/Inter.ttf",
+        "line_height": 18.0,
+        "size": 12,
+        "t": "text",
+        "weight": 600
+      }
+    },
+    "title": {
+      "props": {
+        "text": "text"
+      },
+      "slot": false,
+      "style": {
+        "alignx": 0,
+        "color": 4279774773,
+        "font_src": "makepad_widgets:resources/Inter.ttf",
+        "line_height": 45.0,
+        "size": 30,
+        "t": "text",
+        "weight": 700
+      }
+    },
+    "value": {
+      "props": {
+        "text": "text"
+      },
+      "slot": false,
+      "style": {
+        "alignx": 0,
+        "color": 4294967295,
+        "font_src": "makepad_widgets:resources/Inter.ttf",
+        "line_height": 69.0,
+        "size": 46,
+        "t": "text",
+        "weight": 700
+      }
+    }
+  },
+  "schema_version": 1,
+  "theme": "light",
+  "tokens": {}
+}

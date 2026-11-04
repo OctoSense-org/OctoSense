@@ -1,0 +1,28 @@
+{
+  "digest": "729bc3dfe1ef9ae2e49cb86f82db670adc09282c4aaadc65d58ed804d6255c26",
+  "entry": "card",
+  "ignored_fields": [],
+  "limits": "unsigned",
+  "policy": {
+    "app_id": "forecast",
+    "capabilities": [
+      "storage"
+    ],
+    "display_name": "Forecast",
+    "hosts": [],
+    "instruction_budget": 20000000,
+    "may_prompt": false,
+    "memory_bytes": 67108864,
+    "research": null,
+    "storage": {
+      "accounts": false,
+      "agent_workspace": "account",
+      "cache_max_bytes": null,
+      "max_bytes": 16777216
+    },
+    "storage_bytes": 16777216,
+    "version": "1.2.0"
+  },
+  "signing_blake3": "33cd9cadafd87de362f31926030bc01c3f4686538d1835d3e1c22524ccb1595a",
+  "source": "Contract 1.12.0 (schema_minor 1): the optional window hint, read strictly at this build's minor; it grants nothing"
+}

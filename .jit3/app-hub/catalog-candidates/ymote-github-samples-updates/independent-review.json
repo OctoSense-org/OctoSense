@@ -1,0 +1,133 @@
+{
+  "schema": 1,
+  "candidate_head": "6099285d2af4b7d044f787937125038e69eb7503",
+  "native_prepare": "passed",
+  "payload_sha256": "0dca74f12734e392d270c23fc33b4e0bfde8e6603a7a4f7ea4670b9efb5578ed",
+  "base_sequence": 12,
+  "candidate_sequence": 13,
+  "unchanged_historical_entries": 10,
+  "added_updates": 4,
+  "changed_paths": "candidate-directory-only",
+  "public_release_identity": [
+    {
+      "app_id": "io.github.ymote.cameracard",
+      "version": "1.1.1",
+      "repository": "ymote/camera-card",
+      "public_repo_id": "1378439338",
+      "public_owner_id": "151983",
+      "tag": "v1.1.1",
+      "commit": "3f325cc1fb72ab1abb5aa0f18855a87874b8881e",
+      "release_url": "https://github.com/ymote/camera-card/releases/tag/v1.1.1",
+      "pack_sha256": "5ccc7e16bc8bbeb523b6febf4cfc7c51d3eafb853e8c7bd806b4ce7a43a79bf2",
+      "release_asset_digest": "sha256:5ccc7e16bc8bbeb523b6febf4cfc7c51d3eafb853e8c7bd806b4ce7a43a79bf2",
+      "release_exact_bytes": true,
+      "native_publisher_verify": "passed",
+      "identity_continuity": "unchanged repository, repository ID, owner ID and workflow",
+      "changed_bundle_files": [
+        "listing.json",
+        "manifest.json"
+      ],
+      "capabilities_unchanged": true,
+      "ui_tools_agents_assets_unchanged": true,
+      "release_receipt_sha256": "3323dee7c329c5e0e70fc397429ceec7252722bb748756d0cb2c1d9ed0aa092d",
+      "release_receipt_admission_wording": "not granted by this workflow"
+    },
+    {
+      "app_id": "io.github.ymote.githubnotes",
+      "version": "0.2.1",
+      "repository": "ymote/octosense-github-notes",
+      "public_repo_id": "1408036635",
+      "public_owner_id": "151983",
+      "tag": "v0.2.1",
+      "commit": "0356c16449673fc12cef501d22be446bb496fd76",
+      "release_url": "https://github.com/ymote/octosense-github-notes/releases/tag/v0.2.1",
+      "pack_sha256": "4c8087759c93c947e6f1d2f543dea7f62daa71b8306e73c61e76a19924375b31",
+      "release_asset_digest": "sha256:4c8087759c93c947e6f1d2f543dea7f62daa71b8306e73c61e76a19924375b31",
+      "release_exact_bytes": true,
+      "native_publisher_verify": "passed",
+      "identity_continuity": "unchanged repository, repository ID, owner ID and workflow",
+      "changed_bundle_files": [
+        "listing.json",
+        "manifest.json"
+      ],
+      "capabilities_unchanged": true,
+      "ui_tools_agents_assets_unchanged": true,
+      "release_receipt_sha256": "01718052f5f5270a5190a05bcfcd7e1b984b589d889027344b2ca6b7b65447a0",
+      "release_receipt_admission_wording": "not granted by this workflow"
+    },
+    {
+      "app_id": "io.github.ymote.googlecalendar",
+      "version": "0.2.1",
+      "repository": "ymote/octosense-google-calendar",
+      "public_repo_id": "1408036857",
+      "public_owner_id": "151983",
+      "tag": "v0.2.1",
+      "commit": "e4af7427680bdc331eb639f67dd6f53db5b85775",
+      "release_url": "https://github.com/ymote/octosense-google-calendar/releases/tag/v0.2.1",
+      "pack_sha256": "a92cb1e86be19f8b8c158076fe054ca88e481bf8b580c465e83671834934d64c",
+      "release_asset_digest": "sha256:a92cb1e86be19f8b8c158076fe054ca88e481bf8b580c465e83671834934d64c",
+      "release_exact_bytes": true,
+      "native_publisher_verify": "passed",
+      "identity_continuity": "unchanged repository, repository ID, owner ID and workflow",
+      "changed_bundle_files": [
+        "listing.json",
+        "manifest.json"
+      ],
+      "capabilities_unchanged": true,
+      "ui_tools_agents_assets_unchanged": true,
+      "release_receipt_sha256": "a5f51af72ecd897f6e0a60edcffa7c75583dd883926a443a45d11108414e50cf",
+      "release_receipt_admission_wording": "not granted by this workflow"
+    },
+    {
+      "app_id": "io.github.ymote.inboxassistant",
+      "version": "0.2.1",
+      "repository": "ymote/octosense-inbox-assistant",
+      "public_repo_id": "1408036757",
+      "public_owner_id": "151983",
+      "tag": "v0.2.1",
+      "commit": "f30f8a29fbe22507c68be15a5e737e7749abde83",
+      "release_url": "https://github.com/ymote/octosense-inbox-assistant/releases/tag/v0.2.1",
+      "pack_sha256": "1bbf8bff05e30fe33c1b7ee66f699d7bf09c9839ceeaa52c086e6427e5c88728",
+      "release_asset_digest": "sha256:1bbf8bff05e30fe33c1b7ee66f699d7bf09c9839ceeaa52c086e6427e5c88728",
+      "release_exact_bytes": true,
+      "native_publisher_verify": "passed",
+      "identity_continuity": "unchanged repository, repository ID, owner ID and workflow",
+      "changed_bundle_files": [
+        "listing.json",
+        "manifest.json"
+      ],
+      "capabilities_unchanged": true,
+      "ui_tools_agents_assets_unchanged": true,
+      "release_receipt_sha256": "a7df8a18fec4f2152686a0d69cf87ce1ee474ec9335a2483d38818b1965c21f4",
+      "release_receipt_admission_wording": "not granted by this workflow"
+    }
+  ],
+  "source_scope_review": "No capabilities, UI, tools, agents, assets, storage layout or publisher identity changed. Bundle changes are only version/provenance in manifest.json and release_notes in listing.json; generated workflow receipt wording distinguishes release creation from catalog admission.",
+  "public_first_stage": {
+    "host_source": "128b0524c619cf8c2525ac708e8f76fcf4b99f87",
+    "host_binary_sha256": "0d8bd8a55e39d70de2a24f29d2b049734469ef5ffafa9519d181003caeb15705",
+    "public_catalog_sequence": 12,
+    "public_catalog_envelope_sha256": "d1fd2739201aa5620ea3225a1e1c5d7c9e0c1b4ce0cbbd9c620fc50732555028",
+    "connected_apps_native_assertions": 28,
+    "apps": [
+      "io.github.ymote.inboxassistant",
+      "io.github.ymote.googlecalendar",
+      "io.github.ymote.githubnotes"
+    ],
+    "journey": "Compiled-default public catalog search/install/open, local draft edit, graceful exit and Library restart; exact release bytes/proofs and persisted drafts verified; actual native PNGs reviewed.",
+    "native_exit": "all six successful runs exited0 gracefully without forced cleanup",
+    "preserved_failure": "Initial Inbox pre-install attempt refused ambiguous stale Get rows; driver waited for exact filtered result and succeeded from a fresh profile. No app bytes or admission policy changed.",
+    "provider_accounts": false,
+    "provider_writes": false,
+    "model_calls": false,
+    "host_rc_published": false
+  },
+  "limits": [
+    "macOS-only apps; no provider authentication, real sends/calendar writes, model behavior or physical approvals claimed.",
+    "Camera remains a static zero-capability storyboard; its separate first-install UI receipt is owned by the platform reviewer.",
+    "Catalog13 update UI has not run yet; retained profiles will test it after protected publication.",
+    "This review does not publish catalog13 or the host RC."
+  ],
+  "production_catalog_changed_by_this_commit": false,
+  "review_result": "candidate approved for protected admin catalog publication; complete public update/restart acceptance afterward"
+}

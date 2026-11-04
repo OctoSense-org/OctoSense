@@ -1,0 +1,290 @@
+{
+  "manifest": {
+    "schema": 1,
+    "id": "io.github.ymote.googlecalendar",
+    "version": "0.2.1",
+    "name": "Google Calendar",
+    "integrity": {
+      "bundle_blake3": "515edb6edadc436630e7b333052b595c755230ad0a09710945020a22fcd074b4",
+      "signature": null,
+      "github": {
+        "repository": "ymote/octosense-google-calendar",
+        "repository_id": "1408036857",
+        "owner_id": "151983",
+        "workflow": ".github/workflows/publish-app.yml",
+        "tag": "v0.2.1",
+        "commit": "e4af7427680bdc331eb639f67dd6f53db5b85775",
+        "attestation": {
+          "dsseEnvelope": {
+            "payload": "eyJfdHlwZSI6Imh0dHBzOi8vaW4tdG90by5pby9TdGF0ZW1lbnQvdjEiLCJzdWJqZWN0IjpbeyJuYW1lIjoib2N0b3NlbnNlLWFwcC1tYW5pZmVzdC5qc29uIiwiZGlnZXN0Ijp7InNoYTI1NiI6ImJhMTdlODI5NWZmYThkZTJmZTJmYzZmOGRkMWYyMjAyNDZhMTg3NjQ0YTU4YzIwNWUxMTBhMGMzZmZiNDNjMzMifX1dLCJwcmVkaWNhdGVUeXBlIjoiaHR0cHM6Ly9zbHNhLmRldi9wcm92ZW5hbmNlL3YxIiwicHJlZGljYXRlIjp7ImJ1aWxkRGVmaW5pdGlvbiI6eyJidWlsZFR5cGUiOiJodHRwczovL2FjdGlvbnMuZ2l0aHViLmlvL2J1aWxkdHlwZXMvd29ya2Zsb3cvdjEiLCJleHRlcm5hbFBhcmFtZXRlcnMiOnsid29ya2Zsb3ciOnsicmVmIjoicmVmcy90YWdzL3YwLjIuMSIsInJlcG9zaXRvcnkiOiJodHRwczovL2dpdGh1Yi5jb20veW1vdGUvb2N0b3NlbnNlLWdvb2dsZS1jYWxlbmRhciIsInBhdGgiOiIuZ2l0aHViL3dvcmtmbG93cy9wdWJsaXNoLWFwcC55bWwifX0sImludGVybmFsUGFyYW1ldGVycyI6eyJnaXRodWIiOnsiZXZlbnRfbmFtZSI6InB1c2giLCJyZXBvc2l0b3J5X2lkIjoiMTQwODAzNjg1NyIsInJlcG9zaXRvcnlfb3duZXJfaWQiOiIxNTE5ODMiLCJydW5uZXJfZW52aXJvbm1lbnQiOiJnaXRodWItaG9zdGVkIn19LCJyZXNvbHZlZERlcGVuZGVuY2llcyI6W3sidXJpIjoiZ2l0K2h0dHBzOi8vZ2l0aHViLmNvbS95bW90ZS9vY3Rvc2Vuc2UtZ29vZ2xlLWNhbGVuZGFyQHJlZnMvdGFncy92MC4yLjEiLCJkaWdlc3QiOnsiZ2l0Q29tbWl0IjoiZTRhZjc0Mjc2ODBiZGMzMzFlYjYzOWY2N2RkNmY1M2RiNWI4NTc3NSJ9fV19LCJydW5EZXRhaWxzIjp7ImJ1aWxkZXIiOnsiaWQiOiJodHRwczovL2dpdGh1Yi5jb20veW1vdGUvb2N0b3NlbnNlLWdvb2dsZS1jYWxlbmRhci8uZ2l0aHViL3dvcmtmbG93cy9wdWJsaXNoLWFwcC55bWxAcmVmcy90YWdzL3YwLjIuMSJ9LCJtZXRhZGF0YSI6eyJpbnZvY2F0aW9uSWQiOiJodHRwczovL2dpdGh1Yi5jb20veW1vdGUvb2N0b3NlbnNlLWdvb2dsZS1jYWxlbmRhci9hY3Rpb25zL3J1bnMvMzc3NDk4ODg0ODMvYXR0ZW1wdHMvMSJ9fX19",
+            "payloadType": "application/vnd.in-toto+json",
+            "signatures": [
+              {
+                "sig": "MEUCICBwrI2tnCsznZ6gUrTiY/efEAxkV5tSFFIIrr7Ny4YkAiEA0hDzOKeIUI0lLSN/H1F1yI3XJEvVjJqMpnobLO/JFuY="
+              }
+            ]
+          },
+          "mediaType": "application/vnd.dev.sigstore.bundle.v0.3+json",
+          "verificationMaterial": {
+            "certificate": {
+              "rawBytes": "MIIHUDCCBtegAwIBAgIUXcI9OqlmotP/letLXZ0qGPlabxcwCgYIKoZIzj0EAwMwNzEVMBMGA1UEChMMc2lnc3RvcmUuZGV2MR4wHAYDVQQDExVzaWdzdG9yZS1pbnRlcm1lZGlhdGUwHhcNMjYxMDA4MDgyOTM1WhcNMjYxMDA4MDgzOTM1WjAAMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEDSfoU8rAcJ2ZOpscd8s5/jza4EEhQ6GdXGMtonJdIYGe1oA67B31btg69GUWAQFc48LsR8C8vgq3b0clTVLBa6OCBfYwggXyMA4GA1UdDwEB/wQEAwIHgDATBgNVHSUEDDAKBggrBgEFBQcDAzAfBgNVHSMEGDAWgBTf0+nPViQRlvmo2OkoVaLGLhhkPzBzBgNVHREBAf8EaTBnhmVodHRwczovL2dpdGh1Yi5jb20veW1vdGUvb2N0b3NlbnNlLWdvb2dsZS1jYWxlbmRhci8uZ2l0aHViL3dvcmtmbG93cy9wdWJsaXNoLWFwcC55bWxAcmVmcy90YWdzL3YwLjIuMTA5BgorBgEEAYO/MAEBBCtodHRwczovL3Rva2VuLmFjdGlvbnMuZ2l0aHVidXNlcmNvbnRlbnQuY29tMBIGCisGAQQBg78wAQIEBHB1c2gwNgYKKwYBBAGDvzABAwQoZTRhZjc0Mjc2ODBiZGMzMzFlYjYzOWY2N2RkNmY1M2RiNWI4NTc3NTAjBgorBgEEAYO/MAEEBBVQdWJsaXNoIE9jdG9TZW5zZSBhcHAwLQYKKwYBBAGDvzABBQQfeW1vdGUvb2N0b3NlbnNlLWdvb2dsZS1jYWxlbmRhcjAeBgorBgEEAYO/MAEGBBByZWZzL3RhZ3MvdjAuMi4xMDsGCisGAQQBg78wAQgELQwraHR0cHM6Ly90b2tlbi5hY3Rpb25zLmdpdGh1YnVzZXJjb250ZW50LmNvbTB1BgorBgEEAYO/MAEJBGcMZWh0dHBzOi8vZ2l0aHViLmNvbS95bW90ZS9vY3Rvc2Vuc2UtZ29vZ2xlLWNhbGVuZGFyLy5naXRodWIvd29ya2Zsb3dzL3B1Ymxpc2gtYXBwLnltbEByZWZzL3RhZ3MvdjAuMi4xMDgGCisGAQQBg78wAQoEKgwoZTRhZjc0Mjc2ODBiZGMzMzFlYjYzOWY2N2RkNmY1M2RiNWI4NTc3NTAdBgorBgEEAYO/MAELBA8MDWdpdGh1Yi1ob3N0ZWQwQgYKKwYBBAGDvzABDAQ0DDJodHRwczovL2dpdGh1Yi5jb20veW1vdGUvb2N0b3NlbnNlLWdvb2dsZS1jYWxlbmRhcjA4BgorBgEEAYO/MAENBCoMKGU0YWY3NDI3NjgwYmRjMzMxZWI2MzlmNjdkZDZmNTNkYjViODU3NzUwIAYKKwYBBAGDvzABDgQSDBByZWZzL3RhZ3MvdjAuMi4xMBoGCisGAQQBg78wAQ8EDAwKMTQwODAzNjg1NzAoBgorBgEEAYO/MAEQBBoMGGh0dHBzOi8vZ2l0aHViLmNvbS95bW90ZTAWBgorBgEEAYO/MAERBAgMBjE1MTk4MzB1BgorBgEEAYO/MAESBGcMZWh0dHBzOi8vZ2l0aHViLmNvbS95bW90ZS9vY3Rvc2Vuc2UtZ29vZ2xlLWNhbGVuZGFyLy5naXRodWIvd29ya2Zsb3dzL3B1Ymxpc2gtYXBwLnltbEByZWZzL3RhZ3MvdjAuMi4xMDgGCisGAQQBg78wARMEKgwoZTRhZjc0Mjc2ODBiZGMzMzFlYjYzOWY2N2RkNmY1M2RiNWI4NTc3NTAUBgorBgEEAYO/MAEUBAYMBHB1c2gwZgYKKwYBBAGDvzABFQRYDFZodHRwczovL2dpdGh1Yi5jb20veW1vdGUvb2N0b3NlbnNlLWdvb2dsZS1jYWxlbmRhci9hY3Rpb25zL3J1bnMvMzc3NDk4ODg0ODMvYXR0ZW1wdHMvMTAWBgorBgEEAYO/MAEWBAgMBnB1YmxpYzBbBgorBgEEAYO/MAEYBE0MS3JlcG86eW1vdGVAMTUxOTgzL29jdG9zZW5zZS1nb29nbGUtY2FsZW5kYXJAMTQwODAzNjg1NzpyZWY6cmVmcy90YWdzL3YwLjIuMTCBigYKKwYBBAHWeQIEAgR8BHoAeAB2AN09MGrGxxEyYxkeHJlnNwKiSl643jyt/4eKcoAvKe6OAAABoRqh0j8AAAQDAEcwRQIhAOIhaCS687U9HfXvqj+/IwBRenHVMZsf5LSgCsCNV0EIAiBTPyHs4LnU9paMi2jgLK1jXxwU7X4pA7UuAskcJYsywjAKBggqhkjOPQQDAwNnADBkAjBQBaB00yE2b1610RdkDRN+Vlqg+DrPRGYBcXngjMGgJxNozPRcHlHzucXDqDT9bXgCMATRXDvOFK7oWJgfQaRI58q7NqsHhNPDwQ4mBeK1pPDfC9CXlYTBm+OaH4aYtgSwmA=="
+            },
+            "timestampVerificationData": {},
+            "tlogEntries": [
+              {
+                "canonicalizedBody": "eyJhcGlWZXJzaW9uIjoiMC4wLjEiLCJraW5kIjoiZHNzZSIsInNwZWMiOnsiZW52ZWxvcGVIYXNoIjp7ImFsZ29yaXRobSI6InNoYTI1NiIsInZhbHVlIjoiMGFmMDUzNmVmOGVkZjhhZDFhYTI3ZWE2OGE4YjhhMTg3OGRkOGJhYTIxMmM1ZjA0YWMyNmE2OWY3ZTJjZjUwOCJ9LCJwYXlsb2FkSGFzaCI6eyJhbGdvcml0aG0iOiJzaGEyNTYiLCJ2YWx1ZSI6IjI1NzliYjBmOWZjMDE5ZmIyYzRiYjY3YjM5ODNlZjMxMDQ2YzFhY2UwM2Q0N2ExZDQ5MWFjYTVjMjAyMTE1ZDIifSwic2lnbmF0dXJlcyI6W3sic2lnbmF0dXJlIjoiTUVVQ0lDQndySTJ0bkNzem5aNmdVclRpWS9lZkVBeGtWNXRTRkZJSXJyN055NFlrQWlFQTBoRHpPS2VJVUkwbExTTi9IMUYxeUkzWEpFdlZqSnFNcG5vYkxPL0pGdVk9IiwidmVyaWZpZXIiOiJMUzB0TFMxQ1JVZEpUaUJEUlZKVVNVWkpRMEZVUlMwdExTMHRDazFKU1VoVlJFTkRRblJsWjBGM1NVSkJaMGxWV0dOSk9VOXhiRzF2ZEZBdmJHVjBURmhhTUhGSFVHeGhZbmhqZDBObldVbExiMXBKZW1vd1JVRjNUWGNLVG5wRlZrMUNUVWRCTVZWRlEyaE5UV015Ykc1ak0xSjJZMjFWZFZwSFZqSk5ValIzU0VGWlJGWlJVVVJGZUZaNllWZGtlbVJIT1hsYVV6RndZbTVTYkFwamJURnNXa2RzYUdSSFZYZElhR05PVFdwWmVFMUVRVFJOUkdkNVQxUk5NVmRvWTA1TmFsbDRUVVJCTkUxRVozcFBWRTB4VjJwQlFVMUdhM2RGZDFsSUNrdHZXa2w2YWpCRFFWRlpTVXR2V2tsNmFqQkVRVkZqUkZGblFVVkVVMlp2VlRoeVFXTktNbHBQY0hOalpEaHpOUzlxZW1FMFJVVm9VVFpIWkZoSFRYUUtiMjVLWkVsWlIyVXhiMEUyTjBJek1XSjBaelk1UjFWWFFWRkdZelE0VEhOU09FTTRkbWR4TTJJd1kyeFVWa3hDWVRaUFEwSm1XWGRuWjFoNVRVRTBSd3BCTVZWa1JIZEZRaTkzVVVWQmQwbElaMFJCVkVKblRsWklVMVZGUkVSQlMwSm5aM0pDWjBWR1FsRmpSRUY2UVdaQ1owNVdTRk5OUlVkRVFWZG5RbFJtQ2pBcmJsQldhVkZTYkhadGJ6SlBhMjlXWVV4SFRHaG9hMUI2UW5wQ1owNVdTRkpGUWtGbU9FVmhWRUp1YUcxV2IyUklVbmRqZW05MlRESmtjR1JIYURFS1dXazFhbUl5TUhabFZ6RjJaRWRWZG1JeVRqQmlNMDVzWW01T2JFeFhaSFppTW1SeldsTXhhbGxYZUd4aWJWSm9ZMms0ZFZveWJEQmhTRlpwVEROa2RncGpiWFJ0WWtjNU0yTjVPWGRrVjBwellWaE9iMHhYUm5kalF6VTFZbGQ0UVdOdFZtMWplVGt3V1Zka2Vrd3pXWGRNYWtsMVRWUkJOVUpuYjNKQ1owVkZDa0ZaVHk5TlFVVkNRa04wYjJSSVVuZGplbTkyVEROU2RtRXlWblZNYlVacVpFZHNkbUp1VFhWYU1td3dZVWhXYVdSWVRteGpiVTUyWW01U2JHSnVVWFVLV1RJNWRFMUNTVWREYVhOSFFWRlJRbWMzT0hkQlVVbEZRa2hDTVdNeVozZE9aMWxMUzNkWlFrSkJSMFIyZWtGQ1FYZFJiMXBVVW1oYWFtTXdUV3BqTWdwUFJFSnBXa2ROZWsxNlJteFphbGw2VDFkWk1rNHlVbXRPYlZreFRUSlNhVTVYU1RST1ZHTXpUbFJCYWtKbmIzSkNaMFZGUVZsUEwwMUJSVVZDUWxaUkNtUlhTbk5oV0U1dlNVVTVhbVJIT1ZSYVZ6VjZXbE5DYUdOSVFYZE1VVmxMUzNkWlFrSkJSMFIyZWtGQ1FsRlJabVZYTVhaa1IxVjJZakpPTUdJelRtd0tZbTVPYkV4WFpIWmlNbVJ6V2xNeGFsbFhlR3hpYlZKb1kycEJaVUpuYjNKQ1owVkZRVmxQTDAxQlJVZENRa0o1V2xkYWVrd3pVbWhhTTAxMlpHcEJkUXBOYVRSNFRVUnpSME5wYzBkQlVWRkNaemM0ZDBGUlowVk1VWGR5WVVoU01HTklUVFpNZVRrd1lqSjBiR0pwTldoWk0xSndZakkxZWt4dFpIQmtSMmd4Q2xsdVZucGFXRXBxWWpJMU1GcFhOVEJNYlU1MllsUkNNVUpuYjNKQ1owVkZRVmxQTDAxQlJVcENSMk5OV2xkb01HUklRbnBQYVRoMldqSnNNR0ZJVm1rS1RHMU9kbUpUT1RWaVZ6a3dXbE01ZGxrelVuWmpNbFoxWXpKVmRGb3lPWFphTW5oc1RGZE9hR0pIVm5WYVIwWjVUSGsxYm1GWVVtOWtWMGwyWkRJNWVRcGhNbHB6WWpOa2Vrd3pRakZaYlhod1l6Sm5kRmxZUW5kTWJteDBZa1ZDZVZwWFducE1NMUpvV2pOTmRtUnFRWFZOYVRSNFRVUm5SME5wYzBkQlVWRkNDbWMzT0hkQlVXOUZTMmQzYjFwVVVtaGFhbU13VFdwak1rOUVRbWxhUjAxNlRYcEdiRmxxV1hwUFYxa3lUakpTYTA1dFdURk5NbEpwVGxkSk5FNVVZek1LVGxSQlpFSm5iM0pDWjBWRlFWbFBMMDFCUlV4Q1FUaE5SRmRrY0dSSGFERlphVEZ2WWpOT01GcFhVWGRSWjFsTFMzZFpRa0pCUjBSMmVrRkNSRUZSTUFwRVJFcHZaRWhTZDJONmIzWk1NbVJ3WkVkb01WbHBOV3BpTWpCMlpWY3hkbVJIVlhaaU1rNHdZak5PYkdKdVRteE1WMlIyWWpKa2MxcFRNV3BaVjNoc0NtSnRVbWhqYWtFMFFtZHZja0puUlVWQldVOHZUVUZGVGtKRGIwMUxSMVV3V1ZkWk0wNUVTVE5PYW1kM1dXMVNhazE2VFhoYVYwa3lUWHBzYlU1cVpHc0tXa1JhYlU1VVRtdFphbFpwVDBSVk0wNTZWWGRKUVZsTFMzZFpRa0pCUjBSMmVrRkNSR2RSVTBSQ1FubGFWMXA2VEROU2FGb3pUWFprYWtGMVRXazBlQXBOUW05SFEybHpSMEZSVVVKbk56aDNRVkU0UlVSQmQwdE5WRkYzVDBSQmVrNXFaekZPZWtGdlFtZHZja0puUlVWQldVOHZUVUZGVVVKQ2IwMUhSMmd3Q21SSVFucFBhVGgyV2pKc01HRklWbWxNYlU1MllsTTVOV0pYT1RCYVZFRlhRbWR2Y2tKblJVVkJXVTh2VFVGRlVrSkJaMDFDYWtVeFRWUnJORTE2UWpFS1FtZHZja0puUlVWQldVOHZUVUZGVTBKSFkwMWFWMmd3WkVoQ2VrOXBPSFphTW13d1lVaFdhVXh0VG5aaVV6azFZbGM1TUZwVE9YWlpNMUoyWXpKV2RRcGpNbFYwV2pJNWRsb3llR3hNVjA1b1lrZFdkVnBIUm5sTWVUVnVZVmhTYjJSWFNYWmtNamw1WVRKYWMySXpaSHBNTTBJeFdXMTRjR015WjNSWldFSjNDa3h1YkhSaVJVSjVXbGRhZWt3elVtaGFNMDEyWkdwQmRVMXBOSGhOUkdkSFEybHpSMEZSVVVKbk56aDNRVkpOUlV0bmQyOWFWRkpvV21wak1FMXFZeklLVDBSQ2FWcEhUWHBOZWtac1dXcFplazlYV1RKT01sSnJUbTFaTVUweVVtbE9WMGswVGxSak0wNVVRVlZDWjI5eVFtZEZSVUZaVHk5TlFVVlZRa0ZaVFFwQ1NFSXhZekpuZDFwbldVdExkMWxDUWtGSFJIWjZRVUpHVVZKWlJFWmFiMlJJVW5kamVtOTJUREprY0dSSGFERlphVFZxWWpJd2RtVlhNWFprUjFWMkNtSXlUakJpTTA1c1ltNU9iRXhYWkhaaU1tUnpXbE14YWxsWGVHeGliVkpvWTJrNWFGa3pVbkJpTWpWNlRETktNV0p1VFhaTmVtTXpUa1JyTkU5RVp6QUtUMFJOZGxsWVVqQmFWekYzWkVoTmRrMVVRVmRDWjI5eVFtZEZSVUZaVHk5TlFVVlhRa0ZuVFVKdVFqRlpiWGh3V1hwQ1lrSm5iM0pDWjBWRlFWbFBMd3BOUVVWWlFrVXdUVk16U214alJ6ZzJaVmN4ZG1SSFZrRk5WRlY0VDFSbmVrd3lPV3BrUnpsNldsYzFlbHBUTVc1aU1qbHVZa2RWZEZreVJuTmFWelZyQ2xsWVNrRk5WRkYzVDBSQmVrNXFaekZPZW5CNVdsZFpObU50Vm0xamVUa3dXVmRrZWt3eldYZE1ha2wxVFZSRFFtbG5XVXRMZDFsQ1FrRklWMlZSU1VVS1FXZFNPRUpJYjBGbFFVSXlRVTR3T1UxSGNrZDRlRVY1V1hoclpVaEtiRzVPZDB0cFUydzJORE5xZVhRdk5HVkxZMjlCZGt0bE5rOUJRVUZDYjFKeGFBb3dhamhCUVVGUlJFRkZZM2RTVVVsb1FVOUphR0ZEVXpZNE4xVTVTR1pZZG5GcUt5OUpkMEpTWlc1SVZrMWFjMlkxVEZOblEzTkRUbFl3UlVsQmFVSlVDbEI1U0hNMFRHNVZPWEJoVFdreWFtZE1TekZxV0hoM1ZUZFlOSEJCTjFWMVFYTnJZMHBaYzNsM2FrRkxRbWRuY1docmFrOVFVVkZFUVhkT2JrRkVRbXNLUVdwQ1VVSmhRakF3ZVVVeVlqRTJNVEJTWkd0RVVrNHJWbXh4Wnl0RWNsQlNSMWxDWTFodVoycE5SMmRLZUU1dmVsQlNZMGhzU0hwMVkxaEVjVVJVT1FwaVdHZERUVUZVVWxoRWRrOUdTemR2VjBwblpsRmhVa2sxT0hFM1RuRnpTR2hPVUVSM1VUUnRRbVZMTVhCUVJHWkRPVU5ZYkZsVVFtMHJUMkZJTkdGWkNuUm5VM2R0UVQwOUNpMHRMUzB0UlU1RUlFTkZVbFJKUmtsRFFWUkZMUzB0TFMwSyJ9XX19",
+                "inclusionPromise": {
+                  "signedEntryTimestamp": "MEQCIGEnouyicJclBhJgbeoSiEUUspgJW4Oya01+pkozc3YYAiAwhtfq+5/CwriO4YeLX4n5na/MCXwMJoqENBwzVql5hg=="
+                },
+                "inclusionProof": {
+                  "checkpoint": {
+                    "envelope": "rekor.sigstore.dev - 1193050959916656506\n3022597130\nR5Pe1s7tkYcg/RIiHgsMoephmsZRmQoM5kJ+p9PnQck=\n\n— rekor.sigstore.dev wNI9ajBEAiB53a3RRTBMe/VJeaOWDH8zbcw5McdZ4eTaNcX5fbKu3QIgdZrH6RH+gtWCoVFqvU7SHMh2RV2XtRAMiOtqIXOxk2I=\n"
+                  },
+                  "hashes": [
+                    "U3hFejVFxOJWzW8xbAj5Ijdas44mkOLsZ72NtQp3ObQ=",
+                    "dGi8Jaqhefs8rRUkmvgr7UbN9GmDiueD7Ct6Z/c8h0o=",
+                    "Qr1bnd4smJC87TljpgfMW+C3EqX8Blv4omR2Ig2+6sY=",
+                    "pEaDzgxtarVIp9rKinPIZOm+FLERlewwaaCaoGtVHwo=",
+                    "gPqsU/75adO9YGhNDgwJtTYxcF8XLzAegzJk/tWr1Ak=",
+                    "PdEwCaFiGGxcKJ+3sZafUg2VXReQpv0NHbOWGb5T+q0=",
+                    "zsmkPjLzvFF7FOBgPQiPfSNq9jPINNRz/8wilejc32E=",
+                    "+fV0ZkE6Jxl1LHLISVNigHxUrY1QRzID0AHUlv5Ageg=",
+                    "jeIgJMwv4mb5vit/2Ww85ocLga9IVMqK+KZMHUnlhhA=",
+                    "v0zQI2OZyW+3Ngqy0VI8H1j/qJ9U8uCL5dTxffNEx8E=",
+                    "Lt4NL15OO92esk4hxlyNt5kjMOJFyZp1b8OweMJkwuA=",
+                    "C6Oe3oRwpkdzfgweoIqcbuGS+BvcIYFiDXwU3MqunqI=",
+                    "MB3Jprd+viq+92zuvjw0Q/zaf0g4ikRxFbV+NpP4ISs=",
+                    "9EknQ1dYJ8F0Mj7pSFDdIeFbIavS54i5cX5338ZT2jQ=",
+                    "S0K3yoNmY86X8nFeSBgWlb3CDEqXg+5oVroXNvnM+mM=",
+                    "xGHbkjO/PXHGEwHvm5UqRjcsT7/iwSQXxidi4cIY51A=",
+                    "hafZfJdzUX/yyCr3Anv7Qq1DWVaWxotaclNRcl/O9SQ=",
+                    "NlOclldmKPA1tMKIskqHAwuQDYHp31YwpK+OOMrMccc=",
+                    "qxzHanAzz57SDdmJe0B7bJK72NTIBbwEMGBBKvDOROw=",
+                    "xH/DCseLHr9eKoYT8qsORZK7zVdEGYWHuVtsVrD95wY="
+                  ],
+                  "logIndex": "3022597103",
+                  "rootHash": "R5Pe1s7tkYcg/RIiHgsMoephmsZRmQoM5kJ+p9PnQck=",
+                  "treeSize": "3022597130"
+                },
+                "integratedTime": "1791448175",
+                "kindVersion": {
+                  "kind": "dsse",
+                  "version": "0.0.1"
+                },
+                "logId": {
+                  "keyId": "wNI9atQGlz+VWfO6LRygH4QUfY/8W4RFwiT5i5WRgB0="
+                },
+                "logIndex": "3144501365"
+              }
+            ]
+          }
+        }
+      }
+    },
+    "capabilities": [
+      "storage",
+      "auth",
+      "gcalendar",
+      "glance",
+      "octos.session.open",
+      "octos.turn.start"
+    ],
+    "network": {
+      "hosts": []
+    },
+    "storage": {
+      "max_bytes": 1048576,
+      "accounts": true,
+      "agent_workspace": "none"
+    },
+    "compute": {
+      "instruction_budget": null,
+      "memory_bytes": null
+    },
+    "agent": {
+      "profile": "read-only",
+      "tools": [],
+      "max_iterations": null,
+      "token_budget": null,
+      "model": {
+        "needs": [
+          "tool_calling"
+        ],
+        "tier": "standard",
+        "local_only": false
+      },
+      "instructions": "AGENT.md"
+    },
+    "requires": [
+      "publisher-github-v1"
+    ]
+  },
+  "listing": {
+    "schema": 1,
+    "subtitle": "Calendar drafts, review and event advice",
+    "description": "MacOS developer preview: view a bounded Google agenda, keep event drafts, review changes in the host and discuss a selected event with a read-only assistant. Uses host-managed Google authorization and optional consented app-agent tools; credentials stay in the host. Fresh GitHub-published app identity with separate storage/account grants from the legacy sample. Requires contract 1.8.0 / publisher-github-v1 and compatible connected services. Includes fictional local UI states. Publishing and local UI tests do not validate live Google login, provider writes, model behavior or physical approval. Android Google authorization is unavailable; only macOS is advertised.",
+    "category": "productivity",
+    "keywords": [
+      "calendar",
+      "Google",
+      "OAuth",
+      "sample"
+    ],
+    "screenshots": [
+      "screenshots/01-local-draft.png",
+      "screenshots/02-notes.png",
+      "screenshots/03-host-required.png"
+    ],
+    "icon": "assets/icon.svg",
+    "platforms": [
+      "macos"
+    ],
+    "publisher": {
+      "name": "ymote",
+      "support": "https://github.com/ymote/octosense-google-calendar/issues",
+      "privacy_policy_url": "https://github.com/ymote/octosense-google-calendar/blob/main/PRIVACY.md"
+    },
+    "release_notes": "0.2.1: generated release receipts now distinguish release creation from App Hub admission, and direct publishers to open or update the existing submission issue. App UI, tool permissions and storage layout are unchanged from 0.2.0. This immutable update supports verified install/update and local-draft retention checks; live Google/model/provider writes remain outside the test scope.",
+    "age_rating": "all",
+    "license": "Apache-2.0"
+  },
+  "tools": [
+    {
+      "name": "googlecalendar.calendars",
+      "description": "List calendars for the connected Google account.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "connection": {
+            "description": "The opaque Google connection bound to this app; never a token.",
+            "type": "string"
+          },
+          "page_token": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "connection"
+        ],
+        "type": "object"
+      },
+      "output_schema": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "risk": "read",
+      "background": false,
+      "shareable": false,
+      "private_data": true,
+      "implemented_by": "host-service"
+    },
+    {
+      "name": "googlecalendar.cached",
+      "description": "Read the last completely synchronized agenda for the selected calendar.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "calendar": {
+            "description": "The selected Google Calendar ID.",
+            "type": "string"
+          },
+          "connection": {
+            "description": "The opaque Google connection bound to this app; never a token.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "connection",
+          "calendar"
+        ],
+        "type": "object"
+      },
+      "output_schema": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "risk": "read",
+      "background": false,
+      "shareable": false,
+      "private_data": true,
+      "implemented_by": "host-service"
+    },
+    {
+      "name": "googlecalendar.refresh",
+      "description": "Synchronize Google Calendar and return a complete event snapshot; failed pages preserve the previous cache.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "calendar": {
+            "description": "The selected Google Calendar ID.",
+            "type": "string"
+          },
+          "connection": {
+            "description": "The opaque Google connection bound to this app; never a token.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "connection",
+          "calendar"
+        ],
+        "type": "object"
+      },
+      "output_schema": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "risk": "read",
+      "background": false,
+      "shareable": false,
+      "private_data": true,
+      "implemented_by": "host-service"
+    },
+    {
+      "name": "googlecalendar.event",
+      "description": "Read one Google event with its current ETag.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "calendar": {
+            "description": "The selected Google Calendar ID.",
+            "type": "string"
+          },
+          "connection": {
+            "description": "The opaque Google connection bound to this app; never a token.",
+            "type": "string"
+          },
+          "event_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "connection",
+          "calendar",
+          "event_id"
+        ],
+        "type": "object"
+      },
+      "output_schema": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "risk": "read",
+      "background": false,
+      "shareable": false,
+      "private_data": true,
+      "implemented_by": "host-service"
+    }
+  ],
+  "artifact": "artifacts/io.github.ymote.googlecalendar-0.2.1.bundle",
+  "publisher": "github:1408036857",
+  "publisher_key": "",
+  "source": {
+    "repository": "https://github.com/ymote/octosense-google-calendar",
+    "commit": "e4af7427680bdc331eb639f67dd6f53db5b85775"
+  },
+  "status": {
+    "state": "offered"
+  },
+  "admitted": "2026-10-08"
+}

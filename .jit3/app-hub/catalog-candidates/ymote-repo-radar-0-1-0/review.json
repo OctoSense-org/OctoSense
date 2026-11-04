@@ -1,0 +1,113 @@
+{
+  "schema": 1,
+  "kind": "repo-radar-catalog-candidate-review",
+  "status": "candidate-only-not-approved-for-production",
+  "submission_issue": "https://github.com/OctoSense-org/OctoSense-App-Hub/issues/202",
+  "base_commit": "8b78d203fc8afcff44c2cf4bda7217eaa98892b9",
+  "base_sequence": 15,
+  "base_sha256": "de8536252587d56d0c4d9a0d9f236cc791becc920d51c8572870586afa14caed",
+  "candidate_sequence": 16,
+  "candidate_payload_sha256": "83867e6f8197dff3d7fb630ba50a408a44322c53fa03c619a6fd01fcba0c91bf",
+  "publisher_release": {
+    "schema": 1,
+    "kind": "downloaded-github-app-release-verification",
+    "status": "passed",
+    "repository": "ymote/octosense-repo-radar",
+    "app_id": "org.ymote.reporadar",
+    "version": "0.1.0",
+    "tag": "v0.1.0",
+    "source_commit": "ec202f7d6c8a192a80353a1640c19786db3f77e1",
+    "workflow_run": "https://github.com/ymote/octosense-repo-radar/actions/runs/38088072936",
+    "release_url": "https://github.com/ymote/octosense-repo-radar/releases/tag/v0.1.0",
+    "published_at": "2026-10-10T21:36:41Z",
+    "pack_sha256": "54ed1fe4fc2d885defe5fe9f8a507f3ac29104629d9c10e4b0f597de35b63f83",
+    "bundle_blake3": "90463f61990f62f1610bbcd9e3be76b7ca4bd046c05c9f2c222cbd92267bf136",
+    "component_sha256": "d0ee1835711ed4b1c952f564789d96c160d02035b1d2104db1388e6affdbc757",
+    "release_receipt_sha256": "14ececcd795df00b3f1880e12bcd6163d52a092ea984fdd184f1ca8df14ffd76",
+    "manifest_subject_sha256": "d80ff6e38aac94c7562251ee06b2902051fea885371fab08daf1e9e646164b3e",
+    "publisher_workflow": ".github/workflows/publish-app.yml",
+    "github_repository_id": "1413670501",
+    "github_owner_id": "151983",
+    "catalog_base": {
+      "sequence": 15,
+      "payload_sha256": "51b1c03bdcbfa500c6c62fe89a8514ba51b38dc4811a41b55b7475ff38deb1f7"
+    },
+    "verifier_sha256": "66ca5fd1d12d74226585e12bbb76aeb2096ff6264e87b997a5a7ea051c6229dd",
+    "publisher_unpack_passed": true,
+    "publisher_verify_passed": true,
+    "bundle_files_match_tag_except_sealing_and_rebuild": true,
+    "changed_from_tag_files": [
+      "fns/radar.wasm",
+      "manifest.json"
+    ],
+    "privacy_scan": {
+      "files": 9,
+      "patterns": 3,
+      "findings": []
+    },
+    "sealed_files_unchanged": true,
+    "required_apis": {
+      "charts.d3": 1
+    },
+    "requires": [
+      "wasm-components-v1",
+      "host-api-v1",
+      "publisher-github-v1"
+    ],
+    "gate_warnings": [
+      "fns/radar.wasm is a component that reaches the clock, files in its app folder and the network, but no other app",
+      "fns/radar.wasm is built from 18 crates: bitflags 2.13.2, deranged 0.5.8, itoa 1.0.18, memchr 2.8.3, num-conv 0.2.2, octosense-component 0.1.0, powerfmt 0.2.1, semver 1.0.28, serde 1.0.229, serde_core 1.0.229, serde_json 1.0.152, time 0.3.55 and 6 more",
+      "reporadar.unpin is destructive: every call waits for the host's approval"
+    ],
+    "not_verified": [
+      "Execution of this CI-rebuilt component in the app",
+      "Compatible public host installation",
+      "Public App Hub catalog admission",
+      "Second-version upgrade",
+      "Live model answers"
+    ]
+  },
+  "native_development_acceptance": {
+    "status": "passed",
+    "steps": 94,
+    "host_source": "bb2ac0ac8b2457529ffd29a366df9019012c1c08",
+    "host_sha256": "817776cd2de08922badbcbb78728ec71a66d4e9d5c223debc04956110034c927",
+    "component_sha256": "b7ef65b5fb1f3561909451a8c4d8b7186ce9f9fef1f028ffdbd1f40453c2695a",
+    "scope": "Private development catalog; original source component, not the CI-rebuilt sealed component.",
+    "native_receipt_sha256": "ed167c99a8c88590f906e0c87f170e21b9e6fa8568d6a839cca29c8688012e21"
+  },
+  "tool_binding": {
+    "hub_source": "8347a489141c0e24cab564883db7c4592935a8b2",
+    "hub_sha256": "66ca5fd1d12d74226585e12bbb76aeb2096ff6264e87b997a5a7ea051c6229dd",
+    "source_code_equal_to_base_in": [
+      "crates",
+      "tools",
+      "Cargo.toml",
+      "Cargo.lock"
+    ],
+    "doctor": "passed"
+  },
+  "checks": {
+    "authenticated_base": true,
+    "publisher_unpack": true,
+    "publisher_verify": true,
+    "gate": true,
+    "publisher_entry": true,
+    "catalog_prepare": true,
+    "prior_entries_unchanged": true,
+    "separate_shared_components_candidate_unchanged": true,
+    "sealed_bundle_modified": false
+  },
+  "production_blockers": [
+    "Execute and validate the CI-rebuilt sealed component.",
+    "Publish a compatible host with charts.d3@1 and the component HTTPS fix; RC4 correctly refuses installation.",
+    "Verify the protected catalog dry-run envelope and complete released-host install acceptance before production."
+  ],
+  "not_verified": [
+    "Public App Hub publication",
+    "Second-version upgrade",
+    "Live model answers",
+    "Windows, Linux or Android acceptance"
+  ],
+  "production_dispatched": false
+}

@@ -1,0 +1,8 @@
+{
+  "schema": 1,
+  "id": "os.ai-providers",
+  "version": "1.0.0",
+  "name": "AI providers",
+  "integrity": { "bundle_blake3": "52c3a756a4010abd7df0b3eac0384b411ccd324cdf5e40ddae2659de97e5612f" },
+  "capabilities": ["storage", "llm"]
+}

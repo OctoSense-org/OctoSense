@@ -1,0 +1,17 @@
+{
+  "schema": 1,
+  "kind": "date-refreshed-repo-radar-candidate",
+  "status": "passed-independent-candidate-review",
+  "candidate": "ymote-repo-radar-0-1-2-20261011",
+  "base_commit": "80a64b4557aaba71f7c826c5dc69721c21c0f0fc",
+  "published": "2026-10-11",
+  "previous_candidate": "ymote-repo-radar-0-1-2",
+  "previous_dry_run": "https://github.com/OctoSense-org/OctoSense-App-Hub/actions/runs/38094810540",
+  "prior_review": "prior-review.json",
+  "change": "Catalog publication date only; entry admission date and all index/pack/bundle bytes unchanged",
+  "payload_sha256": "b12e9e24022f6e7dbac177cc997a994b968c7ccfcb21a475c3217c6cedc63be3",
+  "source_acceptance": "https://github.com/ymote/octosense-repo-radar/blob/ed221f103ef9e184451538bf6a7e9aeeac3d68fd/review/acceptance-release-0.1.2.json",
+  "public_publication_proof": false,
+  "independent_review": "independent-review.json",
+  "independent_review_sha256": "ee28cfc80f48c4a39bcbd5fac9e7c2ecf0757a4a8734c2c417f379263f265474"
+}

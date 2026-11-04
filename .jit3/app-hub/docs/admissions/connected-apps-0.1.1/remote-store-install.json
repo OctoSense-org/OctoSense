@@ -1,0 +1,61 @@
+{
+  "apps": [
+    {
+      "app_id": "org.octosense.samples.inbox",
+      "bundle_digest": "af1ea9d980e45ef22dc566b3ed5855abe3006cc0a557cbb9b61c9fcfad47c1f7",
+      "cold_store_policy_matches": true,
+      "declared_agent_files_loaded": true,
+      "direct_network_hosts": [],
+      "fresh_signed_install": true,
+      "local_state_retained": true,
+      "old_release_remains_openable_before_upgrade": true,
+      "prepared_launch_validated": true,
+      "upgrade_from_0_1_0": true,
+      "version": "0.1.1"
+    },
+    {
+      "app_id": "org.octosense.samples.githubnotes",
+      "bundle_digest": "81dd860d3a1bea9dae5efa45e130f88c86edb99db9df84305622b972472db965",
+      "cold_store_policy_matches": true,
+      "declared_agent_files_loaded": true,
+      "direct_network_hosts": [],
+      "fresh_signed_install": true,
+      "local_state_retained": true,
+      "old_release_remains_openable_before_upgrade": true,
+      "prepared_launch_validated": true,
+      "upgrade_from_0_1_0": true,
+      "version": "0.1.1"
+    },
+    {
+      "app_id": "org.octosense.samples.googlecalendar",
+      "bundle_digest": "700134563765275dd272ef49587e4e473737a84f8c15538fb96a419c178c7143",
+      "cold_store_policy_matches": true,
+      "declared_agent_files_loaded": true,
+      "direct_network_hosts": [],
+      "fresh_signed_install": true,
+      "local_state_retained": true,
+      "old_release_remains_openable_before_upgrade": true,
+      "prepared_launch_validated": true,
+      "upgrade_from_0_1_0": true,
+      "version": "0.1.1"
+    }
+  ],
+  "baseline_base": "https://raw.githubusercontent.com/OctoSense-org/OctoSense-App-Hub/a52d928b0c14d2822c09f6ccd18f44bf7b885221",
+  "candidate_base": "https://raw.githubusercontent.com/OctoSense-org/OctoSense-App-Hub/84c85a86018762d19e32181aed6ee01dee106f66",
+  "catalog_sequence": 10,
+  "cleanup": "owned temporary profiles removed",
+  "not_verified": [
+    "default main catalog availability",
+    "native rendering or workflows",
+    "agent peer/model execution",
+    "live provider login or remote writes",
+    "Android"
+  ],
+  "proof": "official-anchor remote catalog/pack verification and real Store fresh install, upgrade and reopen",
+  "result": "pass",
+  "schema": 1,
+  "source_sha256": "88c83a61b3a38407615cb5a074520173f793843471fce97aa2c63d4e4e053bc6",
+  "verifier_binary_sha256": "9f93798b5087373130b0bfd06978b5642863e1335fb2102206d837efa136daf7",
+  "hub_build_source_url": "https://github.com/OctoSense-org/OctoSense-App-Hub/commit/b0856ed2792de87db87866b62d33a0206d8f3c34",
+  "source_tree_matches_merged_a52d928": true
+}

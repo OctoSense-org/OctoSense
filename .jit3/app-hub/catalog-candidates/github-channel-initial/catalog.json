@@ -1,0 +1,1793 @@
+{
+  "entries": [
+    {
+      "admitted": "2026-10-07",
+      "artifact": "artifacts/org.octosense.samples.githubnotes-0.1.0.bundle",
+      "listing": {
+        "age_rating": "all",
+        "category": "productivity",
+        "description": "Write Markdown with the Rinx article writer layout, icon controls and preview in a compatible OctoSense host. Keep recoverable drafts locally; connect GitHub through host OAuth, select a repository and file, and review exact Markdown before committing. Requires the connected-services host build. Live OAuth and remote commits remain unverified; screenshots show fictional native UI fixtures.",
+        "icon": "assets/icon.svg",
+        "keywords": [
+          "markdown",
+          "github",
+          "notes",
+          "sample"
+        ],
+        "license": "Apache-2.0",
+        "platforms": [
+          "macos"
+        ],
+        "publisher": {
+          "name": "ymote",
+          "privacy_policy_url": "https://github.com/ymote/octosense-github-notes/blob/main/PRIVACY.md",
+          "support": "https://github.com/ymote/octosense-github-notes/issues"
+        },
+        "release_notes": "0.1.0 preview: Rinx writer layout, local draft recovery and synthetic GitHub review validated on macOS. Requires the connected-services OctoSense host. Live GitHub OAuth and repository writes remain unverified.",
+        "schema": 1,
+        "screenshots": [
+          "screenshots/01-preview.png",
+          "screenshots/02-editor.png"
+        ],
+        "subtitle": "Markdown drafts with reviewed GitHub saves"
+      },
+      "manifest": {
+        "agent": null,
+        "capabilities": [
+          "storage",
+          "auth",
+          "github"
+        ],
+        "compute": {
+          "instruction_budget": null,
+          "memory_bytes": null
+        },
+        "id": "org.octosense.samples.githubnotes",
+        "integrity": {
+          "bundle_blake3": "d5565438b78e01b98baf268661087b7efd0f5c01799f4841daa140955f82a13b",
+          "signature": {
+            "key_id": "ymote",
+            "value": "299a819bb80f9f23c9b08910188aef9e90ae88d4cf4d799074e7e19609a3e89d8850993805cfdbfade53b4ceb87ad28d1a1ecf059c9961872ff231924c7b260e"
+          }
+        },
+        "name": "GitHub Notes",
+        "network": {
+          "hosts": []
+        },
+        "schema": 1,
+        "storage": {
+          "accounts": true,
+          "max_bytes": 4194304
+        },
+        "version": "0.1.0"
+      },
+      "publisher": "ymote",
+      "publisher_key": "dbda2ca2b6376e8a4bb9d011d6f9aab0f2953021ab9e433215fa1094828761bc",
+      "source": {
+        "commit": "5f0c4c6b13bddae87a4945b2b76ca2a416793f14",
+        "repository": "https://github.com/ymote/octosense-github-notes"
+      },
+      "status": {
+        "state": "offered"
+      },
+      "tools": [
+        {
+          "background": false,
+          "description": "List repositories available to the connected GitHub account.",
+          "implemented_by": "host-service",
+          "input_schema": {
+            "additionalProperties": false,
+            "properties": {
+              "connection": {
+                "description": "The opaque GitHub connection bound to this app; never a provider token.",
+                "type": "string"
+              },
+              "page": {
+                "maximum": 1000,
+                "minimum": 1,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "connection"
+            ],
+            "type": "object"
+          },
+          "name": "githubnotes.repositories",
+          "output_schema": {
+            "items": {
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "private_data": true,
+          "risk": "read",
+          "shareable": false
+        },
+        {
+          "background": false,
+          "description": "List file and directory metadata in a selected repository branch.",
+          "implemented_by": "host-service",
+          "input_schema": {
+            "additionalProperties": false,
+            "properties": {
+              "branch": {
+                "type": "string"
+              },
+              "connection": {
+                "description": "The opaque GitHub connection bound to this app; never a provider token.",
+                "type": "string"
+              },
+              "owner": {
+                "type": "string"
+              },
+              "path": {
+                "description": "Repository-relative directory; empty means the root.",
+                "type": "string"
+              },
+              "repo": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "connection",
+              "owner",
+              "repo",
+              "branch"
+            ],
+            "type": "object"
+          },
+          "name": "githubnotes.files",
+          "output_schema": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "private_data": true,
+          "risk": "read",
+          "shareable": false
+        },
+        {
+          "background": false,
+          "description": "Read a UTF-8 note from the selected repository branch, including its current blob SHA.",
+          "implemented_by": "host-service",
+          "input_schema": {
+            "additionalProperties": false,
+            "properties": {
+              "branch": {
+                "type": "string"
+              },
+              "connection": {
+                "description": "The opaque GitHub connection bound to this app; never a provider token.",
+                "type": "string"
+              },
+              "owner": {
+                "type": "string"
+              },
+              "path": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "repo": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "connection",
+              "owner",
+              "repo",
+              "branch",
+              "path"
+            ],
+            "type": "object"
+          },
+          "name": "githubnotes.read",
+          "output_schema": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "private_data": true,
+          "risk": "read",
+          "shareable": false
+        }
+      ]
+    },
+    {
+      "admitted": "2026-10-07",
+      "artifact": "artifacts/org.octosense.samples.inbox-0.1.0.bundle",
+      "listing": {
+        "age_rating": "all",
+        "category": "productivity",
+        "description": "Developer preview for compatible OctoSense hosts. Read Gmail through host-managed Google login; keep one editable reply shared by Email, Reply, Chat and native review. An optional account-bound agent can triage new mail into quiet decisions or actionable Glance cards. Includes clearly fictional offline fixtures. Requires the connected-services integration in OctoSense PR #347 and App Hub PR #119; older hosts do not supply these services. macOS testing used real DeepSeek with synthetic Gmail: 33 functional soak cycles and cold restoration passed, with two unresolved instrument frame-submission errors. Live Google login, real Gmail sends and physical send approval remain unverified. Android Google authorization is not implemented. No sending tool is exposed to the agent.",
+        "icon": "assets/icon.svg",
+        "keywords": [
+          "email",
+          "gmail",
+          "reply",
+          "sample"
+        ],
+        "license": "Apache-2.0",
+        "platforms": [
+          "macos"
+        ],
+        "publisher": {
+          "name": "ymote",
+          "privacy_policy_url": "https://github.com/ymote/octosense-inbox-assistant/blob/main/PRIVACY.md",
+          "support": "https://github.com/ymote/octosense-inbox-assistant/issues"
+        },
+        "release_notes": "0.1.0 developer-preview packaging of the tested connected Inbox sample. Publisher/support/privacy metadata finalized for ymote; application code, tools, agent guidance, skill and historical screenshots unchanged. Review is required before catalog admission.",
+        "schema": 1,
+        "screenshots": [
+          "screenshots/01-main.png",
+          "screenshots/02-chat.png"
+        ],
+        "subtitle": "Gmail reply and selective-notification preview"
+      },
+      "manifest": {
+        "agent": {
+          "background": true,
+          "instructions": "AGENT.md",
+          "max_iterations": null,
+          "model": {
+            "local_only": false,
+            "needs": [
+              "tool_calling"
+            ],
+            "tier": "standard"
+          },
+          "profile": "read-only",
+          "skills": [
+            "incoming-mail-triage"
+          ],
+          "token_budget": null,
+          "tools": [
+            "ask_user_question"
+          ],
+          "triggers": {
+            "events": [
+              "inbox.new_message"
+            ]
+          }
+        },
+        "capabilities": [
+          "storage",
+          "auth",
+          "gmail",
+          "model",
+          "glance",
+          "octos.session.open",
+          "octos.turn.start"
+        ],
+        "compute": {
+          "instruction_budget": null,
+          "memory_bytes": null
+        },
+        "id": "org.octosense.samples.inbox",
+        "integrity": {
+          "bundle_blake3": "dc8c4d215e1aa28b86752f8632d028588d30e8775ebad6f52a48a943b7780040",
+          "signature": {
+            "key_id": "ymote",
+            "value": "29b50a8d79f8359a04101e7d6fb8851140be7cb5a55a2f062faaf220d9a0660d0b168989a55105e9f4fbddb7c07435ae5e1de9f48341d076af75f5426d0a110f"
+          }
+        },
+        "name": "Inbox Assistant",
+        "network": {
+          "hosts": []
+        },
+        "schema": 1,
+        "storage": {
+          "accounts": true,
+          "max_bytes": null
+        },
+        "version": "0.1.0"
+      },
+      "publisher": "ymote",
+      "publisher_key": "dbda2ca2b6376e8a4bb9d011d6f9aab0f2953021ab9e433215fa1094828761bc",
+      "source": {
+        "commit": "28dd24a39a7e9668b877dd84d9577d10b3f87363",
+        "repository": "https://github.com/ymote/octosense-inbox-assistant"
+      },
+      "status": {
+        "state": "offered"
+      },
+      "tools": [
+        {
+          "background": true,
+          "description": "List message IDs for this account and selected Gmail label. Use page_token when present.",
+          "implemented_by": "host-service",
+          "input_schema": {
+            "additionalProperties": false,
+            "properties": {
+              "connection": {
+                "maxLength": 256,
+                "type": "string"
+              },
+              "label": {
+                "maxLength": 256,
+                "type": "string"
+              },
+              "page_token": {
+                "maxLength": 2048,
+                "type": "string"
+              }
+            },
+            "required": [
+              "connection"
+            ],
+            "type": "object"
+          },
+          "name": "inbox.messages",
+          "output_schema": {
+            "type": "object"
+          },
+          "private_data": true,
+          "risk": "read",
+          "shareable": false
+        },
+        {
+          "background": true,
+          "description": "Read the bound email as plain text, with an explicit notice for omitted attachments.",
+          "implemented_by": "host-service",
+          "input_schema": {
+            "additionalProperties": false,
+            "properties": {
+              "connection": {
+                "maxLength": 256,
+                "type": "string"
+              },
+              "message_id": {
+                "maxLength": 256,
+                "type": "string"
+              }
+            },
+            "required": [
+              "connection",
+              "message_id"
+            ],
+            "type": "object"
+          },
+          "name": "inbox.message",
+          "output_schema": {
+            "type": "object"
+          },
+          "private_data": true,
+          "risk": "read",
+          "shareable": false
+        },
+        {
+          "background": true,
+          "description": "Open or restore the one authoritative local reply draft for this email. Does not send.",
+          "implemented_by": "host-service",
+          "input_schema": {
+            "additionalProperties": false,
+            "properties": {
+              "connection": {
+                "maxLength": 256,
+                "type": "string"
+              },
+              "message_id": {
+                "maxLength": 256,
+                "type": "string"
+              }
+            },
+            "required": [
+              "connection",
+              "message_id"
+            ],
+            "type": "object"
+          },
+          "name": "inbox.draft_open",
+          "output_schema": {
+            "type": "object"
+          },
+          "private_data": true,
+          "risk": "act",
+          "shareable": false
+        },
+        {
+          "background": true,
+          "description": "Read the exact saved draft body, revision and submission state.",
+          "implemented_by": "host-service",
+          "input_schema": {
+            "additionalProperties": false,
+            "properties": {
+              "connection": {
+                "maxLength": 256,
+                "type": "string"
+              },
+              "draft": {
+                "maxLength": 256,
+                "type": "string"
+              }
+            },
+            "required": [
+              "connection",
+              "draft"
+            ],
+            "type": "object"
+          },
+          "name": "inbox.draft_get",
+          "output_schema": {
+            "type": "object"
+          },
+          "private_data": true,
+          "risk": "read",
+          "shareable": false
+        },
+        {
+          "background": true,
+          "description": "Save an explicitly requested draft change only against its current revision. Never authorizes sending.",
+          "implemented_by": "host-service",
+          "input_schema": {
+            "additionalProperties": false,
+            "properties": {
+              "body": {
+                "maxLength": 12000,
+                "type": "string"
+              },
+              "connection": {
+                "maxLength": 256,
+                "type": "string"
+              },
+              "draft": {
+                "maxLength": 256,
+                "type": "string"
+              },
+              "provenance": {
+                "enum": [
+                  "model"
+                ],
+                "type": "string"
+              },
+              "revision": {
+                "minimum": 1,
+                "type": "integer"
+              },
+              "subject": {
+                "maxLength": 512,
+                "type": "string"
+              },
+              "to": {
+                "maxLength": 320,
+                "type": "string"
+              }
+            },
+            "required": [
+              "connection",
+              "draft",
+              "revision",
+              "to",
+              "subject",
+              "body",
+              "provenance"
+            ],
+            "type": "object"
+          },
+          "name": "inbox.draft_edit",
+          "output_schema": {
+            "type": "object"
+          },
+          "private_data": true,
+          "risk": "act",
+          "shareable": false
+        },
+        {
+          "background": true,
+          "description": "Read the durable decision, if any, for this incoming Gmail event.",
+          "implemented_by": "host-service",
+          "input_schema": {
+            "additionalProperties": false,
+            "properties": {
+              "connection": {
+                "maxLength": 256,
+                "type": "string"
+              },
+              "event_id": {
+                "maxLength": 256,
+                "type": "string"
+              }
+            },
+            "required": [
+              "connection",
+              "event_id"
+            ],
+            "type": "object"
+          },
+          "name": "inbox.event_status",
+          "output_schema": {
+            "type": "object"
+          },
+          "private_data": true,
+          "risk": "read",
+          "shareable": false
+        },
+        {
+          "background": true,
+          "description": "Record a quiet relevance decision, or acknowledge a successfully published card. Host verifies publication; prose cannot replace a receipt.",
+          "implemented_by": "host-service",
+          "input_schema": {
+            "additionalProperties": false,
+            "properties": {
+              "connection": {
+                "maxLength": 256,
+                "type": "string"
+              },
+              "decision": {
+                "enum": [
+                  "quiet",
+                  "published"
+                ],
+                "type": "string"
+              },
+              "event_id": {
+                "maxLength": 256,
+                "type": "string"
+              },
+              "reason": {
+                "maxLength": 500,
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "connection",
+              "event_id",
+              "decision",
+              "reason"
+            ],
+            "type": "object"
+          },
+          "name": "inbox.event_decide",
+          "output_schema": {
+            "type": "object"
+          },
+          "private_data": true,
+          "risk": "act",
+          "shareable": false
+        },
+        {
+          "background": true,
+          "description": "Publish one important-email workspace under this app/account. Prefer admitted template glance-workspace.splash with initial.message; the host binds its connection. Use message ID as card_id; notify only if relevant.",
+          "implemented_by": "host-service",
+          "input_schema": {
+            "additionalProperties": false,
+            "properties": {
+              "card_id": {
+                "maxLength": 64,
+                "type": "string"
+              },
+              "data": {
+                "type": "object"
+              },
+              "expires": {
+                "maximum": 604800,
+                "minimum": 60,
+                "type": "integer"
+              },
+              "initial": {
+                "additionalProperties": false,
+                "properties": {
+                  "message": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "body": {
+                        "maxLength": 100,
+                        "type": "string"
+                      },
+                      "from": {
+                        "maxLength": 320,
+                        "type": "string"
+                      },
+                      "id": {
+                        "maxLength": 128,
+                        "type": "string"
+                      },
+                      "subject": {
+                        "maxLength": 512,
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "from",
+                      "subject",
+                      "body"
+                    ],
+                    "type": "object"
+                  }
+                },
+                "required": [
+                  "message"
+                ],
+                "type": "object"
+              },
+              "notify": {
+                "type": "boolean"
+              },
+              "priority": {
+                "maximum": 100,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "script": {
+                "maxLength": 16384,
+                "type": "string"
+              },
+              "source": {
+                "maxLength": 16384,
+                "type": "string"
+              },
+              "summary": {
+                "maxLength": 200,
+                "type": "string"
+              },
+              "template": {
+                "enum": [
+                  "glance-workspace.splash"
+                ],
+                "type": "string"
+              },
+              "title": {
+                "maxLength": 80,
+                "type": "string"
+              }
+            },
+            "required": [
+              "card_id",
+              "title"
+            ],
+            "type": "object"
+          },
+          "name": "inbox.notify",
+          "output_schema": {
+            "type": "object"
+          },
+          "private_data": true,
+          "risk": "act",
+          "shareable": false
+        },
+        {
+          "background": true,
+          "description": "Retire a processed message card after actual completion; does not delete its draft or mail.",
+          "implemented_by": "host-service",
+          "input_schema": {
+            "additionalProperties": false,
+            "properties": {
+              "card_id": {
+                "maxLength": 64,
+                "type": "string"
+              }
+            },
+            "required": [
+              "card_id"
+            ],
+            "type": "object"
+          },
+          "name": "inbox.withdraw",
+          "output_schema": {
+            "type": "object"
+          },
+          "private_data": true,
+          "risk": "act",
+          "shareable": false
+        }
+      ]
+    },
+    {
+      "admitted": "2026-10-07",
+      "artifact": "artifacts/org.octosense.samples.googlecalendar-0.1.0.bundle",
+      "listing": {
+        "age_rating": "all",
+        "category": "productivity",
+        "description": "A macOS development preview using OctoSense shared Google sign-in and Calendar services. Select an account/calendar, view a cached agenda, keep local drafts, and review new or edited events on the host before saving. Explicitly publish an event to Glance with Open Calendar, or ask the read-only assistant about it. Requires OctoSense runtime PR #347 and App Hub PR #119; not a generally available runtime feature. Native macOS journeys used a synthetic Calendar provider; real DeepSeek advisory chat used synthetic events. Live Google sign-in, reads and writes and physical approval remain unverified. Android Google authorization is not implemented for this sample. Recurring series can be viewed but not edited. Screenshots are original captures of synthetic drafts, a standalone missing-service state and the embedded Glance template.",
+        "icon": "assets/icon.svg",
+        "keywords": [
+          "calendar",
+          "Google",
+          "OAuth",
+          "sample"
+        ],
+        "license": "Apache-2.0",
+        "platforms": [
+          "macos"
+        ],
+        "publisher": {
+          "name": "ymote",
+          "privacy_policy_url": "https://github.com/ymote/octosense-google-calendar/blob/main/PRIVACY.md",
+          "support": "https://github.com/ymote/octosense-google-calendar/issues"
+        },
+        "release_notes": "0.1.0 development preview. Tested functional source and original synthetic screenshots preserved from OctoScript-App-Design-Flow 5b0fde7e. Requires runtime #347 and Hub #119. Live Google and physical approval not verified; advisory agent cannot book or change events.",
+        "schema": 1,
+        "screenshots": [
+          "screenshots/01-local-draft.png",
+          "screenshots/02-notes.png",
+          "screenshots/03-host-required.png",
+          "screenshots/04-glance-template.png"
+        ],
+        "subtitle": "Calendar drafts, review and event advice"
+      },
+      "manifest": {
+        "agent": {
+          "instructions": "AGENT.md",
+          "max_iterations": null,
+          "model": {
+            "local_only": false,
+            "needs": [
+              "tool_calling"
+            ],
+            "tier": "standard"
+          },
+          "profile": "read-only",
+          "token_budget": null,
+          "tools": []
+        },
+        "capabilities": [
+          "storage",
+          "auth",
+          "gcalendar",
+          "glance",
+          "octos.session.open",
+          "octos.turn.start"
+        ],
+        "compute": {
+          "instruction_budget": null,
+          "memory_bytes": null
+        },
+        "id": "org.octosense.samples.googlecalendar",
+        "integrity": {
+          "bundle_blake3": "3e262601ebb6092fda6bb10862b92d05a641cb76f84c9e037f25296eda69459a",
+          "signature": {
+            "key_id": "ymote",
+            "value": "c55dafd37f2366d23080500a0a03943ddedb45463bd93117d03513c6bee5cb693f39cbc3d2c0b6b9e7b2b0a9fe4ddf5d9f3b8b4b95016880c434bd4de1d0a201"
+          }
+        },
+        "name": "Google Calendar",
+        "network": {
+          "hosts": []
+        },
+        "schema": 1,
+        "storage": {
+          "accounts": true,
+          "agent_workspace": "none",
+          "max_bytes": 1048576
+        },
+        "version": "0.1.0"
+      },
+      "publisher": "ymote",
+      "publisher_key": "dbda2ca2b6376e8a4bb9d011d6f9aab0f2953021ab9e433215fa1094828761bc",
+      "source": {
+        "commit": "c0783291a528689008d7213f1b1163c9c15ac874",
+        "repository": "https://github.com/ymote/octosense-google-calendar"
+      },
+      "status": {
+        "state": "offered"
+      },
+      "tools": [
+        {
+          "background": false,
+          "description": "List calendars for the connected Google account.",
+          "implemented_by": "host-service",
+          "input_schema": {
+            "additionalProperties": false,
+            "properties": {
+              "connection": {
+                "description": "The opaque Google connection bound to this app; never a token.",
+                "type": "string"
+              },
+              "page_token": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "connection"
+            ],
+            "type": "object"
+          },
+          "name": "googlecalendar.calendars",
+          "output_schema": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "private_data": true,
+          "risk": "read",
+          "shareable": false
+        },
+        {
+          "background": false,
+          "description": "Read the last completely synchronized agenda for the selected calendar.",
+          "implemented_by": "host-service",
+          "input_schema": {
+            "additionalProperties": false,
+            "properties": {
+              "calendar": {
+                "description": "The selected Google Calendar ID.",
+                "type": "string"
+              },
+              "connection": {
+                "description": "The opaque Google connection bound to this app; never a token.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "connection",
+              "calendar"
+            ],
+            "type": "object"
+          },
+          "name": "googlecalendar.cached",
+          "output_schema": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "private_data": true,
+          "risk": "read",
+          "shareable": false
+        },
+        {
+          "background": false,
+          "description": "Synchronize Google Calendar and return a complete event snapshot; failed pages preserve the previous cache.",
+          "implemented_by": "host-service",
+          "input_schema": {
+            "additionalProperties": false,
+            "properties": {
+              "calendar": {
+                "description": "The selected Google Calendar ID.",
+                "type": "string"
+              },
+              "connection": {
+                "description": "The opaque Google connection bound to this app; never a token.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "connection",
+              "calendar"
+            ],
+            "type": "object"
+          },
+          "name": "googlecalendar.refresh",
+          "output_schema": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "private_data": true,
+          "risk": "read",
+          "shareable": false
+        },
+        {
+          "background": false,
+          "description": "Read one Google event with its current ETag.",
+          "implemented_by": "host-service",
+          "input_schema": {
+            "additionalProperties": false,
+            "properties": {
+              "calendar": {
+                "description": "The selected Google Calendar ID.",
+                "type": "string"
+              },
+              "connection": {
+                "description": "The opaque Google connection bound to this app; never a token.",
+                "type": "string"
+              },
+              "event_id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "connection",
+              "calendar",
+              "event_id"
+            ],
+            "type": "object"
+          },
+          "name": "googlecalendar.event",
+          "output_schema": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "private_data": true,
+          "risk": "read",
+          "shareable": false
+        }
+      ]
+    },
+    {
+      "admitted": "2026-10-07",
+      "artifact": "artifacts/org.octosense.samples.inbox-0.1.1.bundle",
+      "listing": {
+        "age_rating": "all",
+        "category": "productivity",
+        "description": "Developer preview for compatible OctoSense hosts. Read Gmail through host-managed Google login; keep one editable reply shared by Email, Reply, Chat and native review. An optional account-bound agent can triage new mail into quiet decisions or actionable Glance cards. Includes clearly fictional offline fixtures. Requires the connected-services integration in OctoSense PR #347 and App Hub PR #119; older hosts do not supply these services. macOS testing used real DeepSeek with synthetic Gmail: 33 functional soak cycles and cold restoration passed, with two unresolved instrument frame-submission errors. Live Google login, real Gmail sends and physical send approval remain unverified. Android Google authorization is not implemented. No sending tool is exposed to the agent.",
+        "icon": "assets/icon.svg",
+        "keywords": [
+          "email",
+          "gmail",
+          "reply",
+          "sample"
+        ],
+        "license": "Apache-2.0",
+        "platforms": [
+          "macos"
+        ],
+        "publisher": {
+          "name": "ymote",
+          "privacy_policy_url": "https://github.com/ymote/octosense-inbox-assistant/blob/main/PRIVACY.md",
+          "support": "https://github.com/ymote/octosense-inbox-assistant/issues"
+        },
+        "release_notes": "0.1.1: require the admitted Glance workspace template and initial message data for agent notifications; remove executable source alternatives. Email/Reply/Chat UI, original screenshots and physical send approval are unchanged. Preview and live-provider limits still apply.",
+        "schema": 1,
+        "screenshots": [
+          "screenshots/01-main.png",
+          "screenshots/02-chat.png"
+        ],
+        "subtitle": "Gmail reply and selective-notification preview"
+      },
+      "manifest": {
+        "agent": {
+          "background": true,
+          "instructions": "AGENT.md",
+          "max_iterations": null,
+          "model": {
+            "local_only": false,
+            "needs": [
+              "tool_calling"
+            ],
+            "tier": "standard"
+          },
+          "profile": "read-only",
+          "skills": [
+            "incoming-mail-triage"
+          ],
+          "token_budget": null,
+          "tools": [
+            "ask_user_question"
+          ],
+          "triggers": {
+            "events": [
+              "inbox.new_message"
+            ]
+          }
+        },
+        "capabilities": [
+          "storage",
+          "auth",
+          "gmail",
+          "model",
+          "glance",
+          "octos.session.open",
+          "octos.turn.start"
+        ],
+        "compute": {
+          "instruction_budget": null,
+          "memory_bytes": null
+        },
+        "id": "org.octosense.samples.inbox",
+        "integrity": {
+          "bundle_blake3": "af1ea9d980e45ef22dc566b3ed5855abe3006cc0a557cbb9b61c9fcfad47c1f7",
+          "signature": {
+            "key_id": "ymote",
+            "value": "5ecb19c31d96ba18ca12e3779fdb46cb59726e863679e80d26ac750d7f48547e9e1afb8d0bd757a45827e0ff9aac703258ae1ab47769b1abc2a1676c854c0f0a"
+          }
+        },
+        "name": "Inbox Assistant",
+        "network": {
+          "hosts": []
+        },
+        "schema": 1,
+        "storage": {
+          "accounts": true,
+          "max_bytes": null
+        },
+        "version": "0.1.1"
+      },
+      "publisher": "ymote",
+      "publisher_key": "dbda2ca2b6376e8a4bb9d011d6f9aab0f2953021ab9e433215fa1094828761bc",
+      "source": {
+        "commit": "72311b5e1c902d32f77fb0be20f5fb01d8518491",
+        "repository": "https://github.com/ymote/octosense-inbox-assistant"
+      },
+      "status": {
+        "state": "offered"
+      },
+      "tools": [
+        {
+          "background": true,
+          "description": "List message IDs for this account and selected Gmail label. Use page_token when present.",
+          "implemented_by": "host-service",
+          "input_schema": {
+            "additionalProperties": false,
+            "properties": {
+              "connection": {
+                "maxLength": 256,
+                "type": "string"
+              },
+              "label": {
+                "maxLength": 256,
+                "type": "string"
+              },
+              "page_token": {
+                "maxLength": 2048,
+                "type": "string"
+              }
+            },
+            "required": [
+              "connection"
+            ],
+            "type": "object"
+          },
+          "name": "inbox.messages",
+          "output_schema": {
+            "type": "object"
+          },
+          "private_data": true,
+          "risk": "read",
+          "shareable": false
+        },
+        {
+          "background": true,
+          "description": "Read the bound email as plain text, with an explicit notice for omitted attachments.",
+          "implemented_by": "host-service",
+          "input_schema": {
+            "additionalProperties": false,
+            "properties": {
+              "connection": {
+                "maxLength": 256,
+                "type": "string"
+              },
+              "message_id": {
+                "maxLength": 256,
+                "type": "string"
+              }
+            },
+            "required": [
+              "connection",
+              "message_id"
+            ],
+            "type": "object"
+          },
+          "name": "inbox.message",
+          "output_schema": {
+            "type": "object"
+          },
+          "private_data": true,
+          "risk": "read",
+          "shareable": false
+        },
+        {
+          "background": true,
+          "description": "Open or restore the one authoritative local reply draft for this email. Does not send.",
+          "implemented_by": "host-service",
+          "input_schema": {
+            "additionalProperties": false,
+            "properties": {
+              "connection": {
+                "maxLength": 256,
+                "type": "string"
+              },
+              "message_id": {
+                "maxLength": 256,
+                "type": "string"
+              }
+            },
+            "required": [
+              "connection",
+              "message_id"
+            ],
+            "type": "object"
+          },
+          "name": "inbox.draft_open",
+          "output_schema": {
+            "type": "object"
+          },
+          "private_data": true,
+          "risk": "act",
+          "shareable": false
+        },
+        {
+          "background": true,
+          "description": "Read the exact saved draft body, revision and submission state.",
+          "implemented_by": "host-service",
+          "input_schema": {
+            "additionalProperties": false,
+            "properties": {
+              "connection": {
+                "maxLength": 256,
+                "type": "string"
+              },
+              "draft": {
+                "maxLength": 256,
+                "type": "string"
+              }
+            },
+            "required": [
+              "connection",
+              "draft"
+            ],
+            "type": "object"
+          },
+          "name": "inbox.draft_get",
+          "output_schema": {
+            "type": "object"
+          },
+          "private_data": true,
+          "risk": "read",
+          "shareable": false
+        },
+        {
+          "background": true,
+          "description": "Save an explicitly requested draft change only against its current revision. Never authorizes sending.",
+          "implemented_by": "host-service",
+          "input_schema": {
+            "additionalProperties": false,
+            "properties": {
+              "body": {
+                "maxLength": 12000,
+                "type": "string"
+              },
+              "connection": {
+                "maxLength": 256,
+                "type": "string"
+              },
+              "draft": {
+                "maxLength": 256,
+                "type": "string"
+              },
+              "provenance": {
+                "enum": [
+                  "model"
+                ],
+                "type": "string"
+              },
+              "revision": {
+                "minimum": 1,
+                "type": "integer"
+              },
+              "subject": {
+                "maxLength": 512,
+                "type": "string"
+              },
+              "to": {
+                "maxLength": 320,
+                "type": "string"
+              }
+            },
+            "required": [
+              "connection",
+              "draft",
+              "revision",
+              "to",
+              "subject",
+              "body",
+              "provenance"
+            ],
+            "type": "object"
+          },
+          "name": "inbox.draft_edit",
+          "output_schema": {
+            "type": "object"
+          },
+          "private_data": true,
+          "risk": "act",
+          "shareable": false
+        },
+        {
+          "background": true,
+          "description": "Read the durable decision, if any, for this incoming Gmail event.",
+          "implemented_by": "host-service",
+          "input_schema": {
+            "additionalProperties": false,
+            "properties": {
+              "connection": {
+                "maxLength": 256,
+                "type": "string"
+              },
+              "event_id": {
+                "maxLength": 256,
+                "type": "string"
+              }
+            },
+            "required": [
+              "connection",
+              "event_id"
+            ],
+            "type": "object"
+          },
+          "name": "inbox.event_status",
+          "output_schema": {
+            "type": "object"
+          },
+          "private_data": true,
+          "risk": "read",
+          "shareable": false
+        },
+        {
+          "background": true,
+          "description": "Record a quiet relevance decision, or acknowledge a successfully published card. Host verifies publication; prose cannot replace a receipt.",
+          "implemented_by": "host-service",
+          "input_schema": {
+            "additionalProperties": false,
+            "properties": {
+              "connection": {
+                "maxLength": 256,
+                "type": "string"
+              },
+              "decision": {
+                "enum": [
+                  "quiet",
+                  "published"
+                ],
+                "type": "string"
+              },
+              "event_id": {
+                "maxLength": 256,
+                "type": "string"
+              },
+              "reason": {
+                "maxLength": 500,
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "connection",
+              "event_id",
+              "decision",
+              "reason"
+            ],
+            "type": "object"
+          },
+          "name": "inbox.event_decide",
+          "output_schema": {
+            "type": "object"
+          },
+          "private_data": true,
+          "risk": "act",
+          "shareable": false
+        },
+        {
+          "background": true,
+          "description": "Publish one important-email workspace using only the admitted glance-workspace.splash template and initial.message. The host binds its connection. Use the exact message ID as card_id; notify only if relevant. Executable card source is not accepted.",
+          "implemented_by": "host-service",
+          "input_schema": {
+            "additionalProperties": false,
+            "properties": {
+              "card_id": {
+                "maxLength": 64,
+                "type": "string"
+              },
+              "expires": {
+                "maximum": 604800,
+                "minimum": 60,
+                "type": "integer"
+              },
+              "initial": {
+                "additionalProperties": false,
+                "properties": {
+                  "message": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "body": {
+                        "maxLength": 100,
+                        "type": "string"
+                      },
+                      "from": {
+                        "maxLength": 320,
+                        "type": "string"
+                      },
+                      "id": {
+                        "maxLength": 64,
+                        "type": "string"
+                      },
+                      "subject": {
+                        "maxLength": 512,
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "from",
+                      "subject",
+                      "body"
+                    ],
+                    "type": "object"
+                  }
+                },
+                "required": [
+                  "message"
+                ],
+                "type": "object"
+              },
+              "notify": {
+                "type": "boolean"
+              },
+              "priority": {
+                "maximum": 100,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "summary": {
+                "maxLength": 200,
+                "type": "string"
+              },
+              "template": {
+                "enum": [
+                  "glance-workspace.splash"
+                ],
+                "type": "string"
+              },
+              "title": {
+                "maxLength": 80,
+                "type": "string"
+              }
+            },
+            "required": [
+              "card_id",
+              "title",
+              "summary",
+              "template",
+              "initial",
+              "notify"
+            ],
+            "type": "object"
+          },
+          "name": "inbox.notify",
+          "output_schema": {
+            "type": "object"
+          },
+          "private_data": true,
+          "risk": "act",
+          "shareable": false
+        },
+        {
+          "background": true,
+          "description": "Retire a processed message card after actual completion; does not delete its draft or mail.",
+          "implemented_by": "host-service",
+          "input_schema": {
+            "additionalProperties": false,
+            "properties": {
+              "card_id": {
+                "maxLength": 64,
+                "type": "string"
+              }
+            },
+            "required": [
+              "card_id"
+            ],
+            "type": "object"
+          },
+          "name": "inbox.withdraw",
+          "output_schema": {
+            "type": "object"
+          },
+          "private_data": true,
+          "risk": "act",
+          "shareable": false
+        }
+      ]
+    },
+    {
+      "admitted": "2026-10-07",
+      "artifact": "artifacts/org.octosense.samples.githubnotes-0.1.1.bundle",
+      "listing": {
+        "age_rating": "all",
+        "category": "productivity",
+        "description": "Write Markdown with the Rinx article writer layout, icon controls and preview in a compatible OctoSense host. Keep recoverable drafts locally; connect GitHub through host OAuth, select a repository and file, and review exact Markdown before committing. Requires the connected-services host build. Live OAuth and remote commits remain unverified; screenshots show fictional native UI fixtures. Optional Ask GitHub Notes requires separate agent consent and can send questions, conversation context and permitted repository/file read results to your configured model. No agent write or approval tools are exposed; manual editing works without a model.",
+        "icon": "assets/icon.svg",
+        "keywords": [
+          "markdown",
+          "github",
+          "notes",
+          "sample"
+        ],
+        "license": "Apache-2.0",
+        "platforms": [
+          "macos"
+        ],
+        "publisher": {
+          "name": "ymote",
+          "privacy_policy_url": "https://github.com/ymote/octosense-github-notes/blob/main/PRIVACY.md",
+          "support": "https://github.com/ymote/octosense-github-notes/issues"
+        },
+        "release_notes": "0.1.1: explicitly declare the optional foreground read-only assistant and its account/data instructions. Preserve the three private, non-shareable read tools. Editor, reviewed GitHub save path and original screenshots are unchanged; no new live-provider claim.",
+        "schema": 1,
+        "screenshots": [
+          "screenshots/01-preview.png",
+          "screenshots/02-editor.png"
+        ],
+        "subtitle": "Markdown drafts with reviewed GitHub saves"
+      },
+      "manifest": {
+        "agent": {
+          "instructions": "AGENT.md",
+          "max_iterations": null,
+          "model": {
+            "local_only": false,
+            "needs": [
+              "tool_calling"
+            ],
+            "tier": "standard"
+          },
+          "profile": "read-only",
+          "token_budget": null,
+          "tools": []
+        },
+        "capabilities": [
+          "storage",
+          "auth",
+          "github"
+        ],
+        "compute": {
+          "instruction_budget": null,
+          "memory_bytes": null
+        },
+        "id": "org.octosense.samples.githubnotes",
+        "integrity": {
+          "bundle_blake3": "81dd860d3a1bea9dae5efa45e130f88c86edb99db9df84305622b972472db965",
+          "signature": {
+            "key_id": "ymote",
+            "value": "97c6c9a24f16f6fdb6d1aea0e9017f046e619ae4b56f5152a570bae0a74ab0ea197d9a68f5f54bb14671b564722bd6c60e7c6e04a6f8d22f2fcfcf6b4f53730c"
+          }
+        },
+        "name": "GitHub Notes",
+        "network": {
+          "hosts": []
+        },
+        "schema": 1,
+        "storage": {
+          "accounts": true,
+          "max_bytes": 4194304
+        },
+        "version": "0.1.1"
+      },
+      "publisher": "ymote",
+      "publisher_key": "dbda2ca2b6376e8a4bb9d011d6f9aab0f2953021ab9e433215fa1094828761bc",
+      "source": {
+        "commit": "77a1a98b53d5665385ead239d9d8ad0dfee7ebc0",
+        "repository": "https://github.com/ymote/octosense-github-notes"
+      },
+      "status": {
+        "state": "offered"
+      },
+      "tools": [
+        {
+          "background": false,
+          "description": "List repositories available to the connected GitHub account.",
+          "implemented_by": "host-service",
+          "input_schema": {
+            "additionalProperties": false,
+            "properties": {
+              "connection": {
+                "description": "The opaque GitHub connection bound to this app; never a provider token.",
+                "type": "string"
+              },
+              "page": {
+                "maximum": 1000,
+                "minimum": 1,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "connection"
+            ],
+            "type": "object"
+          },
+          "name": "githubnotes.repositories",
+          "output_schema": {
+            "items": {
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "private_data": true,
+          "risk": "read",
+          "shareable": false
+        },
+        {
+          "background": false,
+          "description": "List file and directory metadata in a selected repository branch.",
+          "implemented_by": "host-service",
+          "input_schema": {
+            "additionalProperties": false,
+            "properties": {
+              "branch": {
+                "type": "string"
+              },
+              "connection": {
+                "description": "The opaque GitHub connection bound to this app; never a provider token.",
+                "type": "string"
+              },
+              "owner": {
+                "type": "string"
+              },
+              "path": {
+                "description": "Repository-relative directory; empty means the root.",
+                "type": "string"
+              },
+              "repo": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "connection",
+              "owner",
+              "repo",
+              "branch"
+            ],
+            "type": "object"
+          },
+          "name": "githubnotes.files",
+          "output_schema": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "private_data": true,
+          "risk": "read",
+          "shareable": false
+        },
+        {
+          "background": false,
+          "description": "Read a UTF-8 note from the selected repository branch, including its current blob SHA.",
+          "implemented_by": "host-service",
+          "input_schema": {
+            "additionalProperties": false,
+            "properties": {
+              "branch": {
+                "type": "string"
+              },
+              "connection": {
+                "description": "The opaque GitHub connection bound to this app; never a provider token.",
+                "type": "string"
+              },
+              "owner": {
+                "type": "string"
+              },
+              "path": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "repo": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "connection",
+              "owner",
+              "repo",
+              "branch",
+              "path"
+            ],
+            "type": "object"
+          },
+          "name": "githubnotes.read",
+          "output_schema": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "private_data": true,
+          "risk": "read",
+          "shareable": false
+        }
+      ]
+    },
+    {
+      "admitted": "2026-10-07",
+      "artifact": "artifacts/org.octosense.samples.googlecalendar-0.1.1.bundle",
+      "listing": {
+        "age_rating": "all",
+        "category": "productivity",
+        "description": "A macOS development preview using OctoSense shared Google sign-in and Calendar services. Select an account/calendar, view a bounded cached agenda (past 30 days / next 366 days on the updated host), keep local drafts, and review new or edited events on the host before saving. Explicitly publish an event to Glance with Open Calendar, or ask the read-only assistant about it. Requires the compatible OctoSense connected-services runtime; bounded-agenda status depends on host window metadata. Native macOS journeys used a synthetic Calendar provider; real DeepSeek advisory chat used synthetic events. Live Google sign-in, reads and writes and physical approval remain unverified. Android Google authorization is not implemented for this sample. Recurring series can be viewed but not edited. Screenshots are original captures of synthetic drafts, a standalone missing-service state and the embedded Glance template.",
+        "icon": "assets/icon.svg",
+        "keywords": [
+          "calendar",
+          "Google",
+          "OAuth",
+          "sample"
+        ],
+        "license": "Apache-2.0",
+        "platforms": [
+          "macos"
+        ],
+        "publisher": {
+          "name": "ymote",
+          "privacy_policy_url": "https://github.com/ymote/octosense-google-calendar/blob/main/PRIVACY.md",
+          "support": "https://github.com/ymote/octosense-google-calendar/issues"
+        },
+        "release_notes": "0.1.1: disclose the finite agenda window in cache and refresh status; events missing from that window are not described as deleted. Legacy responses without window metadata say date range unavailable. Layout, tools, exact host review and original screenshots are unchanged. macOS developer-preview limitations remain.",
+        "schema": 1,
+        "screenshots": [
+          "screenshots/01-local-draft.png",
+          "screenshots/02-notes.png",
+          "screenshots/03-host-required.png",
+          "screenshots/04-glance-template.png"
+        ],
+        "subtitle": "Calendar drafts, review and event advice"
+      },
+      "manifest": {
+        "agent": {
+          "instructions": "AGENT.md",
+          "max_iterations": null,
+          "model": {
+            "local_only": false,
+            "needs": [
+              "tool_calling"
+            ],
+            "tier": "standard"
+          },
+          "profile": "read-only",
+          "token_budget": null,
+          "tools": []
+        },
+        "capabilities": [
+          "storage",
+          "auth",
+          "gcalendar",
+          "glance",
+          "octos.session.open",
+          "octos.turn.start"
+        ],
+        "compute": {
+          "instruction_budget": null,
+          "memory_bytes": null
+        },
+        "id": "org.octosense.samples.googlecalendar",
+        "integrity": {
+          "bundle_blake3": "700134563765275dd272ef49587e4e473737a84f8c15538fb96a419c178c7143",
+          "signature": {
+            "key_id": "ymote",
+            "value": "0f4d47de4c7c12d1c0462741508da4c9bee5069fa0f816db4565b2ec6cbd24944a105f0e68a6bf186d7e1007e688fee46f193c773c764ec074c18dd76530360c"
+          }
+        },
+        "name": "Google Calendar",
+        "network": {
+          "hosts": []
+        },
+        "schema": 1,
+        "storage": {
+          "accounts": true,
+          "agent_workspace": "none",
+          "max_bytes": 1048576
+        },
+        "version": "0.1.1"
+      },
+      "publisher": "ymote",
+      "publisher_key": "dbda2ca2b6376e8a4bb9d011d6f9aab0f2953021ab9e433215fa1094828761bc",
+      "source": {
+        "commit": "d79d98960642a7e368b9d0f2be8943dcec2bcd95",
+        "repository": "https://github.com/ymote/octosense-google-calendar"
+      },
+      "status": {
+        "state": "offered"
+      },
+      "tools": [
+        {
+          "background": false,
+          "description": "List calendars for the connected Google account.",
+          "implemented_by": "host-service",
+          "input_schema": {
+            "additionalProperties": false,
+            "properties": {
+              "connection": {
+                "description": "The opaque Google connection bound to this app; never a token.",
+                "type": "string"
+              },
+              "page_token": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "connection"
+            ],
+            "type": "object"
+          },
+          "name": "googlecalendar.calendars",
+          "output_schema": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "private_data": true,
+          "risk": "read",
+          "shareable": false
+        },
+        {
+          "background": false,
+          "description": "Read the last completely synchronized agenda for the selected calendar.",
+          "implemented_by": "host-service",
+          "input_schema": {
+            "additionalProperties": false,
+            "properties": {
+              "calendar": {
+                "description": "The selected Google Calendar ID.",
+                "type": "string"
+              },
+              "connection": {
+                "description": "The opaque Google connection bound to this app; never a token.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "connection",
+              "calendar"
+            ],
+            "type": "object"
+          },
+          "name": "googlecalendar.cached",
+          "output_schema": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "private_data": true,
+          "risk": "read",
+          "shareable": false
+        },
+        {
+          "background": false,
+          "description": "Synchronize Google Calendar and return a complete event snapshot; failed pages preserve the previous cache.",
+          "implemented_by": "host-service",
+          "input_schema": {
+            "additionalProperties": false,
+            "properties": {
+              "calendar": {
+                "description": "The selected Google Calendar ID.",
+                "type": "string"
+              },
+              "connection": {
+                "description": "The opaque Google connection bound to this app; never a token.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "connection",
+              "calendar"
+            ],
+            "type": "object"
+          },
+          "name": "googlecalendar.refresh",
+          "output_schema": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "private_data": true,
+          "risk": "read",
+          "shareable": false
+        },
+        {
+          "background": false,
+          "description": "Read one Google event with its current ETag.",
+          "implemented_by": "host-service",
+          "input_schema": {
+            "additionalProperties": false,
+            "properties": {
+              "calendar": {
+                "description": "The selected Google Calendar ID.",
+                "type": "string"
+              },
+              "connection": {
+                "description": "The opaque Google connection bound to this app; never a token.",
+                "type": "string"
+              },
+              "event_id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "connection",
+              "calendar",
+              "event_id"
+            ],
+            "type": "object"
+          },
+          "name": "googlecalendar.event",
+          "output_schema": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "private_data": true,
+          "risk": "read",
+          "shareable": false
+        }
+      ]
+    }
+  ],
+  "published": "2026-10-08",
+  "schema": 1,
+  "sequence": 11
+}

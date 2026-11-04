@@ -1,0 +1,21 @@
+# Local App Hub validation fixture
+theme light
+component FixtureSurface(instance: text) { view Kit(component: "surface", instance: instance) { slot } }
+component FixturePanel(instance: text) { view Kit(component: "panel", instance: instance) }
+component Fixturetag(text: text) { view Kit(component: "tag", instance: "tag", text: text) }
+component Fixturetitle(text: text) { view Kit(component: "title", instance: "title", text: text) }
+component Fixturesubtitle(text: text) { view Kit(component: "subtitle", instance: "subtitle", text: text) }
+component Fixturevalue(text: text) { view Kit(component: "value", instance: "value", text: text) }
+component Fixturedetail(text: text) { view Kit(component: "detail", instance: "detail", text: text) }
+component Fixturefooter(text: text) { view Kit(component: "footer", instance: "footer", text: text) }
+component Fixturepermission(text: text) { view Kit(component: "permission", instance: "permission", text: text) }
+view root FixtureSurface(instance: "page") {
+ FixturePanel(instance: "panel")
+ Fixturetag(text: "LOCAL APP")
+ Fixturetitle(text: "Focus Timer")
+ Fixturesubtitle(text: "A quiet place to focus")
+ Fixturevalue(text: "25:00")
+ Fixturedetail(text: "Your next focus session")
+ Fixturefooter(text: "Installed from your local App Hub.\nThis is a static validation fixture.")
+ Fixturepermission(text: "No device permissions requested")
+}

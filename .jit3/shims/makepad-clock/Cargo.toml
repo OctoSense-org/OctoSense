@@ -1,0 +1,14 @@
+[package]
+name = "makepad-clock"
+version = "0.0.1"
+edition = "2021"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+makepad-app-clock = { path = "/Users/ychen/home/octosense-org/.worktrees/jit3-work/apps/clock" }
+
+[features]
+default = []
+standalone = ["makepad-app-clock/standalone"]

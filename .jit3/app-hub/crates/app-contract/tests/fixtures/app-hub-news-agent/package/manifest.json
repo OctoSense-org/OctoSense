@@ -1,0 +1,30 @@
+{
+  "schema": 1,
+  "id": "dev.example.news",
+  "version": "1.0.0",
+  "name": "News",
+  "integrity": { "bundle_blake3": "bb47e0940a18dcfb4261ac98e56cc0889c8dd874655516f69876752378726fa7" },
+  "capabilities": ["storage"],
+  "agent": {
+    "profile": "workspace-write-never-ask",
+    "tools": [],
+    "max_iterations": 8,
+    "token_budget": 120000,
+    "model": {
+      "needs": ["tool_calling", "long_context", "multilingual"],
+      "tier": "standard",
+      "local_only": false,
+      "per_task": {
+        "triage": { "needs": ["tool_calling"], "tier": "fast" },
+        "synthesis": { "needs": ["tool_calling", "reasoning", "long_context"], "tier": "strong" }
+      }
+    },
+    "background": true,
+    "triggers": {
+      "schedule": ["0 7 * * *", "0 19 * * *"],
+      "events": ["news.items.new"]
+    },
+    "instructions": "AGENT.md",
+    "skills": ["news-digest"]
+  }
+}

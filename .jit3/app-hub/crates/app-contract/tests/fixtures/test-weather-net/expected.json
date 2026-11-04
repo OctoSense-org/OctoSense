@@ -1,0 +1,33 @@
+{
+  "digest": "729bc3dfe1ef9ae2e49cb86f82db670adc09282c4aaadc65d58ed804d6255c26",
+  "entry": "card",
+  "ignored_fields": [],
+  "limits": "unsigned",
+  "policy": {
+    "app_id": "forecast",
+    "capabilities": [
+      "net",
+      "prompt",
+      "storage"
+    ],
+    "display_name": "Forecast",
+    "hosts": [
+      "api.weather.example",
+      "tiles.weather.example"
+    ],
+    "instruction_budget": 20000000,
+    "may_prompt": true,
+    "memory_bytes": 1048576,
+    "research": null,
+    "storage": {
+      "accounts": false,
+      "agent_workspace": "account",
+      "cache_max_bytes": null,
+      "max_bytes": 4096
+    },
+    "storage_bytes": 4096,
+    "version": "1.0.0"
+  },
+  "signing_blake3": "bdbd298db09ccf3a3a50d86bebc776b24ac0264c5b6a8373bd280aaf4e809636",
+  "source": "App Hub app-policy admission tests: net, hosts (one mixed-case), prompt, a clamped budget"
+}

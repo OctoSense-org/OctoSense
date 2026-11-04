@@ -1,0 +1,274 @@
+{
+  "manifest": {
+    "schema": 1,
+    "id": "io.github.ymote.githubnotes",
+    "version": "0.2.1",
+    "name": "GitHub Notes",
+    "integrity": {
+      "bundle_blake3": "502f5ec5adf58d3e31623975a2e4c4ac2e3277a8b36dd0ae4d6e307f1e2d056c",
+      "signature": null,
+      "github": {
+        "repository": "ymote/octosense-github-notes",
+        "repository_id": "1408036635",
+        "owner_id": "151983",
+        "workflow": ".github/workflows/publish-app.yml",
+        "tag": "v0.2.1",
+        "commit": "0356c16449673fc12cef501d22be446bb496fd76",
+        "attestation": {
+          "dsseEnvelope": {
+            "payload": "eyJfdHlwZSI6Imh0dHBzOi8vaW4tdG90by5pby9TdGF0ZW1lbnQvdjEiLCJzdWJqZWN0IjpbeyJuYW1lIjoib2N0b3NlbnNlLWFwcC1tYW5pZmVzdC5qc29uIiwiZGlnZXN0Ijp7InNoYTI1NiI6IjZjZWFjODc0M2U0OWVkYzA5NWQyY2ZhNjc5OTI1ZjU5ZmI5OWZhZDE3NWZiNDIzMTUyOGI0YTk2NDdlNmRiZjgifX1dLCJwcmVkaWNhdGVUeXBlIjoiaHR0cHM6Ly9zbHNhLmRldi9wcm92ZW5hbmNlL3YxIiwicHJlZGljYXRlIjp7ImJ1aWxkRGVmaW5pdGlvbiI6eyJidWlsZFR5cGUiOiJodHRwczovL2FjdGlvbnMuZ2l0aHViLmlvL2J1aWxkdHlwZXMvd29ya2Zsb3cvdjEiLCJleHRlcm5hbFBhcmFtZXRlcnMiOnsid29ya2Zsb3ciOnsicmVmIjoicmVmcy90YWdzL3YwLjIuMSIsInJlcG9zaXRvcnkiOiJodHRwczovL2dpdGh1Yi5jb20veW1vdGUvb2N0b3NlbnNlLWdpdGh1Yi1ub3RlcyIsInBhdGgiOiIuZ2l0aHViL3dvcmtmbG93cy9wdWJsaXNoLWFwcC55bWwifX0sImludGVybmFsUGFyYW1ldGVycyI6eyJnaXRodWIiOnsiZXZlbnRfbmFtZSI6InB1c2giLCJyZXBvc2l0b3J5X2lkIjoiMTQwODAzNjYzNSIsInJlcG9zaXRvcnlfb3duZXJfaWQiOiIxNTE5ODMiLCJydW5uZXJfZW52aXJvbm1lbnQiOiJnaXRodWItaG9zdGVkIn19LCJyZXNvbHZlZERlcGVuZGVuY2llcyI6W3sidXJpIjoiZ2l0K2h0dHBzOi8vZ2l0aHViLmNvbS95bW90ZS9vY3Rvc2Vuc2UtZ2l0aHViLW5vdGVzQHJlZnMvdGFncy92MC4yLjEiLCJkaWdlc3QiOnsiZ2l0Q29tbWl0IjoiMDM1NmMxNjQ0OTY3M2ZjMTJjZWY1MDFkMjJiZTQ0NmJiNDk2ZmQ3NiJ9fV19LCJydW5EZXRhaWxzIjp7ImJ1aWxkZXIiOnsiaWQiOiJodHRwczovL2dpdGh1Yi5jb20veW1vdGUvb2N0b3NlbnNlLWdpdGh1Yi1ub3Rlcy8uZ2l0aHViL3dvcmtmbG93cy9wdWJsaXNoLWFwcC55bWxAcmVmcy90YWdzL3YwLjIuMSJ9LCJtZXRhZGF0YSI6eyJpbnZvY2F0aW9uSWQiOiJodHRwczovL2dpdGh1Yi5jb20veW1vdGUvb2N0b3NlbnNlLWdpdGh1Yi1ub3Rlcy9hY3Rpb25zL3J1bnMvMzc3NDk5MDI4OTEvYXR0ZW1wdHMvMSJ9fX19",
+            "payloadType": "application/vnd.in-toto+json",
+            "signatures": [
+              {
+                "sig": "MEUCIFASwTf3G8x94A1/kM6Df/Jnpoa3P1Nr03n8iNMQbSEeAiEAqe054AfeUckGnMvE4Wv/9uHL9aQWvrEHSanHVs8Isvc="
+              }
+            ]
+          },
+          "mediaType": "application/vnd.dev.sigstore.bundle.v0.3+json",
+          "verificationMaterial": {
+            "certificate": {
+              "rawBytes": "MIIHPDCCBsGgAwIBAgIUJL+HLy58GIZs3X2iUe1rN61qch0wCgYIKoZIzj0EAwMwNzEVMBMGA1UEChMMc2lnc3RvcmUuZGV2MR4wHAYDVQQDExVzaWdzdG9yZS1pbnRlcm1lZGlhdGUwHhcNMjYxMDA4MDgyOTEyWhcNMjYxMDA4MDgzOTEyWjAAMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEbQzi9Y0cTeXZ55mfcBsj4eVJArf0ql0LODuqERNi9FL8cfPyZt7cIyh7+nEvAL8pY46RWDgAslnJZOsDcB8sNaOCBeAwggXcMA4GA1UdDwEB/wQEAwIHgDATBgNVHSUEDDAKBggrBgEFBQcDAzAfBgNVHSMEGDAWgBTf0+nPViQRlvmo2OkoVaLGLhhkPzBwBgNVHREBAf8EZjBkhmJodHRwczovL2dpdGh1Yi5jb20veW1vdGUvb2N0b3NlbnNlLWdpdGh1Yi1ub3Rlcy8uZ2l0aHViL3dvcmtmbG93cy9wdWJsaXNoLWFwcC55bWxAcmVmcy90YWdzL3YwLjIuMTA5BgorBgEEAYO/MAEBBCtodHRwczovL3Rva2VuLmFjdGlvbnMuZ2l0aHVidXNlcmNvbnRlbnQuY29tMBIGCisGAQQBg78wAQIEBHB1c2gwNgYKKwYBBAGDvzABAwQoMDM1NmMxNjQ0OTY3M2ZjMTJjZWY1MDFkMjJiZTQ0NmJiNDk2ZmQ3NjAjBgorBgEEAYO/MAEEBBVQdWJsaXNoIE9jdG9TZW5zZSBhcHAwKgYKKwYBBAGDvzABBQQceW1vdGUvb2N0b3NlbnNlLWdpdGh1Yi1ub3RlczAeBgorBgEEAYO/MAEGBBByZWZzL3RhZ3MvdjAuMi4xMDsGCisGAQQBg78wAQgELQwraHR0cHM6Ly90b2tlbi5hY3Rpb25zLmdpdGh1YnVzZXJjb250ZW50LmNvbTByBgorBgEEAYO/MAEJBGQMYmh0dHBzOi8vZ2l0aHViLmNvbS95bW90ZS9vY3Rvc2Vuc2UtZ2l0aHViLW5vdGVzLy5naXRodWIvd29ya2Zsb3dzL3B1Ymxpc2gtYXBwLnltbEByZWZzL3RhZ3MvdjAuMi4xMDgGCisGAQQBg78wAQoEKgwoMDM1NmMxNjQ0OTY3M2ZjMTJjZWY1MDFkMjJiZTQ0NmJiNDk2ZmQ3NjAdBgorBgEEAYO/MAELBA8MDWdpdGh1Yi1ob3N0ZWQwPwYKKwYBBAGDvzABDAQxDC9odHRwczovL2dpdGh1Yi5jb20veW1vdGUvb2N0b3NlbnNlLWdpdGh1Yi1ub3RlczA4BgorBgEEAYO/MAENBCoMKDAzNTZjMTY0NDk2NzNmYzEyY2VmNTAxZDIyYmU0NDZiYjQ5NmZkNzYwIAYKKwYBBAGDvzABDgQSDBByZWZzL3RhZ3MvdjAuMi4xMBoGCisGAQQBg78wAQ8EDAwKMTQwODAzNjYzNTAoBgorBgEEAYO/MAEQBBoMGGh0dHBzOi8vZ2l0aHViLmNvbS95bW90ZTAWBgorBgEEAYO/MAERBAgMBjE1MTk4MzByBgorBgEEAYO/MAESBGQMYmh0dHBzOi8vZ2l0aHViLmNvbS95bW90ZS9vY3Rvc2Vuc2UtZ2l0aHViLW5vdGVzLy5naXRodWIvd29ya2Zsb3dzL3B1Ymxpc2gtYXBwLnltbEByZWZzL3RhZ3MvdjAuMi4xMDgGCisGAQQBg78wARMEKgwoMDM1NmMxNjQ0OTY3M2ZjMTJjZWY1MDFkMjJiZTQ0NmJiNDk2ZmQ3NjAUBgorBgEEAYO/MAEUBAYMBHB1c2gwYwYKKwYBBAGDvzABFQRVDFNodHRwczovL2dpdGh1Yi5jb20veW1vdGUvb2N0b3NlbnNlLWdpdGh1Yi1ub3Rlcy9hY3Rpb25zL3J1bnMvMzc3NDk5MDI4OTEvYXR0ZW1wdHMvMTAWBgorBgEEAYO/MAEWBAgMBnB1YmxpYzBYBgorBgEEAYO/MAEYBEoMSHJlcG86eW1vdGVAMTUxOTgzL29jdG9zZW5zZS1naXRodWItbm90ZXNAMTQwODAzNjYzNTpyZWY6cmVmcy90YWdzL3YwLjIuMTCBiQYKKwYBBAHWeQIEAgR7BHkAdwB1AN09MGrGxxEyYxkeHJlnNwKiSl643jyt/4eKcoAvKe6OAAABoRqheJQAAAQDAEYwRAIgV8YbisijiM1yokhBdIC9SZmD/OwdH2tpUD4BHEMqC3YCIEwNeGSpjRltLW+lQ0lJcunhO4bS/YS005IwGgwM2XGwMAoGCCqGSM49BAMDA2kAMGYCMQCpzluPoLm7K522Ubx64qx2Fno+mxdloC3+0UMBZTLcGhWu4G9Ys8FdK3aVpIlBbYUCMQCtbfdL5DaNyJ9eSz00wH/mlT7b0wnja/OqA8zX6rmk8pnsFA9ztTM9EQdaZsHU8Zs="
+            },
+            "timestampVerificationData": {},
+            "tlogEntries": [
+              {
+                "canonicalizedBody": "eyJhcGlWZXJzaW9uIjoiMC4wLjEiLCJraW5kIjoiZHNzZSIsInNwZWMiOnsiZW52ZWxvcGVIYXNoIjp7ImFsZ29yaXRobSI6InNoYTI1NiIsInZhbHVlIjoiMDNiYTg0ODgxNmQ0MTBjYjFiNGRmMzA3OWY3ZDZkMmI3MDEyM2MxOTA0Y2Y3YTkzNDY4OWU3NjgxY2RhMWNlOSJ9LCJwYXlsb2FkSGFzaCI6eyJhbGdvcml0aG0iOiJzaGEyNTYiLCJ2YWx1ZSI6IjU2MTY3MWMwNGNkYTM1NGI0MmYyMmNlNjFhMjI3YThiYjhhZjM2NTg4ODRlYjAwM2M1N2Q3ZDViYjlhNzViM2QifSwic2lnbmF0dXJlcyI6W3sic2lnbmF0dXJlIjoiTUVVQ0lGQVN3VGYzRzh4OTRBMS9rTTZEZi9KbnBvYTNQMU5yMDNuOGlOTVFiU0VlQWlFQXFlMDU0QWZlVWNrR25NdkU0V3YvOXVITDlhUVd2ckVIU2FuSFZzOElzdmM9IiwidmVyaWZpZXIiOiJMUzB0TFMxQ1JVZEpUaUJEUlZKVVNVWkpRMEZVUlMwdExTMHRDazFKU1VoUVJFTkRRbk5IWjBGM1NVSkJaMGxWU2t3clNFeDVOVGhIU1Zwek0xZ3lhVlZsTVhKT05qRnhZMmd3ZDBObldVbExiMXBKZW1vd1JVRjNUWGNLVG5wRlZrMUNUVWRCTVZWRlEyaE5UV015Ykc1ak0xSjJZMjFWZFZwSFZqSk5ValIzU0VGWlJGWlJVVVJGZUZaNllWZGtlbVJIT1hsYVV6RndZbTVTYkFwamJURnNXa2RzYUdSSFZYZElhR05PVFdwWmVFMUVRVFJOUkdkNVQxUkZlVmRvWTA1TmFsbDRUVVJCTkUxRVozcFBWRVY1VjJwQlFVMUdhM2RGZDFsSUNrdHZXa2w2YWpCRFFWRlpTVXR2V2tsNmFqQkVRVkZqUkZGblFVVmlVWHBwT1Zrd1kxUmxXRm8xTlcxbVkwSnphalJsVmtwQmNtWXdjV3d3VEU5RWRYRUtSVkpPYVRsR1REaGpabEI1V25RM1kwbDVhRGNyYmtWMlFVdzRjRmswTmxKWFJHZEJjMnh1U2xwUGMwUmpRamh6VG1GUFEwSmxRWGRuWjFoalRVRTBSd3BCTVZWa1JIZEZRaTkzVVVWQmQwbElaMFJCVkVKblRsWklVMVZGUkVSQlMwSm5aM0pDWjBWR1FsRmpSRUY2UVdaQ1owNVdTRk5OUlVkRVFWZG5RbFJtQ2pBcmJsQldhVkZTYkhadGJ6SlBhMjlXWVV4SFRHaG9hMUI2UW5kQ1owNVdTRkpGUWtGbU9FVmFha0pyYUcxS2IyUklVbmRqZW05MlRESmtjR1JIYURFS1dXazFhbUl5TUhabFZ6RjJaRWRWZG1JeVRqQmlNMDVzWW01T2JFeFhaSEJrUjJneFdXa3hkV0l6VW14amVUaDFXakpzTUdGSVZtbE1NMlIyWTIxMGJRcGlSemt6WTNrNWQyUlhTbk5oV0U1dlRGZEdkMk5ETlRWaVYzaEJZMjFXYldONU9UQlpWMlI2VEROWmQweHFTWFZOVkVFMVFtZHZja0puUlVWQldVOHZDazFCUlVKQ1EzUnZaRWhTZDJONmIzWk1NMUoyWVRKV2RVeHRSbXBrUjJ4MlltNU5kVm95YkRCaFNGWnBaRmhPYkdOdFRuWmlibEpzWW01UmRWa3lPWFFLVFVKSlIwTnBjMGRCVVZGQ1p6YzRkMEZSU1VWQ1NFSXhZekpuZDA1bldVdExkMWxDUWtGSFJIWjZRVUpCZDFGdlRVUk5NVTV0VFhoT2FsRXdUMVJaTXdwTk1scHFUVlJLYWxwWFdURk5SRVpyVFdwS2FWcFVVVEJPYlVwcFRrUnJNbHB0VVROT2FrRnFRbWR2Y2tKblJVVkJXVTh2VFVGRlJVSkNWbEZrVjBwekNtRllUbTlKUlRscVpFYzVWRnBYTlhwYVUwSm9ZMGhCZDB0bldVdExkMWxDUWtGSFJIWjZRVUpDVVZGalpWY3hkbVJIVlhaaU1rNHdZak5PYkdKdVRtd0tURmRrY0dSSGFERlphVEYxWWpOU2JHTjZRV1ZDWjI5eVFtZEZSVUZaVHk5TlFVVkhRa0pDZVZwWFducE1NMUpvV2pOTmRtUnFRWFZOYVRSNFRVUnpSd3BEYVhOSFFWRlJRbWMzT0hkQlVXZEZURkYzY21GSVVqQmpTRTAyVEhrNU1HSXlkR3hpYVRWb1dUTlNjR0l5TlhwTWJXUndaRWRvTVZsdVZucGFXRXBxQ21JeU5UQmFWelV3VEcxT2RtSlVRbmxDWjI5eVFtZEZSVUZaVHk5TlFVVktRa2RSVFZsdGFEQmtTRUo2VDJrNGRsb3liREJoU0ZacFRHMU9kbUpUT1RVS1lsYzVNRnBUT1haWk0xSjJZekpXZFdNeVZYUmFNbXd3WVVoV2FVeFhOWFprUjFaNlRIazFibUZZVW05a1YwbDJaREk1ZVdFeVduTmlNMlI2VEROQ01RcFpiWGh3WXpKbmRGbFlRbmRNYm14MFlrVkNlVnBYV25wTU0xSm9Xak5OZG1ScVFYVk5hVFI0VFVSblIwTnBjMGRCVVZGQ1p6YzRkMEZSYjBWTFozZHZDazFFVFRGT2JVMTRUbXBSTUU5VVdUTk5NbHBxVFZSS2FscFhXVEZOUkVaclRXcEthVnBVVVRCT2JVcHBUa1JyTWxwdFVUTk9ha0ZrUW1kdmNrSm5SVVVLUVZsUEwwMUJSVXhDUVRoTlJGZGtjR1JIYURGWmFURnZZak5PTUZwWFVYZFFkMWxMUzNkWlFrSkJSMFIyZWtGQ1JFRlJlRVJET1c5a1NGSjNZM3B2ZGdwTU1tUndaRWRvTVZscE5XcGlNakIyWlZjeGRtUkhWWFppTWs0d1lqTk9iR0p1VG14TVYyUndaRWRvTVZscE1YVmlNMUpzWTNwQk5FSm5iM0pDWjBWRkNrRlpUeTlOUVVWT1FrTnZUVXRFUVhwT1ZGcHFUVlJaTUU1RWF6Sk9lazV0V1hwRmVWa3lWbTFPVkVGNFdrUkplVmx0VlRCT1JGcHBXV3BSTlU1dFdtc0tUbnBaZDBsQldVdExkMWxDUWtGSFJIWjZRVUpFWjFGVFJFSkNlVnBYV25wTU0xSm9Xak5OZG1ScVFYVk5hVFI0VFVKdlIwTnBjMGRCVVZGQ1p6YzRkd3BCVVRoRlJFRjNTMDFVVVhkUFJFRjZUbXBaZWs1VVFXOUNaMjl5UW1kRlJVRlpUeTlOUVVWUlFrSnZUVWRIYURCa1NFSjZUMms0ZGxveWJEQmhTRlpwQ2t4dFRuWmlVemsxWWxjNU1GcFVRVmRDWjI5eVFtZEZSVUZaVHk5TlFVVlNRa0ZuVFVKcVJURk5WR3MwVFhwQ2VVSm5iM0pDWjBWRlFWbFBMMDFCUlZNS1FrZFJUVmx0YURCa1NFSjZUMms0ZGxveWJEQmhTRlpwVEcxT2RtSlRPVFZpVnprd1dsTTVkbGt6VW5aak1sWjFZekpWZEZveWJEQmhTRlpwVEZjMWRncGtSMVo2VEhrMWJtRllVbTlrVjBsMlpESTVlV0V5V25OaU0yUjZURE5DTVZsdGVIQmpNbWQwV1ZoQ2QweHViSFJpUlVKNVdsZGFla3d6VW1oYU0wMTJDbVJxUVhWTmFUUjRUVVJuUjBOcGMwZEJVVkZDWnpjNGQwRlNUVVZMWjNkdlRVUk5NVTV0VFhoT2FsRXdUMVJaTTAweVdtcE5WRXBxV2xkWk1VMUVSbXNLVFdwS2FWcFVVVEJPYlVwcFRrUnJNbHB0VVROT2FrRlZRbWR2Y2tKblJVVkJXVTh2VFVGRlZVSkJXVTFDU0VJeFl6Sm5kMWwzV1V0TGQxbENRa0ZIUkFwMmVrRkNSbEZTVmtSR1RtOWtTRkozWTNwdmRrd3laSEJrUjJneFdXazFhbUl5TUhabFZ6RjJaRWRWZG1JeVRqQmlNMDVzWW01T2JFeFhaSEJrUjJneENsbHBNWFZpTTFKc1kzazVhRmt6VW5CaU1qVjZURE5LTVdKdVRYWk5lbU16VGtSck5VMUVTVFJQVkVWMldWaFNNRnBYTVhka1NFMTJUVlJCVjBKbmIzSUtRbWRGUlVGWlR5OU5RVVZYUWtGblRVSnVRakZaYlhod1dYcENXVUpuYjNKQ1owVkZRVmxQTDAxQlJWbENSVzlOVTBoS2JHTkhPRFpsVnpGMlpFZFdRUXBOVkZWNFQxUm5la3d5T1dwa1J6bDZXbGMxZWxwVE1XNWhXRkp2WkZkSmRHSnRPVEJhV0U1QlRWUlJkMDlFUVhwT2FsbDZUbFJ3ZVZwWFdUWmpiVlp0Q21ONU9UQlpWMlI2VEROWmQweHFTWFZOVkVOQ2FWRlpTMHQzV1VKQ1FVaFhaVkZKUlVGblVqZENTR3RCWkhkQ01VRk9NRGxOUjNKSGVIaEZlVmw0YTJVS1NFcHNiazUzUzJsVGJEWTBNMnA1ZEM4MFpVdGpiMEYyUzJVMlQwRkJRVUp2VW5Gb1pVcFJRVUZCVVVSQlJWbDNVa0ZKWjFZNFdXSnBjMmxxYVUweGVRcHZhMmhDWkVsRE9WTmFiVVF2VDNka1NESjBjRlZFTkVKSVJVMXhRek5aUTBsRmQwNWxSMU53YWxKc2RFeFhLMnhSTUd4S1kzVnVhRTgwWWxNdldWTXdDakExU1hkSFozZE5NbGhIZDAxQmIwZERRM0ZIVTAwME9VSkJUVVJCTW10QlRVZFpRMDFSUTNCNmJIVlFiMHh0TjBzMU1qSlZZbmcyTkhGNE1rWnVieXNLYlhoa2JHOURNeXN3VlUxQ1dsUk1ZMGRvVjNVMFJ6bFpjemhHWkVzellWWndTV3hDWWxsVlEwMVJRM1JpWm1STU5VUmhUbmxLT1dWVGVqQXdkMGd2YlFwc1ZEZGlNSGR1YW1FdlQzRkJPSHBZTm5KdGF6aHdibk5HUVRsNmRGUk5PVVZSWkdGYWMwaFZPRnB6UFFvdExTMHRMVVZPUkNCRFJWSlVTVVpKUTBGVVJTMHRMUzB0Q2c9PSJ9XX19",
+                "inclusionPromise": {
+                  "signedEntryTimestamp": "MEUCIQDEKXqf2ca+d72IBDoiKzLFbyO3ZTLnGb1Je9dgYLX3nAIgO3Gb0/eN5qMr7ujFljF/1t3LxLFvMKyyJBVY5YpH5z8="
+                },
+                "inclusionProof": {
+                  "checkpoint": {
+                    "envelope": "rekor.sigstore.dev - 1193050959916656506\n3022590236\nyidAQm4SdSB8HK/PWUPbfLEJnaSVyvBolE2pwIw7+qw=\n\n— rekor.sigstore.dev wNI9ajBFAiAx7Jkb2rclq1+PWhaV4SIABydTZRXpaEy5ADBgvyRtZQIhALKJi9vpwR2HT4NdzTe6UnmKX9HJbr6ErTPevQNmYcRt\n"
+                  },
+                  "hashes": [
+                    "MB69waA9l0r0CWe33GmgqEYaSOh4hj1enAu9055eWPM=",
+                    "W5hmKE0meTWt3pDAfqBw+DD9WsA3cZba5oybbkeIIX4=",
+                    "KKLFdZM0KXhU9fGNxVwokLWKjaOrE99Ak7+jIC7m7l0=",
+                    "XP0FTGD6PbQrfsiBdyPJ7V8JIU3TGXyHQp1IPCyPgtc=",
+                    "mQwhOGfras46rPDrUL445iMlcOyjMeOgC2Rn8/cr90k=",
+                    "ZQGr1ZsswENDYi6kn+xipDTBHfVqdBLljuZNq6YGEZs=",
+                    "OyHA8OEiVxXP/cgHSxYGBcwRlspBaetlQSGVplZRExE=",
+                    "6yBSEEab9N6CRBrSaXYVvbtX8IaI2yCFnIKoG/V7tJ4=",
+                    "qmtSQILYSNonJjGZT4jfjdNm6QipBSPhkd/E5aVbSJA=",
+                    "Cb2jKY7P56VP4K3VQkxvQReCObSpqVqD8J1L7QhO/io=",
+                    "9EknQ1dYJ8F0Mj7pSFDdIeFbIavS54i5cX5338ZT2jQ=",
+                    "S0K3yoNmY86X8nFeSBgWlb3CDEqXg+5oVroXNvnM+mM=",
+                    "xGHbkjO/PXHGEwHvm5UqRjcsT7/iwSQXxidi4cIY51A=",
+                    "hafZfJdzUX/yyCr3Anv7Qq1DWVaWxotaclNRcl/O9SQ=",
+                    "NlOclldmKPA1tMKIskqHAwuQDYHp31YwpK+OOMrMccc=",
+                    "qxzHanAzz57SDdmJe0B7bJK72NTIBbwEMGBBKvDOROw=",
+                    "xH/DCseLHr9eKoYT8qsORZK7zVdEGYWHuVtsVrD95wY="
+                  ],
+                  "logIndex": "3022590082",
+                  "rootHash": "yidAQm4SdSB8HK/PWUPbfLEJnaSVyvBolE2pwIw7+qw=",
+                  "treeSize": "3022590236"
+                },
+                "integratedTime": "1791448153",
+                "kindVersion": {
+                  "kind": "dsse",
+                  "version": "0.0.1"
+                },
+                "logId": {
+                  "keyId": "wNI9atQGlz+VWfO6LRygH4QUfY/8W4RFwiT5i5WRgB0="
+                },
+                "logIndex": "3144494344"
+              }
+            ]
+          }
+        }
+      }
+    },
+    "capabilities": [
+      "storage",
+      "auth",
+      "github"
+    ],
+    "network": {
+      "hosts": []
+    },
+    "storage": {
+      "max_bytes": 4194304,
+      "accounts": true
+    },
+    "compute": {
+      "instruction_budget": null,
+      "memory_bytes": null
+    },
+    "agent": {
+      "profile": "read-only",
+      "tools": [],
+      "max_iterations": null,
+      "token_budget": null,
+      "model": {
+        "needs": [
+          "tool_calling"
+        ],
+        "tier": "standard",
+        "local_only": false
+      },
+      "instructions": "AGENT.md"
+    },
+    "requires": [
+      "publisher-github-v1"
+    ]
+  },
+  "listing": {
+    "schema": 1,
+    "subtitle": "Markdown drafts with reviewed GitHub saves",
+    "description": "Write Markdown with the Rinx article editor in a compatible OctoSense host. Recover local drafts after restart; connect GitHub through host OAuth, choose a repository and file, and review exact Markdown before saving. Requires a host with contract 1.8.0 / GitHub publisher support and the native Markdown editor; beta.2 cannot install this keyless release. Live GitHub OAuth and remote commits remain unverified. Optional Ask GitHub Notes requires separate agent consent and may send questions, context and permitted repository reads to your configured model. No agent write or approval tools are exposed; manual editing works without a model.",
+    "category": "productivity",
+    "keywords": [
+      "markdown",
+      "github",
+      "notes",
+      "sample"
+    ],
+    "screenshots": [
+      "screenshots/01-preview.png",
+      "screenshots/02-editor.png"
+    ],
+    "icon": "assets/icon.svg",
+    "platforms": [
+      "macos"
+    ],
+    "publisher": {
+      "name": "ymote",
+      "support": "https://github.com/ymote/octosense-github-notes/issues",
+      "privacy_policy_url": "https://github.com/ymote/octosense-github-notes/blob/main/PRIVACY.md"
+    },
+    "release_notes": "0.2.1: clarify that the GitHub release workflow does not grant App Hub admission and supports an issue opened before the release. Regenerate from Design Flow a9a07f4. Editor, permissions and draft format remain unchanged. Verified 0.2.0 installed editing/restart evidence is recorded separately; this update uses a fresh immutable attestation.",
+    "age_rating": "all",
+    "license": "Apache-2.0"
+  },
+  "tools": [
+    {
+      "name": "githubnotes.repositories",
+      "description": "List repositories available to the connected GitHub account.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "connection": {
+            "description": "The opaque GitHub connection bound to this app; never a provider token.",
+            "type": "string"
+          },
+          "page": {
+            "maximum": 1000,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "connection"
+        ],
+        "type": "object"
+      },
+      "output_schema": {
+        "items": {
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "risk": "read",
+      "background": false,
+      "shareable": false,
+      "private_data": true,
+      "implemented_by": "host-service"
+    },
+    {
+      "name": "githubnotes.files",
+      "description": "List file and directory metadata in a selected repository branch.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "branch": {
+            "type": "string"
+          },
+          "connection": {
+            "description": "The opaque GitHub connection bound to this app; never a provider token.",
+            "type": "string"
+          },
+          "owner": {
+            "type": "string"
+          },
+          "path": {
+            "description": "Repository-relative directory; empty means the root.",
+            "type": "string"
+          },
+          "repo": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "connection",
+          "owner",
+          "repo",
+          "branch"
+        ],
+        "type": "object"
+      },
+      "output_schema": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "risk": "read",
+      "background": false,
+      "shareable": false,
+      "private_data": true,
+      "implemented_by": "host-service"
+    },
+    {
+      "name": "githubnotes.read",
+      "description": "Read a UTF-8 note from the selected repository branch, including its current blob SHA.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "branch": {
+            "type": "string"
+          },
+          "connection": {
+            "description": "The opaque GitHub connection bound to this app; never a provider token.",
+            "type": "string"
+          },
+          "owner": {
+            "type": "string"
+          },
+          "path": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "repo": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "connection",
+          "owner",
+          "repo",
+          "branch",
+          "path"
+        ],
+        "type": "object"
+      },
+      "output_schema": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "risk": "read",
+      "background": false,
+      "shareable": false,
+      "private_data": true,
+      "implemented_by": "host-service"
+    }
+  ],
+  "artifact": "artifacts/io.github.ymote.githubnotes-0.2.1.bundle",
+  "publisher": "github:1408036635",
+  "publisher_key": "",
+  "source": {
+    "repository": "https://github.com/ymote/octosense-github-notes",
+    "commit": "0356c16449673fc12cef501d22be446bb496fd76"
+  },
+  "status": {
+    "state": "offered"
+  },
+  "admitted": "2026-10-08"
+}

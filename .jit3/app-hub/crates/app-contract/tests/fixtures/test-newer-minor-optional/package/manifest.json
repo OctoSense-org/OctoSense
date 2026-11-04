@@ -1,0 +1,12 @@
+{
+  "schema": 1,
+  "schema_minor": 2,
+  "id": "forecast",
+  "version": "1.1.0",
+  "name": "Forecast",
+  "integrity": { "bundle_blake3": "729bc3dfe1ef9ae2e49cb86f82db670adc09282c4aaadc65d58ed804d6255c26" },
+  "capabilities": ["storage", "net"],
+  "network": { "hosts": ["api.weather.example"], "retry": 2 },
+  "storage": { "max_bytes": 4096, "backup": "never" },
+  "theme_color": "#336699"
+}

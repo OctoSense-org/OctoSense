@@ -1,0 +1,326 @@
+start 2026-11-04T18:41:49Z
+warning: /Users/ychen/home/octosense-org/.worktrees/jit3-octosense/desktop/Cargo.toml: file `/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/desktop/src/main.rs` found to be present in multiple build targets:
+  * `lib` target `octosense`
+  * `bin` target `octosense`
+warning: patch `makepad-code-editor v2.0.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/code_editor)` was not used in the crate graph
+warning: patch `ruma v0.16.0 (https://github.com/project-robius/ruma.git?branch=tsp#7a912c85)` was not used in the crate graph
+warning: patch `makepad-ai v0.0.1 (/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/.jit3/shims/makepad-ai)` was not used in the crate graph
+warning: patch `makepad-code-editor v2.0.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/code_editor)` was not used in the crate graph
+warning: patch `makepad-markdown v0.0.1 (/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/.jit3/shims/makepad-markdown)` was not used in the crate graph
+warning: patch `makepad-markdown-widgets v0.0.1 (/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/.jit3/shims/makepad-markdown-widgets)` was not used in the crate graph
+warning: patch `makepad-task v0.0.1 (/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/.jit3/shims/makepad-task)` was not used in the crate graph
+help: Check that the patched package version and available features are compatible
+      with the dependency requirements. If the patch has a different version from
+      what is locked in the Cargo.lock file, run `cargo update` to use the new
+      version. This may also occur with an optional dependency that is not enabled.
+   Compiling proc-macro2 v1.0.107
+   Compiling quote v1.0.47
+   Compiling unicode-ident v1.0.24
+   Compiling libc v0.2.190
+   Compiling makepad-micro-proc-macro v1.0.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/libs/micro_proc_macro)
+    Checking cfg-if v1.0.4
+    Checking bytemuck v1.25.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/libs/bytemuck)
+    Checking makepad-fast-inflate v0.1.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/libs/fast_inflate)
+   Compiling makepad-relax v1.0.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/libs/relax/attr)
+    Checking makepad-objc-sys v1.0.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/libs/objc-sys)
+    Checking makepad-zune-core v0.5.1 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/libs/zune/zune-core)
+    Checking makepad-regex v0.1.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/libs/regex)
+    Checking makepad-strict-json v0.1.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/libs/strict_json)
+    Checking simd-adler32 v0.3.9 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/libs/simd-adler32)
+    Checking bitflags v2.10.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/libs/bitflags)
+    Checking ttf-parser v0.24.1 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/libs/ttf-parser)
+    Checking unicode-properties v0.1.4 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/libs/unicode/unicode-properties)
+    Checking smallvec v1.15.1 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/libs/smallvec)
+    Checking unicode-bidi-mirroring v0.3.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/libs/unicode/unicode-bidi-mirroring)
+    Checking unicode-ccc v0.3.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/libs/unicode/unicode-ccc)
+    Checking makepad-zune-inflate v0.2.54 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/libs/zune/zune-inflate)
+   Compiling makepad-relax-api-macro-impl v1.0.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/libs/relax_api/macro_impl)
+   Compiling makepad-live-id-macros-impl v1.0.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/libs/live_id/id_macros_impl)
+   Compiling makepad-micro-serde-derive-impl v1.0.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/libs/micro_serde/derive_impl)
+   Compiling makepad-script-derive-impl v1.0.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/platform/script/derive_impl)
+    Checking unicode-script v0.5.8 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/libs/unicode/unicode-script)
+    Checking byteorder v1.5.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/libs/byteorder)
+    Checking makepad-apple-sys v1.0.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/libs/apple_sys)
+    Checking makepad-gpu-trace v1.0.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/libs/gpu_trace)
+    Checking makepad-toml-parser v1.0.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/libs/toml_parser)
+    Checking ab_glyph_rasterizer v0.1.8 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/libs/ab_glyph_rasterizer)
+    Checking makepad-shared-bytes v1.0.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/libs/shared_bytes)
+    Checking makepad-zune-png v0.5.2 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/libs/zune/zune-png)
+   Compiling makepad-live-id-macros v1.0.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/libs/live_id/id_macros)
+    Checking fxhash v0.2.1 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/libs/fxhash)
+    Checking makepad-git v0.1.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/libs/git)
+    Checking sdfer v0.2.1 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/libs/sdfer)
+    Checking makepad-zune-jpeg v0.5.15 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/libs/zune/zune-jpeg)
+   Compiling makepad-platform v2.0.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/platform)
+    Checking makepad-a11y v0.1.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/libs/a11y)
+    Checking makepad-platform-video v1.0.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/platform/video)
+   Compiling makepad-micro-serde-derive v1.0.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/libs/micro_serde/derive)
+    Checking makepad-stack v1.0.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/libs/stack)
+   Compiling makepad-relax-api-macro v1.0.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/libs/relax_api/macro)
+    Checking foldhash v0.2.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/libs/vulkan/foldhash)
+    Checking makepad-web-manifest v0.1.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/libs/web_manifest)
+   Compiling makepad-script-derive v1.0.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/platform/script/derive)
+    Checking makepad-futures v1.0.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/libs/futures)
+    Checking makepad-prof-stream v1.0.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/libs/prof_stream)
+    Checking makepad-alloc-epoch v1.0.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/libs/alloc_epoch)
+    Checking makepad-jobs v1.0.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/libs/jobs)
+    Checking weezl v0.1.12 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/libs/gif/weezl)
+    Checking makepad-byteorder-lite v0.1.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/libs/byteorder-lite)
+    Checking makepad-zune-qoi v0.5.2 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/libs/zune/zune-qoi)
+   Compiling makepad-derive-widget-impl v1.0.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/widgets/derive_widget_impl)
+    Checking unicode-segmentation v1.12.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/libs/unicode/unicode-segmentation)
+    Checking makepad-relax-api v1.0.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/libs/relax_api)
+    Checking unicode-bidi v0.3.18 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/libs/unicode/unicode-bidi)
+    Checking typenum v1.20.1
+    Checking makepad-app-icons v0.1.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/libs/app_icons)
+    Checking makepad-gif v0.1.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/libs/gif)
+    Checking makepad-webp v0.2.4 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/libs/webp)
+    Checking makepad-tween v0.1.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/libs/tween)
+   Compiling serde_core v1.0.229
+   Compiling shlex v2.0.1
+   Compiling find-msvc-tools v0.1.12
+   Compiling version_check v0.9.5
+    Checking subtle v2.6.1
+   Compiling serde v1.0.229
+    Checking itoa v1.0.18
+   Compiling zmij v1.0.23
+   Compiling serde_json v1.0.151
+    Checking memchr v2.8.3
+    Checking alloc-no-stdlib v2.0.4 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/libs/brotli/alloc-no-stdlib)
+   Compiling generic-array v0.14.7
+    Checking alloc-stdlib v0.2.4 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/libs/brotli/alloc-stdlib)
+    Checking makepad-filesystem-watcher v0.1.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/libs/filesystem_watcher)
+    Checking makepad-base64 v1.0.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/libs/base64)
+    Checking brotli-decompressor v5.0.3 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/libs/brotli/brotli-decompressor)
+    Checking i_float v3.0.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/libs/i_float)
+    Checking unicase v2.9.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/libs/unicase)
+    Checking i_tree v0.19.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/libs/i_tree)
+    Checking makepad-sqlite v1.0.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/libs/sqlite_query)
+    Checking memchr v2.7.6 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/libs/memchr)
+    Checking makepad-live-reload-core v0.1.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/libs/live_reload_core)
+    Checking i_key_sort v0.11.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/libs/i_key_sort)
+    Checking makepad-latex-math v0.1.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/libs/latex_math)
+    Checking i_shape v3.0.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/libs/i_shape)
+   Compiling fs_extra v1.3.0
+   Compiling syn v2.0.119
+   Compiling syn v3.0.5
+    Checking pulldown-cmark v0.12.2 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/libs/pulldown-cmark)
+   Compiling pkg-config v0.3.34
+   Compiling dunce v1.0.5
+    Checking getrandom v0.2.17
+   Compiling jobserver v0.1.35
+    Checking makepad-live-id v1.0.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/libs/live_id)
+    Checking makepad-cpu-budget v1.0.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/platform/cpu_budget)
+    Checking brotli v8.0.4 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/libs/brotli/brotli)
+    Checking i_overlay v7.0.3 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/libs/i_overlay)
+    Checking stable_deref_trait v1.2.1
+    Checking rand_core v0.6.4
+    Checking base64ct v1.8.3
+   Compiling cc v1.4.6
+   Compiling aws-lc-rs v1.18.1
+    Checking cpufeatures v0.2.17
+    Checking makepad-audio-decode v0.1.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/libs/audio_decode)
+    Checking makepad-zip-file v1.0.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/libs/zip_file)
+    Checking makepad-video-flow v0.1.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/libs/video_flow)
+    Checking untrusted v0.7.1
+   Compiling autocfg v1.5.1
+    Checking makepad-core-util v0.1.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/libs/core_util)
+   Compiling zerocopy v0.8.57
+    Checking once_cell v1.21.4
+   Compiling thiserror v2.0.20
+    Checking writeable v0.6.4
+    Checking core-foundation-sys v0.8.7
+    Checking litemap v0.8.3
+    Checking utf8_iter v1.0.4
+   Compiling num-traits v0.2.19
+   Compiling cmake v0.1.58
+    Checking untrusted v0.9.0
+   Compiling icu_normalizer_data v2.3.0
+   Compiling icu_properties_data v2.3.0
+    Checking pem-rfc7468 v0.7.0
+    Checking pin-project-lite v0.2.17
+    Checking const-oid v0.9.6
+    Checking simd-adler32 v0.3.10
+    Checking flagset v0.4.7
+    Checking adler2 v2.0.1
+   Compiling crc32fast v1.5.2
+    Checking bytes v1.12.1
+    Checking log v0.4.34
+   Compiling aws-lc-sys v0.45.0
+   Compiling ring v0.17.14
+    Checking base64 v0.22.1
+    Checking smallvec v1.16.1
+    Checking jiff-core v0.1.1
+    Checking makepad-micro-serde v1.0.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/libs/micro_serde)
+    Checking makepad-html v1.0.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/libs/html)
+    Checking makepad-shader v1.0.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/platform/shader)
+    Checking crypto-common v0.1.7
+    Checking block-buffer v0.10.4
+   Compiling makepad-derive-widget v2.0.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/widgets/derive_widget)
+    Checking digest v0.10.7
+    Checking makepad-svg v1.0.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/libs/svg)
+    Checking bitflags v2.13.2
+    Checking makepad-mbtile-reader v1.0.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/libs/mbtile_reader)
+    Checking sha1 v0.10.7
+    Checking pem v3.0.6
+    Checking signature v2.2.0
+   Compiling rustls v0.23.44
+    Checking jiff v0.2.37
+   Compiling httparse v1.10.1
+   Compiling synstructure v0.13.2
+    Checking hex v0.4.3
+    Checking percent-encoding v2.3.2
+   Compiling blake3 v1.8.7
+    Checking miniz_oxide v0.9.1
+    Checking rand_core v0.10.1
+   Compiling getrandom v0.3.4
+    Checking form_urlencoded v1.2.2
+    Checking http v1.5.0
+    Checking tracing-core v0.1.36
+    Checking hybrid-array v0.4.15
+    Checking futures-io v0.3.34
+    Checking arrayvec v0.7.8
+    Checking constant_time_eq v0.4.2
+    Checking iana-time-zone v0.1.65
+    Checking makepad-app-registry v0.1.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/libs/app_registry)
+   Compiling semver v1.0.28
+   Compiling thiserror v1.0.69
+   Compiling serde_derive v1.0.229
+   Compiling zerovec-derive v0.11.6
+   Compiling displaydoc v0.2.7
+   Compiling thiserror-impl v2.0.20
+   Compiling rustc_version v0.4.1
+    Checking crypto-common v0.2.2
+    Checking block-buffer v0.12.1
+    Checking inout v0.1.4
+   Compiling zeroize_derive v1.5.0
+   Compiling zerofrom-derive v0.1.7
+   Compiling yoke-derive v0.8.2
+    Checking makepad-error-log v1.0.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/libs/error_log)
+    Checking makepad-math v1.0.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/libs/math)
+    Checking makepad-key-code v0.1.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/platform/key_code)
+    Checking makepad-network v1.0.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/platform/network)
+    Checking rustybuzz v0.18.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/libs/rustybuzz)
+    Checking makepad-zune-bmp v0.5.2 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/libs/zune/zune-bmp)
+    Checking makepad-tsdf v0.1.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/libs/tsdf)
+    Checking makepad-script v1.0.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/platform/script)
+    Checking makepad-studio-protocol v0.1.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/platform/studio)
+    Checking zeroize v1.9.0
+    Checking makepad-gizmo v0.1.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/libs/gizmo)
+    Checking ppv-lite86 v0.2.21
+   Compiling der_derive v0.7.3
+   Compiling tls_codec_derive v0.4.2
+    Checking zerofrom v0.1.8
+   Compiling tracing-attributes v0.1.31
+    Checking flate2 v1.1.10
+    Checking makepad-remote v0.1.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/libs/remote)
+    Checking makepad-ai-hub v0.3.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/libs/ai/hub)
+   Compiling thiserror-impl v1.0.69
+    Checking makepad-font-core v1.0.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/libs/font_core)
+    Checking security-framework-sys v2.17.0
+    Checking core-foundation v0.10.1
+    Checking errno v0.3.14
+    Checking rand_core v0.9.5
+   Compiling getrandom v0.4.3
+    Checking signal-hook-registry v1.4.8
+    Checking security-framework v3.7.0
+    Checking tracing v0.1.44
+    Checking rand_chacha v0.9.0
+    Checking makepad-hal v1.0.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/platform/hal)
+    Checking rand_chacha v0.3.1
+    Checking digest v0.11.3
+   Compiling curve25519-dalek v5.0.0
+   Compiling tokio-macros v2.7.2
+    Checking sha2 v0.10.9
+    Checking universal-hash v0.5.1
+   Compiling eyre v0.6.14
+    Checking mio v1.2.3
+    Checking socket2 v0.6.5
+    Checking hashbrown v0.17.1
+    Checking opaque-debug v0.3.1
+    Checking equivalent v1.0.2
+    Checking makepad-civil-time v0.1.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/libs/civil_time)
+    Checking poly1305 v0.8.0
+    Checking tokio v1.53.1
+    Checking rustls-pki-types v1.15.1
+    Checking der v0.7.10
+    Checking tls_codec v0.4.2
+    Checking cipher v0.4.4
+    Checking chacha20 v0.9.1
+    Checking indexmap v2.14.2
+    Checking rand v0.8.8
+    Checking rand v0.9.5
+    Checking yoke v0.8.3
+   Compiling futures-macro v0.3.34
+    Checking signature v3.0.0
+    Checking blake2 v0.10.6
+    Checking aead v0.5.2
+    Checking miniz_oxide v0.8.9
+    Checking fdeflate v0.3.7
+    Checking password-hash v0.5.0
+    Checking sigstore-types v0.14.0
+    Checking chrono v0.4.45
+    Checking octoscript-ui-l0 v0.1.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/.sources/octoscript/crates/octoscript-ui-l0)
+    Checking serde_spanned v0.6.9
+    Checking toml_datetime v0.6.11
+    Checking cpufeatures v0.3.1
+    Checking utf-8 v0.7.6
+    Checking futures-core v0.3.34
+    Checking base64 v0.23.1
+    Checking futures-task v0.3.34
+    Checking pxfm v0.1.30
+    Checking data-encoding v2.11.1
+    Checking byteorder-lite v0.1.0
+    Checking quick-error v2.0.1
+    Checking zune-core v0.5.3
+    Checking slab v0.4.12
+    Checking indenter v0.3.4
+    Checking winnow v0.7.15
+    Checking futures-sink v0.3.34
+    Checking byteorder v1.5.0
+    Checking ryu-js v1.0.3
+    Checking zune-jpeg v0.5.15
+    Checking futures-util v0.3.34
+    Checking image-webp v0.2.4
+    Checking serde_json_canonicalizer v0.3.2
+    Checking sigstore-bundle v0.14.0
+    Checking ureq-proto v0.6.4
+    Checking uuid v1.26.1
+    Checking sha2 v0.11.0
+    Checking argon2 v0.5.3
+    Checking png v0.18.1
+    Checking chacha20poly1305 v0.10.1
+    Checking ed25519 v3.0.0
+    Checking rustls-native-certs v0.8.4
+    Checking webpki-roots v1.0.9
+   Compiling octosense-kernel v0.1.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/crates/kernel)
+    Checking bytemuck v1.25.2
+    Checking qrcode v0.14.1
+    Checking octoscript-node v0.1.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/.sources/octoscript-makepad/crates/octoscript-node)
+    Checking utf8-zero v0.8.1
+    Checking toml_edit v0.22.27
+    Checking wasmparser v0.258.3
+    Checking octos-core v2.0.3-rc.13 (https://github.com/octos-org/octos.git?rev=b0759a57719fd35b3a2da1c5d969bc67538ed516#b0759a57)
+    Checking fs2 v0.4.3
+    Checking roxmltree v0.21.1
+    Checking siphasher v1.0.3
+   Compiling crossbeam-utils v0.8.23
+    Checking ed25519-dalek v3.0.0
+    Checking makepad-cell-width v0.1.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/libs/cell_width)
+    Checking phf_shared v0.12.1
+   Compiling chrono-tz v0.10.4
+   Compiling octosense-ai-host v0.1.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/crates/ai-host)
+    Checking phf v0.12.1
+   Compiling octosense-shell v0.1.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/crates/shell)
+    Checking makepad-script-census v1.0.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/platform/script/census)
+    Checking makepad-script-std v1.0.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-work/platform/script/std)
+    Checking zerovec v0.11.8
+    Checking zerotrie v0.2.5
+    Checking octoscript-render v0.1.0 (/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/.sources/octoscript-makepad/crates/octoscript-render)
+    Checking spki v0.7.3
+.sources/octoscript-makepad/crates/octoscript-render/src/eval.rs:23:15: error[E0308]: mismatched types: expected `ScriptHostContext<'_>`, found `&mut ScriptVmHost`
+.sources/octoscript-makepad/crates/octoscript-render/src/eval.rs:45:20: error[E0599]: no method named `eval_checked` found for mutable reference `&mut makepad_script::ScriptVm<'_>` in the current scope: method not found in `&mut makepad_script::ScriptVm<'_>`
+error: could not compile `octoscript-render` (lib) due to 2 previous errors
+warning: build failed, waiting for other jobs to finish...
+exit=101
+end 2026-11-04T18:42:10Z

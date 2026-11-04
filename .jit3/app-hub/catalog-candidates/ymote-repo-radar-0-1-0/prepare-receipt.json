@@ -1,0 +1,16 @@
+{
+  "added_artifacts": [
+    {
+      "bundle": "artifacts/org.ymote.reporadar-0.1.0.bundle",
+      "index": "index/org.ymote.reporadar-0.1.0.json",
+      "pack": "artifacts/org.ymote.reporadar-0.1.0.bundle.pack.json"
+    }
+  ],
+  "base_sequence": 15,
+  "base_sha256": "de8536252587d56d0c4d9a0d9f236cc791becc920d51c8572870586afa14caed",
+  "candidate_sha256": "9a3a5363c5ffe351544978e2da0392743e3fae61f7a7c3a132e43db875150168",
+  "payload_sha256": "83867e6f8197dff3d7fb630ba50a408a44322c53fa03c619a6fd01fcba0c91bf",
+  "schema": 1,
+  "sequence": 16,
+  "subject": "catalog-v2.payload.json"
+}

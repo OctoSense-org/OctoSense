@@ -1,0 +1,89 @@
+argon2	OK	3s	0 errors	
+base64	TYPE	0s	2 errors	engine/simd.rs:309:27: E0425: cannot find value `vreinterpretq_u8_u16` in this scope
+bytes	OK	0s	0 errors	
+cadcraft-engine	OK	4s	0 errors	
+cadcraft-io	OK	12s	0 errors	
+chacha20poly1305	OK	7s	0 errors	
+chrono	TYPE	1s	2 errors	date.rs:554:9: E0034: multiple applicable items in scope
+chrono-tz	OK	4s	0 errors	
+crossbeam-queue	OK	0s	0 errors	
+deckcraft-anim	OK	3s	0 errors	
+deckcraft-engine	TYPE	17s	2 errors	
+deckcraft-fonts	OK	1s	0 errors	de/impls.rs:1706:32: E0412: cannot find type `net::IpAddr` in this scope
+deckcraft-format	OK	1s	0 errors	
+deckcraft-model	OK	1s	0 errors	
+deckcraft-pptx	OK	1s	0 errors	
+designcraft-engine	OK	25s	0 errors	
+designcraft-idml	OK	3s	0 errors	
+designcraft-images	OK	3s	0 errors	
+designcraft-render	OK	7s	0 errors	
+dom_smoothie	OK	8s	0 errors	
+effectcraft-automation	LOAD	12s		makepad-run: load error ndarray: /Users/ychen/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ndarray-0.17.2/src/slice.rs:247:1: expected `;` or `}` after expression (found OpenBrace `{`)
+effectcraft-engine	LOAD	4s		makepad-run: load error ndarray: /Users/ychen/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ndarray-0.17.2/src/slice.rs:247:1: expected `;` or `}` after expression (found OpenBrace `{`)
+effectcraft-expr	LOAD	12s		makepad-run: load error time: /Users/ychen/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/time-0.3.55/src/parsing/parsed.rs:133:12: expected `>` (found Minus `-`)
+effectcraft-media	LOAD	15s		makepad-run: load error ndarray: /Users/ychen/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ndarray-0.17.2/src/slice.rs:247:1: expected `;` or `}` after expression (found OpenBrace `{`)
+effectcraft-model	OK	2s	0 errors	
+ego-tree	OK	0s	0 errors	
+filmcraft-codecs	TYPE	12s	2 errors	
+filmcraft-engine	TYPE	9s	2 errors	
+filmcraft-media	OK	3s	0 errors	
+flate2	TYPE	1s	22 errors	ffi/miniz_oxide.rs:11:32: E0606: casting `MZFlush` as `isize` is invalid
+futures-util	OK	1s	0 errors	
+gridcraft-calc	TYPE	3s	1 errors	engineering.rs:844:20: E0425: cannot find value `std::f64::consts::EULER_GAMMA` in this scope
+gridcraft-core	OK	0s	0 errors	
+gridcraft-formula	OK	1s	0 errors	
+gridcraft-model	OK	0s	0 errors	
+gridcraft-xlsx	OK	2s	0 errors	
+http	OK	0s	0 errors	
+http-body-util	OK	1s	0 errors	
+image	TYPE	21s	4 errors	hooks.rs:58:9: E0599: no method named `seek` found for `BufReader<Box<dyn image::hooks::ReadSeek>>` in the current scope -- methods with a similar name on this 
+keyring	OK	0s	0 errors	
+libc	OK	12s	0 errors	
+lightcraft-engine	TYPE	26s	6 errors	cmd/previews.rs:315:9: E0658: attributes on expressions are experimental
+log	OK	1s	0 errors	
+mailparse	OK	2s	0 errors	
+oauth2	LOAD	24s		makepad-run: load error serde: /Users/ychen/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/oauth2-5.0.0/target/makepad-run/registry/src/serde-1.0.197-3fb1c873e1b9b056/src/de/mod.rs:496:31: expec
+pdfcraft-annot	OK	3s	0 errors	
+pdfcraft-automation	LOAD	45s		makepad-run: load error time: /Users/ychen/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/time-0.3.55/src/parsing/parsed.rs:133:12: expected `>` (found Minus `-`)
+pdfcraft-cos	OK	2s	0 errors	
+pdfcraft-edit	OK	3s	0 errors	
+photocraft-automation	TYPE	42s	12 errors	lib.rs:202:27: E0599: no function or associated item named `from_utf8` found for type `str` in the current scope
+photocraft-doc	OK	6s	0 errors	
+photocraft-format	OK	8s	0 errors	
+photocraft-io	OK	11s	0 errors	lib.rs:202:27: E0599: no function or associated item named `from_utf8` found for type `str` in the current scope
+png	OK	1s	0 errors	
+qrcode	OK	3s	0 errors	
+quick-xml	TYPE	1s	1 errors	errors.rs:265:33: E0308: mismatched types: expected `&dyn core::error::Error`, found `&Arc<Error>`
+reqwest	TYPE	24s	3 errors	async_impl/client.rs:839:33: E0658: attributes on expressions are experimental
+roxmltree	TYPE	1s	1 errors	lib.rs:1706:10: E0491: in type `&Namespace`, reference has a longer lifetime than the data it references
+rqrr	OK	6s	0 errors	
+rustls	OK	27s	0 errors	
+scraper	LOAD	9s		makepad-run: load error serde: /Users/ychen/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.219/src/de/mod.rs:495:27: expected OpenBrace (found Plus `+`)
+semver	OK	0s	0 errors	
+serde	TYPE	1s	2 errors	error: lifetime may not live long enough
+serde_json	TYPE	1s	4 errors	map.rs:1086:12: E0308: mismatched types: expected `&dyn core::fmt::Debug`, found `&&IterMut<String, Value>`
+sha2	TYPE	2s	112 errors	sha512/aarch64_sha3.rs:29:43: E0425: cannot find value `vrev64q_u8` in this scope
+sigstore-trust-root	LOAD	28s		makepad-run: load error tls_codec: /Users/ychen/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tls_codec-0.4.2/src/tls_vec.rs:897:1: expected `>` (found Plus `+`)
+sigstore-types	OK	2s	0 errors	
+sigstore-verify	LOAD	22s		makepad-run: load error tls_codec: /Users/ychen/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tls_codec-0.4.2/src/tls_vec.rs:897:1: expected `>` (found Plus `+`)
+soundcraft-audio-io	TYPE	4s	2 errors	
+soundcraft-dsp	OK	2s	0 errors	
+thiserror	OK	1s	0 errors	
+tokio	TYPE	1s	3 errors	io/async_write.rs:401:21: E0277: the trait bound `Cursor<Box<[u8]>>: Write` is not satisfied
+tokio-tungstenite	OK	17s	0 errors	
+tracing-subscriber	OK	1s	0 errors	
+ureq	TYPE	10s	2 errors	error.rs:221:24: E0599: no method named `downcast` found for `Box<dyn core::error::Error + core::marker::Send + core::marker::Sync>` in the current scope -- met
+url	OK	2s	0 errors	
+uuid	OK	1s	0 errors	
+vectorcraft-engine	RC1	10s		error: could not compile `thiserror` (build script)
+vectorcraft-format	OK	4s	0 errors	
+vectorcraft-render	TYPE	18s	2 errors	encode/tiff.rs:352:62: E0277: the trait bound `Cow<[u8]>: FromIterator<<FlatMap<Iter<[u8; 4]>, [u8; 3], closure#1019> as Iterator>::Item>` is not satisfied
+vectorcraft-svg	OK	7s	0 errors	
+wasmtime	LOAD	46s	683 errors	makepad check: /Users/ychen/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/cranelift-codegen-0.136.2/build.rs: build script failed (exit 101): compile error in cranelift_isle::trie_again::<RuleS
+wasmtime-wasi	RC1	11s		error: could not compile `foldhash` (lib)
+wasmtime-wasi-http	RC1	8s		error: could not compile `hashbrown` (lib)
+webpki-roots	OK	1s	0 errors	
+wordcraft-doc	OK	3s	0 errors	
+wordcraft-engine	OK	24s	0 errors	
+zip	LOAD	17s	7 errors	thread 'run-check-ty-5' (53874556) panicked at libs/relax/types/src/mir/build/place.rs:106:49:
+sweep done 2026-11-04T18:54:00Z

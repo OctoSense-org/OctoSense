@@ -1,0 +1,27 @@
+{
+  "schema": 1,
+  "subtitle": "A static camera screen rendered from OctoScript L0",
+  "description": "A static L0 rendering of a camera photo-mode screen, including Chinese labels, zoom steps and camera-style controls. This is a rendering and publishing sample: it does not open the camera, take photos, change modes or save images. No device permissions, network access or assistant are requested.",
+  "category": "photo-video",
+  "keywords": [
+    "camera",
+    "viewfinder",
+    "replica",
+    "mate 70"
+  ],
+  "screenshots": [
+    "screenshots/02-native-macos.png"
+  ],
+  "platforms": [
+    "macos"
+  ],
+  "publisher": {
+    "name": "ymote",
+    "support": "https://github.com/ymote/camera-card/issues",
+    "privacy_policy_url": "https://github.com/ymote/camera-card/blob/main/PRIVACY.md"
+  },
+  "release_notes": "New GitHub-authenticated identity and publishing workflow, portable Chinese fonts, and corrected geometry for the 406 by 776 point camera storyboard. Historical releases remain separate.",
+  "age_rating": "all",
+  "license": "Apache-2.0",
+  "icon": "assets/icon.svg"
+}

@@ -1,0 +1,6 @@
+{
+  "digest": "729bc3dfe1ef9ae2e49cb86f82db670adc09282c4aaadc65d58ed804d6255c26",
+  "limits": "unsigned",
+  "refused": "app forecast needs a newer host: storage.encrypted",
+  "source": "ADR 0005 section 2: a required feature this host does not know"
+}

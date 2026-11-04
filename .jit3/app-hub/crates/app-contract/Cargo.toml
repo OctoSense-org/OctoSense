@@ -1,0 +1,25 @@
+# octosense-app-contract — OctoSense ADR 0005: the one small, versioned
+# interface between App Hub and every app. The manifest, the policy an app
+# gets, the integrity checks and what running a package needs; nothing of
+# App Hub's store, agents or sandboxes.
+#
+# Published to crates.io, so it may depend on crates.io crates only: no git
+# and no path dependencies. Within 1.x it only grows (see README.md).
+[package]
+name = "octosense-app-contract"
+version = "1.12.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "The OctoSense app contract: app manifests, the policy an app gets, package integrity and running a package"
+repository = "https://github.com/OctoSense-org/OctoSense-App-Hub"
+homepage = "https://github.com/OctoSense-org/OctoSense-App-Hub/tree/main/crates/app-contract"
+documentation = "https://docs.rs/octosense-app-contract"
+readme = "README.md"
+keywords = ["octosense", "manifest", "sandbox", "app", "policy"]
+categories = ["config", "parser-implementations"]
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+blake3 = "1"
+url = "2"

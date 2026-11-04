@@ -1,0 +1,31 @@
+{
+  "digest": "ec6cbcb9c5bdeeaa752d4569b04a65ad10c46fc5409954f2f9870df7a1c70e96",
+  "entry": "script",
+  "ignored_fields": [],
+  "limits": "system",
+  "policy": {
+    "app_id": "os.camera",
+    "capabilities": [
+      "camera",
+      "library",
+      "microphone",
+      "storage"
+    ],
+    "display_name": "Camera",
+    "hosts": [],
+    "instruction_budget": 4000000000,
+    "may_prompt": false,
+    "memory_bytes": 134217728,
+    "research": null,
+    "storage": {
+      "accounts": false,
+      "agent_workspace": "account",
+      "cache_max_bytes": null,
+      "max_bytes": 67108864
+    },
+    "storage_bytes": 67108864,
+    "version": "1.0.0"
+  },
+  "signing_blake3": "19057ff069436936a1308047165b7ef8a9e84a0c221af74c52775887023e2d3a",
+  "source": "OctoSense apps/camera/bundle (OctoSense-org/OctoSense e2ae324), digest filled in as the shell's pack step does"
+}

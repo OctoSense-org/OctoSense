@@ -1,0 +1,14 @@
+[package]
+name = "makepad-calculator"
+version = "0.0.1"
+edition = "2021"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+makepad-app-calculator = { path = "/Users/ychen/home/octosense-org/.worktrees/jit3-work/apps/calculator" }
+
+[features]
+default = []
+standalone = ["makepad-app-calculator/standalone"]

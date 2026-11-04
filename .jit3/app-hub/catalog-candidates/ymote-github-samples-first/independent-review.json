@@ -1,0 +1,51 @@
+{
+  "schema": 1,
+  "candidate_head": "3e8e34b6829d7fc600a86fbdf8c6c69144dc2cfd",
+  "native_prepare": "passed",
+  "payload_sha256": "8c2d94e5e426d7a920b49de0a6ecdb1a6bc6293e9baebbe2506f4421dce7c344",
+  "base_sequence": 11,
+  "candidate_sequence": 12,
+  "unchanged_historical_entries": 6,
+  "added_fresh_ids": 4,
+  "changed_paths": "candidate-directory-only",
+  "public_release_identity": [
+    {
+      "app": "io.github.ymote.cameracard",
+      "public_repo_id": "1378439338",
+      "public_owner_id": "151983",
+      "tag": "v1.1.0",
+      "commit": "ec847b384ff3e0ac50fdb4eb68a42f1b9ba65d39",
+      "pack_sha256": "e903bbe05687974d88ef041d3d89c3f400ec943eca831eb9c4c4aef927da55f0",
+      "release_exact_bytes": true
+    },
+    {
+      "app": "io.github.ymote.githubnotes",
+      "public_repo_id": "1408036635",
+      "public_owner_id": "151983",
+      "tag": "v0.2.0",
+      "commit": "920ce1ae521c3831e331d0cfb4417aa44ec99f05",
+      "pack_sha256": "23999e614641153fa87ae3d6b4cbb055ec4b2912ab4acec191f6b5d13ac2854d",
+      "release_exact_bytes": true
+    },
+    {
+      "app": "io.github.ymote.googlecalendar",
+      "public_repo_id": "1408036857",
+      "public_owner_id": "151983",
+      "tag": "v0.2.0",
+      "commit": "624b778a2cf30becca31835febd96eab8db79f07",
+      "pack_sha256": "4fefe12ebe1945934331c8a044d8c2e8b178911786b57c8515be89babd3e4f97",
+      "release_exact_bytes": true
+    },
+    {
+      "app": "io.github.ymote.inboxassistant",
+      "public_repo_id": "1408036757",
+      "public_owner_id": "151983",
+      "tag": "v0.2.0",
+      "commit": "4f6a0677e8459813f08b308b9a01e41540725853",
+      "pack_sha256": "794e38a7d7616ec7833acb81c915b0ac66d7d60d38296a912d385f95f1597e53",
+      "release_exact_bytes": true
+    }
+  ],
+  "scope_review": "All four listings are macOS only; Camera is a static storyboard with no capture grants; provider authentication, writes and model behavior are not claimed by these tests. No production catalog modified.",
+  "admission": "hold: Camera full-shell layout/scroll regression and compatible host release readiness"
+}

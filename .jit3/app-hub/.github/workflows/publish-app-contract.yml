@@ -1,0 +1,90 @@
+name: Publish app contract
+
+# Publishes crates/app-contract (octosense-app-contract, OctoSense ADR 0005)
+# to crates.io. A published version can never be deleted, only yanked, so
+# this runs only by hand or from a release tag, after the version bump and
+# CHANGELOG entry were reviewed by App Hub and an app owner (Rinx).
+#
+#   by hand   Actions → Publish app contract → Run workflow (on main)
+#   by tag    git tag app-contract-v1.0.0 && git push origin app-contract-v1.0.0
+#             (the tag must name the crate's version)
+#
+# Needs the repository secret CARGO_REGISTRY_TOKEN: a crates.io token scoped
+# to publish-update for octosense-app-contract (publish-new for the first
+# release). The job runs in the crates-io environment, where reviewers can
+# be required before the token is handed out.
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'app-contract-v*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-app-contract
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  CRATE: octosense-app-contract
+
+jobs:
+  publish-app-contract:
+    if: github.repository == 'OctoSense-org/OctoSense-App-Hub'
+    runs-on: ubuntu-latest
+    environment: crates-io
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Copy the crate out of the workspace
+        # The workspace's [patch] tables name sibling checkouts; the contract
+        # builds from crates.io alone, as its users will build it.
+        shell: bash
+        run: cp -R crates/app-contract "$RUNNER_TEMP/app-contract"
+      - name: Refuse a version that is already published
+        id: version
+        working-directory: ${{ runner.temp }}/app-contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=$(cargo metadata --no-deps --format-version 1 | jq -r --arg crate "$CRATE" '.packages[] | select(.name == $crate) | .version')
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if [[ "$GITHUB_REF_TYPE" == "tag" && "$GITHUB_REF_NAME" != "app-contract-v$version" ]]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not name the crate's version $version (expected app-contract-v$version)."
+            exit 1
+          fi
+          status=$(curl --proto '=https' --tlsv1.2 --silent --show-error --location \
+            --output "$RUNNER_TEMP/index" --write-out '%{http_code}' \
+            "https://index.crates.io/oc/to/$CRATE")
+          case "$status" in
+            200)
+              if jq -e --arg v "$version" 'select(.vers == $v)' "$RUNNER_TEMP/index" > /dev/null; then
+                echo "::error::$CRATE $version is already on crates.io. Bump the version (and CHANGELOG.md) to publish again."
+                exit 1
+              fi
+              ;;
+            404) echo "$CRATE is not on crates.io yet: this is its first release." ;;
+            *)
+              echo "::error::crates.io index answered HTTP $status; cannot tell whether $version is published."
+              exit 1
+              ;;
+          esac
+          echo "Publishing $CRATE $version."
+      - name: Tests and the fixture corpus
+        working-directory: ${{ runner.temp }}/app-contract
+        run: cargo test --all-targets && cargo test --doc
+      - name: Publish
+        working-directory: ${{ runner.temp }}/app-contract
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${CARGO_REGISTRY_TOKEN:?Configure the CARGO_REGISTRY_TOKEN secret}"
+          # The copy is outside git, so there is nothing for Cargo to find
+          # dirty; --allow-dirty only silences that check.
+          cargo publish -p "$CRATE" --allow-dirty

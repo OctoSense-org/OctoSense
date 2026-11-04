@@ -1,0 +1,32 @@
+{
+  "digest": "78577bc28c749948c019b24514c7e6965ea8e57684620b32ed90850ccd3f65ce",
+  "entry": "script",
+  "ignored_fields": [],
+  "limits": "unsigned",
+  "policy": {
+    "app_id": "matrix-octos-script",
+    "capabilities": [
+      "matrix.profile",
+      "octos.session.history",
+      "octos.session.open",
+      "octos.turn.interrupt",
+      "octos.turn.start"
+    ],
+    "display_name": "Matrix + Octos script",
+    "hosts": [],
+    "instruction_budget": 4000000,
+    "may_prompt": false,
+    "memory_bytes": 33554432,
+    "research": null,
+    "storage": {
+      "accounts": false,
+      "agent_workspace": "account",
+      "cache_max_bytes": null,
+      "max_bytes": 16777216
+    },
+    "storage_bytes": 16777216,
+    "version": "1.0.0"
+  },
+  "signing_blake3": "3f5f0b312ec4ca0c6408d5c1cda3409cbad7dba53d83ff9aa1d423251a08a314",
+  "source": "Rinx examples/miniapps/matrix-octos-script (hagency-org/Rinx b857702), as shipped"
+}

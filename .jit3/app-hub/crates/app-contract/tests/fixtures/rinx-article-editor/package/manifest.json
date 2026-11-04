@@ -1,0 +1,15 @@
+{
+  "schema": 1,
+  "id": "org.octosense.article-editor",
+  "version": "2.0.0",
+  "name": "Article editor",
+  "integrity": {
+    "bundle_blake3": "47c95ab7e15b3727ddee7bcc4b6fbead423fae6a91098a4c6bd7280aa189c342"
+  },
+  "capabilities": [
+    "storage",
+    "images",
+    "matrix.event",
+    "matrix.send_message"
+  ]
+}

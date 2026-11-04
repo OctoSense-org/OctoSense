@@ -1,0 +1,1 @@
+Public verification fixtures from [sigstore-rust](https://github.com/sigstore/sigstore-rust/tree/8d1506991f63290f584bc0edebd7e47bf7fdc0ad/crates/sigstore-verify/test_data/bundles), Apache-2.0. These are existing public signatures over synthetic text, not App Hub production attestations. The tests use the maintained Sigstore verifier; no private keys are included.

@@ -1,0 +1,30 @@
+{
+  "schema": 1,
+  "subtitle": "A personal watchlist for open-source projects",
+  "description": "Search public GitHub repositories, pin and reorder your favorites, inspect recent pull requests and releases, and keep a local watchlist across restarts. Repo Radar uses its own Rust WebAssembly component for public networking, parsing, caching and persistence. Requires a compatible OctoSense host with native Makepad D3 charts and the component HTTPS fix. Optional chat uses your OctoSense app agent and configured model. No GitHub account is required; pinning does not star a repository on GitHub. Activity is a bounded sample, not complete history.",
+  "category": "productivity",
+  "keywords": [
+    "github",
+    "repositories",
+    "watchlist",
+    "rust",
+    "releases",
+    "analytics"
+  ],
+  "screenshots": [
+    "screenshots/01-main.png",
+    "screenshots/02-glance.png"
+  ],
+  "icon": "assets/icon.svg",
+  "platforms": [
+    "macos"
+  ],
+  "publisher": {
+    "name": "ymote",
+    "support": "https://github.com/ymote/octosense-repo-radar/issues",
+    "privacy_policy_url": "https://github.com/ymote/octosense-repo-radar/blob/main/PRIVACY.md"
+  },
+  "release_notes": "Initial public repository watchlist with Rust component networking.",
+  "age_rating": "all",
+  "license": "Apache-2.0"
+}

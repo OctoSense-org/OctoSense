@@ -1,0 +1,20 @@
+name: Catalog publication rules
+on:
+  push:
+    branches: [main]
+    paths: ['tools/catalog_publish.py', 'tools/test_catalog_publish.py', '.github/workflows/*catalog*.yml']
+  pull_request:
+    paths: ['tools/catalog_publish.py', 'tools/test_catalog_publish.py', '.github/workflows/*catalog*.yml']
+permissions:
+  contents: read
+jobs:
+  rules:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: '3.12'
+      - run: python3 -m unittest discover -s tools -p 'test_catalog_publish.py'

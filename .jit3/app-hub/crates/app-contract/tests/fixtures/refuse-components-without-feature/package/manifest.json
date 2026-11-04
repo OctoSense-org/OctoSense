@@ -1,0 +1,21 @@
+{
+  "schema": 1,
+  "id": "org.example.writer",
+  "version": "1.0.0",
+  "name": "Writer",
+  "integrity": {
+    "bundle_blake3": "e0ba3dda9e7b4701f0425e3135a8d0877b18f678b95450c6cfb606cd66679084"
+  },
+  "capabilities": [
+    "wasm",
+    "storage"
+  ],
+  "components": [
+    {
+      "as": "markdown",
+      "id": "org.example.markdown",
+      "version": "1.0.0",
+      "blake3": "c30d6e3125ff31676cad3c06735186d82cd0c017802afd344e3d2db876ff976c"
+    }
+  ]
+}

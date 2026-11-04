@@ -1,0 +1,191 @@
+{
+  "admitted": "2026-10-07",
+  "artifact": "artifacts/org.octosense.samples.githubnotes-0.1.0.bundle",
+  "listing": {
+    "age_rating": "all",
+    "category": "productivity",
+    "description": "Write Markdown with the Rinx article writer layout, icon controls and preview in a compatible OctoSense host. Keep recoverable drafts locally; connect GitHub through host OAuth, select a repository and file, and review exact Markdown before committing. Requires the connected-services host build. Live OAuth and remote commits remain unverified; screenshots show fictional native UI fixtures.",
+    "icon": "assets/icon.svg",
+    "keywords": [
+      "markdown",
+      "github",
+      "notes",
+      "sample"
+    ],
+    "license": "Apache-2.0",
+    "platforms": [
+      "macos"
+    ],
+    "publisher": {
+      "name": "ymote",
+      "privacy_policy_url": "https://github.com/ymote/octosense-github-notes/blob/main/PRIVACY.md",
+      "support": "https://github.com/ymote/octosense-github-notes/issues"
+    },
+    "release_notes": "0.1.0 preview: Rinx writer layout, local draft recovery and synthetic GitHub review validated on macOS. Requires the connected-services OctoSense host. Live GitHub OAuth and repository writes remain unverified.",
+    "schema": 1,
+    "screenshots": [
+      "screenshots/01-preview.png",
+      "screenshots/02-editor.png"
+    ],
+    "subtitle": "Markdown drafts with reviewed GitHub saves"
+  },
+  "manifest": {
+    "agent": null,
+    "capabilities": [
+      "storage",
+      "auth",
+      "github"
+    ],
+    "compute": {
+      "instruction_budget": null,
+      "memory_bytes": null
+    },
+    "id": "org.octosense.samples.githubnotes",
+    "integrity": {
+      "bundle_blake3": "d5565438b78e01b98baf268661087b7efd0f5c01799f4841daa140955f82a13b",
+      "signature": {
+        "key_id": "ymote",
+        "value": "299a819bb80f9f23c9b08910188aef9e90ae88d4cf4d799074e7e19609a3e89d8850993805cfdbfade53b4ceb87ad28d1a1ecf059c9961872ff231924c7b260e"
+      }
+    },
+    "name": "GitHub Notes",
+    "network": {
+      "hosts": []
+    },
+    "schema": 1,
+    "storage": {
+      "accounts": true,
+      "max_bytes": 4194304
+    },
+    "version": "0.1.0"
+  },
+  "publisher": "ymote",
+  "publisher_key": "dbda2ca2b6376e8a4bb9d011d6f9aab0f2953021ab9e433215fa1094828761bc",
+  "source": {
+    "commit": "5f0c4c6b13bddae87a4945b2b76ca2a416793f14",
+    "repository": "https://github.com/ymote/octosense-github-notes"
+  },
+  "status": {
+    "state": "offered"
+  },
+  "tools": [
+    {
+      "background": false,
+      "description": "List repositories available to the connected GitHub account.",
+      "implemented_by": "host-service",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "connection": {
+            "description": "The opaque GitHub connection bound to this app; never a provider token.",
+            "type": "string"
+          },
+          "page": {
+            "maximum": 1000,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "connection"
+        ],
+        "type": "object"
+      },
+      "name": "githubnotes.repositories",
+      "output_schema": {
+        "items": {
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "private_data": true,
+      "risk": "read",
+      "shareable": false
+    },
+    {
+      "background": false,
+      "description": "List file and directory metadata in a selected repository branch.",
+      "implemented_by": "host-service",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "branch": {
+            "type": "string"
+          },
+          "connection": {
+            "description": "The opaque GitHub connection bound to this app; never a provider token.",
+            "type": "string"
+          },
+          "owner": {
+            "type": "string"
+          },
+          "path": {
+            "description": "Repository-relative directory; empty means the root.",
+            "type": "string"
+          },
+          "repo": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "connection",
+          "owner",
+          "repo",
+          "branch"
+        ],
+        "type": "object"
+      },
+      "name": "githubnotes.files",
+      "output_schema": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "private_data": true,
+      "risk": "read",
+      "shareable": false
+    },
+    {
+      "background": false,
+      "description": "Read a UTF-8 note from the selected repository branch, including its current blob SHA.",
+      "implemented_by": "host-service",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "branch": {
+            "type": "string"
+          },
+          "connection": {
+            "description": "The opaque GitHub connection bound to this app; never a provider token.",
+            "type": "string"
+          },
+          "owner": {
+            "type": "string"
+          },
+          "path": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "repo": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "connection",
+          "owner",
+          "repo",
+          "branch",
+          "path"
+        ],
+        "type": "object"
+      },
+      "name": "githubnotes.read",
+      "output_schema": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "private_data": true,
+      "risk": "read",
+      "shareable": false
+    }
+  ]
+}

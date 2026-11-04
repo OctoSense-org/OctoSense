@@ -1,0 +1,6 @@
+{
+  "digest": "729bc3dfe1ef9ae2e49cb86f82db670adc09282c4aaadc65d58ed804d6255c26",
+  "limits": "unsigned",
+  "refused": "bundle digest 729bc3dfe1ef9ae2e49cb86f82db670adc09282c4aaadc65d58ed804d6255c26 does not match the manifest's 0000000000000000000000000000000000000000000000000000000000000000: app forecast version 1.0.0",
+  "source": "App Hub app-policy admission tests: a bundle that does not hash to its manifest"
+}

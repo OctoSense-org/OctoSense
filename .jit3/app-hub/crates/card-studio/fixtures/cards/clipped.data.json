@@ -1,0 +1,11 @@
+{"digest": {
+  "topic_a": "Semiconductors and the global supply chain",
+  "topic_b": "Artificial intelligence regulation",
+  "items": [
+    {"id": "a", "title": "Chip makers race to 1nm", "publisher": "The Wire"},
+    {"id": "b", "title": "A quieter week for AI launches", "publisher": "Daily Tech"},
+    {"id": "c", "title": "Batteries get cheaper again", "publisher": "Grid"},
+    {"id": "d", "title": "Open-source models close the gap", "publisher": "Model Watch"},
+    {"id": "e", "title": "Satellite internet reaches the poles", "publisher": "Orbit"}
+  ]
+}}

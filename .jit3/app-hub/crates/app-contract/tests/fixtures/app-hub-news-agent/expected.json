@@ -1,0 +1,28 @@
+{
+  "digest": "bb47e0940a18dcfb4261ac98e56cc0889c8dd874655516f69876752378726fa7",
+  "entry": "card",
+  "ignored_fields": [],
+  "limits": "unsigned",
+  "policy": {
+    "app_id": "dev.example.news",
+    "capabilities": [
+      "storage"
+    ],
+    "display_name": "News",
+    "hosts": [],
+    "instruction_budget": 20000000,
+    "may_prompt": false,
+    "memory_bytes": 67108864,
+    "research": null,
+    "storage": {
+      "accounts": false,
+      "agent_workspace": "account",
+      "cache_max_bytes": null,
+      "max_bytes": 16777216
+    },
+    "storage_bytes": 16777216,
+    "version": "1.0.0"
+  },
+  "signing_blake3": "2c40e35fb5f592f56442c278af894e60891ca9004a3dc228f727b4326adf0051",
+  "source": "App Hub crates/app-policy/tests/fixtures/news-agent (b3602e8), digest filled in"
+}

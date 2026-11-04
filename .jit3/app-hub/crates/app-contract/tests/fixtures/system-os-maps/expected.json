@@ -1,0 +1,37 @@
+{
+  "digest": "344da151a156f25004e39370b9fb201a9da3c1d44b354c8d50195c01585d923b",
+  "entry": "script",
+  "ignored_fields": [],
+  "limits": "system",
+  "policy": {
+    "app_id": "os.maps",
+    "capabilities": [
+      "location",
+      "net",
+      "storage"
+    ],
+    "display_name": "Maps",
+    "hosts": [
+      "maps.mail.ru",
+      "overpass-api.de",
+      "overpass.kumi.systems",
+      "overpass.openstreetmap.fr",
+      "photon.komoot.io",
+      "router.project-osrm.org"
+    ],
+    "instruction_budget": 4000000000,
+    "may_prompt": false,
+    "memory_bytes": 134217728,
+    "research": null,
+    "storage": {
+      "accounts": false,
+      "agent_workspace": "account",
+      "cache_max_bytes": null,
+      "max_bytes": 67108864
+    },
+    "storage_bytes": 67108864,
+    "version": "1.0.0"
+  },
+  "signing_blake3": "7258f3cfd16e5bd94e1069b1baca4310ff99e7d5b32f67724442d2fbf73b197b",
+  "source": "OctoSense apps/maps/bundle (OctoSense-org/OctoSense e2ae324), digest filled in as the shell's pack step does"
+}

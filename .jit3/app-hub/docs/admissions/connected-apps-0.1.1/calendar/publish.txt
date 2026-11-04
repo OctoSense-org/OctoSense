@@ -1,0 +1,4 @@
+org.octosense.samples.googlecalendar 0.1.1 — PASSED
+  grants: capabilities {"auth", "gcalendar", "glance", "octos.session.open", "octos.turn.start", "storage"}, hosts {}, storage 1048576 bytes, agent read-only
+  scan: Pass — Scoped compatibility update: bounded-agenda status distinguishes a finite range from a whole calendar; a missing event is no longer called deleted. Missing/null/incomplete legacy metadata is labelled unavailable.; Four private read-only agent tools, host approval routing, widget layout and original synthetic screenshots are unchanged. Range helper passes four actual native fixture cases; three release contracts pass.; Signature, catalog continuity and gate passed. Bilingual docs/privacy explain finite scope and retain macOS preview and live-provider limitations. This is not new full-app or live Google acceptance.
+published org.octosense.samples.googlecalendar 0.1.1 (catalog sequence 10)

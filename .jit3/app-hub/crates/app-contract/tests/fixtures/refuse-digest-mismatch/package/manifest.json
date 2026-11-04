@@ -1,0 +1,9 @@
+{
+  "schema": 1,
+  "id": "forecast",
+  "version": "1.0.0",
+  "name": "Forecast",
+  "integrity": {
+    "bundle_blake3": "0000000000000000000000000000000000000000000000000000000000000000"
+  }
+}

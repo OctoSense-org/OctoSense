@@ -1,0 +1,41 @@
+{
+  "digest": "c2047fbb78284519ebf1fa636c65042283b219a5539b38af9ff39bd7af552c3c",
+  "entry": "script",
+  "ignored_fields": [],
+  "limits": "system",
+  "policy": {
+    "app_id": "os.news",
+    "capabilities": [
+      "images",
+      "net",
+      "news",
+      "storage",
+      "web"
+    ],
+    "display_name": "News",
+    "hosts": [
+      "api.gdeltproject.org",
+      "feeds.arstechnica.com",
+      "feeds.bbci.co.uk",
+      "feeds.npr.org",
+      "hn.algolia.com",
+      "news.google.com",
+      "www.techmeme.com",
+      "www.theguardian.com"
+    ],
+    "instruction_budget": 4000000000,
+    "may_prompt": false,
+    "memory_bytes": 134217728,
+    "research": null,
+    "storage": {
+      "accounts": false,
+      "agent_workspace": "account",
+      "cache_max_bytes": null,
+      "max_bytes": 67108864
+    },
+    "storage_bytes": 67108864,
+    "version": "1.0.0"
+  },
+  "signing_blake3": "a3949e9918d8d9c27695275792f755fe916fcbb0b80c2d26c48f351f2887a81a",
+  "source": "OctoSense apps/news/bundle (OctoSense-org/OctoSense e2ae324), digest filled in as the shell's pack step does"
+}

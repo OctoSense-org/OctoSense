@@ -1,0 +1,33 @@
+{
+  "digest": "1fa910d469952cd687eb5cf4797746e77fa86891c1b56a712880d57f0a9052e3",
+  "entry": "script",
+  "ignored_fields": [],
+  "limits": "system",
+  "policy": {
+    "app_id": "os.youtube",
+    "capabilities": [
+      "net",
+      "storage"
+    ],
+    "display_name": "YouTube",
+    "hosts": [
+      "i.ytimg.com",
+      "m.youtube.com",
+      "www.youtube.com"
+    ],
+    "instruction_budget": 4000000000,
+    "may_prompt": false,
+    "memory_bytes": 134217728,
+    "research": null,
+    "storage": {
+      "accounts": false,
+      "agent_workspace": "account",
+      "cache_max_bytes": null,
+      "max_bytes": 67108864
+    },
+    "storage_bytes": 67108864,
+    "version": "1.0.0"
+  },
+  "signing_blake3": "4125ede86d5bc5aa97cfacb23faebbcf7657c7b13f969297766aedf8ab750ecc",
+  "source": "OctoSense apps/youtube/bundle (OctoSense-org/OctoSense e2ae324), digest filled in as the shell's pack step does"
+}

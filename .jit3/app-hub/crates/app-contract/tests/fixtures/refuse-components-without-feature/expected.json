@@ -1,0 +1,6 @@
+{
+  "digest": "e0ba3dda9e7b4701f0425e3135a8d0877b18f678b95450c6cfb606cd66679084",
+  "limits": "unsigned",
+  "refused": "components requires wasm-shared-components-v1",
+  "source": "App Hub ADR 0003: components without wasm-shared-components-v1"
+}

@@ -1,0 +1,43 @@
+{
+  "agent": {
+    "instructions": "AGENT.md",
+    "max_iterations": null,
+    "model": {
+      "local_only": false,
+      "needs": [
+        "tool_calling"
+      ],
+      "tier": "standard"
+    },
+    "profile": "read-only",
+    "token_budget": null,
+    "tools": []
+  },
+  "capabilities": [
+    "storage",
+    "auth",
+    "github"
+  ],
+  "compute": {
+    "instruction_budget": null,
+    "memory_bytes": null
+  },
+  "id": "org.octosense.samples.githubnotes",
+  "integrity": {
+    "bundle_blake3": "81dd860d3a1bea9dae5efa45e130f88c86edb99db9df84305622b972472db965",
+    "signature": {
+      "key_id": "ymote",
+      "value": "97c6c9a24f16f6fdb6d1aea0e9017f046e619ae4b56f5152a570bae0a74ab0ea197d9a68f5f54bb14671b564722bd6c60e7c6e04a6f8d22f2fcfcf6b4f53730c"
+    }
+  },
+  "name": "GitHub Notes",
+  "network": {
+    "hosts": []
+  },
+  "schema": 1,
+  "storage": {
+    "accounts": true,
+    "max_bytes": 4194304
+  },
+  "version": "0.1.1"
+}

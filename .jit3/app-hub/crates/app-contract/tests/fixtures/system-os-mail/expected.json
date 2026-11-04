@@ -1,0 +1,29 @@
+{
+  "digest": "3b735c8d1b4c049f05573bf718f023ac6eae1ef77dc3b89553cef486d647a7d5",
+  "entry": "script",
+  "ignored_fields": [],
+  "limits": "system",
+  "policy": {
+    "app_id": "os.mail",
+    "capabilities": [
+      "mail",
+      "storage"
+    ],
+    "display_name": "Mail",
+    "hosts": [],
+    "instruction_budget": 4000000000,
+    "may_prompt": false,
+    "memory_bytes": 134217728,
+    "research": null,
+    "storage": {
+      "accounts": false,
+      "agent_workspace": "account",
+      "cache_max_bytes": null,
+      "max_bytes": 67108864
+    },
+    "storage_bytes": 67108864,
+    "version": "1.0.0"
+  },
+  "signing_blake3": "1cd79d892c1dbbaa11f8f89b59b05b48f913fb43c4a589f39660cced43b8a0f9",
+  "source": "OctoSense apps/mail/bundle (OctoSense-org/OctoSense e2ae324), digest filled in as the shell's pack step does"
+}

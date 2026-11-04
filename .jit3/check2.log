@@ -1,0 +1,9 @@
+start 2026-11-04T18:37:09Z
+makepad run: --allow-c: building native dependencies with cargo (opt-level 0 now, optimized in the background; cached afterwards): aws-lc-rs, aws-lc-sys, blake3, cc, cmake, dunce, find-msvc-tools, fs_extra
+{"severity":"error","code":"RP0001","message":"expected `>` (found Plus `+`)","file":"/Users/ychen/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tls_codec-0.4.2/src/tls_vec.rs","line":897,"col":1,"end_line":897,"end_col":1,"phase":"parse","notes":[],"suggestion":null}
+{"type":"summary","errors":1,"warnings":0,"ms":17386}
+real 17.77
+user 17.49
+sys 10.67
+exit=1
+end 2026-11-04T18:37:27Z

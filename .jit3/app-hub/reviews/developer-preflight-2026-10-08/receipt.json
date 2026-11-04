@@ -1,0 +1,1162 @@
+{
+  "schema": 1,
+  "recorded_at_utc": "2026-10-08",
+  "scope": "Structural preflight of public submitted bundle bytes; not store admission, native acceptance or publication.",
+  "gate_source_commit": "59f3743c00e337b3f6f9183e6fab813b74131699",
+  "gate_binary_sha256": "bd6103d4d6ac76f110a4a776935a85cd3d5bdfacdd14452e97de1ad7155ad2f7",
+  "gate_command": "hub check <bundle> --allow-unsigned --json [--publisher-key <id>=<public-key>]",
+  "source_method": "Resolve the stated Git ref through GitHub, download only regular bundle files, verify each size and Git blob SHA before checking. No repository build scripts executed; no bundle restamped or changed.",
+  "summary": {
+    "primary_gate_passed": 19,
+    "primary_gate_refused": 10,
+    "primary_source_unavailable": 2
+  },
+  "results": [
+    {
+      "issue": 40,
+      "repo": "mikelgh/agentic-mail",
+      "requested_ref": "v0.5.0",
+      "bundle_path": "bundle",
+      "issue_url": "https://github.com/OctoSense-org/OctoSense-App-Hub/issues/40",
+      "commit": "31970993de61c35c17398f79689bcc5d01980d98",
+      "gate": {
+        "app_id": "agentic-mail",
+        "digest": "a9f457475c36b8082e2c05a4dbaa29d42cfef8a402d337d511e367055bb61564",
+        "findings": [
+          {
+            "check": "digest",
+            "detail": "the bundle hashes to a9f457475c36b8082e2c05a4dbaa29d42cfef8a402d337d511e367055bb61564, the manifest claims 87de126698b94650667c2abb6810f3328a09130157be39eefceba4aa3cb4608f",
+            "severity": "refusal"
+          },
+          {
+            "check": "publisher-signature",
+            "detail": "unsigned: accountability rests on the hub alone",
+            "severity": "warning"
+          }
+        ],
+        "passed": false,
+        "resources": [],
+        "schema": 1,
+        "stage": "structural",
+        "version": "0.1.0"
+      },
+      "exit_code": 1,
+      "source_blobs_verified": true,
+      "declared_capabilities": [
+        "storage",
+        "mail"
+      ],
+      "declared_digest": "87de126698b94650667c2abb6810f3328a09130157be39eefceba4aa3cb4608f",
+      "legacy_digest_matches": [],
+      "acceptance": "not-reviewed"
+    },
+    {
+      "issue": 71,
+      "repo": "prettygirlisnotme/TraceShop",
+      "requested_ref": "4cf35ca84c04a7549b8adad9e621860b57d53ebf",
+      "bundle_path": "bundle",
+      "issue_url": "https://github.com/OctoSense-org/OctoSense-App-Hub/issues/71",
+      "commit": "4cf35ca84c04a7549b8adad9e621860b57d53ebf",
+      "gate": {
+        "app_id": "traceshop.shopping",
+        "digest": "051d4389897e6e9f90ef2e88bb3c7455d73197b1b5a1adfa7798f1902912f77c",
+        "findings": [
+          {
+            "check": "publisher-signature",
+            "detail": "unsigned: accountability rests on the hub alone",
+            "severity": "warning"
+          }
+        ],
+        "passed": true,
+        "resources": [],
+        "schema": 1,
+        "stage": "structural",
+        "version": "0.4.0"
+      },
+      "exit_code": 0,
+      "source_blobs_verified": true,
+      "declared_capabilities": [
+        "storage",
+        "octos.session.open",
+        "octos.turn.start",
+        "octos.turn.interrupt"
+      ],
+      "declared_digest": "051d4389897e6e9f90ef2e88bb3c7455d73197b1b5a1adfa7798f1902912f77c",
+      "legacy_digest_matches": [],
+      "acceptance": "not-reviewed"
+    },
+    {
+      "issue": 73,
+      "repo": "aios-pub/OctoStudio",
+      "requested_ref": "octostudio-0.4.3",
+      "bundle_path": "bundle",
+      "issue_url": "https://github.com/OctoSense-org/OctoSense-App-Hub/issues/73",
+      "commit": "7cbe8d496f61ba905a4b83fe76d32f6c31705d7c",
+      "supplied_publisher_key": "aios.pub=c02572b30ef0c38a56de97b909fe6fbb419212ea3d8723d0b0342b7737394c02",
+      "gate": {
+        "app_id": "octostudio",
+        "digest": "5faec99f3b7341404bfc2c2576ee3f6b68e6ce9fcceb3dd481b088e199d7f6a0",
+        "findings": [],
+        "passed": true,
+        "resources": [],
+        "schema": 1,
+        "stage": "structural",
+        "version": "0.4.3"
+      },
+      "exit_code": 0,
+      "source_blobs_verified": true,
+      "declared_capabilities": [
+        "storage",
+        "images",
+        "web",
+        "octos.session.open",
+        "octos.turn.start",
+        "model",
+        "glance"
+      ],
+      "declared_digest": "5faec99f3b7341404bfc2c2576ee3f6b68e6ce9fcceb3dd481b088e199d7f6a0",
+      "legacy_digest_matches": [],
+      "acceptance": "not-reviewed"
+    },
+    {
+      "issue": 74,
+      "repo": "nineanswerer/octo",
+      "requested_ref": "b223c7e3f51ec22f35d90a94a2b9388d3799e489",
+      "bundle_path": "bundle",
+      "issue_url": "https://github.com/OctoSense-org/OctoSense-App-Hub/issues/74",
+      "commit": "b223c7e3f51ec22f35d90a94a2b9388d3799e489",
+      "gate": {
+        "app_id": "no-reminder-agent",
+        "digest": "e05447edf594b06dfa854fe206896dc89d352eb745a7cf0e70b117cc59957b12",
+        "findings": [
+          {
+            "check": "digest",
+            "detail": "the bundle hashes to e05447edf594b06dfa854fe206896dc89d352eb745a7cf0e70b117cc59957b12, the manifest claims c36c4fa4d06f16ab3b4ec49183f1bed5d7635c513fd0e5ce31e8798e2f0e442b",
+            "severity": "refusal"
+          },
+          {
+            "check": "publisher-signature",
+            "detail": "unsigned: accountability rests on the hub alone",
+            "severity": "warning"
+          }
+        ],
+        "passed": false,
+        "resources": [],
+        "schema": 1,
+        "stage": "structural",
+        "version": "0.5.1"
+      },
+      "exit_code": 1,
+      "source_blobs_verified": true,
+      "declared_capabilities": [
+        "storage",
+        "mail",
+        "model"
+      ],
+      "declared_digest": "c36c4fa4d06f16ab3b4ec49183f1bed5d7635c513fd0e5ce31e8798e2f0e442b",
+      "legacy_digest_matches": [
+        "MATCH separator=legacy-windows line_endings=raw"
+      ],
+      "acceptance": "not-reviewed"
+    },
+    {
+      "issue": 76,
+      "repo": "sansanyixyz331/shiyi",
+      "requested_ref": "v0.3.3",
+      "bundle_path": "bundle",
+      "issue_url": "https://github.com/OctoSense-org/OctoSense-App-Hub/issues/76",
+      "commit": "767a34883a6a29cd06c163d0e8b66b22a7a9a2b5",
+      "supplied_publisher_key": "sansanyixyz331=26c8b5d58238d4c112eb202c8813af63b978921c3977710d4373ec55d40d446d",
+      "gate": {
+        "app_id": "shiyi",
+        "digest": "986c4ac18113a198e6688a9b86084fdc1aa638d68d82db421b92ac41b74966a2",
+        "findings": [],
+        "passed": true,
+        "resources": [
+          {
+            "kind": "font",
+            "path": "kit/native/light/kit.json/components/action_label/style/font_src",
+            "target": "makepad_widgets:resources/LXGWWenKaiRegular.ttf"
+          },
+          {
+            "kind": "font",
+            "path": "kit/native/light/kit.json/components/eyebrow/style/font_src",
+            "target": "makepad_widgets:resources/LXGWWenKaiRegular.ttf"
+          },
+          {
+            "kind": "font",
+            "path": "kit/native/light/kit.json/components/ghost_label/style/font_src",
+            "target": "makepad_widgets:resources/LXGWWenKaiRegular.ttf"
+          },
+          {
+            "kind": "font",
+            "path": "kit/native/light/kit.json/components/heading/style/font_src",
+            "target": "makepad_widgets:resources/LXGWWenKaiRegular.ttf"
+          },
+          {
+            "kind": "font",
+            "path": "kit/native/light/kit.json/components/note/style/font_src",
+            "target": "makepad_widgets:resources/LXGWWenKaiRegular.ttf"
+          },
+          {
+            "kind": "font",
+            "path": "kit/native/light/kit.json/components/quote/style/font_src",
+            "target": "makepad_widgets:resources/LXGWWenKaiRegular.ttf"
+          },
+          {
+            "kind": "font",
+            "path": "kit/native/light/kit.json/components/row/style/font_src",
+            "target": "makepad_widgets:resources/LXGWWenKaiRegular.ttf"
+          },
+          {
+            "kind": "font",
+            "path": "kit/native/light/kit.json/components/source/style/font_src",
+            "target": "makepad_widgets:resources/LXGWWenKaiRegular.ttf"
+          }
+        ],
+        "schema": 1,
+        "stage": "structural",
+        "version": "0.3.3"
+      },
+      "exit_code": 0,
+      "source_blobs_verified": true,
+      "declared_capabilities": [
+        "matrix.send_message",
+        "octos.session.open",
+        "octos.turn.start"
+      ],
+      "declared_digest": "986c4ac18113a198e6688a9b86084fdc1aa638d68d82db421b92ac41b74966a2",
+      "legacy_digest_matches": [],
+      "acceptance": "not-reviewed"
+    },
+    {
+      "issue": 77,
+      "repo": "mark-liuzh/OctoSense-Calendar-OMA",
+      "requested_ref": "a0c9594752830d583f9cd532f5e79f43b313a51e",
+      "bundle_path": "bundle",
+      "issue_url": "https://github.com/OctoSense-org/OctoSense-App-Hub/issues/77",
+      "commit": "a0c9594752830d583f9cd532f5e79f43b313a51e",
+      "supplied_publisher_key": "OMA=46b11cc186e7a8ea8688c9d5a246caeaa27e6e0c8ba2986547d7511c0b872380",
+      "gate": {
+        "app_id": "com.oma.octosense.calendar",
+        "digest": "eb64816c9b9407395fadd33712d2625be53baba030b0ae301d32ca45a69f073a",
+        "findings": [],
+        "passed": true,
+        "resources": [],
+        "schema": 1,
+        "stage": "structural",
+        "version": "0.4.1"
+      },
+      "exit_code": 0,
+      "source_blobs_verified": true,
+      "declared_capabilities": [
+        "storage",
+        "net"
+      ],
+      "declared_digest": "eb64816c9b9407395fadd33712d2625be53baba030b0ae301d32ca45a69f073a",
+      "legacy_digest_matches": [],
+      "acceptance": "not-reviewed"
+    },
+    {
+      "issue": 78,
+      "repo": "codezzzsleep/OnCue",
+      "requested_ref": "ad293eeb6c9da54f9318443a30dfbe7d2bfe4bb4",
+      "bundle_path": "oncue/bundle",
+      "issue_url": "https://github.com/OctoSense-org/OctoSense-App-Hub/issues/78",
+      "fetch_error": "gh: No commit found for SHA: ad293eeb6c9da54f9318443a30dfbe7d2bfe4bb4 (HTTP 422)",
+      "acceptance": "blocked-source-unavailable"
+    },
+    {
+      "issue": 84,
+      "repo": "yzbtdiy/VibeMail",
+      "requested_ref": "5f703910e6907ecda99a94367297680030a14705",
+      "bundle_path": "bundle",
+      "issue_url": "https://github.com/OctoSense-org/OctoSense-App-Hub/issues/84",
+      "commit": "5f703910e6907ecda99a94367297680030a14705",
+      "supplied_publisher_key": "yzbtdiy=1095438c3939742da32f74fbcc724ae452b3f1e22e4ebe9cd834c24b2b2b5759",
+      "gate": {
+        "app_id": "vibemail",
+        "digest": "765ca991e5a8d67577fe3bdc14673fd6550378143b8f183721228d3f2edba0cb",
+        "findings": [
+          {
+            "check": "digest",
+            "detail": "the bundle hashes to 765ca991e5a8d67577fe3bdc14673fd6550378143b8f183721228d3f2edba0cb, the manifest claims b495782ccb5b7c8ee57567ad492237223fa02e9e462e1da5aead48d2b886112c",
+            "severity": "refusal"
+          }
+        ],
+        "passed": false,
+        "resources": [],
+        "schema": 1,
+        "stage": "structural",
+        "version": "0.7.25"
+      },
+      "exit_code": 1,
+      "source_blobs_verified": true,
+      "declared_capabilities": [
+        "mail",
+        "model",
+        "storage"
+      ],
+      "declared_digest": "b495782ccb5b7c8ee57567ad492237223fa02e9e462e1da5aead48d2b886112c",
+      "legacy_digest_matches": [],
+      "acceptance": "not-reviewed"
+    },
+    {
+      "issue": 89,
+      "repo": "shaokaiyuan0513-dotcom/TrendyHear",
+      "requested_ref": "ae12dff495c427baca28cb0b56813f8d6c0c09a3",
+      "bundle_path": "bundle",
+      "issue_url": "https://github.com/OctoSense-org/OctoSense-App-Hub/issues/89",
+      "commit": "ae12dff495c427baca28cb0b56813f8d6c0c09a3",
+      "gate": {
+        "app_id": "news.tingjian-native",
+        "digest": "f34099e7307cc0e35f4d125249bd2293caede661085dcbc57fdfd48f207957b5",
+        "findings": [
+          {
+            "check": "publisher-signature",
+            "detail": "unsigned: accountability rests on the hub alone",
+            "severity": "warning"
+          }
+        ],
+        "passed": true,
+        "resources": [],
+        "schema": 1,
+        "stage": "structural",
+        "version": "0.3.0"
+      },
+      "exit_code": 0,
+      "source_blobs_verified": true,
+      "declared_capabilities": [
+        "storage",
+        "net",
+        "model"
+      ],
+      "declared_digest": "f34099e7307cc0e35f4d125249bd2293caede661085dcbc57fdfd48f207957b5",
+      "legacy_digest_matches": [],
+      "acceptance": "not-reviewed"
+    },
+    {
+      "issue": 90,
+      "repo": "dyingforge/loom",
+      "requested_ref": "dceada81006d6396b5c5695cd5c9202ad3effadc",
+      "bundle_path": "bundle",
+      "issue_url": "https://github.com/OctoSense-org/OctoSense-App-Hub/issues/90",
+      "commit": "dceada81006d6396b5c5695cd5c9202ad3effadc",
+      "gate": {
+        "app_id": "loom.pm-calendar",
+        "digest": "ccd190ad47a2a0a0d86a6c2fdc466c367dddb835f7d209699f2d7fab3e314ecb",
+        "findings": [
+          {
+            "check": "publisher-signature",
+            "detail": "unsigned: accountability rests on the hub alone",
+            "severity": "warning"
+          }
+        ],
+        "passed": true,
+        "resources": [],
+        "schema": 1,
+        "stage": "structural",
+        "version": "0.1.0"
+      },
+      "exit_code": 0,
+      "source_blobs_verified": true,
+      "declared_capabilities": [
+        "storage",
+        "net"
+      ],
+      "declared_digest": "ccd190ad47a2a0a0d86a6c2fdc466c367dddb835f7d209699f2d7fab3e314ecb",
+      "legacy_digest_matches": [],
+      "acceptance": "not-reviewed"
+    },
+    {
+      "issue": 94,
+      "repo": "yuandhsh-lang/ripple",
+      "requested_ref": "86b768adcd7823cc1efd6771612160b464b25378",
+      "bundle_path": "bundle",
+      "issue_url": "https://github.com/OctoSense-org/OctoSense-App-Hub/issues/94",
+      "commit": "86b768adcd7823cc1efd6771612160b464b25378",
+      "gate": {
+        "app_id": "ripple",
+        "digest": "fdfdd22c731d50d987587aa2f7286ab2b9f21922ec32661c62559c7dbddf3338",
+        "findings": [
+          {
+            "check": "publisher-signature",
+            "detail": "unsigned: accountability rests on the hub alone",
+            "severity": "warning"
+          }
+        ],
+        "passed": true,
+        "resources": [],
+        "schema": 1,
+        "stage": "structural",
+        "version": "0.1.0"
+      },
+      "exit_code": 0,
+      "source_blobs_verified": true,
+      "declared_capabilities": [
+        "storage",
+        "net"
+      ],
+      "declared_digest": "fdfdd22c731d50d987587aa2f7286ab2b9f21922ec32661c62559c7dbddf3338",
+      "legacy_digest_matches": [],
+      "acceptance": "not-reviewed"
+    },
+    {
+      "issue": 95,
+      "repo": "chrislearn/liyu-mini",
+      "requested_ref": "04241f3b94d7677d4556514369ba6dda0a3bb122",
+      "bundle_path": "bundle",
+      "issue_url": "https://github.com/OctoSense-org/OctoSense-App-Hub/issues/95",
+      "commit": "04241f3b94d7677d4556514369ba6dda0a3bb122",
+      "gate": {
+        "app_id": "liyu-mini",
+        "digest": "aa135d5932b161c7d04a8634d1c8165841690e0561f36dd5f6c3b4f7f331508d",
+        "findings": [
+          {
+            "check": "publisher-signature",
+            "detail": "unsigned: accountability rests on the hub alone",
+            "severity": "warning"
+          },
+          {
+            "check": "policy",
+            "detail": "app liyu-mini requests unknown capability \"liyu\"",
+            "severity": "refusal"
+          }
+        ],
+        "passed": false,
+        "resources": [],
+        "schema": 1,
+        "stage": "structural",
+        "version": "1.0.31"
+      },
+      "exit_code": 1,
+      "source_blobs_verified": true,
+      "declared_capabilities": [
+        "images",
+        "liyu",
+        "model",
+        "net",
+        "storage"
+      ],
+      "declared_digest": "aa135d5932b161c7d04a8634d1c8165841690e0561f36dd5f6c3b4f7f331508d",
+      "legacy_digest_matches": [],
+      "acceptance": "not-reviewed"
+    },
+    {
+      "issue": 98,
+      "repo": "kkkkikun/qianxian-guardian",
+      "requested_ref": "v0.1.0",
+      "bundle_path": "app/qianxian/bundle",
+      "issue_url": "https://github.com/OctoSense-org/OctoSense-App-Hub/issues/98",
+      "commit": "9c7c32291a3a2fdfaed2c34152040cd1239d1834",
+      "supplied_publisher_key": "aurora-x=30c7d686aa2b582adc1a4b94900a5b486d87d377b54ffcb94985bbc18cd74a71",
+      "gate": {
+        "app_id": "qianxian",
+        "digest": "743c1a7f8d26fe6a39d4c4813a9d8129481463d2ac607eff5fe6ee4965b7aef6",
+        "findings": [],
+        "passed": true,
+        "resources": [],
+        "schema": 1,
+        "stage": "structural",
+        "version": "0.1.0"
+      },
+      "exit_code": 0,
+      "source_blobs_verified": true,
+      "declared_capabilities": [
+        "storage",
+        "octos.turn.start"
+      ],
+      "declared_digest": "743c1a7f8d26fe6a39d4c4813a9d8129481463d2ac607eff5fe6ee4965b7aef6",
+      "legacy_digest_matches": [],
+      "acceptance": "not-reviewed"
+    },
+    {
+      "issue": 99,
+      "repo": "woshuoduijiushidui/OctoSense-AppCard",
+      "requested_ref": "3fb6be2273dce840b3e660e92c61ff066c632f38",
+      "bundle_path": "apps/pantry-steward/bundle",
+      "issue_url": "https://github.com/OctoSense-org/OctoSense-App-Hub/issues/99",
+      "commit": "3fb6be2273dce840b3e660e92c61ff066c632f38",
+      "gate": {
+        "app_id": "pantry-steward",
+        "digest": "548a23b9f91be724d2753fcea0e112c1d6c022457dd2a774312bd43b12981713",
+        "findings": [
+          {
+            "check": "digest",
+            "detail": "the bundle hashes to 548a23b9f91be724d2753fcea0e112c1d6c022457dd2a774312bd43b12981713, the manifest claims 2e3a4e858a35e5e57f090736c346d2aa2b1649c94ea9332aa3ab2e96b5cbe2a7",
+            "severity": "refusal"
+          },
+          {
+            "check": "publisher-signature",
+            "detail": "unsigned: accountability rests on the hub alone",
+            "severity": "warning"
+          }
+        ],
+        "passed": false,
+        "resources": [],
+        "schema": 1,
+        "stage": "structural",
+        "version": "0.6.1"
+      },
+      "exit_code": 1,
+      "source_blobs_verified": true,
+      "declared_capabilities": [
+        "storage",
+        "model"
+      ],
+      "declared_digest": "2e3a4e858a35e5e57f090736c346d2aa2b1649c94ea9332aa3ab2e96b5cbe2a7",
+      "legacy_digest_matches": [
+        "MATCH separator=legacy-windows line_endings=raw",
+        "MATCH separator=legacy-windows line_endings=lf"
+      ],
+      "acceptance": "not-reviewed"
+    },
+    {
+      "issue": 100,
+      "repo": "jscjscjscjscjsc/morning-brief",
+      "requested_ref": "a92504045d55befe37f2532d1fcdb867956643ec",
+      "bundle_path": "my-entry/morning-brief/bundle",
+      "issue_url": "https://github.com/OctoSense-org/OctoSense-App-Hub/issues/100",
+      "commit": "a92504045d55befe37f2532d1fcdb867956643ec",
+      "gate": {
+        "app_id": "morning-brief",
+        "digest": "77470aada6e85b64e4a66ef5a4fc9eb035f9ab4c37641ec732aaff4cc01aca92",
+        "findings": [
+          {
+            "check": "publisher-signature",
+            "detail": "unsigned: accountability rests on the hub alone",
+            "severity": "warning"
+          }
+        ],
+        "passed": true,
+        "resources": [],
+        "schema": 1,
+        "stage": "structural",
+        "version": "0.1.0"
+      },
+      "exit_code": 0,
+      "source_blobs_verified": true,
+      "declared_capabilities": [
+        "storage",
+        "net",
+        "images",
+        "llm"
+      ],
+      "declared_digest": "77470aada6e85b64e4a66ef5a4fc9eb035f9ab4c37641ec732aaff4cc01aca92",
+      "legacy_digest_matches": [],
+      "acceptance": "not-reviewed"
+    },
+    {
+      "issue": 101,
+      "repo": "peterdlick-stack/agentic-app",
+      "requested_ref": "d56da0b139d910f910c24337feca273bfc6ecd8b",
+      "bundle_path": "bundle",
+      "issue_url": "https://github.com/OctoSense-org/OctoSense-App-Hub/issues/101",
+      "commit": "d56da0b139d910f910c24337feca273bfc6ecd8b",
+      "gate": {
+        "app_id": "context-dj",
+        "digest": "5e407ee60e0bd19f4a3e6452ac5622887290b9b95860192c95f36d4475d831db",
+        "findings": [
+          {
+            "check": "publisher-signature",
+            "detail": "unsigned: accountability rests on the hub alone",
+            "severity": "warning"
+          }
+        ],
+        "passed": true,
+        "resources": [],
+        "schema": 1,
+        "stage": "structural",
+        "version": "0.3.4"
+      },
+      "exit_code": 0,
+      "source_blobs_verified": true,
+      "declared_capabilities": [
+        "storage",
+        "net",
+        "web",
+        "model",
+        "location"
+      ],
+      "declared_digest": "5e407ee60e0bd19f4a3e6452ac5622887290b9b95860192c95f36d4475d831db",
+      "legacy_digest_matches": [],
+      "acceptance": "not-reviewed"
+    },
+    {
+      "issue": 102,
+      "repo": "buqizixv/shaotangjiabing",
+      "requested_ref": "362e9fdf2123c001d6c1b6c6be654656355256c9",
+      "bundle_path": "onway/bundle",
+      "issue_url": "https://github.com/OctoSense-org/OctoSense-App-Hub/issues/102",
+      "commit": "362e9fdf2123c001d6c1b6c6be654656355256c9",
+      "gate": {
+        "app_id": "onway",
+        "digest": "94368726c1bcb3329deedf1f688503ebe973c9f4c21ac0e203b2ad55b5a9c4be",
+        "findings": [
+          {
+            "check": "digest",
+            "detail": "the bundle hashes to 94368726c1bcb3329deedf1f688503ebe973c9f4c21ac0e203b2ad55b5a9c4be, the manifest claims 4b7104433d3facc0151733e3359be16fb2be2fb4af6a6680234da49a9c88036f",
+            "severity": "refusal"
+          },
+          {
+            "check": "publisher-signature",
+            "detail": "unsigned: accountability rests on the hub alone",
+            "severity": "warning"
+          }
+        ],
+        "passed": false,
+        "resources": [],
+        "schema": 1,
+        "stage": "structural",
+        "version": "1.0.2"
+      },
+      "exit_code": 1,
+      "source_blobs_verified": true,
+      "declared_capabilities": [
+        "storage",
+        "location",
+        "glance"
+      ],
+      "declared_digest": "4b7104433d3facc0151733e3359be16fb2be2fb4af6a6680234da49a9c88036f",
+      "legacy_digest_matches": [
+        "MATCH separator=legacy-windows line_endings=raw"
+      ],
+      "acceptance": "not-reviewed"
+    },
+    {
+      "issue": 103,
+      "repo": "Jasonsu22/AgentMail",
+      "requested_ref": "b3b5b6be259673a4c35df2d638730ef007c185ca",
+      "bundle_path": "bundle",
+      "issue_url": "https://github.com/OctoSense-org/OctoSense-App-Hub/issues/103",
+      "commit": "b3b5b6be259673a4c35df2d638730ef007c185ca",
+      "gate": {
+        "app_id": "agent-mail",
+        "digest": "ab71bdfc8867d19ceb1193c9e2a64bca12f582c3c1530dcbfc43d3be618bc458",
+        "findings": [
+          {
+            "check": "digest",
+            "detail": "the bundle hashes to ab71bdfc8867d19ceb1193c9e2a64bca12f582c3c1530dcbfc43d3be618bc458, the manifest claims e240adf3ee2512118fdd33b0235bb071324325bc74acc2f692c0194eeaa6dac8",
+            "severity": "refusal"
+          },
+          {
+            "check": "publisher-signature",
+            "detail": "unsigned: accountability rests on the hub alone",
+            "severity": "warning"
+          }
+        ],
+        "passed": false,
+        "resources": [],
+        "schema": 1,
+        "stage": "structural",
+        "version": "0.30.116"
+      },
+      "exit_code": 1,
+      "source_blobs_verified": true,
+      "declared_capabilities": [
+        "storage",
+        "mail",
+        "model"
+      ],
+      "declared_digest": "e240adf3ee2512118fdd33b0235bb071324325bc74acc2f692c0194eeaa6dac8",
+      "legacy_digest_matches": [],
+      "acceptance": "not-reviewed"
+    },
+    {
+      "issue": 104,
+      "repo": "jessicaruan6688-byte/doudou-gosim",
+      "requested_ref": "ae92d240115290b48ff86153445811b0d69d6c24",
+      "bundle_path": "bundle",
+      "issue_url": "https://github.com/OctoSense-org/OctoSense-App-Hub/issues/104",
+      "commit": "ae92d240115290b48ff86153445811b0d69d6c24",
+      "gate": {
+        "app_id": "doudou",
+        "digest": "e39f7b9d6cfadb6b5b3c2cb785cfab6a8649b8a79472952c1a50c8848eff2ab7",
+        "findings": [
+          {
+            "check": "publisher-signature",
+            "detail": "unsigned: accountability rests on the hub alone",
+            "severity": "warning"
+          }
+        ],
+        "passed": true,
+        "resources": [],
+        "schema": 1,
+        "stage": "structural",
+        "version": "0.2.0"
+      },
+      "exit_code": 0,
+      "source_blobs_verified": true,
+      "declared_capabilities": [
+        "storage"
+      ],
+      "declared_digest": "e39f7b9d6cfadb6b5b3c2cb785cfab6a8649b8a79472952c1a50c8848eff2ab7",
+      "legacy_digest_matches": [],
+      "acceptance": "blocked-first-use"
+    },
+    {
+      "issue": 105,
+      "repo": "lymio-lab/study-watchlist",
+      "requested_ref": "284b8ae9ef50c3d2695cb32fdd0d46f6b99a5da8",
+      "bundle_path": "bundle",
+      "issue_url": "https://github.com/OctoSense-org/OctoSense-App-Hub/issues/105",
+      "fetch_error": "gh: Not Found (HTTP 404)",
+      "acceptance": "blocked-source-unavailable"
+    },
+    {
+      "issue": 106,
+      "repo": "2892480843/zhixin-mail",
+      "requested_ref": "ec9f70ea88697dfd9f0f44ac0ab912f3de24e65e",
+      "bundle_path": "bundle",
+      "issue_url": "https://github.com/OctoSense-org/OctoSense-App-Hub/issues/106",
+      "commit": "ec9f70ea88697dfd9f0f44ac0ab912f3de24e65e",
+      "gate": {
+        "app_id": "zhixin-mail",
+        "digest": "62f323ebdfd19e03a19baa763fbab91f1b0e7980f65faf8bef67f4e61d4cc525",
+        "findings": [
+          {
+            "check": "publisher-signature",
+            "detail": "unsigned: accountability rests on the hub alone",
+            "severity": "warning"
+          }
+        ],
+        "passed": true,
+        "resources": [],
+        "schema": 1,
+        "stage": "structural",
+        "version": "0.1.0"
+      },
+      "exit_code": 0,
+      "source_blobs_verified": true,
+      "declared_capabilities": [
+        "storage",
+        "mail",
+        "model",
+        "glance"
+      ],
+      "declared_digest": "62f323ebdfd19e03a19baa763fbab91f1b0e7980f65faf8bef67f4e61d4cc525",
+      "legacy_digest_matches": [],
+      "acceptance": "not-reviewed"
+    },
+    {
+      "issue": 107,
+      "repo": "hhyyzz-enda/bluemsun-2026AgentticApp",
+      "requested_ref": "63dba5a5e9bd174211b03e479524083207e5e9ef",
+      "bundle_path": "writing-studio-hub/bundle",
+      "issue_url": "https://github.com/OctoSense-org/OctoSense-App-Hub/issues/107",
+      "commit": "63dba5a5e9bd174211b03e479524083207e5e9ef",
+      "gate": {
+        "app_id": "bluemsun.writing-studio",
+        "digest": "0c4c3e2d334a4f43d78eb3ec7509cf3567203c9613c86a9062cf4ecca0653a4f",
+        "findings": [
+          {
+            "check": "publisher-signature",
+            "detail": "unsigned: accountability rests on the hub alone",
+            "severity": "warning"
+          }
+        ],
+        "passed": true,
+        "resources": [],
+        "schema": 1,
+        "stage": "structural",
+        "version": "1.0.0"
+      },
+      "exit_code": 0,
+      "source_blobs_verified": true,
+      "declared_capabilities": [
+        "storage",
+        "net",
+        "octos.turn.start",
+        "matrix.send_message"
+      ],
+      "declared_digest": "0c4c3e2d334a4f43d78eb3ec7509cf3567203c9613c86a9062cf4ecca0653a4f",
+      "legacy_digest_matches": [],
+      "acceptance": "not-reviewed"
+    },
+    {
+      "issue": 108,
+      "repo": "DitingZhang/OctoParcel",
+      "requested_ref": "7f3c3876a7a97f61e1f6c78afb4fac21a384931f",
+      "bundle_path": "bundle",
+      "issue_url": "https://github.com/OctoSense-org/OctoSense-App-Hub/issues/108",
+      "commit": "7f3c3876a7a97f61e1f6c78afb4fac21a384931f",
+      "gate": {
+        "app_id": "octoparcel",
+        "digest": "4e869cd15aa43fda2c3ca13f2706397acf71b19a1f82999ca030914b1848c05d",
+        "findings": [
+          {
+            "check": "publisher-signature",
+            "detail": "unsigned: accountability rests on the hub alone",
+            "severity": "warning"
+          }
+        ],
+        "passed": true,
+        "resources": [],
+        "schema": 1,
+        "stage": "structural",
+        "version": "0.1.0"
+      },
+      "exit_code": 0,
+      "source_blobs_verified": true,
+      "declared_capabilities": [
+        "storage"
+      ],
+      "declared_digest": "4e869cd15aa43fda2c3ca13f2706397acf71b19a1f82999ca030914b1848c05d",
+      "legacy_digest_matches": [],
+      "acceptance": "not-reviewed"
+    },
+    {
+      "issue": 109,
+      "repo": "ZhangHanDong/weather-app",
+      "requested_ref": "c3354264d65ac959811735e2079e2ddd1c0d956b",
+      "bundle_path": "bundle",
+      "issue_url": "https://github.com/OctoSense-org/OctoSense-App-Hub/issues/109",
+      "commit": "c3354264d65ac959811735e2079e2ddd1c0d956b",
+      "supplied_publisher_key": "zhanghandong=8545d0388a7d1a0aa29424180f9aae786381f27ac8d024108f29aabcc3fffcac",
+      "gate": {
+        "app_id": "trip-guardian",
+        "digest": "e2974304249fac7370f168341c9235edb07a1f5342fd37d16e5fc5509f0ebe57",
+        "findings": [],
+        "passed": true,
+        "resources": [],
+        "schema": 1,
+        "stage": "structural",
+        "version": "0.1.0"
+      },
+      "exit_code": 0,
+      "source_blobs_verified": true,
+      "declared_capabilities": [
+        "net",
+        "storage",
+        "octos.session.open",
+        "octos.turn.start"
+      ],
+      "declared_digest": "e2974304249fac7370f168341c9235edb07a1f5342fd37d16e5fc5509f0ebe57",
+      "legacy_digest_matches": [],
+      "acceptance": "not-reviewed"
+    },
+    {
+      "issue": 111,
+      "repo": "buqizixv/shaotangjiabing",
+      "requested_ref": "f26a7631e8c2c675064820bdd38339a88b6b7549",
+      "bundle_path": "octoscript-weather-assistant/bundle",
+      "issue_url": "https://github.com/OctoSense-org/OctoSense-App-Hub/issues/111",
+      "commit": "f26a7631e8c2c675064820bdd38339a88b6b7549",
+      "gate": {
+        "app_id": "weather-assistant",
+        "digest": "e96045d1221b42afd4597d0010204bd57fc63801e8dec31ddcd5a06c429ec8c5",
+        "findings": [
+          {
+            "check": "digest",
+            "detail": "the bundle hashes to e96045d1221b42afd4597d0010204bd57fc63801e8dec31ddcd5a06c429ec8c5, the manifest claims 2b15931a48b5a3f825996417427476a30921a59cb5fecef56d5477f7620769dd",
+            "severity": "refusal"
+          },
+          {
+            "check": "publisher-signature",
+            "detail": "unsigned: accountability rests on the hub alone",
+            "severity": "warning"
+          }
+        ],
+        "passed": false,
+        "resources": [],
+        "schema": 1,
+        "stage": "structural",
+        "version": "0.4.3"
+      },
+      "exit_code": 1,
+      "source_blobs_verified": true,
+      "declared_capabilities": [
+        "storage",
+        "net",
+        "octos.session.open",
+        "octos.turn.start",
+        "camera"
+      ],
+      "declared_digest": "2b15931a48b5a3f825996417427476a30921a59cb5fecef56d5477f7620769dd",
+      "legacy_digest_matches": [],
+      "acceptance": "not-reviewed"
+    },
+    {
+      "issue": 112,
+      "repo": "9tuore/muse-agent",
+      "requested_ref": "5d6e6d16a8f73798fdcaaa3065cbe7e654dce740",
+      "bundle_path": "official_muse/app/bundle",
+      "issue_url": "https://github.com/OctoSense-org/OctoSense-App-Hub/issues/112",
+      "commit": "5d6e6d16a8f73798fdcaaa3065cbe7e654dce740",
+      "gate": {
+        "app_id": "muse-goals",
+        "digest": "030eee6a22ec7cfd40cd7d9ae4422841e8b6172c64edb1dd9e466a25a6520e4d",
+        "findings": [
+          {
+            "check": "publisher-signature",
+            "detail": "unsigned: accountability rests on the hub alone",
+            "severity": "warning"
+          }
+        ],
+        "passed": true,
+        "resources": [],
+        "schema": 1,
+        "stage": "structural",
+        "version": "0.3.27-rc10"
+      },
+      "exit_code": 0,
+      "source_blobs_verified": true,
+      "declared_capabilities": [
+        "storage",
+        "model",
+        "mail",
+        "calendar",
+        "glance"
+      ],
+      "declared_digest": "030eee6a22ec7cfd40cd7d9ae4422841e8b6172c64edb1dd9e466a25a6520e4d",
+      "legacy_digest_matches": [],
+      "acceptance": "not-reviewed"
+    },
+    {
+      "issue": 113,
+      "repo": "KumaYuriPool/DailyFlow",
+      "requested_ref": "dfb69ea9130fd5c0b2778ebf647ea900a7537713",
+      "bundle_path": "bundle",
+      "issue_url": "https://github.com/OctoSense-org/OctoSense-App-Hub/issues/113",
+      "commit": "dfb69ea9130fd5c0b2778ebf647ea900a7537713",
+      "gate": {
+        "app_id": "dailyflow",
+        "digest": "4310c99ae55b28fe19f923937e986040aa2813e4cddd9f5e49102f9a6270d1e2",
+        "findings": [
+          {
+            "check": "digest",
+            "detail": "the bundle hashes to 4310c99ae55b28fe19f923937e986040aa2813e4cddd9f5e49102f9a6270d1e2, the manifest claims ae1b251fbc9a288d192018b14a3c56fedceecfb33282ee5dbbb1854274d0c7b0",
+            "severity": "refusal"
+          },
+          {
+            "check": "publisher-signature",
+            "detail": "unsigned: accountability rests on the hub alone",
+            "severity": "warning"
+          },
+          {
+            "check": "tools",
+            "detail": "dailyflow.save_record is destructive: every call waits for the host's approval",
+            "severity": "warning"
+          },
+          {
+            "check": "tools",
+            "detail": "dailyflow.apply is destructive: every call waits for the host's approval",
+            "severity": "warning"
+          }
+        ],
+        "passed": false,
+        "resources": [],
+        "schema": 1,
+        "stage": "structural",
+        "version": "0.1.0"
+      },
+      "exit_code": 1,
+      "source_blobs_verified": true,
+      "declared_capabilities": [
+        "storage",
+        "model"
+      ],
+      "declared_digest": "ae1b251fbc9a288d192018b14a3c56fedceecfb33282ee5dbbb1854274d0c7b0",
+      "legacy_digest_matches": [
+        "MATCH separator=legacy-windows line_endings=raw"
+      ],
+      "acceptance": "not-reviewed"
+    },
+    {
+      "issue": 114,
+      "repo": "zhiguang127/cfaw-news-agent",
+      "requested_ref": "aee726ce30b8e1e35ee0ad93f0fde1707eedb034",
+      "bundle_path": "bundle",
+      "issue_url": "https://github.com/OctoSense-org/OctoSense-App-Hub/issues/114",
+      "commit": "aee726ce30b8e1e35ee0ad93f0fde1707eedb034",
+      "gate": {
+        "app_id": "dev.cfaw.news",
+        "digest": "6cc375c7e6b66a66a9b55c1ece4acf1c6c04c4a77ea7b7737585687db0e703b0",
+        "findings": [
+          {
+            "check": "publisher-signature",
+            "detail": "unsigned: accountability rests on the hub alone",
+            "severity": "warning"
+          }
+        ],
+        "passed": true,
+        "resources": [],
+        "schema": 1,
+        "stage": "structural",
+        "version": "1.0.0"
+      },
+      "exit_code": 0,
+      "source_blobs_verified": true,
+      "declared_capabilities": [
+        "storage",
+        "net",
+        "images",
+        "web",
+        "octos.session.open",
+        "octos.turn.start",
+        "octos.turn.interrupt"
+      ],
+      "declared_digest": "6cc375c7e6b66a66a9b55c1ece4acf1c6c04c4a77ea7b7737585687db0e703b0",
+      "legacy_digest_matches": [],
+      "acceptance": "not-reviewed"
+    },
+    {
+      "issue": 115,
+      "repo": "Mingyy21/music-cue",
+      "requested_ref": "14443518f3e0881cc0f84e11a8865b8d2c4b4bca",
+      "bundle_path": "bundle",
+      "issue_url": "https://github.com/OctoSense-org/OctoSense-App-Hub/issues/115",
+      "commit": "14443518f3e0881cc0f84e11a8865b8d2c4b4bca",
+      "gate": {
+        "app_id": "music.cue",
+        "digest": "c0ea642504d3da670beca7191711317b98d44df304704a01c8ffe578aea9b6aa",
+        "findings": [
+          {
+            "check": "digest",
+            "detail": "the bundle hashes to c0ea642504d3da670beca7191711317b98d44df304704a01c8ffe578aea9b6aa, the manifest claims e7c7f5f2f5c005505bb8f824b28b55917c41bc0bee23044d652689d7ea48d22d",
+            "severity": "refusal"
+          },
+          {
+            "check": "publisher-signature",
+            "detail": "unsigned: accountability rests on the hub alone",
+            "severity": "warning"
+          }
+        ],
+        "passed": false,
+        "resources": [],
+        "schema": 1,
+        "stage": "structural",
+        "version": "0.2.0"
+      },
+      "exit_code": 1,
+      "source_blobs_verified": true,
+      "declared_capabilities": [
+        "storage"
+      ],
+      "declared_digest": "e7c7f5f2f5c005505bb8f824b28b55917c41bc0bee23044d652689d7ea48d22d",
+      "legacy_digest_matches": [
+        "MATCH separator=legacy-windows line_endings=raw",
+        "MATCH separator=legacy-windows line_endings=crlf"
+      ],
+      "acceptance": "not-reviewed"
+    },
+    {
+      "issue": 116,
+      "repo": "xiaoland/gosim-agentic26",
+      "requested_ref": "702ea6cfca8240e6c3222b8dc5f375b8ca009866",
+      "bundle_path": "bundle",
+      "issue_url": "https://github.com/OctoSense-org/OctoSense-App-Hub/issues/116",
+      "commit": "702ea6cfca8240e6c3222b8dc5f375b8ca009866",
+      "gate": {
+        "app_id": "agentic26-navigation",
+        "digest": "3579572593d669ab4a2d9b05904750471cd4b173b9370d139ed1dd08c94a8619",
+        "findings": [
+          {
+            "check": "publisher-signature",
+            "detail": "unsigned: accountability rests on the hub alone",
+            "severity": "warning"
+          }
+        ],
+        "passed": true,
+        "resources": [],
+        "schema": 1,
+        "stage": "structural",
+        "version": "0.13.0"
+      },
+      "exit_code": 0,
+      "source_blobs_verified": true,
+      "declared_capabilities": [
+        "storage",
+        "net",
+        "location"
+      ],
+      "declared_digest": "3579572593d669ab4a2d9b05904750471cd4b173b9370d139ed1dd08c94a8619",
+      "legacy_digest_matches": [],
+      "acceptance": "not-reviewed"
+    },
+    {
+      "issue": 117,
+      "repo": "windy664/OctoDining",
+      "requested_ref": "8cf21bb41870da9f15752c21badd582027286062",
+      "bundle_path": "bundle",
+      "issue_url": "https://github.com/OctoSense-org/OctoSense-App-Hub/issues/117",
+      "commit": "8cf21bb41870da9f15752c21badd582027286062",
+      "supplied_publisher_key": "windy664=1b72b26cb53eef42eeb73d5017b57e0e734c25f26191f7f9c8bbf09520d90ba5",
+      "gate": {
+        "app_id": "org.octosense.octodining",
+        "digest": "8ab383f6130d3c5e637fd35571ad283500780c88171067a46a0822e11bedd4ec",
+        "findings": [],
+        "passed": true,
+        "resources": [],
+        "schema": 1,
+        "stage": "structural",
+        "version": "1.7.0"
+      },
+      "exit_code": 0,
+      "source_blobs_verified": true,
+      "declared_capabilities": [
+        "storage",
+        "octos.turn.start",
+        "net"
+      ],
+      "declared_digest": "8ab383f6130d3c5e637fd35571ad283500780c88171067a46a0822e11bedd4ec",
+      "legacy_digest_matches": [],
+      "acceptance": "not-reviewed"
+    }
+  ],
+  "alternate_ref_observations": [
+    {
+      "issue": 78,
+      "requested_ref": "v0.4.8",
+      "commit": "b4b6c8ecbd22375d2e4009af9d6340a421460483",
+      "bundle_path": "oncue/bundle",
+      "gate": {
+        "app_id": "oncue-screening-room",
+        "digest": "f4889ef51ce6b3a6dc57be07196540361d83157e78a9a2cd810788045b9a19cd",
+        "findings": [],
+        "passed": true,
+        "resources": [],
+        "schema": 1,
+        "stage": "structural",
+        "version": "0.4.8"
+      },
+      "note": "The issue SHA does not resolve. The named tag resolves to a different commit and passes structural checks only; it is not silently substituted for the submitted SHA."
+    }
+  ],
+  "separate_routes": [
+    {
+      "issue": 52,
+      "route": "superseded by #77"
+    },
+    {
+      "issue": 60,
+      "route": "superseded by #77"
+    },
+    {
+      "issue": 97,
+      "route": "native module, OctoSense PR #344; no bundle"
+    },
+    {
+      "issue": 110,
+      "route": "native Windows/Rinx extension, not an ordinary bundle"
+    }
+  ],
+  "native_first_use": {
+    "issue": 104,
+    "commit": "ae92d240115290b48ff86153445811b0d69d6c24",
+    "host": "release card-host, pinned plain runtime, macOS Metal hidden native window, 412x892 logical points",
+    "data": "fresh isolated storage and fictional household input",
+    "driver": "Codex via Makepad native HTTP instrument",
+    "result": "blocked",
+    "observed": "Initial UI asks for terminal migration or household input. Entering household data and clicking the submit control clears the editor but leaves the setup prompt; no household is created.",
+    "source_evidence": "main.splash g8_init reads only prior stored household/migration data; flow_submit_text returns failure when household is absent. The view checks absent household before the error state.",
+    "limits": "No live provider, financial advice, phone acceptance, Glance transition or store publication. Owned process exited.",
+    "host_sha256": "5eb4a3db455d6ad801146b2ca1ff9fcaa8f77233ed2cd82ed209bd5bb5a15dfc",
+    "runtime": {
+      "octoscript_makepad": "33dea2f1",
+      "makepad": "32d6415f",
+      "octoscript": "2e37d9e"
+    },
+    "capture": "first-use-doudou.png"
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "digest": "e0ba3dda9e7b4701f0425e3135a8d0877b18f678b95450c6cfb606cd66679084",
+  "entry": "script",
+  "ignored_fields": [],
+  "limits": "unsigned",
+  "policy": {
+    "app_id": "org.example.writer",
+    "capabilities": [
+      "storage",
+      "wasm"
+    ],
+    "display_name": "Writer",
+    "hosts": [],
+    "instruction_budget": 20000000,
+    "may_prompt": false,
+    "memory_bytes": 67108864,
+    "research": null,
+    "storage": {
+      "accounts": false,
+      "agent_workspace": "account",
+      "cache_max_bytes": null,
+      "max_bytes": 16777216
+    },
+    "storage_bytes": 16777216,
+    "version": "1.0.0"
+  },
+  "signing_blake3": "f6665844e8c825fbe9dbbf6d9abe98a8f8b66bcab92a39bcd9642f73ebad2a20",
+  "source": "App Hub ADR 0003: an app that pins one shared component from the catalog"
+}

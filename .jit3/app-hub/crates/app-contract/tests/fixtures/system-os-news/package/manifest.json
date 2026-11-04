@@ -1,0 +1,39 @@
+{
+  "agent": {
+    "model": {
+      "needs": [
+        "tool_calling"
+      ]
+    },
+    "profile": "read-only",
+    "tools": [
+      "ask_user_question"
+    ]
+  },
+  "capabilities": [
+    "storage",
+    "net",
+    "images",
+    "web",
+    "news"
+  ],
+  "id": "os.news",
+  "integrity": {
+    "bundle_blake3": "c2047fbb78284519ebf1fa636c65042283b219a5539b38af9ff39bd7af552c3c"
+  },
+  "name": "News",
+  "network": {
+    "hosts": [
+      "hn.algolia.com",
+      "www.techmeme.com",
+      "news.google.com",
+      "api.gdeltproject.org",
+      "feeds.bbci.co.uk",
+      "feeds.npr.org",
+      "www.theguardian.com",
+      "feeds.arstechnica.com"
+    ]
+  },
+  "schema": 1,
+  "version": "1.0.0"
+}

@@ -1,0 +1,35 @@
+{
+  "digest": "729bc3dfe1ef9ae2e49cb86f82db670adc09282c4aaadc65d58ed804d6255c26",
+  "entry": "card",
+  "ignored_fields": [
+    "network.retry",
+    "storage.backup",
+    "theme_color"
+  ],
+  "limits": "unsigned",
+  "policy": {
+    "app_id": "forecast",
+    "capabilities": [
+      "net",
+      "storage"
+    ],
+    "display_name": "Forecast",
+    "hosts": [
+      "api.weather.example"
+    ],
+    "instruction_budget": 20000000,
+    "may_prompt": false,
+    "memory_bytes": 67108864,
+    "research": null,
+    "storage": {
+      "accounts": false,
+      "agent_workspace": "account",
+      "cache_max_bytes": null,
+      "max_bytes": 4096
+    },
+    "storage_bytes": 4096,
+    "version": "1.1.0"
+  },
+  "signing_blake3": "659e01c4b0161afb3807473661342b7412a1ce1560353bd57b1321e698e5452e",
+  "source": "ADR 0005 section 2: a manifest for a newer 1.x (schema_minor 2) with unknown optional fields at top level, in network and in storage"
+}

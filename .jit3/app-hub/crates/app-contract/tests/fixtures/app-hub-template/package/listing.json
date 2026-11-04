@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "subtitle": "Replace with your app's short description",
+  "description": "Replace with what your app does and who it helps.",
+  "category": "utilities",
+  "keywords": [],
+  "screenshots": ["screenshots/01-main.png"],
+  "icon": "assets/icon.svg",
+  "platforms": ["android"],
+  "publisher": {
+    "name": "Replace with your publisher name",
+    "support": "https://example.com/support",
+    "privacy_policy_url": "https://example.com/privacy"
+  },
+  "release_notes": "Replace with the changes in this version.",
+  "age_rating": "all",
+  "license": "Apache-2.0"
+}

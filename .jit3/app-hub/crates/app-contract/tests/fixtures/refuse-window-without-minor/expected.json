@@ -1,0 +1,6 @@
+{
+  "digest": "729bc3dfe1ef9ae2e49cb86f82db670adc09282c4aaadc65d58ed804d6255c26",
+  "limits": "unsigned",
+  "refused": "window requires \"schema_minor\": 1 or later, so that hosts which predate window ignore it instead of refusing the app",
+  "source": "Contract 1.12.0: window in a manifest that does not declare schema_minor 1, which a host that predates window would refuse as an unknown field"
+}

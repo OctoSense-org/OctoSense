@@ -1,0 +1,28 @@
+{
+  "schema": 1,
+  "decision": "approve_exact_app_artifacts_for_catalog_publication",
+  "supersedes_hold_in": "review.json and independent-review.json",
+  "sequence": 12,
+  "payload_sha256": "8c2d94e5e426d7a920b49de0a6ecdb1a6bc6293e9baebbe2506f4421dce7c344",
+  "reviewer": "Codex",
+  "independent_review": "Second agent independently verified all release bytes, public identities, proofs and retained history.",
+  "camera_regression": {
+    "fix": "https://github.com/OctoSense-org/OctoSense-App-Hub/pull/162",
+    "merged_commit": "ba36df0505e198f998201af312ff5184df98cae9",
+    "host_source": "1f8958508097394336633ee53c0f03e0dd00ae38",
+    "native_checks_passed": 9,
+    "evidence": "https://github.com/ymote/camera-card/blob/b158d76a8b0d7a8452eed4e3b749e707205da6e3/review/1.1.0/VISUAL-REVIEW.json"
+  },
+  "compatible_host": {
+    "candidate_source": "128b0524c619cf8c2525ac708e8f76fcf4b99f87",
+    "release_status": "RC build and final CI pending; catalog admission does not claim a released host",
+    "scope": "Reviewed source hosts installed and ran the genuine packages. Fresh identities require publisher-github-v1. Historical release hosts retain the separate legacy catalog."
+  },
+  "limits": [
+    "macOS listings only",
+    "No provider authentication, remote writes or model behavior claimed by these install checks",
+    "Camera remains a static zero-capability demo",
+    "Historical app IDs and saved data remain separate"
+  ],
+  "production_catalog_changed_by_this_commit": false
+}

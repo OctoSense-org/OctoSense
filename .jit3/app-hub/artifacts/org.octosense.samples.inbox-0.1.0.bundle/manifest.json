@@ -1,0 +1,58 @@
+{
+  "agent": {
+    "background": true,
+    "instructions": "AGENT.md",
+    "max_iterations": null,
+    "model": {
+      "local_only": false,
+      "needs": [
+        "tool_calling"
+      ],
+      "tier": "standard"
+    },
+    "profile": "read-only",
+    "skills": [
+      "incoming-mail-triage"
+    ],
+    "token_budget": null,
+    "tools": [
+      "ask_user_question"
+    ],
+    "triggers": {
+      "events": [
+        "inbox.new_message"
+      ]
+    }
+  },
+  "capabilities": [
+    "storage",
+    "auth",
+    "gmail",
+    "model",
+    "glance",
+    "octos.session.open",
+    "octos.turn.start"
+  ],
+  "compute": {
+    "instruction_budget": null,
+    "memory_bytes": null
+  },
+  "id": "org.octosense.samples.inbox",
+  "integrity": {
+    "bundle_blake3": "dc8c4d215e1aa28b86752f8632d028588d30e8775ebad6f52a48a943b7780040",
+    "signature": {
+      "key_id": "ymote",
+      "value": "29b50a8d79f8359a04101e7d6fb8851140be7cb5a55a2f062faaf220d9a0660d0b168989a55105e9f4fbddb7c07435ae5e1de9f48341d076af75f5426d0a110f"
+    }
+  },
+  "name": "Inbox Assistant",
+  "network": {
+    "hosts": []
+  },
+  "schema": 1,
+  "storage": {
+    "accounts": true,
+    "max_bytes": null
+  },
+  "version": "0.1.0"
+}

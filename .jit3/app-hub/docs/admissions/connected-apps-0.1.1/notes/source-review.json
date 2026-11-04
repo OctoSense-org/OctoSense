@@ -1,0 +1,8 @@
+{
+  "route": "pass",
+  "reasons": [
+    "Scoped update to an existing macOS preview: explicitly declares the previously offered foreground read-only Ask agent and names its instructions. Three private non-shareable read aliases remain; no write, approval or background tool is added.",
+    "Instruction and privacy text distinguish remote saved notes from unsaved local drafts, enforce account/request scope, treat Markdown as untrusted and disclose configured-model processing.",
+    "Editor/tools/original screenshots match the prior release. Exact signature, catalog continuity, structural gate and three contracts passed; brokered model and live GitHub execution remain unverified and are disclosed."
+  ]
+}

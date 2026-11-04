@@ -1,0 +1,26 @@
+{
+  "digest": "e5c87ad13b02be2dcd8d33d095b9cd3bbc05240ae94321e79353a01c8bcb266a",
+  "entry": "card",
+  "ignored_fields": [],
+  "limits": "unsigned",
+  "policy": {
+    "app_id": "my-app",
+    "capabilities": [],
+    "display_name": "My App",
+    "hosts": [],
+    "instruction_budget": 20000000,
+    "may_prompt": false,
+    "memory_bytes": 67108864,
+    "research": null,
+    "storage": {
+      "accounts": false,
+      "agent_workspace": "account",
+      "cache_max_bytes": null,
+      "max_bytes": 16777216
+    },
+    "storage_bytes": 16777216,
+    "version": "0.1.0"
+  },
+  "signing_blake3": "b97f0ab90292b244489f33e51587cd0c3b040a9703fd0190828e2597b58e5d6a",
+  "source": "App Hub templates/app/bundle (b3602e8), digest filled in as `hub` does"
+}

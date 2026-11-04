@@ -1,0 +1,395 @@
+{
+  "schema": 1,
+  "tools": [
+    {
+      "name": "reporadar.search",
+      "description": "Search public GitHub repositories. One explicit page of at most 10 results. Preserve incomplete and rate-limit status.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          }
+        },
+        "required": [
+          "query",
+          "page"
+        ],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "meta": {
+            "type": "object"
+          },
+          "page": {
+            "type": "object"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "meta",
+          "page",
+          "items"
+        ]
+      },
+      "risk": "read",
+      "shareable": false,
+      "background": false,
+      "private_data": false,
+      "implemented_by": "host-service",
+      "host_method": "wasm.radar_search"
+    },
+    {
+      "name": "reporadar.overview",
+      "description": "Read current public repository totals and private local observation timestamps. Deltas are since the previous observation, never assumed daily growth.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "full_name": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 200,
+            "description": "Public GitHub owner/repository from a search result."
+          },
+          "force": {
+            "type": "boolean",
+            "description": "False uses a fresh cache. True refreshes, still respecting provider cooldown."
+          }
+        },
+        "required": [
+          "full_name",
+          "force"
+        ],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "meta": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "meta"
+        ]
+      },
+      "risk": "read",
+      "shareable": false,
+      "background": false,
+      "private_data": true,
+      "implemented_by": "host-service",
+      "host_method": "wasm.radar_overview"
+    },
+    {
+      "name": "reporadar.pulls",
+      "description": "Read one bounded recently updated PR sample (at most 10), not lifetime PR totals or a complete time period.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "full_name": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 200,
+            "description": "Public GitHub owner/repository from a search result."
+          },
+          "force": {
+            "type": "boolean",
+            "description": "False uses a fresh cache. True refreshes, still respecting provider cooldown."
+          }
+        },
+        "required": [
+          "full_name",
+          "force"
+        ],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "meta": {
+            "type": "object"
+          },
+          "page": {
+            "type": "object"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "meta",
+          "page",
+          "items"
+        ]
+      },
+      "risk": "read",
+      "shareable": false,
+      "background": false,
+      "private_data": false,
+      "implemented_by": "host-service",
+      "host_method": "wasm.radar_pulls"
+    },
+    {
+      "name": "reporadar.releases",
+      "description": "Read at most five published releases; an empty list does not imply inactivity. Preserve non-SemVer tags.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "full_name": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 200,
+            "description": "Public GitHub owner/repository from a search result."
+          },
+          "force": {
+            "type": "boolean",
+            "description": "False uses a fresh cache. True refreshes, still respecting provider cooldown."
+          }
+        },
+        "required": [
+          "full_name",
+          "force"
+        ],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "meta": {
+            "type": "object"
+          },
+          "page": {
+            "type": "object"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "meta",
+          "page",
+          "items"
+        ]
+      },
+      "risk": "read",
+      "shareable": false,
+      "background": false,
+      "private_data": false,
+      "implemented_by": "host-service",
+      "host_method": "wasm.radar_releases"
+    },
+    {
+      "name": "reporadar.watchlist",
+      "description": "Read the private local watchlist, saved order and selection. Never describe pins as GitHub stars.",
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "pins": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "pins"
+        ]
+      },
+      "risk": "read",
+      "shareable": false,
+      "background": false,
+      "private_data": true,
+      "implemented_by": "host-service",
+      "host_method": "wasm.radar_watchlist"
+    },
+    {
+      "name": "reporadar.pin",
+      "description": "Pin a repository previously verified by search or overview, and select it. Local state only; never stars on GitHub.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "full_name": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 200,
+            "description": "Public GitHub owner/repository from a search result."
+          }
+        },
+        "required": [
+          "full_name"
+        ],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "pins": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "pins"
+        ]
+      },
+      "risk": "act",
+      "shareable": false,
+      "background": false,
+      "private_data": true,
+      "implemented_by": "host-service",
+      "host_method": "wasm.radar_pin"
+    },
+    {
+      "name": "reporadar.unpin",
+      "description": "Remove a project from the local watchlist only when the person asks. Cached public data may remain.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "repo_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Stable GitHub repository ID from the saved watchlist."
+          }
+        },
+        "required": [
+          "repo_id"
+        ],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "pins": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "pins"
+        ]
+      },
+      "risk": "destructive",
+      "shareable": false,
+      "background": false,
+      "private_data": true,
+      "implemented_by": "host-service",
+      "host_method": "wasm.radar_unpin",
+      "confirm": "host",
+      "auto_approvable": false
+    },
+    {
+      "name": "reporadar.select",
+      "description": "Select an already-pinned project in the shared saved watchlist.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "repo_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Stable GitHub repository ID from the saved watchlist."
+          }
+        },
+        "required": [
+          "repo_id"
+        ],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "pins": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "pins"
+        ]
+      },
+      "risk": "act",
+      "shareable": false,
+      "background": false,
+      "private_data": true,
+      "implemented_by": "host-service",
+      "host_method": "wasm.radar_select"
+    },
+    {
+      "name": "reporadar.move",
+      "description": "Reorder one pinned project by one position. Direction -1 is up; 1 is down.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "repo_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Stable GitHub repository ID from the saved watchlist."
+          },
+          "direction": {
+            "type": "integer",
+            "enum": [
+              -1,
+              1
+            ]
+          }
+        },
+        "required": [
+          "repo_id",
+          "direction"
+        ],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "pins": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "pins"
+        ]
+      },
+      "risk": "act",
+      "shareable": false,
+      "background": false,
+      "private_data": true,
+      "implemented_by": "host-service",
+      "host_method": "wasm.radar_move"
+    }
+  ]
+}

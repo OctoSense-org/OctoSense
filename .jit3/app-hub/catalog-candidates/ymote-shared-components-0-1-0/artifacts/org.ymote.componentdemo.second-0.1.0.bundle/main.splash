@@ -1,0 +1,53 @@
+// Synthetic data only. Each installed app calls the same component bytes,
+// but the host gives it a separate component instance and storage folder.
+let running = false
+fn inspect(call_id) {
+    if running { return }
+    running = true
+    ui.status.set_text("Checking this app's component instance…")
+    let results = {}
+    host.request("wasm.md.count", {}, fn(count_1) {
+        results.count_1 = count_1
+        host.request("wasm.md.count", {}, fn(count_2) {
+            results.count_2 = count_2
+            host.request("wasm.md.to_html", "# Component Demo · Second", fn(markdown) {
+                results.markdown = markdown
+                host.request("wasm.md.read_file", "note.html", fn(before_write) {
+                    results.before_write = before_write
+                    host.request("wasm.md.save_html", {markdown: "# Component Demo · Second" path: "note.html"}, fn(saved) {
+                        results.saved = saved
+                        host.request("wasm.md.read_file", "note.html", fn(read_back) {
+                            results.read_back = read_back
+                            host.request("wasm.bridge.call", ["runtime.describe", "{\"method\":\"runtime.describe\"}"], fn(host_call) {
+                                results.host_call = host_call
+                                host.request("wasm.functions", {}, fn(functions) {
+                                    results.functions = functions
+                                    running = false
+                                    if count_1.is_ok && count_2.is_ok && markdown.is_ok && saved.is_ok && read_back.is_ok && host_call.is_ok {
+                                        ui.status.set_text("Shared components answered")
+                                        ui.counter.set_text("This app's counter: " + count_1.data + " → " + count_2.data)
+                                        ui.content.set_text(read_back.data)
+                                    } else {
+                                        ui.status.set_text("A check failed. See the app tool result.")
+                                    }
+                                    if call_id != nil {
+                                        mod.app_tools.complete(call_id, {app: "org.ymote.componentdemo.second" results: results})
+                                    }
+                                })
+                            })
+                        })
+                    })
+                })
+            })
+        })
+    })
+}
+fn app_tool(name, call_id) { inspect(call_id) }
+SolidView {width: Fill height: Fill flow: Down padding: 24 spacing: 20 draw_bg.color: #xf5f7fa
+    Label {text: "Component Demo · Second" width: Fill draw_text.color: #x17243b draw_text.text_style.font_size: 28}
+    Label {text: "Shared Rust components · private app state" width: Fill draw_text.color: #x48566b}
+    status := Label {text: "Ready to run local checks" width: Fill draw_text.color: #x48566b}
+    counter := Label {text: "This app's counter has not run yet" width: Fill draw_text.color: #x17243b}
+    content := Label {text: "Only a synthetic Markdown note is used." width: Fill draw_text.color: #x17243b}
+    Button {text: "Run checks" width: Fill height: 48 on_click: || inspect(nil)}
+}

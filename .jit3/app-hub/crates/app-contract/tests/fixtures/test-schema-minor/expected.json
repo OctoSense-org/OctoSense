@@ -1,0 +1,28 @@
+{
+  "digest": "729bc3dfe1ef9ae2e49cb86f82db670adc09282c4aaadc65d58ed804d6255c26",
+  "entry": "card",
+  "ignored_fields": [],
+  "limits": "unsigned",
+  "policy": {
+    "app_id": "forecast",
+    "capabilities": [
+      "storage"
+    ],
+    "display_name": "Forecast",
+    "hosts": [],
+    "instruction_budget": 20000000,
+    "may_prompt": false,
+    "memory_bytes": 67108864,
+    "research": null,
+    "storage": {
+      "accounts": false,
+      "agent_workspace": "account",
+      "cache_max_bytes": null,
+      "max_bytes": 16777216
+    },
+    "storage_bytes": 16777216,
+    "version": "1.0.0"
+  },
+  "signing_blake3": "d0de3c7e3b5c368b4794096e57d68586898a318888105f0e25517d909e56299a",
+  "source": "ADR 0005 section 2: an explicit empty requires and schema_minor 0"
+}

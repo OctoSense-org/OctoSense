@@ -1,0 +1,28 @@
+{
+  "digest": "729bc3dfe1ef9ae2e49cb86f82db670adc09282c4aaadc65d58ed804d6255c26",
+  "entry": "card",
+  "ignored_fields": [],
+  "limits": "unsigned",
+  "policy": {
+    "app_id": "forecast",
+    "capabilities": [
+      "storage"
+    ],
+    "display_name": "Forecast",
+    "hosts": [],
+    "instruction_budget": 20000000,
+    "may_prompt": false,
+    "memory_bytes": 67108864,
+    "research": null,
+    "storage": {
+      "accounts": true,
+      "agent_workspace": "none",
+      "cache_max_bytes": 2048,
+      "max_bytes": 4096
+    },
+    "storage_bytes": 4096,
+    "version": "1.0.0"
+  },
+  "signing_blake3": "183f6ff8a9b29d5171e93f2d94e771148e3a10f0d9b16c8ca80705423af637b2",
+  "source": "App Hub app-policy admission tests: the storage block (OctoSense ADR 0004 section 11)"
+}

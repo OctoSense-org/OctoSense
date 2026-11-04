@@ -1,0 +1,41 @@
+{
+  "digest": "729bc3dfe1ef9ae2e49cb86f82db670adc09282c4aaadc65d58ed804d6255c26",
+  "entry": "card",
+  "ignored_fields": [],
+  "limits": "unsigned",
+  "policy": {
+    "app_id": "forecast",
+    "capabilities": [
+      "crawl",
+      "research"
+    ],
+    "display_name": "Forecast",
+    "hosts": [],
+    "instruction_budget": 20000000,
+    "may_prompt": false,
+    "memory_bytes": 67108864,
+    "research": {
+      "categories": [
+        "news"
+      ],
+      "langs": [
+        "en",
+        "zh"
+      ],
+      "max_age_days": 7,
+      "max_depth": 2,
+      "max_pages": 20,
+      "max_results": 20
+    },
+    "storage": {
+      "accounts": false,
+      "agent_workspace": "account",
+      "cache_max_bytes": null,
+      "max_bytes": 16777216
+    },
+    "storage_bytes": 16777216,
+    "version": "1.0.0"
+  },
+  "signing_blake3": "7a20fbff13304c7557918b457dddccd19f955924767ce433be89a07057c502a2",
+  "source": "App Hub app-policy admission tests: research and crawl"
+}

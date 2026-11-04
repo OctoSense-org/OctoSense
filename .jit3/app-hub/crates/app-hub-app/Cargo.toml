@@ -1,0 +1,32 @@
+# octosense-app-hub-app — the shell integration every OctoSense shell links:
+# the native App Hub store module, the Card runner module, the system-app
+# registry packed at build time (OCTOSENSE_SYSTEM_APPS, see build.rs and
+# README.md), installed apps and icons.
+[package]
+name = "octosense-app-hub-app"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+publish = false
+description = "The App Hub shell integration: store module, Card runner, system apps and icons"
+
+[features]
+default = ["text-input-state-query"]
+text-input-state-query = ["octosense-appstore/text-input-state-query"]
+
+[dependencies]
+makepad-widgets = { git = "https://github.com/OctoSense-org/makepad.git", rev = "d653bc4493619ab979ccff165cf48c0c63b77d19" }
+makepad-app-module = { git = "https://github.com/OctoSense-org/makepad.git", rev = "d653bc4493619ab979ccff165cf48c0c63b77d19" }
+makepad-wm-theme = { git = "https://github.com/OctoSense-org/makepad.git", rev = "d653bc4493619ab979ccff165cf48c0c63b77d19" }
+octosense-app-hub = { path = "../app-hub" }
+octosense-app-policy = { path = "../app-policy" }
+octosense-appstore = { path = "../appstore", default-features = false }
+serde_json = "1"
+
+[dev-dependencies]
+tempfile = "3"
+
+[build-dependencies]
+serde_json = "1"
+# Packs the selected system apps (build.rs).
+octosense-app-hub = { path = "../app-hub" }

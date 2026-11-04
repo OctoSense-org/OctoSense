@@ -1,0 +1,113 @@
+{
+  "schema": 1,
+  "kind": "signed official catalog candidate; default main availability requires PR merge",
+  "catalog_candidate_commit_url": "https://github.com/OctoSense-org/OctoSense-App-Hub/commit/84c85a86018762d19e32181aed6ee01dee106f66",
+  "catalog_base_commit_url": "https://github.com/OctoSense-org/OctoSense-App-Hub/commit/a52d928b0c14d2822c09f6ccd18f44bf7b885221",
+  "hub_build_source_url": "https://github.com/OctoSense-org/OctoSense-App-Hub/commit/b0856ed2792de87db87866b62d33a0206d8f3c34",
+  "build_source_tree_equals_merged_base": true,
+  "hub_binary_sha256": "f86581c545eb4af5aec8b48c5adc9eff5131c239217f508cdb62ae88d7d7bf2b",
+  "previous_sequence": 7,
+  "sequence": 10,
+  "catalog_sha256": "18276886c528dfe7e55b231c1b70771a92aea9ac074c5991fff9fa4abc0a30bf",
+  "anchor_and_working_key_unchanged": true,
+  "existing_entries_and_0_1_0_files_unchanged": true,
+  "catalog_signature_verified": true,
+  "publisher_key_unchanged": true,
+  "source_review": {
+    "reviewer": "maintainer assistant operating under explicit publication authorization",
+    "method": "read exact signed source, declarations, all eight author answers, privacy and release limits; hash-bind each packet before hub scan/publish",
+    "external_model_reviewer_invoked": false,
+    "routes": "pass for all three bounded updates",
+    "new_live_provider_or_full_native_acceptance_claimed": false
+  },
+  "tracked_file_privacy_check": {
+    "private_publisher_and_working_key_bytes_absent": true,
+    "credential_and_private_path_markers_absent": true
+  },
+  "optional_external_secret_scan": {
+    "inbox_notes": "Previous public Git SHA false positive independently confirmed; new-head rerun not reported at source merge; no external pass claimed.",
+    "calendar": "Three public Git SHA values in unchanged historical 0.1.0 RELEASE.json flagged while scanner model validation was unavailable; independently verified false positives; no external pass claimed."
+  },
+  "apps": [
+    {
+      "app_id": "org.octosense.samples.inbox",
+      "version": "0.1.1",
+      "source": {
+        "commit": "72311b5e1c902d32f77fb0be20f5fb01d8518491",
+        "repository": "https://github.com/ymote/octosense-inbox-assistant"
+      },
+      "tag_url": "https://github.com/ymote/octosense-inbox-assistant/tree/v0.1.1",
+      "submission": "https://github.com/OctoSense-org/OctoSense-App-Hub/issues/130",
+      "bundle_digest": "af1ea9d980e45ef22dc566b3ed5855abe3006cc0a557cbb9b61c9fcfad47c1f7",
+      "review_packet_sha256": "42d59f06a62a4a567ebe7c536ef363fe3a2cda0e3831eb138b2dc9750704c1f3",
+      "review_answers_url": "https://github.com/ymote/octosense-inbox-assistant/blob/72311b5e1c902d32f77fb0be20f5fb01d8518491/review/ANSWERS.md",
+      "artifact": "artifacts/org.octosense.samples.inbox-0.1.1.bundle",
+      "pack_sha256": "a2592a0f7257afc791eca68c87e65d157e79d32821cc4e3495a5b40001e6bb6b",
+      "files_sha256": {
+        "AGENT.md": "423f618b5e87f225098958b64a76dd1a0f7ec59a7d982fcfca7bde39160638f7",
+        "assets/icon.svg": "d84fe698d55b652e58d36e498fb856cfe14559611253d7942c3f87a978912a40",
+        "glance-workspace.splash": "5d30c155080c6f78bd5687fcdcc533c366ff6f04cd77db77d834d0d9e2cf6162",
+        "listing.json": "f33a03d7b5f39c804ea37f7fdcc4348395e6a8343ee9303a3f75a1ebafce7ae4",
+        "main.splash": "42b2827a168cd74b1c945f1e567ced6380e934a9b68fbcd125c219fcb015d6b1",
+        "manifest.json": "7493bae425be17539a323ce644bbc4702ef7d42666724633698bf1d2653be6ab",
+        "screenshots/01-main.png": "422674f253483ebc7f132a3084b859000c6ecc775b93186a6355e84c93b22ba9",
+        "screenshots/02-chat.png": "0fac34428a8d345a8db37955ac6f1372a06750e50ab66c4e5ec174a3d4497df0",
+        "skills/incoming-mail-triage/SKILL.md": "fac9ae218743cc0f3d7bb2ec762a9ed04359ad74df6340c5cf95a756b977c986",
+        "skills/incoming-mail-triage/manifest.json": "d44cdaa9404a542710ed9a732065a2030b6eef0b1ddba3bcaeb11aa6bbfbc633",
+        "tools.json": "ac2ae65456faae89cb300219164f44829f0cf9dbe428dcaf5336e275d84ab37f"
+      }
+    },
+    {
+      "app_id": "org.octosense.samples.githubnotes",
+      "version": "0.1.1",
+      "source": {
+        "commit": "77a1a98b53d5665385ead239d9d8ad0dfee7ebc0",
+        "repository": "https://github.com/ymote/octosense-github-notes"
+      },
+      "tag_url": "https://github.com/ymote/octosense-github-notes/tree/v0.1.1",
+      "submission": "https://github.com/OctoSense-org/OctoSense-App-Hub/issues/131",
+      "bundle_digest": "81dd860d3a1bea9dae5efa45e130f88c86edb99db9df84305622b972472db965",
+      "review_packet_sha256": "6256d973095c41a8cfe1ff4f4b0ddc78c510af79772c7c01b79e4a3f11bca20d",
+      "review_answers_url": "https://github.com/ymote/octosense-github-notes/blob/77a1a98b53d5665385ead239d9d8ad0dfee7ebc0/review/ANSWERS.md",
+      "artifact": "artifacts/org.octosense.samples.githubnotes-0.1.1.bundle",
+      "pack_sha256": "7a32c4585fd60744a5d111a4df568eaa184327b6d3d0fc2e570463af07e36122",
+      "files_sha256": {
+        "AGENT.md": "9c16b819c5da2a985ea272640993ab6860ce6344c8b2b03de466fe3bad5b794b",
+        "assets/icon.svg": "34a8355dc59fc01adb812b4399fff142638a2390a4d66f6cf54bcf630a1c615c",
+        "listing.json": "b31639e790b96b8ee21fcd18c461fd860a87314efb5d7afec9e8379aa5f789f5",
+        "main.splash": "733f68da86ba76b51766386e99d51d2e12b67feb9496fc32d6d8c8ba6acf85c6",
+        "manifest.json": "49dc25e5d645a129785ff8d885cd75f1f7d606f5b5e76204748aa245309f779d",
+        "screenshots/01-preview.png": "1fa65e33adec702180f545d047d9223bf1a513a18cdfd35e8174f50ac3658de9",
+        "screenshots/02-editor.png": "f95def5775a34e7bb14b12b6739b267b35009bd7f297cd3328428fe5f11ff5bc",
+        "tools.json": "768ab5450ab763cc2d67b60eb7d4f50e13662c028936db26694df9996230ab1a"
+      }
+    },
+    {
+      "app_id": "org.octosense.samples.googlecalendar",
+      "version": "0.1.1",
+      "source": {
+        "commit": "d79d98960642a7e368b9d0f2be8943dcec2bcd95",
+        "repository": "https://github.com/ymote/octosense-google-calendar"
+      },
+      "tag_url": "https://github.com/ymote/octosense-google-calendar/tree/v0.1.1",
+      "submission": "https://github.com/OctoSense-org/OctoSense-App-Hub/issues/132",
+      "bundle_digest": "700134563765275dd272ef49587e4e473737a84f8c15538fb96a419c178c7143",
+      "review_packet_sha256": "63e57268e81d0b6ef56a9ea9a8c8792f37ac97baa0ade77bdfbba4563ad90965",
+      "review_answers_url": "https://github.com/ymote/octosense-google-calendar/blob/d79d98960642a7e368b9d0f2be8943dcec2bcd95/review/ANSWERS.md",
+      "artifact": "artifacts/org.octosense.samples.googlecalendar-0.1.1.bundle",
+      "pack_sha256": "150ecdf8be79a6318db32bde30bfb7b01dc53335934dea73b72b14d359513ec4",
+      "files_sha256": {
+        "AGENT.md": "63f2149c37831a183f8d951fe9c713503e6d6b16a2c1d9a9a69c8ee31aab3150",
+        "assets/icon.svg": "5f4976fe46338bdfa4af1276afa2d0af625d195cc3aead9ba997212c79706486",
+        "listing.json": "4294e6e07e4c5c3ad7fc929c7d2d962792df00ab7fb1568436bca85c6d26ffe7",
+        "main.splash": "f4d5412d9f74754dd7ddcc106ab74eb42cdaf3c9af84e63dd724a4e76f45dec3",
+        "manifest.json": "500cd1957ae4e8bf3a55b08dc69283878fc93663f982639e240eb522be1177ce",
+        "screenshots/01-local-draft.png": "268bdd77e2d4bf4a984e4c4063b5126a73d9554796551b9c131d97b00eeeac72",
+        "screenshots/02-notes.png": "c992b34426bdc98da48f49c37ebcec13c8cb9954e98e890f0ed62314c5893f7d",
+        "screenshots/03-host-required.png": "ba7236e0353fca886f81a0b9d7257731c24a1c2216d4cab67be217499b128dae",
+        "screenshots/04-glance-template.png": "16a97550829f7bc838612dcf67ac9788b77c5809bd1267530954f53230b522fc",
+        "tools.json": "06c2711440f9ebd99629112ed676c2335ad4ad3e03eac50030a3dd60d3510c56"
+      }
+    }
+  ]
+}

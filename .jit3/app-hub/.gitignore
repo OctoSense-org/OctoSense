@@ -1,0 +1,7 @@
+# Keys never live here. Anchor and working keys are held offline by the hub
+# operator; publishers keep their own.
+*.key
+*.cert
+
+# Build output
+target/

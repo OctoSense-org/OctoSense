@@ -1,0 +1,72 @@
+{
+  "schema": 1,
+  "kind": "independent-date-only-candidate-review",
+  "status": "passed-candidate-only",
+  "reviewed_at_utc": "2026-10-11T00:02:01.994542+00:00",
+  "candidate": "ymote-repo-radar-0-1-2-20261011",
+  "source_base_commit": "80a64b4557aaba71f7c826c5dc69721c21c0f0fc",
+  "public_main_observed": "80a64b4557aaba71f7c826c5dc69721c21c0f0fc",
+  "original_candidate_matches_reviewed_commit": "0c1f23b70e0abbfc2d7dadef04fececbe005ba5a",
+  "original_payload_sha256": "9925772acb6995ed13e292f22e9f97dfdcb2ee397163007d85818e4ae4390b41",
+  "new_payload_sha256": "b12e9e24022f6e7dbac177cc997a994b968c7ccfcb21a475c3217c6cedc63be3",
+  "only_semantic_payload_change": {
+    "published": {
+      "before": "2026-10-10",
+      "after": "2026-10-11"
+    }
+  },
+  "authenticated_base": {
+    "sequence": 15,
+    "envelope_sha256": "de8536252587d56d0c4d9a0d9f236cc791becc920d51c8572870586afa14caed",
+    "payload_sha256": "51b1c03bdcbfa500c6c62fe89a8514ba51b38dc4811a41b55b7475ff38deb1f7",
+    "native_verification_passed": true,
+    "matches_immutable_public_readback": true
+  },
+  "candidate_sequence": 16,
+  "retained_historical_entries": 15,
+  "new_app": {
+    "id": "org.ymote.reporadar",
+    "version": "0.1.2",
+    "admitted": "2026-10-10"
+  },
+  "unchanged_publication_files": {
+    "artifacts/org.ymote.reporadar-0.1.2.bundle.pack.json": "62fb0262fa9139675abbd286f71d23efd385eb16697ec6341c12893d216067c3",
+    "artifacts/org.ymote.reporadar-0.1.2.bundle/AGENT.md": "d89417766ebbf1efc3c3e99c1e0bc525be5faec097e403b8234c7d83c2730e50",
+    "artifacts/org.ymote.reporadar-0.1.2.bundle/tools.json": "869fddc77e504f7af9391de514f52538b9be9a246966087af5cd3de9e70d807f",
+    "artifacts/org.ymote.reporadar-0.1.2.bundle/listing.json": "81ae321131edcbc127c508d81d6465b30f4105b677b8d4b0611b1f59ce74ba85",
+    "artifacts/org.ymote.reporadar-0.1.2.bundle/main.splash": "6830d6dba3addbd8304ddf11bd04c828989a35e33633fba69e3b568d89f024bb",
+    "artifacts/org.ymote.reporadar-0.1.2.bundle/manifest.json": "c655f07c299a805bc8590351cd65a8c972ad80214a13ab2ee3a2bfd75c8a04b1",
+    "artifacts/org.ymote.reporadar-0.1.2.bundle/screenshots/02-releases.png": "a889c6b57e9dbb3b72209f7021381335ca61872a8b9667689b15a77abcddb59d",
+    "artifacts/org.ymote.reporadar-0.1.2.bundle/screenshots/01-main.png": "8d3e08866cd0aaa7ee9de87f8b4d5f87aae384f5ba351a5f49c7750637a898f4",
+    "artifacts/org.ymote.reporadar-0.1.2.bundle/fns/radar.wasm": "d0ee1835711ed4b1c952f564789d96c160d02035b1d2104db1388e6affdbc757",
+    "artifacts/org.ymote.reporadar-0.1.2.bundle/assets/icon.svg": "85acb31d245f6a12198ab21e85505d70303bcf68ae0b4328fbb83b5be020bd40",
+    "index/org.ymote.reporadar-0.1.2.json": "614bd64a55123a4fadd3c34a56bf96ecc18646f9b652a8f25092ba135364eb41"
+  },
+  "sealed_bundle_nine_files_exact": true,
+  "historical_review_preserved": true,
+  "documents": {
+    "README.md": "0f29992abf2914d9f0c19a10928fe1b79a624585fc8af3e8c70192b49afd40d4",
+    "README.zh-CN.md": "9355c4fdc6804a639d7fb089a6141761d846fdb0b566774ed6f93c52b7117127",
+    "review.json": "db590b8f71bfd9590813bb2bf6dec7f925a183bd18634397dc28667f18329a63",
+    "prior-review.json": "6b618c2cb7c52f0c537301b8f3a5fd95d7c251631329ed20f7962a0b56be0f97",
+    "prepare-receipt.json": "32369fd9a42488f71022facdeed1d738c5a59e1cdfa2948bce22d84fc3a32428"
+  },
+  "documentation_review": "Bilingual notes accurately link separate sealed 93/93 development-host acceptance, preserve original source-only review, disclose preview Chat and macOS-only/charts.d3, and keep compatible released-host/public-store acceptance and production publication pending. Historical admission date intentionally unchanged.",
+  "privacy_patterns_checked": [
+    "private_user_path",
+    "private_tmp",
+    "email_personal",
+    "token_prefix",
+    "private_key"
+  ],
+  "privacy_hits": [],
+  "public_publication_proof": false,
+  "remaining_gates": [
+    "Merge reviewed new candidate",
+    "Protected fresh dry-run with exact new commit and payload",
+    "Compatible host public release and package acceptance",
+    "Production exact-transaction workflow",
+    "Public origin readback and fresh public-store native acceptance"
+  ],
+  "product_or_publication_changes_performed": false
+}

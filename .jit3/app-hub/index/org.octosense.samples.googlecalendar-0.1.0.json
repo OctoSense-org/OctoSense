@@ -1,0 +1,218 @@
+{
+  "admitted": "2026-10-07",
+  "artifact": "artifacts/org.octosense.samples.googlecalendar-0.1.0.bundle",
+  "listing": {
+    "age_rating": "all",
+    "category": "productivity",
+    "description": "A macOS development preview using OctoSense shared Google sign-in and Calendar services. Select an account/calendar, view a cached agenda, keep local drafts, and review new or edited events on the host before saving. Explicitly publish an event to Glance with Open Calendar, or ask the read-only assistant about it. Requires OctoSense runtime PR #347 and App Hub PR #119; not a generally available runtime feature. Native macOS journeys used a synthetic Calendar provider; real DeepSeek advisory chat used synthetic events. Live Google sign-in, reads and writes and physical approval remain unverified. Android Google authorization is not implemented for this sample. Recurring series can be viewed but not edited. Screenshots are original captures of synthetic drafts, a standalone missing-service state and the embedded Glance template.",
+    "icon": "assets/icon.svg",
+    "keywords": [
+      "calendar",
+      "Google",
+      "OAuth",
+      "sample"
+    ],
+    "license": "Apache-2.0",
+    "platforms": [
+      "macos"
+    ],
+    "publisher": {
+      "name": "ymote",
+      "privacy_policy_url": "https://github.com/ymote/octosense-google-calendar/blob/main/PRIVACY.md",
+      "support": "https://github.com/ymote/octosense-google-calendar/issues"
+    },
+    "release_notes": "0.1.0 development preview. Tested functional source and original synthetic screenshots preserved from OctoScript-App-Design-Flow 5b0fde7e. Requires runtime #347 and Hub #119. Live Google and physical approval not verified; advisory agent cannot book or change events.",
+    "schema": 1,
+    "screenshots": [
+      "screenshots/01-local-draft.png",
+      "screenshots/02-notes.png",
+      "screenshots/03-host-required.png",
+      "screenshots/04-glance-template.png"
+    ],
+    "subtitle": "Calendar drafts, review and event advice"
+  },
+  "manifest": {
+    "agent": {
+      "instructions": "AGENT.md",
+      "max_iterations": null,
+      "model": {
+        "local_only": false,
+        "needs": [
+          "tool_calling"
+        ],
+        "tier": "standard"
+      },
+      "profile": "read-only",
+      "token_budget": null,
+      "tools": []
+    },
+    "capabilities": [
+      "storage",
+      "auth",
+      "gcalendar",
+      "glance",
+      "octos.session.open",
+      "octos.turn.start"
+    ],
+    "compute": {
+      "instruction_budget": null,
+      "memory_bytes": null
+    },
+    "id": "org.octosense.samples.googlecalendar",
+    "integrity": {
+      "bundle_blake3": "3e262601ebb6092fda6bb10862b92d05a641cb76f84c9e037f25296eda69459a",
+      "signature": {
+        "key_id": "ymote",
+        "value": "c55dafd37f2366d23080500a0a03943ddedb45463bd93117d03513c6bee5cb693f39cbc3d2c0b6b9e7b2b0a9fe4ddf5d9f3b8b4b95016880c434bd4de1d0a201"
+      }
+    },
+    "name": "Google Calendar",
+    "network": {
+      "hosts": []
+    },
+    "schema": 1,
+    "storage": {
+      "accounts": true,
+      "agent_workspace": "none",
+      "max_bytes": 1048576
+    },
+    "version": "0.1.0"
+  },
+  "publisher": "ymote",
+  "publisher_key": "dbda2ca2b6376e8a4bb9d011d6f9aab0f2953021ab9e433215fa1094828761bc",
+  "source": {
+    "commit": "c0783291a528689008d7213f1b1163c9c15ac874",
+    "repository": "https://github.com/ymote/octosense-google-calendar"
+  },
+  "status": {
+    "state": "offered"
+  },
+  "tools": [
+    {
+      "background": false,
+      "description": "List calendars for the connected Google account.",
+      "implemented_by": "host-service",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "connection": {
+            "description": "The opaque Google connection bound to this app; never a token.",
+            "type": "string"
+          },
+          "page_token": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "connection"
+        ],
+        "type": "object"
+      },
+      "name": "googlecalendar.calendars",
+      "output_schema": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "private_data": true,
+      "risk": "read",
+      "shareable": false
+    },
+    {
+      "background": false,
+      "description": "Read the last completely synchronized agenda for the selected calendar.",
+      "implemented_by": "host-service",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "calendar": {
+            "description": "The selected Google Calendar ID.",
+            "type": "string"
+          },
+          "connection": {
+            "description": "The opaque Google connection bound to this app; never a token.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "connection",
+          "calendar"
+        ],
+        "type": "object"
+      },
+      "name": "googlecalendar.cached",
+      "output_schema": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "private_data": true,
+      "risk": "read",
+      "shareable": false
+    },
+    {
+      "background": false,
+      "description": "Synchronize Google Calendar and return a complete event snapshot; failed pages preserve the previous cache.",
+      "implemented_by": "host-service",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "calendar": {
+            "description": "The selected Google Calendar ID.",
+            "type": "string"
+          },
+          "connection": {
+            "description": "The opaque Google connection bound to this app; never a token.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "connection",
+          "calendar"
+        ],
+        "type": "object"
+      },
+      "name": "googlecalendar.refresh",
+      "output_schema": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "private_data": true,
+      "risk": "read",
+      "shareable": false
+    },
+    {
+      "background": false,
+      "description": "Read one Google event with its current ETag.",
+      "implemented_by": "host-service",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "calendar": {
+            "description": "The selected Google Calendar ID.",
+            "type": "string"
+          },
+          "connection": {
+            "description": "The opaque Google connection bound to this app; never a token.",
+            "type": "string"
+          },
+          "event_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "connection",
+          "calendar",
+          "event_id"
+        ],
+        "type": "object"
+      },
+      "name": "googlecalendar.event",
+      "output_schema": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "private_data": true,
+      "risk": "read",
+      "shareable": false
+    }
+  ]
+}

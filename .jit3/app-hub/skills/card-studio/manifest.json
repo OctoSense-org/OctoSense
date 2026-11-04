@@ -1,0 +1,44 @@
+{
+  "id": "card-studio",
+  "name": "card-studio",
+  "version": "0.1.0",
+  "type": "tool",
+  "author": "OctoSense",
+  "description": "Inspect an L0 card before publishing it: render it in a hidden card-host at glance, phone and desktop sizes, run the measured checks (clipped, truncated or hidden text, overflow, overlap, empty or failed states, fits the tile, lint and realize errors), and prepare the request a vision model critiques.",
+  "binary": "main",
+  "timeout_secs": 180,
+  "requires_network": false,
+  "tools": [
+    {
+      "name": "card_render",
+      "description": "Render a card at target sizes in a hidden card-host and run the measured checks. Returns the report: per size the PNG, snapshot, tree and log paths, card-host's realize report, findings (check, severity error|warn|info, widget, text, rect, message) and metrics (content_height, fits, hidden_text, …), plus summary.pass and report_path. Any error finding means revise the card.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "card": {"type": "string", "description": "Absolute path of the L0 card file (.card), or of a bundle directory (page.card + kit/, or main.splash)."},
+          "data": {"type": "object", "description": "The host-resolved sources the card binds to, keyed by declaration name (page.data.json), e.g. {\"digest\": {…sys.digest payload…}}."},
+          "data_path": {"type": "string", "description": "Instead of data: absolute path of a JSON file with the same content."},
+          "sizes": {"type": "array", "items": {"type": "string"}, "description": "Target sizes: glance, phone, desktop, <w>x<h> or <name>=<w>x<h>. Default all three named sizes."},
+          "out_dir": {"type": "string", "description": "Where the report and its files go. Default: card-studio.json's out_dir, else a temporary directory."},
+          "kit": {"type": "string", "description": "The L0 kit directory a bare card is lowered with. Default: card-studio.json's kit."},
+          "card_host": {"type": "string", "description": "The card-host binary. Default: card-studio.json's card_host."}
+        },
+        "required": ["card"]
+      }
+    },
+    {
+      "name": "card_critique_payload",
+      "description": "Build the vision-critique request for a card_render report: prompt (with the rubric), response_schema, measured summary, and per size the PNG (path, or base64 with inline), widget snapshot, findings and metrics. Send prompt plus the images to a vision model yourself; the answer is {score, verdict pass|revise, sizes{…}, issues[{size, widget, severity, problem, fix}]}.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "report": {"type": "string", "description": "Absolute path of report.json from card_render (report_path)."},
+          "rubric": {"type": "string", "description": "Absolute path of the rubric markdown (the app's AGENT.md card rubric, or this skill's rubric.md)."},
+          "sizes": {"type": "array", "items": {"type": "string"}, "description": "Only these sizes. Default all in the report."},
+          "inline": {"type": "boolean", "description": "Embed each PNG as base64 (image.data_base64). Default false: paths only."}
+        },
+        "required": ["report", "rubric"]
+      }
+    }
+  ]
+}

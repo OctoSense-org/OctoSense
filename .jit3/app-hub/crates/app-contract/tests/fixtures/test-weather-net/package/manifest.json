@@ -1,0 +1,27 @@
+{
+  "schema": 1,
+  "id": "forecast",
+  "version": "1.0.0",
+  "name": "Forecast",
+  "integrity": {
+    "bundle_blake3": "729bc3dfe1ef9ae2e49cb86f82db670adc09282c4aaadc65d58ed804d6255c26"
+  },
+  "capabilities": [
+    "storage",
+    "net",
+    "prompt"
+  ],
+  "network": {
+    "hosts": [
+      "api.weather.example",
+      "Tiles.Weather.example"
+    ]
+  },
+  "storage": {
+    "max_bytes": 4096
+  },
+  "compute": {
+    "instruction_budget": 999999999999,
+    "memory_bytes": 1048576
+  }
+}

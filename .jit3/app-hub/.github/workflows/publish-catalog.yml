@@ -1,0 +1,153 @@
+name: Publish catalog
+
+# The workflow and CLI always come from main. Candidate files are data only.
+# No signing secret is stored: GitHub's OIDC identity obtains a short-lived
+# Sigstore certificate. Legacy catalog.json and its anchor remain unchanged.
+on:
+  workflow_dispatch:
+    inputs:
+      candidate:
+        description: Reviewed catalog-candidates directory name
+        required: true
+        type: string
+      candidate_commit:
+        description: Reviewed full commit SHA already on main
+        required: true
+        type: string
+      catalog_sha256:
+        description: SHA-256 of the exact prepared catalog-v2.payload.json you approve
+        required: true
+        type: string
+      dry_run:
+        description: Sign and verify only; do not update the public catalog
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: app-hub-catalog-publication
+  cancel-in-progress: false
+
+env:
+  CANDIDATE_NAME: ${{ inputs.candidate }}
+  CANDIDATE_COMMIT: ${{ inputs.candidate_commit }}
+  APPROVED_CATALOG_SHA256: ${{ inputs.catalog_sha256 }}
+
+jobs:
+  validate:
+    if: github.repository == 'OctoSense-org/OctoSense-App-Hub' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          ref: ${{ github.sha }}
+          path: app-hub
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Require the original and rerun actors to be current admins
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 app-hub/tools/catalog_publish.py authorize
+      - name: Read the single runtime pin
+        id: runtime
+        run: |
+          python3 - <<'PY'
+          import os,pathlib,re
+          pins=set()
+          for manifest in pathlib.Path('app-hub/crates').glob('*/Cargo.toml'):
+              for line in manifest.read_text().splitlines():
+                  if 'git = "https://github.com/OctoSense-org/Octoscript-Makepad.git"' in line:
+                      pin=re.search(r'rev\s*=\s*"([0-9a-f]{40})"',line)
+                      assert pin, 'Missing immutable runtime revision'
+                      pins.add(pin[1])
+          assert len(pins)==1, 'Expected one runtime revision'
+          with open(os.environ['GITHUB_OUTPUT'],'a') as out:
+              out.write('revision='+pins.pop()+'\n')
+          PY
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          repository: OctoSense-org/Octoscript-Makepad
+          ref: ${{ steps.runtime.outputs.revision }}
+          path: octoscript-makepad
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de
+        with:
+          toolchain: 1.97.1
+      - name: Prepare trusted dependencies and test publication rules
+        run: |
+          python3 octoscript-makepad/tools/runtime.py prepare --root "$GITHUB_WORKSPACE"
+          python3 -m unittest discover -s app-hub/tools -p 'test_catalog_publish.py'
+      - name: Build trusted native verifier before the signing job
+        working-directory: app-hub
+        run: cargo build --locked --release -p octosense-app-hub
+      - name: Validate reviewed candidate and exact approved digest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 app-hub/tools/catalog_publish.py prepare --repo app-hub \
+            --hub app-hub/target/release/hub --packet "$RUNNER_TEMP/prepared"
+          cp app-hub/target/release/hub "$RUNNER_TEMP/prepared/hub"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: prepared-catalog-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/prepared/
+          # Admission hashes every bundle file, including reviewed dotfiles.
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 7
+
+  sign-and-publish:
+    needs: validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: app-hub-catalog
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: prepared-catalog-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/prepared
+      - name: Recheck actor, exact packet and unchanged main
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          chmod 700 "$RUNNER_TEMP/prepared/hub"
+          python3 tools/catalog_publish.py recheck --packet "$RUNNER_TEMP/prepared"
+      - name: GitHub signs the exact catalog
+        id: attest
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: ${{ runner.temp }}/prepared/catalog-v2.payload.json
+      - name: Verify natively and publish only the approved transaction
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ATTESTATION_PATH: ${{ steps.attest.outputs.bundle-path }}
+          CATALOG_DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          python3 - <<'PY'
+          import os,subprocess
+          root=os.environ['RUNNER_TEMP']+'/prepared'
+          command=['python3','tools/catalog_publish.py','publish','--packet',root,
+                   '--hub',root+'/hub','--proof',os.environ['ATTESTATION_PATH']]
+          if os.environ['CATALOG_DRY_RUN']=='true': command.append('--dry-run')
+          subprocess.run(command,check=True)
+          PY
+      - name: Retain the verified envelope and admission receipt
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: verified-catalog-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/prepared/catalog-v2.json
+            ${{ runner.temp }}/prepared/receipt.json
+          if-no-files-found: error
+          retention-days: 30

@@ -1,0 +1,28 @@
+{
+  "schema": 1,
+  "subtitle": "Gmail reply and selective-notification preview",
+  "description": "Developer preview for compatible OctoSense hosts. Read Gmail through host-managed Google login; keep one editable reply shared by Email, Reply, Chat and native review. An optional account-bound agent can triage new mail into quiet decisions or actionable Glance cards. Includes clearly fictional offline fixtures. Requires the connected-services integration in OctoSense PR #347 and App Hub PR #119; older hosts do not supply these services. macOS testing used real DeepSeek with synthetic Gmail: 33 functional soak cycles and cold restoration passed, with two unresolved instrument frame-submission errors. Live Google login, real Gmail sends and physical send approval remain unverified. Android Google authorization is not implemented. No sending tool is exposed to the agent.",
+  "category": "productivity",
+  "keywords": [
+    "email",
+    "gmail",
+    "reply",
+    "sample"
+  ],
+  "screenshots": [
+    "screenshots/01-main.png",
+    "screenshots/02-chat.png"
+  ],
+  "icon": "assets/icon.svg",
+  "platforms": [
+    "macos"
+  ],
+  "publisher": {
+    "name": "ymote",
+    "support": "https://github.com/ymote/octosense-inbox-assistant/issues",
+    "privacy_policy_url": "https://github.com/ymote/octosense-inbox-assistant/blob/main/PRIVACY.md"
+  },
+  "release_notes": "0.1.0 developer-preview packaging of the tested connected Inbox sample. Publisher/support/privacy metadata finalized for ymote; application code, tools, agent guidance, skill and historical screenshots unchanged. Review is required before catalog admission.",
+  "age_rating": "all",
+  "license": "Apache-2.0"
+}

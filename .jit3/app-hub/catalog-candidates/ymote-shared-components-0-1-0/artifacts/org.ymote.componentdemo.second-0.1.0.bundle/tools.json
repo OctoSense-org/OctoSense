@@ -1,0 +1,35 @@
+{
+  "schema": 1,
+  "tools": [
+    {
+      "name": "second.inspect",
+      "description": "Exercise local shared components with synthetic data.",
+      "implemented_by": "app",
+      "risk": "act",
+      "background": false,
+      "shareable": false,
+      "private_data": true,
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "app": {
+            "type": "string"
+          },
+          "results": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "app",
+          "results"
+        ],
+        "additionalProperties": false
+      }
+    }
+  ]
+}

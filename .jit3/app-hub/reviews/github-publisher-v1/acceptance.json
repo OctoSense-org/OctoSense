@@ -1,0 +1,61 @@
+{
+  "app_id": "dev.octosense.publisher-fixture",
+  "catalog_authority": "ephemeral-local-test-catalog-not-official-v2",
+  "checks": [
+    "real_publisher_proof",
+    "install_and_verified_launch_preserve_proof",
+    "installed_content_tamper_refused",
+    "real_signature_and_installed_proof_tamper_refused",
+    "real_identity_substitution_refused",
+    "second_real_publisher_proof_and_version_update_continuity",
+    "update_installs_and_catalog_version_rollback_refused",
+    "unsigned_update_escape_refused",
+    "withdrawal_revokes_installed_and_prepared_releases"
+  ],
+  "owned_directory_cleanup": true,
+  "passed": true,
+  "production_publication": false,
+  "publisher_proof": "real-github-tag-push",
+  "schema": 1,
+  "update_tested": true,
+  "versions": [
+    "0.1.0",
+    "0.1.1"
+  ],
+  "native_source_commit": "af41b576be961d12f7caf3631b55479755dee69b",
+  "native_fixture": "crates/app-hub/examples/publisher_acceptance.rs",
+  "native_binary_sha256": "9920637f1bdd520430b2f2fd70e827bf21c3209b28bf15d059523b9f0fd8a1d7",
+  "publisher_workflow_hub_pin": "c11de1d7c2533c32b9bf02b3e830e2013b64fc88",
+  "releases": [
+    {
+      "schema": 1,
+      "app_id": "dev.octosense.publisher-fixture",
+      "version": "0.1.0",
+      "repository": "ymote/octosense-publisher-fixture",
+      "commit": "6d77703ba5877051cd1b7da36b21deee7aa08038",
+      "tag": "v0.1.0",
+      "pack_sha256": "2447bde3fe6789efd288b9470f24660e45ec4f57849b40b204c35ba297cd2a6b",
+      "hub_admission": "not submitted",
+      "workflow_run": "https://github.com/ymote/octosense-publisher-fixture/actions/runs/37736273522",
+      "release": "https://github.com/ymote/octosense-publisher-fixture/releases/tag/v0.1.0"
+    },
+    {
+      "schema": 1,
+      "app_id": "dev.octosense.publisher-fixture",
+      "version": "0.1.1",
+      "repository": "ymote/octosense-publisher-fixture",
+      "commit": "6019a0e169d4c65cefc211cb3082ca1bbde6ad3a",
+      "tag": "v0.1.1",
+      "pack_sha256": "9a0d13ea3b02758a960064d9503358e027a8c1370ca247022febb9664cf5df34",
+      "hub_admission": "not submitted",
+      "workflow_run": "https://github.com/ymote/octosense-publisher-fixture/actions/runs/37736765473",
+      "release": "https://github.com/ymote/octosense-publisher-fixture/releases/tag/v0.1.1"
+    }
+  ],
+  "repository_secrets_required": false,
+  "limits": [
+    "No App Hub submission issue or official catalog entry was created for the fixture.",
+    "Store tests used an ephemeral locally signed catalog, not an official GitHub-attested catalog containing this fixture.",
+    "No app UI execution, phone publisher installation, or compatible host release is established by this receipt."
+  ]
+}

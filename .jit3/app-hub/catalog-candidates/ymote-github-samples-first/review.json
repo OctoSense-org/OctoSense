@@ -1,0 +1,68 @@
+{
+  "schema": 1,
+  "status": "candidate_only_not_admitted",
+  "base_sequence": 11,
+  "candidate_sequence": 12,
+  "historical_entries_retained": 6,
+  "reviewer": "Codex",
+  "scope": "Fresh IDs authorized by the publisher; historical IDs and saved data remain separate. Native local install checks use genuine GitHub proofs and a temporary Hub. No personal provider accounts are used.",
+  "checks": {
+    "native_catalog_prepare": "passed",
+    "private_information_scan": "passed: 53 files",
+    "github_publisher_proof": "passed for all four packs"
+  },
+  "required_before_admission": [
+    "Camera full-shell slot-relative layout and scrolling acceptance",
+    "Compatible host release readiness review"
+  ],
+  "apps": [
+    {
+      "id": "io.github.ymote.cameracard",
+      "version": "1.1.0",
+      "repository": "https://github.com/ymote/camera-card",
+      "release": "https://github.com/ymote/camera-card/releases/tag/v1.1.0",
+      "commit": "ec847b384ff3e0ac50fdb4eb68a42f1b9ba65d39",
+      "issue": "https://github.com/OctoSense-org/OctoSense-App-Hub/issues/156",
+      "platforms": [
+        "macos"
+      ],
+      "native_install": "blocked by host L0 placement/scrolling regression"
+    },
+    {
+      "id": "io.github.ymote.githubnotes",
+      "version": "0.2.0",
+      "repository": "https://github.com/ymote/octosense-github-notes",
+      "release": "https://github.com/ymote/octosense-github-notes/releases/tag/v0.2.0",
+      "commit": "920ce1ae521c3831e331d0cfb4417aa44ec99f05",
+      "issue": "https://github.com/OctoSense-org/OctoSense-App-Hub/issues/158",
+      "platforms": [
+        "macos"
+      ],
+      "native_install": "passed on a compatible source host; live provider login and external writes unverified"
+    },
+    {
+      "id": "io.github.ymote.googlecalendar",
+      "version": "0.2.0",
+      "repository": "https://github.com/ymote/octosense-google-calendar",
+      "release": "https://github.com/ymote/octosense-google-calendar/releases/tag/v0.2.0",
+      "commit": "624b778a2cf30becca31835febd96eab8db79f07",
+      "issue": "https://github.com/OctoSense-org/OctoSense-App-Hub/issues/160",
+      "platforms": [
+        "macos"
+      ],
+      "native_install": "passed on a compatible source host; live provider login and external writes unverified"
+    },
+    {
+      "id": "io.github.ymote.inboxassistant",
+      "version": "0.2.0",
+      "repository": "https://github.com/ymote/octosense-inbox-assistant",
+      "release": "https://github.com/ymote/octosense-inbox-assistant/releases/tag/v0.2.0",
+      "commit": "4f6a0677e8459813f08b308b9a01e41540725853",
+      "issue": "https://github.com/OctoSense-org/OctoSense-App-Hub/issues/159",
+      "platforms": [
+        "macos"
+      ],
+      "native_install": "passed on a compatible source host; live provider login and external writes unverified"
+    }
+  ]
+}

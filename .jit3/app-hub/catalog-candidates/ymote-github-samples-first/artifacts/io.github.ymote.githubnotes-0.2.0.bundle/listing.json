@@ -1,0 +1,28 @@
+{
+  "schema": 1,
+  "subtitle": "Markdown drafts with reviewed GitHub saves",
+  "description": "Write Markdown with the Rinx article editor in a compatible OctoSense host. Recover local drafts after restart; connect GitHub through host OAuth, choose a repository and file, and review exact Markdown before saving. Requires a host with contract 1.8.0 / GitHub publisher support and the native Markdown editor; beta.2 cannot install this keyless release. Live GitHub OAuth and remote commits remain unverified. Optional Ask GitHub Notes requires separate agent consent and may send questions, context and permitted repository reads to your configured model. No agent write or approval tools are exposed; manual editing works without a model.",
+  "category": "productivity",
+  "keywords": [
+    "markdown",
+    "github",
+    "notes",
+    "sample"
+  ],
+  "screenshots": [
+    "screenshots/01-preview.png",
+    "screenshots/02-editor.png"
+  ],
+  "icon": "assets/icon.svg",
+  "platforms": [
+    "macos"
+  ],
+  "publisher": {
+    "name": "ymote",
+    "support": "https://github.com/ymote/octosense-github-notes/issues",
+    "privacy_policy_url": "https://github.com/ymote/octosense-github-notes/blob/main/PRIVACY.md"
+  },
+  "release_notes": "0.2.0: fresh GitHub-backed app identity io.github.ymote.githubnotes with tag-issued release attestation. No developer signing key. Historical org.octosense.samples.githubnotes releases remain separate and unchanged; there is no automatic data/account migration. Local editing and reviewed GitHub save behavior are retained.",
+  "age_rating": "all",
+  "license": "Apache-2.0"
+}

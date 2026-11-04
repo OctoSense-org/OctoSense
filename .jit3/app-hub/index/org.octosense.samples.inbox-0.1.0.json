@@ -1,0 +1,481 @@
+{
+  "admitted": "2026-10-07",
+  "artifact": "artifacts/org.octosense.samples.inbox-0.1.0.bundle",
+  "listing": {
+    "age_rating": "all",
+    "category": "productivity",
+    "description": "Developer preview for compatible OctoSense hosts. Read Gmail through host-managed Google login; keep one editable reply shared by Email, Reply, Chat and native review. An optional account-bound agent can triage new mail into quiet decisions or actionable Glance cards. Includes clearly fictional offline fixtures. Requires the connected-services integration in OctoSense PR #347 and App Hub PR #119; older hosts do not supply these services. macOS testing used real DeepSeek with synthetic Gmail: 33 functional soak cycles and cold restoration passed, with two unresolved instrument frame-submission errors. Live Google login, real Gmail sends and physical send approval remain unverified. Android Google authorization is not implemented. No sending tool is exposed to the agent.",
+    "icon": "assets/icon.svg",
+    "keywords": [
+      "email",
+      "gmail",
+      "reply",
+      "sample"
+    ],
+    "license": "Apache-2.0",
+    "platforms": [
+      "macos"
+    ],
+    "publisher": {
+      "name": "ymote",
+      "privacy_policy_url": "https://github.com/ymote/octosense-inbox-assistant/blob/main/PRIVACY.md",
+      "support": "https://github.com/ymote/octosense-inbox-assistant/issues"
+    },
+    "release_notes": "0.1.0 developer-preview packaging of the tested connected Inbox sample. Publisher/support/privacy metadata finalized for ymote; application code, tools, agent guidance, skill and historical screenshots unchanged. Review is required before catalog admission.",
+    "schema": 1,
+    "screenshots": [
+      "screenshots/01-main.png",
+      "screenshots/02-chat.png"
+    ],
+    "subtitle": "Gmail reply and selective-notification preview"
+  },
+  "manifest": {
+    "agent": {
+      "background": true,
+      "instructions": "AGENT.md",
+      "max_iterations": null,
+      "model": {
+        "local_only": false,
+        "needs": [
+          "tool_calling"
+        ],
+        "tier": "standard"
+      },
+      "profile": "read-only",
+      "skills": [
+        "incoming-mail-triage"
+      ],
+      "token_budget": null,
+      "tools": [
+        "ask_user_question"
+      ],
+      "triggers": {
+        "events": [
+          "inbox.new_message"
+        ]
+      }
+    },
+    "capabilities": [
+      "storage",
+      "auth",
+      "gmail",
+      "model",
+      "glance",
+      "octos.session.open",
+      "octos.turn.start"
+    ],
+    "compute": {
+      "instruction_budget": null,
+      "memory_bytes": null
+    },
+    "id": "org.octosense.samples.inbox",
+    "integrity": {
+      "bundle_blake3": "dc8c4d215e1aa28b86752f8632d028588d30e8775ebad6f52a48a943b7780040",
+      "signature": {
+        "key_id": "ymote",
+        "value": "29b50a8d79f8359a04101e7d6fb8851140be7cb5a55a2f062faaf220d9a0660d0b168989a55105e9f4fbddb7c07435ae5e1de9f48341d076af75f5426d0a110f"
+      }
+    },
+    "name": "Inbox Assistant",
+    "network": {
+      "hosts": []
+    },
+    "schema": 1,
+    "storage": {
+      "accounts": true,
+      "max_bytes": null
+    },
+    "version": "0.1.0"
+  },
+  "publisher": "ymote",
+  "publisher_key": "dbda2ca2b6376e8a4bb9d011d6f9aab0f2953021ab9e433215fa1094828761bc",
+  "source": {
+    "commit": "28dd24a39a7e9668b877dd84d9577d10b3f87363",
+    "repository": "https://github.com/ymote/octosense-inbox-assistant"
+  },
+  "status": {
+    "state": "offered"
+  },
+  "tools": [
+    {
+      "background": true,
+      "description": "List message IDs for this account and selected Gmail label. Use page_token when present.",
+      "implemented_by": "host-service",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "connection": {
+            "maxLength": 256,
+            "type": "string"
+          },
+          "label": {
+            "maxLength": 256,
+            "type": "string"
+          },
+          "page_token": {
+            "maxLength": 2048,
+            "type": "string"
+          }
+        },
+        "required": [
+          "connection"
+        ],
+        "type": "object"
+      },
+      "name": "inbox.messages",
+      "output_schema": {
+        "type": "object"
+      },
+      "private_data": true,
+      "risk": "read",
+      "shareable": false
+    },
+    {
+      "background": true,
+      "description": "Read the bound email as plain text, with an explicit notice for omitted attachments.",
+      "implemented_by": "host-service",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "connection": {
+            "maxLength": 256,
+            "type": "string"
+          },
+          "message_id": {
+            "maxLength": 256,
+            "type": "string"
+          }
+        },
+        "required": [
+          "connection",
+          "message_id"
+        ],
+        "type": "object"
+      },
+      "name": "inbox.message",
+      "output_schema": {
+        "type": "object"
+      },
+      "private_data": true,
+      "risk": "read",
+      "shareable": false
+    },
+    {
+      "background": true,
+      "description": "Open or restore the one authoritative local reply draft for this email. Does not send.",
+      "implemented_by": "host-service",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "connection": {
+            "maxLength": 256,
+            "type": "string"
+          },
+          "message_id": {
+            "maxLength": 256,
+            "type": "string"
+          }
+        },
+        "required": [
+          "connection",
+          "message_id"
+        ],
+        "type": "object"
+      },
+      "name": "inbox.draft_open",
+      "output_schema": {
+        "type": "object"
+      },
+      "private_data": true,
+      "risk": "act",
+      "shareable": false
+    },
+    {
+      "background": true,
+      "description": "Read the exact saved draft body, revision and submission state.",
+      "implemented_by": "host-service",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "connection": {
+            "maxLength": 256,
+            "type": "string"
+          },
+          "draft": {
+            "maxLength": 256,
+            "type": "string"
+          }
+        },
+        "required": [
+          "connection",
+          "draft"
+        ],
+        "type": "object"
+      },
+      "name": "inbox.draft_get",
+      "output_schema": {
+        "type": "object"
+      },
+      "private_data": true,
+      "risk": "read",
+      "shareable": false
+    },
+    {
+      "background": true,
+      "description": "Save an explicitly requested draft change only against its current revision. Never authorizes sending.",
+      "implemented_by": "host-service",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "maxLength": 12000,
+            "type": "string"
+          },
+          "connection": {
+            "maxLength": 256,
+            "type": "string"
+          },
+          "draft": {
+            "maxLength": 256,
+            "type": "string"
+          },
+          "provenance": {
+            "enum": [
+              "model"
+            ],
+            "type": "string"
+          },
+          "revision": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "subject": {
+            "maxLength": 512,
+            "type": "string"
+          },
+          "to": {
+            "maxLength": 320,
+            "type": "string"
+          }
+        },
+        "required": [
+          "connection",
+          "draft",
+          "revision",
+          "to",
+          "subject",
+          "body",
+          "provenance"
+        ],
+        "type": "object"
+      },
+      "name": "inbox.draft_edit",
+      "output_schema": {
+        "type": "object"
+      },
+      "private_data": true,
+      "risk": "act",
+      "shareable": false
+    },
+    {
+      "background": true,
+      "description": "Read the durable decision, if any, for this incoming Gmail event.",
+      "implemented_by": "host-service",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "connection": {
+            "maxLength": 256,
+            "type": "string"
+          },
+          "event_id": {
+            "maxLength": 256,
+            "type": "string"
+          }
+        },
+        "required": [
+          "connection",
+          "event_id"
+        ],
+        "type": "object"
+      },
+      "name": "inbox.event_status",
+      "output_schema": {
+        "type": "object"
+      },
+      "private_data": true,
+      "risk": "read",
+      "shareable": false
+    },
+    {
+      "background": true,
+      "description": "Record a quiet relevance decision, or acknowledge a successfully published card. Host verifies publication; prose cannot replace a receipt.",
+      "implemented_by": "host-service",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "connection": {
+            "maxLength": 256,
+            "type": "string"
+          },
+          "decision": {
+            "enum": [
+              "quiet",
+              "published"
+            ],
+            "type": "string"
+          },
+          "event_id": {
+            "maxLength": 256,
+            "type": "string"
+          },
+          "reason": {
+            "maxLength": 500,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "connection",
+          "event_id",
+          "decision",
+          "reason"
+        ],
+        "type": "object"
+      },
+      "name": "inbox.event_decide",
+      "output_schema": {
+        "type": "object"
+      },
+      "private_data": true,
+      "risk": "act",
+      "shareable": false
+    },
+    {
+      "background": true,
+      "description": "Publish one important-email workspace under this app/account. Prefer admitted template glance-workspace.splash with initial.message; the host binds its connection. Use message ID as card_id; notify only if relevant.",
+      "implemented_by": "host-service",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "card_id": {
+            "maxLength": 64,
+            "type": "string"
+          },
+          "data": {
+            "type": "object"
+          },
+          "expires": {
+            "maximum": 604800,
+            "minimum": 60,
+            "type": "integer"
+          },
+          "initial": {
+            "additionalProperties": false,
+            "properties": {
+              "message": {
+                "additionalProperties": false,
+                "properties": {
+                  "body": {
+                    "maxLength": 100,
+                    "type": "string"
+                  },
+                  "from": {
+                    "maxLength": 320,
+                    "type": "string"
+                  },
+                  "id": {
+                    "maxLength": 128,
+                    "type": "string"
+                  },
+                  "subject": {
+                    "maxLength": 512,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "from",
+                  "subject",
+                  "body"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "message"
+            ],
+            "type": "object"
+          },
+          "notify": {
+            "type": "boolean"
+          },
+          "priority": {
+            "maximum": 100,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "script": {
+            "maxLength": 16384,
+            "type": "string"
+          },
+          "source": {
+            "maxLength": 16384,
+            "type": "string"
+          },
+          "summary": {
+            "maxLength": 200,
+            "type": "string"
+          },
+          "template": {
+            "enum": [
+              "glance-workspace.splash"
+            ],
+            "type": "string"
+          },
+          "title": {
+            "maxLength": 80,
+            "type": "string"
+          }
+        },
+        "required": [
+          "card_id",
+          "title"
+        ],
+        "type": "object"
+      },
+      "name": "inbox.notify",
+      "output_schema": {
+        "type": "object"
+      },
+      "private_data": true,
+      "risk": "act",
+      "shareable": false
+    },
+    {
+      "background": true,
+      "description": "Retire a processed message card after actual completion; does not delete its draft or mail.",
+      "implemented_by": "host-service",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "card_id": {
+            "maxLength": 64,
+            "type": "string"
+          }
+        },
+        "required": [
+          "card_id"
+        ],
+        "type": "object"
+      },
+      "name": "inbox.withdraw",
+      "output_schema": {
+        "type": "object"
+      },
+      "private_data": true,
+      "risk": "act",
+      "shareable": false
+    }
+  ]
+}

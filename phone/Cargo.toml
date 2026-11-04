@@ -50,7 +50,7 @@ octosense-shell = { workspace = true }
 # What the Settings app itself uses.
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-makepad-widgets = { workspace = true, features = ["appcard", "maps"] }
+makepad-widgets = { workspace = true, features = ["maps"] }
 makepad-studio-protocol = { workspace = true }
 makepad-wm-api = { workspace = true }
 makepad-ai-services = { workspace = true }

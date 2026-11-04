@@ -1,0 +1,81 @@
+{
+  "schema": 1,
+  "scope": "Review four updates to the GitHub-authenticated sample identities",
+  "sequence": 13,
+  "base_sequence": 12,
+  "base_envelope_sha256": "d1fd2739201aa5620ea3225a1e1c5d7c9e0c1b4ce0cbbd9c620fc50732555028",
+  "payload_sha256": "0dca74f12734e392d270c23fc33b4e0bfde8e6603a7a4f7ea4670b9efb5578ed",
+  "native_catalog_prepare": "passed; all ten prior entries preserved and all four publisher continuities verified",
+  "release_bytes": "All four packs were downloaded from successful GitHub release workflows; native publisher unpack/verify passed",
+  "privacy_scan": {
+    "status": "passed",
+    "files": 53,
+    "patterns": 8
+  },
+  "apps": [
+    {
+      "app_id": "io.github.ymote.cameracard",
+      "version": "1.1.1",
+      "submission": "https://github.com/OctoSense-org/OctoSense-App-Hub/issues/156",
+      "source": {
+        "repository": "https://github.com/ymote/camera-card",
+        "commit": "3f325cc1fb72ab1abb5aa0f18855a87874b8881e"
+      },
+      "pack_sha256": "5ccc7e16bc8bbeb523b6febf4cfc7c51d3eafb853e8c7bd806b4ce7a43a79bf2",
+      "platforms": [
+        "macos"
+      ],
+      "publisher": "github:1378439338"
+    },
+    {
+      "app_id": "io.github.ymote.githubnotes",
+      "version": "0.2.1",
+      "submission": "https://github.com/OctoSense-org/OctoSense-App-Hub/issues/158",
+      "source": {
+        "repository": "https://github.com/ymote/octosense-github-notes",
+        "commit": "0356c16449673fc12cef501d22be446bb496fd76"
+      },
+      "pack_sha256": "4c8087759c93c947e6f1d2f543dea7f62daa71b8306e73c61e76a19924375b31",
+      "platforms": [
+        "macos"
+      ],
+      "publisher": "github:1408036635"
+    },
+    {
+      "app_id": "io.github.ymote.googlecalendar",
+      "version": "0.2.1",
+      "submission": "https://github.com/OctoSense-org/OctoSense-App-Hub/issues/160",
+      "source": {
+        "repository": "https://github.com/ymote/octosense-google-calendar",
+        "commit": "e4af7427680bdc331eb639f67dd6f53db5b85775"
+      },
+      "pack_sha256": "a92cb1e86be19f8b8c158076fe054ca88e481bf8b580c465e83671834934d64c",
+      "platforms": [
+        "macos"
+      ],
+      "publisher": "github:1408036857"
+    },
+    {
+      "app_id": "io.github.ymote.inboxassistant",
+      "version": "0.2.1",
+      "submission": "https://github.com/OctoSense-org/OctoSense-App-Hub/issues/159",
+      "source": {
+        "repository": "https://github.com/ymote/octosense-inbox-assistant",
+        "commit": "f30f8a29fbe22507c68be15a5e737e7749abde83"
+      },
+      "pack_sha256": "1bbf8bff05e30fe33c1b7ee66f699d7bf09c9839ceeaa52c086e6427e5c88728",
+      "platforms": [
+        "macos"
+      ],
+      "publisher": "github:1408036757"
+    }
+  ],
+  "publication_gate": "Do not dispatch until public catalog12 first-install and restart acceptance completes. Host RC publication and catalog admission are separate.",
+  "limits": [
+    "macOS-only listings",
+    "No live provider authentication, remote writes, physical approval or model behavior claimed by these local UI tests",
+    "Camera is a static storyboard with zero capabilities",
+    "Historical identities and saved data remain separate"
+  ],
+  "production_catalog_changed_by_this_commit": false
+}

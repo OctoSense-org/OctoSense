@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: How to submit an app
+    url: https://github.com/OctoSense-org/OctoSense-App-Hub/blob/main/docs/SUBMITTING.md
+    about: Read the step-by-step submission guide (English and 简体中文) before you open a submission.
+  - name: Questions about building an app
+    url: https://github.com/OctoSense-org/OctoSense-App-Flow/issues
+    about: Ask in the OctoSense App Flow repository (formerly Design Flow) how to build, run or test an OctoSense app.

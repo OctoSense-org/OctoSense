@@ -1,0 +1,6 @@
+{
+  "name": "news-digest",
+  "version": "1.0.0",
+  "description": "Write a cited morning or evening digest from collected stories.",
+  "uses": ["news.list", "news.read", "news.digest.write"]
+}

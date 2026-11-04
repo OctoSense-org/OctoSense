@@ -1,0 +1,6 @@
+{
+  "digest": "729bc3dfe1ef9ae2e49cb86f82db670adc09282c4aaadc65d58ed804d6255c26",
+  "limits": "unsigned",
+  "refused": "app id \"terminal\" is reserved: it names a native app or the host itself",
+  "source": "App Hub app-policy admission tests: a native app's id"
+}

@@ -1,0 +1,122 @@
+{
+  "schema": 1,
+  "workflow_run": "https://github.com/OctoSense-org/OctoSense-App-Hub/actions/runs/37736098082",
+  "publication_commit": "27eeec5b3abc3f9c2aa06a3894bab2f15228f116",
+  "public_envelope": {
+    "url": "https://raw.githubusercontent.com/OctoSense-org/OctoSense-App-Hub/27eeec5b3abc3f9c2aa06a3894bab2f15228f116/catalog-v2.json",
+    "sha256": "90576462177341de69eae4737f1e36bd16efce5e474223c1f74182b4b150d5e2",
+    "bytes": 59745,
+    "matches_actions_artifact": true
+  },
+  "sequence": 11,
+  "payload_sha256": "d7a43c63ca3219691f0879b3637aef7088963c579812228a9afa82967437de0c",
+  "consumers": [
+    {
+      "platform": "macOS",
+      "source_repository": "https://github.com/OctoSense-org/OctoSense-App-Hub",
+      "source_commit": "af0cf7f3c8e4e8eb91829bd8ac44219508ba7f0c",
+      "binary_sha256": "1fee158c03f32bcc9732e3303e59c2d89e505bc180dfcbc34b32f15226db0499",
+      "cleanup_complete": true,
+      "checks": [
+        {
+          "name": "actual_github_proof",
+          "expected_accept": true,
+          "accepted": true,
+          "passed": true,
+          "exit_status": 0,
+          "verified_sequence": 11,
+          "payload_sha256": "d7a43c63ca3219691f0879b3637aef7088963c579812228a9afa82967437de0c"
+        },
+        {
+          "name": "payload_tamper",
+          "expected_accept": false,
+          "accepted": false,
+          "passed": true,
+          "exit_status": 1
+        },
+        {
+          "name": "signature_tamper",
+          "expected_accept": false,
+          "accepted": false,
+          "passed": true,
+          "exit_status": 1
+        },
+        {
+          "name": "transparency_log_tamper",
+          "expected_accept": false,
+          "accepted": false,
+          "passed": true,
+          "exit_status": 1
+        },
+        {
+          "name": "missing_transparency_log",
+          "expected_accept": false,
+          "accepted": false,
+          "passed": true,
+          "exit_status": 1
+        },
+        {
+          "name": "legacy_refused_by_v2_verifier",
+          "expected_accept": false,
+          "accepted": false,
+          "passed": true,
+          "exit_status": 1
+        }
+      ]
+    },
+    {
+      "platform": "Android arm64 on OnePlus 6",
+      "source_repository": "https://github.com/OctoSense-org/OctoSense-App-Hub",
+      "source_commit": "6e3b8ffefff018269efb45f7d2c9b08fe75c4d74",
+      "binary_sha256": "0ff7005d9e32082ad7965de88dd1a744eb429a221f8589cdcdc54209939c40d6",
+      "cleanup_complete": true,
+      "checks": [
+        {
+          "name": "actual_github_proof",
+          "expected_accept": true,
+          "accepted": true,
+          "passed": true,
+          "exit_status": 0,
+          "verified_sequence": 11,
+          "payload_sha256": "d7a43c63ca3219691f0879b3637aef7088963c579812228a9afa82967437de0c"
+        },
+        {
+          "name": "payload_tamper",
+          "expected_accept": false,
+          "accepted": false,
+          "passed": true,
+          "exit_status": 1
+        },
+        {
+          "name": "signature_tamper",
+          "expected_accept": false,
+          "accepted": false,
+          "passed": true,
+          "exit_status": 1
+        },
+        {
+          "name": "transparency_log_tamper",
+          "expected_accept": false,
+          "accepted": false,
+          "passed": true,
+          "exit_status": 1
+        },
+        {
+          "name": "missing_transparency_log",
+          "expected_accept": false,
+          "accepted": false,
+          "passed": true,
+          "exit_status": 1
+        },
+        {
+          "name": "legacy_refused_by_v2_verifier",
+          "expected_accept": false,
+          "accepted": false,
+          "passed": true,
+          "exit_status": 1
+        }
+      ]
+    }
+  ],
+  "scope": "Native verification of the independently fetched production catalog and five refusal cases. Not an app installation, GUI test, account connection, or validation of the later default-channel build."
+}

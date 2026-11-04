@@ -1,0 +1,107 @@
+{
+  "schema": 1,
+  "kind": "repo-radar-catalog-candidate-review",
+  "status": "verified-release-candidate; production-pending-consumer-acceptance-and-compatible-release",
+  "app_id": "org.ymote.reporadar",
+  "version": "0.1.2",
+  "tag": "v0.1.2",
+  "source_commit": "e18eb6a88b74398c5df2472d6fd5c0a3d6a1d50b",
+  "repository": "ymote/octosense-repo-radar",
+  "workflow_run": "https://github.com/ymote/octosense-repo-radar/actions/runs/38094354008",
+  "release_url": "https://github.com/ymote/octosense-repo-radar/releases/tag/v0.1.2",
+  "pack_sha256": "62fb0262fa9139675abbd286f71d23efd385eb16697ec6341c12893d216067c3",
+  "bundle_blake3": "da4272cead19e613638d8381c47662ef4cff3716838c7e719916d779f3c9edf9",
+  "component_sha256": "d0ee1835711ed4b1c952f564789d96c160d02035b1d2104db1388e6affdbc757",
+  "component_bytes": 497521,
+  "component_kind": "component",
+  "exports": [
+    "radar-move",
+    "radar-overview",
+    "radar-pin",
+    "radar-pulls",
+    "radar-releases",
+    "radar-search",
+    "radar-select",
+    "radar-unpin",
+    "radar-watchlist"
+  ],
+  "changed_from_tag_files": [
+    "fns/radar.wasm",
+    "manifest.json"
+  ],
+  "publisher_unpack_passed": true,
+  "publisher_verify_passed": true,
+  "source_and_sealed_file_sets_match": true,
+  "intended_publisher_identity_verified": true,
+  "manifest_changed_only_for_sealing": true,
+  "sealed_files_sha256": {
+    "AGENT.md": "d89417766ebbf1efc3c3e99c1e0bc525be5faec097e403b8234c7d83c2730e50",
+    "assets/icon.svg": "85acb31d245f6a12198ab21e85505d70303bcf68ae0b4328fbb83b5be020bd40",
+    "fns/radar.wasm": "d0ee1835711ed4b1c952f564789d96c160d02035b1d2104db1388e6affdbc757",
+    "listing.json": "81ae321131edcbc127c508d81d6465b30f4105b677b8d4b0611b1f59ce74ba85",
+    "main.splash": "6830d6dba3addbd8304ddf11bd04c828989a35e33633fba69e3b568d89f024bb",
+    "manifest.json": "c655f07c299a805bc8590351cd65a8c972ad80214a13ab2ee3a2bfd75c8a04b1",
+    "screenshots/01-main.png": "8d3e08866cd0aaa7ee9de87f8b4d5f87aae384f5ba351a5f49c7750637a898f4",
+    "screenshots/02-releases.png": "a889c6b57e9dbb3b72209f7021381335ca61872a8b9667689b15a77abcddb59d",
+    "tools.json": "869fddc77e504f7af9391de514f52538b9be9a246966087af5cd3de9e70d807f"
+  },
+  "privacy_scan": {
+    "files": 9,
+    "patterns": [
+      "private-local-path",
+      "credential-marker",
+      "local-provider-config"
+    ],
+    "findings": []
+  },
+  "gate_passed": true,
+  "rustsec_database_commit": "7eebec69c352c7191b1f13eb95dd510eeca5d1de",
+  "gate_output": "org.ymote.reporadar 0.1.2 \u2014 PASSED\n  [warning] functions (fns/radar.wasm): fns/radar.wasm is a component that reaches the clock, files in its app folder and the network, but no other app\n  [warning] functions (fns/radar.wasm): fns/radar.wasm is built from 18 crates: bitflags 2.13.2, deranged 0.5.8, itoa 1.0.18, memchr 2.8.3, num-conv 0.2.2, octosense-component 0.1.0, powerfmt 0.2.1, semver 1.0.28, serde 1.0.229, serde_core 1.0.229, serde_json 1.0.152, time 0.3.55 and 6 more\n  [warning] tools: reporadar.unpin is destructive: every call waits for the host's approval\n  declarations: capabilities {\"glance\", \"net\", \"octos.session.history\", \"octos.session.open\", \"octos.turn.start\", \"storage\", \"wasm\"}, hosts {\"api.github.com\", \"github.com\"}, storage 8388608 bytes, agent read-only\n",
+  "base_commit": "cd583a1609a86fb551a15288a9102f7117056a0b",
+  "base_catalog_sha256": "de8536252587d56d0c4d9a0d9f236cc791becc920d51c8572870586afa14caed",
+  "base_verification": {
+    "payload_sha256": "51b1c03bdcbfa500c6c62fe89a8514ba51b38dc4811a41b55b7475ff38deb1f7",
+    "schema": 2,
+    "sequence": 15
+  },
+  "candidate": "ymote-repo-radar-0-1-2",
+  "candidate_preparation": {
+    "added_artifacts": [
+      {
+        "bundle": "artifacts/org.ymote.reporadar-0.1.2.bundle",
+        "index": "index/org.ymote.reporadar-0.1.2.json",
+        "pack": "artifacts/org.ymote.reporadar-0.1.2.bundle.pack.json"
+      }
+    ],
+    "base_sequence": 15,
+    "base_sha256": "de8536252587d56d0c4d9a0d9f236cc791becc920d51c8572870586afa14caed",
+    "candidate_sha256": "f060d2f1655ea7890d3e62e9778b17565fe7574960390c8ef8233b87ad16f44a",
+    "payload_sha256": "9925772acb6995ed13e292f22e9f97dfdcb2ee397163007d85818e4ae4390b41",
+    "schema": 1,
+    "sequence": 16,
+    "subject": "catalog-v2.payload.json"
+  },
+  "verifier_sha256": "66ca5fd1d12d74226585e12bbb76aeb2096ff6264e87b997a5a7ea051c6229dd",
+  "public_publication_proof": false,
+  "not_verified": [
+    "Execution of this sealed version",
+    "Compatible released host",
+    "Public catalog installation",
+    "Live model replies and agent tool execution"
+  ],
+  "submission_issue": "https://github.com/OctoSense-org/OctoSense-App-Hub/issues/202",
+  "source_ux_review": "https://github.com/ymote/octosense-repo-radar/blob/e18eb6a88b74398c5df2472d6fd5c0a3d6a1d50b/review/ux-0.1.1.json",
+  "publisher_ci_tests": {
+    "rust_unit": 17,
+    "rust_doctest": 1,
+    "native_harness_safety": 14,
+    "fmt": "passed",
+    "clippy": "passed",
+    "wasm_target": "wasm32-wasip2",
+    "linked_crates": 18
+  },
+  "publication_rule_tests": {
+    "passed": 17,
+    "failed": 0
+  }
+}

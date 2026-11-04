@@ -1,0 +1,30 @@
+{
+  "agent": null,
+  "capabilities": [
+    "storage",
+    "auth",
+    "github"
+  ],
+  "compute": {
+    "instruction_budget": null,
+    "memory_bytes": null
+  },
+  "id": "org.octosense.samples.githubnotes",
+  "integrity": {
+    "bundle_blake3": "d5565438b78e01b98baf268661087b7efd0f5c01799f4841daa140955f82a13b",
+    "signature": {
+      "key_id": "ymote",
+      "value": "299a819bb80f9f23c9b08910188aef9e90ae88d4cf4d799074e7e19609a3e89d8850993805cfdbfade53b4ceb87ad28d1a1ecf059c9961872ff231924c7b260e"
+    }
+  },
+  "name": "GitHub Notes",
+  "network": {
+    "hosts": []
+  },
+  "schema": 1,
+  "storage": {
+    "accounts": true,
+    "max_bytes": 4194304
+  },
+  "version": "0.1.0"
+}

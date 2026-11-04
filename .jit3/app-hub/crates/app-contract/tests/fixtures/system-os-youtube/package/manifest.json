@@ -1,0 +1,15 @@
+{
+  "schema": 1,
+  "id": "os.youtube",
+  "version": "1.0.0",
+  "name": "YouTube",
+  "integrity": { "bundle_blake3": "1fa910d469952cd687eb5cf4797746e77fa86891c1b56a712880d57f0a9052e3" },
+  "capabilities": ["storage", "net"],
+  "network": {
+    "hosts": [
+      "www.youtube.com",
+      "m.youtube.com",
+      "i.ytimg.com"
+    ]
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "schema": 1,
+  "crate": "octosense-app-contract",
+  "version": "1.8.0",
+  "published": true,
+  "yanked": false,
+  "publication_workflow": "https://github.com/OctoSense-org/OctoSense-App-Hub/actions/runs/37739082884",
+  "workflow_conclusion": "success",
+  "publication_source_commit": "f2e6152a79e95923de5e85500b841cd69258d5df",
+  "workflow_completed_at": "2026-10-08T06:42:53Z",
+  "index_url": "https://index.crates.io/oc/to/octosense-app-contract",
+  "archive_url": "https://static.crates.io/crates/octosense-app-contract/octosense-app-contract-1.8.0.crate",
+  "registry_checksum": "0222acdc13544bb9bbf661321b99f2ecd8aefa631b746a8ff44162d6fd0337da",
+  "downloaded_archive_sha256": "0222acdc13544bb9bbf661321b99f2ecd8aefa631b746a8ff44162d6fd0337da",
+  "downloaded_archive_bytes": 86726,
+  "checks": [
+    "GitHub publication workflow completed successfully at the merged publisher implementation commit.",
+    "The crates.io sparse index contains a non-yanked 1.8.0 entry with the expected checksum.",
+    "The downloaded crates.io archive SHA-256 matches the registry checksum."
+  ],
+  "limits": [
+    "This establishes contract package publication only.",
+    "A compatible OctoSense shell release and phone publisher installation remain pending.",
+    "Existing immutable publishing and catalog acceptance receipts are unchanged."
+  ]
+}

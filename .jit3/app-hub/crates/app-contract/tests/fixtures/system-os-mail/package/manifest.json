@@ -1,0 +1,8 @@
+{
+  "schema": 1,
+  "id": "os.mail",
+  "version": "1.0.0",
+  "name": "Mail",
+  "integrity": { "bundle_blake3": "3b735c8d1b4c049f05573bf718f023ac6eae1ef77dc3b89553cef486d647a7d5" },
+  "capabilities": ["storage", "mail"]
+}

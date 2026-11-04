@@ -1,0 +1,28 @@
+# octosense-appstore — the store, as an OctoSense app (ADR 0003 §7).
+#
+# Trusted tier by necessity: it holds the hub anchor, writes app jails and is
+# the one place that installs. It ships in the build like any other module,
+# and like any other module it also runs standalone through octosense-app-host.
+[package]
+name = "octosense-appstore"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+publish = false
+description = "Browse, search, install and open apps published to the OctoSense app hub"
+
+[features]
+# OctoSense's runtime overlay adds the IME state-query event. Keep its modal
+# input protection enabled for existing shell consumers; standalone hosts
+# using the unmodified framework pins must opt out.
+default = ["text-input-state-query"]
+text-input-state-query = []
+
+[dependencies]
+octosense-app-hub = { path = "../app-hub" }
+octosense-app-policy = { path = "../app-policy", features = ["splash"] }
+makepad-widgets = { git = "https://github.com/OctoSense-org/makepad.git", rev = "d653bc4493619ab979ccff165cf48c0c63b77d19" }
+makepad-app-module = { git = "https://github.com/OctoSense-org/makepad.git", rev = "d653bc4493619ab979ccff165cf48c0c63b77d19" }
+octoscript-makepad = { git = "https://github.com/OctoSense-org/Octoscript-Makepad.git", rev = "6cf2d90aa33ff4ae603f49c7557f3ecf986207f0" }
+octoscript-widgets = { git = "https://github.com/OctoSense-org/Octoscript-Makepad.git", rev = "6cf2d90aa33ff4ae603f49c7557f3ecf986207f0" }
+serde_json = "1"

@@ -1,0 +1,547 @@
+{
+  "manifest": {
+    "schema": 1,
+    "id": "io.github.ymote.inboxassistant",
+    "version": "0.2.1",
+    "name": "Inbox Assistant",
+    "integrity": {
+      "bundle_blake3": "d07595f7a3815b0c4ca396e18ab458fd41965e3d0602a15ac080ea1958a5c86c",
+      "signature": null,
+      "github": {
+        "repository": "ymote/octosense-inbox-assistant",
+        "repository_id": "1408036757",
+        "owner_id": "151983",
+        "workflow": ".github/workflows/publish-app.yml",
+        "tag": "v0.2.1",
+        "commit": "f30f8a29fbe22507c68be15a5e737e7749abde83",
+        "attestation": {
+          "dsseEnvelope": {
+            "payload": "eyJfdHlwZSI6Imh0dHBzOi8vaW4tdG90by5pby9TdGF0ZW1lbnQvdjEiLCJzdWJqZWN0IjpbeyJuYW1lIjoib2N0b3NlbnNlLWFwcC1tYW5pZmVzdC5qc29uIiwiZGlnZXN0Ijp7InNoYTI1NiI6ImI2MzQyNmVhOGYyMGQxYzBjMjJjMDljOWRmOTUxYjg0NThhYjJiY2VjMDA4NTY5YzYxYjFhNDY2Y2YwNDdlOTMifX1dLCJwcmVkaWNhdGVUeXBlIjoiaHR0cHM6Ly9zbHNhLmRldi9wcm92ZW5hbmNlL3YxIiwicHJlZGljYXRlIjp7ImJ1aWxkRGVmaW5pdGlvbiI6eyJidWlsZFR5cGUiOiJodHRwczovL2FjdGlvbnMuZ2l0aHViLmlvL2J1aWxkdHlwZXMvd29ya2Zsb3cvdjEiLCJleHRlcm5hbFBhcmFtZXRlcnMiOnsid29ya2Zsb3ciOnsicmVmIjoicmVmcy90YWdzL3YwLjIuMSIsInJlcG9zaXRvcnkiOiJodHRwczovL2dpdGh1Yi5jb20veW1vdGUvb2N0b3NlbnNlLWluYm94LWFzc2lzdGFudCIsInBhdGgiOiIuZ2l0aHViL3dvcmtmbG93cy9wdWJsaXNoLWFwcC55bWwifX0sImludGVybmFsUGFyYW1ldGVycyI6eyJnaXRodWIiOnsiZXZlbnRfbmFtZSI6InB1c2giLCJyZXBvc2l0b3J5X2lkIjoiMTQwODAzNjc1NyIsInJlcG9zaXRvcnlfb3duZXJfaWQiOiIxNTE5ODMiLCJydW5uZXJfZW52aXJvbm1lbnQiOiJnaXRodWItaG9zdGVkIn19LCJyZXNvbHZlZERlcGVuZGVuY2llcyI6W3sidXJpIjoiZ2l0K2h0dHBzOi8vZ2l0aHViLmNvbS95bW90ZS9vY3Rvc2Vuc2UtaW5ib3gtYXNzaXN0YW50QHJlZnMvdGFncy92MC4yLjEiLCJkaWdlc3QiOnsiZ2l0Q29tbWl0IjoiZjMwZjhhMjlmYmUyMjUwN2M2OGJlMTVhNWU3MzdlNzc0OWFiZGU4MyJ9fV19LCJydW5EZXRhaWxzIjp7ImJ1aWxkZXIiOnsiaWQiOiJodHRwczovL2dpdGh1Yi5jb20veW1vdGUvb2N0b3NlbnNlLWluYm94LWFzc2lzdGFudC8uZ2l0aHViL3dvcmtmbG93cy9wdWJsaXNoLWFwcC55bWxAcmVmcy90YWdzL3YwLjIuMSJ9LCJtZXRhZGF0YSI6eyJpbnZvY2F0aW9uSWQiOiJodHRwczovL2dpdGh1Yi5jb20veW1vdGUvb2N0b3NlbnNlLWluYm94LWFzc2lzdGFudC9hY3Rpb25zL3J1bnMvMzc3NDk4ODEyNTkvYXR0ZW1wdHMvMSJ9fX19",
+            "payloadType": "application/vnd.in-toto+json",
+            "signatures": [
+              {
+                "sig": "MEUCIACpuCHOXcoJQph/hJFpGyEUsbs1q957iUBSqYI/Gc0QAiEA7/f41tmCpFIaeCl5n9+CNQLlP8dnf8MYAJ7FdzxNN5M="
+              }
+            ]
+          },
+          "mediaType": "application/vnd.dev.sigstore.bundle.v0.3+json",
+          "verificationMaterial": {
+            "certificate": {
+              "rawBytes": "MIIHUDCCBtagAwIBAgIUCpXIb4ojzEZ5So+JUdx7ScB2uH8wCgYIKoZIzj0EAwMwNzEVMBMGA1UEChMMc2lnc3RvcmUuZGV2MR4wHAYDVQQDExVzaWdzdG9yZS1pbnRlcm1lZGlhdGUwHhcNMjYxMDA4MDgyODUxWhcNMjYxMDA4MDgzODUxWjAAMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEhlWlM7B7E+4lT6Fr1AMgli1ZcLmHfr8cen0X1rOcIH8xiqRjsGc4Xa1jDV5XJNuVlDFzYOaRpv20h9y/VvsEj6OCBfUwggXxMA4GA1UdDwEB/wQEAwIHgDATBgNVHSUEDDAKBggrBgEFBQcDAzAfBgNVHSMEGDAWgBTf0+nPViQRlvmo2OkoVaLGLhhkPzBzBgNVHREBAf8EaTBnhmVodHRwczovL2dpdGh1Yi5jb20veW1vdGUvb2N0b3NlbnNlLWluYm94LWFzc2lzdGFudC8uZ2l0aHViL3dvcmtmbG93cy9wdWJsaXNoLWFwcC55bWxAcmVmcy90YWdzL3YwLjIuMTA5BgorBgEEAYO/MAEBBCtodHRwczovL3Rva2VuLmFjdGlvbnMuZ2l0aHVidXNlcmNvbnRlbnQuY29tMBIGCisGAQQBg78wAQIEBHB1c2gwNgYKKwYBBAGDvzABAwQoZjMwZjhhMjlmYmUyMjUwN2M2OGJlMTVhNWU3MzdlNzc0OWFiZGU4MzAjBgorBgEEAYO/MAEEBBVQdWJsaXNoIE9jdG9TZW5zZSBhcHAwLQYKKwYBBAGDvzABBQQfeW1vdGUvb2N0b3NlbnNlLWluYm94LWFzc2lzdGFudDAeBgorBgEEAYO/MAEGBBByZWZzL3RhZ3MvdjAuMi4xMDsGCisGAQQBg78wAQgELQwraHR0cHM6Ly90b2tlbi5hY3Rpb25zLmdpdGh1YnVzZXJjb250ZW50LmNvbTB1BgorBgEEAYO/MAEJBGcMZWh0dHBzOi8vZ2l0aHViLmNvbS95bW90ZS9vY3Rvc2Vuc2UtaW5ib3gtYXNzaXN0YW50Ly5naXRodWIvd29ya2Zsb3dzL3B1Ymxpc2gtYXBwLnltbEByZWZzL3RhZ3MvdjAuMi4xMDgGCisGAQQBg78wAQoEKgwoZjMwZjhhMjlmYmUyMjUwN2M2OGJlMTVhNWU3MzdlNzc0OWFiZGU4MzAdBgorBgEEAYO/MAELBA8MDWdpdGh1Yi1ob3N0ZWQwQgYKKwYBBAGDvzABDAQ0DDJodHRwczovL2dpdGh1Yi5jb20veW1vdGUvb2N0b3NlbnNlLWluYm94LWFzc2lzdGFudDA4BgorBgEEAYO/MAENBCoMKGYzMGY4YTI5ZmJlMjI1MDdjNjhiZTE1YTVlNzM3ZTc3NDlhYmRlODMwIAYKKwYBBAGDvzABDgQSDBByZWZzL3RhZ3MvdjAuMi4xMBoGCisGAQQBg78wAQ8EDAwKMTQwODAzNjc1NzAoBgorBgEEAYO/MAEQBBoMGGh0dHBzOi8vZ2l0aHViLmNvbS95bW90ZTAWBgorBgEEAYO/MAERBAgMBjE1MTk4MzB1BgorBgEEAYO/MAESBGcMZWh0dHBzOi8vZ2l0aHViLmNvbS95bW90ZS9vY3Rvc2Vuc2UtaW5ib3gtYXNzaXN0YW50Ly5naXRodWIvd29ya2Zsb3dzL3B1Ymxpc2gtYXBwLnltbEByZWZzL3RhZ3MvdjAuMi4xMDgGCisGAQQBg78wARMEKgwoZjMwZjhhMjlmYmUyMjUwN2M2OGJlMTVhNWU3MzdlNzc0OWFiZGU4MzAUBgorBgEEAYO/MAEUBAYMBHB1c2gwZgYKKwYBBAGDvzABFQRYDFZodHRwczovL2dpdGh1Yi5jb20veW1vdGUvb2N0b3NlbnNlLWluYm94LWFzc2lzdGFudC9hY3Rpb25zL3J1bnMvMzc3NDk4ODEyNTkvYXR0ZW1wdHMvMTAWBgorBgEEAYO/MAEWBAgMBnB1YmxpYzBbBgorBgEEAYO/MAEYBE0MS3JlcG86eW1vdGVAMTUxOTgzL29jdG9zZW5zZS1pbmJveC1hc3Npc3RhbnRAMTQwODAzNjc1NzpyZWY6cmVmcy90YWdzL3YwLjIuMTCBiQYKKwYBBAHWeQIEAgR7BHkAdwB1AN09MGrGxxEyYxkeHJlnNwKiSl643jyt/4eKcoAvKe6OAAABoRqhKTsAAAQDAEYwRAIgN6yHGsK5TxGoF6W7oJq8oUCr5kdvHUsgF+KwlzLYIWUCIGzRjKjoninQv4M7/Ydc4Gu6BnZci0WRH4lGGG+iO67GMAoGCCqGSM49BAMDA2gAMGUCMQClgoeLgfVagyMY/XHBXdigoeATTIJ3zDGqcJoipQn2jr5TEzE/F8FroTxc0B+MPB8CMAnoPFVLrhRsUTkBYii+Bzodm9B2jFiWsIZpdkHCjtqhLuzMOONMFmz0g0S76bgVWg=="
+            },
+            "timestampVerificationData": {},
+            "tlogEntries": [
+              {
+                "canonicalizedBody": "eyJhcGlWZXJzaW9uIjoiMC4wLjEiLCJraW5kIjoiZHNzZSIsInNwZWMiOnsiZW52ZWxvcGVIYXNoIjp7ImFsZ29yaXRobSI6InNoYTI1NiIsInZhbHVlIjoiM2IxNjM5MjYyMDhiZTIzMjQwZTEwNzYxMmI2NmVjMTU2ZmZiODY4MWI0NDM4N2Q1ZTRlMWVjODA2NDhiMzczNCJ9LCJwYXlsb2FkSGFzaCI6eyJhbGdvcml0aG0iOiJzaGEyNTYiLCJ2YWx1ZSI6IjRiMmI5MzIxNTAzNmY1ZWMzM2M4ZDFhOWExZTIzYzg4ODBmYmJlY2NjN2M0ODM0NjVlMGJhYjY5YmQ5MDBjZmEifSwic2lnbmF0dXJlcyI6W3sic2lnbmF0dXJlIjoiTUVVQ0lBQ3B1Q0hPWGNvSlFwaC9oSkZwR3lFVXNiczFxOTU3aVVCU3FZSS9HYzBRQWlFQTcvZjQxdG1DcEZJYWVDbDVuOStDTlFMbFA4ZG5mOE1ZQUo3RmR6eE5ONU09IiwidmVyaWZpZXIiOiJMUzB0TFMxQ1JVZEpUaUJEUlZKVVNVWkpRMEZVUlMwdExTMHRDazFKU1VoVlJFTkRRblJoWjBGM1NVSkJaMGxWUTNCWVNXSTBiMnA2UlZvMVUyOHJTbFZrZURkVFkwSXlkVWc0ZDBObldVbExiMXBKZW1vd1JVRjNUWGNLVG5wRlZrMUNUVWRCTVZWRlEyaE5UV015Ykc1ak0xSjJZMjFWZFZwSFZqSk5ValIzU0VGWlJGWlJVVVJGZUZaNllWZGtlbVJIT1hsYVV6RndZbTVTYkFwamJURnNXa2RzYUdSSFZYZElhR05PVFdwWmVFMUVRVFJOUkdkNVQwUlZlRmRvWTA1TmFsbDRUVVJCTkUxRVozcFBSRlY0VjJwQlFVMUdhM2RGZDFsSUNrdHZXa2w2YWpCRFFWRlpTVXR2V2tsNmFqQkVRVkZqUkZGblFVVm9iRmRzVFRkQ04wVXJOR3hVTmtaeU1VRk5aMnhwTVZwalRHMUlabkk0WTJWdU1GZ0tNWEpQWTBsSU9IaHBjVkpxYzBkak5GaGhNV3BFVmpWWVNrNTFWbXhFUm5wWlQyRlNjSFl5TUdnNWVTOVdkbk5GYWpaUFEwSm1WWGRuWjFoNFRVRTBSd3BCTVZWa1JIZEZRaTkzVVVWQmQwbElaMFJCVkVKblRsWklVMVZGUkVSQlMwSm5aM0pDWjBWR1FsRmpSRUY2UVdaQ1owNVdTRk5OUlVkRVFWZG5RbFJtQ2pBcmJsQldhVkZTYkhadGJ6SlBhMjlXWVV4SFRHaG9hMUI2UW5wQ1owNVdTRkpGUWtGbU9FVmhWRUp1YUcxV2IyUklVbmRqZW05MlRESmtjR1JIYURFS1dXazFhbUl5TUhabFZ6RjJaRWRWZG1JeVRqQmlNMDVzWW01T2JFeFhiSFZaYlRrMFRGZEdlbU15Ykhwa1IwWjFaRU00ZFZveWJEQmhTRlpwVEROa2RncGpiWFJ0WWtjNU0yTjVPWGRrVjBwellWaE9iMHhYUm5kalF6VTFZbGQ0UVdOdFZtMWplVGt3V1Zka2Vrd3pXWGRNYWtsMVRWUkJOVUpuYjNKQ1owVkZDa0ZaVHk5TlFVVkNRa04wYjJSSVVuZGplbTkyVEROU2RtRXlWblZNYlVacVpFZHNkbUp1VFhWYU1td3dZVWhXYVdSWVRteGpiVTUyWW01U2JHSnVVWFVLV1RJNWRFMUNTVWREYVhOSFFWRlJRbWMzT0hkQlVVbEZRa2hDTVdNeVozZE9aMWxMUzNkWlFrSkJSMFIyZWtGQ1FYZFJiMXBxVFhkYWFtaG9UV3BzYlFwWmJWVjVUV3BWZDA0eVRUSlBSMHBzVFZSV2FFNVhWVE5OZW1Sc1RucGpNRTlYUm1sYVIxVTBUWHBCYWtKbmIzSkNaMFZGUVZsUEwwMUJSVVZDUWxaUkNtUlhTbk5oV0U1dlNVVTVhbVJIT1ZSYVZ6VjZXbE5DYUdOSVFYZE1VVmxMUzNkWlFrSkJSMFIyZWtGQ1FsRlJabVZYTVhaa1IxVjJZakpPTUdJelRtd0tZbTVPYkV4WGJIVlpiVGswVEZkR2VtTXliSHBrUjBaMVpFUkJaVUpuYjNKQ1owVkZRVmxQTDAxQlJVZENRa0o1V2xkYWVrd3pVbWhhTTAxMlpHcEJkUXBOYVRSNFRVUnpSME5wYzBkQlVWRkNaemM0ZDBGUlowVk1VWGR5WVVoU01HTklUVFpNZVRrd1lqSjBiR0pwTldoWk0xSndZakkxZWt4dFpIQmtSMmd4Q2xsdVZucGFXRXBxWWpJMU1GcFhOVEJNYlU1MllsUkNNVUpuYjNKQ1owVkZRVmxQTDAxQlJVcENSMk5OV2xkb01HUklRbnBQYVRoMldqSnNNR0ZJVm1rS1RHMU9kbUpUT1RWaVZ6a3dXbE01ZGxrelVuWmpNbFoxWXpKVmRHRlhOV2xpTTJkMFdWaE9lbUZZVGpCWlZ6VXdUSGsxYm1GWVVtOWtWMGwyWkRJNWVRcGhNbHB6WWpOa2Vrd3pRakZaYlhod1l6Sm5kRmxZUW5kTWJteDBZa1ZDZVZwWFducE1NMUpvV2pOTmRtUnFRWFZOYVRSNFRVUm5SME5wYzBkQlVWRkNDbWMzT0hkQlVXOUZTMmQzYjFwcVRYZGFhbWhvVFdwc2JWbHRWWGxOYWxWM1RqSk5NazlIU214TlZGWm9UbGRWTTAxNlpHeE9lbU13VDFkR2FWcEhWVFFLVFhwQlpFSm5iM0pDWjBWRlFWbFBMMDFCUlV4Q1FUaE5SRmRrY0dSSGFERlphVEZ2WWpOT01GcFhVWGRSWjFsTFMzZFpRa0pCUjBSMmVrRkNSRUZSTUFwRVJFcHZaRWhTZDJONmIzWk1NbVJ3WkVkb01WbHBOV3BpTWpCMlpWY3hkbVJIVlhaaU1rNHdZak5PYkdKdVRteE1WMngxV1cwNU5FeFhSbnBqTW14NkNtUkhSblZrUkVFMFFtZHZja0puUlVWQldVOHZUVUZGVGtKRGIwMUxSMWw2VFVkWk5GbFVTVFZhYlVwc1RXcEpNVTFFWkdwT2FtaHBXbFJGTVZsVVZtd0tUbnBOTTFwVVl6Tk9SR3hvV1cxU2JFOUVUWGRKUVZsTFMzZFpRa0pCUjBSMmVrRkNSR2RSVTBSQ1FubGFWMXA2VEROU2FGb3pUWFprYWtGMVRXazBlQXBOUW05SFEybHpSMEZSVVVKbk56aDNRVkU0UlVSQmQwdE5WRkYzVDBSQmVrNXFZekZPZWtGdlFtZHZja0puUlVWQldVOHZUVUZGVVVKQ2IwMUhSMmd3Q21SSVFucFBhVGgyV2pKc01HRklWbWxNYlU1MllsTTVOV0pYT1RCYVZFRlhRbWR2Y2tKblJVVkJXVTh2VFVGRlVrSkJaMDFDYWtVeFRWUnJORTE2UWpFS1FtZHZja0puUlVWQldVOHZUVUZGVTBKSFkwMWFWMmd3WkVoQ2VrOXBPSFphTW13d1lVaFdhVXh0VG5aaVV6azFZbGM1TUZwVE9YWlpNMUoyWXpKV2RRcGpNbFYwWVZjMWFXSXpaM1JaV0U1NllWaE9NRmxYTlRCTWVUVnVZVmhTYjJSWFNYWmtNamw1WVRKYWMySXpaSHBNTTBJeFdXMTRjR015WjNSWldFSjNDa3h1YkhSaVJVSjVXbGRhZWt3elVtaGFNMDEyWkdwQmRVMXBOSGhOUkdkSFEybHpSMEZSVVVKbk56aDNRVkpOUlV0bmQyOWFhazEzV21wb2FFMXFiRzBLV1cxVmVVMXFWWGRPTWsweVQwZEtiRTFVVm1oT1YxVXpUWHBrYkU1Nll6QlBWMFpwV2tkVk5FMTZRVlZDWjI5eVFtZEZSVUZaVHk5TlFVVlZRa0ZaVFFwQ1NFSXhZekpuZDFwbldVdExkMWxDUWtGSFJIWjZRVUpHVVZKWlJFWmFiMlJJVW5kamVtOTJUREprY0dSSGFERlphVFZxWWpJd2RtVlhNWFprUjFWMkNtSXlUakJpTTA1c1ltNU9iRXhYYkhWWmJUazBURmRHZW1NeWJIcGtSMFoxWkVNNWFGa3pVbkJpTWpWNlRETktNV0p1VFhaTmVtTXpUa1JyTkU5RVJYa0tUbFJyZGxsWVVqQmFWekYzWkVoTmRrMVVRVmRDWjI5eVFtZEZSVUZaVHk5TlFVVlhRa0ZuVFVKdVFqRlpiWGh3V1hwQ1lrSm5iM0pDWjBWRlFWbFBMd3BOUVVWWlFrVXdUVk16U214alJ6ZzJaVmN4ZG1SSFZrRk5WRlY0VDFSbmVrd3lPV3BrUnpsNldsYzFlbHBUTVhCaWJVcDJaVU14YUdNelRuQmpNMUpvQ21KdVVrRk5WRkYzVDBSQmVrNXFZekZPZW5CNVdsZFpObU50Vm0xamVUa3dXVmRrZWt3eldYZE1ha2wxVFZSRFFtbFJXVXRMZDFsQ1FrRklWMlZSU1VVS1FXZFNOMEpJYTBGa2QwSXhRVTR3T1UxSGNrZDRlRVY1V1hoclpVaEtiRzVPZDB0cFUydzJORE5xZVhRdk5HVkxZMjlCZGt0bE5rOUJRVUZDYjFKeGFBcExWSE5CUVVGUlJFRkZXWGRTUVVsblRqWjVTRWR6U3pWVWVFZHZSalpYTjI5S2NUaHZWVU55Tld0a2RraFZjMmRHSzB0M2JIcE1XVWxYVlVOSlIzcFNDbXBMYW05dWFXNVJkalJOTnk5WlpHTTBSM1UyUW01YVkya3dWMUpJTkd4SFIwY3JhVTgyTjBkTlFXOUhRME54UjFOTk5EbENRVTFFUVRKblFVMUhWVU1LVFZGRGJHZHZaVXhuWmxaaFozbE5XUzlZU0VKWVpHbG5iMlZCVkZSSlNqTjZSRWR4WTBwdmFYQlJiakpxY2pWVVJYcEZMMFk0Um5KdlZIaGpNRUlyVFFwUVFqaERUVUZ1YjFCR1ZreHlhRkp6VlZSclFsbHBhU3RDZW05a2JUbENNbXBHYVZkelNWcHdaR3RJUTJwMGNXaE1kWHBOVDA5T1RVWnRlakJuTUZNM0NqWmlaMVpYWnowOUNpMHRMUzB0UlU1RUlFTkZVbFJKUmtsRFFWUkZMUzB0TFMwSyJ9XX19",
+                "inclusionPromise": {
+                  "signedEntryTimestamp": "MEYCIQC89Vbw5lS9DJ197lJCif/15mYb3BKDtxFb75CpKwwoKAIhANKHrHWRLvUn/SVAgx779Uiveao2bttgXv5evRW+8z4b"
+                },
+                "inclusionProof": {
+                  "checkpoint": {
+                    "envelope": "rekor.sigstore.dev - 1193050959916656506\n3022583954\nRFYswbHm2jqKOun5Uak82E+aunkG+cDM5O4ubnfF38A=\n\n— rekor.sigstore.dev wNI9ajBFAiEAz1zCVO3zYuqDYmmw/cRpdj+HxNBcWzf+qZ5GZT6h6awCIByW01SvV5vBPZmPK3YslvRNdmEFrnmRcZdinZf4MnBy\n"
+                  },
+                  "hashes": [
+                    "U4mkY2EWzQ4xU5GnOZ/1HMkAEqu6RtCe/6CMRftmz1Q=",
+                    "/Zuv1/Vn7PVIKPhqY2cVu/rYERaHKPm/RsUsK4EJWKU=",
+                    "VQxZs+t8r/WcbspJusragFzzjvKIG3H7Ob39CVQEYmY=",
+                    "B9eLTs8H+EVQuz9GxDjNGGd/mDphN1nGxpytOlaRW+s=",
+                    "VvcXwJDnX9L94l/o8Bl0XFmIp4NNrhIw0KqovQVvKRs=",
+                    "2s7x9bQQNtQIV6mHEsdGVMwllS2G0TJd5iS7XUikujE=",
+                    "BDAiC9HZjaHjArfglRcNeb0O/MysousIiyq4ZdyzgHc=",
+                    "2rrl1jZBPt0pHDNXSdMv6rVX2KvlkZetWfqn1kiVozE=",
+                    "U2Lu+9MykWMnaNJ4ZDPA1Lf1IbEMoOgOI4mx81j62BY=",
+                    "snCDrbmGwm8KJrDnwJ706zG7fAbw20RhAA6260+EUGs=",
+                    "v3DabFytB0zFrppPFKhtr2w1DEWwEQJzZYSyqcUUEzQ=",
+                    "oaJjyG43GWWmiMKLiGxMS8KlWpXehmQWgXRHk/yTXx0=",
+                    "5NdDmroM7NPqCWvkK/2MgztQhPfASGD39l1oM3X/4Xw=",
+                    "S0K3yoNmY86X8nFeSBgWlb3CDEqXg+5oVroXNvnM+mM=",
+                    "xGHbkjO/PXHGEwHvm5UqRjcsT7/iwSQXxidi4cIY51A=",
+                    "hafZfJdzUX/yyCr3Anv7Qq1DWVaWxotaclNRcl/O9SQ=",
+                    "NlOclldmKPA1tMKIskqHAwuQDYHp31YwpK+OOMrMccc=",
+                    "qxzHanAzz57SDdmJe0B7bJK72NTIBbwEMGBBKvDOROw=",
+                    "xH/DCseLHr9eKoYT8qsORZK7zVdEGYWHuVtsVrD95wY="
+                  ],
+                  "logIndex": "3022583881",
+                  "rootHash": "RFYswbHm2jqKOun5Uak82E+aunkG+cDM5O4ubnfF38A=",
+                  "treeSize": "3022583954"
+                },
+                "integratedTime": "1791448132",
+                "kindVersion": {
+                  "kind": "dsse",
+                  "version": "0.0.1"
+                },
+                "logId": {
+                  "keyId": "wNI9atQGlz+VWfO6LRygH4QUfY/8W4RFwiT5i5WRgB0="
+                },
+                "logIndex": "3144488143"
+              }
+            ]
+          }
+        }
+      }
+    },
+    "capabilities": [
+      "storage",
+      "auth",
+      "gmail",
+      "model",
+      "glance",
+      "octos.session.open",
+      "octos.turn.start"
+    ],
+    "network": {
+      "hosts": []
+    },
+    "storage": {
+      "max_bytes": null,
+      "accounts": true
+    },
+    "compute": {
+      "instruction_budget": null,
+      "memory_bytes": null
+    },
+    "agent": {
+      "profile": "read-only",
+      "tools": [
+        "ask_user_question"
+      ],
+      "max_iterations": null,
+      "token_budget": null,
+      "model": {
+        "needs": [
+          "tool_calling"
+        ],
+        "tier": "standard",
+        "local_only": false
+      },
+      "background": true,
+      "triggers": {
+        "events": [
+          "inboxassistant.new_message"
+        ]
+      },
+      "instructions": "AGENT.md",
+      "skills": [
+        "incoming-mail-triage"
+      ]
+    },
+    "requires": [
+      "publisher-github-v1"
+    ]
+  },
+  "listing": {
+    "schema": 1,
+    "subtitle": "Gmail reply and selective-notification preview",
+    "description": "MacOS developer preview: read Gmail, edit a shared reply through Email / Reply / Chat, and review the exact saved reply in the host before sending. Uses host-managed Google authorization and optional consented app-agent tools; credentials stay in the host. Fresh GitHub-published app identity with separate storage/account grants from the legacy sample. Requires contract 1.8.0 / publisher-github-v1 and compatible connected services. Includes fictional local UI states. Publishing and local UI tests do not validate live Google login, provider writes, model behavior or physical approval. Android Google authorization is unavailable; only macOS is advertised.",
+    "category": "productivity",
+    "keywords": [
+      "email",
+      "gmail",
+      "reply",
+      "sample"
+    ],
+    "screenshots": [
+      "screenshots/01-main.png",
+      "screenshots/03-reply.png",
+      "screenshots/02-chat.png"
+    ],
+    "icon": "assets/icon.svg",
+    "platforms": [
+      "macos"
+    ],
+    "publisher": {
+      "name": "ymote",
+      "support": "https://github.com/ymote/octosense-inbox-assistant/issues",
+      "privacy_policy_url": "https://github.com/ymote/octosense-inbox-assistant/blob/main/PRIVACY.md"
+    },
+    "release_notes": "0.2.1: generated release receipts now distinguish release creation from App Hub admission, and direct publishers to open or update the existing submission issue. App UI, tool permissions and storage layout are unchanged from 0.2.0. This immutable update supports verified install/update and local-draft retention checks; live Google/model/provider writes remain outside the test scope.",
+    "age_rating": "all",
+    "license": "Apache-2.0"
+  },
+  "tools": [
+    {
+      "name": "inboxassistant.messages",
+      "description": "List message IDs for this account and selected Gmail label. Use page_token when present.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "connection": {
+            "maxLength": 256,
+            "type": "string"
+          },
+          "label": {
+            "maxLength": 256,
+            "type": "string"
+          },
+          "page_token": {
+            "maxLength": 2048,
+            "type": "string"
+          }
+        },
+        "required": [
+          "connection"
+        ],
+        "type": "object"
+      },
+      "output_schema": {
+        "type": "object"
+      },
+      "risk": "read",
+      "background": true,
+      "shareable": false,
+      "private_data": true,
+      "implemented_by": "host-service"
+    },
+    {
+      "name": "inboxassistant.message",
+      "description": "Read the bound email as plain text, with an explicit notice for omitted attachments.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "connection": {
+            "maxLength": 256,
+            "type": "string"
+          },
+          "message_id": {
+            "maxLength": 256,
+            "type": "string"
+          }
+        },
+        "required": [
+          "connection",
+          "message_id"
+        ],
+        "type": "object"
+      },
+      "output_schema": {
+        "type": "object"
+      },
+      "risk": "read",
+      "background": true,
+      "shareable": false,
+      "private_data": true,
+      "implemented_by": "host-service"
+    },
+    {
+      "name": "inboxassistant.draft_open",
+      "description": "Open or restore the one authoritative local reply draft for this email. Does not send.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "connection": {
+            "maxLength": 256,
+            "type": "string"
+          },
+          "message_id": {
+            "maxLength": 256,
+            "type": "string"
+          }
+        },
+        "required": [
+          "connection",
+          "message_id"
+        ],
+        "type": "object"
+      },
+      "output_schema": {
+        "type": "object"
+      },
+      "risk": "act",
+      "background": true,
+      "shareable": false,
+      "private_data": true,
+      "implemented_by": "host-service"
+    },
+    {
+      "name": "inboxassistant.draft_get",
+      "description": "Read the exact saved draft body, revision and submission state.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "connection": {
+            "maxLength": 256,
+            "type": "string"
+          },
+          "draft": {
+            "maxLength": 256,
+            "type": "string"
+          }
+        },
+        "required": [
+          "connection",
+          "draft"
+        ],
+        "type": "object"
+      },
+      "output_schema": {
+        "type": "object"
+      },
+      "risk": "read",
+      "background": true,
+      "shareable": false,
+      "private_data": true,
+      "implemented_by": "host-service"
+    },
+    {
+      "name": "inboxassistant.draft_edit",
+      "description": "Save an explicitly requested draft change only against its current revision. Never authorizes sending.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "maxLength": 12000,
+            "type": "string"
+          },
+          "connection": {
+            "maxLength": 256,
+            "type": "string"
+          },
+          "draft": {
+            "maxLength": 256,
+            "type": "string"
+          },
+          "provenance": {
+            "enum": [
+              "model"
+            ],
+            "type": "string"
+          },
+          "revision": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "subject": {
+            "maxLength": 512,
+            "type": "string"
+          },
+          "to": {
+            "maxLength": 320,
+            "type": "string"
+          }
+        },
+        "required": [
+          "connection",
+          "draft",
+          "revision",
+          "to",
+          "subject",
+          "body",
+          "provenance"
+        ],
+        "type": "object"
+      },
+      "output_schema": {
+        "type": "object"
+      },
+      "risk": "act",
+      "background": true,
+      "shareable": false,
+      "private_data": true,
+      "implemented_by": "host-service"
+    },
+    {
+      "name": "inboxassistant.event_status",
+      "description": "Read the durable decision, if any, for this incoming Gmail event.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "connection": {
+            "maxLength": 256,
+            "type": "string"
+          },
+          "event_id": {
+            "maxLength": 256,
+            "type": "string"
+          }
+        },
+        "required": [
+          "connection",
+          "event_id"
+        ],
+        "type": "object"
+      },
+      "output_schema": {
+        "type": "object"
+      },
+      "risk": "read",
+      "background": true,
+      "shareable": false,
+      "private_data": true,
+      "implemented_by": "host-service"
+    },
+    {
+      "name": "inboxassistant.event_decide",
+      "description": "Record a quiet relevance decision, or acknowledge a successfully published card. Host verifies publication; prose cannot replace a receipt.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "connection": {
+            "maxLength": 256,
+            "type": "string"
+          },
+          "decision": {
+            "enum": [
+              "quiet",
+              "published"
+            ],
+            "type": "string"
+          },
+          "event_id": {
+            "maxLength": 256,
+            "type": "string"
+          },
+          "reason": {
+            "maxLength": 500,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "connection",
+          "event_id",
+          "decision",
+          "reason"
+        ],
+        "type": "object"
+      },
+      "output_schema": {
+        "type": "object"
+      },
+      "risk": "act",
+      "background": true,
+      "shareable": false,
+      "private_data": true,
+      "implemented_by": "host-service"
+    },
+    {
+      "name": "inboxassistant.notify",
+      "description": "Publish one important-email workspace using only the admitted glance-workspace.splash template and initial.message. The host binds its connection. Use the exact message ID as card_id; notify only if relevant. Executable card source is not accepted.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "card_id": {
+            "maxLength": 64,
+            "type": "string"
+          },
+          "expires": {
+            "maximum": 604800,
+            "minimum": 60,
+            "type": "integer"
+          },
+          "initial": {
+            "additionalProperties": false,
+            "properties": {
+              "message": {
+                "additionalProperties": false,
+                "properties": {
+                  "body": {
+                    "maxLength": 100,
+                    "type": "string"
+                  },
+                  "from": {
+                    "maxLength": 320,
+                    "type": "string"
+                  },
+                  "id": {
+                    "maxLength": 64,
+                    "type": "string"
+                  },
+                  "subject": {
+                    "maxLength": 512,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "from",
+                  "subject",
+                  "body"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "message"
+            ],
+            "type": "object"
+          },
+          "notify": {
+            "type": "boolean"
+          },
+          "priority": {
+            "maximum": 100,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "summary": {
+            "maxLength": 200,
+            "type": "string"
+          },
+          "template": {
+            "enum": [
+              "glance-workspace.splash"
+            ],
+            "type": "string"
+          },
+          "title": {
+            "maxLength": 80,
+            "type": "string"
+          }
+        },
+        "required": [
+          "card_id",
+          "title",
+          "summary",
+          "template",
+          "initial",
+          "notify"
+        ],
+        "type": "object"
+      },
+      "output_schema": {
+        "type": "object"
+      },
+      "risk": "act",
+      "background": true,
+      "shareable": false,
+      "private_data": true,
+      "implemented_by": "host-service"
+    },
+    {
+      "name": "inboxassistant.withdraw",
+      "description": "Retire a processed message card after actual completion; does not delete its draft or mail.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "card_id": {
+            "maxLength": 64,
+            "type": "string"
+          }
+        },
+        "required": [
+          "card_id"
+        ],
+        "type": "object"
+      },
+      "output_schema": {
+        "type": "object"
+      },
+      "risk": "act",
+      "background": true,
+      "shareable": false,
+      "private_data": true,
+      "implemented_by": "host-service"
+    }
+  ],
+  "artifact": "artifacts/io.github.ymote.inboxassistant-0.2.1.bundle",
+  "publisher": "github:1408036757",
+  "publisher_key": "",
+  "source": {
+    "repository": "https://github.com/ymote/octosense-inbox-assistant",
+    "commit": "f30f8a29fbe22507c68be15a5e737e7749abde83"
+  },
+  "status": {
+    "state": "offered"
+  },
+  "admitted": "2026-10-08"
+}

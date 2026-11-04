@@ -1,0 +1,31 @@
+{
+  "added_artifacts": [
+    {
+      "bundle": "artifacts/org.ymote.componentdemo.first-0.1.0.bundle",
+      "index": "index/org.ymote.componentdemo.first-0.1.0.json",
+      "pack": "artifacts/org.ymote.componentdemo.first-0.1.0.bundle.pack.json"
+    },
+    {
+      "bundle": "artifacts/org.ymote.componentdemo.second-0.1.0.bundle",
+      "index": "index/org.ymote.componentdemo.second-0.1.0.json",
+      "pack": "artifacts/org.ymote.componentdemo.second-0.1.0.bundle.pack.json"
+    },
+    {
+      "component": "artifacts/org.ymote.componentdemo.hostcall-0.1.0.wasm",
+      "index": "index/components/org.ymote.componentdemo.hostcall-0.1.0.json"
+    },
+    {
+      "component": "artifacts/org.ymote.componentdemo.markdown-0.1.0.wasm",
+      "index": "index/components/org.ymote.componentdemo.markdown-0.1.0.json"
+    }
+  ],
+  "base_sequence": 15,
+  "base_sha256": "de8536252587d56d0c4d9a0d9f236cc791becc920d51c8572870586afa14caed",
+  "candidate_sha256": "7eb44292bf44c25fe3eb9ccc325c802616381b626686bfc90b57b1578679a6e9",
+  "executed_app_code": false,
+  "payload_sha256": "87bde245807a5ff6a1b3297c409d4ef6684414e47b038519a196feab29f42a7e",
+  "published": false,
+  "schema": 1,
+  "sequence": 16,
+  "status": "candidate-only-awaiting-admin-attestation"
+}

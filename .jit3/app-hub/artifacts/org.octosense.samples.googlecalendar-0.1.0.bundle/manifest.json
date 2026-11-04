@@ -1,0 +1,47 @@
+{
+  "agent": {
+    "instructions": "AGENT.md",
+    "max_iterations": null,
+    "model": {
+      "local_only": false,
+      "needs": [
+        "tool_calling"
+      ],
+      "tier": "standard"
+    },
+    "profile": "read-only",
+    "token_budget": null,
+    "tools": []
+  },
+  "capabilities": [
+    "storage",
+    "auth",
+    "gcalendar",
+    "glance",
+    "octos.session.open",
+    "octos.turn.start"
+  ],
+  "compute": {
+    "instruction_budget": null,
+    "memory_bytes": null
+  },
+  "id": "org.octosense.samples.googlecalendar",
+  "integrity": {
+    "bundle_blake3": "3e262601ebb6092fda6bb10862b92d05a641cb76f84c9e037f25296eda69459a",
+    "signature": {
+      "key_id": "ymote",
+      "value": "c55dafd37f2366d23080500a0a03943ddedb45463bd93117d03513c6bee5cb693f39cbc3d2c0b6b9e7b2b0a9fe4ddf5d9f3b8b4b95016880c434bd4de1d0a201"
+    }
+  },
+  "name": "Google Calendar",
+  "network": {
+    "hosts": []
+  },
+  "schema": 1,
+  "storage": {
+    "accounts": true,
+    "agent_workspace": "none",
+    "max_bytes": 1048576
+  },
+  "version": "0.1.0"
+}

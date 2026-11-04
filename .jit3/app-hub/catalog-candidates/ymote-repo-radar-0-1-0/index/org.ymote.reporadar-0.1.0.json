@@ -1,0 +1,557 @@
+{
+  "manifest": {
+    "schema": 1,
+    "id": "org.ymote.reporadar",
+    "version": "0.1.0",
+    "name": "Repo Radar",
+    "integrity": {
+      "bundle_blake3": "90463f61990f62f1610bbcd9e3be76b7ca4bd046c05c9f2c222cbd92267bf136",
+      "signature": null,
+      "github": {
+        "repository": "ymote/octosense-repo-radar",
+        "repository_id": "1413670501",
+        "owner_id": "151983",
+        "workflow": ".github/workflows/publish-app.yml",
+        "tag": "v0.1.0",
+        "commit": "ec202f7d6c8a192a80353a1640c19786db3f77e1",
+        "attestation": {
+          "dsseEnvelope": {
+            "payload": "eyJfdHlwZSI6Imh0dHBzOi8vaW4tdG90by5pby9TdGF0ZW1lbnQvdjEiLCJzdWJqZWN0IjpbeyJuYW1lIjoib2N0b3NlbnNlLWFwcC1tYW5pZmVzdC5qc29uIiwiZGlnZXN0Ijp7InNoYTI1NiI6ImQ4MGZmNmUzOGFhYzk0Yzc1NjIyNTFlZTA2YjI5MDIwNTFmZWE4ODUzNzFmYWIwOGRhZjFlOWU2NDYxNjRiM2UifX1dLCJwcmVkaWNhdGVUeXBlIjoiaHR0cHM6Ly9zbHNhLmRldi9wcm92ZW5hbmNlL3YxIiwicHJlZGljYXRlIjp7ImJ1aWxkRGVmaW5pdGlvbiI6eyJidWlsZFR5cGUiOiJodHRwczovL2FjdGlvbnMuZ2l0aHViLmlvL2J1aWxkdHlwZXMvd29ya2Zsb3cvdjEiLCJleHRlcm5hbFBhcmFtZXRlcnMiOnsid29ya2Zsb3ciOnsicmVmIjoicmVmcy90YWdzL3YwLjEuMCIsInJlcG9zaXRvcnkiOiJodHRwczovL2dpdGh1Yi5jb20veW1vdGUvb2N0b3NlbnNlLXJlcG8tcmFkYXIiLCJwYXRoIjoiLmdpdGh1Yi93b3JrZmxvd3MvcHVibGlzaC1hcHAueW1sIn19LCJpbnRlcm5hbFBhcmFtZXRlcnMiOnsiZ2l0aHViIjp7ImV2ZW50X25hbWUiOiJwdXNoIiwicmVwb3NpdG9yeV9pZCI6IjE0MTM2NzA1MDEiLCJyZXBvc2l0b3J5X293bmVyX2lkIjoiMTUxOTgzIiwicnVubmVyX2Vudmlyb25tZW50IjoiZ2l0aHViLWhvc3RlZCJ9fSwicmVzb2x2ZWREZXBlbmRlbmNpZXMiOlt7InVyaSI6ImdpdCtodHRwczovL2dpdGh1Yi5jb20veW1vdGUvb2N0b3NlbnNlLXJlcG8tcmFkYXJAcmVmcy90YWdzL3YwLjEuMCIsImRpZ2VzdCI6eyJnaXRDb21taXQiOiJlYzIwMmY3ZDZjOGExOTJhODAzNTNhMTY0MGMxOTc4NmRiM2Y3N2UxIn19XX0sInJ1bkRldGFpbHMiOnsiYnVpbGRlciI6eyJpZCI6Imh0dHBzOi8vZ2l0aHViLmNvbS95bW90ZS9vY3Rvc2Vuc2UtcmVwby1yYWRhci8uZ2l0aHViL3dvcmtmbG93cy9wdWJsaXNoLWFwcC55bWxAcmVmcy90YWdzL3YwLjEuMCJ9LCJtZXRhZGF0YSI6eyJpbnZvY2F0aW9uSWQiOiJodHRwczovL2dpdGh1Yi5jb20veW1vdGUvb2N0b3NlbnNlLXJlcG8tcmFkYXIvYWN0aW9ucy9ydW5zLzM4MDg4MDcyOTM2L2F0dGVtcHRzLzEifX19fQ==",
+            "payloadType": "application/vnd.in-toto+json",
+            "signatures": [
+              {
+                "sig": "MEUCIQCSS3WWWS7MlFZiO76b+eVOsv+43K1EXUrgWeJpAGK8fgIgScpMuJqZaLdenLVKNmD69lXihQNmd9JxaYFzsfz9F0Y="
+              }
+            ]
+          },
+          "mediaType": "application/vnd.dev.sigstore.bundle.v0.3+json",
+          "verificationMaterial": {
+            "certificate": {
+              "rawBytes": "MIIHLjCCBrSgAwIBAgIUXwCV2xHxOVd43R2RT/HExzcz/BYwCgYIKoZIzj0EAwMwNzEVMBMGA1UEChMMc2lnc3RvcmUuZGV2MR4wHAYDVQQDExVzaWdzdG9yZS1pbnRlcm1lZGlhdGUwHhcNMjYxMDEwMjEzNjM2WhcNMjYxMDEwMjE0NjM2WjAAMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEelQ5wIpmoiJwycMCsWwEsVKgp+b3dYiXiZNkPbV1aPhZHZUoRPTEx5gKOwaC3E+SGodD/4aCml5cFyVAwfvizqOCBdMwggXPMA4GA1UdDwEB/wQEAwIHgDATBgNVHSUEDDAKBggrBgEFBQcDAzAfBgNVHSMEGDAWgBTf0+nPViQRlvmo2OkoVaLGLhhkPzBuBgNVHREBAf8EZDBihmBodHRwczovL2dpdGh1Yi5jb20veW1vdGUvb2N0b3NlbnNlLXJlcG8tcmFkYXIvLmdpdGh1Yi93b3JrZmxvd3MvcHVibGlzaC1hcHAueW1sQHJlZnMvdGFncy92MC4xLjAwOQYKKwYBBAGDvzABAQQraHR0cHM6Ly90b2tlbi5hY3Rpb25zLmdpdGh1YnVzZXJjb250ZW50LmNvbTASBgorBgEEAYO/MAECBARwdXNoMDYGCisGAQQBg78wAQMEKGVjMjAyZjdkNmM4YTE5MmE4MDM1M2ExNjQwYzE5Nzg2ZGIzZjc3ZTEwIwYKKwYBBAGDvzABBAQVUHVibGlzaCBPY3RvU2Vuc2UgYXBwMCgGCisGAQQBg78wAQUEGnltb3RlL29jdG9zZW5zZS1yZXBvLXJhZGFyMB4GCisGAQQBg78wAQYEEHJlZnMvdGFncy92MC4xLjAwOwYKKwYBBAGDvzABCAQtDCtodHRwczovL3Rva2VuLmFjdGlvbnMuZ2l0aHVidXNlcmNvbnRlbnQuY29tMHAGCisGAQQBg78wAQkEYgxgaHR0cHM6Ly9naXRodWIuY29tL3ltb3RlL29jdG9zZW5zZS1yZXBvLXJhZGFyLy5naXRodWIvd29ya2Zsb3dzL3B1Ymxpc2gtYXBwLnltbEByZWZzL3RhZ3MvdjAuMS4wMDgGCisGAQQBg78wAQoEKgwoZWMyMDJmN2Q2YzhhMTkyYTgwMzUzYTE2NDBjMTk3ODZkYjNmNzdlMTAdBgorBgEEAYO/MAELBA8MDWdpdGh1Yi1ob3N0ZWQwPQYKKwYBBAGDvzABDAQvDC1odHRwczovL2dpdGh1Yi5jb20veW1vdGUvb2N0b3NlbnNlLXJlcG8tcmFkYXIwOAYKKwYBBAGDvzABDQQqDChlYzIwMmY3ZDZjOGExOTJhODAzNTNhMTY0MGMxOTc4NmRiM2Y3N2UxMCAGCisGAQQBg78wAQ4EEgwQcmVmcy90YWdzL3YwLjEuMDAaBgorBgEEAYO/MAEPBAwMCjE0MTM2NzA1MDEwKAYKKwYBBAGDvzABEAQaDBhodHRwczovL2dpdGh1Yi5jb20veW1vdGUwFgYKKwYBBAGDvzABEQQIDAYxNTE5ODMwcAYKKwYBBAGDvzABEgRiDGBodHRwczovL2dpdGh1Yi5jb20veW1vdGUvb2N0b3NlbnNlLXJlcG8tcmFkYXIvLmdpdGh1Yi93b3JrZmxvd3MvcHVibGlzaC1hcHAueW1sQHJlZnMvdGFncy92MC4xLjAwOAYKKwYBBAGDvzABEwQqDChlYzIwMmY3ZDZjOGExOTJhODAzNTNhMTY0MGMxOTc4NmRiM2Y3N2UxMBQGCisGAQQBg78wARQEBgwEcHVzaDBhBgorBgEEAYO/MAEVBFMMUWh0dHBzOi8vZ2l0aHViLmNvbS95bW90ZS9vY3Rvc2Vuc2UtcmVwby1yYWRhci9hY3Rpb25zL3J1bnMvMzgwODgwNzI5MzYvYXR0ZW1wdHMvMTAWBgorBgEEAYO/MAEWBAgMBnB1YmxpYzBWBgorBgEEAYO/MAEYBEgMRnJlcG86eW1vdGVAMTUxOTgzL29jdG9zZW5zZS1yZXBvLXJhZGFyQDE0MTM2NzA1MDE6cmVmOnJlZnMvdGFncy92MC4xLjAwgYoGCisGAQQB1nkCBAIEfAR6AHgAdgDdPTBqxscRMmMZHhyZZzcCokpeuN48rf+HinKALynujgAAAaEnvxTZAAAEAwBHMEUCIQDjDiR0FERaRJuThjS5jN09slHkI97mUYD4dhHZ/ItY/gIgQC7v1XmN4OnXYEO4K2BgwHF6srjmA6J5suDA7QLrjPcwCgYIKoZIzj0EAwMDaAAwZQIxALgtf9SKr5XEx45ot9fHdiEaQTEzIndPOfpblwoq5fEsfcU0L/pof6tdT1cosmXHdAIwW9sNt/zj5wCxLcs5cLIpC7A6XmEmUDgucqgzEjYDPzm3X0d2C1PjEyrc/+3l9VKg"
+            },
+            "timestampVerificationData": {},
+            "tlogEntries": [
+              {
+                "canonicalizedBody": "eyJhcGlWZXJzaW9uIjoiMC4wLjEiLCJraW5kIjoiZHNzZSIsInNwZWMiOnsiZW52ZWxvcGVIYXNoIjp7ImFsZ29yaXRobSI6InNoYTI1NiIsInZhbHVlIjoiY2Y4NDQwMWIzMTEzYzI0NGI1ZjQ2N2FkMTVkNGRjZTE4YzQzZTYxZGU1NTQ3OGU1M2M2ZWI2YzI3MjI3MTA2OCJ9LCJwYXlsb2FkSGFzaCI6eyJhbGdvcml0aG0iOiJzaGEyNTYiLCJ2YWx1ZSI6IjZjODFhODdkMmE1NmVmYWUzMGVjZjEyZDc0M2M4YzJjMTE5NzNlMGRiMDc0NDE0MWMwYjU5OGE3NGY4ZmM0MDgifSwic2lnbmF0dXJlcyI6W3sic2lnbmF0dXJlIjoiTUVVQ0lRQ1NTM1dXV1M3TWxGWmlPNzZiK2VWT3N2KzQzSzFFWFVyZ1dlSnBBR0s4ZmdJZ1NjcE11SnFaYUxkZW5MVktObUQ2OWxYaWhRTm1kOUp4YVlGenNmejlGMFk9IiwidmVyaWZpZXIiOiJMUzB0TFMxQ1JVZEpUaUJEUlZKVVNVWkpRMEZVUlMwdExTMHRDazFKU1VoTWFrTkRRbkpUWjBGM1NVSkJaMGxWV0hkRFZqSjRTSGhQVm1RME0xSXlVbFF2U0VWNGVtTjZMMEpaZDBObldVbExiMXBKZW1vd1JVRjNUWGNLVG5wRlZrMUNUVWRCTVZWRlEyaE5UV015Ykc1ak0xSjJZMjFWZFZwSFZqSk5ValIzU0VGWlJGWlJVVVJGZUZaNllWZGtlbVJIT1hsYVV6RndZbTVTYkFwamJURnNXa2RzYUdSSFZYZElhR05PVFdwWmVFMUVSWGROYWtWNlRtcE5NbGRvWTA1TmFsbDRUVVJGZDAxcVJUQk9hazB5VjJwQlFVMUdhM2RGZDFsSUNrdHZXa2w2YWpCRFFWRlpTVXR2V2tsNmFqQkVRVkZqUkZGblFVVmxiRkUxZDBsd2JXOXBTbmQ1WTAxRGMxZDNSWE5XUzJkd0sySXpaRmxwV0dsYVRtc0tVR0pXTVdGUWFGcElXbFZ2VWxCVVJYZzFaMHRQZDJGRE0wVXJVMGR2WkVRdk5HRkRiV3cxWTBaNVZrRjNablpwZW5GUFEwSmtUWGRuWjFoUVRVRTBSd3BCTVZWa1JIZEZRaTkzVVVWQmQwbElaMFJCVkVKblRsWklVMVZGUkVSQlMwSm5aM0pDWjBWR1FsRmpSRUY2UVdaQ1owNVdTRk5OUlVkRVFWZG5RbFJtQ2pBcmJsQldhVkZTYkhadGJ6SlBhMjlXWVV4SFRHaG9hMUI2UW5WQ1owNVdTRkpGUWtGbU9FVmFSRUpwYUcxQ2IyUklVbmRqZW05MlRESmtjR1JIYURFS1dXazFhbUl5TUhabFZ6RjJaRWRWZG1JeVRqQmlNMDVzWW01T2JFeFlTbXhqUnpoMFkyMUdhMWxZU1haTWJXUndaRWRvTVZscE9UTmlNMHB5V20xNGRncGtNMDEyWTBoV2FXSkhiSHBoUXpGb1kwaEJkV1ZYTVhOUlNFcHNXbTVOZG1SSFJtNWplVGt5VFVNMGVFeHFRWGRQVVZsTFMzZFpRa0pCUjBSMmVrRkNDa0ZSVVhKaFNGSXdZMGhOTmt4NU9UQmlNblJzWW1rMWFGa3pVbkJpTWpWNlRHMWtjR1JIYURGWmJsWjZXbGhLYW1JeU5UQmFWelV3VEcxT2RtSlVRVk1LUW1kdmNrSm5SVVZCV1U4dlRVRkZRMEpCVW5ka1dFNXZUVVJaUjBOcGMwZEJVVkZDWnpjNGQwRlJUVVZMUjFacVRXcEJlVnBxWkd0T2JVMDBXVlJGTlFwTmJVVTBUVVJOTVUweVJYaE9hbEYzV1hwRk5VNTZaekphUjBsNldtcGpNMXBVUlhkSmQxbExTM2RaUWtKQlIwUjJla0ZDUWtGUlZsVklWbWxpUjJ4NkNtRkRRbEJaTTFKMlZUSldkV015VldkWldFSjNUVU5uUjBOcGMwZEJVVkZDWnpjNGQwRlJWVVZIYm14MFlqTlNiRXd5T1dwa1J6bDZXbGMxZWxwVE1Ya0tXbGhDZGt4WVNtaGFSMFo1VFVJMFIwTnBjMGRCVVZGQ1p6YzRkMEZSV1VWRlNFcHNXbTVOZG1SSFJtNWplVGt5VFVNMGVFeHFRWGRQZDFsTFMzZFpRZ3BDUVVkRWRucEJRa05CVVhSRVEzUnZaRWhTZDJONmIzWk1NMUoyWVRKV2RVeHRSbXBrUjJ4MlltNU5kVm95YkRCaFNGWnBaRmhPYkdOdFRuWmlibEpzQ21KdVVYVlpNamwwVFVoQlIwTnBjMGRCVVZGQ1p6YzRkMEZSYTBWWlozaG5ZVWhTTUdOSVRUWk1lVGx1WVZoU2IyUlhTWFZaTWpsMFRETnNkR0l6VW13S1RESTVhbVJIT1hwYVZ6VjZXbE14ZVZwWVFuWk1XRXBvV2tkR2VVeDVOVzVoV0ZKdlpGZEpkbVF5T1hsaE1scHpZak5rZWt3elFqRlpiWGh3WXpKbmRBcFpXRUozVEc1c2RHSkZRbmxhVjFwNlRETlNhRm96VFhaa2FrRjFUVk0wZDAxRVowZERhWE5IUVZGUlFtYzNPSGRCVVc5RlMyZDNiMXBYVFhsTlJFcHRDazR5VVRKWmVtaG9UVlJyZVZsVVozZE5lbFY2V1ZSRk1rNUVRbXBOVkdzelQwUmFhMWxxVG0xT2VtUnNUVlJCWkVKbmIzSkNaMFZGUVZsUEwwMUJSVXdLUWtFNFRVUlhaSEJrUjJneFdXa3hiMkl6VGpCYVYxRjNVRkZaUzB0M1dVSkNRVWRFZG5wQlFrUkJVWFpFUXpGdlpFaFNkMk42YjNaTU1tUndaRWRvTVFwWmFUVnFZakl3ZG1WWE1YWmtSMVYyWWpKT01HSXpUbXhpYms1c1RGaEtiR05IT0hSamJVWnJXVmhKZDA5QldVdExkMWxDUWtGSFJIWjZRVUpFVVZGeENrUkRhR3haZWtsM1RXMVpNMXBFV21wUFIwVjRUMVJLYUU5RVFYcE9WRTVvVFZSWk1FMUhUWGhQVkdNMFRtMVNhVTB5V1ROT01sVjRUVU5CUjBOcGMwY0tRVkZSUW1jM09IZEJVVFJGUldkM1VXTnRWbTFqZVRrd1dWZGtla3d6V1hkTWFrVjFUVVJCWVVKbmIzSkNaMFZGUVZsUEwwMUJSVkJDUVhkTlEycEZNQXBOVkUweVRucEJNVTFFUlhkTFFWbExTM2RaUWtKQlIwUjJla0ZDUlVGUllVUkNhRzlrU0ZKM1kzcHZka3d5WkhCa1IyZ3hXV2sxYW1JeU1IWmxWekYyQ21SSFZYZEdaMWxMUzNkWlFrSkJSMFIyZWtGQ1JWRlJTVVJCV1hoT1ZFVTFUMFJOZDJOQldVdExkMWxDUWtGSFJIWjZRVUpGWjFKcFJFZENiMlJJVW5jS1kzcHZka3d5WkhCa1IyZ3hXV2sxYW1JeU1IWmxWekYyWkVkVmRtSXlUakJpTTA1c1ltNU9iRXhZU214alJ6aDBZMjFHYTFsWVNYWk1iV1J3WkVkb01RcFphVGt6WWpOS2NscHRlSFprTTAxMlkwaFdhV0pIYkhwaFF6Rm9ZMGhCZFdWWE1YTlJTRXBzV201TmRtUkhSbTVqZVRreVRVTTBlRXhxUVhkUFFWbExDa3QzV1VKQ1FVZEVkbnBCUWtWM1VYRkVRMmhzV1hwSmQwMXRXVE5hUkZwcVQwZEZlRTlVU21oUFJFRjZUbFJPYUUxVVdUQk5SMDE0VDFSak5FNXRVbWtLVFRKWk0wNHlWWGhOUWxGSFEybHpSMEZSVVVKbk56aDNRVkpSUlVKbmQwVmpTRlo2WVVSQ2FFSm5iM0pDWjBWRlFWbFBMMDFCUlZaQ1JrMU5WVmRvTUFwa1NFSjZUMms0ZGxveWJEQmhTRlpwVEcxT2RtSlRPVFZpVnprd1dsTTVkbGt6VW5aak1sWjFZekpWZEdOdFZuZGllVEY1V1ZkU2FHTnBPV2haTTFKd0NtSXlOWHBNTTBveFltNU5kazE2WjNkUFJHZDNUbnBKTlUxNldYWlpXRkl3V2xjeGQyUklUWFpOVkVGWFFtZHZja0puUlVWQldVOHZUVUZGVjBKQlowMEtRbTVDTVZsdGVIQlpla0pYUW1kdmNrSm5SVVZCV1U4dlRVRkZXVUpGWjAxU2JrcHNZMGM0Tm1WWE1YWmtSMVpCVFZSVmVFOVVaM3BNTWpscVpFYzVlZ3BhVnpWNldsTXhlVnBZUW5aTVdFcG9Xa2RHZVZGRVJUQk5WRTB5VG5wQk1VMUVSVFpqYlZadFQyNUtiRnB1VFhaa1IwWnVZM2s1TWsxRE5IaE1ha0YzQ21kWmIwZERhWE5IUVZGUlFqRnVhME5DUVVsRlprRlNOa0ZJWjBGa1owUmtVRlJDY1hoelkxSk5iVTFhU0doNVdscDZZME52YTNCbGRVNDBPSEptSzBnS2FXNUxRVXg1Ym5WcVowRkJRV0ZGYm5aNFZGcEJRVUZGUVhkQ1NFMUZWVU5KVVVScVJHbFNNRVpGVW1GU1NuVlVhR3BUTldwT01EbHpiRWhyU1RrM2JRcFZXVVEwWkdoSVdpOUpkRmt2WjBsblVVTTNkakZZYlU0MFQyNVlXVVZQTkVzeVFtZDNTRVkyYzNKcWJVRTJTalZ6ZFVSQk4xRk1jbXBRWTNkRFoxbEpDa3R2V2tsNmFqQkZRWGROUkdGQlFYZGFVVWw0UVV4bmRHWTVVMHR5TlZoRmVEUTFiM1E1Wmtoa2FVVmhVVlJGZWtsdVpGQlBabkJpYkhkdmNUVm1SWE1LWm1OVk1Fd3ZjRzltTm5Sa1ZERmpiM050V0Voa1FVbDNWemx6VG5RdmVtbzFkME40VEdOek5XTk1TWEJETjBFMldHMUZiVlZFWjNWamNXZDZSV3BaUkFwUWVtMHpXREJrTWtNeFVHcEZlWEpqTHlzemJEbFdTMmNLTFMwdExTMUZUa1FnUTBWU1ZFbEdTVU5CVkVVdExTMHRMUW89In1dfX0=",
+                "inclusionPromise": {
+                  "signedEntryTimestamp": "MEMCIAJfdY54uRXPwNuL9tSJl3K46A6uFNTlDeJeq2xXDwibAh9dpy4962Dnu+YOUqgC2RwxQiH7xQSYFvXT7NjUlJpX"
+                },
+                "inclusionProof": {
+                  "checkpoint": {
+                    "envelope": "rekor.sigstore.dev - 1193050959916656506\n3072021563\n+HJz3qV+0yKh1bfDQtc39C7KPRsm/17Lk9/CyoBSdt0=\n\n— rekor.sigstore.dev wNI9ajBFAiEA39JNu0qVmypd1NYF3tSM/+7HXKeXKWe3ctF8jgA3slECIE/6C7c4yE3g/4Uuai6qFQ7eBfYeJgYrLx8EyIkq1qD5\n"
+                  },
+                  "hashes": [
+                    "Qjjo8Bjx35fw5KppmDkFOiuJ7WGgcrgLvrmMbySYEU0=",
+                    "GpYxNE+e1V1huCTx2KORKZOAAk6fFbcjkzU7AuA2xUE=",
+                    "jKnIfkl1nDG/rG0cs5yJXz7exECeBBTEDBiBnEQWpeU=",
+                    "ghDD440cDQny30XA7L6tvMCHBQwQJNniBeZ8GfL1t1o=",
+                    "QvoEwN2d5dq3WmoBrOpVEECEgExQjqmT3s4b/AXkGSM=",
+                    "rS5DYkSXpfTkE7v5jU6HwDGxF/h8tF3XWTmB+IQNRUg=",
+                    "QiSkpJEEgfq+mF+5lv/LG7Z/kGYh8Jm9cxQud31SF7w=",
+                    "yIxPeoaNHBg/F4L5M5UoaS1ufvtrt+EB2V076SydZfE=",
+                    "Zg5NxGxCQZBXDWMP5QLK/9FXZKHZUPF2dO5qLl1yM/0=",
+                    "CW2WTbMu29Oa24/QjwGrWoyJowZ6BBLHMxgag6XW0JA=",
+                    "zmOZOBWqj9CYzlFGiZbFMtNMWfo0YOD9R5rZpNfdQY0=",
+                    "aN8BTjAE6JZeiqlO+W2Hb3nN1VGuK7YfE2aquKstSl8=",
+                    "MSHDFdXu+XpAQsW3b+7uu3X/1lF7U4Hl2lvVN2kgMzo=",
+                    "fmjVRgoER6Jol2VYMJ4gjN+gfF4wwC0TUMZi20CW2HE=",
+                    "yZtJI/OFtohEZkvIIM84PxpkPjDCSC7CWyr548rTxAc=",
+                    "om8Mo6jc82xC+xjzZpVSF3bSvjQtzU3hJPp+3MvIbxY=",
+                    "nJQWVVa+CZb+ApRpFBqEy/CaFefHQrKS+uwZgaigR4s=",
+                    "zTOk9U3BGOWhTbct/o1LdKrd5R3BPI2zyVYYtOOjbjo=",
+                    "tH6/k7jMZpY6OZh8hpsqeVPXDhTNxi0YO6neCO8pw3k=",
+                    "hafZfJdzUX/yyCr3Anv7Qq1DWVaWxotaclNRcl/O9SQ=",
+                    "NlOclldmKPA1tMKIskqHAwuQDYHp31YwpK+OOMrMccc=",
+                    "qxzHanAzz57SDdmJe0B7bJK72NTIBbwEMGBBKvDOROw=",
+                    "xH/DCseLHr9eKoYT8qsORZK7zVdEGYWHuVtsVrD95wY="
+                  ],
+                  "logIndex": "3072021313",
+                  "rootHash": "+HJz3qV+0yKh1bfDQtc39C7KPRsm/17Lk9/CyoBSdt0=",
+                  "treeSize": "3072021563"
+                },
+                "integratedTime": "1791668197",
+                "kindVersion": {
+                  "kind": "dsse",
+                  "version": "0.0.1"
+                },
+                "logId": {
+                  "keyId": "wNI9atQGlz+VWfO6LRygH4QUfY/8W4RFwiT5i5WRgB0="
+                },
+                "logIndex": "3193925575"
+              }
+            ]
+          }
+        }
+      }
+    },
+    "capabilities": [
+      "storage",
+      "wasm",
+      "net",
+      "glance",
+      "octos.session.open",
+      "octos.session.history",
+      "octos.turn.start"
+    ],
+    "network": {
+      "hosts": [
+        "api.github.com",
+        "github.com"
+      ]
+    },
+    "storage": {
+      "max_bytes": 8388608
+    },
+    "compute": {
+      "instruction_budget": null,
+      "memory_bytes": null
+    },
+    "agent": {
+      "profile": "read-only",
+      "tools": [],
+      "max_iterations": null,
+      "token_budget": null,
+      "model": {
+        "needs": [
+          "tool_calling"
+        ],
+        "tier": "standard",
+        "local_only": false
+      },
+      "instructions": "AGENT.md"
+    },
+    "host_api": {
+      "required": {
+        "charts.d3": 1
+      }
+    },
+    "requires": [
+      "wasm-components-v1",
+      "host-api-v1",
+      "publisher-github-v1"
+    ]
+  },
+  "listing": {
+    "schema": 1,
+    "subtitle": "A personal watchlist for open-source projects",
+    "description": "Search public GitHub repositories, pin and reorder your favorites, inspect recent pull requests and releases, and keep a local watchlist across restarts. Repo Radar uses its own Rust WebAssembly component for public networking, parsing, caching and persistence. Requires a compatible OctoSense host with native Makepad D3 charts and the component HTTPS fix. Optional chat uses your OctoSense app agent and configured model. No GitHub account is required; pinning does not star a repository on GitHub. Activity is a bounded sample, not complete history.",
+    "category": "productivity",
+    "keywords": [
+      "github",
+      "repositories",
+      "watchlist",
+      "rust",
+      "releases",
+      "analytics"
+    ],
+    "screenshots": [
+      "screenshots/01-main.png",
+      "screenshots/02-glance.png"
+    ],
+    "icon": "assets/icon.svg",
+    "platforms": [
+      "macos"
+    ],
+    "publisher": {
+      "name": "ymote",
+      "support": "https://github.com/ymote/octosense-repo-radar/issues",
+      "privacy_policy_url": "https://github.com/ymote/octosense-repo-radar/blob/main/PRIVACY.md"
+    },
+    "release_notes": "Initial public repository watchlist with Rust component networking.",
+    "age_rating": "all",
+    "license": "Apache-2.0"
+  },
+  "tools": [
+    {
+      "name": "reporadar.search",
+      "description": "Search public GitHub repositories. One explicit page of at most 10 results. Preserve incomplete and rate-limit status.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "page": {
+            "maximum": 100,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "query": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "query",
+          "page"
+        ],
+        "type": "object"
+      },
+      "output_schema": {
+        "properties": {
+          "items": {
+            "items": {
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "meta": {
+            "type": "object"
+          },
+          "page": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "meta",
+          "page",
+          "items"
+        ],
+        "type": "object"
+      },
+      "risk": "read",
+      "background": false,
+      "shareable": false,
+      "private_data": false,
+      "implemented_by": "host-service"
+    },
+    {
+      "name": "reporadar.overview",
+      "description": "Read current public repository totals and private local observation timestamps. Deltas are since the previous observation, never assumed daily growth.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "force": {
+            "description": "False uses a fresh cache. True refreshes, still respecting provider cooldown.",
+            "type": "boolean"
+          },
+          "full_name": {
+            "description": "Public GitHub owner/repository from a search result.",
+            "maxLength": 200,
+            "minLength": 3,
+            "type": "string"
+          }
+        },
+        "required": [
+          "full_name",
+          "force"
+        ],
+        "type": "object"
+      },
+      "output_schema": {
+        "properties": {
+          "meta": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "meta"
+        ],
+        "type": "object"
+      },
+      "risk": "read",
+      "background": false,
+      "shareable": false,
+      "private_data": true,
+      "implemented_by": "host-service"
+    },
+    {
+      "name": "reporadar.pulls",
+      "description": "Read one bounded recently updated PR sample (at most 10), not lifetime PR totals or a complete time period.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "force": {
+            "description": "False uses a fresh cache. True refreshes, still respecting provider cooldown.",
+            "type": "boolean"
+          },
+          "full_name": {
+            "description": "Public GitHub owner/repository from a search result.",
+            "maxLength": 200,
+            "minLength": 3,
+            "type": "string"
+          }
+        },
+        "required": [
+          "full_name",
+          "force"
+        ],
+        "type": "object"
+      },
+      "output_schema": {
+        "properties": {
+          "items": {
+            "items": {
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "meta": {
+            "type": "object"
+          },
+          "page": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "meta",
+          "page",
+          "items"
+        ],
+        "type": "object"
+      },
+      "risk": "read",
+      "background": false,
+      "shareable": false,
+      "private_data": false,
+      "implemented_by": "host-service"
+    },
+    {
+      "name": "reporadar.releases",
+      "description": "Read at most five published releases; an empty list does not imply inactivity. Preserve non-SemVer tags.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "force": {
+            "description": "False uses a fresh cache. True refreshes, still respecting provider cooldown.",
+            "type": "boolean"
+          },
+          "full_name": {
+            "description": "Public GitHub owner/repository from a search result.",
+            "maxLength": 200,
+            "minLength": 3,
+            "type": "string"
+          }
+        },
+        "required": [
+          "full_name",
+          "force"
+        ],
+        "type": "object"
+      },
+      "output_schema": {
+        "properties": {
+          "items": {
+            "items": {
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "meta": {
+            "type": "object"
+          },
+          "page": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "meta",
+          "page",
+          "items"
+        ],
+        "type": "object"
+      },
+      "risk": "read",
+      "background": false,
+      "shareable": false,
+      "private_data": false,
+      "implemented_by": "host-service"
+    },
+    {
+      "name": "reporadar.watchlist",
+      "description": "Read the private local watchlist, saved order and selection. Never describe pins as GitHub stars.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "output_schema": {
+        "properties": {
+          "pins": {
+            "items": {
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "pins"
+        ],
+        "type": "object"
+      },
+      "risk": "read",
+      "background": false,
+      "shareable": false,
+      "private_data": true,
+      "implemented_by": "host-service"
+    },
+    {
+      "name": "reporadar.pin",
+      "description": "Pin a repository previously verified by search or overview, and select it. Local state only; never stars on GitHub.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "full_name": {
+            "description": "Public GitHub owner/repository from a search result.",
+            "maxLength": 200,
+            "minLength": 3,
+            "type": "string"
+          }
+        },
+        "required": [
+          "full_name"
+        ],
+        "type": "object"
+      },
+      "output_schema": {
+        "properties": {
+          "pins": {
+            "items": {
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "pins"
+        ],
+        "type": "object"
+      },
+      "risk": "act",
+      "background": false,
+      "shareable": false,
+      "private_data": true,
+      "implemented_by": "host-service"
+    },
+    {
+      "name": "reporadar.unpin",
+      "description": "Remove a project from the local watchlist only when the person asks. Cached public data may remain.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "repo_id": {
+            "description": "Stable GitHub repository ID from the saved watchlist.",
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "repo_id"
+        ],
+        "type": "object"
+      },
+      "output_schema": {
+        "properties": {
+          "pins": {
+            "items": {
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "pins"
+        ],
+        "type": "object"
+      },
+      "risk": "destructive",
+      "background": false,
+      "shareable": false,
+      "private_data": true,
+      "implemented_by": "host-service",
+      "auto_approvable": false
+    },
+    {
+      "name": "reporadar.select",
+      "description": "Select an already-pinned project in the shared saved watchlist.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "repo_id": {
+            "description": "Stable GitHub repository ID from the saved watchlist.",
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "repo_id"
+        ],
+        "type": "object"
+      },
+      "output_schema": {
+        "properties": {
+          "pins": {
+            "items": {
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "pins"
+        ],
+        "type": "object"
+      },
+      "risk": "act",
+      "background": false,
+      "shareable": false,
+      "private_data": true,
+      "implemented_by": "host-service"
+    },
+    {
+      "name": "reporadar.move",
+      "description": "Reorder one pinned project by one position. Direction -1 is up; 1 is down.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "direction": {
+            "enum": [
+              -1,
+              1
+            ],
+            "type": "integer"
+          },
+          "repo_id": {
+            "description": "Stable GitHub repository ID from the saved watchlist.",
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "repo_id",
+          "direction"
+        ],
+        "type": "object"
+      },
+      "output_schema": {
+        "properties": {
+          "pins": {
+            "items": {
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "pins"
+        ],
+        "type": "object"
+      },
+      "risk": "act",
+      "background": false,
+      "shareable": false,
+      "private_data": true,
+      "implemented_by": "host-service"
+    }
+  ],
+  "artifact": "artifacts/org.ymote.reporadar-0.1.0.bundle",
+  "publisher": "github:1413670501",
+  "publisher_key": "",
+  "source": {
+    "repository": "https://github.com/ymote/octosense-repo-radar",
+    "commit": "ec202f7d6c8a192a80353a1640c19786db3f77e1"
+  },
+  "status": {
+    "state": "offered"
+  },
+  "admitted": "2026-10-10"
+}

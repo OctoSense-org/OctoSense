@@ -1,0 +1,49 @@
+# octosense-app-hub — ADR 0003: the index, the catalog and its signatures.
+#
+# The hub is what decides an app is OFFERED; ADR 0002's policy crate decides
+# what it may DO once it runs. This crate holds both halves of that boundary:
+# the index entry a publisher submits, and the signed catalog a device reads.
+#
+# No makepad dependency: a device verifies a catalog long before it draws
+# anything, and the hub's own jobs run headless.
+[package]
+name = "octosense-app-hub"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+publish = false
+description = "The OctoSense app hub: index entries, a signed catalog, and the admission gate (ADR 0003)"
+
+[dependencies]
+octosense-app-policy = { path = "../app-policy" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+blake3 = "1"
+ed25519-dalek = { version = "3", features = ["rand_core"] }
+rand_core = { version = "0.9", features = ["os_rng"] }
+hex = "0.4"
+base64 = "0.22"
+# Structural admission (admission.rs): decode artwork within limits, parse
+# SVG, and check a card's L0 source, the same crate card-host renders with.
+image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "webp"] }
+roxmltree = "0.21.1"
+octoscript-ui-l0 = { git = "https://github.com/OctoSense-org/Octoscript.git", rev = "2e37d9e657a246f16718d9a475e167ccd2d5b5fa" }
+ureq = "3"
+sha2 = "0.10"
+semver = "1"
+# RustSec advisories' front matter (hub check --advisory-db).
+toml = { version = "0.8", default-features = false, features = ["parse"] }
+# Offline verification only: no signing credentials, subprocess or network/TUF
+# client in the device. The public-good trust snapshot ships with this build.
+sigstore-verify = { version = "=0.14.0", default-features = false }
+sigstore-trust-root = { version = "=0.14.0", default-features = false }
+sigstore-types = "=0.14.0"
+fs2 = "0.4"
+# The app's own functions (functions.rs): validate a WebAssembly component and
+# read its imports and exports (OctoSense ADR 0014). The version Wasmtime 49
+# uses, so a host that links both builds one copy; parsing only.
+wasmparser = { version = "0.258.3", default-features = false, features = ["std", "validate", "component-model", "features", "simd"] }
+
+[[bin]]
+name = "hub"
+path = "src/bin/hub.rs"

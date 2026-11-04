@@ -1,0 +1,29 @@
+{
+  "digest": "52c3a756a4010abd7df0b3eac0384b411ccd324cdf5e40ddae2659de97e5612f",
+  "entry": "script",
+  "ignored_fields": [],
+  "limits": "system",
+  "policy": {
+    "app_id": "os.ai-providers",
+    "capabilities": [
+      "llm",
+      "storage"
+    ],
+    "display_name": "AI providers",
+    "hosts": [],
+    "instruction_budget": 4000000000,
+    "may_prompt": false,
+    "memory_bytes": 134217728,
+    "research": null,
+    "storage": {
+      "accounts": false,
+      "agent_workspace": "account",
+      "cache_max_bytes": null,
+      "max_bytes": 67108864
+    },
+    "storage_bytes": 67108864,
+    "version": "1.0.0"
+  },
+  "signing_blake3": "91d0308c380092a950ad6575d3ce6bbb03f0d3d3f12ae4d54c2fb0869449e8db",
+  "source": "OctoSense apps/ai-providers/bundle (OctoSense-org/OctoSense e2ae324), digest filled in as the shell's pack step does"
+}

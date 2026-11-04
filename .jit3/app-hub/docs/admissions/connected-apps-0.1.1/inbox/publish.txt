@@ -1,0 +1,4 @@
+org.octosense.samples.inbox 0.1.1 — PASSED
+  grants: capabilities {"auth", "glance", "gmail", "model", "octos.session.open", "octos.turn.start", "storage"}, hosts {}, storage 16777216 bytes, agent read-only
+  scan: Pass — Scoped update to an existing macOS developer preview: notify now requires the admitted workspace template and initial message, excludes executable source alternatives, and keeps nine private non-shareable account tools with no sending tool.; Listing/privacy retain selective triage, remote-model data use, physical-send boundary and unresolved live/native limits. UI/template and original screenshots match the prior signed release.; Exact publisher signature, catalog continuity, structural gate and four declaration/provenance tests passed. This source review does not claim new live Gmail, model or full native acceptance.
+published org.octosense.samples.inbox 0.1.1 (catalog sequence 8)

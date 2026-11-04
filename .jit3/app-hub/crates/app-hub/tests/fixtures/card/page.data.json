@@ -1,0 +1,88 @@
+{
+  "$kit": {
+    "placements": {
+      "detail": {
+        "component": "detail",
+        "layout": {
+          "h": 48,
+          "w": 272,
+          "x": 44,
+          "y": 324
+        }
+      },
+      "footer": {
+        "component": "footer",
+        "layout": {
+          "h": 68,
+          "w": 312,
+          "x": 24,
+          "y": 453
+        }
+      },
+      "page": {
+        "component": "surface",
+        "layout": {
+          "h": 640,
+          "w": 360,
+          "x": 0,
+          "y": 0
+        }
+      },
+      "panel": {
+        "component": "panel",
+        "layout": {
+          "h": 210,
+          "w": 312,
+          "x": 24,
+          "y": 200
+        }
+      },
+      "permission": {
+        "component": "permission",
+        "layout": {
+          "h": 44,
+          "w": 312,
+          "x": 24,
+          "y": 550
+        }
+      },
+      "subtitle": {
+        "component": "subtitle",
+        "layout": {
+          "h": 54,
+          "w": 312,
+          "x": 24,
+          "y": 128
+        }
+      },
+      "tag": {
+        "component": "tag",
+        "layout": {
+          "h": 24,
+          "w": 312,
+          "x": 24,
+          "y": 34
+        }
+      },
+      "title": {
+        "component": "title",
+        "layout": {
+          "h": 52,
+          "w": 312,
+          "x": 24,
+          "y": 75
+        }
+      },
+      "value": {
+        "component": "value",
+        "layout": {
+          "h": 76,
+          "w": 272,
+          "x": 44,
+          "y": 236
+        }
+      }
+    },
+    "theme": "light"
+  }
+}

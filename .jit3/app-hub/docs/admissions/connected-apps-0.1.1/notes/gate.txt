@@ -1,0 +1,2 @@
+org.octosense.samples.githubnotes 0.1.1 — PASSED
+  grants: capabilities {"auth", "github", "storage"}, hosts {}, storage 4194304 bytes, agent read-only
