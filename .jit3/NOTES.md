@@ -87,3 +87,26 @@ TextInputStateQuery, screen_origin. relax gaps to file upstream: json! (15), inc
 upstream work (android-enter-composition, android-video-seek, finance-seed); 38 fail, nearly all because their files moved/changed
 (platform/src/os → platform/hal, widgets/src → widgets/core). The settings patch (18 files, 123 hunks: AccessibilityPreferences,
 TextInputStateQuery, scroll_pos, screen_origin, WindowRequest?) is a hand re-port.
+
+## PORT LOOP, round 2 (4 Nov, user "next"): 130 → 66 → 29 → 15, every fork-API family gone
+Makepad side (jit3-work `jit3-port-makepad`, now upstream/work + 13 commits): c82d7c318 splash-host drain (ddfb25b96, path-rewritten);
+b13d30484 terminal TERMINAL_MODULE (53d66972e; crate renamed makepad_app_terminal, `caller` in its test); 371a2dd44 Cx::show_qr_scanner +
+Cx::android_integration + NativeQr events + Event::AndroidIntegration (id 96) (hand port of 81fd7371c, desktop half); ebfe04864 the
+runtime-patch surface: accessibility.rs + Cx::accessibility_preferences, Event::TextInputStateQuery (98) answered by TextInput,
+View/ViewRef::scroll_pos, input_provenance (trusted_user_input, always false here: no HAL evidence hooks), Event::HomeIntent (97),
+home::platform_data_dir; 08e26b83a Cx::handle_script_tasks pub.
+OctoSense side (jit3-port 50897a0c, 9470e688, 1b916eb0): upstream differences the SHELL follows: normalised readbacks (packed RGBA
+top-first), task Class instead of Lane (Heavy→Background, Light→Visible, no reserve), no isolate time budget (trusted = plain entry),
+ServiceRegistry::process() instead of PendingServiceLinks, ServiceCall.caller, MpTerm module root (TermTabs needs the fork's settings
+chain 3d6637552→b5a945e29, not ported), WindowGeomChange.screen_origin, Swapchain Option, MacosMenu dock, RemoteScroll phase/is_mouse,
+Rect dpi_snap helper, StyleSheet::load(style.sheet(dark)) + family/resources, BlackOrange arms, TouchState::Cancel, point_to_index shift.
+PORT GAPS (marked in code): Splash set_policy/set_memory_bytes/set_device_consent (isolate memory cap LOST), splash_policy::may_run,
+splash::register_agent_module (agent.notify in isolates), camera_preview release, WebReader (auth webview), Video show_controls (fork
+video-controls patch), TermTabs, provenance evidence hooks (macOS/Android), Android HAL halves of QR/AndroidIntegration/HomeIntent.
+rustc: `cargo test -p octosense-shell --features octos-core,app-terminal --no-run` builds (App Hub crates all [patch]ed to .jit3/app-hub);
+touched modules: 145 passed, 1 ignored, 4 failed = upstream behaviour (VM number rounding 14.5/14.6 MB, 990 m/1 km; Video
+show_controls). relax: check9 = 29 (json! 15 + include_str 14); with OCTOSENSE_WORKSPACE exported check10 = 15 (relax ignores cargo
+[env] → .jit3/issue-cargo-env-config.md). json! ROOT CAUSE found with .jit3/repro/json_glob_shadow: a glob `pub use crate::serde_json::*`
+over a PRIVATE `mod serde_json` (makepad_micro_serde) makes relax resolve `serde_json::json!` to that module via `use makepad_widgets::*`;
+`::serde_json::json!` works → .jit3/issue-json-glob-shadow.md (not opened yet). Workaround if needed: `::serde_json::json!` at the 15 sites.
+Next: open the two issues (user's call), then `makepad run octosense` (bare relax run) for the first real JIT launch; then the gaps above.
