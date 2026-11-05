@@ -134,3 +134,19 @@ STOPPED HERE (user's call). Upstream issues opened 4 Nov: #1384 json! glob shado
 (next_keys/KEYS, world + program units), #1387 native library back-reference (blake3), #1388 lock rewrite per run. In-tree
 workarounds kept: pure blake3, unused [patch] entries removed, `::serde_json::json!`. Next when upstream answers #1386: rerun
 `.d1-scratch/jit3-run.sh jit3-run9`.
+
+## FIRST LIGHT (5 Nov 2026 morning, user "keep pushing without them"): OctoSense RUNS under the JIT
+- The trap reproduced with the smallest app + one serde derive, no --allow-c (.d1-scratch/jit3-mini, `relax run jit3-mini --features serde`);
+  with blake3 + --allow-c (early world) it did not → posted on #1386. Cause: each jit::Unit allocated `#[thread_local]`s from TLS_FIRST_FREE
+  of the one per-thread block; the proc-macro world (own Unit) and the program aliased. FIX in jit3-work 3538cf789 (`Unit::tls_alloc` bumps
+  one process-wide AtomicU32); relax rebuilt (`cargo build --release -p relax-runner --bin relax`, 51 s). Mini app: two KEYS placements, runs.
+- run10 (patched runner): no trap, exited at main+3 s after `[makepad-remote] MAKEPAD_REMOTE=47640: a port or address is not supported any more`
+  → jit3-run.sh no longer sets MAKEPAD_REMOTE (relax opens its own Unix socket: `makepad inspect <pid>`).
+- run11: UP. Modules linked (terminal, calculator, clock, notes, reminders, weather), ai-host up (no packaged octos kernel → stub), glance etc.
+  Shader flood: `sample_as_bgra` unknown upstream (fork: identical to `sample` except WebGL) → 26 sites in crates/shell → `sample(` (e3e5929d);
+  the LIVE session patched the running app in 70 ms ("makepad live: icon_frame.rs, ui.rs: patched"), glass shader compiles, flood gone.
+  Left: (a) once: lazy module `isolate ui`: `property ime not found in prototype chain` (widgets/core lib.rs widgets_header `..mod.ime` in an
+  isolate); (b) one contained panic on makepad-app: `GenVec<ScriptObjectData> value from heap 3 used in heap 1` (a script value crossing
+  isolates; flightrec /Users/ychen/.makepad-run/flightrec/auto-octosense-51076-20261105-184314-panic.mkpf; `makepad inspect 51076 panics`);
+  (c) relax background typeck panics `anonymous const type: NoSolution` (typeck.rs:850, thread gandalf; harmless); (d) prebuild.rs runs cargo
+  for 10 catalog apps in the background under the JIT (exit 101) — disable in the spike.
