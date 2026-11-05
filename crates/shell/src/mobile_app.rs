@@ -158,7 +158,7 @@ impl App {
         let mut msgs = Vec::new();
         if viewport.x >= 1.0 && viewport.y >= 1.0 {
             msgs.push(StudioToApp::WindowGeomChange {
-                window_id, dpi_factor: dpi, left: 0.0, top: 0.0, width: viewport.x, height: viewport.y,
+                screen_origin: None, window_id, dpi_factor: dpi, left: 0.0, top: 0.0, width: viewport.x, height: viewport.y,
             });
         }
         msgs.push(StudioToApp::Custom(json));
@@ -868,7 +868,7 @@ impl App {
             let phase = match point.state {
                 TouchState::Start => PhonePointerPhase::Down,
                 TouchState::Move => PhonePointerPhase::Move,
-                TouchState::Stop => PhonePointerPhase::Up,
+                TouchState::Stop | TouchState::Cancel => PhonePointerPhase::Up,
                 TouchState::Stable => return owned.is_some() || !self.state_mut().phone.accepts_app_input(),
             };
             let handled = self.phone_pointer_at(cx, phase, point.abs, point.time, true, 0.0);

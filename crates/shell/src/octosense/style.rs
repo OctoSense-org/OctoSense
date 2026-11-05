@@ -54,7 +54,7 @@ impl DesktopStyle {
 
 pub fn load_sheet(style: DesktopStyle, dark: bool) -> StyleSheet {
     if style != DesktopStyle::OctoSense {
-        let mut sheet = StyleSheet::load_with_appearance(style.framework(), dark);
+        let mut sheet = StyleSheet::load(style.framework().sheet(dark));
         sheet.icons = icon_assets(style.framework());
         return sheet;
     }
@@ -81,6 +81,9 @@ pub fn load_sheet(style: DesktopStyle, dark: bool) -> StyleSheet {
     };
     StyleSheet {
         name: if dark { "macos-dark" } else { "macos" }.into(),
+        family: UpstreamStyle::Macos,
+        // The shell crate owns the fonts and images the OctoSense sheet names.
+        resources: env!("CARGO_MANIFEST_DIR").into(),
         theme: read(theme_name, theme),
         widgets: read(widgets_name, widgets),
         icons: icon_assets(UpstreamStyle::Macos),
@@ -150,6 +153,8 @@ fn own_artwork(style: UpstreamStyle) -> Option<[&'static str; 2]> {
         UpstreamStyle::Windows => pair!("windows"),
         UpstreamStyle::NextStep => pair!("nextstep"),
         UpstreamStyle::Ios => pair!("ios"),
+        // Upstream's own dark family: no OctoSense artwork for it yet.
+        UpstreamStyle::BlackOrange => return None,
         UpstreamStyle::Android => pair!("android"),
         UpstreamStyle::Windows2000 => return None,
     })

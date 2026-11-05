@@ -19,7 +19,7 @@ impl IconFrame {
             DesktopStyle::Ios => (1., 1., 62., 62., 15.),
             DesktopStyle::Windows => (5., 5., 54., 54., 12.),
             DesktopStyle::NextStep => (0., 0., 64., 64., 0.),
-            DesktopStyle::Omarchy | DesktopStyle::Windows2000 => return None,
+            DesktopStyle::Omarchy | DesktopStyle::Windows2000 | DesktopStyle::BlackOrange => return None,
         };
         Some(Self { x, y, width, height, radius })
     }

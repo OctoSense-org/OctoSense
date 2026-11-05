@@ -1261,11 +1261,10 @@ impl GlanceTiles {
 }
 
 fn has_native_auth(widget: &WidgetRef) -> bool {
-    if widget.borrow::<makepad_widgets::web_reader::WebReader>()
-        .is_some_and(|reader| reader.auth_browser_id().is_some()) { return true; }
-    let mut found = false;
-    widget.children(&mut |_, child| { found |= has_native_auth(&child); });
-    found
+    // jit3 PORT GAP: upstream has no WebReader widget (fork + auth-webview
+    // runtime patches), so no card can hold a native auth browser here.
+    let _ = widget;
+    false
 }
 
 /// Retiring the host isolate drops native ReviewRequest capabilities (which

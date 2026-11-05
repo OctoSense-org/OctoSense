@@ -1263,6 +1263,7 @@ impl App {
             let shared = shared_swapchain_from_host_swapchain(&swapchain, cx);
             let msgs = vec![
                 StudioToApp::WindowGeomChange {
+                    screen_origin: None,
                     window_id,
                     dpi_factor: dpi,
                     left: 0.0,
@@ -1270,8 +1271,9 @@ impl App {
                     width: w,
                     height: h,
                 },
-                StudioToApp::Swapchain(shared),
             ];
+            // No shared swapchain on a backend without one (upstream returns Option).
+            let msgs = msgs.into_iter().chain(shared.map(StudioToApp::Swapchain)).collect::<Vec<_>>();
             if let Some(sender) = self
                 .state_mut()
                 .clients
@@ -6445,6 +6447,7 @@ impl MatchEvent for App {
                     key: KeyCode::KeyQ,
                     shift: true,
                     enabled: true,
+                    dock: false,
                     name: "Quit OctoSense".to_string(),
                 }],
             }],
@@ -6674,7 +6677,7 @@ impl MatchEvent for App {
 impl App {
     pub fn shell_script_mod(vm: &mut ScriptVm) -> ScriptValue {
         host::set_child_env("MAKEPAD_HOME", octosense::paths::home().as_os_str());
-        desktop_style::install(vm,desktop_style::StyleSheet::load(desktop_style::DesktopStyle::Omarchy));
+        desktop_style::install(vm,desktop_style::StyleSheet::load(desktop_style::DesktopStyle::Omarchy.sheet(false)));
         crate::makepad_widgets::script_mod(vm);
         charts::register(vm);
         octosense::icon_frame::script_mod(vm);

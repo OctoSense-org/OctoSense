@@ -641,6 +641,7 @@ impl MpRunView {
             return Vec::new();
         }
         let mut outbound = vec![StudioToApp::WindowGeomChange {
+            screen_origin: None,
             window_id: target.window_id,
             dpi_factor: self.last_dpi_factor,
             left: 0.0,
@@ -669,8 +670,9 @@ impl MpRunView {
         #[cfg(not(all(target_os = "linux", not(target_env = "ohos"))))]
         {
             if let Some(swapchain) = self.swapchain.as_ref() {
-                let shared = shared_swapchain_from_host_swapchain(swapchain, cx);
-                outbound.push(StudioToApp::Swapchain(shared));
+                if let Some(shared) = shared_swapchain_from_host_swapchain(swapchain, cx) {
+                    outbound.push(StudioToApp::Swapchain(shared));
+                }
             }
         }
         outbound
@@ -884,7 +886,7 @@ impl MpRunView {
 impl Widget for MpRunView {
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         let dpi_factor = Self::host_dpi_factor(cx);
-        let rect = cx.walk_turtle(walk).dpi_snap(1.0 / dpi_factor);
+        let rect = rect_dpi_snap(cx.walk_turtle(walk), 1.0 / dpi_factor);
         // Only the "starting…" state gets a backdrop; a presented frame is
         // composited straight over the wallpaper so translucent children
         // (Omarchy's 0.985/0.96 window opacity) show it through.
@@ -1131,7 +1133,8 @@ impl Widget for MpRunView {
                         cx,
                         target.client,
                         StudioToApp::Scroll(RemoteScroll {
-                            is_mouse: e.is_mouse,
+                            is_mouse: e.device.is_mouse(),
+                            phase: e.phase,
                             time: e.time,
                             x: local.x,
                             y: local.y,
@@ -1209,5 +1212,14 @@ impl crate::tile::TileHost for MpRunView {
 
     fn set_corner_radius(&mut self, radius: f32) {
         MpRunView::set_corner_radius(self, radius)
+    }
+}
+
+/// The fork's `Rect::dpi_snap`: both corners floored to the device grid
+/// (upstream snaps only a `Vec2d`, and rounds).
+fn rect_dpi_snap(rect: Rect, f: f64) -> Rect {
+    Rect {
+        pos: dvec2((rect.pos.x / f).floor() * f, (rect.pos.y / f).floor() * f),
+        size: dvec2((rect.size.x / f).floor() * f, (rect.size.y / f).floor() * f),
     }
 }

@@ -993,7 +993,7 @@ impl ShellSystemChat {
                     } else if e.abs.y > r.pos.y + r.size.y {
                         source.scroll_by(-SELECT_SCROLL, self.max_scroll);
                     }
-                    if let Some(i) = self.select.tracker.point_to_index(cx, e.abs) {
+                    if let Some(i) = self.select.tracker.point_to_index(cx, e.abs, DVec2::default()) {
                         self.select.cursor = i;
                     }
                     cx.set_cursor(MouseCursor::Text);
@@ -1090,7 +1090,7 @@ impl ShellSystemChat {
                 // same place takes the word. The prompt keeps the keyboard,
                 // so Cmd+C finds the selection and typing goes on.
                 if self.hit_at(e.abs) == Some(Hit::Pane) && contains(self.select.region, e.abs) {
-                    if let Some(i) = self.select.tracker.point_to_index(cx, e.abs) {
+                    if let Some(i) = self.select.tracker.point_to_index(cx, e.abs, DVec2::default()) {
                         let double = e.time - self.select.press.0 < DOUBLE_PRESS_S && self.select.press.1 == i;
                         self.select.press = (e.time, i);
                         if double {

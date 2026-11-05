@@ -1,5 +1,5 @@
 import sys,json,collections
-rows=[json.loads(l) for l in open(".jit3/check8.log") if l.startswith("{") and '"file"' in l]
+rows=[json.loads(l) for l in open(".jit3/check9.log") if l.startswith("{") and '"file"' in l]
 fam={"android_integration":"android","accessibility":"accessibility","Accessibility":"accessibility","with_script_vm_id_trusted":"script-vm-trust","Lane":"thread-lane","CloseDecision":"module-host","ModuleCloseAction":"module-host","ModuleWindows":"module-host","WindowRequest":"module-host","splash_host":"splash-host","splash_policy":"splash-policy","set_policy":"splash-policy","PeerLink":"ai-services-links","PeerDown":"ai-services-links","PeerUp":"ai-services-links","UiPort":"ai-services-links","PendingPeerLinks":"ai-services-links","PendingServiceLinks":"ai-services-links","NativeQr":"native-qr","Readback":"readback","ModalBounds":"modal-bounds","TextInputStateQuery":"ime-state-query","terminal::ai":"terminal-ai","json!":"relax-json-macro","include_str":"relax-include-str","screen_origin":"screen-origin"}
 out=collections.defaultdict(list)
 for r in rows:
