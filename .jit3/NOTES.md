@@ -157,3 +157,25 @@ workarounds kept: pure blake3, unused [patch] entries removed, `::serde_json::js
 - `makepad run` (tools/run, target/host/makepad): added MAKEPAD_RUN_TRUST_MACROS=1 (jit3-work 2b346b873: Policy::Open with a notice) because
   the sandbox refuses serde_derive. OctoSense now runs under it: `JIT3_RUNNER=<jit3-work>/target/host/makepad jit3-run.sh <log>
   MAKEPAD_RUN_TRUST_MACROS=1` → first present main+5.3 s cold, app check 0 errors, modules linked (run13).
+
+## STEPS 1-5 (5 Nov afternoon, user "do 1-5")
+1. Fork `jit` = OctoSense-org/makepad jit (aee111593: upstream work 60abec8ba + 15 port commits + compat/ crates + libs/wm_theme);
+   upstream PRs #1391 (TLS allocator, fixes #1386), #1392 (MAKEPAD_RUN_TRUST_MACROS) + #1383 earlier.
+2. OctoSense `jit` branch (e54315fd): pins → fork jit, Octoscript-Makepad jit 468becf1, App Hub jit eb4fbe15; [patch] → .sources/makepad
+   (upstream layout + compat/); no runtime patches; Rinx/AppCard/OctosCode/Task + markdown editor off the line (native-apps.json);
+   setup.py --check --cargo + native_apps.py --check pass; relax/makepad check 0 errors; shell tests build, touched tests pass.
+   PROVIDED-CRATE TRAP: the runner must be built FROM the checkout's own `.sources/makepad` (`cargo build --profile host -p makepad-run
+   --bin makepad` there). A runner built in another worktree of the same commit (jit3-work) binds the program's makepad_script by name
+   as a provided crate while also compiling it → "a field of ScriptTypeObject is reached from JIT-compiled code … lives in a provided
+   crate" in traits::register_type_inner → no frame in 180 s (run14; report ~/.makepad/devhub/captures/20261105T210556Z-*). Hypothesis
+   under test (run15 with .sources/makepad/target/host/makepad).
+3. devhub master runs under the JIT (`makepad run makepad-app-devhub` from the tree; menu-bar app; control ~/.makepad/devhub/devhub.sock);
+   it says "no fleet identity: ~/.makepad/fleet/id.key … this machine's JITs only" → tools/fleet-identity.md (fleet-id tool, root key on
+   the admin Mac, node credentials for the minis) + the private-LAN rule = the overlay question. `makepad devhub ls` hung (rc 142) with no
+   JIT up; `makepad inspect <pid> status` works against the running shell. autosync wants a branch named `work`.
+4. Security gaps, port branch jit-port-policy (.worktrees/jit3-port2, on top of aee111593): splash policy layer = fork 03a0362fe picked
+   (path-rewritten) + dd1961a69 (granted isolate mods, register_agent_module → SplashAction::Notify defined here), 541216e62 (vm/res
+   hunks only), d7a834c74, b0f98fb63, 52160dec0; splash_policy.rs/gate.rs = fork d653bc44 final; gps.rs ported (no data-fetch epoch);
+   device consent = makepad-device-consent.patch minus camera_preview. Tests: widgets-core splash/policy/host/isolate 47 + script-std gate 5
+   pass before consent (consent run pending). Left: trusted-input evidence hooks (macOS: HAL apple backend), then merge → fork jit → pins.
+5. `main` decision waits on Home (upstream Android HAL has no GLES; OpenHarmony dropped upstream).
