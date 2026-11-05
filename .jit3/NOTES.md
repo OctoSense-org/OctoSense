@@ -205,3 +205,15 @@ workarounds kept: pure blake3, unused [patch] entries removed, `::serde_json::js
   rustc's), so plain-typed APIs cannot bind. That is upstream's to answer (issue to file: provided plain types with String fields).
 - Runner rule stays: the bare `relax` runner (provides no crates) runs the jit line; OCTOSENSE_JIT_RUNNER=<runner> makes process apps
   launch from source through it (clients.rs launch_plan, 790ab4fd).
+
+## 5 Nov, afternoon: process apps launch from source through the runner and are admitted
+- Why the first JIT child died: upstream has no launch-secret handshake. The shell hands every process launch a secret
+  (STUDIO_HANDSHAKE_STDIN=1 + first stdin line) and the hub refuses any studio socket without the X-Studio-Token header
+  (`wm-hub: refused a socket (BadToken(1))` in jit3-run25.log), so the child was removed after one frame. Ported the fork's
+  handshake (studio_launch_token, the two consts, header on start_studio_websocket) = fork jit f6dee0a7f, cherry-picked
+  (uncommitted) into .sources/makepad. Verified with a fake hub (scratchpad hdr.py): the JIT child sends the header.
+- jit3-run26 (MAKEPAD_WM_TEST_APP=finance): shell first frame 21.7 s; `wm: finance client 1 first frame in 14527 ms (cold)`
+  (child main at 4.6 s = relax compile from source, cache cold), 1561 demo transactions loaded; no [E]/[W] after it.
+- Status of "其余 app jit 化": every catalog process app (Task, Finance, Route, Image, PDF, Files, Browser, aichat, …) now
+  launches from source through OCTOSENSE_JIT_RUNNER; in-process native apps are JIT'd inside the shell image. Still out:
+  Rinx, AppCard, OctosCode, markdown editor (need fork widgets `serde`/`appcard` features → ports).
