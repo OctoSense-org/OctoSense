@@ -1,3 +1,0 @@
-# Keep the bundle byte-exact: its digest covers every file, so Git must not
-# convert line endings (core.autocrlf) in a checkout.
-bundle/** -text

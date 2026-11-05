@@ -1,6 +1,0 @@
-# Bundle digests cover exact file bytes. Git must not convert LF/CRLF on
-# checkout, including when a Windows developer uses core.autocrlf=true.
-artifacts/** -text
-catalog-candidates/** -text
-crates/*/tests/fixtures/** -text
-templates/app/bundle/** -text

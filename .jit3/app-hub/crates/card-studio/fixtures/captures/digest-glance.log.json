@@ -1,4 +1,0 @@
-[
- "[I] card-host - card-host: card-studio-preview 0.0.0 admitted \u2014 capabilities {}, hosts {}, storage 16777216 bytes, agent none",
- "[I] card-host - card-host: realize {\"lint\":{\"diagnostics\":[],\"diagnostics_truncated\":false,\"level\":\"L0\",\"valid\":true},\"lowering\":\"l0-kit\",\"realize\":{\"diagnostics\":[],\"nodes\":7,\"truncated\":false},\"sources\":[]}"
-]

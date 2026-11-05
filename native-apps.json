@@ -40,290 +40,914 @@
       }
     },
     {
-      "id": "rinx",
-      "crate": "rinx",
-      "source": { "git": "https://github.com/hagency-org/Rinx.git", "tag": "v1.1.0", "rev": "4b89097d8791a7190d01de1c576979c93df0013d", "local": null },
-      "module": "rinx::module::RINX_MODULE",
-      "bin": null,
-      "default_features": false,
-      "crate_features": ["octosense-module"],
-      "implies": ["octos-core"],
-      "hosting": { "macos": "module", "windows": "module", "linux": "module", "android": "module", "ios": "module", "ohos": "module" },
-      "shells": { "desktop": "default", "phone": "default" },
-      "native_mobile": "feature",
-      "sandbox": { "network": "any", "processes": false },
-      "storage": { "accounts": true, "agent_workspace": "account", "external": [] },
-      "agent": {
-        "octos": ["octos.session.open", "octos.session.history", "octos.turn.start", "octos.turn.interrupt"],
-        "tools": null,
-        "generic_tools": ["read_file", "write_file", "edit_file", "diff_edit", "apply_patch", "glob", "grep", "list_dir", "code_structure", "ask_user_question", "view_image", "recall", "recall_memory", "memory_search", "memory_load", "save_memory", "memory_note", "web_search", "web_fetch", "tool_search"],
-        "grants": []
-      }
-    },
-    {
       "id": "reference",
       "crate": "octosense-reference",
-      "source": { "path": "apps/reference" },
+      "source": {
+        "path": "apps/reference"
+      },
       "module": "octosense_reference::REFERENCE_MODULE",
       "bin": "octosense-reference",
       "default_features": true,
       "crate_features": [],
       "implies": [],
-      "hosting": { "macos": "module", "windows": "module", "linux": "module", "android": "module", "ios": "module", "ohos": "module" },
-      "shells": { "desktop": "opt-in", "phone": "mobile-apps" },
+      "hosting": {
+        "macos": "module",
+        "windows": "module",
+        "linux": "module",
+        "android": "module",
+        "ios": "module",
+        "ohos": "module"
+      },
+      "shells": {
+        "desktop": "opt-in",
+        "phone": "mobile-apps"
+      },
       "native_mobile": "always",
-      "sandbox": { "network": "none", "processes": false },
-      "storage": { "accounts": false, "agent_workspace": "none", "external": [] },
-      "agent": { "octos": [], "tools": null }
+      "sandbox": {
+        "network": "none",
+        "processes": false
+      },
+      "storage": {
+        "accounts": false,
+        "agent_workspace": "none",
+        "external": []
+      },
+      "agent": {
+        "octos": [],
+        "tools": null
+      }
     },
     {
       "id": "sheets",
       "crate": "makepad-sheets",
-      "source": { "git": "https://github.com/OctoSense-org/makepad.git", "rev": "d653bc4493619ab979ccff165cf48c0c63b77d19", "local": ".sources/makepad/apps/sheets" },
+      "source": {
+        "git": "https://github.com/OctoSense-org/makepad.git",
+        "rev": "aee111593c916506d3e9f3d4c850884c806f264b",
+        "local": ".sources/makepad/compat/makepad-sheets"
+      },
       "module": "makepad_sheets::SHEETS_MODULE",
       "bin": "sheets",
-      "bin_features": ["standalone"],
+      "bin_features": [
+        "standalone"
+      ],
       "default_features": false,
       "crate_features": [],
       "implies": [],
-      "hosting": { "macos": "module", "windows": "module", "linux": "module", "android": "module", "ios": "module", "ohos": "module" },
-      "shells": { "desktop": "opt-in", "phone": "mobile-apps" },
+      "hosting": {
+        "macos": "module",
+        "windows": "module",
+        "linux": "module",
+        "android": "module",
+        "ios": "module",
+        "ohos": "module"
+      },
+      "shells": {
+        "desktop": "opt-in",
+        "phone": "mobile-apps"
+      },
       "native_mobile": "always",
-      "sandbox": { "network": "none", "processes": false },
-      "storage": { "accounts": false, "agent_workspace": "none", "external": [] },
+      "sandbox": {
+        "network": "none",
+        "processes": false
+      },
+      "storage": {
+        "accounts": false,
+        "agent_workspace": "none",
+        "external": []
+      },
       "agent": {
-        "octos": ["octos.session.open", "octos.session.history", "octos.turn.start", "octos.turn.interrupt"],
-        "tools": [
-          {"name": "sheets.new", "description": "Create an empty workbook session on the sheet engine. Answers the workbook handle and its sheet names. Nothing touches disk until sheets.export.", "input_schema": {"type": "object", "properties": {}, "additionalProperties": false}, "risk": "act"},
-          {"name": "sheets.open", "description": "Open an xlsx file from your workspace as a workbook session. The path is relative to your workspace; paths outside it are refused.", "input_schema": {"type": "object", "properties": {"path": {"type": "string", "minLength": 1, "maxLength": 512}}, "required": ["path"], "additionalProperties": false}, "risk": "act"},
-          {"name": "sheets.set", "description": "Set cells in an open workbook: each entry is a cell like A1 with a value (number, text or boolean) or a formula. Formulas compute at the next sheets.recalc.", "input_schema": {"type": "object", "properties": {"book": {"type": "integer", "minimum": 1}, "sheet": {}, "cells": {"type": "array", "minItems": 1, "maxItems": 256, "items": {"type": "object", "properties": {"at": {"type": "string", "maxLength": 12}, "value": {}, "formula": {"type": "string", "maxLength": 2048}}, "required": ["at"], "additionalProperties": false}}}, "required": ["book", "cells"], "additionalProperties": false}, "risk": "act"},
-          {"name": "sheets.get", "description": "Read a rectangle of computed values from an open workbook, row-major, as a range like A1:C9 or a single cell like B2.", "input_schema": {"type": "object", "properties": {"book": {"type": "integer", "minimum": 1}, "sheet": {}, "range": {"type": "string", "minLength": 2, "maxLength": 24}}, "required": ["book", "range"], "additionalProperties": false}, "risk": "read", "shareable": true},
-          {"name": "sheets.eval", "description": "Evaluate one spreadsheet formula and answer its value, without storing anything: against an open workbook when `book` is given, else as a plain calculation.", "input_schema": {"type": "object", "properties": {"book": {"type": "integer", "minimum": 1}, "sheet": {}, "at": {"type": "string", "maxLength": 12}, "formula": {"type": "string", "minLength": 1, "maxLength": 2048}}, "required": ["formula"], "additionalProperties": false}, "risk": "read", "shareable": true},
-          {"name": "sheets.fill", "description": "Fill a formula down a column of an open workbook for up to two million rows. The numeric subset runs as one compiled kernel (milliseconds for a million rows); anything else computes row by row on the engine's evaluator — the answer says which. Results land as values.", "input_schema": {"type": "object", "properties": {"book": {"type": "integer", "minimum": 1}, "sheet": {}, "column": {"type": "string", "minLength": 1, "maxLength": 4}, "rows": {"type": "integer", "minimum": 1, "maximum": 2000000}, "formula": {"type": "string", "minLength": 1, "maxLength": 2048}}, "required": ["book", "column", "rows", "formula"], "additionalProperties": false}, "risk": "act"},
-          {"name": "sheets.recalc", "description": "Recalculate every stored formula in an open workbook, so sheets.get reads fresh values.", "input_schema": {"type": "object", "properties": {"book": {"type": "integer", "minimum": 1}}, "required": ["book"], "additionalProperties": false}, "risk": "act"},
-          {"name": "sheets.export", "description": "Write an open workbook as an xlsx file into your workspace. The path is relative to your workspace; paths outside it are refused, and a file already at that path is never replaced: choose a new name.", "input_schema": {"type": "object", "properties": {"book": {"type": "integer", "minimum": 1}, "path": {"type": "string", "minLength": 1, "maxLength": 512}}, "required": ["book", "path"], "additionalProperties": false}, "risk": "act"},
-          {"name": "sheets.close", "description": "Close an open workbook session without exporting it. Unexported changes are gone; the engine holds at most sixteen open workbooks.", "input_schema": {"type": "object", "properties": {"book": {"type": "integer", "minimum": 1}}, "required": ["book"], "additionalProperties": false}, "risk": "act"}
+        "octos": [
+          "octos.session.open",
+          "octos.session.history",
+          "octos.turn.start",
+          "octos.turn.interrupt"
         ],
-        "system_tools": ["sheets.get", "sheets.eval"]
+        "tools": [
+          {
+            "name": "sheets.new",
+            "description": "Create an empty workbook session on the sheet engine. Answers the workbook handle and its sheet names. Nothing touches disk until sheets.export.",
+            "input_schema": {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": false
+            },
+            "risk": "act"
+          },
+          {
+            "name": "sheets.open",
+            "description": "Open an xlsx file from your workspace as a workbook session. The path is relative to your workspace; paths outside it are refused.",
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 512
+                }
+              },
+              "required": [
+                "path"
+              ],
+              "additionalProperties": false
+            },
+            "risk": "act"
+          },
+          {
+            "name": "sheets.set",
+            "description": "Set cells in an open workbook: each entry is a cell like A1 with a value (number, text or boolean) or a formula. Formulas compute at the next sheets.recalc.",
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "book": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "sheet": {},
+                "cells": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 256,
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "at": {
+                        "type": "string",
+                        "maxLength": 12
+                      },
+                      "value": {},
+                      "formula": {
+                        "type": "string",
+                        "maxLength": 2048
+                      }
+                    },
+                    "required": [
+                      "at"
+                    ],
+                    "additionalProperties": false
+                  }
+                }
+              },
+              "required": [
+                "book",
+                "cells"
+              ],
+              "additionalProperties": false
+            },
+            "risk": "act"
+          },
+          {
+            "name": "sheets.get",
+            "description": "Read a rectangle of computed values from an open workbook, row-major, as a range like A1:C9 or a single cell like B2.",
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "book": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "sheet": {},
+                "range": {
+                  "type": "string",
+                  "minLength": 2,
+                  "maxLength": 24
+                }
+              },
+              "required": [
+                "book",
+                "range"
+              ],
+              "additionalProperties": false
+            },
+            "risk": "read",
+            "shareable": true
+          },
+          {
+            "name": "sheets.eval",
+            "description": "Evaluate one spreadsheet formula and answer its value, without storing anything: against an open workbook when `book` is given, else as a plain calculation.",
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "book": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "sheet": {},
+                "at": {
+                  "type": "string",
+                  "maxLength": 12
+                },
+                "formula": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 2048
+                }
+              },
+              "required": [
+                "formula"
+              ],
+              "additionalProperties": false
+            },
+            "risk": "read",
+            "shareable": true
+          },
+          {
+            "name": "sheets.fill",
+            "description": "Fill a formula down a column of an open workbook for up to two million rows. The numeric subset runs as one compiled kernel (milliseconds for a million rows); anything else computes row by row on the engine's evaluator — the answer says which. Results land as values.",
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "book": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "sheet": {},
+                "column": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4
+                },
+                "rows": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 2000000
+                },
+                "formula": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 2048
+                }
+              },
+              "required": [
+                "book",
+                "column",
+                "rows",
+                "formula"
+              ],
+              "additionalProperties": false
+            },
+            "risk": "act"
+          },
+          {
+            "name": "sheets.recalc",
+            "description": "Recalculate every stored formula in an open workbook, so sheets.get reads fresh values.",
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "book": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "required": [
+                "book"
+              ],
+              "additionalProperties": false
+            },
+            "risk": "act"
+          },
+          {
+            "name": "sheets.export",
+            "description": "Write an open workbook as an xlsx file into your workspace. The path is relative to your workspace; paths outside it are refused, and a file already at that path is never replaced: choose a new name.",
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "book": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "path": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 512
+                }
+              },
+              "required": [
+                "book",
+                "path"
+              ],
+              "additionalProperties": false
+            },
+            "risk": "act"
+          },
+          {
+            "name": "sheets.close",
+            "description": "Close an open workbook session without exporting it. Unexported changes are gone; the engine holds at most sixteen open workbooks.",
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "book": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "required": [
+                "book"
+              ],
+              "additionalProperties": false
+            },
+            "risk": "act"
+          }
+        ],
+        "system_tools": [
+          "sheets.get",
+          "sheets.eval"
+        ]
       }
     },
     {
       "id": "terminal",
       "crate": "makepad-terminal",
-      "source": { "git": "https://github.com/OctoSense-org/makepad.git", "rev": "d653bc4493619ab979ccff165cf48c0c63b77d19", "local": ".sources/makepad/apps/terminal" },
+      "source": {
+        "git": "https://github.com/OctoSense-org/makepad.git",
+        "rev": "aee111593c916506d3e9f3d4c850884c806f264b",
+        "local": ".sources/makepad/compat/makepad-terminal"
+      },
       "module": "makepad_terminal::TERMINAL_MODULE",
       "bin": "terminal",
       "default_features": true,
       "crate_features": [],
       "implies": [],
-      "hosting": { "macos": "process", "windows": "process", "linux": "process-if-vulkan", "android": "module", "ios": "module", "ohos": "module" },
-      "shells": { "desktop": "default", "phone": "off" },
+      "hosting": {
+        "macos": "process",
+        "windows": "process",
+        "linux": "process-if-vulkan",
+        "android": "module",
+        "ios": "module",
+        "ohos": "module"
+      },
+      "shells": {
+        "desktop": "default",
+        "phone": "off"
+      },
       "native_mobile": "feature",
-      "sandbox": { "network": "any", "processes": true },
-      "storage": { "accounts": false, "agent_workspace": "none", "external": ["home:rw"] },
+      "sandbox": {
+        "network": "any",
+        "processes": true
+      },
+      "storage": {
+        "accounts": false,
+        "agent_workspace": "none",
+        "external": [
+          "home:rw"
+        ]
+      },
       "agent": {
-        "octos": ["octos.session.open", "octos.session.history", "octos.turn.start", "octos.turn.interrupt"],
-        "tools": [
-          {"name": "terminal.run", "description": "Type a command followed by Enter into the person's live Terminal. The person approves each command first, on a sheet that shows it exactly; it then runs for real in the terminal they see, inside the Terminal's own sandbox: the person's files and the network are reachable, OctoSense's private data and the build toolchain are not. It returns at once: the output is on the Terminal's screen.", "input_schema": {"type": "object", "properties": {"command": {"type": "string", "maxLength": 4096}}, "required": ["command"], "additionalProperties": false}, "risk": "destructive", "confirm": "host", "shareable": true},
-          {"name": "terminal.read_screen", "description": "Read the terminal grid that is visible now, with trailing spaces removed from each row, plus cursor and working-directory context.", "input_schema": {"type": "object", "properties": {}, "additionalProperties": false}, "risk": "read", "shareable": true},
-          {"name": "terminal.read_scrollback", "description": "Read the last requested number of lines from the terminal's scrollback plus screen (default 200, at most 2000).", "input_schema": {"type": "object", "properties": {"lines": {"type": "integer", "minimum": 1, "maximum": 2000}}, "additionalProperties": false}, "risk": "read", "shareable": true}
+        "octos": [
+          "octos.session.open",
+          "octos.session.history",
+          "octos.turn.start",
+          "octos.turn.interrupt"
         ],
-        "own_tools": ["terminal.read_screen", "terminal.read_scrollback"],
-        "tool_policy": { "run": { "confirm": "host", "auto_approvable": false } }
+        "tools": [
+          {
+            "name": "terminal.run",
+            "description": "Type a command followed by Enter into the person's live Terminal. The person approves each command first, on a sheet that shows it exactly; it then runs for real in the terminal they see, inside the Terminal's own sandbox: the person's files and the network are reachable, OctoSense's private data and the build toolchain are not. It returns at once: the output is on the Terminal's screen.",
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "command": {
+                  "type": "string",
+                  "maxLength": 4096
+                }
+              },
+              "required": [
+                "command"
+              ],
+              "additionalProperties": false
+            },
+            "risk": "destructive",
+            "confirm": "host",
+            "shareable": true
+          },
+          {
+            "name": "terminal.read_screen",
+            "description": "Read the terminal grid that is visible now, with trailing spaces removed from each row, plus cursor and working-directory context.",
+            "input_schema": {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": false
+            },
+            "risk": "read",
+            "shareable": true
+          },
+          {
+            "name": "terminal.read_scrollback",
+            "description": "Read the last requested number of lines from the terminal's scrollback plus screen (default 200, at most 2000).",
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "lines": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 2000
+                }
+              },
+              "additionalProperties": false
+            },
+            "risk": "read",
+            "shareable": true
+          }
+        ],
+        "own_tools": [
+          "terminal.read_screen",
+          "terminal.read_scrollback"
+        ],
+        "tool_policy": {
+          "run": {
+            "confirm": "host",
+            "auto_approvable": false
+          }
+        }
       }
-    },
-    {
-      "id": "appcard",
-      "crate": "octosense-appcard",
-      "source": { "path": "apps/appcard/module" },
-      "module": "octosense_appcard::APPCARD_MODULE",
-      "bin": null,
-      "default_features": true,
-      "crate_features": [],
-      "implies": ["octos-core"],
-      "hosting": { "macos": "module", "windows": "module", "linux": "module", "android": "module", "ios": "module", "ohos": "module" },
-      "shells": { "desktop": "opt-in", "phone": "opt-in" },
-      "native_mobile": "feature",
-      "sandbox": { "network": "any", "processes": false },
-      "storage": { "accounts": false, "agent_workspace": "none", "external": [] },
-      "agent": { "octos": [], "tools": null }
     },
     {
       "id": "apphub",
       "feature": "app-hub",
       "crate": "octosense-app-hub-app",
-      "source": { "git": "https://github.com/OctoSense-org/OctoSense-App-Hub", "rev": "386359153ed6377b5f047bd9ed2767a6a2ac2bc7", "local": null },
-      "module": ["octosense_app_hub_app::APP_HUB_MODULE", "octosense_app_hub_app::CARD_MODULE"],
+      "source": {
+        "git": "https://github.com/OctoSense-org/OctoSense-App-Hub",
+        "rev": "eb4fbe15f25116888b24949c16bfe107f6a2c779",
+        "local": null
+      },
+      "module": [
+        "octosense_app_hub_app::APP_HUB_MODULE",
+        "octosense_app_hub_app::CARD_MODULE"
+      ],
       "bin": null,
       "default_features": true,
       "crate_features": [],
-      "implies": ["dep:octosense-appstore", "dep:octosense-app-policy", "dep:octosense-app-hub", "dep:octosense-app-contract", "dep:octosense-mail-service", "dep:octosense-oauth-service", "dep:octosense-markdown-editor", "dep:octosense-news-service", "dep:octosense-sheets-service", "dep:octosense-engine-area", "dep:octosense-calendar-service", "octosense-ai-host/llm"],
-      "hosting": { "macos": "module", "windows": "module", "linux": "module", "android": "module", "ios": "module", "ohos": "module" },
-      "shells": { "desktop": "default", "phone": "default" },
+      "implies": [
+        "dep:octosense-appstore",
+        "dep:octosense-app-policy",
+        "dep:octosense-app-hub",
+        "dep:octosense-app-contract",
+        "dep:octosense-mail-service",
+        "dep:octosense-oauth-service",
+        "dep:octosense-news-service",
+        "dep:octosense-sheets-service",
+        "dep:octosense-engine-area",
+        "dep:octosense-calendar-service",
+        "octosense-ai-host/llm"
+      ],
+      "hosting": {
+        "macos": "module",
+        "windows": "module",
+        "linux": "module",
+        "android": "module",
+        "ios": "module",
+        "ohos": "module"
+      },
+      "shells": {
+        "desktop": "default",
+        "phone": "default"
+      },
       "native_mobile": "always",
-      "sandbox": { "network": "any", "processes": false },
-      "storage": { "accounts": false, "agent_workspace": "none", "external": [] },
+      "sandbox": {
+        "network": "any",
+        "processes": false
+      },
+      "storage": {
+        "accounts": false,
+        "agent_workspace": "none",
+        "external": []
+      },
       "agent": {
-        "octos": ["octos.session.open", "octos.session.history", "octos.turn.start", "octos.turn.interrupt"],
-        "tools": [
-          {"name": "apphub.search", "description": "Find apps in the signed OctoSense catalog whose name, description, category or publisher match every word of the query. Answers each app's id, name, subtitle, category, publisher, version and status (available, installed, update available, built in or unavailable). Does not install anything.", "input_schema": {"type": "object", "properties": {"query": {"type": "string", "maxLength": 200}, "category": {"type": "string", "maxLength": 64}}, "required": ["query"], "additionalProperties": false}, "risk": "read", "shareable": true},
-          {"name": "apphub.installed", "description": "List the apps installed from App Hub: id, name, version and whether an update is available.", "input_schema": {"type": "object", "properties": {}, "additionalProperties": false}, "risk": "read", "shareable": true},
-          {"name": "apphub.updates", "description": "List the installed apps that have a newer release in the catalog: id, name and the catalog's version. Does not update anything.", "input_schema": {"type": "object", "properties": {}, "additionalProperties": false}, "risk": "read", "shareable": true}
+        "octos": [
+          "octos.session.open",
+          "octos.session.history",
+          "octos.turn.start",
+          "octos.turn.interrupt"
         ],
-        "system_tools": ["apphub.search", "apphub.installed", "apphub.updates"]
+        "tools": [
+          {
+            "name": "apphub.search",
+            "description": "Find apps in the signed OctoSense catalog whose name, description, category or publisher match every word of the query. Answers each app's id, name, subtitle, category, publisher, version and status (available, installed, update available, built in or unavailable). Does not install anything.",
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "query": {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                "category": {
+                  "type": "string",
+                  "maxLength": 64
+                }
+              },
+              "required": [
+                "query"
+              ],
+              "additionalProperties": false
+            },
+            "risk": "read",
+            "shareable": true
+          },
+          {
+            "name": "apphub.installed",
+            "description": "List the apps installed from App Hub: id, name, version and whether an update is available.",
+            "input_schema": {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": false
+            },
+            "risk": "read",
+            "shareable": true
+          },
+          {
+            "name": "apphub.updates",
+            "description": "List the installed apps that have a newer release in the catalog: id, name and the catalog's version. Does not update anything.",
+            "input_schema": {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": false
+            },
+            "risk": "read",
+            "shareable": true
+          }
+        ],
+        "system_tools": [
+          "apphub.search",
+          "apphub.installed",
+          "apphub.updates"
+        ]
       }
     },
     {
       "id": "calculator",
       "crate": "makepad-calculator",
-      "source": { "git": "https://github.com/OctoSense-org/makepad.git", "rev": "d653bc4493619ab979ccff165cf48c0c63b77d19", "local": ".sources/makepad/apps/calculator" },
+      "source": {
+        "git": "https://github.com/OctoSense-org/makepad.git",
+        "rev": "aee111593c916506d3e9f3d4c850884c806f264b",
+        "local": ".sources/makepad/compat/makepad-calculator"
+      },
       "module": "makepad_calculator::CALCULATOR_MODULE",
       "bin": "calculator",
-      "bin_features": ["standalone"],
+      "bin_features": [
+        "standalone"
+      ],
       "default_features": false,
       "crate_features": [],
       "implies": [],
-      "hosting": { "macos": "module", "windows": "module", "linux": "module", "android": "module", "ios": "module", "ohos": "module" },
-      "shells": { "desktop": "default", "phone": "default" },
+      "hosting": {
+        "macos": "module",
+        "windows": "module",
+        "linux": "module",
+        "android": "module",
+        "ios": "module",
+        "ohos": "module"
+      },
+      "shells": {
+        "desktop": "default",
+        "phone": "default"
+      },
       "native_mobile": "feature",
-      "sandbox": { "network": "none", "processes": false },
-      "storage": { "accounts": false, "agent_workspace": "none", "external": [] },
+      "sandbox": {
+        "network": "none",
+        "processes": false
+      },
+      "storage": {
+        "accounts": false,
+        "agent_workspace": "none",
+        "external": []
+      },
       "agent": {
-        "octos": ["octos.session.open", "octos.session.history", "octos.turn.start", "octos.turn.interrupt"],
-        "tools": [
-          {"name": "calculator.eval", "description": "Evaluate an expression. Uses the on-screen angle mode. Does not change the calculation, memory, or history.", "input_schema": {"type": "object", "properties": {"expression": {"type": "string", "maxLength": 1024}}, "required": ["expression"], "additionalProperties": false}, "risk": "read", "shareable": true}
+        "octos": [
+          "octos.session.open",
+          "octos.session.history",
+          "octos.turn.start",
+          "octos.turn.interrupt"
         ],
-        "system_tools": ["calculator.eval"]
+        "tools": [
+          {
+            "name": "calculator.eval",
+            "description": "Evaluate an expression. Uses the on-screen angle mode. Does not change the calculation, memory, or history.",
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "expression": {
+                  "type": "string",
+                  "maxLength": 1024
+                }
+              },
+              "required": [
+                "expression"
+              ],
+              "additionalProperties": false
+            },
+            "risk": "read",
+            "shareable": true
+          }
+        ],
+        "system_tools": [
+          "calculator.eval"
+        ]
       }
     },
     {
       "id": "clock",
       "crate": "makepad-clock",
-      "source": { "git": "https://github.com/OctoSense-org/makepad.git", "rev": "d653bc4493619ab979ccff165cf48c0c63b77d19", "local": ".sources/makepad/apps/clock" },
+      "source": {
+        "git": "https://github.com/OctoSense-org/makepad.git",
+        "rev": "aee111593c916506d3e9f3d4c850884c806f264b",
+        "local": ".sources/makepad/compat/makepad-clock"
+      },
       "module": "makepad_clock::CLOCK_MODULE",
       "bin": "clock",
-      "bin_features": ["standalone"],
+      "bin_features": [
+        "standalone"
+      ],
       "default_features": false,
       "crate_features": [],
       "implies": [],
-      "hosting": { "macos": "module", "windows": "module", "linux": "module", "android": "module", "ios": "module", "ohos": "module" },
-      "shells": { "desktop": "default", "phone": "default" },
+      "hosting": {
+        "macos": "module",
+        "windows": "module",
+        "linux": "module",
+        "android": "module",
+        "ios": "module",
+        "ohos": "module"
+      },
+      "shells": {
+        "desktop": "default",
+        "phone": "default"
+      },
       "native_mobile": "feature",
-      "sandbox": { "network": "none", "processes": false },
-      "storage": { "accounts": false, "agent_workspace": "none", "external": [] },
+      "sandbox": {
+        "network": "none",
+        "processes": false
+      },
+      "storage": {
+        "accounts": false,
+        "agent_workspace": "none",
+        "external": []
+      },
       "agent": {
-        "octos": ["octos.session.open", "octos.session.history", "octos.turn.start", "octos.turn.interrupt"],
-        "tools": [
-          {"name": "clock.now", "description": "The current local time and date, the next alarm, and any running timer or stopwatch.", "input_schema": {"type": "object", "properties": {}}, "risk": "read", "shareable": true}
+        "octos": [
+          "octos.session.open",
+          "octos.session.history",
+          "octos.turn.start",
+          "octos.turn.interrupt"
         ],
-        "system_tools": ["clock.now"]
+        "tools": [
+          {
+            "name": "clock.now",
+            "description": "The current local time and date, the next alarm, and any running timer or stopwatch.",
+            "input_schema": {
+              "type": "object",
+              "properties": {}
+            },
+            "risk": "read",
+            "shareable": true
+          }
+        ],
+        "system_tools": [
+          "clock.now"
+        ]
       }
     },
     {
       "id": "notes",
       "crate": "makepad-notes",
-      "source": { "git": "https://github.com/OctoSense-org/makepad.git", "rev": "d653bc4493619ab979ccff165cf48c0c63b77d19", "local": ".sources/makepad/apps/notes" },
+      "source": {
+        "git": "https://github.com/OctoSense-org/makepad.git",
+        "rev": "aee111593c916506d3e9f3d4c850884c806f264b",
+        "local": ".sources/makepad/compat/makepad-notes"
+      },
       "module": "makepad_notes::NOTES_MODULE",
       "bin": "notes",
-      "bin_features": ["standalone"],
+      "bin_features": [
+        "standalone"
+      ],
       "default_features": false,
       "crate_features": [],
       "implies": [],
-      "hosting": { "macos": "module", "windows": "module", "linux": "module", "android": "module", "ios": "module", "ohos": "module" },
-      "shells": { "desktop": "default", "phone": "default" },
+      "hosting": {
+        "macos": "module",
+        "windows": "module",
+        "linux": "module",
+        "android": "module",
+        "ios": "module",
+        "ohos": "module"
+      },
+      "shells": {
+        "desktop": "default",
+        "phone": "default"
+      },
       "native_mobile": "feature",
-      "sandbox": { "network": "none", "processes": false },
-      "storage": { "accounts": false, "agent_workspace": "none", "external": [] },
+      "sandbox": {
+        "network": "none",
+        "processes": false
+      },
+      "storage": {
+        "accounts": false,
+        "agent_workspace": "none",
+        "external": []
+      },
       "agent": {
-        "octos": ["octos.session.open", "octos.session.history", "octos.turn.start", "octos.turn.interrupt"],
-        "tools": [
-          {"name": "notes.search", "description": "Find active notes whose title or body contains the query. Answers id, title, preview, folder, edited_ms and pinned.", "input_schema": {"type": "object", "properties": {"query": {"type": "string", "description": "text to find"}}, "required": ["query"]}, "risk": "read", "shareable": true},
-          {"name": "notes.read", "description": "Read one active note by id: folder, title, complete source, timestamps and pinned state.", "input_schema": {"type": "object", "properties": {"id": {"type": "string", "description": "note id such as n000001"}}, "required": ["id"]}, "risk": "read", "shareable": true}
+        "octos": [
+          "octos.session.open",
+          "octos.session.history",
+          "octos.turn.start",
+          "octos.turn.interrupt"
         ],
-        "system_tools": ["notes.search", "notes.read"]
+        "tools": [
+          {
+            "name": "notes.search",
+            "description": "Find active notes whose title or body contains the query. Answers id, title, preview, folder, edited_ms and pinned.",
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "query": {
+                  "type": "string",
+                  "description": "text to find"
+                }
+              },
+              "required": [
+                "query"
+              ]
+            },
+            "risk": "read",
+            "shareable": true
+          },
+          {
+            "name": "notes.read",
+            "description": "Read one active note by id: folder, title, complete source, timestamps and pinned state.",
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "description": "note id such as n000001"
+                }
+              },
+              "required": [
+                "id"
+              ]
+            },
+            "risk": "read",
+            "shareable": true
+          }
+        ],
+        "system_tools": [
+          "notes.search",
+          "notes.read"
+        ]
       }
     },
     {
       "id": "reminders",
       "crate": "makepad-reminders",
-      "source": { "git": "https://github.com/OctoSense-org/makepad.git", "rev": "d653bc4493619ab979ccff165cf48c0c63b77d19", "local": ".sources/makepad/apps/reminders" },
+      "source": {
+        "git": "https://github.com/OctoSense-org/makepad.git",
+        "rev": "aee111593c916506d3e9f3d4c850884c806f264b",
+        "local": ".sources/makepad/compat/makepad-reminders"
+      },
       "module": "makepad_reminders::REMINDERS_MODULE",
       "bin": "reminders",
-      "bin_features": ["standalone"],
+      "bin_features": [
+        "standalone"
+      ],
       "default_features": false,
       "crate_features": [],
       "implies": [],
-      "hosting": { "macos": "module", "windows": "module", "linux": "module", "android": "module", "ios": "module", "ohos": "module" },
-      "shells": { "desktop": "default", "phone": "default" },
+      "hosting": {
+        "macos": "module",
+        "windows": "module",
+        "linux": "module",
+        "android": "module",
+        "ios": "module",
+        "ohos": "module"
+      },
+      "shells": {
+        "desktop": "default",
+        "phone": "default"
+      },
       "native_mobile": "feature",
-      "sandbox": { "network": "none", "processes": false },
-      "storage": { "accounts": false, "agent_workspace": "none", "external": [] },
+      "sandbox": {
+        "network": "none",
+        "processes": false
+      },
+      "storage": {
+        "accounts": false,
+        "agent_workspace": "none",
+        "external": []
+      },
       "agent": {
-        "octos": ["octos.session.open", "octos.session.history", "octos.turn.start", "octos.turn.interrupt"],
-        "tools": [
-          {"name": "reminders.due", "description": "Incomplete dated reminders due before today plus N days, including overdue items and today.", "input_schema": {"type": "object", "properties": {"days": {"type": "integer", "minimum": 1, "maximum": 31}}, "required": ["days"], "additionalProperties": false}, "risk": "read", "shareable": true},
-          {"name": "reminders.list", "description": "Reminders in a smart list or personal list, using the same projection as the UI.", "input_schema": {"type": "object", "properties": {"name": {"type": "string", "minLength": 1, "maxLength": 64}}, "required": ["name"], "additionalProperties": false}, "risk": "read", "shareable": true}
+        "octos": [
+          "octos.session.open",
+          "octos.session.history",
+          "octos.turn.start",
+          "octos.turn.interrupt"
         ],
-        "system_tools": ["reminders.due", "reminders.list"]
+        "tools": [
+          {
+            "name": "reminders.due",
+            "description": "Incomplete dated reminders due before today plus N days, including overdue items and today.",
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "days": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 31
+                }
+              },
+              "required": [
+                "days"
+              ],
+              "additionalProperties": false
+            },
+            "risk": "read",
+            "shareable": true
+          },
+          {
+            "name": "reminders.list",
+            "description": "Reminders in a smart list or personal list, using the same projection as the UI.",
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                }
+              },
+              "required": [
+                "name"
+              ],
+              "additionalProperties": false
+            },
+            "risk": "read",
+            "shareable": true
+          }
+        ],
+        "system_tools": [
+          "reminders.due",
+          "reminders.list"
+        ]
       }
     },
     {
       "id": "weather",
       "crate": "makepad-weather",
-      "source": { "git": "https://github.com/OctoSense-org/makepad.git", "rev": "d653bc4493619ab979ccff165cf48c0c63b77d19", "local": ".sources/makepad/apps/weather" },
+      "source": {
+        "git": "https://github.com/OctoSense-org/makepad.git",
+        "rev": "aee111593c916506d3e9f3d4c850884c806f264b",
+        "local": ".sources/makepad/compat/makepad-weather"
+      },
       "module": "makepad_weather::WEATHER_MODULE",
       "bin": "weather",
-      "bin_features": ["standalone"],
+      "bin_features": [
+        "standalone"
+      ],
       "default_features": false,
       "crate_features": [],
       "implies": [],
-      "hosting": { "macos": "module", "windows": "module", "linux": "module", "android": "module", "ios": "module", "ohos": "module" },
-      "shells": { "desktop": "default", "phone": "default" },
-      "native_mobile": "feature",
-      "sandbox": { "network": "any", "processes": false },
-      "storage": { "accounts": false, "agent_workspace": "none", "external": [] },
-      "agent": {
-        "octos": ["octos.session.open", "octos.session.history", "octos.turn.start", "octos.turn.interrupt"],
-        "tools": [
-          {"name": "weather.current", "description": "Current conditions and the 5-day forecast for the city selected on screen.", "input_schema": {"type": "object", "properties": {}}, "risk": "read", "shareable": true}
-        ],
-        "system_tools": ["weather.current"]
-      }
-    },
-    {
-      "id": "octoscode",
-      "crate": "octoscode-module",
-      "source": { "git": "https://github.com/octos-org/octoscode-app.git", "rev": "5d0c2a0962218aa94497201ce1a39b7429f09e36", "local": null },
-      "module": "octoscode_module::OCTOSCODE_MODULE",
-      "bin": null,
-      "default_features": false,
-      "crate_features": ["octosense-module"],
-      "implies": ["octos-core"],
-      "hosting": { "macos": "module", "windows": "module", "linux": "module", "android": "module", "ios": "module", "ohos": "module" },
-      "shells": { "desktop": "default", "phone": "default" },
-      "native_mobile": "feature",
-      "sandbox": { "network": "none", "processes": false },
-      "storage": { "accounts": false, "agent_workspace": "none", "external": ["home:rw"] },
-      "agent": {
-        "octos": []
+      "hosting": {
+        "macos": "module",
+        "windows": "module",
+        "linux": "module",
+        "android": "module",
+        "ios": "module",
+        "ohos": "module"
       },
-      "kernel": "coding"
-    },
-    {
-      "id": "task",
-      "crate": "makepad-task",
-      "source": { "git": "https://github.com/OctoSense-org/makepad.git", "rev": "d653bc4493619ab979ccff165cf48c0c63b77d19", "local": ".sources/makepad/apps/task" },
-      "module": null,
-      "bin": "task",
-      "default_features": true,
-      "crate_features": [],
-      "implies": [],
-      "hosting": { "macos": "process", "windows": "process", "linux": "process-if-vulkan", "android": "none", "ios": "none", "ohos": "none" },
-      "shells": { "desktop": "off", "phone": "off" },
+      "shells": {
+        "desktop": "default",
+        "phone": "default"
+      },
       "native_mobile": "feature",
-      "sandbox": { "network": "none", "processes": true },
-      "storage": { "accounts": false, "agent_workspace": "none", "external": [] },
-      "agent": { "octos": [], "tools": null }
+      "sandbox": {
+        "network": "any",
+        "processes": false
+      },
+      "storage": {
+        "accounts": false,
+        "agent_workspace": "none",
+        "external": []
+      },
+      "agent": {
+        "octos": [
+          "octos.session.open",
+          "octos.session.history",
+          "octos.turn.start",
+          "octos.turn.interrupt"
+        ],
+        "tools": [
+          {
+            "name": "weather.current",
+            "description": "Current conditions and the 5-day forecast for the city selected on screen.",
+            "input_schema": {
+              "type": "object",
+              "properties": {}
+            },
+            "risk": "read",
+            "shareable": true
+          }
+        ],
+        "system_tools": [
+          "weather.current"
+        ]
+      }
     }
   ]
 }

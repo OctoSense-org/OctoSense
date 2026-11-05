@@ -30,8 +30,8 @@
     "id": "terminal",
     "label": "Terminal",
     "source": "makepad",
-    "package": "makepad-app-terminal",
-    "bin": "makepad-app-terminal",
+    "package": "makepad-terminal",
+    "bin": "terminal",
     "policy": "new"
   },
   {
@@ -46,24 +46,24 @@
     "id": "sheets",
     "label": "Sheets",
     "source": "makepad",
-    "package": "makepad-app-sheets",
-    "bin": "makepad-app-sheets",
+    "package": "makepad-sheets",
+    "bin": "sheets",
     "policy": "focus"
   },
   {
     "id": "clock",
     "label": "Clock",
     "source": "makepad",
-    "package": "makepad-app-clock",
-    "bin": "makepad-app-clock",
+    "package": "makepad-clock",
+    "bin": "clock",
     "policy": "focus"
   },
   {
     "id": "weather",
     "label": "Weather",
     "source": "makepad",
-    "package": "makepad-app-weather",
-    "bin": "makepad-app-weather",
+    "package": "makepad-weather",
+    "bin": "weather",
     "policy": "focus"
   },
   {
@@ -78,24 +78,24 @@
     "id": "notes",
     "label": "Notes",
     "source": "makepad",
-    "package": "makepad-app-notes",
-    "bin": "makepad-app-notes",
+    "package": "makepad-notes",
+    "bin": "notes",
     "policy": "focus"
   },
   {
     "id": "reminders",
     "label": "Reminders",
     "source": "makepad",
-    "package": "makepad-app-reminders",
-    "bin": "makepad-app-reminders",
+    "package": "makepad-reminders",
+    "bin": "reminders",
     "policy": "focus"
   },
   {
     "id": "calculator",
     "label": "Calculator",
     "source": "makepad",
-    "package": "makepad-app-calculator",
-    "bin": "makepad-app-calculator",
+    "package": "makepad-calculator",
+    "bin": "calculator",
     "policy": "focus"
   },
   {
