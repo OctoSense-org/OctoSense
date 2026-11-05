@@ -1,0 +1,71 @@
+makepad-run: 20 unresolved imports (first 20):
+  /Users/ychen/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zmij-1.0.23/src/lib.rs:105: unresolved import `core::arch::aarch64::vcgtzq_s8`
+  /Users/ychen/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zmij-1.0.23/src/lib.rs:105: unresolved import `core::arch::aarch64::vcombine_s32`
+  /Users/ychen/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zmij-1.0.23/src/lib.rs:105: unresolved import `core::arch::aarch64::vcreate_u64`
+  /Users/ychen/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zmij-1.0.23/src/lib.rs:105: unresolved import `core::arch::aarch64::vdup_n_s32`
+  /Users/ychen/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zmij-1.0.23/src/lib.rs:105: unresolved import `core::arch::aarch64::vmla_n_s32`
+  /Users/ychen/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zmij-1.0.23/src/lib.rs:105: unresolved import `core::arch::aarch64::vmlaq_n_s16`
+  /Users/ychen/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zmij-1.0.23/src/lib.rs:105: unresolved import `core::arch::aarch64::vmlaq_n_s32`
+  /Users/ychen/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zmij-1.0.23/src/lib.rs:105: unresolved import `core::arch::aarch64::vqdmulh_n_s32`
+  /Users/ychen/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zmij-1.0.23/src/lib.rs:105: unresolved import `core::arch::aarch64::vqdmulhq_n_s16`
+  /Users/ychen/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zmij-1.0.23/src/lib.rs:105: unresolved import `core::arch::aarch64::vqdmulhq_n_s32`
+  /Users/ychen/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zmij-1.0.23/src/lib.rs:105: unresolved import `core::arch::aarch64::vreinterpret_s32_u32`
+  /Users/ychen/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zmij-1.0.23/src/lib.rs:105: unresolved import `core::arch::aarch64::vreinterpret_s32_u64`
+  /Users/ychen/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zmij-1.0.23/src/lib.rs:105: unresolved import `core::arch::aarch64::vreinterpret_u16_s32`
+  /Users/ychen/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zmij-1.0.23/src/lib.rs:105: unresolved import `core::arch::aarch64::vreinterpret_u32_s32`
+  /Users/ychen/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zmij-1.0.23/src/lib.rs:105: unresolved import `core::arch::aarch64::vreinterpretq_u16_s8`
+  /Users/ychen/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zmij-1.0.23/src/lib.rs:105: unresolved import `core::arch::aarch64::vreinterpretq_u8_s16`
+  /Users/ychen/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zmij-1.0.23/src/lib.rs:105: unresolved import `core::arch::aarch64::vreinterpretq_u8_u64`
+  /Users/ychen/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zmij-1.0.23/src/lib.rs:105: unresolved import `core::arch::aarch64::vrev64q_u8`
+  /Users/ychen/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zmij-1.0.23/src/lib.rs:105: unresolved import `core::arch::aarch64::vshll_n_u16`
+  /Users/ychen/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zmij-1.0.23/src/lib.rs:105: unresolved import `core::arch::aarch64::vshr_n_u32`
+makepad-run: --allow-c: the optimized native build's scripts said other cfgs or env than the first build's: its library is not taken
+makepad check: 139 crates type- and borrow-checked in 37.3 s
+/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/.sources/makepad/platform/hal/src/backend/apple/media/layers.rs:830:26: warning: unnecessary `unsafe` block -- because it's nested under this `unsafe` block [unused_unsafe]
+/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/.sources/makepad/platform/hal/src/backend/apple/metal/compute.rs:105:42: warning: unnecessary `unsafe` block -- because it's nested under this `unsafe` block [unused_unsafe]
+/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/.sources/makepad/platform/hal/src/backend/apple/metal/compute.rs:213:30: warning: unnecessary `unsafe` block -- because it's nested under this `unsafe` block [unused_unsafe]
+/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/.sources/makepad/platform/hal/src/backend/apple/metal/frame.rs:647:17: warning: unnecessary `unsafe` block -- because it's nested under this `unsafe` block [unused_unsafe]
+/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/.sources/makepad/platform/hal/src/backend/apple/metal/frame.rs:762:30: warning: unnecessary `unsafe` block -- because it's nested under this `unsafe` block [unused_unsafe]
+/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/.sources/makepad/platform/hal/src/backend/apple/metal/readback.rs:78:25: warning: unnecessary `unsafe` block -- because it's nested under this `unsafe` block [unused_unsafe]
+/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/.sources/makepad/platform/hal/src/backend/apple/metal/readback.rs:113:13: warning: unnecessary `unsafe` block -- because it's nested under this `unsafe` block [unused_unsafe]
+/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/.sources/makepad/platform/hal/src/backend/apple/metal/readback.rs:171:13: warning: unnecessary `unsafe` block -- because it's nested under this `unsafe` block [unused_unsafe]
+/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/.sources/makepad/widgets/core/src/splash_host.rs:132:15: warning: function `prompts_allowed_for_heap` is never used [dead_code]
+/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/.sources/makepad/widgets/core/src/splash_policy.rs:78:15: warning: function `device_consent_required` is never used [dead_code]
+/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/.sources/makepad/widgets/core/src/splash_policy.rs:84:15: warning: function `device_prompt_allowed` is never used [dead_code]
+/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/.sources/makepad/widgets/core/src/widget_async.rs:276:15: warning: function `apply_splash_isolate_mods` is never used [dead_code]
+/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/.sources/octoscript-makepad/crates/makepad-d3/src/data/chart_data.rs:3:13: warning: unused import: `DataPoint` [unused_imports]
+/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/.sources/octoscript-makepad/crates/makepad-d3/src/data/source.rs:336:5: warning: field `state` is never read [dead_code]
+/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/.sources/octoscript-makepad/crates/makepad-d3/src/geo/path.rs:5:22: warning: unused imports: `FeatureCollection` and `Feature` [unused_imports]
+/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/.sources/octoscript-makepad/crates/makepad-d3/src/geo/path.rs:448:12: warning: struct `GeoPathBuilder` is never constructed [dead_code]
+/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/.sources/octoscript-makepad/crates/makepad-d3/src/geo/path.rs:455:12: warning: associated items `new`, `point_radius`, and `build` are never used [dead_code]
+/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/.sources/octoscript-makepad/crates/makepad-d3/src/interaction/brush.rs:233:5: warning: field `keyboard_modifiers` is never read [dead_code]
+/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/.sources/octoscript-makepad/crates/makepad-d3/src/interaction/zoom.rs:9:12: warning: struct `Point2D` is never constructed [dead_code]
+/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/.sources/octoscript-makepad/crates/makepad-d3/src/interaction/zoom.rs:18:12: warning: associated functions `new` and `zero` are never used [dead_code]
+/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/.sources/octoscript-makepad/crates/makepad-d3/src/layout/delaunay.rs:331:5: warning: field `bounds` is never read [dead_code]
+/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/.sources/octoscript-makepad/crates/makepad-d3/src/layout/force/forces.rs:40:5: warning: field `theta` is never read [dead_code]
+/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/.sources/octoscript-makepad/crates/makepad-d3/src/layout/force/simulation.rs:192:5: warning: field `random_seed` is never read [dead_code]
+/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/.sources/octoscript-makepad/crates/makepad-d3/src/layout/hierarchy/node.rs:272:12: warning: struct `PositionedNode` is never constructed [dead_code]
+/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/.sources/octoscript-makepad/crates/makepad-d3/src/layout/hierarchy/node.rs:295:12: warning: associated items `from_node` and `contains` are never used [dead_code]
+/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/.sources/octoscript-makepad/crates/makepad-d3/src/layout/hierarchy/tree.rs:194:12: warning: struct `ClusterLayout` is never constructed [dead_code]
+/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/.sources/octoscript-makepad/crates/makepad-d3/src/layout/hierarchy/tree.rs:211:12: warning: multiple associated items are never used [dead_code]
+/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/.sources/octoscript-makepad/crates/makepad-d3/src/render3d/surface.rs:303:21: warning: unused variable: `v11` [unused_variables]
+/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/.sources/octoscript-makepad/crates/makepad-d3/src/scale/sequential.rs:242:18: warning: use of deprecated method `scale::sequential::::domain`: Use `with_domain` instead for consistent builder pattern [deprecated]
+/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/.sources/octoscript-makepad/crates/makepad-d3/src/scale/sequential.rs:243:18: warning: use of deprecated method `scale::sequential::::clamp`: Use `with_clamp` instead for consistent builder pattern [deprecated]
+/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/.sources/octoscript-makepad/crates/makepad-d3/src/scale/utils.rs:115:8: warning: function `lerp` is never used [dead_code]
+/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/.sources/octoscript-makepad/crates/makepad-d3/src/scale/utils.rs:120:8: warning: function `unlerp` is never used [dead_code]
+/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/.sources/octoscript-makepad/crates/octoscript-widgets/src/design.rs:655:17: warning: unnecessary parentheses around assigned value [unused_parens]
+/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/.sources/octoscript-makepad/crates/octoscript-widgets/src/kit_shared.rs:82:17: warning: unnecessary parentheses around assigned value [unused_parens]
+/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/.sources/octoscript-makepad/crates/octoscript-widgets/src/kit_shared.rs:105:17: warning: unnecessary parentheses around assigned value [unused_parens]
+/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/.sources/octoscript-makepad/crates/octoscript-widgets/src/kit_shared.rs:108:20: warning: variable does not need to be mutable -- help: remove this `mut` (`w`) [unused_mut]
+/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/.sources/octoscript-makepad/crates/octoscript-widgets/src/kit_shared.rs:108:29: warning: unused variable: `w` [unused_variables]
+/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/.sources/octoscript-makepad/crates/octoscript-widgets/src/kit_shared.rs:109:25: warning: unnecessary parentheses around assigned value [unused_parens]
+/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/.sources/octoscript-makepad/crates/octoscript-widgets/src/kit_shared.rs:112:20: warning: variable does not need to be mutable -- help: remove this `mut` (`w`) [unused_mut]
+/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/.sources/octoscript-makepad/crates/octoscript-widgets/src/kit_shared.rs:112:29: warning: unused variable: `w` [unused_variables]
+/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/.sources/octoscript-makepad/crates/octoscript-widgets/src/kit_shared.rs:113:25: warning: unnecessary parentheses around assigned value [unused_parens]
+/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/crates/shell/src/agents.rs:393:9: warning: variable does not need to be mutable -- help: remove this `mut` (`tools`) [unused_mut]
+/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/crates/shell/src/approvals/mod.rs:279:30: warning: unused variable: `app` [unused_variables]
+/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/crates/shell/src/mail_card.rs:426:13: warning: variable does not need to be mutable -- help: remove this `mut` (`binding`) [unused_mut]
+/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/crates/shell/src/mail_card.rs:764:46: warning: unused import: `publication_host_ready` [unused_imports]
+makepad check: 94273 body owners of the checked crates, 1805 compiled in all, 0 errors
+makepad check: cpu typeck 17 ms, lower 81 ms, opt 14 ms, codegen 45 ms; 64651 RIR insts, 211 KB code
+makepad check: constant initializers: 11151 evaluated to data, 1520 compiled and run; evaluation cpu 213.2 ms
