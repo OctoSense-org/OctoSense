@@ -534,13 +534,14 @@ impl Active {
         // Fail closed on the device: a studio render never inherits the
         // shell's OS permissions and carries no host identity, as a seated
         // contained app does (`glance_card::seat`).
-        // jit3 PORT GAP: upstream Splash has no set_device_consent.
+        splash.set_device_consent(cx, true);
         splash.set_host_tag(cx, None);
         splash.set_host_caps(cx, Vec::new());
         splash.set_host_prompts(cx, false);
         // Hosts and the instruction budget are declarations since the ruling
         // of 8 October 2026; the jail, quota and memory cap are what is enforced.
-        // jit3 PORT GAP: upstream Splash has no set_policy / set_memory_bytes (isolate memory cap).
+        splash.set_policy(cx, Some(Vec::new()), Some(5_000_000));
+        splash.set_memory_bytes(cx, Some(16 * 1024 * 1024));
         splash.set_text(cx, &body);
         let mut children = 0;
         if let Some(s) = splash.borrow() {

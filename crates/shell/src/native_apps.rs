@@ -142,33 +142,6 @@ pub const APPS: &[NativeApp] = &[
         kernel: KernelPort::None,
     },
     NativeApp {
-        id: "rinx",
-        feature: "app-rinx",
-        bin: None,
-        macos: Hosting::Module,
-        windows: Hosting::Module,
-        linux: Hosting::Module,
-        android: Hosting::Module,
-        ios: Hosting::Module,
-        ohos: Hosting::Module,
-        wasm: Hosting::Module,
-        octos: &["octos.session.open", "octos.session.history", "octos.turn.start", "octos.turn.interrupt"],
-        tools: &[],
-        network: Network::Any,
-        processes: false,
-        accounts: true,
-        external: &[],
-        storage: r#"{"accounts": true, "agent_workspace": "account", "external": []}"#,
-        tools_json: r##"[]"##,
-        generic_tools: &["read_file", "write_file", "edit_file", "diff_edit", "apply_patch", "glob", "grep", "list_dir", "code_structure", "ask_user_question", "view_image", "recall", "recall_memory", "memory_search", "memory_load", "save_memory", "memory_note", "web_search", "web_fetch", "tool_search"],
-        grants: &[],
-        system_tools: &[],
-        own_tools: &[],
-        calls_per_turn: None,
-        calls_per_day: None,
-        kernel: KernelPort::None,
-    },
-    NativeApp {
         id: "reference",
         feature: "app-reference",
         bin: Some("octosense-reference"),
@@ -247,33 +220,6 @@ pub const APPS: &[NativeApp] = &[
         grants: &[],
         system_tools: &[],
         own_tools: &["terminal.read_screen", "terminal.read_scrollback"],
-        calls_per_turn: None,
-        calls_per_day: None,
-        kernel: KernelPort::None,
-    },
-    NativeApp {
-        id: "appcard",
-        feature: "app-appcard",
-        bin: None,
-        macos: Hosting::Module,
-        windows: Hosting::Module,
-        linux: Hosting::Module,
-        android: Hosting::Module,
-        ios: Hosting::Module,
-        ohos: Hosting::Module,
-        wasm: Hosting::Module,
-        octos: &[],
-        tools: &[],
-        network: Network::Any,
-        processes: false,
-        accounts: false,
-        external: &[],
-        storage: r#"{"accounts": false, "agent_workspace": "none", "external": []}"#,
-        tools_json: r##"[]"##,
-        generic_tools: &[],
-        grants: &[],
-        system_tools: &[],
-        own_tools: &[],
         calls_per_turn: None,
         calls_per_day: None,
         kernel: KernelPort::None,
@@ -440,60 +386,6 @@ pub const APPS: &[NativeApp] = &[
         calls_per_day: None,
         kernel: KernelPort::None,
     },
-    NativeApp {
-        id: "octoscode",
-        feature: "app-octoscode",
-        bin: None,
-        macos: Hosting::Module,
-        windows: Hosting::Module,
-        linux: Hosting::Module,
-        android: Hosting::Module,
-        ios: Hosting::Module,
-        ohos: Hosting::Module,
-        wasm: Hosting::Module,
-        octos: &[],
-        tools: &[],
-        network: Network::None,
-        processes: false,
-        accounts: false,
-        external: &["home:rw"],
-        storage: r#"{"accounts": false, "agent_workspace": "none", "external": ["home:rw"]}"#,
-        tools_json: r##"[]"##,
-        generic_tools: &[],
-        grants: &[],
-        system_tools: &[],
-        own_tools: &[],
-        calls_per_turn: None,
-        calls_per_day: None,
-        kernel: KernelPort::Coding,
-    },
-    NativeApp {
-        id: "task",
-        feature: "app-task",
-        bin: Some("task"),
-        macos: Hosting::Process,
-        windows: Hosting::Process,
-        linux: Hosting::ProcessIfVulkan,
-        android: Hosting::None,
-        ios: Hosting::None,
-        ohos: Hosting::None,
-        wasm: Hosting::None,
-        octos: &[],
-        tools: &[],
-        network: Network::None,
-        processes: true,
-        accounts: false,
-        external: &[],
-        storage: r#"{"accounts": false, "agent_workspace": "none", "external": []}"#,
-        tools_json: r##"[]"##,
-        generic_tools: &[],
-        grants: &[],
-        system_tools: &[],
-        own_tools: &[],
-        calls_per_turn: None,
-        calls_per_day: None,
-        kernel: KernelPort::None,
-    },
 ];
 
 impl NativeApp {
@@ -542,7 +434,6 @@ pub fn package_of(id: &str) -> Option<&'static str> {
         "notes" => Some("makepad-notes"),
         "reminders" => Some("makepad-reminders"),
         "weather" => Some("makepad-weather"),
-        "task" => Some("makepad-task"),
         _ => None,
     }
 }
@@ -552,16 +443,12 @@ pub fn package_of(id: &str) -> Option<&'static str> {
 pub fn link(out: &mut Vec<&'static dyn AppModule>) {
     #[cfg(any(feature = "app-updater", native_mobile))]
     out.push(&octosense_updater_ui::UPDATER_MODULE);
-    #[cfg(feature = "app-rinx")]
-    out.push(&rinx::module::RINX_MODULE);
     #[cfg(any(feature = "app-reference", native_mobile))]
     out.push(&octosense_reference::REFERENCE_MODULE);
     #[cfg(any(feature = "app-sheets", native_mobile))]
     out.push(&makepad_sheets::SHEETS_MODULE);
     #[cfg(feature = "app-terminal")]
     out.push(&makepad_terminal::TERMINAL_MODULE);
-    #[cfg(feature = "app-appcard")]
-    out.push(&octosense_appcard::APPCARD_MODULE);
     #[cfg(any(feature = "app-hub", native_mobile))]
     {
         out.push(&octosense_app_hub_app::APP_HUB_MODULE);
@@ -577,6 +464,4 @@ pub fn link(out: &mut Vec<&'static dyn AppModule>) {
     out.push(&makepad_reminders::REMINDERS_MODULE);
     #[cfg(feature = "app-weather")]
     out.push(&makepad_weather::WEATHER_MODULE);
-    #[cfg(feature = "app-octoscode")]
-    out.push(&octoscode_module::OCTOSCODE_MODULE);
 }

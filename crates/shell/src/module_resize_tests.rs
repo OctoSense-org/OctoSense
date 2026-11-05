@@ -202,7 +202,6 @@ fn calendar_saved_event_title_wraps_above_its_details_on_a_narrow_phone() {
 }
 
 #[test]
-#[ignore = "jit3 PORT GAP: upstream has no splash_policy (set_policy_for_heap)"]
 fn maps_location_request_checks_the_contained_app_capability() {
     let (mut cx, _tile, root, outer) = hosted_card();
     set_card_body(&mut cx, &root, outer, "View{}");
@@ -210,7 +209,7 @@ fn maps_location_request_checks_the_contained_app_capability() {
     let owner = cx.script_ref_vm_id(&source).unwrap();
     let heap = cx.with_script_vm_id(owner, |vm| vm.bx.heap.heap_key());
     let request = |cx: &mut Cx| cx.with_script_vm_id(owner, |vm| {
-        // jit3 PORT GAP: upstream has no splash::register_agent_module.
+        splash::register_agent_module(vm);
         vm.bx.captured_errors = Some(Vec::new());
         let result = script_eval!(vm, {sys.request_location()});
         let errors = vm.take_errors();
@@ -218,12 +217,12 @@ fn maps_location_request_checks_the_contained_app_capability() {
         result.as_number().unwrap()
     });
     for capability in ["net", "location.get", ""] {
-        // jit3 PORT GAP (test ignored): splash_policy::set_policy_for_heap(heap, vec![capability.into()], vec![], None);
+        splash_policy::set_policy_for_heap(heap, vec![capability.into()], vec![], None);
         assert_eq!(request(&mut cx), -1.0, "{capability} cannot start permission consent");
     }
-    // jit3 PORT GAP (test ignored): splash_policy::set_policy_for_heap(heap, vec!["location".into()], vec![], None);
+    splash_policy::set_policy_for_heap(heap, vec!["location".into()], vec![], None);
     assert_eq!(request(&mut cx), if cfg!(target_os = "android") {1.0} else {0.0}, "unsupported platforms must not claim a request started");
-    // jit3 PORT GAP (test ignored): splash_policy::set_policy_for_heap(heap, vec![], vec![], None);
+    splash_policy::set_policy_for_heap(heap, vec![], vec![], None);
     assert_eq!(request(&mut cx), -1.0, "revoking the grant takes effect on the next request");
 }
 

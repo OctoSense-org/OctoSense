@@ -188,3 +188,9 @@ workarounds kept: pure blake3, unused [patch] entries removed, `::serde_json::js
   → arr_view op), shell glance_card.rs:287 install_nav (ScriptCode.native field), plus makepad_script internals reached from JIT
   (array_storage, set_fn, temp_string_with). Upstream's own calculator audit shows 26 HAL static reads too (upstream's problem).
   Decision for now: run unbound (loader built from a different commit than the program's makepad) until those sites use ops.
+- run18 (bare relax runner, jit branch, .sources layout): first frame 30.5 s cold, 6 modules, the `ime` note only → the jit branch is
+  validated end-to-end in unbound mode. Fork jit → 7407e3c5a (policy layer + device consent merged, register_type_inner bound op);
+  Octoscript-Makepad jit 6b448eec; App Hub jit 537fd7c9 (policy/agent/consent calls restored); OctoSense pins moved (setup --update),
+  PORT GAP marks in the shell down to 3 (WebReader, isolate memory cap stays enforced now through set_memory_bytes), App Hub 1
+  (camera_preview). The bare runner (`relax`, Policy::Open, provides no crates) is the jit line's runner until the boundary sites use ops;
+  `makepad run` binds its provided makepad_script and parks on the audit's violations.

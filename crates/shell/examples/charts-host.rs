@@ -29,7 +29,7 @@ struct App {
 impl MatchEvent for App {
     fn handle_startup(&mut self, cx: &mut Cx) {
         let card = self.ui.splash(cx, ids!(card));
-        // jit3 PORT GAP: upstream Splash has no set_policy.
+        card.set_policy(cx, Some(Vec::new()), Some(2_000_000));
         let custom_script =
             std::env::args().find_map(|arg| arg.strip_prefix("--script=").map(str::to_owned));
         let source = match custom_script {

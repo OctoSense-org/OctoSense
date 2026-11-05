@@ -1,0 +1,2 @@
+makepad-run: --allow-c: the optimized native build's scripts said other cfgs or env than the first build's: its library is not taken
+{"type":"summary","errors":0,"warnings":0,"ms":56989}
