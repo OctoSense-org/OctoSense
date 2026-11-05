@@ -129,3 +129,8 @@ Ruled out along the way (each a real finding):
   panic DEPTH/PAYLOAD → the proc-macro WORLD (pmhost.rs: its own Program/Tcx/JIT Unit, in process, for the life of the run; started early beside the
   native build = `proc-macro world started beside the native build`, absent in the calculator) runs on the same main thread. Suspect: two units
   placing thread-locals in one per-thread block (each Unit starts at TLS_FIRST_FREE) — not proven: the trace shows one sequence of offsets.
+- run8: MAKEPAD_RUN_OPT with EVERY backend -token off → identical fault at the identical offset: not an optimisation pass; runtime/TLS.
+STOPPED HERE (user's call). Upstream issues opened 4 Nov: #1384 json! glob shadow, #1385 cargo [env], #1386 the startup trap
+(next_keys/KEYS, world + program units), #1387 native library back-reference (blake3), #1388 lock rewrite per run. In-tree
+workarounds kept: pure blake3, unused [patch] entries removed, `::serde_json::json!`. Next when upstream answers #1386: rerun
+`.d1-scratch/jit3-run.sh jit3-run9`.
