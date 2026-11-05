@@ -7,8 +7,8 @@
 //! superbuild, or a desktop that switched `aichat` to module hosting —
 //! there is no socket to frame anything over: each service is an ordinary
 //! in-process [`ServiceLink`] the chat root adopts into its registry
-//! (parked on `Cx` as [`PendingServiceLinks`], the same lot the Window's
-//! F10 overlay drains), and the WM keeps the host half of every link:
+//! (registered in the process registry, `ServiceRegistry::process`, the
+//! same one the Window's overlay reads), and the WM keeps the host half of every link:
 //! calls arrive on its `down` channel, answers go back on `up`. Dropping
 //! a host half is how an instance leaves — the registry sees the link
 //! close and forgets the endpoint.
@@ -16,7 +16,8 @@
 //! This is the leg the web build runs everything on.
 
 use crate::hub::ClientId;
-use makepad_ai_services::port::{PendingServiceLinks, ServiceLink, ServiceLinkHost};
+use makepad_ai_services::engine::ServiceRegistry;
+use makepad_ai_services::port::{ServiceLink, ServiceLinkHost};
 use makepad_ai_services::wire::*;
 use makepad_widgets::*;
 use std::collections::HashMap;
@@ -55,17 +56,22 @@ impl PaneLinks {
     /// One link: the app-side half goes to the lot the chat root drains,
     /// announced with its manifest exactly as a port announces itself; the
     /// host half stays here.
-    fn open(pending: &mut PendingServiceLinks, manifest: ServiceManifest) -> ServiceLinkHost {
+    fn open(registry: &ServiceRegistry, manifest: ServiceManifest) -> ServiceLinkHost {
         let (link, host) = ServiceLink::pair(manifest.clone());
         let _ = host.up.send(HostedUp { from: None, msg: ServiceUp::Register { manifest, port_tag: 0 } });
-        pending.links.push(link);
+        // Upstream has no pending lot on `Cx`: a standalone link goes straight
+        // into the process registry every chat panel of the process reads.
+        if let Err(e) = registry.register(link, "in this window", None) {
+            log!("pane links: service refused: {e}");
+        }
         host
     }
 
     /// The WM's own service, once.
     pub fn open_os(&mut self, cx: &mut Cx, manifest: ServiceManifest) {
         if self.os.is_none() {
-            self.os = Some(Self::open(cx.global::<PendingServiceLinks>(), manifest));
+            let _ = cx;
+            self.os = Some(Self::open(&ServiceRegistry::process(), manifest));
         }
     }
 
@@ -77,7 +83,8 @@ impl PaneLinks {
     /// root is up, and is adopted the moment it is.
     pub fn open_instance(&mut self, cx: &mut Cx, client: ClientId, manifest: ServiceManifest) {
         let approves = crate::dev_mode::overrides_every_approval(&manifest.id);
-        let host = Self::open(cx.global::<PendingServiceLinks>(), crate::ai_bus::dev_approved(&manifest, approves));
+        let _ = cx;
+        let host = Self::open(&ServiceRegistry::process(), crate::ai_bus::dev_approved(&manifest, approves));
         self.instances.insert(client, host);
         self.manifests.insert(client, manifest);
     }
@@ -196,22 +203,19 @@ mod tests {
 
     #[test]
     fn links_are_adopted_by_a_registry_and_calls_come_back_as_pane_calls() {
-        let mut pending = PendingServiceLinks::default();
-        let mut links = PaneLinks::default();
-        links.os = Some(PaneLinks::open(&mut pending, crate::ai_bus::AiBus::os_manifest(&[])));
-        links.instances.insert(4, PaneLinks::open(&mut pending, sheets()));
-        assert_eq!(pending.links.len(), 2);
-        // The chat root adopts the lot; the registry answers each Register.
+        // A test registry stands in for the process one; a link registers
+        // the moment it opens, and the registry answers each Register.
         let registry = ServiceRegistry::new();
-        let endpoints: Vec<EndpointId> = pending
-            .take()
-            .into_iter()
-            .map(|link| registry.register(link, "in this process", None).expect("adopted"))
-            .collect();
+        let mut links = PaneLinks::default();
+        links.os = Some(PaneLinks::open(&registry, crate::ai_bus::AiBus::os_manifest(&[])));
+        links.instances.insert(4, PaneLinks::open(&registry, sheets()));
         let _ = registry.pump();
-        assert_eq!(registry.services().len(), 2);
+        let services = registry.services();
+        assert_eq!(services.len(), 2);
+        let endpoint_of = |id: &str| EndpointId(services.iter().find(|s| s.id == id).expect(id).endpoint.clone());
+        let endpoints = [endpoint_of("os"), endpoint_of("sheets")];
         // A call the engine sends down reaches the host half as a pane call…
-        let call = ServiceCall { call_id: "c1".into(), tool: "summary".into(), args: "{}".into() };
+        let call = ServiceCall { call_id: "c1".into(), tool: "summary".into(), args: "{}".into(), caller: None };
         assert!(registry.send(&endpoints[1], ServiceDown::Call(call)));
         let calls = links.drain();
         assert!(matches!(calls.as_slice(), [PaneCall::Instance(4, c)] if c.call_id == "c1"), "one instance call");

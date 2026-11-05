@@ -33,7 +33,7 @@ pub(crate) fn with_native_theme<R>(cx: &mut Cx, f: impl FnOnce(&mut ScriptVm) ->
     let existing = cx.global::<Selected>().native_vm;
     let vm_id = if let Some(vm_id) = existing { vm_id } else {
         let vm_id = cx.alloc_splash_vm_with_network(false);
-        cx.with_script_vm_id_trusted(vm_id, |vm| {
+        cx.with_script_vm_id(vm_id, |vm| {
             desktop_style::install(vm, (*sheet).clone());
             vm.with_reload(|vm| {
                 // Only the framework's packaged-font resolver is needed.
@@ -46,5 +46,5 @@ pub(crate) fn with_native_theme<R>(cx: &mut Cx, f: impl FnOnce(&mut ScriptVm) ->
         cx.global::<Selected>().native_vm = Some(vm_id);
         vm_id
     };
-    Some(cx.with_script_vm_id_trusted(vm_id, f))
+    Some(cx.with_script_vm_id(vm_id, f))
 }

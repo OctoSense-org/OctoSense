@@ -427,7 +427,7 @@ impl Renderer {
         let id = a.pending.job.id.clone();
         // Compression never stalls the UI. Grants, cancellation and the same
         // original deadline are checked again before publishing the file.
-        let task = cx.task_pool().submit(Lane::Heavy, move || {
+        let task = cx.task_pool().submit(Class::Background, move || {
             let mut p = a.pending;
             let outcome = (|| {
                 validity(&p)?;
@@ -534,14 +534,13 @@ impl Active {
         // Fail closed on the device: a studio render never inherits the
         // shell's OS permissions and carries no host identity, as a seated
         // contained app does (`glance_card::seat`).
-        splash.set_device_consent(cx, true);
+        // jit3 PORT GAP: upstream Splash has no set_device_consent.
         splash.set_host_tag(cx, None);
         splash.set_host_caps(cx, Vec::new());
         splash.set_host_prompts(cx, false);
         // Hosts and the instruction budget are declarations since the ruling
         // of 8 October 2026; the jail, quota and memory cap are what is enforced.
-        splash.set_policy(cx, Some(Vec::new()), Some(5_000_000));
-        splash.set_memory_bytes(cx, Some(16 * 1024 * 1024));
+        // jit3 PORT GAP: upstream Splash has no set_policy / set_memory_bytes (isolate memory cap).
         splash.set_text(cx, &body);
         let mut children = 0;
         if let Some(s) = splash.borrow() {
@@ -613,6 +612,8 @@ fn shaders_ready(cx: &Cx, id: DrawListId, depth: usize) -> bool {
 /// Platform readbacks are premultiplied. Flatten before PNG encoding rather
 /// than interpreting premultiplied bytes as straight-alpha PNG samples.
 fn rgba(result: &TextureReadback, dark: bool) -> Result<Vec<u8>, String> {
+    // Upstream normalises every readback: UNORM8 RGBA, rows top to bottom,
+    // packed at `width * 4` bytes a row on every backend.
     let bytes = result
         .data
         .as_ref()
@@ -621,33 +622,22 @@ fn rgba(result: &TextureReadback, dark: bool) -> Result<Vec<u8>, String> {
         .width
         .checked_mul(4)
         .ok_or("invalid readback dimensions")?;
-    let total = result
-        .stride
+    let total = row
         .checked_mul(result.height)
         .ok_or("invalid readback dimensions")?;
-    if result.stride < row || bytes.len() < total {
-        return Err("invalid readback stride".into());
+    if bytes.len() < total {
+        return Err("invalid readback size".into());
     }
-    let mut out = Vec::with_capacity(row * result.height);
+    let mut out = Vec::with_capacity(total);
     let backdrop = if dark { 24u16 } else { 255u16 };
-    for y in 0..result.height {
-        let y = match result.origin {
-            ReadbackOrigin::TopLeft => y,
-            ReadbackOrigin::BottomLeft => result.height - 1 - y,
-        };
-        for p in bytes[y * result.stride..y * result.stride + row].chunks_exact(4) {
-            let rgb = match result.channel_order {
-                ReadbackChannelOrder::Rgba => [p[0], p[1], p[2]],
-                ReadbackChannelOrder::Bgra => [p[2], p[1], p[0]],
-            };
-            for c in rgb {
-                out.push(
-                    (u16::from(c) + (backdrop * (255 - u16::from(p[3])) + 127) / 255).min(255)
-                        as u8,
-                );
-            }
-            out.push(255);
+    for p in bytes[..total].chunks_exact(4) {
+        for c in [p[0], p[1], p[2]] {
+            out.push(
+                (u16::from(c) + (backdrop * (255 - u16::from(p[3])) + 127) / 255).min(255)
+                    as u8,
+            );
         }
+        out.push(255);
     }
     Ok(out)
 }
@@ -655,26 +645,19 @@ fn rgba(result: &TextureReadback, dark: bool) -> Result<Vec<u8>, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    fn pixels(order: ReadbackChannelOrder, origin: ReadbackOrigin, data: &[u8]) -> TextureReadback {
+    fn pixels(data: &[u8]) -> TextureReadback {
         TextureReadback {
             ticket: ReadbackTicket(1),
             allocation_generation: 1,
             producer_serial: 1,
             width: 1,
             height: 2,
-            stride: 8,
-            channel_order: order,
-            origin,
             data: Ok(Arc::from(data)),
         }
     }
     #[test]
-    fn png_input_flattens_premultiplied_rows_and_respects_padding_and_origin() {
-        let result = pixels(
-            ReadbackChannelOrder::Bgra,
-            ReadbackOrigin::BottomLeft,
-            &[0, 0, 128, 128, 9, 9, 9, 9, 30, 20, 10, 255, 9, 9, 9, 9],
-        );
+    fn png_input_flattens_premultiplied_rows() {
+        let result = pixels(&[10, 20, 30, 255, 128, 0, 0, 128]);
         assert_eq!(
             rgba(&result, false).unwrap(),
             [10, 20, 30, 255, 255, 127, 127, 255]
@@ -686,16 +669,8 @@ mod tests {
     }
     #[test]
     fn bad_readback_payloads_fail_before_encoding() {
-        assert!(rgba(
-            &pixels(ReadbackChannelOrder::Rgba, ReadbackOrigin::TopLeft, &[0; 8]),
-            false
-        )
-        .is_err());
-        let mut result = pixels(
-            ReadbackChannelOrder::Rgba,
-            ReadbackOrigin::TopLeft,
-            &[0; 16],
-        );
+        assert!(rgba(&pixels(&[0; 4]), false).is_err());
+        let mut result = pixels(&[0; 8]);
         result.data = Err(ReadbackError::Cancelled);
         assert!(rgba(&result, false).unwrap_err().contains("Cancelled"));
     }

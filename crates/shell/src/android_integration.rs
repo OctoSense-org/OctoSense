@@ -7,7 +7,7 @@ use crate::{
 use makepad_strict_json::{obj, s, Value};
 use makepad_widgets::{
     image_cache::{decode_image_from_data, ImageBuffer, ImageError},
-    makepad_platform::thread::Lane,
+    makepad_platform::thread::Class,
     *,
 };
 use std::{
@@ -1024,7 +1024,7 @@ impl App {
             let owned_path = path.clone();
             let task =
                 cx.task_pool()
-                    .submit_named(Lane::Light, "android_launcher_icon", move || {
+                    .submit_named(Class::Visible, "android_launcher_icon", move || {
                         let result = (|| {
                             let file = std::fs::File::open(&owned_path)
                                 .map_err(|_| ImageError::PathNotFound(owned_path.clone().into()))?;

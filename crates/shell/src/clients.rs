@@ -33,7 +33,7 @@ use std::os::unix::process::CommandExt;
 
 #[cfg(unix)]
 use makepad_widgets::makepad_platform::thread::CancellationToken;
-use makepad_widgets::makepad_platform::thread::{Lane, SignalToUI, TaskPool, ThreadSpawner, ThreadOptions};
+use makepad_widgets::makepad_platform::thread::{Class, SignalToUI, TaskPool, ThreadSpawner, ThreadOptions};
 #[cfg(any(unix, test))]
 use makepad_widgets::Cx;
 
@@ -795,7 +795,7 @@ pub fn kill_child_group(child: &mut ProcessGroup, grace: std::time::Duration, po
     }
     let state = child.state.clone();
     let wait = CancellationToken::new();
-    let submitted = pool.submit(Lane::Heavy, move || {
+    let submitted = pool.submit(Class::Background, move || {
         let _ = wait.wait_until(Cx::monotonic_now() + grace.as_secs_f64());
         state.signal(signal::SIGKILL, true);
     });
@@ -824,25 +824,24 @@ fn reap_child_group(mut child: ProcessGroup, _grace: std::time::Duration, pool: 
     }
     #[cfg(unix)]
     child.state.signal(signal::SIGTERM, false);
-    match pool.reserve(Lane::Heavy) {
-        Ok(slot) => slot
-            .submit(move || {
-                #[cfg(unix)]
-                {
-                    let wait = CancellationToken::new();
-                    let _ = wait.wait_until(Cx::monotonic_now() + _grace.as_secs_f64());
-                    child.state.signal(signal::SIGKILL, true);
-                }
-                #[cfg(not(unix))]
-                let _ = child.child.kill();
-                let _ = child.wait();
-            })
-            .detach(),
+    // No reservation API upstream: a refused submit falls back to the
+    // immediate kill, exactly as a failed reservation did.
+    let state = child.state.clone();
+    match pool.submit(Class::Background, move || {
+        #[cfg(unix)]
+        {
+            let wait = CancellationToken::new();
+            let _ = wait.wait_until(Cx::monotonic_now() + _grace.as_secs_f64());
+            child.state.signal(signal::SIGKILL, true);
+        }
+        #[cfg(not(unix))]
+        let _ = child.child.kill();
+        let _ = child.wait();
+    }) {
+        Ok(task) => task.detach(),
         Err(_) => {
             #[cfg(unix)]
-            child.state.signal(signal::SIGKILL, true);
-            #[cfg(not(unix))]
-            let _ = child.child.kill();
+            state.signal(signal::SIGKILL, true);
         }
     }
 }

@@ -664,7 +664,7 @@ impl ModuleHost {
         // never becomes an instance, and its isolate goes at once.
         let style = self.style.as_ref();
         let created = contain_outside(cx, vm_id, "create", |cx| {
-            let parts = cx.with_script_vm_id_trusted(vm_id, |vm| {
+            let parts = cx.with_script_vm_id(vm_id, |vm| {
                 // The isolate came up with the stock theme; the WM's palette
                 // retints it exactly as it retints a child process's.
                 if let Some(sheet) = style {
@@ -735,7 +735,7 @@ impl ModuleHost {
         for instance in self.instances.values_mut().filter(|i| i.failed.is_none()) {
             let vm_id = instance.vm_id;
             contain_outside(cx, vm_id, "a restyle", |cx| {
-                cx.with_script_vm_id_trusted(vm_id,|vm| {
+                cx.with_script_vm_id(vm_id,|vm| {
                     apply_module_style(vm, sheet);
                     vm.with_reload(|vm| {
                         makepad_wm_theme::apply(vm);
@@ -1122,7 +1122,7 @@ impl ModuleHost {
         }
         let vm_id = instance.vm_id;
         if let Some(shutdown) = instance.shutdown.take() {
-            if contain_outside(cx, vm_id, "shutdown", |cx| cx.with_script_vm_id_trusted(vm_id, |vm| shutdown(vm))).is_none() {
+            if contain_outside(cx, vm_id, "shutdown", |cx| cx.with_script_vm_id(vm_id, |vm| shutdown(vm))).is_none() {
                 // Closed anyway; the fault stays queued only for the log.
                 take_fault_of(cx, vm_id);
                 error!("wm: module instance {label} panicked in shutdown; freeing its isolate anyway");
@@ -1201,7 +1201,7 @@ impl ModuleHost {
         // Its own last word, for the resources it opened (a pty, a
         // socket); run in the isolate even though that is marked failed.
         if let Some(shutdown) = instance.shutdown.take() {
-            let ran = catch_unwind(AssertUnwindSafe(|| cx.with_script_vm_id_trusted(vm_id, |vm| shutdown(vm))));
+            let ran = catch_unwind(AssertUnwindSafe(|| cx.with_script_vm_id(vm_id, |vm| shutdown(vm))));
             if let Err(payload) = ran {
                 error!("wm: failed module instance {} panicked again in shutdown: {}", instance.label(), panic_message(&*payload));
                 discard_payload(payload);
@@ -1247,14 +1247,14 @@ mod nested_style_tests {
         let mut cx = Cx::new(Box::new(|_, _| {}));
         cx.with_vm(makepad_widgets::script_mod);
         let outer = cx.alloc_splash_vm_with_network(false);
-        let inherited = cx.with_script_vm_id_trusted(outer, |vm| {
+        let inherited = cx.with_script_vm_id(outer, |vm| {
             apply_module_style(vm, &desktop_style::StyleSheet::load(desktop_style::DesktopStyle::Android));
             #[cfg(feature = "app-hub")]
             octosense_app_hub_app::CARD_MODULE.register(vm);
             desktop_style::current(vm).unwrap()
         });
         let nested = cx.alloc_splash_vm_with_network(false);
-        cx.with_script_vm_id_trusted(nested, |vm| {
+        cx.with_script_vm_id(nested, |vm| {
             vm.bx.captured_errors = Some(Vec::new());
             // Splash replays the inherited stylesheet inside a fresh isolate.
             // Its resource module has already been stripped at allocation.
@@ -1300,7 +1300,7 @@ mod style_tests {
             let instance=host.get(1).unwrap();
             assert_eq!(instance.root.widget_uid(),uid);
             assert_eq!(instance.vm_id,isolate);
-            cx.with_script_vm_id_trusted(isolate,|vm| {
+            cx.with_script_vm_id(isolate,|vm| {
                 let palette=makepad_wm_theme::current_for_vm(vm).unwrap();
                 let p=choice.palette(dark).background;
                 let expected=format!("#{:02x}{:02x}{:02x}",(p.x*255.0).round() as u8,(p.y*255.0).round() as u8,(p.z*255.0).round() as u8);
@@ -1322,7 +1322,7 @@ mod style_tests {
         host.apply_style(&mut cx,&desktop_style::StyleSheet::load(desktop_style::DesktopStyle::Macos));
         let instance=host.get(1).unwrap();
         assert_eq!(instance.root.widget_uid(),uid);
-        cx.with_script_vm_id_trusted(instance.vm_id,|vm| {
+        cx.with_script_vm_id(instance.vm_id,|vm| {
             let palette=makepad_wm_theme::current_for_vm(vm).unwrap();
             assert_eq!(palette.get("background"),Some("#ececec"));
             let sheets=vm.module(id!(sheets));
@@ -1355,7 +1355,7 @@ mod channel_tests {
         let json = crate::wm_reply::WmUnavailable { app: "browser".into(), path: "https://x/a".into() }.to_json();
         assert!(host.send_custom(&mut cx, 7, json.clone()));
         assert!(!host.send_custom(&mut cx, 8, json), "no instance, nothing sent");
-        cx.with_script_vm_id_trusted(host.get(7).unwrap().vm_id, |vm| assert!(vm.take_errors().is_empty()));
+        cx.with_script_vm_id(host.get(7).unwrap().vm_id, |vm| assert!(vm.take_errors().is_empty()));
         // The last refs into the isolate's heap go before the heap does.
         drop(root);
         assert!(host.teardown(&mut cx, 7));
@@ -1498,15 +1498,13 @@ impl ServiceExecutor for TerminalExecutor {
     }
 }
 
-/// The emulator the Terminal's tools act on: the selected tab's focused
-/// pane. The module's root is a `TermTabs`, not an `MpTerm`, and
-/// `WidgetRef::borrow_mut` downcasts only the root itself, so this walks to
-/// the active terminal the way the module's own executor does. `None` when
-/// the root is not a `TermTabs` or it has no terminal to give.
+/// The emulator the Terminal's tools act on. Upstream's terminal module
+/// mints an `MpTerm` root directly (the fork's `TermTabs` root, with its
+/// tabs, is not ported yet), so the root is the terminal. `None` when the
+/// root is not a terminal.
 #[cfg(feature = "app-terminal")]
-fn active_terminal(cx: &mut Cx, root: &WidgetRef) -> Option<WidgetRef> {
-    let term = root.borrow_mut::<makepad_terminal::tabs::TermTabs>().map(|mut tabs| tabs.active_term(cx))?;
-    (!term.is_empty()).then_some(term)
+fn active_terminal(_cx: &mut Cx, root: &WidgetRef) -> Option<WidgetRef> {
+    root.borrow_mut::<makepad_terminal::widget::MpTerm>().is_some().then(|| root.clone())
 }
 
 #[cfg(all(test, feature = "app-terminal"))]
@@ -1552,7 +1550,7 @@ mod terminal_tests {
         let module = &makepad_terminal::TERMINAL_MODULE;
         host.create(&mut cx, 9, module, module.open_schema().empty_open().unwrap(), dvec2(400.0, 700.0)).unwrap();
         for (tool, args) in [("read_screen", "{}"), ("read_scrollback", r#"{"lines":10}"#), ("run", r#"{"command":"true"}"#)] {
-            let call = ServiceCall { call_id: format!("c-{tool}"), tool: tool.into(), args: args.into() };
+            let call = ServiceCall { call_id: format!("c-{tool}"), tool: tool.into(), args: args.into(), caller: None };
             let Some(ExecOutcome::Done(result)) = host.execute(&mut cx, 9, &call) else {
                 panic!("{tool}: the Terminal answers at once");
             };

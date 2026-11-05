@@ -509,7 +509,7 @@ impl AiBus {
             })
             .map(|(client, _)| *client)
             .max()?;
-        let call = ServiceCall { call_id: call_id.to_string(), tool: tool.to_string(), args: args.to_string() };
+        let call = ServiceCall { call_id: call_id.to_string(), tool: tool.to_string(), args: args.to_string(), caller: None };
         if let Some(manifest) = self.manifests.get(&client) {
             self.audit_call(app, Some(manifest), &call);
         }

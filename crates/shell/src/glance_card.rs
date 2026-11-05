@@ -1345,7 +1345,8 @@ fn seat(cx: &mut Cx, splash: &SplashRef, app: &str, contained: bool) -> bool {
         }
     }
     let _ = (app, contained);
-    splash.set_policy(cx, Some(Vec::new()), Some(TILE_INSTRUCTION_BUDGET));
+    // jit3 PORT GAP: upstream Splash has no set_policy (hosts/instruction budget declaration).
+    let _ = TILE_INSTRUCTION_BUDGET;
     splash.set_host_prompts(cx, false);
     false
 }

@@ -560,7 +560,7 @@ impl Widget for MpModuleView {
             // Transparent app roots must not get dark text on an old dark ground.
             let vm_id = self.vm_id;
             let ground = contain(cx, vm_id, "its theme", |cx| {
-                cx.with_script_vm_id_trusted(vm_id, |vm| script_eval!(vm, {mod.theme.color_bg_app})).as_color()
+                cx.with_script_vm_id(vm_id, |vm| script_eval!(vm, {mod.theme.color_bg_app})).as_color()
             });
             match ground {
                 Some(Some(color)) => self.draw_bg.color = Vec4f::from_u32(color),

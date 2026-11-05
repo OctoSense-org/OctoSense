@@ -148,7 +148,7 @@ pub use octosense_ai_host as ai_host;
 // (the phone's Settings app) wraps this `App` and plugs in through `ext`.
 
 pub use makepad_widgets;
-use makepad_widgets::makepad_platform::thread::{Lane, SignalToUI, TaskHandle};
+use makepad_widgets::makepad_platform::thread::{Class, SignalToUI, TaskHandle};
 use makepad_widgets::*;
 
 /// The standalone mobile shell: the Android phone shell fills the window
@@ -3491,7 +3491,7 @@ impl App {
         }
         self.backgrounds_pending = true;
         log!("wm: theme '{}' has no wallpapers; fetching them", name);
-        match cx.task_pool().submit(Lane::Heavy, move || {
+        match cx.task_pool().submit(Class::Background, move || {
                 let n = theme::fetch_backgrounds_if_missing(&name);
                 log!("wm: fetched {} wallpaper(s) for '{}'", n, name);
                 n
@@ -5528,7 +5528,7 @@ impl App {
                             let timestamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis();
                             path.join(format!("{timestamp}.png"))
                         } else { path.clone() };
-                        match cx.task_pool().submit(Lane::Heavy, move || {
+                        match cx.task_pool().submit(Class::Background, move || {
                             let Ok(bytes) = result.data else { return; };
                             let mut rgba = Vec::with_capacity(result.width * result.height * 4);
                             for y in 0..result.height {
@@ -5614,6 +5614,7 @@ impl App {
             call_id: format!("test-ask-{}", self.next_id),
             tool: "ask".into(),
             args: format!("{{\"text\":{}}}", text.serialize_json()),
+            caller: None,
         };
         let outcome = self.module_host.execute(cx, client, &call);
         log!("wm: ask-appcard {:?} -> client {} outcome {:?}", text, client, outcome.map(|o| matches!(o, ExecOutcome::Done(_))));
