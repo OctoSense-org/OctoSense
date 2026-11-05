@@ -91,7 +91,7 @@ script_mod! {
                 if self.premultiplied > 0.5 {
                     color = self.image.sample(uv)
                 } else {
-                    color = Pal.premul(self.image.sample_as_bgra(uv))
+                    color = Pal.premul(self.image.sample(uv))
                 }
             }
             let composed = color + Pal.premul(self.backing) * (1.0 - color.a)
