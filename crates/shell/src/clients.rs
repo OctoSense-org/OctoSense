@@ -1067,6 +1067,15 @@ pub struct LaunchPlan {
     pub program: PathBuf,
     /// Its arguments: `--stdin-loop`, the row's own, then the launch's.
     pub args: Vec<String>,
+    /// Where the program runs: a JIT launch runs the runner in the app's
+    /// checkout, which is the workspace it resolves the package in.
+    pub cwd: Option<PathBuf>,
+}
+
+/// `OCTOSENSE_JIT_RUNNER=<path to makepad or relax>`: launches run the app from source
+/// under the JIT runner instead of a cargo release build (the jit line).
+pub fn jit_runner() -> Option<PathBuf> {
+    std::env::var_os("OCTOSENSE_JIT_RUNNER").filter(|v| !v.is_empty()).map(PathBuf::from).filter(|p| p.is_file())
 }
 
 /// The workspace member a native app's build selects with the app's crate
@@ -1129,7 +1138,7 @@ pub fn launch_plan(app: &AppDef, root: Option<&Path>, extra_args: &[String]) -> 
     args.extend(extra_args.iter().cloned());
     if app.package.is_empty() {
         let program = resolve_bin(&app.bin).ok_or_else(|| format!("binary not found: {}", app.bin))?;
-        return Ok(LaunchPlan { build: None, program, args });
+        return Ok(LaunchPlan { build: None, program, args, cwd: None });
     }
     let native = crate::native_apps::find(&app.id).and_then(|n| Some((crate::native_apps::package_of(n.id)?, n.bin?)));
     let manifest_root = app.manifest.as_ref().and_then(|m| Path::new(m).parent()).map(Path::to_path_buf);
@@ -1144,7 +1153,7 @@ pub fn launch_plan(app: &AppDef, root: Option<&Path>, extra_args: &[String]) -> 
         _ => {
             let Some(checkout) = manifest_root.clone().or_else(|| root.map(Path::to_path_buf)) else {
                 let program = resolve_bin(&app.bin).ok_or_else(|| format!("binary not found: {}", app.bin))?;
-                return Ok(LaunchPlan { build: None, program, args });
+                return Ok(LaunchPlan { build: None, program, args, cwd: None });
             };
             let manifest = match &app.manifest {
                 Some(m) => PathBuf::from(m),
@@ -1155,6 +1164,14 @@ pub fn launch_plan(app: &AppDef, root: Option<&Path>, extra_args: &[String]) -> 
             (checkout, manifest, app.package.clone(), app.bin.clone(), target, locked, None)
         }
     };
+    if let Some(runner) = jit_runner() {
+        // The jit line: the runner compiles the package from the checkout at launch and
+        // caches it (target/makepad-run there); cargo builds nothing. The app's own
+        // arguments follow `--`, as the runner takes them.
+        let mut run = vec!["run".to_string(), "--quiet".to_string(), "--allow-c".to_string(), package.clone(), "--".to_string()];
+        run.extend(args);
+        return Ok(LaunchPlan { build: None, program: runner, args: run, cwd: Some(checkout) });
+    }
     let mut build = vec!["build".to_string(), "--release".to_string()];
     if locked {
         build.push("--locked".to_string());
@@ -1175,6 +1192,7 @@ pub fn launch_plan(app: &AppDef, root: Option<&Path>, extra_args: &[String]) -> 
         build: Some(BuildStep { cargo: cargo_bin(), args: build, dir: checkout.clone(), checkout, target_dir, program: program.clone() }),
         program,
         args,
+        cwd: None,
     })
 }
 
@@ -1573,6 +1591,13 @@ pub fn spawn_client(
         cmd.current_dir(&app.dir);
     } else if let Some(root) = &root {
         cmd.current_dir(root);
+    }
+    if let Some(dir) = &plan.cwd {
+        // A JIT launch runs the runner in the app's checkout, the workspace it resolves the
+        // package in (over the cwd rules above), with the macro policy a developer's checkout
+        // runs with.
+        cmd.current_dir(dir);
+        cmd.env("MAKEPAD_RUN_TRUST_MACROS", "1").env("MAKEPAD_RUN_ALLOW_C", "1");
     }
     if let Some(colors) = term_colors {
         cmd.env("MAKEPAD_TERMINAL_COLORS", colors);
