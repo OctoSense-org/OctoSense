@@ -194,3 +194,14 @@ workarounds kept: pure blake3, unused [patch] entries removed, `::serde_json::js
   PORT GAP marks in the shell down to 3 (WebReader, isolate memory cap stays enforced now through set_memory_bytes), App Hub 1
   (camera_preview). The bare runner (`relax`, Policy::Open, provides no crates) is the jit line's runner until the boundary sites use ops;
   `makepad run` binds its provided makepad_script and parks on the audit's violations.
+
+## BOUND MODE (official `makepad run`, provided crates) — where it stands, 5 Nov night
+- OctoSense/Octoscript-Makepad/App Hub are boundary-clean for makepad-script per the audit (0 violations in audited crates): injected
+  globals via vm.injected_global, strings via vm.cast_to_string, arrays via heap.arr_view, global fns via the new ScriptVm::new_fn
+  (REG_FN, fork jit c36bf46d), ScriptMod via ScriptMod::new (19 literals). Marked ops: traits::register_type_inner, ScriptLoc::new (+ impl).
+- Still parked at startup: `ScriptLoc::new` (vm.rs:574) "a field of ScriptLoc (file: String) is reached from JIT code … rustc's alone" even
+  though ScriptLoc is `#[relax_api(plain)]` and new is marked: the 35 "provided type … rustc lays it out in N bytes, makepad run in N+8:
+  opaque" lines show every plain type with a String/Vec field is demoted to opaque in this build (relax's String is 8 bytes larger than
+  rustc's), so plain-typed APIs cannot bind. That is upstream's to answer (issue to file: provided plain types with String fields).
+- Runner rule stays: the bare `relax` runner (provides no crates) runs the jit line; OCTOSENSE_JIT_RUNNER=<runner> makes process apps
+  launch from source through it (clients.rs launch_plan, 790ab4fd).
