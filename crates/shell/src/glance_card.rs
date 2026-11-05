@@ -425,11 +425,11 @@ struct WorkspaceChat {
 
 fn bounded_context(value: serde_json::Value) -> serde_json::Value {
     if serde_json::to_vec(&value).is_ok_and(|bytes| bytes.len() <= 12 * 1024) { value }
-    else { serde_json::json!({"omitted": "Exceeds card context limit"}) }
+    else { ::serde_json::json!({"omitted": "Exceeds card context limit"}) }
 }
 
 fn attach_mail_publication(binding: &mut crate::glance_chat::ContextBinding, source: &str, data: &serde_json::Value) {
-    let publication = bounded_context(serde_json::json!({"source":source, "data":data}));
+    let publication = bounded_context(::serde_json::json!({"source":source, "data":data}));
     binding.source_message["publication"] = publication;
     // Preserve the authoritative email/draft/lease when a large publication
     // would exceed the combined context budget. Never truncate its JSON/source.
@@ -445,7 +445,7 @@ impl WorkspaceChat {
         let thread = thread[..53].to_string();
         let declaration = format!("source workspace_conversation sys.chat(app: {}, thread: {}, fields: [entries, id, role, text])\nview root Surface {{ TextBody(text: \"\") }}",
             serde_json::to_string(&card.app).unwrap(), serde_json::to_string(&thread).unwrap());
-        Self { account, thread, declaration, publication: bounded_context(serde_json::json!({
+        Self { account, thread, declaration, publication: bounded_context(::serde_json::json!({
             "publisher": card.app, "card_id": card.card_id, "title": card.title, "summary": card.summary,
             "published_ms": card.published_ms, "data": card.l0.as_ref().map(|l| &l.data),
         })) }
@@ -455,7 +455,7 @@ impl WorkspaceChat {
             kind: octosense_l0_chat::ContextKind::Card,
             account: self.account.clone(), thread: self.thread.clone(),
             source_message: self.publication.clone(),
-            draft: bounded_context(serde_json::json!({"local_state": state})),
+            draft: bounded_context(::serde_json::json!({"local_state": state})),
         }
     }
     fn account_valid(&self, app: &str) -> bool {
@@ -505,7 +505,7 @@ impl L0Session {
 
     fn for_card(card: &crate::glance::GlanceCard) -> Self {
         let mut session = Self::new(&card.app, &card.l0.as_deref().cloned().unwrap_or(crate::glance::L0Source {
-            source: String::new(), data: serde_json::json!({}), mail: None,
+            source: String::new(), data: ::serde_json::json!({}), mail: None,
         }));
         session.opening_account = card.account.clone();
         session.open_url = Some(publication_open_url(card));
@@ -529,7 +529,7 @@ impl L0Session {
 
     pub(crate) fn chat_snapshot(&mut self) -> Result<serde_json::Value, String> {
         if let Some(chat) = &self.workspace_chat {
-            let data = crate::glance_chat::seed_bound(&self.app, &chat.declaration, &serde_json::json!({}), &self.store, &chat.binding(&self.store))?;
+            let data = crate::glance_chat::seed_bound(&self.app, &chat.declaration, &::serde_json::json!({}), &self.store, &chat.binding(&self.store))?;
             return Ok(data["workspace_conversation"].clone());
         }
         if let Some(mail) = &mut self.mail { mail.refresh(); }
@@ -581,7 +581,7 @@ impl L0Session {
                 kind: octosense_l0_chat::ContextKind::Card,
                 account: self.opening_account.clone().ok_or("Missing card account")?,
                 thread: octosense_l0_chat::thread_of(&source, &self.store, &data).ok_or("Missing card thread")?,
-                source_message: serde_json::json!({}), draft: serde_json::json!({}),
+                source_message: ::serde_json::json!({}), draft: ::serde_json::json!({}),
             }
         };
         binding.source_message["compose_reply"] = source_email.clone();
@@ -606,7 +606,7 @@ impl L0Session {
                 if let octoscript_ui_l0::NodeValue::Event(event) = arg {
                     let mut state = session.store.clone();
                     let outcome = octoscript_ui_l0::dispatch_reporting_with_origin(&session.source, &mut state, &node.key, event,
-                        Some(&serde_json::json!("")), data, octoscript_ui_l0::ValueOrigin::UserInput);
+                        Some(&::serde_json::json!("")), data, octoscript_ui_l0::ValueOrigin::UserInput);
                     if outcome.writes.iter().any(|write| write.helper == "sys.chat" && write.op == "append") { return true; }
                 }
             }
@@ -722,7 +722,7 @@ impl L0Session {
             // off the element as it would realize now.
             match node.as_ref().and_then(|n| node_arg(n, "value")) {
                 Some(NodeValue::Text(t)) | Some(NodeValue::Token(t)) => Some(serde_json::Value::String(t.clone())),
-                Some(NodeValue::Number(n)) => Some(serde_json::json!(n)),
+                Some(NodeValue::Number(n)) => Some(::serde_json::json!(n)),
                 _ => None,
             }
         };

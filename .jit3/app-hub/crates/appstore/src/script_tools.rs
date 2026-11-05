@@ -368,7 +368,7 @@ fn is_active(heap: usize, token: &str) -> bool {
         .is_some_and(|p| p.heap == heap && p.deadline > Instant::now())
 }
 fn request(heap: usize, token: &str) -> Option<Value> {
-    state().pending.get(token).filter(|p|p.heap == heap && p.started && p.deadline > Instant::now()).map(|p|json!({"args":p.args,"context":{"app":p.app,"account":p.account,"caller":p.caller,"call_id":token}}))
+    state().pending.get(token).filter(|p|p.heap == heap && p.started && p.deadline > Instant::now()).map(|p|::serde_json::json!({"args":p.args,"context":{"app":p.app,"account":p.account,"caller":p.caller,"call_id":token}}))
 }
 fn finish(heap: usize, token: &str, result: Result<Value, String>) -> bool {
     let pending = {

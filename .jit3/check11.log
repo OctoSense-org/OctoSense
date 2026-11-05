@@ -1,0 +1,4 @@
+makepad run: --allow-c: building native dependencies with cargo (opt-level 0 now, optimized in the background; cached afterwards): aws-lc-rs, aws-lc-sys, blake3, cc, cmake, dunce, find-msvc-tools, fs_extra
+makepad-run: --allow-c: the optimized native build's scripts said other cfgs or env than the first build's: its library is not taken
+{"severity":"error","code":"RT0001","message":"internal: macro `json!` is not supported","file":"/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/.jit3/app-hub/crates/appstore/src/script_tools.rs","line":371,"col":109,"end_line":371,"end_col":109,"phase":"typeck","notes":[],"suggestion":null}
+{"type":"summary","errors":1,"warnings":0,"ms":20067}

@@ -1,0 +1,3 @@
+makepad run: --allow-c: building native dependencies with cargo (opt-level 0 now, optimized in the background; cached afterwards): aws-lc-rs, aws-lc-sys, blake3, cc, cmake, dunce, find-msvc-tools, fs_extra
+makepad-run: --allow-c: the optimized native build's scripts said other cfgs or env than the first build's: its library is not taken
+{"type":"summary","errors":0,"warnings":0,"ms":12286}
