@@ -217,3 +217,18 @@ workarounds kept: pure blake3, unused [patch] entries removed, `::serde_json::js
 - Status of "其余 app jit 化": every catalog process app (Task, Finance, Route, Image, PDF, Files, Browser, aichat, …) now
   launches from source through OCTOSENSE_JIT_RUNNER; in-process native apps are JIT'd inside the shell image. Still out:
   Rinx, AppCard, OctosCode, markdown editor (need fork widgets `serde`/`appcard` features → ports).
+
+## 5 Nov, evening ("can we fix here"): the async/crypto stack compiles and runs under relax
+- Reproducer `.d1-scratch/jit3-deps` (tokio rt-multi-thread+net+time+sync, httparse, ring 0.17, zeroize): run1 = 12 distinct
+  type errors in tokio/mio/socket2/ring/httparse/cc, all missing relax std surface → fixed in fork jit 3641529b5 (std,
+  read from the checkout at run time; MAKEPAD_RUN_STD) + differential test tests/std/core_dep_gaps_async_crypto.rs (16/16 SAME).
+- Then ring panicked "foreign function `concat` is not available": `#[link_name = concat!(prefix!(), stringify!(x))]` was read
+  as the token `concat` → parser now literalises link_name/export_name/link_section macro values (6402b7ed3).
+- Then "`ring_core_0_17_14__sha256_block_data_order_hw` is not available": libnative.dylib HAS it but local (`t`) because ring
+  builds with -fvisibility=hidden / .private_extern → new compiler/src/os/hidden.rs reads the dylib's LC_SYMTAB (ELF .symtab)
+  and adds the image slide; hooked after find_system in jit.rs foreign_addr (9240af3a8). allow_c fixture gained cn_hidden_mul.
+- run4: httparse, ring sha256 (2cf24dba…), zeroize, tokio all print the rustc output. tokio-only variant (jit3-deps2) also OK.
+- Upstream PR branches (jit3-pr, on upstream/main, clean cherry-picks): relax-std-async-crypto-gaps, relax-attr-value-macros,
+  relax-hidden-native-symbols. Next probe running: jit3-deps3 = reqwest(rustls)+keyring+chrono+serde_json+url (AppCard's stack).
+- The std generator (std/check, `relax-std-gen num`) does not build with stable rustc here (internal attributes); the NonZero
+  TryFrom lines were emitted by hand in the generator's exact format, and the generator source changed to match.
