@@ -150,3 +150,10 @@ workarounds kept: pure blake3, unused [patch] entries removed, `::serde_json::js
   isolates; flightrec /Users/ychen/.makepad-run/flightrec/auto-octosense-51076-20261105-184314-panic.mkpf; `makepad inspect 51076 panics`);
   (c) relax background typeck panics `anonymous const type: NoSolution` (typeck.rs:850, thread gandalf; harmless); (d) prebuild.rs runs cargo
   for 10 catalog apps in the background under the JIT (exit 101) — disable in the spike.
+- 5 Nov midday: process apps = the first-open cargo release build (minutes) + a PROTOCOL MISMATCH: launches built from `.sources/makepad`
+  (the FORK checkout; no `MPB1` studio batch header) while the JIT shell speaks upstream's → `.sources/makepad` is now a symlink to
+  jit3-work (fork worktree kept as `.sources/makepad.fork`), desktop/config/apps*.json makepad rows renamed to upstream's
+  `makepad-app-<id>` package + bin; route/image prebuilt (`cargo build --release -p makepad-app-route -p makepad-app-image`, 45 s).
+- `makepad run` (tools/run, target/host/makepad): added MAKEPAD_RUN_TRUST_MACROS=1 (jit3-work 2b346b873: Policy::Open with a notice) because
+  the sandbox refuses serde_derive. OctoSense now runs under it: `JIT3_RUNNER=<jit3-work>/target/host/makepad jit3-run.sh <log>
+  MAKEPAD_RUN_TRUST_MACROS=1` → first present main+5.3 s cold, app check 0 errors, modules linked (run13).
