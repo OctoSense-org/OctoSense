@@ -179,3 +179,12 @@ workarounds kept: pure blake3, unused [patch] entries removed, `::serde_json::js
    device consent = makepad-device-consent.patch minus camera_preview. Tests: widgets-core splash/policy/host/isolate 47 + script-std gate 5
    pass before consent (consent run pending). Left: trusted-input evidence hooks (macOS: HAL apple backend), then merge → fork jit → pins.
 5. `main` decision waits on Home (upstream Android HAL has no GLES; OpenHarmony dropped upstream).
+- PROVIDED-CRATE BINDING, resolved (5 Nov evening): the loader binds makepad_script etc. as provided crates when the program's makepad
+  sources hash-match the loader's build (run14/15/16: bound → parked compile errors: traits::register_type_inner (fixed by #[relax_api] on
+  it, jit3-work + .sources/makepad), then lib.rs:6691 `ScriptMod built in JIT reaches rustc code`, and the audit's list below). When they
+  MISMATCH the loader runs everything from source (unbound) and offers a loader update ("The JIT itself changed (makepad_script) --
+  Restart to update"); run13 and run17 ran that way. `makepad check --boundary makepad-script …` lists what OctoSense must fix for the
+  bound mode: octoscript-render eval.rs:36 (ScriptVmBase.injected_globals field) and :303 (ScriptArrayStorage matched by variant;
+  → arr_view op), shell glance_card.rs:287 install_nav (ScriptCode.native field), plus makepad_script internals reached from JIT
+  (array_storage, set_fn, temp_string_with). Upstream's own calculator audit shows 26 HAL static reads too (upstream's problem).
+  Decision for now: run unbound (loader built from a different commit than the program's makepad) until those sites use ops.
