@@ -82,7 +82,7 @@
       "crate": "makepad-sheets",
       "source": {
         "git": "https://github.com/OctoSense-org/makepad.git",
-        "rev": "7407e3c5a76252e70bd638319b2754aeb223e75f",
+        "rev": "c36bf46d0af95753e9331919c32b135d4e49f689",
         "local": ".sources/makepad/compat/makepad-sheets"
       },
       "module": "makepad_sheets::SHEETS_MODULE",
@@ -359,7 +359,7 @@
       "crate": "makepad-terminal",
       "source": {
         "git": "https://github.com/OctoSense-org/makepad.git",
-        "rev": "7407e3c5a76252e70bd638319b2754aeb223e75f",
+        "rev": "c36bf46d0af95753e9331919c32b135d4e49f689",
         "local": ".sources/makepad/compat/makepad-terminal"
       },
       "module": "makepad_terminal::TERMINAL_MODULE",
@@ -466,7 +466,7 @@
       "crate": "octosense-app-hub-app",
       "source": {
         "git": "https://github.com/OctoSense-org/OctoSense-App-Hub",
-        "rev": "537fd7c95540ac2188a1d0ed7a36823d6081176a",
+        "rev": "26f00c2914bb1d2edcb95728bb82862df989b36b",
         "local": null
       },
       "module": [
@@ -577,7 +577,7 @@
       "crate": "makepad-calculator",
       "source": {
         "git": "https://github.com/OctoSense-org/makepad.git",
-        "rev": "7407e3c5a76252e70bd638319b2754aeb223e75f",
+        "rev": "c36bf46d0af95753e9331919c32b135d4e49f689",
         "local": ".sources/makepad/compat/makepad-calculator"
       },
       "module": "makepad_calculator::CALCULATOR_MODULE",
@@ -648,7 +648,7 @@
       "crate": "makepad-clock",
       "source": {
         "git": "https://github.com/OctoSense-org/makepad.git",
-        "rev": "7407e3c5a76252e70bd638319b2754aeb223e75f",
+        "rev": "c36bf46d0af95753e9331919c32b135d4e49f689",
         "local": ".sources/makepad/compat/makepad-clock"
       },
       "module": "makepad_clock::CLOCK_MODULE",
@@ -710,7 +710,7 @@
       "crate": "makepad-notes",
       "source": {
         "git": "https://github.com/OctoSense-org/makepad.git",
-        "rev": "7407e3c5a76252e70bd638319b2754aeb223e75f",
+        "rev": "c36bf46d0af95753e9331919c32b135d4e49f689",
         "local": ".sources/makepad/compat/makepad-notes"
       },
       "module": "makepad_notes::NOTES_MODULE",
@@ -799,7 +799,7 @@
       "crate": "makepad-reminders",
       "source": {
         "git": "https://github.com/OctoSense-org/makepad.git",
-        "rev": "7407e3c5a76252e70bd638319b2754aeb223e75f",
+        "rev": "c36bf46d0af95753e9331919c32b135d4e49f689",
         "local": ".sources/makepad/compat/makepad-reminders"
       },
       "module": "makepad_reminders::REMINDERS_MODULE",
@@ -892,7 +892,7 @@
       "crate": "makepad-weather",
       "source": {
         "git": "https://github.com/OctoSense-org/makepad.git",
-        "rev": "7407e3c5a76252e70bd638319b2754aeb223e75f",
+        "rev": "c36bf46d0af95753e9331919c32b135d4e49f689",
         "local": ".sources/makepad/compat/makepad-weather"
       },
       "module": "makepad_weather::WEATHER_MODULE",

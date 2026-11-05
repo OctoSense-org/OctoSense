@@ -283,23 +283,16 @@ static TAPS: std::sync::Mutex<Vec<Tap>> = std::sync::Mutex::new(Vec::new());
 /// acts only on calls from the isolate it owns.
 pub fn install_nav(vm: &mut ScriptVm) {
     let nav = {
-        let base = &mut *vm.bx;
-        let mut native = base.code.native.borrow_mut();
-        native.add_fn(&mut base.heap, script_args_def!(t = NIL, v = NIL), |vm, args| {
+        vm.new_fn(script_args_def!(t = NIL, v = NIL), |vm, args| {
             let t = script_value!(vm, args.t);
             let v = script_value!(vm, args.v);
-            let mut target = String::new();
-            vm.bx.heap.cast_to_string(t, &mut target);
-            let typed = (!v.is_nil()).then(|| {
-                let mut text = String::new();
-                vm.bx.heap.cast_to_string(v, &mut text);
-                text
-            });
-            queue_tap(Tap { heap: vm.bx.heap.heap_key(), target, typed });
+            let target = vm.cast_to_string(t);
+            let typed = (!v.is_nil()).then(|| vm.cast_to_string(v));
+            queue_tap(Tap { heap: vm.heap_key(), target, typed });
             NIL
         })
     };
-    vm.set_injected_global(id!(NAV), nav.into());
+    vm.set_injected_global(id!(NAV), nav);
 }
 
 /// The most `NAV` calls kept waiting: a card no surface reads cannot grow
