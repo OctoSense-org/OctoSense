@@ -40,6 +40,9 @@ name = "octosense"
 path = "src/main.rs"
 
 [dependencies]
+# jit3: pure-Rust blake3 (no C), so --allow-c builds no native library that calls back into JIT'd Rust
+# (blake3_neon references blake3_compress_in_place_portable, which dlopen cannot resolve).
+blake3 = { version = "1.8", features = ["pure"] }
 octosense-shell = { workspace = true }
 
 [features]

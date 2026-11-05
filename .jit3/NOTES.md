@@ -110,3 +110,22 @@ show_controls). relax: check9 = 29 (json! 15 + include_str 14); with OCTOSENSE_W
 over a PRIVATE `mod serde_json` (makepad_micro_serde) makes relax resolve `serde_json::json!` to that module via `use makepad_widgets::*`;
 `::serde_json::json!` works → .jit3/issue-json-glob-shadow.md (not opened yet). Workaround if needed: `::serde_json::json!` at the 15 sites.
 Next: open the two issues (user's call), then `makepad run octosense` (bare relax run) for the first real JIT launch; then the gaps above.
+
+## FIRST RUN ATTEMPTS (4 Nov evening, user "open octosense"): relax check clean (bc7d3a6c, `::serde_json::json!` around #1384), runs die at startup
+Launch: `.d1-scratch/jit3-run.sh <log> [ENV=..]` (herdr tab via macos-look/tab.sh; scratch OCTOSENSE_HOME .d1-scratch/jit3-home; logs .d1-scratch/jit3-run*.log).
+Every run (1-7) dies identically before the first frame: `fatal fault in program code (signal 4) … illegal instruction at pc in JIT core::hash::random::next_keys +0x8c`
+= relax std shim random.rs:29:20, the `match KEYS.get()` on the `#[thread_local] static KEYS: Cell<Option<(u64,u64)>>` → an unreachable arm (udf), i.e. the
+thread-local read back a bad discriminant. Frames: HashMap::new ← makepad_hal::backend::apple::shell::Shared::new ← OnceLock ← expect_main_loop ← run_app.
+Ruled out along the way (each a real finding):
+- run1-3: `libraries not found: [… libnative.dylib]` = dlopen RTLD_NOW failed: `symbol not found in flat namespace '_blake3_compress_in_place_portable'`
+  (blake3's C NEON code calls back into its Rust side; the JIT exports nothing to dyld) → .jit3/issue-allow-c-native-backref.md. Workaround IN TREE:
+  desktop/Cargo.toml `blake3 = { features = ["pure"] }` (blake3 still needs --allow-c: its `cc` build-dependency).
+- the native key changed every run: cargo rewrites Cargo.lock on each `--allow-c` build (only the ORDER of [[patch.unused]] blocks) and native.rs keys on
+  the lock bytes → full C rebuild per launch → .jit3/issue-allow-c-lock-order.md. Workaround IN TREE: removed every unused [patch] entry (code_editor ×2,
+  makepad-ai/markdown/markdown-widgets/task shims, ruma section, app-contract path) → lock stable (md5 66b718…), warm boots.
+- calculator runs fine under both runners, with and without --allow-c (hidden window reached first present) → not the runner build, not --allow-c as such.
+- OctoSense without --allow-c is refused (blake3's cc build-dep). MAKEPAD_RUN_OPT=-statictls changes nothing (static TLS is Linux x86-64 only).
+- MAKEPAD_RUN_TLS_TRACE=1: KEYS is "block at 0x50"; the trace also lists proc_macro::CALL_SITE (0x20, copied on first access), IN_MACRO, std CURRENT,
+  panic DEPTH/PAYLOAD → the proc-macro WORLD (pmhost.rs: its own Program/Tcx/JIT Unit, in process, for the life of the run; started early beside the
+  native build = `proc-macro world started beside the native build`, absent in the calculator) runs on the same main thread. Suspect: two units
+  placing thread-locals in one per-thread block (each Unit starts at TLS_FIRST_FREE) — not proven: the trace shows one sequence of offsets.
