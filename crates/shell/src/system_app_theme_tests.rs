@@ -18,9 +18,7 @@ fn camera_recording_failure_settles_controls_without_stopping_a_healthy_recordin
         // Execute the shipped app's callbacks in the native VM. Camera,
         // timers and rendering endpoints are test doubles: this verifies app
         // state and endpoint calls, not pixels or successful hardware capture.
-        let value = vm.eval(ScriptMod {
-            file: "camera_recording_failure_test.splash".into(),
-            code: format!(r#"
+        let value = vm.eval(ScriptMod::new("", "", "camera_recording_failure_test.splash", 0, 0, &(format!(r#"
 use mod.std.assert
 let fs = {{}}
 let native_recording = false
@@ -59,7 +57,7 @@ let ui = {{
 set_mode("video")
 start_recording()
 assert(recording && timer_visible && rec_timer == 1)
-// Android queues a request, then reports that recording is unsupported.
+
 native_recording = false
 native_error = "video failed: recording is not implemented on Android yet"
 failed()
@@ -71,8 +69,8 @@ set_mode("photo")
 assert(mode == "photo")
 failed()
 assert(stopped.len() == 1)
-// An unrelated error while the native recorder remains active must not
-// discard the UI state or permit a mode change during that recording.
+
+
 set_mode("video")
 start_recording()
 native_error = "photo failed: synthetic still failure"
@@ -84,15 +82,13 @@ assert(mode == "video")
 stop_recording()
 assert(!recording && !timer_visible && rec_timer == nil)
 assert(stopped.len() == 2 && stopped[1] == 2 && stop_requests == 1)
-// Rejected app consent cannot start another native recording or UI timer.
+
 microphone_allowed = false
 start_recording()
 assert(!recording && !native_recording && !timer_visible && rec_timer == nil)
 assert(timers.len() == 2 && retry_visible && !permission_pending)
 true
-;"#),
-            ..Default::default()
-        });
+;"#)), &[]));
         let errors = vm.take_errors();
         assert!(errors.is_empty(), "Camera app errors: {errors:?}");
         assert!(!value.is_err(), "Camera callbacks returned {value:?}");
@@ -121,11 +117,7 @@ fn script_colors(style: DesktopStyle, dark: bool, styles: &str, expressions: &[&
             .iter()
             .map(|expression| {
                 vm.bx.captured_errors = Some(Vec::new());
-                let value = vm.eval(ScriptMod {
-                    file: "news_theme_test.splash".into(),
-                    code: format!("use mod.prelude.widgets.*\n{styles}\n{expression}\n;"),
-                    ..Default::default()
-                });
+                let value = vm.eval(ScriptMod::new("", "", "news_theme_test.splash", 0, 0, &(format!("use mod.prelude.widgets.*\n{styles}\n{expression}\n;")), &[]));
                 let errors = vm.take_errors();
                 assert!(errors.is_empty(), "{expression}: {errors:?}");
                 Vec4f::script_from_value(vm, value).to_u32()
@@ -146,9 +138,7 @@ fn youtube_committed_query_restores_field_without_overwriting_unsent_typing() {
             vm.bx.captured_errors = Some(Vec::new());
             // Run the shipped callbacks with local storage/network/UI spies.
             // No provider request or actual persisted user file is involved.
-            let value = vm.eval(ScriptMod {
-                file: "youtube_query_restore_test.splash".into(),
-                code: format!(r#"
+            let value = vm.eval(ScriptMod::new("", "", "youtube_query_restore_test.splash", 0, 0, &(format!(r#"
 use mod.std.assert
 let stored_query = {stored}
 let writes = []
@@ -174,12 +164,12 @@ boot()
 assert(q == "{expected}" && field_text == q)
 assert(status_text == "Searching YouTube for “{expected}”…")
 assert(writes.len() == 0 && field_sets == 1)
-// A committed chip/search replaces the field and persists its trimmed query.
+
 search_for("  NASA science  ")
 assert(q == "NASA science" && field_text == q)
 assert(writes.len() == 1 && writes[0].path == "accounts/device/query.json")
 assert(writes[0].data.parse_json().q == q && field_sets == 2)
-// Result polling and tab changes must not discard a draft still being typed.
+
 field_text = "Unsubmitted next query"
 video_count = "0"
 read_hits()
@@ -192,9 +182,7 @@ search_for("   ")
 assert(q == "NASA science" && field_text == "Unsubmitted next query")
 assert(field_sets == 2 && writes.len() == 1)
 true
-;"#),
-                ..Default::default()
-            });
+;"#)), &[]));
             let errors = vm.take_errors();
             assert!(errors.is_empty(), "YouTube stored={stored}: {errors:?}");
             assert!(!value.is_err(), "YouTube callbacks returned {value:?}");

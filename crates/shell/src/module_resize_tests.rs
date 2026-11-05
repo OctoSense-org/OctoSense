@@ -20,11 +20,7 @@ fn photo_model(expression: &str) -> serde_json::Value {
     };
     vm.bx.captured_errors = Some(Vec::new());
     let result = vm.with_instruction_limit(500_000, |vm| {
-        vm.eval(ScriptMod {
-            file: "photos_tile_test.splash".into(),
-            code: format!("use mod.math.*\n{source}\n{expression}\n;"),
-            ..Default::default()
-        })
+        vm.eval(ScriptMod::new("", "", "photos_tile_test.splash", 0, 0, &(format!("use mod.math.*\n{source}\n{expression}\n;")), &[]))
     });
     let errors = vm.take_errors();
     assert!(errors.is_empty(), "{errors:?}");
@@ -277,7 +273,7 @@ assert(mod.note == "This app does not have location access. Choose an origin ins
     let mut host = ScriptVmHost::new((), ());
     let mut vm = ScriptVm { host: host.host_context(), bx: Box::new(ScriptVmBase::new()) };
     vm.bx.captured_errors = Some(Vec::new());
-    let result = vm.eval(ScriptMod { file: "maps_location_test.splash".into(), code, ..Default::default() });
+    let result = vm.eval(ScriptMod::new("", "", "maps_location_test.splash", 0, 0, &code, &[]));
     let errors = vm.take_errors();
     assert!(errors.is_empty(), "{errors:?}");
     assert_eq!(result.as_number(), Some(1.0));

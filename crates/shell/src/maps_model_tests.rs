@@ -16,11 +16,7 @@ fn maps_model(expression: &str) -> serde_json::Value {
     };
     vm.bx.captured_errors = Some(Vec::new());
     let result = vm.with_instruction_limit(500_000, |vm| {
-        vm.eval(ScriptMod {
-            file: "maps_model_test.splash".into(),
-            code: format!("use mod.math.*\n{source}\n{expression}\n;"),
-            ..Default::default()
-        })
+        vm.eval(ScriptMod::new("", "", "maps_model_test.splash", 0, 0, &(format!("use mod.math.*\n{source}\n{expression}\n;")), &[]))
     });
     let errors = vm.take_errors();
     assert!(errors.is_empty(), "{errors:?}");

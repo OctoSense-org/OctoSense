@@ -158,19 +158,11 @@ impl ConnectedReplyReview {
         }
         if let Some(owner) = cx.script_ref_vm_id(&self.source) {
             cx.with_script_vm_id(owner, |vm| {
-                vm.eval(ScriptMod {
-                    cargo_manifest_path: env!("CARGO_MANIFEST_DIR").into(),
-                    module_path: "native_review_close".into(),
-                    file: "native_review_close.splash".into(),
-                    line: 0,
-                    column: 0,
-                    code: format!(
+                vm.eval(ScriptMod::new(env!("CARGO_MANIFEST_DIR"), "native_review_close", "native_review_close.splash", 0, 0, &(format!(
                         "mod.host.request({}, {{ticket: {}}}, nil)",
                         serde_json::json!(self.close_service),
                         serde_json::json!(self.close_ticket)
-                    ),
-                    values: vec![],
-                });
+                    )), &[]));
             });
         }
     }

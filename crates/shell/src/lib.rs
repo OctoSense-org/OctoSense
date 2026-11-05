@@ -6688,15 +6688,7 @@ impl App {
         let theme_name = App::theme_name_from_env();
         let source = theme::load_theme_source(&theme_name);
         let eval_theme = |vm: &mut ScriptVm, name: &str, code: &str| -> bool {
-            let script_mod_id = ScriptMod {
-                cargo_manifest_path: env!("CARGO_MANIFEST_DIR").to_string(),
-                module_path: name.to_string(),
-                file: "theme.splash".to_string(),
-                line: 0,
-                column: 0,
-                code: code.to_string(),
-                values: vec![],
-            };
+            let script_mod_id = ScriptMod::new(env!("CARGO_MANIFEST_DIR"), &name, "theme.splash", 0, 0, &code, &[]);
             let value = vm.eval(script_mod_id);
             let errors = vm.take_errors();
             for e in &errors {

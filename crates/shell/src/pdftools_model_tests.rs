@@ -21,12 +21,7 @@ fn pdftools_model(expression: &str) -> serde_json::Value {
     };
     vm.bx.captured_errors = Some(Vec::new());
     let result = vm.with_instruction_limit(500_000, |vm| {
-        vm.eval(ScriptMod {
-            file: "pdftools_model_test.splash".into(),
-            // The app reaches `regex` through the widgets prelude.
-            code: format!("use mod.math.*\nuse mod.std.regex\n{source}\n{expression}\n;"),
-            ..Default::default()
-        })
+        vm.eval(ScriptMod::new("", "", "pdftools_model_test.splash", 0, 0, &(format!("use mod.math.*\nuse mod.std.regex\n{source}\n{expression}\n;")), &[]))
     });
     let errors = vm.take_errors();
     assert!(errors.is_empty(), "{errors:?}");
@@ -409,11 +404,7 @@ fn parse_errors(code: &str) -> Vec<String> {
     };
     vm.bx.captured_errors = Some(Vec::new());
     vm.with_instruction_limit(200_000, |vm| {
-        vm.eval(ScriptMod {
-            file: "pdftools_parse_test.splash".into(),
-            code: format!("use mod.math.*\nuse mod.std.regex\n{code}\n;"),
-            ..Default::default()
-        })
+        vm.eval(ScriptMod::new("", "", "pdftools_parse_test.splash", 0, 0, &(format!("use mod.math.*\nuse mod.std.regex\n{code}\n;")), &[]))
     });
     vm.take_errors().into_iter().filter(|e| e.contains("parser.rs") || e.contains("tokenizer.rs")).collect()
 }

@@ -466,7 +466,7 @@
       "crate": "octosense-app-hub-app",
       "source": {
         "git": "https://github.com/OctoSense-org/OctoSense-App-Hub",
-        "rev": "26f00c2914bb1d2edcb95728bb82862df989b36b",
+        "rev": "a85b289633215cbc36def8816af52e962608d2b5",
         "local": null
       },
       "module": [

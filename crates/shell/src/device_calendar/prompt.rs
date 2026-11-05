@@ -135,18 +135,10 @@ impl DeviceCalendarReview {
         }
         if let Some(owner) = cx.script_ref_vm_id(&self.source) {
             cx.with_script_vm_id(owner, |vm| {
-                vm.eval(ScriptMod {
-                    cargo_manifest_path: env!("CARGO_MANIFEST_DIR").into(),
-                    module_path: "device_calendar_close".into(),
-                    file: "device_calendar_close.splash".into(),
-                    line: 0,
-                    column: 0,
-                    code: format!(
+                vm.eval(ScriptMod::new(env!("CARGO_MANIFEST_DIR"), "device_calendar_close", "device_calendar_close.splash", 0, 0, &(format!(
                         "mod.host.request(\"device_calendar.sheet.close\", {{ticket:{}}}, nil)",
                         json!(self.ticket)
-                    ),
-                    values: vec![],
-                });
+                    )), &[]));
             });
         }
     }

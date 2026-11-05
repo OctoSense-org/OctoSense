@@ -934,7 +934,7 @@ mod tests {
             for (name, source) in [("base", crate::theme::BUNDLED_TOKYO_NIGHT_SPLASH.to_string()), ("shell", crate::theme::shell_splash_block(crate::theme::BUNDLED_TOKYO_NIGHT_SPLASH))] {
                 let mut code = source.lines().skip_while(|line| line.trim().is_empty() || line.trim().starts_with("//")).collect::<Vec<_>>().join("\n");
                 code.push_str("\ntrue\n");
-                vm.eval(ScriptMod {cargo_manifest_path: env!("CARGO_MANIFEST_DIR").into(), module_path: name.into(), file: "theme.splash".into(), line: 0, column: 0, code, values: vec![]});
+                vm.eval(ScriptMod::new(env!("CARGO_MANIFEST_DIR"), &name, "theme.splash", 0, 0, &code, &[]));
             }
             crate::shell::ui::script_mod(vm);
             crate::card_chat::script_mod(vm); crate::mail_clip::script_mod(vm); super::script_mod(vm);

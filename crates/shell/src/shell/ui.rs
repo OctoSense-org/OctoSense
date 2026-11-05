@@ -1959,15 +1959,7 @@ mod tests {
             .collect::<Vec<_>>()
             .join("\n");
         body.push_str("\ntrue\n");
-        vm.eval(ScriptMod {
-            cargo_manifest_path: env!("CARGO_MANIFEST_DIR").to_string(),
-            module_path: name.to_string(),
-            file: "theme.splash".to_string(),
-            line: 0,
-            column: 0,
-            code: body,
-            values: vec![],
-        });
+        vm.eval(ScriptMod::new(env!("CARGO_MANIFEST_DIR"), &name, "theme.splash", 0, 0, &body, &[]));
     }
 
     /// A syntax-and-mapping guard: the kit's DSL evaluates without error,

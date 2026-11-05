@@ -23,12 +23,7 @@ fn quickdeck_model(expression: &str) -> serde_json::Value {
     };
     vm.bx.captured_errors = Some(Vec::new());
     let result = vm.with_instruction_limit(500_000, |vm| {
-        vm.eval(ScriptMod {
-            file: "quickdeck_model_test.splash".into(),
-            // The app reaches `regex` and the math functions through the widgets prelude.
-            code: format!("use mod.math.*\nuse mod.std.regex\n{source}\n{expression}\n;"),
-            ..Default::default()
-        })
+        vm.eval(ScriptMod::new("", "", "quickdeck_model_test.splash", 0, 0, &(format!("use mod.math.*\nuse mod.std.regex\n{source}\n{expression}\n;")), &[]))
     });
     let errors = vm.take_errors();
     assert!(errors.is_empty(), "{errors:?}");
