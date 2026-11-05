@@ -357,7 +357,7 @@ mod tests {
         let mut cx = Cx::new(Box::new(|_, _| {}));
         let widget = cx.with_vm(|vm| {
             makepad_widgets::script_mod(vm);
-            desktop_style::install(vm, desktop_style::StyleSheet::load(desktop_style::DesktopStyle::Omarchy));
+            desktop_style::install(vm, desktop_style::StyleSheet::load(desktop_style::DesktopStyle::Omarchy.sheet(false)));
             vm.with_reload(makepad_widgets::script_mod);
             super::script_mod(vm);
             let value = script_eval!(vm, {use mod.widgets.* CardChat{}});
@@ -375,7 +375,7 @@ mod tests {
         widget.borrow_mut::<CardChat>().unwrap().rows = vec![MessageRow {speaker:"Assistant".into(),text:"Retained answer".into()}];
         let pass = DrawPass::new(&mut cx); let mut list = DrawList2d::new(&mut cx);
         for dark in [false,true,false] {
-            let sheet = desktop_style::StyleSheet::load_with_appearance(desktop_style::DesktopStyle::Android,dark);
+            let sheet = desktop_style::StyleSheet::load(desktop_style::DesktopStyle::Android.sheet(dark));
             crate::glance_style::select(&mut cx,&sheet);
             widget.borrow_mut::<CardChat>().unwrap().set_ink(&mut cx,crate::shell::rgb(255,255,255));
             let (revision,_) = crate::glance_style::current(&mut cx);
@@ -431,7 +431,7 @@ mod tests {
         let mut cx = Cx::new(Box::new(|_, _| {}));
         let widget = cx.with_vm(|vm| {
             makepad_widgets::script_mod(vm);
-            desktop_style::install(vm, desktop_style::StyleSheet::load(desktop_style::DesktopStyle::Android));
+            desktop_style::install(vm, desktop_style::StyleSheet::load(desktop_style::DesktopStyle::Android.sheet(false)));
             vm.with_reload(makepad_widgets::script_mod);
             super::script_mod(vm);
             let value = script_eval!(vm, {use mod.widgets.* CardChat{}});
@@ -456,7 +456,7 @@ mod tests {
             }
         };
         for dark in [false, true, false] {
-            let sheet = desktop_style::StyleSheet::load_with_appearance(desktop_style::DesktopStyle::Android, dark);
+            let sheet = desktop_style::StyleSheet::load(desktop_style::DesktopStyle::Android.sheet(dark));
             crate::glance_style::select(&mut cx, &sheet);
             widget.borrow_mut::<CardChat>().unwrap().set_ink(&mut cx, crate::shell::rgb(0, 0, 0));
             // Use the exact presentation object applied to the native editor,

@@ -128,7 +128,7 @@ mod tests {
         let mut cx = Cx::new(Box::new(|_, _| {}));
         cx.with_vm(makepad_widgets::script_mod);
         let mut host = crate::module_host::ModuleHost::default();
-        host.apply_style(&mut cx, &desktop_style::StyleSheet::load(desktop_style::DesktopStyle::Android));
+        host.apply_style(&mut cx, &desktop_style::StyleSheet::load(desktop_style::DesktopStyle::Android.sheet(false)));
         let module = &octosense_app_hub_app::CARD_MODULE;
         let open = module.open_schema().validate(r#"{"app":"os.back-probe"}"#, &[]).unwrap();
         host.create(&mut cx, 11, module, open, dvec2(400.0, 700.0)).unwrap();

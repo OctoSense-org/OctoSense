@@ -1248,7 +1248,7 @@ mod nested_style_tests {
         cx.with_vm(makepad_widgets::script_mod);
         let outer = cx.alloc_splash_vm_with_network(false);
         let inherited = cx.with_script_vm_id(outer, |vm| {
-            apply_module_style(vm, &desktop_style::StyleSheet::load(desktop_style::DesktopStyle::Android));
+            apply_module_style(vm, &desktop_style::StyleSheet::load(desktop_style::DesktopStyle::Android.sheet(false)));
             #[cfg(feature = "app-hub")]
             octosense_app_hub_app::CARD_MODULE.register(vm);
             desktop_style::current(vm).unwrap()
@@ -1319,7 +1319,7 @@ mod style_tests {
         let open=module.open_schema().validate("{}", &[]).unwrap();
         host.create(&mut cx,1,module,open,dvec2(900.0,700.0)).unwrap();
         let uid=host.get(1).unwrap().root.widget_uid();
-        host.apply_style(&mut cx,&desktop_style::StyleSheet::load(desktop_style::DesktopStyle::Macos));
+        host.apply_style(&mut cx,&desktop_style::StyleSheet::load(desktop_style::DesktopStyle::Macos.sheet(false)));
         let instance=host.get(1).unwrap();
         assert_eq!(instance.root.widget_uid(),uid);
         cx.with_script_vm_id(instance.vm_id,|vm| {
@@ -1346,7 +1346,7 @@ mod channel_tests {
         let mut cx = Cx::new(Box::new(|_, _| {}));
         cx.with_vm(makepad_widgets::script_mod);
         let mut host = ModuleHost::default();
-        host.apply_style(&mut cx, &desktop_style::StyleSheet::load(desktop_style::DesktopStyle::Android));
+        host.apply_style(&mut cx, &desktop_style::StyleSheet::load(desktop_style::DesktopStyle::Android.sheet(false)));
         let module = &octosense_reference::REFERENCE_MODULE;
         host.create(&mut cx, 7, module, module.open_schema().empty_open().unwrap(), dvec2(400.0, 700.0)).unwrap();
         let root = host.get(7).unwrap().root.clone();

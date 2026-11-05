@@ -48,38 +48,14 @@ fn visit(
         return Err(invalid("cyclic or overly nested tool JSON"));
     }
     if value.as_object().is_some() {
-        out.write_all(b"{")?;
-        let base = path.len();
-        let mut node = value;
-        let mut first = true;
-        while let Some(object) = node.as_object() {
-            if path.len() >= 32 || path.contains(&node) {
-                return Err(invalid("cyclic or overly nested tool JSON"));
-            }
-            path.push(node);
-            let data = heap.object_data(object);
-            for (key, entry) in data.map.iter() {
-                if !first {
-                    out.write_all(b",")?;
-                }
-                first = false;
-                string(heap, *key, out)?;
-                out.write_all(b":")?;
-                visit(heap, entry.value, path, out)?;
-            }
-            for entry in &data.vec {
-                if !first {
-                    out.write_all(b",")?;
-                }
-                first = false;
-                string(heap, entry.key, out)?;
-                out.write_all(b":")?;
-                visit(heap, entry.value, path, out)?;
-            }
-            node = data.proto;
-        }
-        path.truncate(base);
-        out.write_all(b"}")
+        // jit3 PORT: upstream's ScriptHeap keeps its object storage private
+        // (no `object_data`); its own JSON writer walks the prototype chain
+        // and turns a cycle or absurd nesting into a null leaf at depth 24,
+        // so the ancestor-path cycle error above no longer fires for objects.
+        let _ = path;
+        let mut text = String::new();
+        heap.to_json_inner(value, &mut text);
+        out.write_all(text.as_bytes())
     } else if let Some(array) = value.as_array() {
         path.push(value);
         out.write_all(b"[")?;

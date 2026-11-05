@@ -1172,14 +1172,14 @@ mod tests {
         let mut cx = Cx::new(Box::new(|_, _| {}));
         cx.with_vm(makepad_widgets::script_mod);
         let mut host = crate::module_host::ModuleHost::default();
-        host.apply_style(&mut cx, &desktop_style::StyleSheet::load(desktop_style::DesktopStyle::Android));
+        host.apply_style(&mut cx, &desktop_style::StyleSheet::load(desktop_style::DesktopStyle::Android.sheet(false)));
         for (index, app) in catalog.iter().enumerate() {
             let module = registry.module(&app.id).unwrap();
             let client = index as u64 + 1;
             host.create(&mut cx, client, module, module.open_schema().empty_open().unwrap(), dvec2(400.0, 700.0)).unwrap();
             let instance = host.get(client).unwrap();
             assert!(!instance.root.is_empty(), "{} must provide a real view", app.id);
-            cx.with_script_vm_id_trusted(instance.vm_id, |vm| {
+            cx.with_script_vm_id(instance.vm_id, |vm| {
                 assert!(script_eval!(vm, {mod.theme.font_regular.font_family.latin.res}).as_handle().is_some(),
                         "{} must have the Android font resource", app.id);
                 assert!(script_eval!(vm, {mod.res}).is_nil(), "resource loading stays restricted after registration");
@@ -1199,7 +1199,9 @@ mod tests {
         let mut cx = Cx::new(Box::new(|_, _| {}));
         cx.with_vm(makepad_widgets::script_mod);
         let mut host = crate::module_host::ModuleHost::default();
-        for (index, app) in build_rows(bundled_catalog()).iter().enumerate() {
+        // `self::`: the block's `use makepad_widgets::*` above would otherwise take the
+        // property inspector's build_rows.
+        for (index, app) in self::build_rows(bundled_catalog()).iter().enumerate() {
             let module = registry.module(&app.id).unwrap();
             let client = index as u64 + 1;
             host.create(&mut cx, client, module, module_open(module, app).unwrap(), dvec2(400.0, 700.0)).unwrap();
@@ -1209,7 +1211,7 @@ mod tests {
                 host.apply_style(&mut cx, &choice.sheet(crate::desktop::DesktopStyle::Android, dark));
                 let instance = host.get(client).unwrap();
                 assert_eq!(instance.root.widget_uid(), uid, "{} must retain its instance", app.id);
-                cx.with_script_vm_id_trusted(instance.vm_id, |vm| {
+                cx.with_script_vm_id(instance.vm_id, |vm| {
                     let theme = vm.module(id!(theme));
                     let p = choice.palette(dark);
                     for (role, color) in [("color_bg_app", p.background), ("color_text", p.text), ("color_focus", p.accent)] {

@@ -553,7 +553,7 @@ fn the_restart_on_a_stopped_face_responds_where_it_is_drawn() {
 #[test]
 fn a_press_on_a_host_sheet_over_a_card_app_is_not_the_apps() {
     let (mut cx, mut host) = setup();
-    host.apply_style(&mut cx, &desktop_style::StyleSheet::load(desktop_style::DesktopStyle::Macos));
+    host.apply_style(&mut cx, &desktop_style::StyleSheet::load(desktop_style::DesktopStyle::Macos.sheet(false)));
     let module = &octosense_appstore::cardapp::CARD_MODULE;
     let open = module.open_schema().validate(r#"{"app":"os.press-probe"}"#, &[]).unwrap();
     host.create(&mut cx, 1, module, open, dvec2(400.0, 500.0)).unwrap();

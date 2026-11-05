@@ -1575,7 +1575,7 @@ mod tests {
         use makepad_widgets::makepad_draw::cx_draw::CxDraw;
         let mut cx = tile_cx();
         cx.with_vm(|vm| {
-            desktop_style::install(vm, desktop_style::StyleSheet::load(desktop_style::DesktopStyle::Omarchy));
+            desktop_style::install(vm, desktop_style::StyleSheet::load(desktop_style::DesktopStyle::Omarchy.sheet(false)));
         });
         let mut tiles = GlanceTiles::scrolling();
         tiles.viewport_layout = true;
@@ -1600,7 +1600,7 @@ mod tests {
         };
         let mut identity = None;
         for dark in [false, true, false] {
-            let sheet = desktop_style::StyleSheet::load_with_appearance(desktop_style::DesktopStyle::Android, dark);
+            let sheet = desktop_style::StyleSheet::load(desktop_style::DesktopStyle::Android.sheet(dark));
             crate::glance_style::select(&mut cx, &sheet);
             let card = tiles.open(&mut cx, "style-event", "test.style", false, &body);
             draw(&mut cx, &mut tiles); draw(&mut cx, &mut tiles);

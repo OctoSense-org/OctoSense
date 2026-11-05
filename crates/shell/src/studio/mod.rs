@@ -721,11 +721,7 @@ mod tests {
     fn unowned_readback_is_preserved_for_other_shell_consumers() {
         let mut cx = Cx::new(Box::new(|_, _| {}));
         let mut renderer = Renderer::default();
-        let original = pixels(
-            ReadbackChannelOrder::Rgba,
-            ReadbackOrigin::TopLeft,
-            &[0; 16],
-        );
+        let original = pixels(&[0; 8]);
         assert_eq!(
             renderer.readback(&mut cx, original).unwrap().ticket,
             ReadbackTicket(1)

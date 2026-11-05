@@ -462,3 +462,7 @@ lopdf = { git = "https://github.com/ymote/pdfcraft.git", rev = "51f09eea27c56e8e
 # jit3 spike
 [patch."https://github.com/OctoSense-org/OctoSense-App-Hub"]
 octosense-app-policy = { path = ".jit3/app-hub/crates/app-policy" }
+octosense-appstore = { path = ".jit3/app-hub/crates/appstore" }
+octosense-app-hub = { path = ".jit3/app-hub/crates/app-hub" }
+octosense-app-hub-app = { path = ".jit3/app-hub/crates/app-hub-app" }
+octosense-app-contract = { path = ".jit3/app-hub/crates/app-contract" }

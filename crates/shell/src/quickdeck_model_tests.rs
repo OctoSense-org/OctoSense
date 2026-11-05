@@ -18,7 +18,7 @@ fn quickdeck_model(expression: &str) -> serde_json::Value {
         .split_once("\nstart_timeout(").unwrap().0;
     let mut host = ScriptVmHost::new((), ());
     let mut vm = ScriptVm {
-        host: &mut host,
+        host: host.host_context(),
         bx: Box::new(ScriptVmBase::new()),
     };
     vm.bx.captured_errors = Some(Vec::new());

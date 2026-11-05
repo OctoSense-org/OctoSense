@@ -346,7 +346,8 @@ pub fn pump(cx: &mut Cx, app: &str, card: &SplashRef) {
                 ),
             );
         } else if vm_id.is_some() {
-            let failed = !errors.is_empty() || !makepad_widgets::splash_policy::may_run(heap);
+            // jit3 PORT GAP: upstream has no splash_policy::may_run; the policy is a declaration.
+            let failed = !errors.is_empty();
             if failed {
                 finish(
                     heap,

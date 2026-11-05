@@ -239,7 +239,7 @@ impl AppModule for CardModule {
                     .map(|view| (view.card_surface.clone(), view.host_sheet.clone())) else { return };
                 let heap = splash.borrow_mut().and_then(|mut s| s.isolate_heap_key(cx));
                 if let Some(heap) = heap {
-                    makepad_widgets::camera_preview::release_isolate_devices(cx, heap);
+                    // jit3 PORT GAP: upstream has no camera_preview module (isolate device release).
                     crate::services::cancel_heap(heap);
                 }
                 splash.set_host_tag(cx, None);

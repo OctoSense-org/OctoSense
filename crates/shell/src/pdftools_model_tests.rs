@@ -16,7 +16,7 @@ fn pdftools_model(expression: &str) -> serde_json::Value {
         .split_once("\nstart_timeout(").unwrap().0;
     let mut host = ScriptVmHost::new((), ());
     let mut vm = ScriptVm {
-        host: &mut host,
+        host: host.host_context(),
         bx: Box::new(ScriptVmBase::new()),
     };
     vm.bx.captured_errors = Some(Vec::new());
@@ -404,7 +404,7 @@ fn a_title_printed_in_pieces_is_counted_as_pieces() {
 fn parse_errors(code: &str) -> Vec<String> {
     let mut host = ScriptVmHost::new((), ());
     let mut vm = ScriptVm {
-        host: &mut host,
+        host: host.host_context(),
         bx: Box::new(ScriptVmBase::new()),
     };
     vm.bx.captured_errors = Some(Vec::new());

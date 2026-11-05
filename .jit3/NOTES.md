@@ -71,3 +71,19 @@ Biggest soft counts: sha2 112, flate2 22, photocraft-automation 12, lightcraft-e
   android_integration, accessibility_preferences, with_script_vm_id_trusted, thread::Lane, CloseDecision, splash_host, WindowRequest,
   ai_services peer/ui_port links, set_policy, TextInputStateQuery, ModuleCloseAction/ModuleWindows, ModalBounds, Readback*, terminal::ai.
   This is the shell's first-layer port list (resolution errors hide the type errors behind them; expect 2–3× once resolved).
+
+## PORT LOOP (started 4 Nov, user "push and start the 153"); PR #1383 opened for the relax fix
+Recipe: fork commits cherry-pick directly into jit3-work (shared object store; branch `jit3-port-makepad` = upstream work + relax fix);
+files moved upstream (widgets/src → widgets/core/src) are re-applied with a path-rewritten `git apply --3way`; check with
+`cargo check -p <crates>` + crate tests; then `relax check --json --allow-c octosense --no-default-features --features octos-core,app-*`
+from jit3-octosense (bare runner, ~35–65 s) and `python3 .jit3/worklist.py` (edit the log name inside).
+Progress: 182 → 157 (AI1: 08118a09d af0d0fc26 b9cbb6c17 45d677e67, resolved against upstream's settings-card engine; 99 tests)
+→ 139 (W4: cc3e9a618 1e6bf7cea; area.rs part dropped as superseded; modal on widgets/core).
+Remaining map: close veto 2370dd25b (module-host 9); PendingServiceLinks ← 74fec2160 (aichat overlay, big; port only the type);
+Readback* ← b174762ef (Studio code atlas, big); Lane ← 99a7ad641?; NativeQr ← a68fd2063; with_script_vm_id_trusted ← ed8452f12;
+take_splash_host_requests_for ← ddfb25b96. NO fork commit (OctoSense runtime patches): WindowRequest, AccessibilityPreferences,
+TextInputStateQuery, screen_origin. relax gaps to file upstream: json! (15), include_str! in concat!/compile_error! (14).
+→ 130 (close veto 2370dd25b, clean pick). Runtime-patch trial (.jit3/patch-trial.tsv): of OctoSense's 41 makepad patches only 3 apply to
+upstream work (android-enter-composition, android-video-seek, finance-seed); 38 fail, nearly all because their files moved/changed
+(platform/src/os → platform/hal, widgets/src → widgets/core). The settings patch (18 files, 123 hunks: AccessibilityPreferences,
+TextInputStateQuery, scroll_pos, screen_origin, WindowRequest?) is a hand re-port.

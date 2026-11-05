@@ -198,7 +198,7 @@ fn vm_alive(cx: &mut Cx) {
 }
 
 fn call(id: &str) -> ServiceCall {
-    ServiceCall { call_id: id.into(), tool: "ping".into(), args: "{}".into() }
+    ServiceCall { call_id: id.into(), tool: "ping".into(), args: "{}".into(), caller: None }
 }
 
 #[test]
@@ -526,7 +526,7 @@ impl ServiceExecutor for FlightExecutor {
 static FLIGHT: FlightModule = FlightModule;
 
 fn flight_call(id: &str, tool: &str) -> ServiceCall {
-    ServiceCall { call_id: id.into(), tool: tool.into(), args: "{}".into() }
+    ServiceCall { call_id: id.into(), tool: tool.into(), args: "{}".into(), caller: None }
 }
 
 fn is_outcome_unknown(result: &makepad_ai_services::wire::ToolResult) -> bool {

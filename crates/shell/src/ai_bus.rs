@@ -635,7 +635,7 @@ mod tests {
     }
 
     fn call(tool: &str, args: &str) -> ServiceCall {
-        ServiceCall { call_id: "c".into(), tool: tool.into(), args: args.into() }
+        ServiceCall { call_id: "c".into(), tool: tool.into(), args: args.into(), caller: None }
     }
 
     #[test]
@@ -955,7 +955,7 @@ mod local_tests {
         assert!(replay[1].contains("\"m4\""));
         // A call addressed to it is the host's to run; the wrong kind of
         // address for the same id drops.
-        let call = ServiceCall { call_id: "c1".into(), tool: "summary".into(), args: "{}".into() };
+        let call = ServiceCall { call_id: "c1".into(), tool: "summary".into(), args: "{}".into(), caller: None };
         let down = HostedDown { to: Some(EndpointId("m4".into())), msg: ServiceDown::Call(call.clone()) };
         match bus.on_custom(9, &down.to_json()) {
             Route::Local(4, ServiceDown::Call(c)) => assert_eq!(c.call_id, "c1"),
