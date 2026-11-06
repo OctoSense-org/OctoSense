@@ -233,3 +233,9 @@ workarounds kept: pure blake3, unused [patch] entries removed, `::serde_json::js
   test (zone_alloc::domain a_sparse_detached…, base untouched by us). Next probe running: jit3-deps3 = reqwest(rustls)+keyring+chrono+serde_json+url (AppCard's stack).
 - The std generator (std/check, `relax-std-gen num`) does not build with stable rustc here (internal attributes); the NonZero
   TryFrom lines were emitted by hand in the generator's exact format, and the generator source changed to match.
+- jit3-deps3 (reqwest 0.12 rustls+json+blocking, tokio, serde derive, serde_json, chrono+serde, url, keyring apple-native):
+  relax run2 = 0 type errors, output identical to rustc (client build, refused connect, keyring entry, serde round trip).
+  AppCard's third-party stack is clear; what is left is makepad-side: makepad-ai (compat is EMPTY), code_editor (exists upstream),
+  streaming-markdown-kit + makepad-diagram-kit (Robius kits, patched onto upstream widgets). Measuring: Cargo.toml (uncommitted)
+  adds member apps/appcard/module + workspace deps/patches makepad-code-editor → .sources/makepad/code_editor, makepad-ai →
+  compat; `relax check --allow-c octosense-appcard` → .jit3/check-appcard1.log.
