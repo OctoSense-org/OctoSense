@@ -228,7 +228,8 @@ workarounds kept: pure blake3, unused [patch] entries removed, `::serde_json::js
   builds with -fvisibility=hidden / .private_extern → new compiler/src/os/hidden.rs reads the dylib's LC_SYMTAB (ELF .symtab)
   and adds the image slide; hooked after find_system in jit.rs foreign_addr (9240af3a8). allow_c fixture gained cn_hidden_mul.
 - run4: httparse, ring sha256 (2cf24dba…), zeroize, tokio all print the rustc output. tokio-only variant (jit3-deps2) also OK.
-- Upstream PR branches (jit3-pr, on upstream/main, clean cherry-picks): relax-std-async-crypto-gaps, relax-attr-value-macros,
-  relax-hidden-native-symbols. Next probe running: jit3-deps3 = reqwest(rustls)+keyring+chrono+serde_json+url (AppCard's stack).
+- Upstream PRs (jit3-pr, on upstream/main, clean cherry-picks, cargo check green): #1394 std gaps, #1395 attr value macros,
+  #1396 hidden native symbols. Fork jit pushed at 9240af3a8. relax-front tests 79/79; relax-base has one pre-existing failing
+  test (zone_alloc::domain a_sparse_detached…, base untouched by us). Next probe running: jit3-deps3 = reqwest(rustls)+keyring+chrono+serde_json+url (AppCard's stack).
 - The std generator (std/check, `relax-std-gen num`) does not build with stable rustc here (internal attributes); the NonZero
   TryFrom lines were emitted by hand in the generator's exact format, and the generator source changed to match.
