@@ -10846,6 +10846,7 @@ dependencies = [
  "octosense-app-hub",
  "octosense-app-hub-app",
  "octosense-app-policy",
+ "octosense-appcard",
  "octosense-appstore",
  "octosense-cad-service",
  "octosense-calendar-service",

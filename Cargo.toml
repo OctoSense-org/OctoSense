@@ -83,6 +83,7 @@ octosense-reference = { path = "apps/reference" }
 makepad-sheets = { git = "https://github.com/OctoSense-org/makepad.git", rev = "40f50bec1379f4b379cf599e1ab434df34da3902", default-features = false }
 makepad-terminal = { git = "https://github.com/OctoSense-org/makepad.git", rev = "40f50bec1379f4b379cf599e1ab434df34da3902" }
 octosense-app-hub-app = { git = "https://github.com/OctoSense-org/OctoSense-App-Hub", rev = "a85b289633215cbc36def8816af52e962608d2b5" }
+octosense-appcard = { path = "apps/appcard/module" }
 makepad-calculator = { git = "https://github.com/OctoSense-org/makepad.git", rev = "40f50bec1379f4b379cf599e1ab434df34da3902", default-features = false }
 makepad-clock = { git = "https://github.com/OctoSense-org/makepad.git", rev = "40f50bec1379f4b379cf599e1ab434df34da3902", default-features = false }
 makepad-notes = { git = "https://github.com/OctoSense-org/makepad.git", rev = "40f50bec1379f4b379cf599e1ab434df34da3902", default-features = false }

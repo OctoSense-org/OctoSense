@@ -573,6 +573,46 @@
       }
     },
     {
+      "id": "appcard",
+      "crate": "octosense-appcard",
+      "source": {
+        "path": "apps/appcard/module"
+      },
+      "module": "octosense_appcard::APPCARD_MODULE",
+      "bin": null,
+      "default_features": true,
+      "crate_features": [],
+      "implies": [
+        "octos-core"
+      ],
+      "hosting": {
+        "macos": "module",
+        "windows": "module",
+        "linux": "module",
+        "android": "module",
+        "ios": "module",
+        "ohos": "module"
+      },
+      "shells": {
+        "desktop": "opt-in",
+        "phone": "opt-in"
+      },
+      "native_mobile": "feature",
+      "sandbox": {
+        "network": "any",
+        "processes": false
+      },
+      "storage": {
+        "accounts": false,
+        "agent_workspace": "none",
+        "external": []
+      },
+      "agent": {
+        "octos": [],
+        "tools": null
+      }
+    },
+    {
       "id": "calculator",
       "crate": "makepad-calculator",
       "source": {

@@ -252,6 +252,33 @@ pub const APPS: &[NativeApp] = &[
         kernel: KernelPort::None,
     },
     NativeApp {
+        id: "appcard",
+        feature: "app-appcard",
+        bin: None,
+        macos: Hosting::Module,
+        windows: Hosting::Module,
+        linux: Hosting::Module,
+        android: Hosting::Module,
+        ios: Hosting::Module,
+        ohos: Hosting::Module,
+        wasm: Hosting::Module,
+        octos: &[],
+        tools: &[],
+        network: Network::Any,
+        processes: false,
+        accounts: false,
+        external: &[],
+        storage: r#"{"accounts": false, "agent_workspace": "none", "external": []}"#,
+        tools_json: r##"[]"##,
+        generic_tools: &[],
+        grants: &[],
+        system_tools: &[],
+        own_tools: &[],
+        calls_per_turn: None,
+        calls_per_day: None,
+        kernel: KernelPort::None,
+    },
+    NativeApp {
         id: "calculator",
         feature: "app-calculator",
         bin: Some("calculator"),
@@ -454,6 +481,8 @@ pub fn link(out: &mut Vec<&'static dyn AppModule>) {
         out.push(&octosense_app_hub_app::APP_HUB_MODULE);
         out.push(&octosense_app_hub_app::CARD_MODULE);
     }
+    #[cfg(feature = "app-appcard")]
+    out.push(&octosense_appcard::APPCARD_MODULE);
     #[cfg(feature = "app-calculator")]
     out.push(&makepad_calculator::CALCULATOR_MODULE);
     #[cfg(feature = "app-clock")]
