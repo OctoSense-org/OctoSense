@@ -177,9 +177,9 @@ pub fn handle_network_responses(cx: &mut Cx, responses: &[NetworkResponse]) {
     pump(cx);
     let mut touched = false;
     for response in responses {
+        // The request id rides on the variant (`metadata_id` is the request's own tag).
         let request_id = match response {
-            NetworkResponse::HttpResponse { response, .. } => response.metadata_id,
-            NetworkResponse::HttpError { error, .. } => error.metadata_id,
+            NetworkResponse::HttpResponse { request_id, .. } | NetworkResponse::HttpError { request_id, .. } => *request_id,
             _ => continue,
         };
         if url_of(request_id).is_none() {
