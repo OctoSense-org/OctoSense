@@ -285,3 +285,17 @@ workarounds kept: pure blake3, unused [patch] entries removed, `::serde_json::js
   is restyled — pre-existing jit-line issue, to look at. `BUG: update_global_ui_handle while isolate installed; deferred` once per run.
 - Visual confirmation of the re-evaluated card is still pending (needs a screenshot/instrument run); fork jit 0b3ffae05 adds the
   "splash: live re-eval" log so the next run shows it.
+
+## 5 Nov, 18:00: hidden visual checks on the jit line WORK through makepad-remote (no port, Unix socket)
+- Upstream `work` ships the --remote instrument (platform/src/remote.rs + remote_core.rs + remote_capture.rs), ON by default in
+  every process over a same-user Unix socket (`makepad-remote: pid N … socket …` startup line). `MAKEPAD_REMOTE=<port>` (the fork's
+  HTTP form) is REFUSED with exit 2 — that was the earlier "it exits"; `MAKEPAD_REMOTE=1` / `--remote` (no value) is the agent form.
+- Client: jit3-work/target/release/makepad-remote (built with `cargo build --release -p makepad-remote --bin makepad-remote`).
+  `makepad-remote app <pid> grab out=x.png` = 1400x900 PNG of the hidden shell in ~400 ms (capture 108 ms + encode 294 ms);
+  `status` (windows, sizes, dpi), `settled`, `mouse k=move|down|up|click x= y= [b=]`, `click x= y=`, `key t=|c=`, `text t=`,
+  `resize w= h=`, `close`, `log`, `trace`; `help` lists only the runner's JIT commands (the app `cmd` service answers anyway).
+- run31: hidden shell (MAKEPAD_HIDE_WINDOWS=1 MAKEPAD_REMOTE=1 MAKEPAD_WM_TEST_APP=calculator), first frame 32 s cold; grabs
+  jit-calc{,2,3,4}.png in the session scratchpad. Injected mouse down renders the Calculator key pressed, but down+up (with a
+  settled frame between) did not register as a tap on the module's button (display stayed 0): the gesture recipe the mac-look rig
+  uses (ui_pointer gate) is what to try; the capture path itself is proven.
+- Peer octosense-org-48 declined switching tonight (its work = 375 + 382 uncommitted files on the fork line); told it the recipe.
