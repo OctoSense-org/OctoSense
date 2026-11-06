@@ -299,3 +299,26 @@ workarounds kept: pure blake3, unused [patch] entries removed, `::serde_json::js
   settled frame between) did not register as a tap on the module's button (display stayed 0): the gesture recipe the mac-look rig
   uses (ui_pointer gate) is what to try; the capture path itself is proven.
 - Peer octosense-org-48 declined switching tonight (its work = 375 + 382 uncommitted files on the fork line); told it the recipe.
+
+## 6 Nov 2026: relax against the hagency stacks
+
+- `relax check --allow-c hagency` (hagency-client CLI, 514 crates: tokio, salvo, reqwest, aws-lc, sqlite) first
+  stopped in the front end on time 0.3.55: `#[derive(Clone, Copy)]` + a field `Option_ri8<-25, 25>` lost the `<`
+  of the in-place-split `<-` token when the derive copied the field type (`AssertParamIsClone<..>`). Fixed on
+  fork jit 51eb53a8a, upstream PR makepad#1402 (derive.rs `split_before`, fixture tests/std/derive_split_tokens.rs).
+  The time crate alone then checks with 0 errors.
+- Second run: 65 errors, 51 of them one cause: `use rusqlite::params;` -> "E0603: module `params` is private".
+  rusqlite has a private `mod params;` AND `#[macro_export] macro_rules! params`; rustc imports the macro.
+  Relax has the rule (privacy.rs `macro_binding_visible`) but it only fires when the exported macro is in
+  `mods[root].macros`, which is empty for a REGISTRY crate (a path-dependency copy of the same shape passes:
+  .d1-scratch/jit3-macro-mod; the failing minimal case is .d1-scratch/jit3-rusqlite, rusqlite =0.40.2
+  default-features=false). `rusqlite::params![..]` qualified works; only the `use` fails. Where registry crates
+  diverge: demand loading (front/src/demand.rs scan/resolve, preload.rs, rs_outline.rs). Not fixed yet.
+- The other 14: GenericArray `[u8; 32]: From<GenericArray<u8, U32>>` (hagency-matrix), four `impl Future: Send`
+  auto-trait overflows (E0275) in async bodies, one E0053 trait fn type, one E0308 `Value` vs `u64`,
+  xml-1.4.0 x3, simdutf8 x2 (not read yet). Log: .d1-scratch/relax-check-hagency-client2.log.
+- hagency-desktop (Rinx fork) is on kevinaboos' makepad branch, 167k lines in one crate: not a relax target
+  without the same port the OctoSense shell got. Its slow edit loop was `incremental = false` (repo PR #32 +
+  the Mac's global ~/.cargo/config.toml): 37 s -> 10 s with CARGO_INCREMENTAL=1. PR hagency-desktop#9.
+- hagency-server: link = 4 s with `LIBRARY_PATH=.run/libpq/lib`; backend edit 5 s; agent-service (65k lines)
+  edit 45 s (31 s of it `cargo check`), incremental off by the global config. Nothing relax can do there soon.
