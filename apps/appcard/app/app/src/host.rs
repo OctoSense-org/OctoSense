@@ -35,6 +35,8 @@ pub fn register_script_mods(vm: &mut ScriptVm) {
     // The kit classes the cards are lowered onto (the fork makepad had them in its prelude).
     octoscript_widgets::kit::script_mod(vm);
     crate::makepad_code_editor::script_mod(vm);
+    #[cfg(not(feature = "web-card"))]
+    crate::web_card_shim::script_mod(vm);
     crate::makepad_diagram_kit::script_mod(vm);
     crate::app::login::script_mod(vm);
     crate::app::approvals::script_mod(vm);

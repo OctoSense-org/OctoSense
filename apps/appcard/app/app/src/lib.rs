@@ -16,7 +16,7 @@ pub use octoscript_widgets;
 /// The native host's composer, deep-link and browser events, as the host posts them.
 mod host_events;
 #[cfg(not(feature = "web-card"))]
-mod web_card_shim;
+pub(crate) mod web_card_shim;
 #[cfg(not(feature = "web-card"))]
 use web_card_shim::*;
 

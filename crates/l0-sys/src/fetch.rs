@@ -85,6 +85,7 @@ pub fn fetch_cx(cx: &mut Cx, heap_key: usize, url: &str) -> Option<Rc<Vec<u8>>> 
         None => {}
     }
     let request_id = LiveId::unique();
+    log!("sys: data fetch issuing {url}");
     FETCHES.with(|f| f.borrow_mut().insert(url.to_string(), DataFetch::Loading(request_id)));
     let mut req = HttpRequest::new(url.to_string(), HttpMethod::GET);
     req.set_header("User-Agent".to_string(), user_agent(url).to_string());
@@ -173,6 +174,7 @@ pub fn handle_network_responses(cx: &mut Cx, responses: &[NetworkResponse]) {
                 if (200..300).contains(&status) {
                     match body {
                         Some(body) => {
+                            log!("sys: data fetch loaded {} bytes (status {status}) {}", body.len(), url_of(request_id).unwrap_or_default());
                             loaded(request_id, body.to_vec());
                         }
                         None => {

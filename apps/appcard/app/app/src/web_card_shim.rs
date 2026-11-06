@@ -4,6 +4,14 @@
 
 use makepad_widgets::*;
 
+// The DSL name too: the app's prototypes place a `WebCard` where the overlay's anchor goes;
+// without the feature it is an empty view of the same size.
+script_mod! {
+    use mod.prelude.widgets.*
+    use mod.widgets.*
+    mod.widgets.WebCard = View {}
+}
+
 /// The id every web card shared one native overlay under.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct WebCardBrowserId(pub LiveId);
