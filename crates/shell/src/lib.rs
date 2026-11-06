@@ -6241,6 +6241,8 @@ fn scan_theme_color(source: &str, key: &str) -> Option<Vec4f> {
 impl MatchEvent for App {
     fn handle_startup(&mut self, cx: &mut Cx) {
         runtime_host::init(cx.get_data_dir(), None);
+        // The `sys` vocabulary into every card isolate, and its live-data pump.
+        octosense_l0_sys::ensure_registered();
         self.dev_generation = dev_mode::generation();
         // An agent for every app that declares one (ADR 0004 §4): the ones
         // the person already allowed get their peer now, so the system
@@ -7390,6 +7392,13 @@ impl AppMain for App {
     }
 
     fn handle_event(&mut self, cx: &mut Cx, event: &Event) {
+        // The cards' live data: the shell issues the fetches the `sys` methods queued (an
+        // isolate may not) and hands the answers back; a datum landing re-evaluates the
+        // bodies that bind it.
+        octosense_l0_sys::pump(cx);
+        if let Event::NetworkResponses(responses) = event {
+            octosense_l0_sys::handle_network_responses(cx, responses);
+        }
         self.shell_handle_event(cx, event);
     }
 }

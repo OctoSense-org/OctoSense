@@ -10856,6 +10856,7 @@ dependencies = [
  "octosense-engine-area",
  "octosense-film-service",
  "octosense-l0-chat",
+ "octosense-l0-sys",
  "octosense-light-service",
  "octosense-mail-service",
  "octosense-news-service",

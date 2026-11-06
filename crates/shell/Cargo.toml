@@ -74,6 +74,9 @@ octoscript-makepad = { workspace = true }
 octoscript-ui-l0 = { workspace = true }
 # A glance card's in-card chat with its app's agent (`sys.chat`, glance_chat.rs).
 octosense-l0-chat = { workspace = true }
+# The cards' `sys` vocabulary (live data, device state, the user's references): installed into
+# every isolate; the shell is the broker that issues the cards' fetches and routes the answers.
+octosense-l0-sys = { workspace = true }
 octosense-ai-host = { workspace = true }
 octosense-mail-service = { workspace = true, optional = true }
 octosense-oauth-service = { workspace = true, optional = true, features = ["host"] }

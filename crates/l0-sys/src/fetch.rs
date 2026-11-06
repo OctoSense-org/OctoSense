@@ -84,13 +84,33 @@ pub fn fetch_cx(cx: &mut Cx, heap_key: usize, url: &str) -> Option<Rc<Vec<u8>>> 
         }
         None => {}
     }
+    // Not issued here: a `sys` method runs inside an isolate's evaluation, where the platform
+    // refuses raw HTTP (host-IO-only isolates). The request waits for the host's [`pump`].
     let request_id = LiveId::unique();
-    log!("sys: data fetch issuing {url}");
     FETCHES.with(|f| f.borrow_mut().insert(url.to_string(), DataFetch::Loading(request_id)));
-    let mut req = HttpRequest::new(url.to_string(), HttpMethod::GET);
-    req.set_header("User-Agent".to_string(), user_agent(url).to_string());
-    cx.http_request(request_id, req);
+    PENDING.with(|p| p.borrow_mut().push((request_id, url.to_string())));
+    // An event cycle follows a redraw; the host pumps in it.
+    cx.redraw_all();
     None
+}
+
+thread_local! {
+    /// Fetches a `sys` method asked for and the host has not issued yet: (request id, URL).
+    static PENDING: RefCell<Vec<(LiveId, String)>> = RefCell::new(Vec::new());
+}
+
+/// Issue the fetches the cards asked for. The HOST calls this from its own event handler,
+/// outside any isolate (the shell's app, or AppCard standalone): that is the one place the
+/// platform lets raw HTTP out, and the place a host applies its network policy. Cheap when
+/// nothing waits.
+pub fn pump(cx: &mut Cx) {
+    let pending = PENDING.with(|p| std::mem::take(&mut *p.borrow_mut()));
+    for (request_id, url) in pending {
+        log!("sys: data fetch issuing {url}");
+        let mut req = HttpRequest::new(url.clone(), HttpMethod::GET);
+        req.set_header("User-Agent".to_string(), user_agent(&url).to_string());
+        cx.http_request(request_id, req);
+    }
 }
 
 /// What a method answers while `url` is unresolved: the loading glyph while it may still
@@ -154,6 +174,7 @@ fn failed_terminally_by_id(request_id: LiveId) {
 /// Route the responses of this module's fetches: the host app calls it with every
 /// `Event::NetworkResponses`. Responses to other requests are left alone.
 pub fn handle_network_responses(cx: &mut Cx, responses: &[NetworkResponse]) {
+    pump(cx);
     let mut touched = false;
     for response in responses {
         let request_id = match response {

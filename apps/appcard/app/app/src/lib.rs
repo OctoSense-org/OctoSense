@@ -9423,6 +9423,7 @@ impl AppMain for App {
 
     fn handle_event(&mut self, cx: &mut Cx, event: &Event) {
         // Answers to the cards' live-data fetches (octosense-l0-sys issues them on the app's Cx).
+        octosense_l0_sys::pump(cx);
         if let Event::NetworkResponses(responses) = event {
             octosense_l0_sys::handle_network_responses(cx, responses);
         }
