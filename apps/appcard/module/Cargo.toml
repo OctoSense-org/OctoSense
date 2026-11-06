@@ -25,3 +25,5 @@ serde_json = "1.0"
 # The storage the shell offers the instance (ADR 0004 §11): AppCard keeps
 # its cards' chat threads in its account folder.
 octosense-app-peers = { workspace = true }
+# The `sys` vocabulary of the app's cards, installed into every isolate.
+octosense-l0-sys = { workspace = true }

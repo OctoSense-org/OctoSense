@@ -12,6 +12,12 @@ pub use host::{register_script_mods, AppShell, BODY_WIDGET};
 pub use app::l0_chat::set_folder as set_l0_chat_folder;
 #[cfg(target_os = "android")]
 mod monitor;
+/// The native host's composer, deep-link and browser events, as the host posts them.
+mod host_events;
+#[cfg(not(feature = "web-card"))]
+mod web_card_shim;
+#[cfg(not(feature = "web-card"))]
+use web_card_shim::*;
 
 use makepad_ai::*;
 use makepad_widgets::makepad_draw::svg::{
@@ -5595,7 +5601,7 @@ impl Widget for ChatList {
                             // the rebuilds the flag exists to suppress.
                             self.rendered_cache.as_ref().map(|c| c.3).unwrap_or(0)
                         } else {
-                            cx.script_data_fetch_epoch()
+                            octosense_l0_sys::live_data_epoch()
                         };
                         let unchanged = matches!(
                             &self.rendered_cache,
@@ -5662,7 +5668,7 @@ impl Widget for ChatList {
                             // every frame forever.
                             // The draw has already consumed this epoch. The poll
                             // must not invalidate the same result a second time.
-                            self.last_fetch_epoch = cx.script_data_fetch_epoch();
+                            self.last_fetch_epoch = octosense_l0_sys::live_data_epoch();
                             self.rendered_cache = Some((
                                 item_id,
                                 msg.text.clone(),
@@ -5672,7 +5678,7 @@ impl Widget for ChatList {
                                 if self.driving_card {
                                     0
                                 } else {
-                                    cx.script_data_fetch_epoch()
+                                    octosense_l0_sys::live_data_epoch()
                                 },
                             ));
                         }
@@ -5708,7 +5714,7 @@ impl Widget for ChatList {
         // `Timer::default()` is empty, so the first event starts the loop and
         // every firing re-arms it.
         if self.epoch_poll.is_event(event).is_some() || self.epoch_poll.is_empty() {
-            let epoch = cx.script_data_fetch_epoch();
+            let epoch = octosense_l0_sys::live_data_epoch();
             if epoch != self.last_fetch_epoch {
                 self.last_fetch_epoch = epoch;
                 // A DRIVING card is not re-resolved, and this is the rule the app
@@ -8147,7 +8153,7 @@ impl MatchEvent for App {
         }
 
         for action in actions {
-            if let Some(state) = action.downcast_ref::<makepad_widgets::makepad_platform::event::NativeSystemBrowserNavigation>() {
+            if let Some(state) = action.downcast_ref::<crate::host_events::NativeSystemBrowserNavigation>() {
                 if !self.reader_url.is_empty() && state.browser_id == web_card_browser_id().0.get_value() {
                     let title = if state.error.is_some() { "Page couldn't load" }
                         else if state.loading { "Loading…" }
@@ -8424,7 +8430,7 @@ impl MatchEvent for App {
         // Never fires on desktop.
         for action in actions {
             if let Some(sub) = action
-                .downcast_ref::<makepad_widgets::makepad_platform::event::NativeComposerSubmit>()
+                .downcast_ref::<crate::host_events::NativeComposerSubmit>()
             {
                 let text = sub.text.clone();
                 self.submit_prompt(cx, text);
@@ -8432,7 +8438,7 @@ impl MatchEvent for App {
             // Deep link / share (e.g. a YouTube URL shared from another app): emit a
             // `deeplink` event to the web card, which plays it (octos.on("deeplink")).
             if let Some(dl) = action
-                .downcast_ref::<makepad_widgets::makepad_platform::event::NativeDeepLink>()
+                .downcast_ref::<crate::host_events::NativeDeepLink>()
             {
                 let payload = format!(
                     "\"{}\"",
@@ -8443,13 +8449,13 @@ impl MatchEvent for App {
             // Layer 3 — native composer "＋" / "⟳" controls (app management lives
             // in the composer now; the screen is otherwise just the a2app card).
             if action
-                .downcast_ref::<makepad_widgets::makepad_platform::event::NativeComposerNewApp>()
+                .downcast_ref::<crate::host_events::NativeComposerNewApp>()
                 .is_some()
             {
                 self.open_new_app(cx);
             }
             if action
-                .downcast_ref::<makepad_widgets::makepad_platform::event::NativeComposerSwitch>()
+                .downcast_ref::<crate::host_events::NativeComposerSwitch>()
                 .is_some()
             {
                 let n = self.apps.len();
@@ -8461,7 +8467,7 @@ impl MatchEvent for App {
             // pill + raised the keyboard; mark composer_shown so the app state
             // matches and a later sync_composer won't re-fold it mid-typing.
             if action
-                .downcast_ref::<makepad_widgets::makepad_platform::event::NativeComposerExpand>()
+                .downcast_ref::<crate::host_events::NativeComposerExpand>()
                 .is_some()
             {
                 self.composer_shown = true;
@@ -9003,6 +9009,8 @@ impl MatchEvent for App {
     }
 
     fn handle_startup(&mut self, cx: &mut Cx) {
+        // The cards' `sys` vocabulary and its live-data pump, before the first card evaluates.
+        octosense_l0_sys::ensure_registered();
         // Android: route the real `log` facade (transport/store crates) to
         // logcat — without this their records are dropped silently.
         octos_app_transport::install_android_logger();
@@ -9412,6 +9420,10 @@ impl AppMain for App {
     }
 
     fn handle_event(&mut self, cx: &mut Cx, event: &Event) {
+        // Answers to the cards' live-data fetches (octosense-l0-sys issues them on the app's Cx).
+        if let Event::NetworkResponses(responses) = event {
+            octosense_l0_sys::handle_network_responses(cx, responses);
+        }
         self.sync_reader(cx);
         if app::l0_card::L0_READER_OPEN.load(std::sync::atomic::Ordering::Relaxed) {
             match event {

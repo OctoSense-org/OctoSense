@@ -41,7 +41,7 @@ pub fn reader_url() -> String {
 pub fn close_reader() {
     L0_READER_OPEN.store(false, std::sync::atomic::Ordering::Relaxed);
     if let Ok(mut url) = L0_READER_URL.write() { url.clear(); }
-    makepad_widgets::splash::set_link("");
+    octosense_l0_sys::set_link("");
 }
 
 /// The theme kit, baked in. §1.1's middle layer: the card names roles and this
@@ -923,11 +923,11 @@ fn with_durable(
 /// every write; anything that changes the store and forgets this leaves the
 /// screen showing the list as it was.
 pub fn publish_collections() {
-    makepad_widgets::splash::set_collections(super::user_store::all_collections());
+    octosense_l0_sys::set_collections(super::user_store::all_collections());
     // §5.12's single values travel the same way. Read-only from a card's side:
     // `sys.prefs` answers them and no transition writes them, which is what keeps
     // a preference the user's rather than a cell a card can move.
-    makepad_widgets::splash::set_prefs(super::user_store::get().prefs);
+    octosense_l0_sys::set_prefs(super::user_store::get().prefs);
     publish_locale();
 }
 
@@ -962,7 +962,7 @@ fn publish_locale() {
     } else {
         "c"
     };
-    makepad_widgets::splash::set_locale(lang, unit);
+    octosense_l0_sys::set_locale(lang, unit);
 }
 
 /// Record the card that was just seeded, so its taps have somewhere to land.
@@ -1127,7 +1127,7 @@ fn tap_inner(
             makepad_widgets::log!("[l0] reader {} {:?}", write.op, write.value);
             if write.op == "set" && !write.value.is_empty() {
                 if let Ok(mut url) = L0_READER_URL.write() { *url = write.value.clone(); }
-                makepad_widgets::splash::set_link(&write.value);
+                octosense_l0_sys::set_link(&write.value);
                 L0_READER_OPEN.store(true, std::sync::atomic::Ordering::Relaxed);
             } else {
                 close_reader();

@@ -164,6 +164,8 @@ impl AppModule for AppCardModule {
         // names. The host test `appcard_isolates_carry_the_sys_engine_after_register`
         // guards this.
         makepad_widgets::widget_async::register_splash_isolate_mod(makepad_widgets::splash::register_agent_module);
+        // The `sys` vocabulary itself lives with the app now (octosense-l0-sys), not in makepad.
+        octosense_l0_sys::ensure_registered();
     }
     fn open_schema(&self) -> OpenSchema { OpenSchema::new(1) }
     /// Cards fetch live values over HTTP; the store keeps sessions and

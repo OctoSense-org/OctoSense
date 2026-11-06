@@ -1,0 +1,14 @@
+# octosense-l0-sys: the `sys` vocabulary of L0 cards (live data, device state, the user's
+# references, formatters), installed into every Splash isolate as a host module. It moved here
+# from the fork makepad's Splash widget so that makepad stays upstream-clean.
+[package]
+name = "octosense-l0-sys"
+version.workspace = true
+edition.workspace = true
+license = "Apache-2.0"
+publish = false
+
+[dependencies]
+makepad-widgets = { workspace = true }
+octoscript-node = { workspace = true }
+serde_json = { workspace = true }

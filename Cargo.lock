@@ -9868,6 +9868,7 @@ dependencies = [
  "octoscript-ui-l0",
  "octosense-kernel",
  "octosense-l0-chat",
+ "octosense-l0-sys",
  "octosense-llm-config",
  "reqwest 0.12.28",
  "robius-open",
@@ -10473,6 +10474,7 @@ dependencies = [
  "makepad-widgets",
  "octos-app",
  "octosense-app-peers",
+ "octosense-l0-sys",
  "serde_json",
 ]
 
@@ -10628,6 +10630,15 @@ version = "0.1.0"
 dependencies = [
  "octoscript-ui-l0",
  "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "octosense-l0-sys"
+version = "0.1.0"
+dependencies = [
+ "makepad-widgets",
+ "octoscript-node",
  "serde_json",
 ]
 

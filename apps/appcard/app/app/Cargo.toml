@@ -35,8 +35,12 @@ standalone = []
 # dumps; `launch_var` in src/lib.rs). The shell's `dev-mode` turns it on for
 # the hosted app.
 dev-mode = ["octosense-kernel/dev-mode"]
+# The native web-card overlay (a system browser view floating over a card): a fork makepad
+# feature. Off, the reader and web apps degrade to no-ops; see src/web_card_shim.rs.
+web-card = []
 
 [dependencies]
+octosense-l0-sys = { workspace = true }
 # One framework source, locked by Octoscript-Makepad/runtime.json.
 # tools/setup-native.py verifies the release and prepares the sibling source.
 makepad-widgets     = { workspace = true, features = ["maps", "pdf"] }
