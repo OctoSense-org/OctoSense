@@ -452,7 +452,7 @@ mod tests {
                 .replace("initial: \"km\"", "initial: \"c\"")
                 .replace("initial: \"mi\"", "initial: \"f\"")
                 .replace("initial: .fwd", &format!("initial: .{direction}"));
-            let data = serde_json::json!({});
+            let data = ::serde_json::json!({});
             let report = realize(&source, &data, RealizeLimits::default());
             let root = report.complete_root().expect("converter realizes as L0");
             let lowered = kit::lower(root);
@@ -519,7 +519,7 @@ mod tests {
     }
 
     fn news_data() -> serde_json::Value {
-        serde_json::json!({
+        ::serde_json::json!({
             "lead": [{"id":"1","title":"Rust 1.95","author":"a","points":412.0,"comments":137.0,"url":"u"}],
             "feed": [{"id":"2","title":"Another","author":"b","points":90.0,"comments":12.0,"url":"u"}],
             "article": {}, "selected": "", "env": {"locale": {"lang":"en"}}
@@ -527,7 +527,7 @@ mod tests {
     }
 
     fn stock_data() -> serde_json::Value {
-        serde_json::json!({
+        ::serde_json::json!({
             "movers": [{"ticker":"NVDA","name":"Nvidia","last":184.2,"change":3.1,"pct":1.7}],
             "quote": {"name":"Nvidia","last":184.2,"change":3.1,"pct":1.7,"open":181.0,
                       "high":185.6,"low":180.2,"volume":41200000.0,"mktcap":4.52e12,"pe":58.3},
@@ -545,7 +545,7 @@ mod tests {
     #[test]
     fn a_watch_row_reveals_its_own_remove() {
         let mut data = stock_data();
-        data["watch"] = serde_json::json!([
+        data["watch"] = ::serde_json::json!([
             {"ticker":"NVDA","last":184.2,"pct":1.7},
             {"ticker":"TEAM","last":149.0,"pct":2.0}
         ]);
@@ -578,7 +578,7 @@ mod tests {
     }
 
     fn weather_data() -> serde_json::Value {
-        serde_json::json!({
+        ::serde_json::json!({
             "place": {"name":"Kyoto","lat":35.0,"lon":135.8},
             "now": {"temp":21.0,"cond":"clear","feels":20.0,"humidity":54.0,"wind":3.2,
                     "pressure":1013.0,"uv":4.0,"visibility":10.0},
@@ -784,7 +784,7 @@ mod nav_dsl {
     fn kit() -> String { super::super::l0_card::kit_src() }
 
     fn data(screen: &str) -> serde_json::Value {
-        serde_json::json!({
+        ::serde_json::json!({
             "origin": "Saratoga High School", "dest": "Stanford University",
             "query": "", "screen": screen, "found": [],
             "here": { "lat": -9999, "lon": -9999, "accuracy": 0, "ok": 0 },
@@ -859,7 +859,7 @@ mod kit_palette {
     #[test]
     fn a_theme_texture_reaches_the_tree() {
         const CARD: &str = "view root Surface { Rule() }\n";
-        let data = serde_json::json!({ "env": { "locale": {} } });
+        let data = ::serde_json::json!({ "env": { "locale": {} } });
         let root = realize(CARD, &data, RealizeLimits::default())
             .root
             .expect("realizes");
@@ -883,7 +883,7 @@ mod kit_palette {
             "event e { s: toggle }\n",
             "view root Surface { Chip(text: copy.g, on_tap: e) Panel { Rule() } }\n"
         );
-        let data = serde_json::json!({
+        let data = ::serde_json::json!({
             "copy": { "g": "Go" }, "s": false, "env": { "locale": {} }
         });
         let root = realize(CARD, &data, RealizeLimits::default())
@@ -936,7 +936,7 @@ mod numeric_text {
             "state n { shape: number, initial: 42 }\n",
             "view root Surface { TextValue(value: n) }\n"
         );
-        let data = serde_json::json!({ "n": 42.0, "env": { "locale": {} }, "copy": {} });
+        let data = ::serde_json::json!({ "n": 42.0, "env": { "locale": {} }, "copy": {} });
         let root = realize(CARD, &data, RealizeLimits::default())
             .root
             .expect("realizes");

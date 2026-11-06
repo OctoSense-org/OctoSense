@@ -112,4 +112,4 @@ octosense-l0-chat = { workspace = true }
 octoscript-node = { workspace = true }
 
 [build-dependencies]
-blake3 = "1.8"
+blake3 = { version = "1.8", features = ["pure"] }

@@ -554,7 +554,7 @@ fn fetched_rows(
         for i in 0..count.min(cap).min(3) {
             let id = eval_text(cx, &format!("sys.news_digest({query:?}, {language:?}, \"items.{i}.id\")"))?;
             if id.is_empty() || id == "—" || id == "n/a" { break; }
-            rows.push(serde_json::json!({"id":id}));
+            rows.push(::serde_json::json!({"id":id}));
         }
         return Some(rows);
     }
@@ -619,7 +619,7 @@ fn fetched_rows(
             if name.trim().is_empty() {
                 break;
             }
-            rows.push(serde_json::json!({ "name": name }));
+            rows.push(::serde_json::json!({ "name": name }));
         }
         return Some(rows);
     }
@@ -694,7 +694,7 @@ fn fetched_rows(
         if key.trim().is_empty() {
             break;
         }
-        let mut row = serde_json::json!({ key_field: key });
+        let mut row = ::serde_json::json!({ key_field: key });
         if request.helper == "sys.search" {
             if let Some(label) = eval_text(cx, &format!("sys.search({query:?}, {i}, \"label\")")) {
                 row["label"] = label.into();
@@ -752,7 +752,7 @@ fn fetched_scalars(
             continue;
         };
         let value = match text.trim().parse::<f64>() {
-            Ok(n) => serde_json::json!(n),
+            Ok(n) => ::serde_json::json!(n),
             Err(_) => serde_json::Value::String(text),
         };
         out.insert((*field).to_owned(), value);
@@ -812,7 +812,7 @@ fn resolve_guards(
             continue;
         }
         let value = match text.parse::<f64>() {
-            Ok(n) => serde_json::json!(n),
+            Ok(n) => ::serde_json::json!(n),
             Err(_) => serde_json::Value::String(text.to_owned()),
         };
         let Some(map) = data.as_object_mut() else {
@@ -884,7 +884,7 @@ fn with_durable(
                 if let Some(map) = out.as_object_mut() {
                     map.insert(
                         request.name.clone(),
-                        serde_json::json!({ "has": if held { "1" } else { "0" } }),
+                        ::serde_json::json!({ "has": if held { "1" } else { "0" } }),
                     );
                 }
             }
@@ -901,7 +901,7 @@ fn with_durable(
         };
         let rows: Vec<serde_json::Value> = super::user_store::collection(collection)
             .into_iter()
-            .map(|reference| serde_json::json!({ key_field: reference }))
+            .map(|reference| ::serde_json::json!({ key_field: reference }))
             .collect();
         if !out.is_object() {
             out = serde_json::Value::Object(Default::default());
@@ -1060,8 +1060,8 @@ pub fn gesture(cx: &mut makepad_widgets::Cx, event: &str, render_body: bool) -> 
 fn tap_payload(root: &octoscript_ui_l0::UiNode, key: &str, text: &str) -> Option<serde_json::Value> {
     if root.key == key {
         return Some(match root.args.iter().find(|(name, _)| name == "value").map(|(_, value)| value) {
-            Some(octoscript_ui_l0::NodeValue::Number(number)) => serde_json::json!(number),
-            Some(octoscript_ui_l0::NodeValue::Bool(value)) => serde_json::json!(value),
+            Some(octoscript_ui_l0::NodeValue::Number(number)) => ::serde_json::json!(number),
+            Some(octoscript_ui_l0::NodeValue::Bool(value)) => ::serde_json::json!(value),
             _ => serde_json::Value::String(text.to_owned()),
         });
     }
@@ -1259,7 +1259,7 @@ mod tests {
     fn l0_migration_numeric_presets_keep_their_type_and_declared_value() {
         let source = include_str!("../../../../a2app-l0/apps/convert/exemplar.card");
         let mut store = octoscript_ui_l0::InstanceStore::default();
-        let data = serde_json::json!({});
+        let data = ::serde_json::json!({});
         for (index, amount) in [(1, 10), (2, 100)] {
             let report = octoscript_ui_l0::realize_with_state(source, &data, &store, Default::default());
             let root = report.complete_root().unwrap();
@@ -1277,7 +1277,7 @@ mod tests {
         let source = "state draft { shape: text, initial: \"\" }\nevent edit { draft: set($value) }\nview root Field(text: draft, on_commit: edit)";
         let report = octoscript_ui_l0::realize(source, &data, Default::default());
         let root = report.complete_root().unwrap();
-        assert_eq!(super::tap_payload(root, "root", "010"), Some(serde_json::json!("010")));
+        assert_eq!(super::tap_payload(root, "root", "010"), Some(::serde_json::json!("010")));
         assert_eq!(super::tap_payload(root, "missing", "10"), None);
     }
 

@@ -701,7 +701,7 @@ impl OctosUiAgent {
                             .map(|(started, _)| started.elapsed().as_millis());
                         self.app_prompt_cache.complete(&turn, success,
                             token_usage.as_ref().map(|usage| usage.output_tokens as usize));
-                        log::info!("generation-metric {}", serde_json::json!({
+                        log::info!("generation-metric {}", ::serde_json::json!({
                             "event": if success { "completed" } else { "failed" },
                             "turn_id": turn, "elapsed_ms": elapsed,
                             "outcome": outcome, "token_usage": token_usage
@@ -723,7 +723,7 @@ impl OctosUiAgent {
                 self.app_prompt_cache.context(&ev.session_id,
                     ev.context_state.token_estimate.max(ev.normalization.token_estimate),
                     ev.normalization.dropped_count == 0 && ev.normalization.truncated_count == 0);
-                log::info!("generation-metric {}", serde_json::json!({
+                log::info!("generation-metric {}", ::serde_json::json!({
                     "event": "context_normalized", "session_id": ev.session_id,
                     "context_tokens": ev.context_state.token_estimate,
                     "prompt_tokens_estimate": ev.normalization.token_estimate,
@@ -746,7 +746,7 @@ impl OctosUiAgent {
                     if let Some(window) = usage.context_window {
                         self.app_prompt_cache.window(&ev.session_id, window as usize);
                     }
-                    log::info!("generation-metric {}", serde_json::json!({
+                    log::info!("generation-metric {}", ::serde_json::json!({
                         "event": "provider_usage", "session_id": ev.session_id,
                         "turn_id": ev.turn_id, "token_usage": usage
                     }));
@@ -756,7 +756,7 @@ impl OctosUiAgent {
                 if let Some((started, first_seen)) = self.generation_started.get_mut(&ev.turn_id) {
                     if !*first_seen {
                         *first_seen = true;
-                        log::info!("generation-metric {}", serde_json::json!({
+                        log::info!("generation-metric {}", ::serde_json::json!({
                             "event": "first_text", "turn_id": ev.turn_id,
                             "elapsed_ms": started.elapsed().as_millis()
                         }));
@@ -768,7 +768,7 @@ impl OctosUiAgent {
             UiNotification::TurnCompleted(ev) if !self.pending_completion.contains_key(&ev.turn_id) => {
                 self.app_prompt_cache.complete(&ev.turn_id, true, ev.tokens_out.map(|tokens| tokens as usize));
                 if let Some((started, _)) = self.generation_started.remove(&ev.turn_id) {
-                    log::info!("generation-metric {}", serde_json::json!({
+                    log::info!("generation-metric {}", ::serde_json::json!({
                         "event": "completed", "turn_id": ev.turn_id,
                         "elapsed_ms": started.elapsed().as_millis(),
                         "tokens_in": ev.tokens_in, "tokens_out": ev.tokens_out
@@ -778,13 +778,13 @@ impl OctosUiAgent {
             UiNotification::TurnError(ev) => {
                 self.app_prompt_cache.complete(&ev.turn_id, false, None);
                 self.generation_started.remove(&ev.turn_id);
-                log::info!("generation-metric {}", serde_json::json!({
+                log::info!("generation-metric {}", ::serde_json::json!({
                     "event": "failed", "turn_id": ev.turn_id, "code": ev.code
                 }));
             }
             UiNotification::EnvelopeV2(ev) => {
                 if let PayloadV2::TurnTerminal { token_usage: Some(token_usage), .. } = &ev.envelope.payload {
-                    log::info!("generation-metric {}", serde_json::json!({
+                    log::info!("generation-metric {}", ::serde_json::json!({
                         "event": "usage", "session_id": ev.session_id,
                         "turn_id": ev.envelope.turn_id,
                         "token_usage": token_usage
@@ -1048,7 +1048,7 @@ impl Agent for OctosUiAgent {
             && std::env::var_os("OCTOS_A2APP_DISABLE_REFERENCE_CACHE").is_none();
         let (sent_text, reference_hit) = self.app_prompt_cache.prepare(&key, &turn_id, text, cache_enabled);
         self.generation_started.insert(turn_id.clone(), (std::time::Instant::now(), false));
-        log::info!("generation-metric {}", serde_json::json!({
+        log::info!("generation-metric {}", ::serde_json::json!({
             "event": "submitted", "turn_id": turn_id, "session_id": key,
             "prompt_bytes": sent_text.len(), "original_prompt_bytes": text.len(),
             "reference_cache_hit": reference_hit,
@@ -1338,7 +1338,7 @@ mod generation_terminal_tests {
     fn hydrated(turn: &TurnId, text: &str) -> TransportEvent {
         TransportEvent::SessionHydrated {
             session_id: "_main:test".into(),
-            result: serde_json::json!({
+            result: ::serde_json::json!({
                 "session_id": "_main:test",
                 "cursor": {"stream": "_main:test", "seq": 3},
                 "messages": [
@@ -1454,7 +1454,7 @@ mod generation_terminal_tests {
         assert!(!agent.app_prompt_cache.prepare(&key, &first, &prompt, false).1);
         agent.translate(TransportEvent::ConnectionState(ConnectionState::Dialing));
         agent.translate(TransportEvent::ConnectionState(ConnectionState::Handshaking));
-        let opened = serde_json::from_value(serde_json::json!({"opened":{"session_id":key}})).unwrap();
+        let opened = serde_json::from_value(::serde_json::json!({"opened":{"session_id":key}})).unwrap();
         agent.translate(TransportEvent::RpcResult(LifecycleResult::SessionOpen(opened)));
         agent.translate(TransportEvent::ConnectionState(ConnectionState::Live));
         agent.app_prompt_cache.context(&key, 1, true);

@@ -239,3 +239,17 @@ workarounds kept: pure blake3, unused [patch] entries removed, `::serde_json::js
   streaming-markdown-kit + makepad-diagram-kit (Robius kits, patched onto upstream widgets). Measuring: Cargo.toml (uncommitted)
   adds member apps/appcard/module + workspace deps/patches makepad-code-editor → .sources/makepad/code_editor, makepad-ai →
   compat; `relax check --allow-c octosense-appcard` → .jit3/check-appcard1.log.
+
+## 5 Nov, late: AppCard measured on the jit line
+- Fork jit now 900357ab3: + svg text/edges port (a333e31a3), makepad-ai real crate (661a836ea), relax lint guard (0cbe066e4),
+  zmij NEON intrinsics (98351cb3e), blake3-pure build-script gate (900357ab3). Upstream PRs #1397 (lint), #1398 (NEON), #1399 (blake3).
+- OctoSense jit: pins → 661a836e (makepad-ai patched to .sources/makepad/libs/makepad_ai, makepad-code-editor → code_editor),
+  member apps/appcard/module, appcard build-dep blake3 pure, `::serde_json::json!` in AppCard (relax #1384 workaround).
+- `relax check --allow-c octosense-appcard`: 161 → 47 → 45 → 35 errors, ALL in AppCard's own code, all fork-only makepad APIs:
+  splash::set_link/set_collections/set_prefs/set_locale (5), Cx::system_browser + web_card_browser_id + WidgetRef::web_card +
+  NativeSystemBrowserNavigation (8, the native web-card overlay), NativeComposer*/NativeDeepLink events (6), Cx::script_data_fetch_epoch
+  (4), ScriptVm::eval_checked + ScriptHostContext (4), Cx::lock_script_sources (1), WidgetTree::geometry_json (1), SplashAction cast (1).
+- THE REAL GAP (not visible in the type check): the fork's widgets/src/splash.rs is 6292 lines with 70 `sys.*` L0 capability methods
+  (news, weather, maps/tiles, routes, stocks, quakes, locale, prefs, collections, link, …); the jit splash (upstream + our policy port)
+  is 1515 lines with 1 (`notify`). AppCard's cards call those at run time. Decision for the user: port the fork `sys` module onto
+  upstream splash, or move it out of makepad into AppCard/OctoSense as an app-registered module.

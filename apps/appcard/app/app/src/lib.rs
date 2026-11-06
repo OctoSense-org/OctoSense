@@ -2134,7 +2134,7 @@ fn save_card_artifact(
         Ok(()) => log::info!("a2app: saved card '{name}' ({substrate}, {} bytes) → {}", body.len(), path.display()),
         Err(e) => log::warn!("a2app: save card '{name}' failed: {e}"),
     }
-    let record = serde_json::json!({
+    let record = ::serde_json::json!({
         "name": name,
         "substrate": substrate,
         "domain": domain,
@@ -8044,7 +8044,7 @@ fn run_blocking_solo_login(
                 let create_url = server_url
                     .join("api/auth/solo/create")
                     .map_err(|e| format!("solo create url: {e}"))?;
-                let body = serde_json::json!({
+                let body = ::serde_json::json!({
                     "name": pid.as_str(),
                     "username": pid.as_str(),
                     "email": format!("{}@octos.local", pid.as_str()),
@@ -10048,7 +10048,7 @@ impl AppMain for App {
                                 #[cfg(target_os = "android")]
                                 if self.dev_round < 8 {
                                     let store = octoscript_ui_l0::InstanceStore::default();
-                                    let data = serde_json::json!({});
+                                    let data = ::serde_json::json!({});
                                     let critic = match crate::app::l0_card::render(cx, card, &data, &store) {
                                         Err(e) => Some(format!(
                                             "SELF-CHECK (rendered on the real device): your card FAILED to render — {e}. Fix the error and re-output the FULL card between BEGIN_CARD and END_CARD."
@@ -10084,7 +10084,7 @@ impl AppMain for App {
                                             } else {
                                                 0
                                             };
-                                            crate::app::l0_card::begin(src, serde_json::json!({}), item);
+                                            crate::app::l0_card::begin(src, ::serde_json::json!({}), item);
                                             // Arm the capture BEFORE the draw so this guaranteed
                                             // full redraw writes the frame (reliable even if the
                                             // UI then idles on cached images).
@@ -11280,7 +11280,7 @@ mod tests {
             .expect("weather-activity is registered");
 
         let store = octoscript_ui_l0::InstanceStore::default();
-        let guards = octoscript_ui_l0::guard_bindings(exemplar, &serde_json::json!({}), &store);
+        let guards = octoscript_ui_l0::guard_bindings(exemplar, &::serde_json::json!({}), &store);
 
         let mut branched: Vec<String> = guards
             .iter()

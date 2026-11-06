@@ -1,0 +1,48 @@
+makepad check: 118 crates type- and borrow-checked in 13.7 s
+/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/.sources/makepad/platform/hal/src/backend/apple/media/layers.rs:830:26: warning: unnecessary `unsafe` block -- because it's nested under this `unsafe` block [unused_unsafe]
+/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/.sources/makepad/platform/hal/src/backend/apple/metal/compute.rs:105:42: warning: unnecessary `unsafe` block -- because it's nested under this `unsafe` block [unused_unsafe]
+/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/.sources/makepad/platform/hal/src/backend/apple/metal/compute.rs:213:30: warning: unnecessary `unsafe` block -- because it's nested under this `unsafe` block [unused_unsafe]
+/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/.sources/makepad/platform/hal/src/backend/apple/metal/frame.rs:647:17: warning: unnecessary `unsafe` block -- because it's nested under this `unsafe` block [unused_unsafe]
+/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/.sources/makepad/platform/hal/src/backend/apple/metal/frame.rs:762:30: warning: unnecessary `unsafe` block -- because it's nested under this `unsafe` block [unused_unsafe]
+/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/.sources/makepad/platform/hal/src/backend/apple/metal/readback.rs:78:25: warning: unnecessary `unsafe` block -- because it's nested under this `unsafe` block [unused_unsafe]
+/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/.sources/makepad/platform/hal/src/backend/apple/metal/readback.rs:113:13: warning: unnecessary `unsafe` block -- because it's nested under this `unsafe` block [unused_unsafe]
+/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/.sources/makepad/platform/hal/src/backend/apple/metal/readback.rs:171:13: warning: unnecessary `unsafe` block -- because it's nested under this `unsafe` block [unused_unsafe]
+/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/apps/appcard/app/app/src/app/l0_card.rs:44:5: E0425: cannot find value `makepad_widgets::splash::set_link` in this scope
+/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/apps/appcard/app/app/src/app/l0_card.rs:926:5: E0425: cannot find value `makepad_widgets::splash::set_collections` in this scope
+/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/apps/appcard/app/app/src/app/l0_card.rs:930:5: E0425: cannot find value `makepad_widgets::splash::set_prefs` in this scope
+/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/apps/appcard/app/app/src/app/l0_card.rs:965:5: E0425: cannot find value `makepad_widgets::splash::set_locale` in this scope
+/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/apps/appcard/app/app/src/app/l0_card.rs:1130:17: E0425: cannot find value `makepad_widgets::splash::set_link` in this scope
+/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/apps/appcard/app/app/src/app/l0_eval.rs:75:9: E0308: mismatched types: expected `ScriptHostContext`, found `&mut Cx`
+/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/apps/appcard/app/app/src/app/l0_eval.rs:79:17: E0599: no method named `eval_checked` found for `ScriptVm` in the current scope -- methods with a similar name on this type: `eval`
+/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/apps/appcard/app/app/src/app/l0_eval.rs:115:9: E0308: mismatched types: expected `ScriptHostContext`, found `&mut Cx`
+/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/apps/appcard/app/app/src/app/l0_eval.rs:121:17: E0599: no method named `eval_checked` found for `&mut ScriptVm` in the current scope -- methods with a similar name on this type: `eval`
+/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/apps/appcard/app/app/src/lib.rs:5598:29: E0599: no method named `script_data_fetch_epoch` found for `&mut Cx2d` in the current scope
+/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/apps/appcard/app/app/src/lib.rs:5665:53: E0599: no method named `script_data_fetch_epoch` found for `&mut Cx2d` in the current scope
+/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/apps/appcard/app/app/src/lib.rs:5675:37: E0599: no method named `script_data_fetch_epoch` found for `&mut Cx2d` in the current scope
+/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/apps/appcard/app/app/src/lib.rs:5711:25: E0599: no method named `script_data_fetch_epoch` found for `&mut Cx` in the current scope
+/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/apps/appcard/app/app/src/lib.rs:6052:13: E0599: no method named `system_browser` found for `&mut Cx` in the current scope
+/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/apps/appcard/app/app/src/lib.rs:6052:31: E0425: cannot find value `web_card_browser_id` in this scope
+/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/apps/appcard/app/app/src/lib.rs:6631:9: E0599: no method named `web_card` found for `WidgetRef` in the current scope -- methods with a similar name on this type: `card`
+/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/apps/appcard/app/app/src/lib.rs:6645:9: E0599: no method named `web_card` found for `WidgetRef` in the current scope -- methods with a similar name on this type: `card`
+/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/apps/appcard/app/app/src/lib.rs:6654:9: E0599: no method named `system_browser` found for `&mut Cx` in the current scope
+/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/apps/appcard/app/app/src/lib.rs:6654:27: E0425: cannot find value `web_card_browser_id` in this scope
+/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/apps/appcard/app/app/src/lib.rs:8150:56: E0412: cannot find type `makepad_widgets::makepad_platform::event::NativeSystemBrowserNavigation` in this scope
+/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/apps/appcard/app/app/src/lib.rs:8151:71: E0425: cannot find value `web_card_browser_id` in this scope
+/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/apps/appcard/app/app/src/lib.rs:8171:82: E0277: the trait bound `Box<dyn makepad_platform::action::ActionTrait>: ActionCast<SplashAction>` is not satisfied
+/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/apps/appcard/app/app/src/lib.rs:8427:33: E0412: cannot find type `makepad_widgets::makepad_platform::event::NativeComposerSubmit` in this scope
+/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/apps/appcard/app/app/src/lib.rs:8435:33: E0412: cannot find type `makepad_widgets::makepad_platform::event::NativeDeepLink` in this scope
+/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/apps/appcard/app/app/src/lib.rs:8441:17: E0599: no method named `system_browser` found for `&mut Cx` in the current scope
+/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/apps/appcard/app/app/src/lib.rs:8441:35: E0425: cannot find value `web_card_browser_id` in this scope
+/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/apps/appcard/app/app/src/lib.rs:8445:16: E0599: no method named `is_some` found for `Option<&{error}>` in the current scope -- methods with a similar name on this type: `is_some`, `is_none`, `is_some_and`
+/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/apps/appcard/app/app/src/lib.rs:8446:33: E0412: cannot find type `makepad_widgets::makepad_platform::event::NativeComposerNewApp` in this scope
+/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/apps/appcard/app/app/src/lib.rs:8451:16: E0599: no method named `is_some` found for `Option<&{error}>` in the current scope -- methods with a similar name on this type: `is_some`, `is_none`, `is_some_and`
+/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/apps/appcard/app/app/src/lib.rs:8452:33: E0412: cannot find type `makepad_widgets::makepad_platform::event::NativeComposerSwitch` in this scope
+/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/apps/appcard/app/app/src/lib.rs:8463:16: E0599: no method named `is_some` found for `Option<&{error}>` in the current scope -- methods with a similar name on this type: `is_some`, `is_none`, `is_some_and`
+/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/apps/appcard/app/app/src/lib.rs:8464:33: E0412: cannot find type `makepad_widgets::makepad_platform::event::NativeComposerExpand` in this scope
+/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/apps/appcard/app/app/src/lib.rs:9392:9: E0599: no method named `lock_script_sources` found for `&mut Cx` in the current scope -- methods with a similar name on this type: `load_script_resource`, `script_source`, `load_all_script_resources`, `source`
+/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/apps/appcard/app/app/src/lib.rs:9800:32: E0599: no method named `geometry_json` found for `&WidgetTree` in the current scope
+/Users/ychen/home/octosense-org/.worktrees/jit3-octosense/apps/appcard/app/app/src/lib.rs:9805:26: E0608: cannot index into a value of type `{error}`
+makepad check: 78904 body owners of the checked crates, 1466 compiled in all, 35 errors
+makepad check: cpu typeck 2 ms, lower 21 ms, opt 4 ms, codegen 18 ms; 29285 RIR insts, 175 KB code
+makepad check: constant initializers: 9877 evaluated to data, 1240 compiled and run; evaluation cpu 112.4 ms
+rc 1

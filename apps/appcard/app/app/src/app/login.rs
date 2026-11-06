@@ -579,10 +579,10 @@ mod tests {
     #[test]
     fn llm_qr_custom_endpoint_rejects_invalid_route() {
         for url in ["", "file:///tmp/model", "http://user:secret@localhost/v1", "http://localhost/v1?key=secret"] {
-            let payload = serde_json::json!({"llm_family":"openai", "llm_key":"test", "llm_base_url":url});
+            let payload = ::serde_json::json!({"llm_family":"openai", "llm_key":"test", "llm_base_url":url});
             assert!(parse_llm_provision_config(&payload.to_string()).is_err());
         }
-        let payload = serde_json::json!({"llm_family":"openai", "llm_key":"test", "llm_api_type":"unknown"});
+        let payload = ::serde_json::json!({"llm_family":"openai", "llm_key":"test", "llm_api_type":"unknown"});
         assert!(parse_llm_provision_config(&payload.to_string()).is_err());
     }
 

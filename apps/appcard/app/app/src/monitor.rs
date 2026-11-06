@@ -398,7 +398,7 @@ fn generate_image(prompt: &str, size: &str, quality: &str) -> Result<(std::path:
     let key = read_api_key().ok_or_else(|| "no API key (push /data/local/tmp/oai_key)".to_string())?;
     log(&format!("imagegen: {} ({size}, {quality})", prompt.chars().take(60).collect::<String>()));
     let started = std::time::Instant::now();
-    let req = serde_json::json!({
+    let req = ::serde_json::json!({
         "model": "gpt-image-2", "prompt": prompt, "size": size, "quality": quality, "n": 1
     });
     let png = std::thread::spawn(move || -> Result<Vec<u8>, String> {
@@ -490,7 +490,7 @@ fn vision_score(path: &std::path::Path, rubric: &str) -> Result<(u32, String, St
     let instruction = format!(
         "You are a strict art director scoring concept key-art for a premium movie box-office app. Rubric: {rubric}. Be critical; reserve 9 and 10 for genuinely production-ready art. Reply on ONE line EXACTLY as: SCORE: <integer 0-10> | <one-sentence critique> | IMPROVE: <one short phrase to add to the image prompt to raise the score>"
     );
-    let req = serde_json::json!({
+    let req = ::serde_json::json!({
         "model": "gpt-4o",
         "max_tokens": 220,
         "messages": [{"role": "user", "content": [
@@ -545,7 +545,7 @@ fn ux_score(path: &std::path::Path) -> Result<(u32, String, String), String> {
     let bytes = std::fs::read(path).map_err(|e| format!("read image: {e}"))?;
     let data_uri = format!("data:image/png;base64,{}", b64_encode(&bytes));
     let instruction = "You are a ruthless senior mobile UI/UX designer reviewing a SCREENSHOT of a running movie box-office app on a phone. Score its VISUAL DESIGN + UX from 0-10 (reserve 9-10 for App-Store-featured quality; most screens are 4-6). Judge visual hierarchy, spacing/rhythm, contrast/legibility, use of imagery, typography, polish. Reply on ONE line EXACTLY as: SCORE: <integer 0-10> | <one-sentence critique> | IMPROVE: <one concrete, buildable change to the card to raise the score>";
-    let req = serde_json::json!({
+    let req = ::serde_json::json!({
         "model": "gpt-4o",
         "max_tokens": 220,
         "messages": [{"role": "user", "content": [
@@ -666,7 +666,7 @@ fn design_prompt(brief: &str, prev: Option<(&str, &str)>) -> Result<String, Stri
             " Your previous prompt was: {last}. An art director scored it below bar: {critique}. Design a BETTER, meaningfully different concept that fixes that — a bolder single focal point and cleaner composition."
         ));
     }
-    let req = serde_json::json!({
+    let req = ::serde_json::json!({
         "model": "gpt-4o", "max_tokens": 400,
         "messages": [{"role": "user", "content": ask}]
     });

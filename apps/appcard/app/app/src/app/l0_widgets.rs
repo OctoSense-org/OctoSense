@@ -719,9 +719,9 @@ pub fn parse_tap(target: &str) -> Option<(String, String, String)> {
 /// quotes, control characters and `$$` in keys cannot change the route.
 fn field_target_expr(target: &str, changing: bool) -> Option<String> {
     let (key, event, _) = parse_tap(target)?;
-    let mut routing = serde_json::json!({"k": key, "e": event});
+    let mut routing = ::serde_json::json!({"k": key, "e": event});
     if changing {
-        routing["c"] = serde_json::json!(1);
+        routing["c"] = ::serde_json::json!(1);
     }
     let routing = routing.to_string();
     let head = format!("l0:{},\"v\":", routing.trim_end_matches('}'));

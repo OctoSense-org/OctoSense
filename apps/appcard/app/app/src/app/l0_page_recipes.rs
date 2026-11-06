@@ -84,7 +84,7 @@ mod tests {
         let source = "source movers sys.movers(count: 1, fields: [ticker])\n\
             state range { shape: enum[d1, m1], initial: .d1 }\n\
             view root Surface { StockPlot(symbol: movers.0.ticker, range: range) }\n";
-        let report = octoscript_ui_l0::realize(source, &serde_json::json!({
+        let report = octoscript_ui_l0::realize(source, &::serde_json::json!({
             "movers": [{"ticker": "BLTE"}], "range": "d1"
         }), octoscript_ui_l0::RealizeLimits::default());
         let lowered = octoscript_ui_l0::kit::lower(report.complete_root().unwrap());
