@@ -41,6 +41,9 @@ web-card = []
 
 [dependencies]
 octosense-l0-sys = { workspace = true }
+# The kit classes (KitButton, KitFormField, ...) the cards are lowered onto: they were part of
+# the fork makepad's widget prelude; Octoscript-Makepad owns them now.
+octoscript-widgets = { workspace = true }
 # One framework source, locked by Octoscript-Makepad/runtime.json.
 # tools/setup-native.py verifies the release and prepares the sibling source.
 makepad-widgets     = { workspace = true, features = ["maps", "pdf"] }

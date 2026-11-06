@@ -12,6 +12,7 @@ pub use host::{register_script_mods, AppShell, BODY_WIDGET};
 pub use app::l0_chat::set_folder as set_l0_chat_folder;
 #[cfg(target_os = "android")]
 mod monitor;
+pub use octoscript_widgets;
 /// The native host's composer, deep-link and browser events, as the host posts them.
 mod host_events;
 #[cfg(not(feature = "web-card"))]
@@ -9011,6 +9012,7 @@ impl MatchEvent for App {
     fn handle_startup(&mut self, cx: &mut Cx) {
         // The cards' `sys` vocabulary and its live-data pump, before the first card evaluates.
         octosense_l0_sys::ensure_registered();
+        makepad_widgets::widget_async::register_splash_isolate_mod(|vm| { octoscript_widgets::kit::script_mod(vm); });
         // Android: route the real `log` facade (transport/store crates) to
         // logcat — without this their records are dropped silently.
         octos_app_transport::install_android_logger();

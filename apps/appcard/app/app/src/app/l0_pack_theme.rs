@@ -26,8 +26,9 @@ pub fn defaults(theme: &str) -> String {
     format!("// Native kit typography: {theme}\nlet font_base = {}\nlet font_step = 1\nlet l0_family = \"kit:{theme}:body\"\nlet l0_display_family = \"kit:{theme}:title\"\n", body * 0.75 - 1.0)
 }
 
-/// Resolve registered kit fonts in the widget crate, which is registered in every
-/// isolated Splash VM. The host application crate is not registered in those VMs.
+/// Resolve registered kit fonts in octoscript-widgets, whose kit module every isolated
+/// Splash VM registers (so its crate resources resolve there). The host application
+/// crate is not registered in those VMs.
 pub fn font_resource(family: &str, weight: i32) -> Option<String> {
     let (theme, role) = family.strip_prefix("kit:")?.split_once(':')?;
     if !matches!(role, "body" | "title") { return None }
@@ -40,7 +41,7 @@ pub fn font_resource(family: &str, weight: i32) -> Option<String> {
         } else if weight >= 500 { "Medium" } else { "Regular" };
         source.replace("Regular.ttf", &format!("{suffix}.ttf"))
     } else { source.to_owned() };
-    Some(format!("makepad_widgets:resources/theme-kits/{source}"))
+    Some(format!("octoscript_widgets:resources/theme-kits/{source}"))
 }
 
 #[cfg(test)]
@@ -53,7 +54,7 @@ mod tests {
             for role in ["body", "title"] {
                 for weight in [400, 500, 600, 700] {
                     let path = font_resource(&format!("kit:{theme}:{role}"), weight).unwrap();
-                    assert!(std::path::Path::new(env!("OCTOSENSE_WORKSPACE")).join("makepad/widgets").join(path.strip_prefix("makepad_widgets:").unwrap()).is_file(), "{path}");
+                    assert!(std::path::Path::new(env!("OCTOSENSE_WORKSPACE")).join("octoscript-makepad/crates/octoscript-widgets").join(path.strip_prefix("octoscript_widgets:").unwrap()).is_file(), "{path}");
                 }
             }
         }

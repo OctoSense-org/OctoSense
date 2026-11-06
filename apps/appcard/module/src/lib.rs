@@ -166,6 +166,7 @@ impl AppModule for AppCardModule {
         makepad_widgets::widget_async::register_splash_isolate_mod(makepad_widgets::splash::register_agent_module);
         // The `sys` vocabulary itself lives with the app now (octosense-l0-sys), not in makepad.
         octosense_l0_sys::ensure_registered();
+        makepad_widgets::widget_async::register_splash_isolate_mod(|vm| { octos_app::octoscript_widgets::kit::script_mod(vm); });
     }
     fn open_schema(&self) -> OpenSchema { OpenSchema::new(1) }
     /// Cards fetch live values over HTTP; the store keeps sessions and

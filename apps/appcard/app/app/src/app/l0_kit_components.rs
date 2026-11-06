@@ -361,6 +361,9 @@ mod tests {
         let mut cx = Cx::new(Box::new(|_, _| {}));
         let vm_id = cx.alloc_splash_vm();
         let root = cx.with_script_vm_id(vm_id, |vm| {
+            // The kit classes come from Octoscript-Makepad now (the app registers them into
+            // every isolate at startup; this isolate was made without that registration).
+            octoscript_widgets::kit::script_mod(vm);
             let value = script_eval!(vm, {
                 use mod.prelude.widgets.*
                 View {
@@ -376,12 +379,12 @@ mod tests {
             View::script_from_value(vm, value)
         });
         assert_eq!(root.children.len(), 6);
-        assert!(root.children[0].1.borrow::<kit::KitButton>().is_some());
-        assert!(root.children[1].1.borrow::<kit::KitFormField>().is_some());
-        assert!(root.children[2].1.borrow::<kit::KitTabBar>().is_some());
-        assert!(root.children[3].1.borrow::<kit::KitBottomNavigation>().is_some());
-        assert!(root.children[4].1.borrow::<kit::TaskplanProjectCard>().is_some());
-        assert!(root.children[5].1.borrow::<kit::CamoTrackRow>().is_some());
+        assert!(root.children[0].1.borrow::<octoscript_widgets::kit::KitButton>().is_some());
+        assert!(root.children[1].1.borrow::<octoscript_widgets::kit::KitFormField>().is_some());
+        assert!(root.children[2].1.borrow::<octoscript_widgets::kit::KitTabBar>().is_some());
+        assert!(root.children[3].1.borrow::<octoscript_widgets::kit::KitBottomNavigation>().is_some());
+        assert!(root.children[4].1.borrow::<octoscript_widgets::kit::TaskplanProjectCard>().is_some());
+        assert!(root.children[5].1.borrow::<octoscript_widgets::kit::CamoTrackRow>().is_some());
         assert_eq!(root.child_by_path(&[LiveId::from_str("title")]).text(), "Headline");
     }
     fn tapped(event: &str, mut content: UiNode) -> UiNode {

@@ -197,3 +197,15 @@ pub fn handle_network_responses(cx: &mut Cx, responses: &[NetworkResponse]) {
         cx.redraw_all();
     }
 }
+
+/// Put `bytes` in the cache as the loaded answer for `url` (a test's seed, or a host that
+/// already has the document): the next ask returns them without a request.
+pub fn seed_loaded(url: &str, bytes: &[u8]) {
+    FETCHES.with(|f| f.borrow_mut().insert(url.to_string(), DataFetch::Loaded(Rc::new(bytes.to_vec()))));
+    RETRIES.with(|r| r.borrow_mut().remove(url));
+}
+
+/// How many URLs the cache knows (loaded, loading or failed).
+pub fn cached_count() -> usize {
+    FETCHES.with(|f| f.borrow().len())
+}

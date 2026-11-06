@@ -162,7 +162,7 @@ fn build_with_adapters(src: &str, adapters: bool) -> Option<UiNode> {
     // "no capabilities" dummy this test wants.
     let mut host = makepad_widgets::makepad_script::ScriptVmHost::new(0i32, 0i32);
     let vm = &mut ScriptVm {
-        host: &mut host,
+        host: host.host_context(),
         bx: Box::new(ScriptVmBase::new()),
     };
     let sys = vm.new_module(id!(sys));
@@ -465,10 +465,8 @@ mod tests {
         ]));
         let geo = "https://geocoding-api.open-meteo.com/v1/search?name=MigrationTest&count=1&language=en&format=json";
         let weather = "https://api.open-meteo.com/v1/forecast?latitude=1.0000&longitude=2.0000&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m&daily=temperature_2m_max,temperature_2m_min&timezone=auto&forecast_days=1";
-        let seed = |cx: &makepad_widgets::Cx, url: &str, bytes: &[u8]| {
-            let id = makepad_widgets::LiveId::from_str(url);
-            cx.script_data.resources.begin_data_fetch(url, id);
-            assert!(cx.script_data.resources.handle_data_fetch_response(id, bytes.to_vec()));
+        let seed = |_cx: &makepad_widgets::Cx, url: &str, bytes: &[u8]| {
+            octosense_l0_sys::fetch::seed_loaded(url, bytes);
         };
         seed(&cx, geo, br#"{"results":[{"latitude":1,"longitude":2}]}"#);
         seed(&cx, weather, br#"{"current":{"temperature_2m":20.2,"apparent_temperature":22.4}}"#);
@@ -478,7 +476,7 @@ mod tests {
         }
         seed(&cx, weather, br#"{"current":{"temperature_2m":20.2,"apparent_temperature":null}}"#);
         assert_eq!(super::probe_text(&mut cx, "sys.cities(0, \"feels_delta\", \"f\")").as_deref(), Some("—"));
-        assert_eq!(cx.script_data.resources.data_fetches.borrow().len(), 2, "changing units shares the same cached response");
+        assert_eq!(octosense_l0_sys::fetch::cached_count(), 2, "changing units shares the same cached response");
         octosense_l0_sys::set_collections(Default::default());
     }
 
@@ -976,7 +974,7 @@ mod probe_cache_tests {
     fn probe_cache_reexecutes_live_calls_and_bounds_compiled_bodies() {
         let mut cx = makepad_widgets::Cx::new(Box::new(|_, _| {}));
         let counter = std::rc::Rc::new(std::cell::Cell::new(0));
-        let mut vm = ScriptVm { host: &mut cx, bx: Box::new(ScriptVmBase::new()) };
+        let mut vm = ScriptVm { host: makepad_widgets::makepad_script::ScriptHostOwner::host_context(&mut cx), bx: Box::new(ScriptVmBase::new()) };
         let probe = vm.new_module(id!(probe));
         let calls = counter.clone();
         vm.add_method(probe, id!(next), script_args_def!(), move |_vm, _| {

@@ -3994,7 +3994,7 @@ pub(crate) fn nav_routes_json(bytes: &[u8]) -> Option<String> {
                 let exit = man.and_then(|m| m.get("exit")).and_then(|v| v.as_u64());
                 let at = man.and_then(|m| m.get("location")).and_then(|v| v.as_array());
                 let coord = |i: usize| at.and_then(|a| a.get(i)).and_then(|v| v.as_f64());
-                steps.push(serde_json::json!({
+                steps.push(::serde_json::json!({
                     "instr": nav_list_step(&kind, &modifier, &road, exit),
                     "kind": kind,
                     "modifier": modifier,
@@ -4007,7 +4007,7 @@ pub(crate) fn nav_routes_json(bytes: &[u8]) -> Option<String> {
         if steps.is_empty() {
             continue;
         }
-        out.push(serde_json::json!({
+        out.push(::serde_json::json!({
             "min": route.get("duration").and_then(|v| v.as_f64()).unwrap_or(0.0) / 60.0,
             "m": route.get("distance").and_then(|v| v.as_f64()).unwrap_or(0.0),
             "via": via.join(", "),

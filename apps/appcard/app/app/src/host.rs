@@ -32,6 +32,8 @@ pub const BODY_WIDGET: &str = "OctosAppBody";
 /// standalone `AppMain::script_mod` does — minus `makepad_widgets::script_mod`
 /// (the host has run it) and minus the standalone `Window{}` root.
 pub fn register_script_mods(vm: &mut ScriptVm) {
+    // The kit classes the cards are lowered onto (the fork makepad had them in its prelude).
+    octoscript_widgets::kit::script_mod(vm);
     crate::makepad_code_editor::script_mod(vm);
     crate::makepad_diagram_kit::script_mod(vm);
     crate::app::login::script_mod(vm);
@@ -183,7 +185,7 @@ mod tests {
         let mut cx = Cx::new(Box::new(|_, _| {}));
         cx.with_vm(makepad_widgets::script_mod);
         let vm_id = cx.alloc_splash_vm_with_network(false);
-        let root = cx.with_script_vm_id_trusted(vm_id, |vm| {
+        let root = cx.with_script_vm_id(vm_id, |vm| {
             register_script_mods(vm);
             let errors = vm.take_errors();
             assert!(errors.is_empty(), "register_script_mods left script errors: {errors:?}");

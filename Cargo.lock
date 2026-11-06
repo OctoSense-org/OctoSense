@@ -9866,6 +9866,7 @@ dependencies = [
  "octos-core",
  "octoscript-node",
  "octoscript-ui-l0",
+ "octoscript-widgets",
  "octosense-kernel",
  "octosense-l0-chat",
  "octosense-l0-sys",

@@ -2279,11 +2279,12 @@ mod resolve_tests {
 #[cfg(test)]
 mod capability_bridge {
     // `splash.rs` installs its own helpers plus those of the modules it pulls in.
+    // The `sys` vocabulary lives in octosense-l0-sys (crates/l0-sys) now, not in makepad.
     const BACKEND: &[&str] = &[
-        include_str!(concat!(env!("OCTOSENSE_WORKSPACE"), "/makepad/widgets/src/splash.rs")),
-        include_str!(concat!(env!("OCTOSENSE_WORKSPACE"), "/makepad/widgets/src/splash_l0.rs")),
-        include_str!(concat!(env!("OCTOSENSE_WORKSPACE"), "/makepad/widgets/src/splash_dataset.rs")),
-        include_str!(concat!(env!("OCTOSENSE_WORKSPACE"), "/makepad/widgets/src/splash_news.rs")),
+        include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../../../crates/l0-sys/src/sys.rs")),
+        include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../../../crates/l0-sys/src/l0.rs")),
+        include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../../../crates/l0-sys/src/dataset.rs")),
+        include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../../../crates/l0-sys/src/news.rs")),
     ];
     const LOWERING: &str =
         include_str!(concat!(env!("OCTOSENSE_WORKSPACE"), "/octoscript/crates/octoscript-ui-l0/src/lib.rs"));
