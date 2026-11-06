@@ -268,3 +268,20 @@ workarounds kept: pure blake3, unused [patch] entries removed, `::serde_json::js
 - Run-time contract: the host app must route Event::NetworkResponses to octosense_l0_sys::handle_network_responses (AppCard does;
   the shell's glance cards do NOT yet — add when the shell hosts L0 cards that fetch).
 - Pending: relax check7, octos-app unit tests, a real run of AppCard under the JIT shell (fetch → epoch → re-eval path unverified).
+
+## 5 Nov, later: AppCard runs in the JIT shell; live data flows through the shell as broker
+- run27–30 (JIT3_FEATURES=…,app-appcard,dev-mode; MAKEPAD_WM_TEST_APP=appcard MAKEPAD_SEED_CARD_FILE=.d1-scratch/jit3-seed-weather.splash):
+  AppCard = in-process module in the JIT shell, seed card evaluated, `sys.weather` → l0-sys queues → the SHELL pumps the HTTP
+  (octosense_l0_sys::pump in its AppMain::handle_event; Cx::http_request is refused inside an isolate: host-IO-only) → response
+  matched by the variant's request_id (not metadata_id) → "sys: data fetch loaded 1462 bytes (status 200)" → epoch bump → Splash pump.
+  run30 first frame 230 s (cache warm; the module build dominates). Fixed on the way: relax build-script nesting (depth rule →
+  chain rule, beca1727f), blake3-pure gate, std batch 2 (ae4a1db5a: PhantomData Ord, u8::escape_ascii, str::from_utf8* assoc,
+  split_at_unchecked, Seek for Box, OsString==OsStr, vld1q_u8_x2), PopupMenuPosition in the DSL (02f9f0700), WebCard DSL placeholder.
+- Remaining parked relax errors in deps (do not block the run): chrono E0034 (method resolution: Debug::fmt applies without the trait in
+  scope — relax bug), serde_json map.rs Debug of iterators (`&&IterMut` vs `&dyn Debug`), tracing Pin::map_unchecked, url `self`
+  module, tokio Command::uid/gid, security-framework `impl Trait` in a path + collect, sha2 sha512 NEON (vextq_u64, vsha512hq_u64,
+  vsha512h2q_u64), icu/image/indexmap/jiff items partly fixed in batch 2 (indexmap Bound indexing still open).
+- Splash isolate theme errors (`themes/macos/theme.splash: property widgets not found in prototype chain`) appear when the card isolate
+  is restyled — pre-existing jit-line issue, to look at. `BUG: update_global_ui_handle while isolate installed; deferred` once per run.
+- Visual confirmation of the re-evaluated card is still pending (needs a screenshot/instrument run); fork jit 0b3ffae05 adds the
+  "splash: live re-eval" log so the next run shows it.
