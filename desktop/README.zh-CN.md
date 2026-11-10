@@ -415,7 +415,7 @@ cargo makepad android run -p octosense --release
 
 ## 版本固定与上游同步
 
-每个外部依赖在整个仓库中只固定一次：Makepad 和 OctoScript 通过 `native-runtime.lock.json`（以及 `runtime-patches.lock.json` 中经审查的补丁），App Hub、octos 和 Rinx 在根目录 `Cargo.toml` 的 `[workspace.dependencies]` 中。系统应用、宿主服务、内核服务和 AppCard 都在本仓库中，与 Shell 在同一个 pull request 中修改，无需固定版本。移动固定版本之后：运行 `python3 tools/setup.py --update`，按需运行 `cargo update`，再运行 `python3 tools/setup.py --check --cargo` 和下面的测试。
+每个外部依赖在整个仓库中只固定一次：Makepad 和 OctoScript 通过 `native-runtime.lock.json`（以及 `runtime-patches.lock.json` 中经审查的补丁），App Hub、octos 和 Rinx 在根目录 `Cargo.toml` 的 `[workspace.dependencies]` 中。系统应用、宿主服务、内核服务和 AppCard 都在本仓库中，与 Shell 在同一个 pull request 中修改，无需固定版本。移动固定版本之后：运行 `python3 tools/setup.py --update`，按需运行 `cargo update`，再运行 `python3 tools/setup.py --check --cargo` 和下面的测试。拉取代码或切换分支后，如果任一锁文件发生了变化，也运行同样的 `--update`：它会替换上一个锁在 `.sources/makepad` 中暂存的运行时补丁，同时保留你自己的任何修改。
 
 `scripts/upstream.py sync|status|diff|update` 跟踪从官方 Makepad 导入的 WM 文件（`upstream/makepad.json`，基线 `74b63be8`）；见 [docs/upstream.md](docs/upstream.md)。它需要用 `--source` 指向官方 Makepad 的完整克隆：`.sources/makepad` 是分支版本的检出，不包含基线提交。
 
