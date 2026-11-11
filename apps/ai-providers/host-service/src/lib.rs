@@ -64,7 +64,7 @@
 //! `client_open`, `client_pair` (then `client_pair_ready` /
 //! `client_pair_show`, the export sheet's pattern) and `client_back`. They
 //! answer `{enabled, origin, endpoint, descriptor, profile_id, session_id,
-//! web_origin}`; no token ever reaches a script, the clipboard or a link. A
+//! web_origin, port}`; no token ever reaches a script, the clipboard or a link. A
 //! web client pairs with a one-time code drawn on a host sheet with a QR of
 //! its link ([`sheets::pair_client`]); leaving that sheet or closing the Talk
 //! to Octos sheet turns pairing off. See `crates/kernel/README.md`.
@@ -977,8 +977,10 @@ fn client_info() -> Result<Value, String> {
     } else {
         Default::default()
     };
+    // The port alone, for a Mac's sheet, which names this Mac rather than the address.
+    let port = origin.rsplit_once(':').map(|(_, port)| port.trim_end_matches('/')).filter(|port| port.parse::<u16>().is_ok()).unwrap_or_default();
     Ok(json!({"enabled": enabled, "origin": origin, "endpoint": endpoint, "descriptor": descriptor,
-        "profile_id": "_main", "session_id": kernel::SYSTEM_SESSION, "web_origin": web_origin}))
+        "profile_id": "_main", "session_id": kernel::SYSTEM_SESSION, "web_origin": web_origin, "port": port}))
 }
 
 /// Mint a pairing code and build its sheet: the code, and a QR of the web

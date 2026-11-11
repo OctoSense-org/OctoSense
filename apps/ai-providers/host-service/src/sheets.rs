@@ -20,6 +20,8 @@ fn lit(s: &str) -> String {
 
 const STYLES: &str = r##"// A desktop sheet follows the appearance at Mac metrics.
 let desk = try { theme.ui_pointer == true } catch { false }
+// The Mac style's sheets say some things as a Mac's panes do.
+let desk_mac = desk && try { theme.ui_unified == true } catch { false }
 let follow_touch_appearance = false
 let dark_appearance = if desk || follow_touch_appearance { try { dot(mod.theme.color_text, #x36b61200) >= 0.5 } catch { false } } else { false }
 fn by(touch, pointer){ if desk { pointer } else { touch } }
@@ -183,6 +185,7 @@ fn show(d){
     ui.descriptor.set_text(d.descriptor)
     ui.session.set_text(d.session_id)
     ui.web_origin.set_text(d.web_origin)
+    if desk_mac { ui.port_note.set_text(mac_reach(d.port)) }
 }
 fn answer(r){
     if !r.is_ok {
@@ -222,6 +225,12 @@ fn pair(){ status("Preparing a pairing code…") host.request("llm.sheet.client_
 fn close(){ host.request("llm.sheet.cancel", {}, nil) }
 // A desktop's Advanced disclosure: what a terminal client needs, out of the way.
 let details_open = false
+// A Mac's pane names the computer and keeps protocol paths out of sight, as Sharing does:
+// the server listens on this Mac's loopback only.
+fn mac_reach(port){
+    if port == "" { return "Only clients on this Mac can reach your assistant. A terminal client finds it by itself." }
+    return "Clients on this Mac reach your assistant on port " + port + "; other computers can't. A terminal client finds it by itself."
+}
 fn toggle_details(){
     details_open = !details_open
     ui.details_box.set_visible(details_open)
@@ -312,9 +321,17 @@ let DeskSwitch = Toggle{text: "" padding: 0 margin: 0 width: 28 height: 18
                 }
             }}
             details_box := View{visible: false width: Fill height: Fit flow: Down spacing: 8
-                TalkRow{TalkKey{text: "Server:"} origin := Field{is_read_only: true}}
-                TalkRow{TalkKey{text: "Terminal Address:"} endpoint := Field{is_read_only: true}}
-                TalkNote{Caption{text: "A terminal client on this device finds these by itself."}}
+                if desk_mac {
+                    // Under the disclosure's word: this Mac and its port, no address.
+                    View{width: Fill height: Fit padding: Inset{left: 16}
+                        port_note := Caption{text: ""}
+                    }
+                    View{visible: false origin := Field{is_read_only: true} endpoint := Field{is_read_only: true}}
+                } else {
+                    TalkRow{TalkKey{text: "Server:"} origin := Field{is_read_only: true}}
+                    TalkRow{TalkKey{text: "Terminal Address:"} endpoint := Field{is_read_only: true}}
+                    TalkNote{Caption{text: "A terminal client on this device finds these by itself."}}
+                }
             }
             // The connection file is the terminal client's to read, and it names the
             // conversation: a person has no use for its path or the conversation's id.

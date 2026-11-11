@@ -364,7 +364,7 @@ fn on_menu_command(command){
 fn named(label){ if ui_desk { label.split(" · ")[0] } else { label } }
 fn add_model(){
     if ui_desk { status("") } else { status("Choose the model on the sheet OctoSense shows.") }
-    host.request("llm.add_provider", {}, fn(r){
+    host_sheet("llm.add_provider", {}, fn(r){
         if r.is_ok { said("Added " + named(r.data.label)) } else { status(r.error) }
         refresh_current()
     })
@@ -372,7 +372,7 @@ fn add_model(){
 fn edit(p){
     status("")
     menu_for = ""
-    host.request("llm.edit_provider", {id: p.id}, fn(r){
+    host_sheet("llm.edit_provider", {id: p.id}, fn(r){
         if r.is_ok { discard_result(p.id) said("Saved " + named(r.data.label)) } else { status(r.error) }
         refresh_current()
     })
@@ -435,13 +435,13 @@ fn pick_model(p, m){
 fn show_qr(){
     if providers.len() == 0 { status("Add a model first.") return }
     if ui_desk { status("") } else { status("The code is on the sheet OctoSense shows.") }
-    host.request("llm.export_qr", {}, fn(r){
+    host_sheet("llm.export_qr", {}, fn(r){
         if r.is_ok { status("") } else { status(r.error) }
     })
 }
 fn import_code(){
     status("")
-    host.request("llm.import_qr", {}, fn(r){
+    host_sheet("llm.import_qr", {}, fn(r){
         if r.is_ok { import_said(r.data.message) } else { status(r.error) }
         refresh_current()
     })
@@ -522,7 +522,7 @@ let TouchRoot = SolidView{width: Fill height: Fill flow: Down align: Align{x: 0.
         }
         add := Big{visible: false text: "Add model" on_click: || add_model()}
         talk := Quiet{visible: false text: "Talk to Octos" on_click: || {
-            host.request("llm.connect_client", {}, fn(r){ if !r.is_ok { status(r.error) } })
+            host_sheet("llm.connect_client", {}, fn(r){ if !r.is_ok { status(r.error) } })
         }}
         saved_heading := View{visible: false width: Fill height: Fit flow: Right align: Align{y: 1.0} padding: Inset{top: 4}
             Section{text: "SAVED MODELS"}
@@ -908,7 +908,20 @@ fn desk_tools_render(){ try { ui.list_tools.render() } catch { nil } }
 // too, so under one a Mac's rows are drawn deaf until it goes: a click on its Done or
 // Cancel picked the row under the button. A window under a Mac sheet takes no click,
 // drag or right-click.
-fn desk_modal(){ desk_at >= 0 || desk_removing != nil || desk_says != "" }
+fn desk_modal(){ desk_at >= 0 || desk_removing != nil || desk_says != "" || desk_host_sheets > 0 }
+// The host's sheets (Add, Details, the two QR sheets, Web Clients) are up until their
+// request answers: under one, a Mac's list is out of focus too, its picked row grey and
+// its rows deaf, as under the app's own sheets.
+let desk_host_sheets = 0
+fn host_sheet(method, args, done){
+    desk_host_sheets = desk_host_sheets + 1
+    desk_inert()
+    host.request(method, args, fn(r){
+        desk_host_sheets = max(0, desk_host_sheets - 1)
+        desk_inert()
+        done(r)
+    })
+}
 fn desk_inert(){ if ui_unified { try { ui.rows.render() } catch { nil } } }
 fn desk_drag_to(p, dy){ clamp(p.index + round(dy / DESK_ROW_H), 0, max(0, providers.len() - 1)) }
 fn desk_drag_words(p, to){
@@ -1063,7 +1076,7 @@ let DeskRoot = SolidView{width: Fill height: Fill flow: Overlay draw_bg.color: u
             if ui_unified {
                 View{width: Fit height: Fill flow: Right align: Align{y: 0.5}
                     talk := DeskBarItem{visible: false reset_hover_on_click: true text: "Web Clients…" draw_icon +: {svg: ui_icon("globe") color: ui_ink} on_click: || {
-                        host.request("llm.connect_client", {}, fn(r){ if !r.is_ok { status(r.error) } })
+                        host_sheet("llm.connect_client", {}, fn(r){ if !r.is_ok { status(r.error) } })
                     }}
                     talk_off := DeskBarItem{enabled: false text: "Web Clients…" draw_icon +: {svg: ui_icon("globe") color: desk_tool_off}
                         draw_text +: {color: desk_tool_off color_hover: desk_tool_off color_down: desk_tool_off color_focus: desk_tool_off}}
@@ -1071,7 +1084,7 @@ let DeskRoot = SolidView{width: Fill height: Fill flow: Overlay draw_bg.color: u
             } else {
                 View{width: Fit height: Fit flow: Right align: Align{y: 0.5}
                     talk := UiTool{visible: false reset_hover_on_click: true text: "Web Clients…" draw_icon +: {svg: ui_icon("globe")} on_click: || {
-                        host.request("llm.connect_client", {}, fn(r){ if !r.is_ok { status(r.error) } })
+                        host_sheet("llm.connect_client", {}, fn(r){ if !r.is_ok { status(r.error) } })
                     }}
                     talk_off := UiTool{enabled: false text: "Web Clients…" draw_icon +: {svg: ui_icon("globe") color: desk_tool_off}
                         draw_bg +: {color_hover: #x00000000 color_down: #x00000000 color_disabled: #x00000000}
