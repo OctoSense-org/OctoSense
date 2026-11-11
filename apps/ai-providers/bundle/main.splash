@@ -956,55 +956,65 @@ fn desk_empty_table(){
         Label{clip_y: false padding: 0 text: "Click + to add the model your assistant answers with." draw_text +: {color: ui_muted text_style: theme.font_regular{font_size: 8.25}}}
     }
 }
-// A Mac's row: picked, it stands on the list's selection; the rest as every desktop's.
+// A Mac's row: picked, it stands on the list's selection, the accent with white words
+// while the list is the person's, grey under a sheet (a Mac's table out of focus). The
+// rest as every desktop's.
 fn desk_mac_row(p){
     let on = p.id == desk_pick
     View{width: Fill height: Fit
-        if desk_modal() { desk_mac_face(p, on) }
+        if desk_modal() { desk_mac_face(p, on, false) }
         else {
             GestureView{width: Fill height: Fit cursor: MouseCursor.Default menu: desk_row_titles(p) on_menu: |title| desk_row_chosen(p, title)
                 on_tap: |x, y| desk_tap_row(p)
                 on_pan: |dx, dy, phase| desk_drag(p, dy, phase)
-                desk_mac_face(p, on)
+                desk_mac_face(p, on, true)
             }
         }
     }
 }
-fn desk_mac_face(p, on){
-    RoundedView{width: Fill height: Fit margin: Inset{left: 4 right: 4 top: 1 bottom: 1} show_bg: true draw_bg +: {color: if on { ui_selected } else { #x00000000 } border_radius: 4.0}
-        desk_row_body(p, Inset{left: 10 right: 10 top: 7 bottom: 7})
+fn desk_mac_face(p, on, lit){
+    let hot = on && lit
+    let face = #x00000000
+    if on { face = ui_selected }
+    if hot { face = ui_accent_row }
+    RoundedView{width: Fill height: Fit margin: Inset{left: 4 right: 4 top: 1 bottom: 1} show_bg: true draw_bg +: {color: face border_radius: 4.0}
+        desk_row_body(p, Inset{left: 10 right: 10 top: 7 bottom: 7}, hot)
     }
 }
-fn desk_row_body(p, pad){
+fn desk_row_body(p, pad, hot){
+    let ink = if hot { #xffffff } else { ui_ink }
+    let sub = if hot { #xffffffd8 } else { ui_muted }
+    let good = if hot { #xffffff } else { ui_success }
+    let bad = if hot { #xffffff } else { ui_danger }
     UiListRow{padding: pad
         View{width: Fill height: Fit flow: Down spacing: 3
             View{width: Fill height: Fit flow: Right spacing: 6 align: Align{y: 0.5}
-                UiRowTitle{width: Fit text: p.model_label}
-                DeskRank{text: rank_text(p)}
+                UiRowTitle{width: Fit text: p.model_label draw_text +: {color: ink}}
+                DeskRank{text: rank_text(p) draw_text +: {color: sub}}
             }
-            UiRowNote{text: desk_note(p)}
+            UiRowNote{text: desk_note(p) draw_text +: {color: sub}}
         }
         if !desk_narrow {
             View{width: Fit height: Fit flow: Right spacing: 5 align: Align{y: 0.5}
                 if state_of(p.id) == "testing" {
-                    DeskSpin{}
-                    DeskCount{text: "Testing…"}
+                    DeskSpin{draw_bg +: {color: sub}}
+                    DeskCount{text: "Testing…" draw_text +: {color: sub}}
                 }
                 if state_of(p.id) == "ok" {
-                    DeskMark{draw_svg +: {svg: ui_icon("check") color: ui_success}}
-                    DeskCount{text: result_of(p.id) draw_text +: {color: ui_success}}
+                    DeskMark{draw_svg +: {svg: ui_icon("check") color: good}}
+                    DeskCount{text: result_of(p.id) draw_text +: {color: good}}
                 }
                 if state_of(p.id) == "fail" {
-                    DeskMark{draw_svg +: {svg: ui_icon("xmark") color: ui_danger}}
-                    DeskCount{text: "Couldn't connect" draw_text +: {color: ui_danger}}
+                    DeskMark{draw_svg +: {svg: ui_icon("xmark") color: bad}}
+                    DeskCount{text: "Couldn't connect" draw_text +: {color: bad}}
                 }
                 if state_of(p.id) == "" {
-                    if desk_key_broken(p) { DeskCount{text: key_text(p) draw_text +: {color: ui_danger}} }
-                    else { DeskCount{text: key_text(p)} }
+                    if desk_key_broken(p) { DeskCount{text: key_text(p) draw_text +: {color: bad}} }
+                    else { DeskCount{text: key_text(p) draw_text +: {color: sub}} }
                 }
             }
         }
-        if desk_narrow && desk_key_broken(p) { DeskCount{text: key_text(p) draw_text +: {color: ui_danger}} }
+        if desk_narrow && desk_key_broken(p) { DeskCount{text: key_text(p) draw_text +: {color: bad}} }
         UiButton{text: "Details…" on_click: || desk_details(p)}
     }
 }

@@ -1445,9 +1445,7 @@ fn press_spent(){
     st.spent = true
     st.spent_n = optional(st, "spent_n", 0) + 1
     let n = st.spent_n
-    st.spent_last = time_now()
-    log("n10c-diag spend " + n + " at " + time_now())
-    start_timeout(0.05, || { log("n10c-diag clear " + n + " of " + st.spent_n + " at " + time_now()) if n == st.spent_n { st.spent = false } })
+    start_timeout(0.05, || { if n == st.spent_n { st.spent = false } })
 }
 fn press_is_spent(){ optional(st, "spent", false) }
 fn press_free(){ !press_is_spent() && !sheet_open() && !pop_tool(deck_tab()) }
@@ -8824,17 +8822,9 @@ fn mac_tabs_view(){
         // press first, so it doesn't ask press_free() (chooser_open() checks for a sheet).
         View{width: 34 height: Fill align: Align{x: 0.5 y: 0.5}
             IconBtn{width: 26 height: 22 icon_walk: Walk{width: 16 height: 16} draw_icon +: {svg: icon("plus") color: ui_muted}
-                on_click: || { n10c_diag() chooser_open() }}
+                on_click: || chooser_open()}
         }
     }
-}
-fn n10c_diag(){
-    let t = deck_tab()
-    let s = "n10c-diag plus spent=" + pick(press_is_spent(), "1", "0") + " n=" + optional(st, "spent_n", 0) + " age=" + (time_now() - optional(st, "spent_last", 0)) + " confirm=" + st.confirm + " removing=" + st.removing
-    s = s + " fonts=" + pick(optional(st, "fonts_sheet", false), "1", "0") + " full=" + pick(optional(st, "full_alert", false), "1", "0")
-    s = s + " chooser=" + pick(optional(st, "chooser", false), "1", "0") + " open=" + pick(optional(st, "open_sheet", false), "1", "0") + " refusal=" + pick(optional(st, "refusal", nil) != nil, "1", "0")
-    if t != nil { s = s + " view=" + t.view + " tool=" + t.tool + " state=" + t.state }
-    log(s)
 }
 // A sheet's regions draw once the sheet is in the tree (as the Fonts sheet's rows do).
 fn mac_sheet_fill(){
@@ -8944,8 +8934,7 @@ fn refusal_view(){
 let CHOOSER_CARD = 150
 fn chooser_cols(){ pick(st.width < 820, 3, 4) }
 fn chooser_open(){
-    if sheet_open() { log("n10c-diag chooser_open refused") return }
-    log("n10c-diag chooser_open at " + time_now())
+    if sheet_open() { return }
     st.chooser = true
     let now = optional(st, "chooser_pick", "")
     if now == "" || theme_named(now) == nil {
@@ -8957,7 +8946,6 @@ fn chooser_open(){
     render_confirm()
 }
 fn chooser_close(){
-    log("n10c-diag chooser_close at " + time_now())
     st.chooser = false
     render_confirm()
 }

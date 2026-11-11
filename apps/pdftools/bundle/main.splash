@@ -824,7 +824,8 @@ let pt_modal = st.confirm != nil || st.removing != "" || st.going || st.open_she
 // A Mac's menu bar and the keys of its rows wait for a sheet while it's up. The moment
 // after is for the press that closed it, and a key or a menu is never that press: a
 // Command-W just after a double click opened a PDF closed the window, its Close Tab
-// still off.
+// still off. Nor is a click on the tab bar: every sheet hangs under it, so the press
+// that closed one never comes up over a tab or the +.
 fn menus_wait(){
     if ui_unified { return st.confirm != nil || st.removing != "" || st.going || st.open_sheet }
     pt_modal
@@ -4162,7 +4163,7 @@ fn tab_menu(t){
     ["Close Tab"]
 }
 fn tab_chosen(i, t, title){
-    if pt_modal { return }
+    if menus_wait() { return }
     if title == "Close Tab" {
         ask_close(t)
         return
@@ -4192,7 +4193,7 @@ fn doc_tab(i, t){
     GestureView{width: Fill height: Fill flow: Overlay cursor: MouseCursor.Default
         menu: tab_menu(t)
         on_menu: |title| tab_chosen(i, t, title)
-        on_tap: |x, y| { if pt_modal { return } show_tab(i) }
+        on_tap: |x, y| { if menus_wait() { return } show_tab(i) }
         SolidView{width: Fill height: Fill draw_bg.color: band}
         View{width: Fill height: Fill align: Align{y: 0.5} padding: Inset{left: 30 right: 30}
             Label{clip_y: false padding: 0 width: Fill align: Align{x: 0.5} max_lines: 1 text_overflow: TextOverflow.Ellipsis text: shown_name(t.title) draw_text +: {color: pick(on, ui_ink, ui_muted) text_style: theme.font_regular{font_size: 9}}}
@@ -4234,7 +4235,7 @@ fn second_click(key){
     again
 }
 fn library_open(){
-    if pt_modal { return }
+    if menus_wait() { return }
     let t = cur_tab()
     if field_guard(t) { return }
     scan_library()
