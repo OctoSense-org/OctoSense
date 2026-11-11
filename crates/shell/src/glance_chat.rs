@@ -144,6 +144,11 @@ fn demo_mail() -> bool {
     DEMO_MAIL.load(std::sync::atomic::Ordering::Relaxed)
 }
 
+/// The canned demo reply answers: no model is needed.
+pub fn answers_without_model() -> bool {
+    demo_mail()
+}
+
 /// Who answers a card's chat in the shell (module docs).
 pub struct HostResponder;
 

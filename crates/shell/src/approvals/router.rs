@@ -27,7 +27,7 @@
 //! request on the owning app's sheet) that nobody answers within
 //! [`Router::sheet_expiry_s`] (`host_tools::prompt_deadline`, 10 min unless
 //! `OCTOSENSE_PROMPT_DEADLINE_SECS` says otherwise) expires: denied with the
-//! reason ("expired: no answer in 10 min"), never approved, audited `by:
+//! reason ("expired: no answer in 10 minutes"), never approved, audited `by:
 //! expired`, and kept visible as an [`Expired`] record and a notice until
 //! the person dismisses it. External connections' requests never expire
 //! here: they are not the shell's (octos#2624).
@@ -90,7 +90,7 @@ pub trait AppConfirm: Send {
 }
 
 /// A request that expired unanswered: withdrawn from pending, kept for the
-/// surfaces ("Expired: no answer in 10 min") until the person dismisses it.
+/// surfaces ("Expired: no answer in 10 minutes") until the person dismisses it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Expired {
     pub id: RequestId,
@@ -100,14 +100,16 @@ pub struct Expired {
     pub heading: String,
     /// "Calendar's agent".
     pub caller: String,
-    /// "no answer in 10 min".
+    /// "no answer in 10 minutes".
     pub reason: String,
     /// Unix seconds.
     pub at: u64,
+    /// "Calendar wanted Mail to send a message to ana@example.org.", for a Mac.
+    pub past: String,
 }
 
 impl Expired {
-    /// "Expired: no answer in 10 min".
+    /// "Expired: no answer in 10 minutes".
     pub fn status(&self) -> String {
         format!("Expired: {}", self.reason)
     }
@@ -126,6 +128,22 @@ pub struct Notice {
     /// longer pending, with its sheet line (answered, stopped, withdrawn,
     /// expired). `None`: the notice stands on its own.
     pub request: Option<RequestId>,
+    /// The same news in plain words, when `title` and `body` name a tool's id.
+    pub plain: Option<(String, String)>,
+    /// The approvals surface keeps this on screen by itself until it is
+    /// dismissed (what expired), so a Mac raises no second notice with the same
+    /// words. It is told, recorded and audited all the same.
+    pub on_surface: bool,
+}
+
+impl Notice {
+    /// What a notification says: on a Mac, plain words when there are some.
+    pub fn words(&self, mac: bool) -> (&str, &str) {
+        match &self.plain {
+            Some((title, body)) if mac => (title, body),
+            _ => (&self.title, &self.body),
+        }
+    }
 }
 
 pub struct Router {
@@ -288,7 +306,10 @@ impl Router {
         std::mem::take(&mut self.notices)
     }
     fn notice(&mut self, title: impl Into<String>, body: impl Into<String>) {
-        self.notices.push(Notice { title: title.into(), body: body.into(), request: None });
+        self.notices.push(Notice { title: title.into(), body: body.into(), request: None, plain: None, on_surface: false });
+    }
+    fn notice_plain(&mut self, title: impl Into<String>, body: impl Into<String>, plain: (String, String)) {
+        self.notices.push(Notice { title: title.into(), body: body.into(), request: None, plain: Some(plain), on_surface: false });
     }
 
     /// Route one request. The decision may be given before this returns.
@@ -296,9 +317,10 @@ impl Router {
         if req.caller.is_external() {
             // Not the shell's to answer, by any path: no developer mode, no
             // rule, no sheet, and no decision on the relay.
-            self.notice(
+            self.notice_plain(
                 format!("Outside request: {} \u{00b7} {}", app_label(&req.app), req.tool.name),
                 "An outside client's turn asked for this; that client answers it.",
+                ("Request from an outside client".to_string(), format!("{} That client answers it.", super::words::said(&req).sentence)),
             );
             self.changed();
             return Route::LeftToClient("an external client's approval is answered by that client".into());
@@ -378,6 +400,10 @@ impl Router {
             title: format!("Needs you: {}", line.heading()),
             body: format!("{} asks. Open the sheet to approve or deny.", line.caller),
             request: Some(req.id.clone()),
+            // A Mac's sheet is up already, so this one is not shown there
+            // (`approvals_changed`); it still has no tool id to give away.
+            plain: Some(("Needs you".to_string(), line.said.sentence.clone())),
+            on_surface: false,
         });
         self.changed();
         if let Some(b) = &batch {
@@ -409,7 +435,7 @@ impl Router {
         }
         let until = now + self.app_wait_s;
         self.waiting.insert(req.id.clone(), until);
-        self.notice(format!("Waiting for {}", app_label(&req.app)), format!("{} wants {}; open {} to confirm it there.", caller_label(&req.app, &req.caller), req.tool.name, app_label(&req.app)));
+        self.notice_plain(format!("Waiting for {}", app_label(&req.app)), format!("{} wants {}; open {} to confirm it there.", caller_label(&req.app, &req.caller), req.tool.name, app_label(&req.app)), super::words::waiting_said(&req));
         self.changed();
         Route::WaitingForApp { until }
     }
@@ -417,7 +443,7 @@ impl Router {
     fn refuse_visibly(&mut self, id: &RequestId, reason: &str, now: u64) {
         let Some(req) = self.pending.get(id).cloned() else { return };
         self.decide(id, Decision::Deny, "refused", None, reason, now);
-        self.notice(format!("Refused: {} \u{00b7} {}", app_label(&req.app), req.tool.name), reason.to_string());
+        self.notice_plain(format!("Refused: {} \u{00b7} {}", app_label(&req.app), req.tool.name), reason.to_string(), ("Refused".to_string(), format!("{} {reason}.", super::words::said(&req).past)));
         self.changed();
     }
 
@@ -532,7 +558,7 @@ impl Router {
     pub fn tick(&mut self, now: u64) -> bool {
         let before = self.generation;
         for rule in self.rules.expire(now) {
-            self.notice("Approval rule ended", format!("{} no longer approves on its own.", rule.describe()));
+            self.notice_plain("Approval rule ended", format!("{} no longer approves on its own.", rule.describe()), ("Approval rule ended".to_string(), format!("\u{201c}{}\u{201d} no longer approves on its own.", super::words::rule_said(&rule))));
             self.changed();
         }
         let late: Vec<RequestId> = self.waiting.iter().filter(|(_, until)| now >= **until).map(|(id, _)| id.clone()).collect();
@@ -582,8 +608,12 @@ impl Router {
         }
         let heading = format!("{} \u{00b7} {}", app_label(&req.app), req.tool.name);
         let caller = caller_label(&req.app, &req.caller);
-        self.notice(format!("Expired: {heading}"), format!("{caller} asked; no answer in time ({reason}), so it was denied. Nothing was approved."));
-        self.expired.push(Expired { id: id.clone(), app: req.app.clone(), heading, caller, reason, at: now });
+        let past = super::words::said(&req).past;
+        self.notice_plain(format!("Expired: {heading}"), format!("{caller} asked; no answer in time ({reason}), so it was denied. Nothing was approved."), (format!("Denied: {reason}"), past.clone()));
+        if let Some(told) = self.notices.last_mut() {
+            told.on_surface = true;
+        }
+        self.expired.push(Expired { id: id.clone(), app: req.app.clone(), heading, caller, reason, at: now, past });
         if self.expired.len() > EXPIRED_KEPT {
             self.expired.remove(0);
         }
@@ -615,7 +645,12 @@ impl Router {
                 Some(r) => format!("By your rule: {}", r.describe()),
                 None => "Developer mode approves everything.".to_string(),
             };
-            self.notice(format!("Approved automatically: {} \u{00b7} {}", app_label(&req.app), req.tool.name), format!("{why} Asked by {}.", caller_label(&req.app, &req.caller)));
+            let said = match rule.and_then(|r| self.rules.get(r)) {
+                Some(r) => format!("By your rule: {}.", super::words::rule_said(r)),
+                None => "Developer mode approves everything.".to_string(),
+            };
+            let plain = ("Approved automatically".to_string(), format!("{} {said}", super::words::said(&req).past));
+            self.notice_plain(format!("Approved automatically: {} \u{00b7} {}", app_label(&req.app), req.tool.name), format!("{why} Asked by {}.", caller_label(&req.app, &req.caller)), plain);
         }
         self.relay.approval_decided(id, decision, reason);
     }

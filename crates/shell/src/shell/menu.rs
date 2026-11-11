@@ -39,6 +39,7 @@ use super::{alpha, fade, MaterialTokens, MenuTokens, ShellTokens};
 
 mod nextstep;
 use nextstep::NextMenus;
+pub mod mac;
 
 // ======================================================================
 // The model
@@ -371,9 +372,25 @@ fn theme_items() -> Vec<MenuItem> {
     v
 }
 
+/// The shortcuts in force, as System Settings lists them: what each does, and its keys.
+pub fn shortcut_rows() -> Vec<(String, String)> {
+    key_items().into_iter().filter(|item| !item.label.is_empty()).map(|item| (item.label, item.description)).collect()
+}
+
 /// `learn.keybindings` — `omarchy-menu-keybindings`, showing OUR binds with
 /// the combos this OS actually answers to.
 fn key_items() -> Vec<MenuItem> {
+    if MAC_KEYS.load(std::sync::atomic::Ordering::Relaxed) {
+        return crate::binds::mac_keymap()
+            .iter()
+            .enumerate()
+            .filter(|(_, bind)| !bind.help.is_empty())
+            .map(|(i, bind)| {
+                MenuItem::new(&format!("learn.keybindings.{i}"), bind.help, MenuKind::Inert)
+                    .describe(&crate::binds::mac_combo_text(bind))
+            })
+            .collect();
+    }
     keymap()
         .iter()
         .enumerate()
@@ -388,6 +405,15 @@ fn key_items() -> Vec<MenuItem> {
         })
         .collect()
 }
+
+fn launcher_has(items: &[MenuItem], id: &str) -> bool {
+    items.iter().any(|item| item.id == id)
+}
+
+/// The window in front belongs to an app with an assistant, as of the menu's opening.
+pub static ASK_APP_HERE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+/// The Mac's list of shortcuts is the one in force (`DesktopStyle::Macos`).
+pub static MAC_KEYS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 /// One drawn row.
 #[derive(Clone, Debug)]
@@ -492,7 +518,7 @@ impl MenuModel {
                     .icon(Ico::Monitor),
             );
             items.push(
-                MenuItem::new("start.settings.ai-providers", "AI providers", MenuKind::App)
+                MenuItem::new("start.settings.ai-providers", "AI Providers", MenuKind::App)
                     .icon(Ico::Cpu),
             );
         }
@@ -512,7 +538,7 @@ impl MenuModel {
         // The style rows: the standalone shell has one style and no menu for it.
         #[cfg(not(mobile_only))]
         {
-            items.push(MenuItem::new("desktop","Desktop style",MenuKind::Menu));
+            items.push(MenuItem::new("desktop","Desktop style",MenuKind::Menu).icon(Ico::Shirt));
             for style in crate::desktop::DesktopStyle::ALL {
                 items.push(MenuItem::new(&format!("desktop.{}",style.id()),style.label(),MenuKind::Action));
             }
@@ -546,12 +572,17 @@ impl MenuModel {
         if path.starts_with("learn.keybindings") {
             items.extend(key_items());
         }
+        // A Mac's settings live in System Settings: Spotlight finds its panes.
+        if MAC_KEYS.load(std::sync::atomic::Ordering::Relaxed) && launcher_has(&items, "apps.settings") {
+            items.extend(mac::settings_items());
+        }
         items
     }
 
     pub fn open_at(&mut self, path: &str, skin: MenuSkin) {
         self.open = true;
         self.skin = skin;
+        crate::desktop::set_mac_launchpad(skin == MenuSkin::Launcher && MAC_KEYS.load(std::sync::atomic::Ordering::Relaxed));
         self.path = path.to_string();
         self.stack.clear();
         self.filter.clear();
@@ -573,6 +604,7 @@ impl MenuModel {
 
     pub fn close(&mut self) {
         self.open = false;
+        crate::desktop::set_mac_launchpad(false);
         self.rows.clear();
         self.stack.clear();
         self.filter.clear();
@@ -706,6 +738,20 @@ impl MenuModel {
             }
         }
 
+        // A Mac's Launchpad holds apps, and its Spotlight says what each row is.
+        if MAC_KEYS.load(std::sync::atomic::Ordering::Relaxed) {
+            match self.skin {
+                MenuSkin::Launcher => mac::launchpad_rows(&mut rows, &needle),
+                MenuSkin::Menu if path.is_empty() => {
+                    // With nothing in front there is no app to ask.
+                    if !ASK_APP_HERE.load(std::sync::atomic::Ordering::Relaxed) {
+                        rows.retain(|row| row.target != ASK_APP_ROW);
+                    }
+                    mac::spotlight_rows(&mut rows, &needle)
+                }
+                MenuSkin::Menu => mac::spotlight_list(&mut rows, &path),
+            }
+        }
         self.rows = rows;
         if self.sel >= self.rows.len() {
             self.sel = self.rows.len().saturating_sub(1);
@@ -1121,6 +1167,10 @@ pub enum ShellMenuAction {
     Activate(String),
     /// Escape, or a click outside the card.
     Cancel,
+    /// The Mac's menu bar moved from one open menu to the next.
+    MacSwitched,
+    /// A status item's slider moved: its target and its level, from 0 to 1.
+    MacSlide(String, f64),
     #[default]
     None,
 }
@@ -1193,6 +1243,24 @@ pub struct ShellMenu {
     /// Fixture mode: the gallery draws the surface without owning input.
     #[rust]
     pub inert: bool,
+    /// The open pull-down menu of a Mac's menu bar.
+    #[rust]
+    mac: Option<mac::MacMenus>,
+    /// The About panel of a Mac's menus.
+    #[rust]
+    about: Option<mac::MacAbout>,
+    /// Force Quit Applications, from the system menu or Option-Command-Escape.
+    #[rust]
+    force_quit: Option<mac::MacForceQuit>,
+    /// No row of Spotlight or Launchpad is chosen until the person moves or types.
+    #[rust]
+    mac_idle: bool,
+    /// Spotlight's list: the lines of each row's note that goes under its name.
+    #[rust]
+    spotlight_notes: Vec<Vec<String>>,
+    /// The preview's facts about the app chosen, kept while it stays chosen.
+    #[rust]
+    spotlight_facts: Option<(String, Vec<(String, String)>)>,
 }
 
 /// Preserve a search's top while keeping the whole card in the viewport.
@@ -1248,6 +1316,10 @@ impl ShellMenu {
     pub fn open_at(&mut self, cx: &mut Cx, path: &str, skin: MenuSkin) {
         self.anchor = None;
         self.touch_press = None;
+        self.mac = None;
+        self.about = None;
+        self.force_quit = None;
+        self.mac_idle = true;
         self.model.open_at(path, skin);
         self.next = nextstep::NextMenus::default();
         self.gate.reset();
@@ -1261,11 +1333,17 @@ impl ShellMenu {
 
     pub fn close(&mut self, cx: &mut Cx) {
         self.model.close();
+        self.mac = None;
+        self.about = None;
+        self.force_quit = None;
         self.next = nextstep::NextMenus::default();
         self.redraw(cx);
     }
 
     fn row_height(&self) -> f64 {
+        if self.spotlight() {
+            return self.spotlight_layout(self.screen).2;
+        }
         if self.anchor.is_some() { return if self.desktop_style.mobile() {44.0} else {30.0}; }
         if matches!(self.desktop_style, DesktopStyle::Windows2000 | DesktopStyle::NextStep) {return 30.0;}
         if self.model.rows.iter().any(|r| !r.detail.is_empty()) {
@@ -1301,6 +1379,14 @@ impl ShellMenu {
 
     /// The card rect for a screen, and how many rows fit in it.
     fn layout_card(&self, screen: Rect) -> (Rect, usize) {
+        if self.spotlight() {
+            let (card, visible, _) = self.spotlight_layout(screen);
+            return (card, visible);
+        }
+        if self.launchpad() {
+            let (columns, rows, ..) = self.launchpad_grid(screen);
+            return (screen, (columns * rows).max(1));
+        }
         if let Some(anchor) = self.anchor {
             let width = 248.0f64.min((screen.size.x - 12.0).max(1.0));
             let top = (anchor.pos.y + anchor.size.y + 4.0).max(screen.pos.y + 4.0);
@@ -1373,6 +1459,20 @@ impl ShellMenu {
         if !self.model.open {
             self.card = Rect::default();
             self.row_rects.clear();
+            return;
+        }
+        if self.mac_surface() {
+            if self.mac.is_some() {
+                self.draw_mac_menus(cx, screen);
+            } else if self.about.is_some() {
+                self.draw_about(cx, screen);
+            } else if self.force_quit.is_some() {
+                self.draw_force_quit(cx, screen);
+            } else if self.model.skin == MenuSkin::Launcher {
+                self.draw_launchpad(cx, screen);
+            } else {
+                self.draw_spotlight(cx, screen);
+            }
             return;
         }
         if matches!(self.desktop_style, DesktopStyle::NextStep | DesktopStyle::Windows2000) && self.anchor.is_none() {
@@ -1513,7 +1613,11 @@ impl ShellMenu {
             let selected = i == self.model.sel;
             let dim = if row.disabled { 0.4 } else { 1.0 };
             if selected {
-                self.d.solid(cx, row_rect, skin.selected_bg());
+                if self.d.material().is_glass() {
+                    self.d.rounded(cx, row_rect, 3.0, skin.selected_bg());
+                } else {
+                    self.d.solid(cx, row_rect, skin.selected_bg());
+                }
             }
             let text_color = fade(
                 if selected {
@@ -1534,7 +1638,8 @@ impl ShellMenu {
                 self.d.icon_centered(cx,ico,rect(row_rect.pos.x+ICON_MARGIN,y,ICON_COLUMN,rh),tok.font.icon_large,text_color);
             }
             let label_w = row_rect.size.x - label_x - CHEVRON_COLUMN - CHEVRON_MARGIN;
-            if row.detail.is_empty() {
+            // A top-bar dropdown's rows are one line tall: a title and no more.
+            if row.detail.is_empty() || self.anchor.is_some() {
                 self.d.label_elided(
                     cx,
                     rect(row_rect.pos.x + label_x, y, label_w, rh),
@@ -1627,6 +1732,18 @@ impl ShellMenu {
         if !self.model.open {
             return false;
         }
+        if self.mac.is_some() {
+            return self.mac_key(cx, e);
+        }
+        if self.about.is_some() {
+            return self.about_key(cx, e);
+        }
+        if self.force_quit.is_some() {
+            return self.force_quit_key(cx, e);
+        }
+        if self.launchpad() && self.launchpad_key(cx, e) {
+            return true;
+        }
         if matches!(self.desktop_style, DesktopStyle::NextStep | DesktopStyle::Windows2000) && self.anchor.is_none() {
             return self.next_key(cx, e);
         }
@@ -1670,12 +1787,16 @@ impl ShellMenu {
                     cx.widget_action(self.uid, ShellMenuAction::Cancel);
                 }
             }
+            KeyCode::ArrowDown if self.spotlight() => self.spotlight_arrow(1),
+            KeyCode::ArrowUp if self.spotlight() => self.spotlight_arrow(-1),
             KeyCode::ArrowDown => self.model.move_sel(1),
             KeyCode::ArrowUp => self.model.move_sel(-1),
             KeyCode::PageDown => self.model.move_sel(6),
             KeyCode::PageUp => self.model.move_sel(-6),
             KeyCode::ReturnKey | KeyCode::NumpadEnter | KeyCode::ArrowRight => {
-                self.activate_selected(cx);
+                if !(self.mac_surface() && self.mac_idle) && !self.spotlight_blank() {
+                    self.activate_selected(cx);
+                }
             }
             other => {
                 if e.modifiers.control || e.modifiers.logo || e.modifiers.alt {
@@ -1697,6 +1818,10 @@ impl ShellMenu {
                 self.model.rebuild();
             }
         }
+        // A Mac's Spotlight and Launchpad choose nothing until the person types
+        // or moves; with the search cleared they are back to choosing nothing.
+        self.mac_idle = self.model.filter.is_empty()
+            && !matches!(e.key_code, KeyCode::ArrowDown | KeyCode::ArrowUp | KeyCode::PageDown | KeyCode::PageUp);
         self.gate.reset();
         self.follow_cursor(screen);
         self.redraw(cx);
@@ -1721,6 +1846,18 @@ impl ShellMenu {
     pub fn handle_pointer(&mut self, cx: &mut Cx, event: &Event, screen: Rect) -> bool {
         if !self.model.open {
             return false;
+        }
+        if self.mac.is_some() {
+            return self.mac_pointer(cx, event);
+        }
+        if self.about.is_some() {
+            return self.about_pointer(cx, event);
+        }
+        if self.force_quit.is_some() {
+            return self.force_quit_pointer(cx, event);
+        }
+        if self.launchpad() {
+            return self.launchpad_pointer(cx, event);
         }
         if matches!(self.desktop_style, DesktopStyle::NextStep | DesktopStyle::Windows2000) && self.anchor.is_none() {
             return self.next_pointer(cx, event);
@@ -1773,8 +1910,9 @@ impl ShellMenu {
                     return true;
                 }
                 if let Some(i) = self.row_at(e.abs) {
-                    if !self.model.rows[i].disabled && self.model.sel != i {
+                    if !self.model.rows[i].disabled && (self.model.sel != i || self.mac_idle) {
                         self.model.sel = i;
+                        self.mac_idle = false;
                         self.redraw(cx);
                     }
                 }
@@ -1790,6 +1928,7 @@ impl ShellMenu {
                 if let Some(i) = self.row_at(e.abs) {
                     if !self.model.rows[i].disabled {
                         self.model.sel = i;
+                        self.mac_idle = false;
                         self.activate_selected(cx);
                     }
                 }
@@ -1830,6 +1969,16 @@ impl ShellMenu {
 }
 
 impl Widget for ShellMenu {
+    /// What a Mac's Spotlight or Launchpad shows, for a test's snapshot: its
+    /// rows are drawn, not widgets.
+    fn text(&self) -> String {
+        if !self.model.open || self.mac.is_some() || self.about.is_some() || self.force_quit.is_some() {
+            return String::new();
+        }
+        let surface = if self.launchpad() { "launchpad" } else if self.spotlight() { "spotlight" } else { return String::new() };
+        let rows: Vec<String> = self.model.rows.iter().map(|r| format!("{}={}", r.label, r.detail)).collect();
+        format!("{surface} [{}] {}", self.model.filter, rows.join("; "))
+    }
     fn draw_walk(&mut self, cx: &mut Cx2d, _scope: &mut Scope, walk: Walk) -> DrawStep {
         cx.begin_turtle(walk, self.layout);
         let screen = cx.turtle().rect();

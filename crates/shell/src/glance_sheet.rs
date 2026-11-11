@@ -87,6 +87,28 @@ pub fn sheet_rect(screen: Rect, card_h: f64) -> Rect {
     rect(screen.pos.x + (screen.size.x - w) * 0.5, screen.pos.y + (screen.size.y - h) * 0.5, w, h)
 }
 
+/// A Mac's Mail review is an alert (`MailReview`): as wide as the shell's own
+/// alerts, its margins the apps' (`UiAlertPanel`), as tall as what it holds,
+/// below the toolbar of the window it's about, or else centred.
+const MAC_REVIEW_W: f64 = 300.0;
+const MAC_REVIEW_TOP: f64 = 20.0;
+fn mac_review_on_window(window: Rect, card_h: f64) -> Rect {
+    const BELOW_TOOLBAR: f64 = 53.0;
+    let w = MAC_REVIEW_W.min(window.size.x - MARGIN * 2.0).max(200.0);
+    let h = (MAC_REVIEW_TOP + card_h + PAD).min(window.size.y - BELOW_TOOLBAR - MARGIN).max(120.0);
+    rect(window.pos.x + (window.size.x - w) * 0.5, window.pos.y + BELOW_TOOLBAR, w, h)
+}
+fn mac_review_rect(screen: Rect, card_h: f64) -> Rect {
+    let w = MAC_REVIEW_W.min(screen.size.x - MARGIN * 2.0).max(200.0);
+    let h = (MAC_REVIEW_TOP + card_h + PAD).min(screen.size.y - MARGIN * 2.0).max(120.0);
+    rect(screen.pos.x + (screen.size.x - w) * 0.5, screen.pos.y + (screen.size.y - h) * 0.5, w, h)
+}
+/// What a Mac's review draws in: the alert inside its margins.
+#[cfg(any(feature = "app-hub", native_mobile))]
+fn mac_review_card(sheet: Rect) -> Rect {
+    rect(sheet.pos.x + PAD, sheet.pos.y + MAC_REVIEW_TOP, sheet.size.x - PAD * 2.0, sheet.size.y - MAC_REVIEW_TOP - PAD)
+}
+
 /// Script workspaces contain editors and their own scroll regions. Keep a
 /// stable app-sized viewport instead of sizing the window from its last draw.
 fn script_workspace_rect(screen: Rect) -> Rect {
@@ -95,14 +117,52 @@ fn script_workspace_rect(screen: Rect) -> Rect {
     rect(screen.pos.x + (screen.size.x - w) * 0.5, screen.pos.y + (screen.size.y - h) * 0.5, w, h)
 }
 
-/// The ✕ in a window at `sheet`.
+/// The ✕ in a window at `sheet`; on a Mac, the close light.
 pub fn close_rect(sheet: Rect) -> Rect {
+    if mac_style() {
+        let (x, y) = mac_lights_at(sheet);
+        return rect(x - 4.0, y - 4.0, 20.0, 20.0);
+    }
     rect(sheet.pos.x + sheet.size.x - PAD - CLOSE + 4.0, sheet.pos.y + (HEADER - CLOSE) * 0.5 + 2.0, CLOSE, CLOSE)
 }
 
 /// The card's own area in a window at `sheet`.
 pub fn card_rect(sheet: Rect) -> Rect {
     rect(sheet.pos.x + PAD, sheet.pos.y + HEADER, sheet.size.x - PAD * 2.0, sheet.size.y - HEADER - PAD)
+}
+
+/// A Mac's card window: a segmented control this wide and tall, and how much
+/// less of a row it takes.
+const MAC_TABS_W: f64 = 216.0;
+const MAC_TABS_H: f64 = 28.0;
+const MAC_TABS_SAVED: f64 = 16.0;
+
+/// Where a Mac's card window has its first light: as a unified toolbar has it.
+fn mac_lights_at(sheet: Rect) -> (f64, f64) {
+    (sheet.pos.x + 20.0, sheet.pos.y + (HEADER - 12.0) * 0.5)
+}
+
+thread_local! {
+    /// A Mac's card window as it was drawn this frame: where it stands, how far
+    /// down a sheet hangs from (under its title and its Card | Chat control),
+    /// and whose card it is.
+    static MAC_WINDOW: std::cell::RefCell<Option<(Rect, f64, String)>> = const { std::cell::RefCell::new(None) };
+}
+
+/// The Mac's card window up now, for a sheet of its app's to hang from.
+pub fn mac_window() -> Option<(Rect, f64, String)> {
+    MAC_WINDOW.with(|w| w.borrow().clone())
+}
+
+/// Whether the Mac's form is up.
+fn mac_style() -> bool {
+    crate::shell::menu::MAC_KEYS.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// A card lowering in this window: on a Mac it stands on the window's material,
+/// in a Mac's type, as it does in the Notification Center.
+fn lowering<R>(lower: impl FnOnce() -> R) -> R {
+    if mac_style() { crate::glance_card::on_material(lower) } else { lower() }
 }
 
 /// All peer modes share one row directly above the active pane.
@@ -168,11 +228,15 @@ pub struct ShellGlanceSheet {
     #[rust] retained: Vec<Retained>,
     #[rust] visible_sheet: Rect,
     #[rust] insets: SafeInsets,
+    /// The window a Mac's review of a message hangs from: Mail's, when it's in front.
+    #[rust] review_window: Option<Rect>,
     #[rust] chatting: bool,
     #[rust] chat_available: bool,
     #[rust] resume_store: Option<InstanceStore>,
     #[rust] script_interacted: bool,
     #[rust] tabs_style: Option<(bool, Vec4f)>,
+    /// A Mac: the pointer is on the close light.
+    #[rust] close_over: bool,
     #[rust] focus_layout: bool,
     #[rust]
     open: Option<Open>,
@@ -220,15 +284,25 @@ impl ShellGlanceSheet {
         if self.tabs_style == Some((self.chatting, ink)) { return; }
         self.tabs_style = Some((self.chatting, ink));
         let light = ink.x + ink.y + ink.z < 1.5;
+        let mac = mac_style();
+        let radius = if mac { 2.5 } else { 10.0 };
+        // A Mac's two are one control: a track, and a raised segment in it.
+        if let Some(mut tabs) = self.tabs.borrow_mut::<View>() {
+            tabs.layout.spacing = if mac { 0.0 } else { 8.0 };
+            tabs.layout.padding = if mac { Inset { left: 2.0, right: 2.0, top: 2.0, bottom: 2.0 } } else { Inset { left: 14.0, right: 14.0, top: 0.0, bottom: 8.0 } };
+        }
         for (path, active) in [(ids!(card_tab), !self.chatting), (ids!(chat_tab), self.chatting)] {
-            let face = match (light, active) {
-                (true, true) => crate::shell::rgb(229, 237, 255), (true, false) => crate::shell::rgb(243, 245, 249),
-                (false, true) => crate::shell::rgb(42, 58, 87), (false, false) => crate::shell::rgb(35, 39, 48),
+            let face = match (mac, light, active) {
+                (true, true, true) => crate::shell::rgb(255, 255, 255),
+                (true, false, true) => crate::shell::rgb(108, 108, 112),
+                (true, _, false) => vec4(0.0, 0.0, 0.0, 0.0),
+                (false, true, true) => crate::shell::rgb(229, 237, 255), (false, true, false) => crate::shell::rgb(243, 245, 249),
+                (false, false, true) => crate::shell::rgb(42, 58, 87), (false, false, false) => crate::shell::rgb(35, 39, 48),
             };
-            let text = if active && light { crate::shell::rgb(38, 80, 170) } else { ink };
+            let text = if active && light && !mac { crate::shell::rgb(38, 80, 170) } else { ink };
             let mut button = self.tabs.widget(cx, path);
             script_apply_eval!(cx, button, {
-                draw_bg +: {color: #(face) color_hover: #(face) color_down: #(face) color_focus: #(face) border_size: 0 border_radius: 10}
+                draw_bg +: {color: #(face) color_hover: #(face) color_down: #(face) color_focus: #(face) border_size: 0 border_radius: #(radius)}
                 draw_text +: {color: #(text) color_hover: #(text) color_down: #(text) color_focus: #(text)}
             });
         }
@@ -253,6 +327,30 @@ impl ShellGlanceSheet {
     /// A full workspace owns the complete pointer stream, including its
     /// opening/closing frames. The covered feed never scrolls underneath it.
     pub fn accepts_pointer(&mut self, _event: &Event) -> bool { self.is_open() }
+
+    /// A Mac's review has its Back button: its window needs no ✕ besides.
+    #[cfg(any(feature = "app-hub", native_mobile))]
+    fn mac_reviewing(&self) -> bool {
+        mac_style() && self.review.is_active()
+    }
+    #[cfg(not(any(feature = "app-hub", native_mobile)))]
+    fn mac_reviewing(&self) -> bool {
+        false
+    }
+
+    /// The card a Mac's review needs, so its window fits the message.
+    #[cfg(any(feature = "app-hub", native_mobile))]
+    fn mac_review_height(&mut self, cx: &mut Cx2d, screen: Rect) -> Option<f64> {
+        if !self.mac_reviewing() {
+            return None;
+        }
+        let width = MAC_REVIEW_W.min(screen.size.x - MARGIN * 2.0).max(200.0) - PAD * 2.0;
+        Some(self.review.mac_card_height(cx, &mut self.d, width).clamp(120.0, 600.0))
+    }
+    #[cfg(not(any(feature = "app-hub", native_mobile)))]
+    fn mac_review_height(&mut self, _cx: &mut Cx2d, _screen: Rect) -> Option<f64> {
+        None
+    }
 
     fn revoke_review(&mut self) {
         #[cfg(any(feature = "app-hub", native_mobile))]
@@ -312,6 +410,7 @@ impl ShellGlanceSheet {
         self.mail_toolbar = MailToolbar::default();
         cx.set_key_focus(Area::Empty);
         cx.hide_text_ime();
+        if let (true, Some(mut chat)) = (self.chatting, self.chat.borrow_mut::<crate::card_chat::CardChat>()) { chat.want_keyboard(); }
         self.redraw(cx);
     }
     /// The key (`app/card_id`) of the open card.
@@ -379,7 +478,7 @@ impl ShellGlanceSheet {
                     // not generated card source or authority-bearing JSON.
                     self.open = Some(Open { key: key.into(), compose: Default::default(), card: GlanceCard {
                         account: None,
-                        app: "os.mail".into(), card_id: "host-review".into(), title: "Mail reply".into(), summary: String::new(), viewport: false,
+                        app: "os.mail".into(), card_id: "host-review".into(), title: "Mail".into(), summary: String::new(), viewport: false,
                         priority: 0, published_ms: 0, expires_ms: u64::MAX, open_app: "mail".into(),
                         route: None, body: "".into(), contained: false, digests: Vec::new(), l0: None,
                     }});
@@ -410,7 +509,7 @@ impl ShellGlanceSheet {
         self.live.clear();
         if card.l0.as_ref().is_some_and(|l| l.mail.is_some()) {
             self.live.prepare_native(&Self::tile_key(key), &card);
-        } else { self.live.body(&Self::tile_key(key), &card, "glance sheet"); }
+        } else { lowering(|| self.live.body(&Self::tile_key(key), &card, "glance sheet")); }
         self.chat_available = !card.viewport && self.live.session_mut(&Self::tile_key(key)).is_some_and(|s| s.has_chat());
         self.open = Some(Open { key: key.to_string(), card, compose: Default::default() });
         if let Some(binding) = self.mail_binding() {
@@ -569,7 +668,7 @@ impl ShellGlanceSheet {
         let key = Self::tile_key(&open.key);
         if same_mail || open.card.l0.as_ref().is_some_and(|l| l.mail.is_some()) {
             self.live.prepare_native(&key, &open.card);
-        } else { self.live.body(&key, &open.card, "glance sheet"); }
+        } else { lowering(|| self.live.body(&key, &open.card, "glance sheet")); }
         self.chat_available = !open.card.viewport && self.live.session_mut(&key).is_some_and(|s| s.has_chat());
         if let Some(store) = previous { self.live.restore_store(&key, store); }
         if !same_layout { self.resume_store = None; }
@@ -610,6 +709,11 @@ impl ShellGlanceSheet {
             }
         }
         self.review.poll();
+        // Mail's own window says "Message sent": a Mac's sheet goes as soon as it's true. A card
+        // keeps its sheet, with its OK, since nothing else says what became of the message.
+        if self.review.sent() && self.open.as_ref().is_some_and(|o| o.card.card_id == "host-review") {
+            self.close(cx);
+        }
     }
 
     /// Run the open card's queued taps through its L0 session, and lower it
@@ -618,7 +722,8 @@ impl ShellGlanceSheet {
         let Some(open) = &self.open else { return; };
         let key = Self::tile_key(&open.key);
         let previous = self.live.session_mut(&key).map(|s| s.store.clone());
-        if self.live.dispatch(cx, &self.tiles, "glance sheet") {
+        let (live, tiles) = (&mut self.live, &self.tiles);
+        if lowering(|| live.dispatch(cx, tiles, "glance sheet")) {
             if self.live.session_mut(&key).is_some_and(|s| s.shows_chat()) {
                 self.resume_store = previous;
                 self.select_chat(cx, true);
@@ -642,6 +747,7 @@ impl Widget for ShellGlanceSheet {
         if self.is_open() { self.poll_review(cx); }
         // Every frame, open or closed: the kit keeps its overlay in tree order.
         self.d.begin_surface(cx);
+        MAC_WINDOW.with(|w| w.borrow_mut().take());
         let mut tok = self.d.tokens(self.tokens);
         if let Some(state) = scope.data.get_mut::<crate::WmState>().filter(|state| state.style.target.mobile()) {
             tok.notifications.surface.text = if state.style.dark {crate::shell::rgb(242, 243, 248)} else {crate::shell::rgb(26, 26, 32)};
@@ -658,10 +764,16 @@ impl Widget for ShellGlanceSheet {
         if let Some(mut mail) = self.mail.borrow_mut::<crate::mail_clip::MailClip>() { mail.set_ink(cx, ink); }
         if let Some(state) = scope.data.get_mut::<crate::WmState>() {
             self.insets = state.phone.insets;
+            self.review_window = state.layout.focused_client()
+                .filter(|client| state.clients.get(client).is_some_and(|slot| slot.app == "mail"))
+                .and_then(|client| state.layout.desktop.get(client))
+                .filter(|window| !window.maximized && !window.fullscreen && window.snap.is_none())
+                .map(|window| rect(window.rect.x, window.rect.y, window.rect.w, window.rect.h));
             self.return_rect = self.open.as_ref().filter(|_| state.phone.screen == crate::mobile::PhoneScreen::Home)
                 .and_then(|o| state.phone.pages.summary_rect(&o.key, state.phone.viewport));
         }
         if self.is_open() {
+            let review_height = self.mac_review_height(cx, screen);
             let open = self.open.as_ref().unwrap();
             let mut background = tok.notifications.surface.background;
             background.w = 1.0;
@@ -672,6 +784,8 @@ impl Widget for ShellGlanceSheet {
                 if self.keyboard_visible { insets.bottom = 0.0; }
                 insets.inset(screen)
             } else if open.card.viewport { script_workspace_rect(screen) }
+            else if let (Some(review_h), Some(window)) = (review_height, self.review_window) { mac_review_on_window(window, review_h) }
+            else if let Some(review_h) = review_height { mac_review_rect(screen, review_h) }
             else { sheet_rect(screen, if self.chatting || open.card.l0.as_ref().is_some_and(|l| l.mail.is_some()) {600.0} else {card_h + if self.chat_available {TABS} else {0.0}}) };
             let sheet = self.presentation.rect(destination);
             self.sheet = sheet;
@@ -689,31 +803,59 @@ impl Widget for ShellGlanceSheet {
                 if self.presentation.covers_background() { self.d.solid(cx, screen, background); }
                 else { self.round.color = background; self.round.radius = self.presentation.radius(); self.round.draw_abs(cx, sheet); }
             } else {
-                self.d.solid(cx, screen, vec4(0.0, 0.0, 0.0, 0.55));
+                // On a Mac it is a panel over the desktop, not a dialog: nothing dims,
+                // but for the window a review hangs from.
+                if !mac_style() { self.d.solid(cx, screen, vec4(0.0, 0.0, 0.0, 0.55)); }
+                if let Some(window) = self.review_window.filter(|_| review_height.is_some()) {
+                    // A Mac's sheet dim, the one every app's sheet uses: 14% in the light, 32% in the dark.
+                    let dim = if !mac_style() { 0.15 } else if ink.x + ink.y + ink.z < 1.5 { 0.14 } else { 0.32 };
+                    self.d.rounded(cx, window, 10.0, vec4(0.0, 0.0, 0.0, dim));
+                }
                 self.d.card(cx, sheet, &tok.notifications.surface);
+                if mac_style() {
+                    let m = self.d.material();
+                    let even = if ink.x + ink.y + ink.z < 1.5 { crate::shell::rgb(250, 250, 251) } else { crate::shell::rgb(38, 38, 40) };
+                    let edge = m.border_width.max(1.0);
+                    self.d.rounded(cx, rect(sheet.pos.x + edge, sheet.pos.y + edge, (sheet.size.x - edge * 2.0).max(1.0), (sheet.size.y - edge * 2.0).max(1.0)), ((m.corner_radius - 1.0) * 0.5).max(0.0), even);
+                }
             }
             self.visible_sheet = sheet.clip((screen.pos, screen.pos + screen.size));
             cx.begin_turtle(Walk::abs_rect(self.visible_sheet), Layout::default());
             let close = close_rect(sheet);
             #[cfg(any(feature = "app-hub", native_mobile))]
-            let heading = if self.review.is_active() { "Mail reply" } else { &open.card.title };
+            let heading = if self.review.is_active() { if mac_style() { self.review.mac_title() } else { "Mail" } } else { &open.card.title };
             #[cfg(not(any(feature = "app-hub", native_mobile)))]
             let heading = &open.card.title;
             if !focus_layout {
-                self.d.label_elided(cx, rect(sheet.pos.x + PAD + 4.0, sheet.pos.y + 4.0, sheet.size.x - PAD * 2.0 - CLOSE - 8.0, HEADER - 4.0), true, 14.0, ink, HAlign::Left, heading);
-                self.d.icon_centered(cx, Ico::Close, close, 14.0, ink);
+                if mac_style() {
+                    if self.mac_reviewing() {
+                        // A Mac's review is an alert: its title is under Mail's icon (`MailReview`).
+                    } else {
+                        self.d.label_elided(cx, rect(sheet.pos.x + 84.0, sheet.pos.y, (sheet.size.x - 168.0).max(1.0), HEADER), true, 13.0, ink, HAlign::Center, heading);
+                    }
+                    if !self.mac_reviewing() {
+                        let (x, y) = mac_lights_at(sheet);
+                        self.d.mac_panel_lights(cx, x, y, crate::shell::ui::PanelLights { dark: ink.x + ink.y + ink.z >= 1.5, front: true, over: self.close_over, down: false });
+                    }
+                } else {
+                    self.d.label_elided(cx, rect(sheet.pos.x + PAD + 4.0, sheet.pos.y + 4.0, sheet.size.x - PAD * 2.0 - CLOSE - 8.0, HEADER - 4.0), true, 14.0, ink, HAlign::Left, heading);
+                    if !self.mac_reviewing() { self.d.icon_centered(cx, Ico::Close, close, 14.0, ink); }
+                }
             }
             let mut card = card_rect(sheet);
             let key = Self::tile_key(&open.key);
             if reviewing {
                 #[cfg(any(feature = "app-hub", native_mobile))]
-                self.review.draw(cx, &mut self.d, card, &tok);
+                {
+                    let card = if self.mac_reviewing() { mac_review_card(sheet) } else { card };
+                    self.review.draw(cx, &mut self.d, card, &tok);
+                }
             } else {
                 // Only the active pane draws and receives input. The generated
                 // draft and the native chat share the exact publication/session.
                 if !self.chatting && open.card.l0.as_ref().is_none_or(|l| l.mail.is_none()) {
                     let new_session = self.live.session_mut(&key).is_none();
-                    self.live.body(&key, &open.card, "glance sheet");
+                    lowering(|| self.live.body(&key, &open.card, "glance sheet"));
                     if new_session { self.chat_available = !open.card.viewport && self.live.session_mut(&key).is_some_and(|s| s.has_chat()); }
                 }
                 // Layout at the final size throughout the reveal. The surface
@@ -721,7 +863,21 @@ impl Widget for ShellGlanceSheet {
                 let body_sheet = Rect { pos: sheet.pos, size: destination.size };
                 let (pane, tabs) = workspace_rects(body_sheet, self.chat_available || native_mail, focus_layout);
                 card = pane;
+                // A Mac's are a small segmented control, centred.
+                let tabs = tabs.map(|t| if mac_style() {
+                    card.pos.y -= MAC_TABS_SAVED;
+                    card.size.y += MAC_TABS_SAVED;
+                    rect(t.pos.x + (t.size.x - MAC_TABS_W) * 0.5, t.pos.y, MAC_TABS_W, MAC_TABS_H)
+                } else { t });
+                if let Some(track) = tabs.filter(|_| mac_style()) {
+                    let color = if ink.x + ink.y + ink.z < 1.5 { crate::shell::rgb(226, 226, 230) } else { crate::shell::rgb(58, 58, 60) };
+                    self.d.rounded(cx, track, 3.5, color);
+                }
                 if let Some(tabs) = tabs { self.tabs.draw_walk_all(cx, scope, Walk::abs_rect(tabs)); }
+                if mac_style() && !self.fullscreen {
+                    let hang = tabs.map_or(HEADER, |t| t.pos.y + t.size.y + 6.0 - sheet.pos.y);
+                    MAC_WINDOW.with(|w| *w.borrow_mut() = Some((sheet, hang, open.card.app.clone())));
+                }
                 if !self.chatting && crate::mail_compose::eligible(&open.card) {
                     let height = 82.0_f64.min(card.size.y);
                     let dock = rect(card.pos.x, card.pos.y + card.size.y - height, card.size.x, height);
@@ -748,7 +904,7 @@ impl Widget for ShellGlanceSheet {
                     self.mail_toolbar.draw(cx, &mut self.d, toolbar, &tok, binding);
                     rect(card.pos.x, card.pos.y, card.size.x, (card.size.y - MailToolbar::HEIGHT).max(20.))
                 } else { card };
-                let body = self.live.body(&key, &open.card, "glance sheet");
+                let body = lowering(|| self.live.body(&key, &open.card, "glance sheet"));
                 if open.card.viewport {
                     let closing = self.presentation.phase == crate::card_presentation::Phase::Closing;
                     self.tiles.sync_foreground(cx, !self.app_suspended && !closing,
@@ -807,7 +963,8 @@ impl Widget for ShellGlanceSheet {
                 self.close_touch = None;
             }
             let sheet = self.sheet;
-            let closes = |p| (!self.focus_layout && contains(close_rect(sheet), p)) || (!self.fullscreen && !contains(sheet, p));
+            let mac_reviewing = self.mac_reviewing();
+            let closes = |p| (!self.focus_layout && !mac_reviewing && contains(close_rect(sheet), p)) || (!self.fullscreen && !contains(sheet, p));
             let mut consumed = self.close_touch.is_some();
             for t in &e.touches {
                 if self.close_touch.is_none() && t.state == TouchState::Start && closes(t.abs) {
@@ -827,8 +984,15 @@ impl Widget for ShellGlanceSheet {
             }
             if consumed { return; }
         }
+        if let Event::MouseMove(e) = event {
+            let over = mac_style() && !self.mac_reviewing() && contains(close_rect(self.sheet), e.abs);
+            if over != self.close_over {
+                self.close_over = over;
+                self.redraw(cx);
+            }
+        }
         match event {
-            Event::MouseDown(e) if (!self.focus_layout && contains(close_rect(self.sheet), e.abs)) || (!self.fullscreen && !contains(self.sheet, e.abs)) => {
+            Event::MouseDown(e) if (!self.focus_layout && !self.mac_reviewing() && contains(close_rect(self.sheet), e.abs)) || (!self.fullscreen && !contains(self.sheet, e.abs)) => {
                 self.dismiss(cx);
                 return;
             }
@@ -872,6 +1036,11 @@ impl Widget for ShellGlanceSheet {
                     let result = self.live.session_mut(&key).ok_or_else(|| "This conversation is unavailable".to_string()).and_then(|session| session.chat_submit(&text));
                     chat.submitted(cx, result);
                 }
+            }
+            if self.chat.borrow_mut::<crate::card_chat::CardChat>().is_some_and(|mut chat| chat.take_providers_request()) {
+                self.hide_workspace(cx);
+                cx.widget_action(self.uid, crate::glance_panel::ShellGlancePanelAction::Open { app: "ai-providers".into(), route: None });
+                return;
             }
             let show_reply = self.chat.borrow_mut::<crate::card_chat::CardChat>().is_some_and(|mut chat| chat.take_reply_request());
             if show_reply {

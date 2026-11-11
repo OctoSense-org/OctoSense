@@ -65,6 +65,51 @@ widget callback and observes both source and rich edits. Loading programmaticall
 does not emit a user edit. Use `load`, not an unchecked generic `set_text`, when
 importing a remote file.
 
+## Document page
+
+The crate also holds `DocumentEditor`, the page Writer shows on a Mac, and
+`DocumentScroller` and `DocMark` for its read-only preview. `DocumentEditor` reuses
+Rinx's rich input and cross-block selection, one input per line, and shows a line's
+heading, list number, quote or emphasis as it will print. Its text stays the app's
+line format (`# Title`, `- item`, `1. item`, `> quote`, `**bold**`, `*italic*`); only
+the lines a person changes are written again, so a document's saved form doesn't
+move on its own. `MarkdownEditor` isn't used for this: its model has no first-level
+heading, an edit writes the whole document again, and its chrome is its own.
+
+```splash
+editor_text := DocumentEditor {
+    width: Fill height: Fill
+    on_change: |text| draft_changed(text)
+    on_format: |style, bold, italic, line, selected| format_changed(style, bold, italic, line, selected)
+    on_save: || save_doc()
+}
+```
+
+`ui.editor_text.text()` and `set_text(s)` read and load the text; `headings()` answers
+JSON `[{level, text, line}]`; `bold()`, `italic()`, `set_style(id)`, `go_to_line(n)`,
+`focus()`, `set_active(on)`, `cut()`, `copy()` and `paste()` act on the caret or the
+selection. `find(words, step)` selects a place the words appear, case aside, and brings it
+into view while the keyboard stays where it is: `step` 0 takes the first at or after the
+selection, 1 the next and -1 the one before, round the document. It answers JSON
+`{index, count}`, `index` counting from 1, and `{0, 0}` when the words aren't there.
+`find_done()` gives the keyboard back to the page, on the match. `replace_found(words, with, all)` puts `with` in place
+of the selected match and goes on to the next, or in place of every match when `all` is true (one change to undo); the
+words take the bold and italic of what they replace, and it answers JSON `{index, count, replaced}`. For the rest of a
+Mac's Edit menu: `on_format`'s `selected` says whether there is a selection (a menu's rows read it from the
+script's state, not from the editor), `delete_selected()` removes it and leaves the
+pasteboard alone, `paste_matching()` is Paste and Match Style (the pasteboard's words as if typed there: Markdown in
+them stays characters, and each further line is a row as Return would make it; Option-Shift-Command-V on the page), and `change_case(kind)` is
+Transformations, `"upper"`, `"lower"` or `"capitalize"` (a capital to each word, a word running to a space), keeping
+the selection and its bold and italic. A right click off the selection selects the word under it, or puts the caret
+there, before a menu around the page opens. `paper := Sheet{...}` is the sheet behind the lines and `page_gap` the room above it:
+the top edge goes up with the first line, as a page's does.
+`DocumentScroller{on_mark: |k| ...}` scrolls a page holding
+`DocMark{mark: k}` headings with `scroll_to_mark(k)` and `scroll_to_top()`, brings a
+mark just into sight with `reveal_mark(k)` (going up, a mark in the first screenful takes the page to its top, so
+what's above it shows too), and says which mark has reached the top. A page ends in `DocMark{end: true}`:
+`on_near_end: || ...` asks for the next step of a long page as scrolling comes near it, and over the last screenful the
+last marks are reached in turn, though they can't scroll up to the top.
+
 ## Verification
 
 ```sh

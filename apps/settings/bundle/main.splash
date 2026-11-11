@@ -1,0 +1,814 @@
+// BEGIN shared app interface
+// Shared system-app interface. Run tools/sync-app-interface.py after editing.
+// Bundles carry this prelude so they work in the contained standalone host too.
+// Resolve the current theme after a host restyle, not a retained prelude alias.
+let theme = mod.theme
+// A desktop shell's style sheet says `ui_pointer = true`: the app gets pointer
+// metrics and the Mac layouts (13-point text, 28-point controls, a sidebar and
+// a toolbar). Anything else, a phone or a bare host, keeps the touch metrics.
+let ui_desk = try { theme.ui_pointer == true } catch { false }
+// A Mac's window has no title bar over an app that says so to the shell
+// (crates/shell/src/clients.rs, unified_chrome): the app draws to the window's top
+// edge, its toolbar is 52 points tall, and the lights sit over the leading 84 points
+// of the toolbar, or over the top of a sidebar. Other desktops keep a title bar.
+let ui_unified = ui_desk && try { theme.ui_unified == true } catch { false }
+fn ui_by(touch, desk){ if ui_desk { desk } else { touch } }
+let ui_ink = theme.color_text
+let ui_page = theme.color_bg_app
+let ui_light = dot(ui_ink, #x36b61200) < 0.5
+let ui_surface = if ui_light { #xffffff } else { mix(ui_page, ui_ink, ui_by(0.06, 0.07)) }
+let ui_field = if ui_desk && ui_light { #xffffff } else { mix(ui_page, ui_ink, ui_by(0.075, 0.07)) }
+let ui_hover = mix(ui_page, ui_ink, ui_by(0.12, 0.07))
+let ui_border = mix(ui_page, ui_ink, ui_by(0.22, 0.14))
+let ui_muted = mix(ui_ink, ui_page, ui_by(0.24, 0.26))
+// The Mac's system colours where the page is a Mac's, near white or near black;
+// a retro style's mid-gray page keeps text that is mostly ink.
+let ui_lum = dot(ui_page, #x36b61200)
+let ui_mac = ui_desk && (ui_lum > 0.86 || ui_lum < 0.25)
+let ui_link = if ui_mac { if ui_light { #x0060c0 } else { #x6cb8ff } } else { mix(ui_ink, #x356bce, 0.25) }
+let ui_primary = ui_by(#x285cd6, #x0071e3)
+let ui_success = if ui_mac { if ui_light { #x1a7030 } else { #x30d158 } } else { mix(ui_ink, #x28a55b, 0.20) }
+let ui_danger = if ui_mac { if ui_light { #xc70012 } else { #xffa097 } } else { mix(ui_ink, #xe13b53, 0.20) }
+// The Mac's surfaces: a sidebar and a toolbar a shade off the page, a selection
+// in the sidebar's own gray, a push button's face.
+let ui_sidebar = mix(ui_page, ui_ink, 0.03)
+let ui_bar = if ui_light { #xededf0 } else { #x303033 }
+let ui_selected = mix(ui_page, ui_ink, 0.11)
+let ui_button = if ui_light { #xffffff } else { mix(ui_page, ui_ink, 0.16) }
+// What a list or a document sits on: white in the light; in the dark, darker than
+// the window around it, as a Mac's content is.
+let ui_content = if ui_mac { if ui_light { #xffffff } else { #x1e1e1e } } else { ui_surface }
+// A selected row: the accent when it is the row the person is on, white text on it.
+let ui_accent_row = if ui_light { #x0064d2 } else { #x0a60c8 }
+// A Mac dims the window behind a sheet, more in the dark; the shell's own sheets
+// and the native apps' dim as much.
+let ui_sheet_dim = if ui_light { #x00000024 } else { #x00000052 }
+// A touch size in the type scale; on the desktop, the Mac's size for that role
+// (Makepad's font_size is three quarters of a point).
+fn ui_fs(n){
+    if !ui_desk { return n }
+    if n <= 12 { return 8.25 }
+    if n <= 13 { return 9 }
+    if n <= 16 { return 9.75 }
+    if n <= 18 { return 11.25 }
+    if n <= 21 { return 12.75 }
+    if n <= 24 { return 13.5 }
+    if n <= 28 { return 16.5 }
+    19.5
+}
+let ui_icons = {}
+fn ui_icon(name){
+    let handle = ui_icons[name]
+    if handle == nil {
+        handle = http_resource("{{assets}}/icons/ui-" + name + ".svg")
+        ui_icons[name] = handle
+    }
+    handle
+}
+let UiButton = ButtonFlat{height: ui_by(44, 28) margin: 0 padding: Inset{left: ui_by(14, 12) right: ui_by(14, 12)} spacing: 6
+    icon_walk: Walk{width: 15 height: 15}
+    draw_bg +: {border_radius: ui_by(12.0, 3.0) border_size: ui_by(0.0, 1.0) border_color: ui_border
+        color: ui_by(#x00000000, ui_button) color_hover: ui_by(ui_hover, mix(ui_button, ui_ink, 0.04)) color_down: ui_by(ui_field, mix(ui_button, ui_ink, 0.1)) color_focus: ui_by(ui_hover, ui_button)}
+    draw_text +: {color: ui_by(ui_link, ui_ink) color_hover: ui_by(ui_link, ui_ink) color_down: ui_by(ui_link, ui_ink) color_focus: ui_by(ui_link, ui_ink)
+        text_style: ui_by(theme.font_bold{font_size: 14}, theme.font_regular{font_size: 9.75})}
+    draw_icon +: {color: ui_ink}
+}
+let UiPrimary = UiButton{
+    draw_bg +: {border_size: 0.0 color: ui_primary color_hover: ui_by(#x3468df, #x006edb) color_down: ui_by(#x204cb8, #x0060c0) color_focus: ui_by(#x204cb8, ui_primary)}
+    draw_text +: {color: #xffffff color_hover: #xffffff color_down: #xffffff color_focus: #xffffff}
+    draw_icon +: {color: #xffffff}
+}
+let UiPill = UiButton{height: ui_by(44, 24) padding: Inset{left: ui_by(14, 10) right: ui_by(14, 10)}
+    draw_bg +: {color: ui_by(ui_surface, #x00000000) border_size: 0.0 border_radius: ui_by(22.0, 3.0)}
+    draw_text +: {color: ui_ink color_hover: ui_ink color_down: ui_ink color_focus: ui_ink}}
+let UiField = TextInput{width: Fill height: ui_by(48, 28) margin: 0 padding: Inset{left: ui_by(14, 8) right: ui_by(14, 8) top: ui_by(12, 6) bottom: ui_by(12, 6)}
+    draw_bg +: {color: ui_field color_hover: ui_field color_focus: ui_field color_empty: ui_field
+        border_color: ui_border border_color_hover: ui_by(ui_link, ui_border) border_color_focus: ui_link border_color_empty: ui_border border_radius: ui_by(12.0, 3.0)}
+    draw_text +: {color: ui_ink color_hover: ui_ink color_focus: ui_ink color_empty: ui_muted color_empty_hover: ui_muted color_empty_focus: ui_muted text_style: theme.font_regular{font_size: ui_by(15, 9.75)}}
+    draw_selection.color: #x557dcc55
+}
+let UiCard = RoundedView{width: Fill height: Fit flow: Down spacing: ui_by(12, 8) padding: ui_by(20, 14)
+    show_bg: true draw_bg +: {color: ui_surface border_radius: ui_by(16.0, 5.0) border_size: ui_by(0.0, 1.0) border_color: ui_by(#x00000000, ui_border)}}
+let UiCaption = Label{padding: 0 flow: Flow.Right{wrap: true} width: Fill draw_text +: {color: ui_muted text_style: theme.font_regular{font_size: ui_by(13, 8.25) line_spacing: 1.4}}}
+let UiTitle = Label{padding: 0 flow: Flow.Right{wrap: true} width: Fill draw_text +: {color: ui_ink text_style: theme.font_bold{font_size: ui_by(28, 16.5) line_spacing: 1.2}}}
+// The Mac's parts. They are drawn on a desktop only; a phone keeps its pages.
+// A shader's border_radius is half the corner it draws: 3 is a 6-point corner.
+let UiSep = SolidView{width: Fill height: 1 draw_bg.color: ui_border}
+let UiVSep = SolidView{width: 1 height: Fill draw_bg.color: ui_border}
+let UiGlyph = Svg{width: 16 height: 16 animating: false draw_svg +: {color: ui_muted}}
+let UiTool = ButtonFlat{height: 28 margin: 0 padding: Inset{left: 8 right: 8} spacing: 5 icon_walk: Walk{width: 16 height: 16}
+    draw_bg +: {border_radius: 3.0 border_size: 0.0 color: #x00000000 color_hover: ui_hover color_down: ui_selected color_focus: #x00000000}
+    draw_text +: {color: ui_ink color_hover: ui_ink color_down: ui_ink color_focus: ui_ink text_style: theme.font_regular{font_size: 9.75}}
+    draw_icon +: {color: ui_ink}
+}
+let UiToolIcon = UiTool{width: 30 padding: 0 spacing: 0 text: ""}
+// A tool whose click hides it or the pane it sits on: it comes back unwashed.
+let UiPaneTool = UiToolIcon{reset_hover_on_click: true}
+// The clear button inside a search field, shown while it holds text.
+let UiSearchClear = UiPaneTool{visible: false width: 24 height: 24 icon_walk: Walk{width: 14 height: 14}
+    draw_bg +: {color_hover: #x00000000 color_down: #x00000000}
+    draw_icon +: {svg: ui_icon("search-clear") color: ui_muted}}
+let UiToolbar = SolidView{width: Fill height: if ui_unified { 52 } else { 40 } flow: Right align: Align{y: 0.5} spacing: 4 padding: Inset{left: 12 right: 10} draw_bg.color: ui_bar}
+// A toolbar that starts at the window's leading edge, with no sidebar beside it.
+let UiWindowToolbar = UiToolbar{padding: Inset{left: if ui_unified { 84 } else { 12 } right: 10}}
+let UiBarTitle = Label{clip_y: false padding: 0 text: "" max_lines: 1 draw_text +: {color: ui_ink text_style: theme.font_bold{font_size: 11.25}}}
+let UiBarSub = Label{clip_y: false padding: 0 text: "" max_lines: 1 draw_text +: {color: ui_muted text_style: theme.font_regular{font_size: 8.25}}}
+let UiSidebar = SolidView{width: 208 height: Fill flow: Down padding: Inset{left: 8 right: 8 top: if ui_unified { 52 } else { 8 } bottom: 8} spacing: 1 draw_bg.color: ui_sidebar}
+let UiSideHead = Label{padding: Inset{left: 8 top: 12 bottom: 4} text: "" draw_text +: {color: ui_muted text_style: theme.font_bold{font_size: 8.25}}}
+let UiSideRow = ButtonFlat{width: Fill height: 28 margin: 0 padding: Inset{left: 8 right: 8} spacing: 7 align: Align{x: 0.0 y: 0.5}
+    icon_walk: Walk{width: 16 height: 16} label_walk: Walk{width: Fill height: Fit}
+    draw_bg +: {border_radius: 3.0 border_size: 0.0 color: #x00000000 color_hover: #x00000000 color_down: ui_selected color_focus: #x00000000}
+    draw_text +: {color: ui_ink color_hover: ui_ink color_down: ui_ink color_focus: ui_ink text_style: theme.font_regular{font_size: 9.75}}
+    draw_icon +: {color: ui_link}
+}
+let UiSideRowOn = UiSideRow{draw_bg +: {color: ui_selected color_hover: ui_selected color_focus: ui_selected}}
+let UiSeg = ButtonFlat{height: 24 margin: 0 padding: Inset{left: 12 right: 12}
+    draw_bg +: {border_radius: 2.5 border_size: 0.0 color: #x00000000 color_hover: ui_hover color_down: ui_selected color_focus: #x00000000}
+    draw_text +: {color: ui_ink color_hover: ui_ink color_down: ui_ink color_focus: ui_ink text_style: theme.font_regular{font_size: 9.75}}
+}
+let UiSegOn = UiSeg{draw_bg +: {color: ui_button color_hover: ui_button color_focus: ui_button border_size: 1.0 border_color: ui_border}}
+let UiSegments = RoundedView{width: Fit height: 28 flow: Right align: Align{y: 0.5} spacing: 2 padding: 2 show_bg: true draw_bg +: {color: ui_selected border_radius: 3.5}}
+let UiSearch = UiField{padding: Inset{left: 26 right: 8 top: 6 bottom: 6}}
+let UiGroup = RoundedView{width: Fill height: Fit flow: Down show_bg: true draw_bg +: {color: ui_surface border_radius: 5.0 border_size: 1.0 border_color: ui_border}}
+let UiFormRow = View{width: Fill height: Fit flow: Right align: Align{y: 0.5} spacing: 12 padding: Inset{left: 14 right: 14 top: 8 bottom: 8}}
+let UiFormLabel = Label{clip_y: false padding: 0 width: Fill text: "" draw_text +: {color: ui_ink text_style: theme.font_regular{font_size: 9.75}}}
+let UiListRow = View{width: Fill height: Fit flow: Right align: Align{y: 0.5} spacing: 10 padding: Inset{left: 14 right: 14 top: 8 bottom: 8}}
+// A two-line row of a list: a line in the body size, a line under it in the small.
+let UiRowTitle = Label{clip_y: false padding: 0 width: Fill text: "" max_lines: 1 text_overflow: Ellipsis draw_text +: {color: ui_ink text_style: theme.font_regular{font_size: 9.75}}}
+let UiRowNote = Label{clip_y: false padding: 0 width: Fill text: "" max_lines: 1 text_overflow: Ellipsis draw_text +: {color: ui_muted text_style: theme.font_regular{font_size: 8.25}}}
+// A form: the label right-aligned in a 110-point column to the left of its control.
+let UiFormKey = Label{clip_y: false padding: 0 width: 110 text: "" align: Align{x: 1.0} draw_text +: {color: ui_ink text_style: theme.font_regular{font_size: 9.75}}}
+let UiFormLine = View{width: Fill height: Fit flow: Right align: Align{y: 0.5} spacing: 8}
+// A pop-up button: the choice, and the up-down mark at its trailing edge (an
+// Overlay of this over UiPopupMark).
+let UiPopup = UiButton{padding: Inset{left: 10 right: 28} align: Align{x: 0.0 y: 0.5}}
+let UiPopupMark = View{width: Fit height: Fit padding: Inset{right: 8} new_batch: true
+    Svg{width: 13 height: 13 animating: false draw_svg +: {svg: ui_icon("updown") color: ui_muted}}}
+// A small count or state beside a name.
+let UiBadge = RoundedView{width: Fit height: Fit padding: Inset{left: 6 right: 6 top: 2 bottom: 2} new_batch: true show_bg: true draw_bg +: {color: mix(ui_surface, ui_ink, 0.1) border_radius: 2.5}}
+let UiBadgeText = Label{clip_y: false padding: 0 text: "" draw_text +: {color: ui_ink text_style: theme.font_bold{font_size: 8.25}}}
+// A status bar along a window's bottom: small text on the bar's colour.
+let UiFootBar = SolidView{width: Fill height: 24 flow: Right align: Align{y: 0.5} spacing: 8 padding: Inset{left: 12 right: 12} draw_bg.color: ui_bar}
+// An empty list or an empty window: a glyph, a title, a line, and, under them, what
+// to do about it. Centred in what the empty state fills.
+let UiEmpty = View{width: Fill height: Fill flow: Down align: Align{x: 0.5 y: 0.5} spacing: 6 padding: 24
+    glyph := Svg{width: 36 height: 36 margin: Inset{bottom: 4} animating: false draw_svg +: {color: ui_muted}}
+    title := Label{clip_y: false padding: 0 text: "" draw_text +: {color: ui_ink text_style: theme.font_bold{font_size: 11.25}}}
+    note := Label{clip_y: false padding: 0 text: "" draw_text +: {color: ui_muted text_style: theme.font_regular{font_size: 9.75}}}
+}
+// A Mac's alert carries its app's icon, as the native apps' alerts do: 64 points
+// on top in the alert below. The shell draws it in its style's frame (`ReviewAppIcon`,
+// crates/shell/src/connected_review.rs; `app` is the bundle's id, "os.writer"); a host
+// without the shell has none, and the alert keeps its words alone.
+let UiAlertIcon = try { mod.widgets.ReviewAppIcon } catch { nil }
+let ui_alert_icon = ui_mac && UiAlertIcon != nil
+// A Mac's alert as macOS has drawn it since 11 (Files' Empty Trash): 260 points
+// wide, the app's 64-point icon on top, the title and its words centred under it,
+// then the buttons. Two sit side by side, each as wide as the other, the default
+// on the right (UiAlertRow, each button `width: Fill`); three or more stand one
+// over another, the default on top (UiAlertStack). A host with no app icon shows
+// the words alone. Off a Mac an app keeps its own sheet.
+let UiAlertPanel = RoundedShadowView{width: 260 height: Fit flow: Down align: Align{x: 0.5} padding: Inset{left: 16 right: 16 top: 20 bottom: 16} new_batch: true cursor: MouseCursor.Default
+    draw_bg +: {color: ui_surface border_size: 1.0 border_color: ui_border border_radius: 10.0 shadow_color: #x00000040 shadow_radius: 18.0 shadow_offset: vec2(0.0, 4.0)}}
+// A Label's margin counts twice: 10 and 6 points between icon, title and words.
+let UiAlertTitle = Label{clip_y: false width: Fill padding: 0 margin: Inset{top: 5} align: Align{x: 0.5} flow: Flow.Right{wrap: true} text: "" draw_text +: {color: ui_ink text_style: theme.font_bold{font_size: 9.75 line_spacing: 1.3}}}
+let UiAlertNote = Label{clip_y: false width: Fill padding: 0 margin: Inset{top: 3} align: Align{x: 0.5} flow: Flow.Right{wrap: true} text: "" draw_text +: {color: ui_ink text_style: theme.font_regular{font_size: 8.25 line_spacing: 1.3}}}
+let UiAlertRow = View{width: Fill height: Fit flow: Right spacing: 8 margin: Inset{top: 16}}
+let UiAlertStack = View{width: Fill height: Fit flow: Down spacing: 8 margin: Inset{top: 16}}
+// END shared app interface
+// System Settings: what the shell lets a person choose, in a window. Everything
+// goes through the `settings` host service (crates/shell/src/app_settings_link.rs),
+// which answers this app alone. What it would take to turn command execution on is
+// typed on OctoSense's own sheet, never here.
+let PANES = [
+    {id: "general" title: "General" icon: "gear" key: "cmd+1" words: "version software update app hub store install"}
+    {id: "appearance" title: "Appearance" icon: "sun" key: "cmd+2" words: "light dark auto mode desktop style theme picture wallpaper colors colours"}
+    {id: "assistant" title: "Assistant" icon: "sparkles" key: "cmd+3" words: "ai providers models ask octosense approvals commands terminal"}
+    {id: "keyboard" title: "Keyboard" icon: "key" key: "cmd+4" words: "shortcuts keys"}
+]
+// The chosen pane: on a Mac the accent with white words, as System Settings shows it in
+// its window; the other styles keep the sidebar's gray.
+let pane_on = if ui_mac { ui_accent_row } else { ui_selected }
+let pane_on_ink = if ui_mac { #xffffff } else { ui_ink }
+let PaneRowOn = UiSideRow{draw_bg +: {color: pane_on color_hover: pane_on color_down: pane_on color_focus: pane_on}
+    draw_text +: {color: pane_on_ink color_hover: pane_on_ink color_down: pane_on_ink color_focus: pane_on_ink}}
+// Each pane's tile colour, as System Settings colours its panes.
+fn pane_tint(id){
+    if id == "appearance" {
+        if ui_light { return #x1c1c1e }
+        return #x48484a
+    }
+    if id == "assistant" { return #x8a5cf5 }
+    if id == "keyboard" { return #x8e8e93 }
+    #x8e8e93
+}
+let LOOKS = [{id: "auto" title: "Auto" night: 0.0 split: 1.0} {id: "light" title: "Light" night: 0.0 split: 0.0} {id: "dark" title: "Dark" night: 1.0 split: 0.0}]
+let st = nil            // what `settings.state` last said
+let drawn = ""          // what the panes show, to draw them again only when it changes
+let failed = false      // the service would not answer
+let pane = "general"
+let narrow = false      // too narrow for a sidebar: the toolbar's pop-up chooses the pane
+let shown_note = ""
+let find_text = ""      // what the sidebar's search field holds
+let back_panes = []     // where Back goes, the nearest last
+let forward_panes = []  // where Forward goes, the nearest last
+
+fn pane_title(){
+    for p in PANES { if p.id == pane { return p.title } }
+    ""
+}
+fn sync_bar(){
+    ui.bar_title.set_text(pane_title())
+    ui.pane_button.set_text(pane_title())
+}
+fn show(id){
+    if id == pane { return }
+    back_panes.push(pane)
+    forward_panes.clear()
+    enter(id)
+}
+fn enter(id){
+    pane = id
+    say("")
+    remember()
+    sync_bar()
+    sync_steps()
+    ui.side_rows.render()
+    ui.body.render()
+    ui.scroller.set_scroll_y(0)
+}
+fn remember(){
+    mod.settings_view = {pane: pane find: find_text back: back_panes forward: forward_panes}
+}
+fn step_back(){
+    if back_panes.len() == 0 { return }
+    let to = back_panes[back_panes.len() - 1]
+    back_panes.pop()
+    forward_panes.push(pane)
+    enter(to)
+}
+fn step_forward(){
+    if forward_panes.len() == 0 { return }
+    let to = forward_panes[forward_panes.len() - 1]
+    forward_panes.pop()
+    back_panes.push(pane)
+    enter(to)
+}
+fn sync_steps(){
+    ui.back_on.set_visible(back_panes.len() > 0)
+    ui.back_off.set_visible(back_panes.len() == 0)
+    ui.forward_on.set_visible(forward_panes.len() > 0)
+    ui.forward_off.set_visible(forward_panes.len() == 0)
+}
+// Search looks through the panes' names and what's on them, as the sidebar's rows.
+fn pane_found(p){
+    let wanted = find_text.replace(regex("[^A-Za-z0-9 ]", "g"), "").trim()
+    wanted == "" || regex(wanted, "i").test(p.title + " " + p.words)
+}
+fn any_found(){
+    for p in PANES { if pane_found(p) { return true } }
+    false
+}
+fn set_find(text){
+    find_text = text
+    ui.find_clear.set_visible(text != "")
+    remember()
+    ui.side_rows.render()
+    ui.side_none.set_visible(!any_found())
+}
+fn clear_find(){
+    ui.find.set_text("")
+    set_find("")
+}
+fn take_first_found(){
+    for p in PANES {
+        if pane_found(p) {
+            show(p.id)
+            return
+        }
+    }
+}
+// Something the shell refused: there is no more to it than that it did not happen.
+fn say(text){
+    shown_note = text
+    ui.notice.set_text(text)
+    ui.notice.set_visible(text != "")
+}
+fn fingerprint(s){
+    let on = if s.commands.on { "on" } else { "off" }
+    let can = if s.commands.can { "can" } else { "cannot" }
+    s.style + "|" + s.look + "|" + s.theme + "|" + s.picture + "|" + on + "|" + can + "|" + s.commands.applied + "|" + s.keys.len()
+}
+fn load(){
+    host.request("settings.state", {}, fn(r){
+        if !r.is_ok {
+            if st == nil && !failed {
+                failed = true
+                ui.body.render()
+            }
+            return
+        }
+        let was_failed = failed
+        failed = false
+        let n = 0
+        for k in r.data.keys {
+            k.n = n
+            n = n + 1
+        }
+        let first = st == nil
+        st = r.data
+        if st.pane != "" { show(st.pane) }
+        if first {
+            sync_bar()
+            ui.side_rows.render()
+        }
+        let now = fingerprint(st)
+        if now != drawn || was_failed {
+            drawn = now
+            ui.body.render()
+        }
+    })
+}
+fn change(key, value){
+    say("")
+    host.request("settings.set", {key: key value: value}, fn(r){
+        if !r.is_ok { say("That setting didn’t change. Try again.") }
+        load()
+    })
+}
+fn open_place(place){
+    say("")
+    host.request("settings.open", {pane: place}, fn(r){
+        if !r.is_ok { say("That didn’t open. Try again.") }
+    })
+}
+fn set_commands(on){
+    say("")
+    // Turning on takes the sheet's yes: until then the switch says what's true.
+    if on {
+        drawn = ""
+        load()
+    }
+    host.request("settings.commands", {on: on}, fn(r){
+        if !r.is_ok { say("That setting didn’t change. Try again.") }
+        // A switch the sheet was cancelled on goes back.
+        drawn = ""
+        load()
+    })
+}
+fn restart_assistant(){
+    say("")
+    host.request("settings.restart_assistant", {}, fn(r){
+        if !r.is_ok { say("The assistant didn’t restart. Try again.") }
+        load()
+    })
+}
+fn style_label(){
+    for s in st.styles { if s.id == st.style { return s.label } }
+    st.style
+}
+fn theme_label(){
+    for t in st.themes { if t.id == st.theme { return t.label } }
+    st.theme
+}
+fn open_style_menu(){
+    let titles = []
+    for s in st.styles { titles.push(s.label) }
+    ui.style_pick.open_menu(titles, style_label())
+}
+fn style_chosen(title){
+    for s in st.styles { if s.label == title { change("style", s.id) } }
+}
+fn picture_label(){
+    for p in st.pictures { if p.id == st.picture { return p.label } }
+    st.picture
+}
+fn picture_note(){
+    if st.picture == "abyssal-currents" { return "Changes with the appearance" }
+    if st.picture == "tokyo-night" { return "The same picture in Light and Dark" }
+    "One color across the desktop"
+}
+fn open_picture_menu(){
+    let titles = []
+    for p in st.pictures { titles.push(p.label) }
+    ui.picture_pick.open_menu(titles, picture_label())
+}
+fn picture_chosen(title){
+    for p in st.pictures { if p.label == title { change("picture", p.id) } }
+}
+fn open_theme_menu(){
+    let titles = []
+    for t in st.themes { titles.push(t.label) }
+    ui.theme_pick.open_menu(titles, theme_label())
+}
+fn theme_chosen(title){
+    for t in st.themes { if t.label == title { change("theme", t.id) } }
+}
+fn open_pane_menu(){
+    let titles = []
+    for p in PANES { titles.push(p.title) }
+    ui.pane_pick.open_menu(titles, pane_title())
+}
+fn pane_chosen(title){
+    for p in PANES { if p.title == title { show(p.id) } }
+}
+fn has_look(id){
+    for look in st.looks { if look == id { return true } }
+    false
+}
+fn apply_width(width){
+    let now = width < 560
+    if now == narrow { return }
+    narrow = now
+    ui.side.set_visible(!narrow)
+    ui.side_line.set_visible(!narrow)
+    ui.bar_lead.set_visible(narrow && ui_unified)
+    ui.bar_title.set_visible(!narrow)
+    ui.bar_pick.set_visible(narrow)
+}
+fn on_app_resize(width, height){
+    if width > 0 { apply_width(width) }
+}
+fn app_menus(){
+    let rows = [
+        {menu: "Edit" title: "Find" key: "cmd+F" command: "find" enabled: !narrow}
+        {menu: "View" title: "Back" key: "cmd+[" command: "back" enabled: back_panes.len() > 0}
+        {menu: "View" title: "Forward" key: "cmd+]" command: "forward" enabled: forward_panes.len() > 0}
+    ]
+    for p in PANES {
+        rows.push({menu: "View" title: p.title key: p.key command: "pane:" + p.id checked: p.id == pane})
+    }
+    rows
+}
+fn on_menu_command(command){
+    if command == "find" { ui.find.focus() }
+    if command == "back" { step_back() }
+    if command == "forward" { step_forward() }
+    for p in PANES {
+        if command == "pane:" + p.id { show(p.id) }
+    }
+}
+
+// A row's name, and a line under it that wraps.
+let SetWords = View{width: Fill height: Fit flow: Down spacing: 2}
+let SetNote = Label{clip_y: false padding: 0 width: Fill height: Fit flow: Flow.Right{wrap: true} text: "" draw_text +: {color: ui_muted text_style: theme.font_regular{font_size: 8.25 line_spacing: 1.3}}}
+let SetHead = Label{clip_y: false padding: Inset{left: 2 top: 10 bottom: 2} text: "" draw_text +: {color: ui_ink text_style: theme.font_bold{font_size: 9.75}}}
+let SetKeys = Label{clip_y: false padding: 0 text: "" draw_text +: {color: ui_muted text_style: theme.font_regular{font_size: 9.75}}}
+// The Mac's switch: a white knob that slides in a track.
+let SetSwitch = Toggle{text: "" padding: 0 margin: 0 width: 28 height: 18
+    draw_bg +: {size: 16.0 border_size: 0.0 color: mix(ui_page, ui_ink, 0.22) color_hover: mix(ui_page, ui_ink, 0.22) color_down: mix(ui_page, ui_ink, 0.3) color_focus: mix(ui_page, ui_ink, 0.22) color_active: ui_primary
+        mark_color: #xffffff mark_color_hover: #xffffff mark_color_active: #xffffff mark_color_active_hover: #xffffff
+        pixel: fn(){
+            let sdf = Sdf2d.viewport(self.pos * self.rect_size)
+            let h = self.size
+            let w = h * 1.625
+            let top = (self.rect_size.y - h) * 0.5
+            sdf.box(0.0, top, w, h, h * 0.25)
+            sdf.fill(self.color.mix(self.color_active, self.active))
+            sdf.circle(h * 0.5 + (w - h) * self.active, top + h * 0.5, h * 0.5 - 1.5)
+            sdf.fill(self.mark_color)
+            return sdf.result
+        }
+    }
+}
+
+// A little window on a little desktop: what each appearance looks like. Auto is half of each.
+let LookPicture = View{width: 72 height: 48 show_bg: true
+    draw_bg +: {
+        day: uniform(#xb7d2ef)
+        dusk: uniform(#x1d2a44)
+        page_day: uniform(#xffffff)
+        page_night: uniform(#x2c2c2e)
+        bar_day: uniform(#xe6e6e8)
+        bar_night: uniform(#x3c3c3e)
+        edge: uniform(ui_border)
+        ring: uniform(ui_primary)
+        on: instance(0.0)
+        night: instance(0.0)
+        split: instance(0.0)
+        pixel: fn(){
+            let sdf = Sdf2d.viewport(self.pos * self.rect_size)
+            let w = self.rect_size.x
+            let h = self.rect_size.y
+            let dark = max(self.night, self.split * clamp((self.pos.x - 0.5) * w, 0.0, 1.0))
+            sdf.box(2.0, 2.0, w - 4.0, h - 4.0, 4.0)
+            sdf.fill(mix(self.day, self.dusk, dark))
+            sdf.box(14.0, 12.0, w - 28.0, h - 20.0, 2.0)
+            sdf.fill(mix(self.page_day, self.page_night, dark))
+            sdf.box(14.0, 12.0, w - 28.0, 6.0, 2.0)
+            sdf.fill(mix(self.bar_day, self.bar_night, dark))
+            sdf.box(1.0, 1.0, w - 2.0, h - 2.0, 5.0)
+            sdf.stroke(mix(self.edge, self.ring, self.on), 1.0 + self.on)
+            return sdf.result
+        }
+    }
+}
+let LookWord = UiSeg{height: 20 padding: Inset{left: 6 right: 6} draw_bg +: {color_hover: #x00000000 color_down: #x00000000}}
+// A Mac's row that goes somewhere, as System Settings' rows with a chevron: the whole row
+// takes the click, and its chevron says it leads on. Software Update and App Hub open in
+// their own windows (the updater and App Hub are apps of their own), as before.
+fn set_place_row(title, note, place){
+    GestureView{width: Fill height: Fit cursor: MouseCursor.Default on_tap: |x, y| open_place(place)
+        UiFormRow{
+            SetWords{
+                UiRowTitle{text: title}
+                UiRowNote{text: note}
+            }
+            UiGlyph{width: 12 height: 12 draw_svg +: {svg: ui_icon("chevron-right") color: ui_muted}}
+        }
+    }
+}
+// General's lead, as System Settings' About: the icon, the name, the version.
+fn set_about(){
+    View{width: Fill height: Fit flow: Down align: Align{x: 0.5} spacing: 4 padding: Inset{top: 6 bottom: 10}
+        if ui_alert_icon { UiAlertIcon{app: "os.settings" width: 64 height: 64} }
+        else {
+            RoundedView{width: 64 height: 64 align: Align{x: 0.5 y: 0.5} show_bg: true draw_bg +: {color: pane_tint("general") border_radius: 7.0}
+                UiGlyph{width: 36 height: 36 draw_svg +: {svg: ui_icon("gear") color: #xffffff}}
+            }
+        }
+        Label{clip_y: false padding: 0 margin: Inset{top: 6} text: "OctoSense" draw_text +: {color: ui_ink text_style: theme.font_bold{font_size: 12.75}}}
+        Label{clip_y: false padding: 0 text: "Version " + st.version draw_text +: {color: ui_muted text_style: theme.font_regular{font_size: 8.25}}}
+    }
+}
+let SetToolOff = UiToolIcon{enabled: false draw_bg +: {color_disabled: #x00000000} draw_icon +: {color: mix(ui_bar, ui_ink, 0.32)}}
+
+let remembered = try { mod.settings_view } catch { nil }
+if remembered != nil {
+    pane = remembered.pane
+    find_text = remembered.find
+    back_panes = remembered.back
+    forward_panes = remembered.forward
+}
+start_timeout(0.05, || load())
+start_interval(2, || load())
+
+SolidView{width: Fill height: Fill flow: Right draw_bg.color: ui_page
+    side := UiSidebar{
+        View{width: Fill height: 28 flow: Overlay align: Align{y: 0.5} margin: Inset{bottom: 8}
+            find := UiSearch{empty_text: "Search" on_change: |text| set_find(text) on_escape: |text| clear_find() on_return: |text| take_first_found()}
+            UiGlyph{width: 14 height: 14 margin: Inset{left: 8} draw_svg +: {svg: ui_icon("search")}}
+            find_clear := View{visible: find_text != "" width: Fill height: Fill flow: Right align: Align{x: 1.0 y: 0.5}
+                UiPaneTool{width: 24 height: 24 icon_walk: Walk{width: 14 height: 14} draw_icon +: {svg: ui_icon("search-clear") color: ui_muted} on_click: || clear_find()}
+            }
+        }
+        side_rows := View{width: Fill height: Fit flow: Down spacing: 1 on_render: || {
+            for p in PANES {
+                if pane_found(p) {
+                    // As System Settings: each pane's glyph in white on its own coloured
+                    // tile, over the row's leading edge; the row takes the press.
+                    View{width: Fill height: 28 flow: Overlay
+                        if p.id == pane {
+                            PaneRowOn{text: p.title padding: Inset{left: 36 right: 8} spacing: 0 icon_walk: Walk{width: 0 height: 0} on_click: || show(p.id)}
+                        }
+                        else {
+                            UiSideRow{text: p.title padding: Inset{left: 36 right: 8} spacing: 0 icon_walk: Walk{width: 0 height: 0} on_click: || show(p.id)}
+                        }
+                        View{width: Fit height: Fill align: Align{y: 0.5} padding: Inset{left: 7}
+                            RoundedView{width: 20 height: 20 align: Align{x: 0.5 y: 0.5} show_bg: true draw_bg +: {color: pane_tint(p.id) border_radius: 2.5}
+                                UiGlyph{width: 13 height: 13 draw_svg +: {svg: ui_icon(p.icon) color: #xffffff}}
+                            }
+                        }
+                    }
+                }
+            }
+            // A render that emits nothing keeps the last one's rows, so a search
+            // that finds nothing still emits this, and the rows go.
+            if !any_found() {
+                View{width: Fill height: 0}
+            }
+        }}
+        // As System Settings: a search that finds nothing says so in the sidebar's middle.
+        side_none := View{visible: !any_found() width: Fill height: Fill align: Align{x: 0.5 y: 0.4}
+            Label{padding: 0 text: "No Results" draw_text +: {color: ui_muted text_style: theme.font_regular{font_size: 9.75}}}
+        }
+    }
+    side_line := UiVSep{}
+    View{width: Fill height: Fill flow: Down
+        UiToolbar{
+            bar_lead := View{visible: false width: 72 height: 1}
+            back_on := UiPaneTool{visible: back_panes.len() > 0 draw_icon +: {svg: ui_icon("chevron-left")} on_click: || step_back()}
+            back_off := SetToolOff{visible: back_panes.len() == 0 draw_icon +: {svg: ui_icon("chevron-left")}}
+            forward_on := UiPaneTool{visible: forward_panes.len() > 0 draw_icon +: {svg: ui_icon("chevron-right")} on_click: || step_forward()}
+            forward_off := SetToolOff{visible: forward_panes.len() == 0 draw_icon +: {svg: ui_icon("chevron-right")}}
+            bar_title := UiBarTitle{margin: Inset{left: 4} text: pane_title()}
+            bar_pick := View{visible: false width: Fit height: 28 flow: Overlay align: Align{x: 1.0 y: 0.5}
+                pane_pick := GestureView{width: Fit height: 28 menu_words_at: 10 on_menu: |title| pane_chosen(title)
+                    pane_button := UiPopup{reset_hover_on_click: true text: pane_title() on_click: || open_pane_menu()}
+                }
+                UiPopupMark{}
+            }
+        }
+        UiSep{}
+        scroller := ScrollYView{width: Fill height: Fill flow: Down align: Align{x: 0.5}
+            View{width: Fill max_width: 560 height: Fit flow: Down spacing: 8 padding: Inset{left: 20 right: 20 top: 14 bottom: 20}
+                notice := SetNote{visible: false draw_text +: {color: ui_danger}}
+                body := View{width: Fill height: Fit flow: Down spacing: 8 on_render: || {
+                    if st == nil && failed {
+                        UiEmpty{height: 300
+                            glyph := UiGlyph{width: 36 height: 36 draw_svg +: {svg: ui_icon("gear")}}
+                            title := Label{clip_y: false padding: 0 text: "Settings Couldn’t Open" draw_text +: {color: ui_ink text_style: theme.font_bold{font_size: 11.25}}}
+                            UiButton{margin: Inset{top: 8} text: "Try Again" on_click: || load()}
+                        }
+                    }
+                    if st != nil && pane == "general" && ui_unified {
+                        set_about()
+                        if st.has.update || st.has.hub {
+                            UiGroup{
+                                if st.has.update { set_place_row("Software Update", "Newer versions of OctoSense", "software-update") }
+                                if st.has.update && st.has.hub { UiSep{} }
+                                if st.has.hub { set_place_row("App Hub", "Find, install and remove apps", "app-hub") }
+                            }
+                        }
+                    }
+                    if st != nil && pane == "general" && !ui_unified {
+                        UiGroup{
+                            UiFormRow{
+                                SetWords{
+                                    UiRowTitle{text: "OctoSense"}
+                                    UiRowNote{text: "Version " + st.version}
+                                }
+                            }
+                            if st.has.update {
+                                UiSep{}
+                                UiFormRow{
+                                    SetWords{
+                                        UiRowTitle{text: "Software Update"}
+                                        UiRowNote{text: "Newer versions of OctoSense"}
+                                    }
+                                    UiButton{text: "Check…" on_click: || open_place("software-update")}
+                                }
+                            }
+                            if st.has.hub {
+                                UiSep{}
+                                UiFormRow{
+                                    SetWords{
+                                        UiRowTitle{text: "App Hub"}
+                                        UiRowNote{text: "Find, install and remove apps"}
+                                    }
+                                    UiButton{text: "Open…" on_click: || open_place("app-hub")}
+                                }
+                            }
+                        }
+                    }
+                    if st != nil && pane == "appearance" {
+                        UiGroup{
+                            if st.looks.len() > 0 {
+                                View{width: Fill height: Fit flow: Down spacing: 8 padding: Inset{left: 14 right: 14 top: 10 bottom: 10}
+                                    UiRowTitle{text: "Appearance"}
+                                    View{width: Fill height: Fit flow: Right spacing: 12
+                                        for look in LOOKS {
+                                            if has_look(look.id) {
+                                                View{width: Fit height: Fit flow: Down spacing: 3 align: Align{x: 0.5}
+                                                    GestureView{width: 72 height: 48 cursor: MouseCursor.Default on_tap: |x, y| change("appearance", look.id)
+                                                        LookPicture{draw_bg +: {on: if look.id == st.look { 1.0 } else { 0.0 } night: look.night split: look.split}}
+                                                    }
+                                                    LookWord{text: look.title on_click: || change("appearance", look.id)}
+                                                }
+                                            }
+                                        }
+                                    }
+                                    if has_look("auto") { UiRowNote{text: "Auto follows this computer’s setting"} }
+                                }
+                                UiSep{}
+                            }
+                            UiFormRow{
+                                SetWords{
+                                    UiRowTitle{text: "Desktop Style"}
+                                    UiRowNote{text: "The menu bar, the Dock and every window"}
+                                }
+                                View{width: Fit height: 28 flow: Overlay align: Align{x: 1.0 y: 0.5}
+                                    style_pick := GestureView{width: Fit height: 28 menu_words_at: 10 on_menu: |title| style_chosen(title)
+                                        UiPopup{reset_hover_on_click: true text: style_label() on_click: || open_style_menu()}
+                                    }
+                                    UiPopupMark{}
+                                }
+                            }
+                            // A Mac's desktop picture; Omarchy's come with its theme, below.
+                            if st.pictures.len() > 0 {
+                                UiSep{}
+                                UiFormRow{
+                                    SetWords{
+                                        UiRowTitle{text: "Desktop Picture"}
+                                        UiRowNote{text: picture_note()}
+                                    }
+                                    View{width: Fit height: 28 flow: Overlay align: Align{x: 1.0 y: 0.5}
+                                        picture_pick := GestureView{width: Fit height: 28 menu_words_at: 10 on_menu: |title| picture_chosen(title)
+                                            UiPopup{reset_hover_on_click: true text: picture_label() on_click: || open_picture_menu()}
+                                        }
+                                        UiPopupMark{}
+                                    }
+                                }
+                            }
+                            if st.themed {
+                                UiSep{}
+                                UiFormRow{
+                                    SetWords{
+                                        UiRowTitle{text: "Theme"}
+                                        UiRowNote{text: "This style’s colors and pictures"}
+                                    }
+                                    View{width: Fit height: 28 flow: Overlay align: Align{x: 1.0 y: 0.5}
+                                        theme_pick := GestureView{width: Fit height: 28 menu_words_at: 10 on_menu: |title| theme_chosen(title)
+                                            UiPopup{reset_hover_on_click: true text: theme_label() on_click: || open_theme_menu()}
+                                        }
+                                        UiPopupMark{}
+                                    }
+                                }
+                                UiSep{}
+                                UiFormRow{
+                                    SetWords{
+                                        UiRowTitle{text: "Desktop Picture"}
+                                        UiRowNote{text: "One of the theme’s pictures"}
+                                    }
+                                    UiButton{text: "Next Picture" on_click: || change("picture", "next")}
+                                }
+                            }
+                        }
+                    }
+                    if st != nil && pane == "assistant" && ui_unified {
+                        UiGroup{
+                            if st.has.ai {
+                                set_place_row("AI Providers", "The models the assistant answers with", "ai-providers")
+                                UiSep{}
+                            }
+                            set_place_row("Ask OctoSense", "Talk to the assistant (F8)", "assistant")
+                            UiSep{}
+                            set_place_row("Approvals", "Standing rules and recent automatic approvals", "approvals")
+                        }
+                    }
+                    if st != nil && pane == "assistant" && !ui_unified {
+                        UiGroup{
+                            if st.has.ai {
+                                UiFormRow{
+                                    SetWords{
+                                        UiRowTitle{text: "AI Providers"}
+                                        UiRowNote{text: "The models the assistant answers with"}
+                                    }
+                                    UiButton{text: "Open…" on_click: || open_place("ai-providers")}
+                                }
+                                UiSep{}
+                            }
+                            UiFormRow{
+                                SetWords{
+                                    UiRowTitle{text: "Ask OctoSense"}
+                                    UiRowNote{text: "Talk to the assistant (F8)"}
+                                }
+                                UiButton{text: "Open…" on_click: || open_place("assistant")}
+                            }
+                            UiSep{}
+                            UiFormRow{
+                                SetWords{
+                                    UiRowTitle{text: "Approvals"}
+                                    UiRowNote{text: "Standing rules and recent automatic approvals"}
+                                }
+                                UiButton{text: "Open…" on_click: || open_place("approvals")}
+                            }
+                        }
+                    }
+                    if st != nil && pane == "assistant" {
+                        SetHead{text: "Commands"}
+                        UiGroup{
+                            UiFormRow{
+                                SetWords{
+                                    UiRowTitle{text: "Let the Assistant Run Commands"}
+                                    SetNote{text: st.commands.note}
+                                }
+                                if st.commands.can || st.commands.on {
+                                    commands_switch := SetSwitch{active: st.commands.on on_click: |active| set_commands(active)}
+                                }
+                            }
+                            if st.commands.applied == "restart" {
+                                UiSep{}
+                                UiFormRow{
+                                    SetWords{
+                                        UiRowTitle{text: "Restart the Assistant to Apply"}
+                                        UiRowNote{text: "It started with the other setting"}
+                                    }
+                                    UiButton{text: "Restart" on_click: || restart_assistant()}
+                                }
+                            }
+                        }
+                    }
+                    if st != nil && pane == "keyboard" {
+                        // What the list is, and that it is only a list: the shell's keys are fixed.
+                        if ui_unified {
+                            View{width: Fill height: Fit flow: Down spacing: 3 padding: Inset{left: 2 bottom: 2}
+                                Label{clip_y: false padding: 0 text: "Keyboard Shortcuts" draw_text +: {color: ui_ink text_style: theme.font_bold{font_size: 9.75}}}
+                                SetNote{text: "Shortcuts for windows, apps and desktops. They work in every app and can’t be changed."}
+                            }
+                        }
+                        UiGroup{
+                            for k in st.keys {
+                                UiFormRow{
+                                    UiRowTitle{text: k.title}
+                                    SetKeys{text: k.keys}
+                                }
+                                if k.n < st.keys.len() - 1 { UiSep{} }
+                            }
+                        }
+                    }
+                }}
+            }
+        }
+    }
+}

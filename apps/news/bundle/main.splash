@@ -3,37 +3,178 @@
 // Bundles carry this prelude so they work in the contained standalone host too.
 // Resolve the current theme after a host restyle, not a retained prelude alias.
 let theme = mod.theme
+// A desktop shell's style sheet says `ui_pointer = true`: the app gets pointer
+// metrics and the Mac layouts (13-point text, 28-point controls, a sidebar and
+// a toolbar). Anything else, a phone or a bare host, keeps the touch metrics.
+let ui_desk = try { theme.ui_pointer == true } catch { false }
+// A Mac's window has no title bar over an app that says so to the shell
+// (crates/shell/src/clients.rs, unified_chrome): the app draws to the window's top
+// edge, its toolbar is 52 points tall, and the lights sit over the leading 84 points
+// of the toolbar, or over the top of a sidebar. Other desktops keep a title bar.
+let ui_unified = ui_desk && try { theme.ui_unified == true } catch { false }
+fn ui_by(touch, desk){ if ui_desk { desk } else { touch } }
 let ui_ink = theme.color_text
 let ui_page = theme.color_bg_app
 let ui_light = dot(ui_ink, #x36b61200) < 0.5
-let ui_surface = if ui_light { #xffffff } else { mix(ui_page, ui_ink, 0.06) }
-let ui_field = mix(ui_page, ui_ink, 0.075)
-let ui_hover = mix(ui_page, ui_ink, 0.12)
-let ui_border = mix(ui_page, ui_ink, 0.22)
-let ui_muted = mix(ui_ink, ui_page, 0.24)
-let ui_link = mix(ui_ink, #x356bce, 0.25)
-let ui_primary = #x285cd6
-let ui_success = mix(ui_ink, #x28a55b, 0.20)
-let ui_danger = mix(ui_ink, #xe13b53, 0.20)
-let UiButton = ButtonFlat{height: 44 margin: 0 padding: Inset{left: 14 right: 14}
-    draw_bg +: {border_radius: 12.0 border_size: 0.0 color: #x00000000 color_hover: ui_hover color_down: ui_field color_focus: ui_hover}
-    draw_text +: {color: ui_link color_hover: ui_link color_down: ui_link color_focus: ui_link text_style: theme.font_bold{font_size: 14}}
+let ui_surface = if ui_light { #xffffff } else { mix(ui_page, ui_ink, ui_by(0.06, 0.07)) }
+let ui_field = if ui_desk && ui_light { #xffffff } else { mix(ui_page, ui_ink, ui_by(0.075, 0.07)) }
+let ui_hover = mix(ui_page, ui_ink, ui_by(0.12, 0.07))
+let ui_border = mix(ui_page, ui_ink, ui_by(0.22, 0.14))
+let ui_muted = mix(ui_ink, ui_page, ui_by(0.24, 0.26))
+// The Mac's system colours where the page is a Mac's, near white or near black;
+// a retro style's mid-gray page keeps text that is mostly ink.
+let ui_lum = dot(ui_page, #x36b61200)
+let ui_mac = ui_desk && (ui_lum > 0.86 || ui_lum < 0.25)
+let ui_link = if ui_mac { if ui_light { #x0060c0 } else { #x6cb8ff } } else { mix(ui_ink, #x356bce, 0.25) }
+let ui_primary = ui_by(#x285cd6, #x0071e3)
+let ui_success = if ui_mac { if ui_light { #x1a7030 } else { #x30d158 } } else { mix(ui_ink, #x28a55b, 0.20) }
+let ui_danger = if ui_mac { if ui_light { #xc70012 } else { #xffa097 } } else { mix(ui_ink, #xe13b53, 0.20) }
+// The Mac's surfaces: a sidebar and a toolbar a shade off the page, a selection
+// in the sidebar's own gray, a push button's face.
+let ui_sidebar = mix(ui_page, ui_ink, 0.03)
+let ui_bar = if ui_light { #xededf0 } else { #x303033 }
+let ui_selected = mix(ui_page, ui_ink, 0.11)
+let ui_button = if ui_light { #xffffff } else { mix(ui_page, ui_ink, 0.16) }
+// What a list or a document sits on: white in the light; in the dark, darker than
+// the window around it, as a Mac's content is.
+let ui_content = if ui_mac { if ui_light { #xffffff } else { #x1e1e1e } } else { ui_surface }
+// A selected row: the accent when it is the row the person is on, white text on it.
+let ui_accent_row = if ui_light { #x0064d2 } else { #x0a60c8 }
+// A Mac dims the window behind a sheet, more in the dark; the shell's own sheets
+// and the native apps' dim as much.
+let ui_sheet_dim = if ui_light { #x00000024 } else { #x00000052 }
+// A touch size in the type scale; on the desktop, the Mac's size for that role
+// (Makepad's font_size is three quarters of a point).
+fn ui_fs(n){
+    if !ui_desk { return n }
+    if n <= 12 { return 8.25 }
+    if n <= 13 { return 9 }
+    if n <= 16 { return 9.75 }
+    if n <= 18 { return 11.25 }
+    if n <= 21 { return 12.75 }
+    if n <= 24 { return 13.5 }
+    if n <= 28 { return 16.5 }
+    19.5
+}
+let ui_icons = {}
+fn ui_icon(name){
+    let handle = ui_icons[name]
+    if handle == nil {
+        handle = http_resource("{{assets}}/icons/ui-" + name + ".svg")
+        ui_icons[name] = handle
+    }
+    handle
+}
+let UiButton = ButtonFlat{height: ui_by(44, 28) margin: 0 padding: Inset{left: ui_by(14, 12) right: ui_by(14, 12)} spacing: 6
+    icon_walk: Walk{width: 15 height: 15}
+    draw_bg +: {border_radius: ui_by(12.0, 3.0) border_size: ui_by(0.0, 1.0) border_color: ui_border
+        color: ui_by(#x00000000, ui_button) color_hover: ui_by(ui_hover, mix(ui_button, ui_ink, 0.04)) color_down: ui_by(ui_field, mix(ui_button, ui_ink, 0.1)) color_focus: ui_by(ui_hover, ui_button)}
+    draw_text +: {color: ui_by(ui_link, ui_ink) color_hover: ui_by(ui_link, ui_ink) color_down: ui_by(ui_link, ui_ink) color_focus: ui_by(ui_link, ui_ink)
+        text_style: ui_by(theme.font_bold{font_size: 14}, theme.font_regular{font_size: 9.75})}
+    draw_icon +: {color: ui_ink}
 }
 let UiPrimary = UiButton{
-    draw_bg +: {color: ui_primary color_hover: #x3468df color_down: #x204cb8 color_focus: #x204cb8}
+    draw_bg +: {border_size: 0.0 color: ui_primary color_hover: ui_by(#x3468df, #x006edb) color_down: ui_by(#x204cb8, #x0060c0) color_focus: ui_by(#x204cb8, ui_primary)}
     draw_text +: {color: #xffffff color_hover: #xffffff color_down: #xffffff color_focus: #xffffff}
+    draw_icon +: {color: #xffffff}
 }
-let UiPill = UiButton{draw_bg +: {color: ui_surface border_radius: 22.0} draw_text +: {color: ui_ink color_hover: ui_ink color_down: ui_ink color_focus: ui_ink}}
-let UiField = TextInput{width: Fill height: 48 margin: 0 padding: Inset{left: 14 right: 14 top: 12 bottom: 12}
+let UiPill = UiButton{height: ui_by(44, 24) padding: Inset{left: ui_by(14, 10) right: ui_by(14, 10)}
+    draw_bg +: {color: ui_by(ui_surface, #x00000000) border_size: 0.0 border_radius: ui_by(22.0, 3.0)}
+    draw_text +: {color: ui_ink color_hover: ui_ink color_down: ui_ink color_focus: ui_ink}}
+let UiField = TextInput{width: Fill height: ui_by(48, 28) margin: 0 padding: Inset{left: ui_by(14, 8) right: ui_by(14, 8) top: ui_by(12, 6) bottom: ui_by(12, 6)}
     draw_bg +: {color: ui_field color_hover: ui_field color_focus: ui_field color_empty: ui_field
-        border_color: ui_border border_color_hover: ui_link border_color_focus: ui_link border_color_empty: ui_border border_radius: 12.0}
-    draw_text +: {color: ui_ink color_hover: ui_ink color_focus: ui_ink color_empty: ui_muted color_empty_hover: ui_muted color_empty_focus: ui_muted text_style: theme.font_regular{font_size: 15}}
+        border_color: ui_border border_color_hover: ui_by(ui_link, ui_border) border_color_focus: ui_link border_color_empty: ui_border border_radius: ui_by(12.0, 3.0)}
+    draw_text +: {color: ui_ink color_hover: ui_ink color_focus: ui_ink color_empty: ui_muted color_empty_hover: ui_muted color_empty_focus: ui_muted text_style: theme.font_regular{font_size: ui_by(15, 9.75)}}
     draw_selection.color: #x557dcc55
 }
-let UiCard = RoundedView{width: Fill height: Fit flow: Down spacing: 12 padding: 20
-    show_bg: true draw_bg +: {color: ui_surface border_radius: 16.0}}
-let UiCaption = Label{padding: 0 flow: Flow.Right{wrap: true} width: Fill draw_text +: {color: ui_muted text_style: theme.font_regular{font_size: 13 line_spacing: 1.4}}}
-let UiTitle = Label{padding: 0 flow: Flow.Right{wrap: true} width: Fill draw_text +: {color: ui_ink text_style: theme.font_bold{font_size: 28 line_spacing: 1.2}}}
+let UiCard = RoundedView{width: Fill height: Fit flow: Down spacing: ui_by(12, 8) padding: ui_by(20, 14)
+    show_bg: true draw_bg +: {color: ui_surface border_radius: ui_by(16.0, 5.0) border_size: ui_by(0.0, 1.0) border_color: ui_by(#x00000000, ui_border)}}
+let UiCaption = Label{padding: 0 flow: Flow.Right{wrap: true} width: Fill draw_text +: {color: ui_muted text_style: theme.font_regular{font_size: ui_by(13, 8.25) line_spacing: 1.4}}}
+let UiTitle = Label{padding: 0 flow: Flow.Right{wrap: true} width: Fill draw_text +: {color: ui_ink text_style: theme.font_bold{font_size: ui_by(28, 16.5) line_spacing: 1.2}}}
+// The Mac's parts. They are drawn on a desktop only; a phone keeps its pages.
+// A shader's border_radius is half the corner it draws: 3 is a 6-point corner.
+let UiSep = SolidView{width: Fill height: 1 draw_bg.color: ui_border}
+let UiVSep = SolidView{width: 1 height: Fill draw_bg.color: ui_border}
+let UiGlyph = Svg{width: 16 height: 16 animating: false draw_svg +: {color: ui_muted}}
+let UiTool = ButtonFlat{height: 28 margin: 0 padding: Inset{left: 8 right: 8} spacing: 5 icon_walk: Walk{width: 16 height: 16}
+    draw_bg +: {border_radius: 3.0 border_size: 0.0 color: #x00000000 color_hover: ui_hover color_down: ui_selected color_focus: #x00000000}
+    draw_text +: {color: ui_ink color_hover: ui_ink color_down: ui_ink color_focus: ui_ink text_style: theme.font_regular{font_size: 9.75}}
+    draw_icon +: {color: ui_ink}
+}
+let UiToolIcon = UiTool{width: 30 padding: 0 spacing: 0 text: ""}
+// A tool whose click hides it or the pane it sits on: it comes back unwashed.
+let UiPaneTool = UiToolIcon{reset_hover_on_click: true}
+// The clear button inside a search field, shown while it holds text.
+let UiSearchClear = UiPaneTool{visible: false width: 24 height: 24 icon_walk: Walk{width: 14 height: 14}
+    draw_bg +: {color_hover: #x00000000 color_down: #x00000000}
+    draw_icon +: {svg: ui_icon("search-clear") color: ui_muted}}
+let UiToolbar = SolidView{width: Fill height: if ui_unified { 52 } else { 40 } flow: Right align: Align{y: 0.5} spacing: 4 padding: Inset{left: 12 right: 10} draw_bg.color: ui_bar}
+// A toolbar that starts at the window's leading edge, with no sidebar beside it.
+let UiWindowToolbar = UiToolbar{padding: Inset{left: if ui_unified { 84 } else { 12 } right: 10}}
+let UiBarTitle = Label{clip_y: false padding: 0 text: "" max_lines: 1 draw_text +: {color: ui_ink text_style: theme.font_bold{font_size: 11.25}}}
+let UiBarSub = Label{clip_y: false padding: 0 text: "" max_lines: 1 draw_text +: {color: ui_muted text_style: theme.font_regular{font_size: 8.25}}}
+let UiSidebar = SolidView{width: 208 height: Fill flow: Down padding: Inset{left: 8 right: 8 top: if ui_unified { 52 } else { 8 } bottom: 8} spacing: 1 draw_bg.color: ui_sidebar}
+let UiSideHead = Label{padding: Inset{left: 8 top: 12 bottom: 4} text: "" draw_text +: {color: ui_muted text_style: theme.font_bold{font_size: 8.25}}}
+let UiSideRow = ButtonFlat{width: Fill height: 28 margin: 0 padding: Inset{left: 8 right: 8} spacing: 7 align: Align{x: 0.0 y: 0.5}
+    icon_walk: Walk{width: 16 height: 16} label_walk: Walk{width: Fill height: Fit}
+    draw_bg +: {border_radius: 3.0 border_size: 0.0 color: #x00000000 color_hover: #x00000000 color_down: ui_selected color_focus: #x00000000}
+    draw_text +: {color: ui_ink color_hover: ui_ink color_down: ui_ink color_focus: ui_ink text_style: theme.font_regular{font_size: 9.75}}
+    draw_icon +: {color: ui_link}
+}
+let UiSideRowOn = UiSideRow{draw_bg +: {color: ui_selected color_hover: ui_selected color_focus: ui_selected}}
+let UiSeg = ButtonFlat{height: 24 margin: 0 padding: Inset{left: 12 right: 12}
+    draw_bg +: {border_radius: 2.5 border_size: 0.0 color: #x00000000 color_hover: ui_hover color_down: ui_selected color_focus: #x00000000}
+    draw_text +: {color: ui_ink color_hover: ui_ink color_down: ui_ink color_focus: ui_ink text_style: theme.font_regular{font_size: 9.75}}
+}
+let UiSegOn = UiSeg{draw_bg +: {color: ui_button color_hover: ui_button color_focus: ui_button border_size: 1.0 border_color: ui_border}}
+let UiSegments = RoundedView{width: Fit height: 28 flow: Right align: Align{y: 0.5} spacing: 2 padding: 2 show_bg: true draw_bg +: {color: ui_selected border_radius: 3.5}}
+let UiSearch = UiField{padding: Inset{left: 26 right: 8 top: 6 bottom: 6}}
+let UiGroup = RoundedView{width: Fill height: Fit flow: Down show_bg: true draw_bg +: {color: ui_surface border_radius: 5.0 border_size: 1.0 border_color: ui_border}}
+let UiFormRow = View{width: Fill height: Fit flow: Right align: Align{y: 0.5} spacing: 12 padding: Inset{left: 14 right: 14 top: 8 bottom: 8}}
+let UiFormLabel = Label{clip_y: false padding: 0 width: Fill text: "" draw_text +: {color: ui_ink text_style: theme.font_regular{font_size: 9.75}}}
+let UiListRow = View{width: Fill height: Fit flow: Right align: Align{y: 0.5} spacing: 10 padding: Inset{left: 14 right: 14 top: 8 bottom: 8}}
+// A two-line row of a list: a line in the body size, a line under it in the small.
+let UiRowTitle = Label{clip_y: false padding: 0 width: Fill text: "" max_lines: 1 text_overflow: Ellipsis draw_text +: {color: ui_ink text_style: theme.font_regular{font_size: 9.75}}}
+let UiRowNote = Label{clip_y: false padding: 0 width: Fill text: "" max_lines: 1 text_overflow: Ellipsis draw_text +: {color: ui_muted text_style: theme.font_regular{font_size: 8.25}}}
+// A form: the label right-aligned in a 110-point column to the left of its control.
+let UiFormKey = Label{clip_y: false padding: 0 width: 110 text: "" align: Align{x: 1.0} draw_text +: {color: ui_ink text_style: theme.font_regular{font_size: 9.75}}}
+let UiFormLine = View{width: Fill height: Fit flow: Right align: Align{y: 0.5} spacing: 8}
+// A pop-up button: the choice, and the up-down mark at its trailing edge (an
+// Overlay of this over UiPopupMark).
+let UiPopup = UiButton{padding: Inset{left: 10 right: 28} align: Align{x: 0.0 y: 0.5}}
+let UiPopupMark = View{width: Fit height: Fit padding: Inset{right: 8} new_batch: true
+    Svg{width: 13 height: 13 animating: false draw_svg +: {svg: ui_icon("updown") color: ui_muted}}}
+// A small count or state beside a name.
+let UiBadge = RoundedView{width: Fit height: Fit padding: Inset{left: 6 right: 6 top: 2 bottom: 2} new_batch: true show_bg: true draw_bg +: {color: mix(ui_surface, ui_ink, 0.1) border_radius: 2.5}}
+let UiBadgeText = Label{clip_y: false padding: 0 text: "" draw_text +: {color: ui_ink text_style: theme.font_bold{font_size: 8.25}}}
+// A status bar along a window's bottom: small text on the bar's colour.
+let UiFootBar = SolidView{width: Fill height: 24 flow: Right align: Align{y: 0.5} spacing: 8 padding: Inset{left: 12 right: 12} draw_bg.color: ui_bar}
+// An empty list or an empty window: a glyph, a title, a line, and, under them, what
+// to do about it. Centred in what the empty state fills.
+let UiEmpty = View{width: Fill height: Fill flow: Down align: Align{x: 0.5 y: 0.5} spacing: 6 padding: 24
+    glyph := Svg{width: 36 height: 36 margin: Inset{bottom: 4} animating: false draw_svg +: {color: ui_muted}}
+    title := Label{clip_y: false padding: 0 text: "" draw_text +: {color: ui_ink text_style: theme.font_bold{font_size: 11.25}}}
+    note := Label{clip_y: false padding: 0 text: "" draw_text +: {color: ui_muted text_style: theme.font_regular{font_size: 9.75}}}
+}
+// A Mac's alert carries its app's icon, as the native apps' alerts do: 64 points
+// on top in the alert below. The shell draws it in its style's frame (`ReviewAppIcon`,
+// crates/shell/src/connected_review.rs; `app` is the bundle's id, "os.writer"); a host
+// without the shell has none, and the alert keeps its words alone.
+let UiAlertIcon = try { mod.widgets.ReviewAppIcon } catch { nil }
+let ui_alert_icon = ui_mac && UiAlertIcon != nil
+// A Mac's alert as macOS has drawn it since 11 (Files' Empty Trash): 260 points
+// wide, the app's 64-point icon on top, the title and its words centred under it,
+// then the buttons. Two sit side by side, each as wide as the other, the default
+// on the right (UiAlertRow, each button `width: Fill`); three or more stand one
+// over another, the default on top (UiAlertStack). A host with no app icon shows
+// the words alone. Off a Mac an app keeps its own sheet.
+let UiAlertPanel = RoundedShadowView{width: 260 height: Fit flow: Down align: Align{x: 0.5} padding: Inset{left: 16 right: 16 top: 20 bottom: 16} new_batch: true cursor: MouseCursor.Default
+    draw_bg +: {color: ui_surface border_size: 1.0 border_color: ui_border border_radius: 10.0 shadow_color: #x00000040 shadow_radius: 18.0 shadow_offset: vec2(0.0, 4.0)}}
+// A Label's margin counts twice: 10 and 6 points between icon, title and words.
+let UiAlertTitle = Label{clip_y: false width: Fill padding: 0 margin: Inset{top: 5} align: Align{x: 0.5} flow: Flow.Right{wrap: true} text: "" draw_text +: {color: ui_ink text_style: theme.font_bold{font_size: 9.75 line_spacing: 1.3}}}
+let UiAlertNote = Label{clip_y: false width: Fill padding: 0 margin: Inset{top: 3} align: Align{x: 0.5} flow: Flow.Right{wrap: true} text: "" draw_text +: {color: ui_ink text_style: theme.font_regular{font_size: 8.25 line_spacing: 1.3}}}
+let UiAlertRow = View{width: Fill height: Fit flow: Right spacing: 8 margin: Inset{top: 16}}
+let UiAlertStack = View{width: Fill height: Fit flow: Down spacing: 8 margin: Inset{top: 16}}
 // END shared app interface
 let sources = [
     {id: "hn" label: "Hacker News" kind: "hn" url: "https://hn.algolia.com/api/v1/search?tags=front_page&hitsPerPage=30"}
@@ -47,9 +188,25 @@ let tabs = [
     {id: "techmeme" label: "TechMeme"}
     {id: "google" label: "Google"}
 ]
+// The Mac's sidebar: the sections, then the sources. A phone keeps its tabs.
+let side_rows = [
+    {id: "today" label: "Today" icon: "sun"}
+    {id: "saved" label: "Saved" icon: "bookmark"}
+]
+let side_sources = [
+    {id: "hn" label: "Hacker News" icon: "bolt"}
+    {id: "techmeme" label: "Techmeme" icon: "newspaper"}
+    {id: "google" label: "Google News" icon: "globe"}
+]
 let rows_by = {hn: [] techmeme: [] google: []}
 let failed_by = {hn: false techmeme: false google: false}
+let remembered_cache_errors = try { mod.news_cache_errors } catch { nil }
+let cache_errors = if remembered_cache_errors == nil { {hn: false techmeme: false google: false} } else { remembered_cache_errors }
 let saved = []
+let remembered_save_error = try { mod.news_save_error } catch { nil }
+let save_error = if remembered_save_error == nil { "" } else { remembered_save_error }
+let remembered_read_error = try { mod.news_read_error } catch { nil }
+let read_error = if remembered_read_error == nil { "" } else { remembered_read_error }
 let tab = "today"
 let query = ""
 let busy = false
@@ -70,9 +227,33 @@ let service_fetching = false
 // on its own: after 15 s, then 30 s, 1 min … at most every 15 min.
 let retry_delay = 15
 let retry_armed = false
+// The touch reader can show either the story or its discussion. Retry the
+// page the person was actually viewing, not always the original story.
+let touch_url = ""
 let months = ["January" "February" "March" "April" "May" "June" "July" "August" "September" "October" "November" "December"]
 let days = ["Sunday" "Monday" "Tuesday" "Wednesday" "Thursday" "Friday" "Saturday"]
 let specials = ["\\" "." "*" "+" "?" "(" ")" "[" "]" "{" "}" "|" "^" "$"]
+// What the Mac's window adds: how wide it is, the sidebar, what has been read, and
+// the state of the page beside the list. A phone never touches these.
+let short_months = ["Jan" "Feb" "Mar" "Apr" "May" "Jun" "Jul" "Aug" "Sep" "Oct" "Nov" "Dec"]
+let desk_width = 0
+let desk_height = 0
+let desk_side = true
+let desk_over = false
+let desk_ready = false
+let desk_lists = 0
+let desk_settled = false
+let desk_read = {}
+let desk_read_links = []
+let desk_state = "none"
+let desk_ask = 0
+let desk_comments = false
+let desk_url = ""
+let desk_search_dim = false
+let desk_tools_tight = false
+let desk_pane_rows = false
+let desk_summaries = {}
+let desk_thumbs = {}
 
 // ADR 0004 §11: the app's data is its account folder (a system app acts for
 // the device), the folder its agent works in; what it can fetch again is
@@ -135,6 +316,27 @@ fn feed_rows(body, s){
     out
 }
 
+// A cache is optional: a failed disk write must not discard fresh headlines
+// or prevent the other sources from finishing their update.
+fn write_cache(id, rows){
+    let stored = try {
+        fs.write(cache_path("cache_" + id + ".json"), rows.to_json())
+        true
+    } catch { false }
+    cache_errors[id] = !stored
+    mod.news_cache_errors = cache_errors
+}
+fn cache_has_error(){
+    for s in sources {
+        let failed = try { cache_errors[s.id] } catch { nil }
+        if failed == true { return true }
+    }
+    false
+}
+fn sync_cache_notice(){
+    ui.cache_notice.set_visible(tab != "saved" && cache_has_error())
+}
+
 fn load_source(s){
     let res = fetch(s.url).await()
     if res == nil || res.status_code >= 400 || res.body == nil {
@@ -150,7 +352,7 @@ fn load_source(s){
     }
     rows_by[s.id] = rows
     failed_by[s.id] = false
-    fs.write(cache_path("cache_" + s.id + ".json"), rows.to_json())
+    write_cache(s.id, rows)
 }
 
 // The wait before the next retry after `delay`: twice as long, at most
@@ -164,6 +366,16 @@ fn next_retry_delay(delay){
 fn any_failed(){
     for s in sources { if failed_by[s.id] { return true } }
     false
+}
+
+// Today combines several sources. Distinguish a partial update from a run
+// where none could be refreshed, even if old cached stories are still visible.
+fn today_update_failure(){
+    let failures = 0
+    for s in sources { if failed_by[s.id] { failures = failures + 1 } }
+    if failures == 0 { return "" }
+    if failures == sources.len() { return "Couldn't update headlines" }
+    "Some sources couldn't update"
 }
 
 // After a run: a failed source is fetched again later, sooner at first.
@@ -200,7 +412,9 @@ fn refresh_with(due){
     }
     ui.list.render()
     busy = false
+    desk_settled = true
     updated = time_now()
+    sync_cache_notice()
     sync_status()
     ui.tile_list.render()
     schedule_retry()
@@ -233,7 +447,7 @@ fn list_service(){
                 for it in r.data.items { rows.push(service_row(it)) }
                 if rows.len() > 0 {
                     rows_by[s.id] = rows
-                    fs.write(cache_path("cache_" + s.id + ".json"), rows.to_json())
+                    write_cache(s.id, rows)
                 }
                 failed_by[s.id] = r.data.feed_error != nil
                 if r.data.updated > updated { updated = r.data.updated }
@@ -253,7 +467,10 @@ fn listed_service(){
         refresh()
         return
     }
+    desk_lists = desk_lists + 1
+    if desk_lists >= 2 { desk_settled = true }
     ui.list.render()
+    sync_cache_notice()
     sync_status()
     ui.tile_list.render()
     schedule_retry()
@@ -344,8 +561,14 @@ fn meta(r){
     let line = r.source
     let a = ago(r.published)
     if a != "" { line = line + "  ·  " + a }
-    if r.points != nil { line = line + "  ·  " + r.points + " points" }
-    if r.comments != nil { line = line + "  ·  " + r.comments + " comments" }
+    if r.points != nil {
+        let unit = if r.points == 1 { " point" } else { " points" }
+        line = line + "  ·  " + r.points + unit
+    }
+    if r.comments != nil {
+        let unit = if r.comments == 1 { " comment" } else { " comments" }
+        line = line + "  ·  " + r.comments + unit
+    }
     line
 }
 
@@ -355,26 +578,51 @@ fn date_line(){
 }
 
 fn sync_status(){
-    let text = ""
-    if busy || service_fetching { text = "Updating…" }
-    else if tab != "today" && tab != "saved" && failed_by[tab] && rows_by[tab].len() == 0 {
-        text = "Couldn't load this source. Tap Refresh to try again."
+    if ui_desk {
+        desk_sync_status()
+        return
     }
-    else if updated > 0 { text = "Updated " + ago(updated) + " ago" }
+    let text = ""
+    // Saved is local; a feed refresh says nothing about these stories.
+    if tab != "saved" {
+        if busy || service_fetching { text = "Updating…" }
+        // With no rows the empty state gives the recovery instruction itself.
+        else if tab == "today" && any_failed() {
+            if today_rows().len() > 0 || query != "" { text = today_update_failure() + ". Tap Refresh to try again." }
+        }
+        else if tab != "today" && failed_by[tab] {
+            if rows_by[tab].len() > 0 || query != "" { text = "Couldn't update this source. Tap Refresh to try again." }
+        }
+        else if updated > 0 { text = "Updated " + ago(updated) + " ago" }
+    }
     if text == "Updated now ago" { text = "Updated just now" }
     ui.status.set_text(text)
+    ui.status.set_visible(text != "")
+}
+
+fn tab_title(id){
+    for t in side_rows { if t.id == id { return t.label } }
+    for t in side_sources { if t.id == id { return t.label } }
+    "News"
 }
 
 fn pick(id){
     tab = id
+    sync_cache_notice()
+    if ui_desk {
+        desk_picked()
+        return
+    }
     ui.tabbar.render()
     ui.list.render()
     sync_status()
+    touch_remember()
 }
 
 fn set_query(text){
     query = ("" + text).trim()
     ui.list.render()
+    if ui_desk { desk_query_changed() } else { touch_remember() }
 }
 
 fn is_saved(link){
@@ -382,61 +630,652 @@ fn is_saved(link){
     false
 }
 
+fn sync_save_notice(){
+    let reader_active = reading != nil
+    if ui_desk && desk_steps_aside() { reader_active = false }
+    let notice = save_error
+    if read_error != "" {
+        if notice != "" { notice = notice + "\n" }
+        notice = notice + read_error
+    }
+    ui.saved_notice_list_text.set_text(notice)
+    ui.saved_notice_reader_text.set_text(notice)
+    ui.saved_notice_list.set_visible(notice != "" && !reader_active)
+    ui.saved_notice_reader.set_visible(notice != "" && reader_active)
+}
+
 fn toggle_save(r){
-    if is_saved(r.link) { saved.retain(|s| s.link != r.link) } else { saved.push(r) }
-    fs.write(data_path("saved.json"), saved.to_json())
+    let removing = is_saved(r.link)
+    let next = []
+    for story in saved { if !removing || story.link != r.link { next.push(story) } }
+    if !removing { next.push(r) }
+    let stored = try {
+        fs.write(data_path("saved.json"), next.to_json())
+        true
+    } catch { false }
+    if !stored {
+        save_error = if removing { "Couldn't remove this story from Saved. Try again." } else { "Couldn't save this story. Try again." }
+        mod.news_save_error = save_error
+        sync_save_notice()
+        return
+    }
+    saved = next
+    save_error = ""
+    mod.news_save_error = ""
+    sync_save_notice()
     sync_reader_bar()
-    if tab == "saved" { ui.list.render() }
+    if tab == "saved" || ui_desk { ui.list.render() }
+    if ui_desk { desk_saved_changed() }
 }
 
 fn sync_reader_bar(){
+    if ui_desk {
+        ui.reader_bar.render()
+        return
+    }
     if reading == nil { return }
     if is_saved(reading.link) { ui.save.set_text("Saved") } else { ui.save.set_text("Save") }
 }
 
 fn open_story(r){
+    if ui_desk {
+        desk_open(r)
+        return
+    }
     reading = r
     ui.reader_title.set_text(r.source)
-    ui.reader_fail.set_text("")
     sync_reader_bar()
     ui.comments.set_visible(r.discussion != "" && r.discussion != r.link)
     ui.reader_pane.set_visible(true)
     ui.main.set_visible(false)
-    ui.reader.open(r.link)
+    sync_save_notice()
+    touch_load(r.link)
+}
+
+fn touch_page_failed(){
+    if reading == nil || touch_url == "" { return }
+    ui.reader_notice.set_visible(true)
+}
+
+fn touch_load(url){
+    touch_url = url
+    touch_remember()
+    ui.reader_notice.set_visible(false)
+    // Opening an already-open address need not reload a native web view.
+    ui.reader.close()
+    if !ui.reader.open(url) { touch_page_failed() }
+}
+
+fn touch_retry(){
+    if reading != nil && touch_url != "" { touch_load(touch_url) }
 }
 
 fn open_comments(){
-    if reading != nil && reading.discussion != "" { ui.reader.open(reading.discussion) }
+    if ui_desk {
+        desk_toggle_comments()
+        return
+    }
+    if reading != nil && reading.discussion != "" { touch_load(reading.discussion) }
 }
 
 fn close_story(){
+    reading = nil
+    touch_url = ""
+    touch_remember()
     ui.reader.close()
     ui.main.set_visible(true)
     ui.reader_pane.set_visible(false)
-    reading = nil
+    sync_save_notice()
+}
+
+// A restyle preserves the touch widgets but reruns this script. Keep the
+// model that their actions need, including the page that Retry should open.
+fn touch_remember(){
+    mod.news_touch = {tab: tab query: query reading: reading url: touch_url}
+}
+fn touch_recall(){
+    let v = optional(mod, "news_touch", nil)
+    if v == nil { return }
+    tab = v.tab
+    query = v.query
+    reading = v.reading
+    touch_url = v.url
 }
 
 fn empty_text(){
     if busy || service_fetching { return "Loading your headlines…" }
     if query != "" { return "No stories match your search." }
-    if tab == "saved" { return "Long-press a story, or tap Save while reading, to keep it here." }
+    if tab == "saved" { return ui_by("Long-press a story, or tap Save while reading, to keep it here.", "Click Save while reading a story to keep it here.") }
+    if tab == "today" && any_failed() { return "Couldn't load your headlines. Tap Refresh to try again." }
+    if tab != "today" && failed_by[tab] { return "Couldn't load this source. Tap Refresh to try again." }
     "No stories yet."
 }
 
 fn boot(){
-    ui.date.set_text(date_line())
     load_state()
-    ui.tabbar.render()
-    ui.list.render()
+    if ui_desk {
+        desk_boot()
+    } else {
+        ui.date.set_text(date_line())
+        ui.tabbar.render()
+        ui.list.render()
+    }
     ui.tile_list.render()
+    sync_save_notice()
+    sync_cache_notice()
     use_service = host.has("news")
     refresh()
+}
+
+// The window: three columns when there is room for the sidebar, the list and the
+// reader; two when the sidebar has folded away; below that the list and the reader
+// take turns. The shell calls on_app_resize on every frame of the opening animation.
+// A Mac's reader keeps 380 points or more beside the list: the sidebar gives way first, below
+// 811 points (its 210, a list of 220 and the reader), as a Mac's three-pane window does.
+let desk_three_at = if ui_unified { 811 } else { 760 }
+fn desk_columns(){
+    if desk_width == 0 || desk_width >= desk_three_at { return 3 }
+    if desk_width >= 640 { return 2 }
+    1
+}
+// The sidebar beside the list. A wide window keeps it until it is hidden; a narrower one
+// shows it when asked, pushing the list over while the reader steps aside.
+fn desk_docked(){
+    if desk_columns() == 3 { return desk_side }
+    desk_over
+}
+fn desk_pushed(){ desk_columns() < 3 && desk_over }
+// Asked for in a narrower window, the sidebar pushes the list over and the reader steps
+// aside: beside a sidebar and a list there is no room for a reader, and a story clicked
+// folds the sidebar away again.
+fn desk_steps_aside(){ desk_pushed() }
+// How wide the list is: what the window leaves it, or a column beside the reader of
+// 300 points that gives way first, four points to the reader's one, down to 200.
+fn desk_list_width(){
+    if desk_steps_aside() { return desk_width - 209 }
+    if desk_columns() == 1 { return desk_width }
+    let room = desk_width - 1 - if desk_docked() { 210 } else { 0 }
+    // A Mac's list gives way, to 200 points, before its reader goes under 380: at 650 points
+    // the list keeps its title whole beside the lights.
+    if ui_unified { return max(200, min(300, room - 380)) }
+    if room >= 600 { return 300 }
+    max(200, 300 - (600 - room) * 0.8)
+}
+// How wide the reader is beside the list.
+fn desk_reader_width(){
+    let side = if desk_docked() { 210 } else { 0 }
+    desk_width - side - desk_list_width() - 1
+}
+fn on_app_resize(width, height){
+    if !ui_desk || width <= 0 { return }
+    let columns = desk_columns()
+    let docked = desk_docked()
+    desk_width = width
+    desk_height = height
+    if !desk_ready { return }
+    // A window that grows to three columns keeps the sidebar it was showing; one that
+    // narrows past a step folds it away.
+    if columns != desk_columns() {
+        if desk_columns() == 3 && desk_over { desk_side = true }
+        desk_over = false
+    }
+    desk_remember()
+    if columns != desk_columns() || docked != desk_docked() { desk_layout() }
+    else if desk_reader_tight() != desk_tools_tight { ui.reader_bar.render() }
+    // The search field moves between the sidebar and the list's bar.
+    if docked != desk_docked() {
+        ui.sidebar.render()
+        ui.list_bar.render()
+    }
+    // In one column a row is as tall as its text, and a summary shows where the list has room.
+    if (columns == 1) != (desk_columns() == 1) || docked != desk_docked() || visible_rows().len() == 0 { ui.list.render() }
+}
+fn desk_layout(){
+    let one = desk_columns() == 1
+    let docked = desk_docked()
+    let pushed = desk_steps_aside()
+    // In one column an open story has the window to itself, unless the sidebar was asked for.
+    let alone = one && reading != nil && !pushed
+    let reader = !pushed && (!one || alone)
+    ui.side_gap.set_visible(docked)
+    ui.side_layer.set_visible(docked)
+    ui.side_tool.set_visible(ui_unified && docked)
+    ui.list_col.set_visible(!alone)
+    ui.list_edge.set_visible(reader && !one)
+    ui.reader_col.set_visible(reader)
+    ui.reader_bar.render()
+    sync_save_notice()
+}
+fn desk_toggle_side(){
+    if desk_columns() == 3 {
+        desk_side = !desk_side
+        desk_over = false
+    } else {
+        desk_over = !desk_over
+    }
+    ui.list_bar.render()
+    ui.sidebar.render()
+    // In a narrower window the sidebar pushes the list over: its rows follow the width.
+    if desk_columns() < 3 { ui.list.render() }
+    desk_layout()
+    desk_remember()
+}
+
+fn desk_row_tap(r){
+    ui.list_keys.focus()
+    open_story(r)
+}
+// The keyboard moves through the list, with the story opening beside it.
+fn desk_list_key(key, cmd){
+    if cmd {
+        if key == "KeyR" && tab != "saved" { refresh() }
+        return
+    }
+    if key != "ArrowDown" && key != "ArrowUp" { return }
+    if desk_columns() == 1 || desk_steps_aside() { return }
+    let rows = visible_rows()
+    let at = -1
+    if reading != nil {
+        for i r in rows { if r.link == reading.link { at = i } }
+    }
+    let to = if at < 0 { 0 } else if key == "ArrowDown" { at + 1 } else { at - 1 }
+    if to < 0 || to >= rows.len() { return }
+    // A row is 68 points and its rule 1, under the list's 6.
+    let top = 6 + to * 69
+    let seen = desk_height - (if ui_unified { 53 } else { 41 }) - (if desk_docked() { 0 } else { 36 })
+    let y = ui.list.scroll_y()
+    if top - 6 < y {
+        ui.list.set_scroll_y(top - 6)
+    } else if top + 74 > y + seen {
+        ui.list.set_scroll_y(top + 74 - seen)
+    }
+    open_story(rows[to])
+}
+fn desk_row_hold(r){ toggle_save(r) }
+// A Mac's menu bar asks for these while News is in front.
+fn app_menus(){
+    let open = reading != nil
+    [
+        {menu: "File" title: if open && is_saved(reading.link) { "Remove from Saved" } else { "Save Story" } key: "cmd+S" command: "save" enabled: open}
+        {menu: "File" title: if open && !desk_is_read(reading.link) { "Mark as Read" } else { "Mark as Unread" } key: "shift+cmd+U" command: "read" enabled: open}
+        {menu: "File"}
+        {menu: "File" title: "Copy Link" key: "shift+cmd+C" command: "copy" enabled: open}
+        {menu: "Edit" title: "Find…" key: "cmd+F" command: "find"}
+        {menu: "View" title: if desk_docked() { "Hide Sidebar" } else { "Show Sidebar" } key: "ctrl+cmd+S" command: "sidebar"}
+        {menu: "View"}
+        {menu: "View" title: "Today" key: "cmd+1" command: "today" checked: tab == "today"}
+        {menu: "View" title: "Saved" key: "cmd+2" command: "saved" checked: tab == "saved"}
+        {menu: "View"}
+        {menu: "View" title: "Refresh" key: "cmd+R" command: "refresh" enabled: tab != "saved"}
+    ]
+}
+fn on_menu_command(command){
+    if command == "save" { if reading != nil { toggle_save(reading) } }
+    else if command == "read" { if reading != nil { desk_toggle_read(reading) } }
+    else if command == "copy" { if reading != nil { desk_copy(reading.link) } }
+    else if command == "find" { ui.search.focus() }
+    else if command == "sidebar" { desk_toggle_side() }
+    else if command == "today" { pick("today") }
+    else if command == "saved" { pick("saved") }
+    else if command == "refresh" { if tab != "saved" { refresh() } }
+}
+fn desk_row_menu(r, title){
+    if title == "Open" { desk_row_tap(r) }
+    else if title == "Copy Link" { desk_copy(r.link) }
+    else if title == "Mark as Read" || title == "Mark as Unread" { desk_toggle_read(r) }
+    else { toggle_save(r) }
+}
+
+// Dates read the same everywhere: 3:45 PM today, Yesterday, then Nov 2, 2026.
+fn desk_clock(t){
+    let h = t.hour
+    let mark = "AM"
+    if h >= 12 { mark = "PM" }
+    if h > 12 { h = h - 12 }
+    if h == 0 { h = 12 }
+    let m = "" + t.minute
+    if t.minute < 10 { m = "0" + m }
+    "" + h + ":" + m + " " + mark
+}
+fn desk_day(t){ short_months[t.month - 1] + " " + t.day + ", " + t.year }
+fn desk_same_day(a, b){ a.year == b.year && a.month == b.month && a.day == b.day }
+fn desk_when(secs){
+    if secs == nil || secs <= 0 { return "" }
+    let t = local_time(secs)
+    if desk_same_day(t, local_time()) { return desk_clock(t) }
+    if desk_same_day(t, local_time(time_now() - 86400)) { return "Yesterday" }
+    desk_day(t)
+}
+fn desk_stamp(secs){
+    if secs == nil || secs <= 0 { return "" }
+    let t = local_time(secs)
+    desk_day(t) + " at " + desk_clock(t)
+}
+fn desk_count(n){
+    if n == 1 { return "1 story" }
+    "" + n + " stories"
+}
+fn desk_source(r){
+    if r.source == "TechMeme" { return "Techmeme" }
+    r.source
+}
+fn desk_row_meta(r){
+    let line = ""
+    if tab != "hn" { line = desk_source(r) }
+    if r.points != nil {
+        let points = "" + r.points + " points"
+        if r.points == 1 { points = "1 point" }
+        if line != "" { line = line + " · " }
+        line = line + points
+    }
+    if tab == "hn" && r.comments != nil {
+        let comments = "" + r.comments + " comments"
+        if r.comments == 1 { comments = "1 comment" }
+        if line != "" { line = line + " · " }
+        line = line + comments
+    }
+    line
+}
+fn desk_byline(r){
+    let line = desk_source(r)
+    if desk_comments { line = "Comments on " + line }
+    let when = desk_stamp(r.published)
+    if when != "" { line = line + " · " + when }
+    line
+}
+fn desk_has_comments(r){ r.discussion != "" && r.discussion != r.link }
+fn desk_host(url){
+    let parts = url.split("/")
+    if parts.len() < 3 { return url }
+    parts[2].replace(regex("^www\\."), "")
+}
+
+// A feed's summary often opens with the byline and the headline again: what is left
+// after them, if anything, is the summary.
+fn desk_letters(text){ ("" + text).replace(regex("[^A-Za-z0-9]+", "g"), "") }
+fn desk_clean_summary(r){
+    let text = ("" + r.summary).trim()
+    if text == "" { return "" }
+    let plain = desk_letters(text)
+    let head = desk_letters(r.title)
+    if plain == desk_letters(r.source) || head == "" { return "" }
+    let opening = regex("^[A-Za-z0-9]{1,48}").exec(head)
+    if opening == nil { return text }
+    if plain.search(opening.value) < 0 { return text }
+    let parts = text.split(" — ")
+    if parts.len() > 1 && desk_letters(parts[parts.len() - 1]).search(opening.value) < 0 { return parts[parts.len() - 1].trim() }
+    ""
+}
+fn desk_summary(r){
+    let known = optional(desk_summaries, r.link, nil)
+    if known != nil { return known }
+    let text = desk_clean_summary(r)
+    desk_summaries[r.link] = text
+    text
+}
+// A row is always the same height: a summary only where the headline leaves it room.
+fn desk_row_summary(r){
+    let text = desk_summary(r)
+    if text == "" { return "" }
+    let room = desk_list_width() - 46
+    if r.image != "" { room = room - 52 }
+    if r.title.len() * 6.8 > room { return "" }
+    text
+}
+
+fn desk_load_read(){
+    if !fs.exists(data_path("read.json")) { return }
+    let v = fs.read(data_path("read.json")).parse_json()
+    if v == nil { return }
+    desk_read_links = v
+    for link in v { desk_read[link] = true }
+}
+fn desk_is_read(link){ optional(desk_read, link, false) }
+fn desk_store_read(next){
+    let stored = try {
+        fs.write(data_path("read.json"), next.to_json())
+        true
+    } catch { false }
+    if !stored {
+        read_error = "Couldn't update read status. Check storage, then try again."
+        mod.news_read_error = read_error
+        sync_save_notice()
+        return false
+    }
+    read_error = ""
+    mod.news_read_error = ""
+    sync_save_notice()
+    true
+}
+fn desk_mark_read(link){
+    if desk_is_read(link) { return }
+    let next = []
+    for known in desk_read_links { next.push(known) }
+    next.push(link)
+    let dropped = nil
+    if next.len() > 600 {
+        dropped = next[0]
+        next.remove(0)
+    }
+    if !desk_store_read(next) { return }
+    desk_read_links = next
+    if dropped != nil { desk_read[dropped] = false }
+    desk_read[link] = true
+}
+fn desk_mark_unread(link){
+    if !desk_is_read(link) { return }
+    let next = []
+    for known in desk_read_links { if known != link { next.push(known) } }
+    if !desk_store_read(next) { return }
+    desk_read_links = next
+    desk_read[link] = false
+}
+// Mark as Read and Mark as Unread, from a row's menu or the File menu.
+fn desk_toggle_read(r){
+    if desk_is_read(r.link) { desk_mark_unread(r.link) } else { desk_mark_read(r.link) }
+    ui.list.render()
+}
+
+// The subtitle of the list's toolbar. Saved is local, so it counts rather than
+// saying when it was updated; an empty list says what it has to say in its pane.
+fn desk_status_text(){
+    let shown = visible_rows().len()
+    if shown == 0 { return "" }
+    if query != "" || tab == "saved" { return desk_count(shown) }
+    if busy || service_fetching { return "Updating…" }
+    if tab == "today" && any_failed() { return today_update_failure() }
+    if tab != "today" && failed_by[tab] { return "Couldn't update" }
+    if updated > 0 { return "Updated " + desk_when(updated) }
+    ""
+}
+fn desk_sync_status(){
+    if desk_search_off() != desk_search_dim {
+        ui.list_bar.render()
+        ui.sidebar.render()
+    }
+    else { desk_sync_status_text() }
+    if visible_rows().len() == 0 { ui.list.render() }
+    desk_sync_pane()
+    desk_remember()
+}
+fn desk_sync_pane(){
+    if desk_state == "none" && (visible_rows().len() > 0) != desk_pane_rows { ui.reader_state.render() }
+}
+fn desk_loading(){ busy || service_fetching || !desk_settled }
+fn desk_failed(){
+    if tab == "today" { return any_failed() }
+    if tab == "saved" { return false }
+    failed_by[tab]
+}
+fn desk_search_off(){ query == "" && visible_rows().len() == 0 }
+// The reader shows what the list has selected: a story the list no longer has goes.
+fn desk_reader_follows_list(){
+    if reading == nil { return }
+    for r in visible_rows() { if r.link == reading.link { return } }
+    desk_back()
+}
+fn desk_picked(){
+    desk_reader_follows_list()
+    ui.sidebar.render()
+    ui.list_bar.render()
+    ui.list_host.render()
+    ui.reader_state.render()
+    desk_layout()
+    desk_remember()
+}
+fn desk_query_changed(){
+    desk_reader_follows_list()
+    ui.search_clear.set_visible(query != "")
+    desk_sync_status_text()
+    desk_sync_pane()
+    desk_remember()
+}
+fn desk_sync_status_text(){
+    let text = desk_status_text()
+    ui.status.set_text(text)
+    ui.status.set_visible(text != "")
+}
+fn desk_clear_search(){
+    query = ""
+    ui.search.set_text("")
+    ui.search_clear.set_visible(false)
+    ui.list.render()
+    desk_sync_status()
+}
+fn desk_saved_changed(){ desk_sync_status() }
+
+// The page. Its web view paints over the pane and says nothing about how a load
+// goes, so News asks the site first: the pane says Loading until the site answers,
+// and says so plainly if it never does.
+fn desk_open(r){
+    reading = r
+    desk_comments = false
+    desk_mark_read(r.link)
+    // A narrower window has no room for the reader beside the sidebar: the sidebar folds away.
+    // A Mac's keeps both, and the sidebar stays until it's put away.
+    if desk_steps_aside() {
+        desk_over = false
+        ui.list_bar.render()
+        ui.sidebar.render()
+    }
+    ui.list.render()
+    desk_layout()
+    desk_load(r.link)
+}
+fn desk_load(url){
+    desk_ask = desk_ask + 1
+    let ask = desk_ask
+    desk_url = url
+    ui.reader.close()
+    ui.reader_bar.render()
+    if !regex("^https?://", "i").test(url) {
+        desk_state = "failed"
+        ui.reader_state.render()
+        desk_remember()
+        return
+    }
+    desk_state = "loading"
+    ui.reader_state.render()
+    desk_remember()
+    net.http_request(net.HttpRequest{url: url method: net.HttpMethod.HEAD headers: {"User-Agent": "OctoSense-News/1.0"}}) do net.HttpEvents{
+        on_response: |res| desk_show_page(ask)
+        on_error: |err| desk_ask_again(ask, url)
+    }
+    start_timeout(1.5, || desk_show_page(ask))
+}
+// Some sites hang up on a HEAD request and answer a GET.
+fn desk_ask_again(ask, url){
+    if ask != desk_ask || desk_state != "loading" { return }
+    net.http_request(net.HttpRequest{url: url method: net.HttpMethod.GET headers: {"User-Agent": "OctoSense-News/1.0"}}) do net.HttpEvents{
+        on_response: |res| desk_show_page(ask)
+        on_error: |err| desk_probe_failed(ask)
+    }
+}
+// The reader can open on the timer before the preliminary GET finishes. A
+// late probe failure must not close a page that the reader is already showing.
+fn desk_probe_failed(ask){
+    if ask != desk_ask || desk_state != "loading" { return }
+    desk_page_failed(ask)
+}
+fn desk_show_page(ask){
+    if ask != desk_ask || desk_state != "loading" { return }
+    if ui.reader.open(desk_url) { desk_state = "page" } else { desk_state = "failed" }
+    ui.reader_state.render()
+    desk_remember()
+}
+fn desk_page_failed(ask){
+    if ask != desk_ask { return }
+    ui.reader.close()
+    desk_state = "failed"
+    ui.reader_state.render()
+    desk_remember()
+}
+fn desk_page_error(){ desk_page_failed(desk_ask) }
+fn desk_retry(){ desk_load(desk_url) }
+fn desk_toggle_comments(){
+    if reading == nil { return }
+    desk_comments = !desk_comments
+    if desk_comments { desk_load(reading.discussion) } else { desk_load(reading.link) }
+}
+fn desk_back(){
+    desk_ask = desk_ask + 1
+    reading = nil
+    desk_state = "none"
+    desk_url = ""
+    desk_comments = false
+    ui.reader.close()
+    ui.list.render()
+    ui.reader_state.render()
+    desk_layout()
+    desk_remember()
+}
+fn desk_copy(text){ host.request("clipboard.write", {text: text}, fn(r){}) }
+
+// An appearance switch runs the script again in the same window: what was on screen
+// stays. mod outlives the run; closing News ends it.
+fn desk_remember(){
+    mod.news_desk = {tab: tab query: query reading: reading side: desk_side over: desk_over comments: desk_comments url: desk_url
+        state: desk_state width: desk_width height: desk_height rows: rows_by failed: failed_by saved: saved
+        updated: updated settled: desk_settled}
+}
+fn desk_recall(){
+    let v = optional(mod, "news_desk", nil)
+    if v == nil { return }
+    tab = v.tab
+    query = v.query
+    reading = v.reading
+    desk_side = v.side
+    desk_over = v.over
+    desk_comments = v.comments
+    desk_url = v.url
+    desk_state = v.state
+    desk_width = v.width
+    desk_height = v.height
+    rows_by = v.rows
+    failed_by = v.failed
+    saved = v.saved
+    updated = v.updated
+    desk_settled = v.settled
+}
+fn desk_boot(){
+    desk_load_read()
+    desk_ready = true
+    ui.list_keys.focus()
+    ui.sidebar.render()
+    ui.side_glyph.render()
+    ui.list_bar.render()
+    ui.list.render()
+    desk_layout()
+    ui.reader_state.render()
+    if desk_state == "loading" || (desk_state == "page" && !ui.reader.is_open()) { desk_load(desk_url) }
 }
 start_timeout(0.05, || boot())
 start_interval(900, || refresh_due())
 start_interval(2, || {
     if use_service && service_fetching && !busy { refresh_due() }
 })
+// An appearance switch runs this script again; its actions follow the retained widgets.
+if ui_desk { desk_recall() } else { touch_recall() }
 
 let ink = ui_ink
 let secondary = ui_muted
@@ -453,7 +1292,7 @@ let TabButtonActive = TabButton{
 let BarButton = UiButton{}
 
 let StoryHead = View{width: Fill height: Fit flow: Down spacing: 7
-    meta := Label{width: Fill text: "" max_lines: 1 draw_text.color: secondary draw_text.text_style.font_size: 13}
+    meta := Label{width: Fill text: "" max_lines: 1 text_overflow: Ellipsis draw_text.color: secondary draw_text.text_style.font_size: 13}
     title := Label{width: Fill text: "" max_lines: 3 text_overflow: Ellipsis draw_text.color: ink draw_text.text_style: theme.font_bold{font_size: 16 line_spacing: 1.2}}
 }
 let StoryText = StoryHead{
@@ -468,8 +1307,7 @@ let CardHead = StoryCard{text := StoryHead{}}
 let CardTextImage = StoryCard{text := StoryText{} thumb := Image{width: 76 height: 76 fit: ImageFit.CropToFill}}
 let CardHeadImage = StoryCard{text := StoryHead{} thumb := Image{width: 76 height: 76 fit: ImageFit.CropToFill}}
 
-HostedView{width: Fill height: Fill
-    full: View{width: Fill height: Fill flow: Overlay align: Align{x: 0.5} show_bg: true draw_bg.color: ground
+let TouchFull = View{width: Fill height: Fill flow: Overlay align: Align{x: 0.5} show_bg: true draw_bg.color: ground
         main := View{width: Fill max_width: 960 height: Fill flow: Down
             View{width: Fill height: Fit flow: Right align: Align{y: 1.0} padding: Inset{left: 18 right: 12 top: 14 bottom: 6}
                 View{width: Fill height: Fit flow: Down spacing: 2
@@ -491,7 +1329,9 @@ HostedView{width: Fill height: Fill
                     draw_text +: {color: ink color_hover: ink color_focus: ink color_empty: secondary color_empty_hover: secondary}
                 }
             }
+            // Keep the strip scrollable without a bright, permanent thumb at rest.
             tabbar := ScrollXView{width: Fill height: 60 flow: Right spacing: 4 padding: Inset{left: 12 right: 12 top: 4 bottom: 8}
+                scroll_bars: ScrollBarsTabs{show_scroll_x: true show_scroll_y: false scroll_bar_x.drag_scrolling: true}
                 on_render: || {
                     for t in tabs {
                         if t.id == tab { TabButtonActive{text: t.label on_click: || pick(t.id)} }
@@ -500,6 +1340,12 @@ HostedView{width: Fill height: Fill
                 }
             }
             status := Label{width: Fill padding: Inset{left: 18 right: 18 bottom: 6} text: "Loading your headlines…" draw_text.color: secondary draw_text.text_style.font_size: 13}
+            saved_notice_list := View{visible: false width: Fill height: Fit padding: Inset{left: 18 right: 18 bottom: 8}
+                saved_notice_list_text := Label{clip_y: false width: Fill flow: Flow.Right{wrap: true} text: "" draw_text.color: secondary draw_text.text_style.font_size: 12}
+            }
+            cache_notice := View{visible: false width: Fill height: Fit padding: Inset{left: 18 right: 18 bottom: 8}
+                Label{clip_y: false width: Fill flow: Flow.Right{wrap: true} text: "Some headlines couldn't be saved for offline use. Check storage, then refresh." draw_text.color: secondary draw_text.text_style.font_size: 12}
+            }
             list := ScrollYView{width: Fill height: Fill flow: Down spacing: 12 padding: Inset{left: 16 right: 16 bottom: 28}
                 on_render: || {
                     let rows = visible_rows()
@@ -535,10 +1381,411 @@ HostedView{width: Fill height: Fill
                 comments := BarButton{text: "Comments" on_click: || open_comments()}
                 save := BarButton{text: "Save" on_click: || { if reading != nil { toggle_save(reading) } }}
             }
-            reader_fail := Label{width: Fill padding: Inset{left: 18 right: 18} text: "" draw_text.color: secondary draw_text.text_style.font_size: 13}
-            reader := WebReader{width: Fill height: Fill on_error: || ui.reader_fail.set_text(ui.reader.error())}
+            saved_notice_reader := View{visible: false width: Fill height: Fit padding: Inset{left: 18 right: 18 top: 6 bottom: 8}
+                saved_notice_reader_text := Label{clip_y: false width: Fill flow: Flow.Right{wrap: true} text: "" draw_text.color: secondary draw_text.text_style.font_size: 12}
+            }
+            // The native reader can also report a blocked part of an otherwise
+            // usable page, so leave the page in place beneath this notice.
+            reader_notice := View{visible: false width: Fill height: Fit flow: Down align: Align{x: 0.5} spacing: 8 padding: Inset{left: 20 right: 20 top: 16 bottom: 16}
+                Label{clip_y: false width: Fill align: Align{x: 0.5} flow: Flow.Right{wrap: true}
+                    text: "There was a problem loading this page." draw_text.color: ink draw_text.text_style: theme.font_bold{font_size: 14}}
+                Label{clip_y: false width: Fill align: Align{x: 0.5} flow: Flow.Right{wrap: true}
+                    text: "Check your connection, then try again." draw_text.color: secondary draw_text.text_style.font_size: 13}
+                UiPrimary{text: "Try Again" on_click: || touch_retry()}
+            }
+            reader := WebReader{width: Fill height: Fill on_error: || touch_page_failed()}
         }
     }
+
+// The Mac's News: sections and sources in a sidebar, a column of stories, the reader
+// beside it. As the window narrows the sidebar folds away, then the list and the reader
+// take turns. A phone keeps its page above.
+let desk_off = mix(ui_muted, ui_bar, 0.55)
+let desk_regular = theme.font_regular{font_size: 9.75 line_spacing: 1.2}
+// The reader with nothing chosen: its words large, regular and light grey.
+// Grey that still reads: 5.1:1 on the light reader, 5.8:1 on the dark one.
+let desk_no_pick = if ui_light { #x6e6e73 } else { #x98989d }
+let desk_no_pick_face = theme.font_regular{font_size: 16.5 line_spacing: 1.2}
+let desk_bold = theme.font_bold{font_size: 9.75 line_spacing: 1.2}
+let desk_small = theme.font_regular{font_size: 8.25}
+// UiEmpty's look, with a heading no test takes for a story's title.
+let DeskEmpty = View{width: Fill height: Fill flow: Down align: Align{x: 0.5 y: 0.5} spacing: 6 padding: 24
+    glyph := Svg{width: 36 height: 36 margin: Inset{bottom: 4} animating: false draw_svg +: {color: ui_muted}}
+    head := Label{clip_y: false padding: 0 width: Fill align: Align{x: 0.5} flow: Flow.Right{wrap: true} text: "" draw_text +: {color: ui_ink text_style: theme.font_bold{font_size: 11.25}}}
+    note := Label{clip_y: false padding: 0 width: Fill align: Align{x: 0.5} flow: Flow.Right{wrap: true} text: "" draw_text +: {color: ui_muted text_style: desk_regular}}
+}
+// A Mac's empty reader, as Mail and News draw it: "No Story Selected" alone, large and
+// light grey, with no glyph; the hint under it while there are stories to click.
+let DeskNoPick = View{width: Fill height: Fill flow: Down align: Align{x: 0.5 y: 0.5} spacing: 6 padding: 24
+    head := Label{clip_y: false padding: 0 width: Fill align: Align{x: 0.5} flow: Flow.Right{wrap: true} text: "No Story Selected" draw_text +: {color: desk_no_pick text_style: desk_no_pick_face}}
+    note := Label{clip_y: false padding: 0 width: Fill align: Align{x: 0.5} flow: Flow.Right{wrap: true} text: "Click a story to read it here." draw_text +: {color: ui_muted text_style: desk_regular}}
+}
+let DeskLoading = View{width: Fill height: Fill flow: Down align: Align{x: 0.5 y: 0.5} spacing: 10 padding: 24
+    LoadingSpinner{width: 22 height: 22 draw_bg +: {color: ui_muted stroke_width: 2.0 min_gap_ratio: 0.25 max_gap_ratio: 0.7}}
+    note := Label{clip_y: false padding: 0 width: Fill align: Align{x: 0.5} flow: Flow.Right{wrap: true} text: "" draw_text +: {color: ui_muted text_style: desk_regular}}
+}
+// A link that opens in the person's browser: a push button's face, or a tool's.
+let DeskLinkButton = LinkLabel{width: Fit height: 28 margin: 0 padding: Inset{left: 12 right: 12} spacing: 6 align: Align{x: 0.5 y: 0.5} text: ""
+    icon_walk: Walk{width: 0 height: 0}
+    label_walk: Walk{width: Fit height: Fit}
+    draw_text +: {color: ui_ink color_hover: ui_ink color_down: ui_ink color_focus: ui_ink text_style: theme.font_regular{font_size: 9.75}}
+    draw_bg +: {color: ui_button color_hover: mix(ui_button, ui_ink, 0.04) color_down: mix(ui_button, ui_ink, 0.1) color_focus: ui_button
+        edge: uniform(ui_border)
+        pixel: fn(){
+            let sdf = Sdf2d.viewport(self.pos * self.rect_size)
+            sdf.box(0.5, 0.5, self.rect_size.x - 1.0, self.rect_size.y - 1.0, 3.0)
+            sdf.fill_keep(mix(mix(self.color, self.color_hover, self.hover), self.color_down, self.down))
+            sdf.stroke(self.edge, 1.0)
+            return sdf.result
+        }
+    }
+}
+let DeskLinkTool = LinkLabel{width: Fit height: 28 margin: 0 padding: Inset{left: 8 right: 8} spacing: 5 align: Align{x: 0.5 y: 0.5} text: ""
+    icon_walk: Walk{width: 16 height: 16}
+    label_walk: Walk{width: Fit height: Fit}
+    draw_icon +: {svg: ui_icon("safari") color: ui_ink}
+    draw_text +: {color: ui_ink color_hover: ui_ink color_down: ui_ink color_focus: ui_ink text_style: theme.font_regular{font_size: 9.75}}
+    draw_bg +: {color: #x00000000 color_hover: ui_hover color_down: ui_selected color_focus: #x00000000
+        pixel: fn(){
+            let sdf = Sdf2d.viewport(self.pos * self.rect_size)
+            sdf.box(0.0, 0.0, self.rect_size.x, self.rect_size.y, 3.0)
+            sdf.fill(mix(mix(self.color, self.color_hover, self.hover), self.color_down, self.down))
+            return sdf.result
+        }
+    }
+}
+let DeskToolOff = UiToolIcon{enabled: false draw_icon +: {color: desk_off}}
+let DeskThumb = Image{width: 44 height: 44 fit: ImageFit.CropToFill
+    draw_bg +: {
+        empty_color: uniform(ui_selected)
+        pixel: fn(){
+            let sdf = Sdf2d.viewport(self.pos * self.rect_size)
+            sdf.box(0.0, 0.0, self.rect_size.x, self.rect_size.y, 3.0)
+            let c = self.get_color()
+            return sdf.fill(vec4(mix(self.empty_color.rgb, c.rgb, c.a), 1.0))
+        }
+    }
+}
+let DeskTitleBlock = View{width: Fill height: Fit flow: Down spacing: 1
+    bar_title := UiBarTitle{width: Fill text_overflow: Ellipsis text: "Today"}
+    status := UiBarSub{width: Fill text_overflow: Ellipsis text: ""}
+}
+let DeskReaderTitle = View{width: Fill height: Fit flow: Down spacing: 1
+    reader_title := Label{clip_y: false padding: 0 width: Fill text: "" max_lines: 1 text_overflow: Ellipsis draw_text +: {color: ui_ink text_style: theme.font_bold{font_size: 9.75}}}
+    reader_sub := UiBarSub{width: Fill text_overflow: Ellipsis text: ""}
+}
+let DeskSearch = View{width: 150 height: 28 flow: Overlay align: Align{y: 0.5}
+    search := UiSearch{padding: Inset{left: 26 right: 22 top: 6 bottom: 6} empty_text: "Search" on_change: |text| set_query(text) on_escape: |text| { desk_clear_search(); ui.list_keys.focus() }}
+    glass := UiGlyph{width: 14 height: 14 margin: Inset{left: 8} draw_svg +: {svg: ui_icon("search")}}
+    clear_box := View{width: Fill height: Fill flow: Right align: Align{x: 1.0 y: 0.5}
+        search_clear := UiSearchClear{on_click: || desk_clear_search()}
+    }
+}
+let DeskRowText = View{width: Fill height: Fill flow: Down spacing: 2
+    line := View{width: Fill height: Fit flow: Right spacing: 6 align: Align{y: 0.5}
+        meta := Label{clip_y: false padding: 0 width: Fill text: "" max_lines: 1 text_overflow: Ellipsis draw_text +: {color: ui_muted text_style: desk_small}}
+        mark := View{visible: false width: 11 height: 11
+            glyph := Svg{width: 11 height: 11 animating: false draw_svg +: {svg: http_resource("{{assets}}/icons/bookmark-fill.svg") color: ui_muted}}
+        }
+        when := Label{clip_y: false padding: 0 width: Fit text: "" max_lines: 1 draw_text +: {color: ui_muted text_style: desk_small}}
+    }
+    title := Label{clip_y: false padding: 0 width: Fill text: "" max_lines: 2 text_overflow: Ellipsis draw_text +: {color: ui_ink text_style: desk_regular}}
+    summary := Label{visible: false clip_y: false padding: 0 width: Fill text: "" max_lines: 1 text_overflow: Ellipsis draw_text +: {color: ui_muted text_style: theme.font_regular{font_size: 9}}}
+}
+fn desk_paper(){ http_resource("{{assets}}/icons/newspaper-large.svg") }
+fn desk_thumb(url){
+    let handle = optional(desk_thumbs, url, nil)
+    if handle == nil {
+        handle = http_resource(url)
+        desk_thumbs[url] = handle
+    }
+    handle
+}
+fn desk_row(r, on){
+    let unread = !desk_is_read(r.link)
+    let line = desk_row_summary(r)
+    let head = ui_muted
+    if unread { head = ui_ink }
+    if on { head = #xffffff }
+    let small = ui_muted
+    if on { small = #xffffff }
+    let dot = ui_link
+    if on { dot = #xffffff }
+    let fill = #x00000000
+    if on { fill = ui_accent_row }
+    let lines = 2
+    if line != "" { lines = 1 }
+    let face = desk_regular
+    if unread { face = desk_bold }
+    // Wide enough for its title on a line, a row in one column is as tall as its text.
+    let one = desk_columns() == 1
+    GestureView{width: Fill height: if one { Fit } else { 68 } on_tap: |x, y| desk_row_tap(r) on_long_press: |x, y| desk_row_hold(r)
+        menu: ["Open", "Open in Browser", "-", if unread { "Mark as Read" } else { "Mark as Unread" }, if is_saved(r.link) { "Remove from Saved" } else { "Save Story" }, "-", "Copy Link"]
+        menu_urls: ["", r.link, "", "", "", "", ""]
+        on_menu: |title| desk_row_menu(r, title)
+        RoundedView{width: Fill height: if one { Fit } else { Fill } flow: Right spacing: 4 padding: Inset{left: 8 right: 10 top: 8 bottom: 8} show_bg: true draw_bg +: {color: fill border_radius: 3.0}
+            View{width: 12 height: Fit padding: Inset{top: 3}
+                if unread { RoundedView{width: 8 height: 8 show_bg: true draw_bg +: {color: dot border_radius: 2.0}} }
+            }
+            DeskRowText{
+                height: if one { Fit } else { Fill }
+                line.meta.text: desk_row_meta(r)
+                line.meta.draw_text.color: small
+                line.mark.visible: is_saved(r.link)
+                line.mark.glyph.draw_svg.color: small
+                line.when.text: desk_when(r.published)
+                line.when.draw_text.color: small
+                title.text: r.title
+                title.max_lines: lines
+                title.draw_text.color: head
+                title.draw_text.text_style: face
+                summary.visible: line != ""
+                summary.text: line
+                summary.draw_text.color: small
+            }
+            if r.image != "" { DeskThumb{margin: Inset{left: 6} src: desk_thumb(r.image)} }
+        }
+    }
+}
+// What the list says when it has no stories to show, centred in its pane.
+fn desk_list_empty(){
+    let room = desk_height - 14 - if ui_unified { 53 } else { 41 }
+    if !desk_docked() { room = room - 36 }
+    let h = max(220, room)
+    View{width: Fill height: Fit flow: Down
+        if query != "" {
+            DeskEmpty{height: h glyph.draw_svg.svg: ui_icon("search") head.text: "No Results" note.text: "No stories match your search."
+                UiButton{margin: Inset{top: 8} text: "Clear Search" on_click: || desk_clear_search()}
+            }
+        } else if tab == "saved" {
+            DeskEmpty{height: h glyph.draw_svg.svg: ui_icon("bookmark") head.text: "No Saved Stories" note.text: "Click Save while reading a story to keep it here."
+                UiButton{margin: Inset{top: 8} text: "Browse Today" on_click: || pick("today")}
+            }
+        } else if desk_loading() {
+            DeskLoading{height: h note.text: "Loading your headlines…"}
+        } else if desk_failed() {
+            DeskEmpty{height: h glyph.draw_svg.svg: desk_paper() head.text: "Can't Load " + desk_failed_name() note.text: "Check your connection,\nthen try again."
+                UiButton{margin: Inset{top: 8} text: "Try Again" on_click: || refresh()}
+            }
+        } else {
+            DeskEmpty{height: h glyph.draw_svg.svg: desk_paper() head.text: "No Stories Yet" note.text: "New stories appear here as they're published."
+                UiButton{margin: Inset{top: 8} text: "Refresh" on_click: || refresh()}
+            }
+        }
+    }
+}
+fn desk_failed_name(){
+    if tab == "today" { return "Your Headlines" }
+    tab_title(tab)
+}
+fn desk_list_body(){
+    let rows = visible_rows()
+    if rows.len() == 0 { return desk_list_empty() }
+    let picked = -1
+    if reading != nil {
+        for i r in rows {
+            if r.link == reading.link {
+                picked = i
+                break
+            }
+        }
+    }
+    let last = rows.len() - 1
+    View{width: Fill height: Fit flow: Down
+        for i r in rows {
+            desk_row(r, i == picked)
+            if i < last {
+                if i == picked || i + 1 == picked { View{width: Fill height: 1} }
+                else { UiSep{margin: Inset{left: 20 right: 10}} }
+            }
+        }
+    }
+}
+let DeskList = ScrollYView{width: Fill height: Fill flow: Down padding: Inset{left: 8 right: 8 top: 6 bottom: 8} on_render: || { desk_list_body() }}
+let DeskListHost = View{width: Fill height: Fill on_render: || { list := DeskList{desk_list_body()} }}
+fn desk_search_view(width){
+    // A Mac's search field is never dimmed: in an empty list it finds nothing, and says so.
+    if desk_search_off() && !ui_unified {
+        return DeskSearch{width: width search.is_read_only: true search.draw_text.color_empty: desk_off glass.draw_svg.color: desk_off}
+    }
+    DeskSearch{width: width search.text: query clear_box.search_clear.visible: query != ""}
+}
+fn desk_refresh_tool(){
+    if tab == "saved" { return DeskToolOff{draw_icon +: {svg: ui_icon("refresh")}} }
+    UiToolIcon{draw_icon +: {svg: ui_icon("refresh")} on_click: || refresh()}
+}
+fn desk_list_bar_view(){
+    let line = desk_status_text()
+    desk_search_dim = desk_search_off()
+    if desk_docked() {
+        // The search field waits at the sidebar's top, as in Apple News: the title keeps its width.
+        // A Mac's sidebar button sits over the sidebar by the lights; under a title bar it stays here.
+        return UiToolbar{
+            if !ui_unified { UiPaneTool{draw_icon +: {svg: ui_icon("sidebar")} on_click: || desk_toggle_side()} }
+            DeskTitleBlock{bar_title.text: tab_title(tab) status.text: line status.visible: line != ""}
+            desk_refresh_tool()
+        }
+    }
+    SolidView{width: Fill height: Fit flow: Down draw_bg.color: ui_bar
+        UiWindowToolbar{
+            UiPaneTool{draw_icon +: {svg: ui_icon("sidebar")} on_click: || desk_toggle_side()}
+            DeskTitleBlock{bar_title.text: tab_title(tab) status.text: line status.visible: line != ""}
+            desk_refresh_tool()
+        }
+        View{width: Fill height: Fit padding: Inset{left: 12 right: 10 bottom: 8}
+            desk_search_view(Fill)
+        }
+    }
+}
+fn desk_reader_title(){
+    if reading == nil { return View{width: Fill height: 1} }
+    DeskReaderTitle{reader_title.text: reading.title reader_sub.text: desk_byline(reading)}
+}
+fn desk_reader_bar(){
+    if desk_columns() == 1 && reading != nil {
+        return UiWindowToolbar{
+            UiPaneTool{draw_icon +: {svg: ui_icon("chevron-left")} on_click: || desk_back()}
+            desk_reader_title()
+            desk_reader_tools()
+        }
+    }
+    UiToolbar{
+        desk_reader_title()
+        desk_reader_tools()
+    }
+}
+// A reader under 260 points wide keeps its title readable: Share and Open in Browser
+// move behind a » menu.
+fn desk_reader_tight(){ ui_unified && desk_columns() > 1 && desk_reader_width() < 260 }
+// The reader's tools, glyphs as a Mac's toolbar has them, the same with a story open or not.
+fn desk_reader_tools(){
+    desk_tools_tight = desk_reader_tight()
+    View{width: Fit height: Fit flow: Right spacing: 4 align: Align{y: 0.5}
+        if reading == nil {
+            DeskToolOff{draw_icon +: {svg: ui_icon("bookmark")}}
+            DeskToolOff{draw_icon +: {svg: ui_icon("export")}}
+            DeskToolOff{draw_icon +: {svg: ui_icon("safari")}}
+        } else {
+            if desk_has_comments(reading) {
+                if desk_comments { article_tool := UiToolIcon{draw_icon +: {svg: ui_icon("doc")} on_click: || open_comments()} }
+                else { comments_tool := UiToolIcon{draw_icon +: {svg: ui_icon("bubble")} on_click: || open_comments()} }
+            }
+            if is_saved(reading.link) { unsave_tool := UiToolIcon{draw_icon +: {svg: http_resource("{{assets}}/icons/bookmark-fill.svg")} on_click: || toggle_save(reading)} }
+            else { save_tool := UiToolIcon{draw_icon +: {svg: ui_icon("bookmark")} on_click: || toggle_save(reading)} }
+            if desk_tools_tight {
+                // What a narrow reader's toolbar has no room for, as a Mac's toolbar overflows.
+                more_tool := GestureView{width: Fit height: Fit menu: ["Copy Link", "Open in Browser"] menu_urls: ["", desk_url]
+                    on_menu: |title| { if title == "Copy Link" { desk_copy(desk_url) } }
+                    UiTool{reset_hover_on_click: true text: "»" on_click: || ui.more_tool.open_menu()}
+                }
+            } else {
+                share_tool := GestureView{width: Fit height: Fit menu: ["Copy Link"]
+                    on_menu: |title| desk_copy(desk_url)
+                    UiToolIcon{draw_icon +: {svg: ui_icon("export")} on_click: || ui.share_tool.open_menu()}
+                }
+                open_tool := DeskLinkTool{width: 30 padding: 0 spacing: 0 url: desk_url}
+            }
+        }
+    }
+}
+// Under the reader's toolbar, so the page moves down rather than covering it.
+// What the reader pane says. Under the page's web view while a page is open.
+fn desk_reader_state(){
+    desk_pane_rows = visible_rows().len() > 0
+    View{width: Fill height: Fill flow: Down
+        if desk_state == "loading" {
+            DeskLoading{note.text: "Loading story…"}
+        } else if desk_state == "failed" {
+            DeskEmpty{glyph.draw_svg.svg: ui_icon("globe") head.text: "Can't Open This Story" note.text: desk_host(desk_url) + " isn't responding. Check your connection, then try again."
+                View{width: Fit height: Fit flow: Right spacing: 8 margin: Inset{top: 8}
+                    DeskLinkButton{text: "Open in Browser" url: desk_url}
+                    UiButton{text: "Try Again" on_click: || desk_retry()}
+                }
+            }
+        } else if desk_state == "page" {
+            DeskEmpty{glyph.draw_svg.svg: ui_icon("globe") head.text: desk_host(desk_url) note.text: "The page appears here once it loads."}
+        } else if ui_unified {
+            DeskNoPick{note.visible: desk_pane_rows}
+        } else if desk_pane_rows {
+            DeskEmpty{glyph.draw_svg.svg: desk_paper() head.text: "No Story Selected" note.text: "Click a story to read it here."}
+        } else {
+            DeskEmpty{glyph.draw_svg.svg: desk_paper() head.text: "No Story Selected" note.visible: false}
+        }
+    }
+}
+// A Mac's reader holds 380 points or more beside the list, which gives way first (desk_list_width).
+let desk_reader_basis = if ui_unified { 380 } else { 300 }
+let desk_reader_give = if ui_unified { 0.0 } else { 0.25 }
+let DeskFull = SolidView{width: Fill height: Fill flow: Overlay draw_bg.color: ui_content
+    View{width: Fill height: Fill flow: Right
+        side_gap := View{width: 209 height: Fill}
+        // 300 points beside the reader; everything the window leaves when the reader steps aside.
+        list_col := View{width: Fill{weight: 0.000001 basis: 300 shrink: 1.0} min_width: 200 height: Fill flow: Down
+            list_bar := View{width: Fill height: Fit flow: Down on_render: || { desk_list_bar_view() }
+                UiToolbar{
+                    DeskTitleBlock{}
+                }
+            }
+            UiSep{}
+            saved_notice_list := View{visible: false width: Fill height: Fit flow: Down
+                View{width: Fill height: Fit flow: Right spacing: 6 align: Align{y: 0.5} padding: Inset{left: 12 right: 12 top: 7 bottom: 7}
+                    UiGlyph{width: 14 height: 14 draw_svg +: {svg: ui_icon("info") color: ui_muted}}
+                    saved_notice_list_text := Label{clip_y: false width: Fill flow: Flow.Right{wrap: true} padding: 0 text: "" draw_text +: {color: ui_ink text_style: theme.font_regular{font_size: 9}}}
+                }
+                UiSep{}
+            }
+            cache_notice := View{visible: false width: Fill height: Fit flow: Down
+                View{width: Fill height: Fit flow: Right spacing: 6 align: Align{y: 0.5} padding: Inset{left: 12 right: 12 top: 7 bottom: 7}
+                    UiGlyph{width: 14 height: 14 draw_svg +: {svg: ui_icon("info") color: ui_muted}}
+                    Label{clip_y: false width: Fill flow: Flow.Right{wrap: true} padding: 0 text: "Some headlines couldn't be saved for offline use. Check storage, then refresh." draw_text +: {color: ui_ink text_style: theme.font_regular{font_size: 9}}}
+                }
+                UiSep{}
+            }
+            list_keys := GestureView{width: Fill height: Fill cursor: MouseCursor.Default on_key: |key, cmd, shift| desk_list_key(key, cmd)
+                list_host := DeskListHost{list := DeskList{}}
+            }
+        }
+        list_edge := UiVSep{}
+        reader_col := View{width: Fill{weight: 1.0 basis: desk_reader_basis shrink: desk_reader_give} min_width: 200 height: Fill flow: Down
+            reader_bar := View{width: Fill height: Fit flow: Down on_render: || { desk_reader_bar() }
+                UiToolbar{}
+            }
+            UiSep{}
+            saved_notice_reader := View{visible: false width: Fill height: Fit flow: Down
+                View{width: Fill height: Fit flow: Right spacing: 6 align: Align{y: 0.5} padding: Inset{left: 12 right: 12 top: 7 bottom: 7}
+                    UiGlyph{width: 14 height: 14 draw_svg +: {svg: ui_icon("info") color: ui_muted}}
+                    saved_notice_reader_text := Label{clip_y: false width: Fill flow: Flow.Right{wrap: true} padding: 0 text: "" draw_text +: {color: ui_ink text_style: theme.font_regular{font_size: 9}}}
+                }
+                UiSep{}
+            }
+            SolidView{width: Fill height: Fill flow: Overlay draw_bg.color: ui_content
+                reader := WebReader{width: Fill height: Fill on_error: || desk_page_error()}
+                reader_state := View{width: Fill height: Fill on_render: || { desk_reader_state() }}
+            }
+        }
+    }
+    side_layer := View{width: Fit height: Fill flow: Right new_batch: true
+        sidebar := UiSidebar{on_render: || {
+            if desk_docked() { View{width: Fill height: Fit padding: Inset{bottom: 10} desk_search_view(Fill)} }
+            for t in side_rows {
+                if t.id == tab { UiSideRowOn{text: t.label draw_icon +: {svg: ui_icon(t.icon)} on_click: || pick(t.id)} }
+                else { UiSideRow{text: t.label draw_icon +: {svg: ui_icon(t.icon)} on_click: || pick(t.id)} }
+            }
+            UiSideHead{padding: Inset{left: 4 top: 12 bottom: 4} text: "Sources"}
+            for t in side_sources {
+                if t.id == tab { UiSideRowOn{text: t.label draw_icon +: {svg: ui_icon(t.icon)} on_click: || pick(t.id)} }
+                else { UiSideRow{text: t.label draw_icon +: {svg: ui_icon(t.icon)} on_click: || pick(t.id)} }
+            }
+        }}
+        UiVSep{}
+    }
+    side_tool := View{visible: false width: Fit height: Fit margin: Inset{left: if ui_unified { 84 } else { 12 } top: if ui_unified { 12 } else { 6 }} new_batch: true
+        side_glyph := View{width: Fit height: Fit on_render: || { UiPaneTool{draw_icon +: {svg: ui_icon("sidebar")} on_click: || desk_toggle_side()} }}
+    }
+}
+
+HostedView{width: Fill height: Fill
+    full: if ui_desk { DeskFull{} } else { TouchFull{} }
     tile: View{width: Fill height: Fill flow: Down padding: Inset{left: 14 right: 14 top: 12 bottom: 12} spacing: 8
         new_batch: true show_bg: true draw_bg.color: ui_surface
         Label{text: "News" draw_text.color: accent draw_text.text_style: theme.font_bold{font_size: 13}}

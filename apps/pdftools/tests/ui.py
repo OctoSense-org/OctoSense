@@ -15,13 +15,13 @@ private headless weston (the pixman renderer, never idle), which stops with it.
   shell    every mode on the samples in the shell's own window, light, then
            dark through the shell's own style menu (the dark pass works on
            what the light pass left): Home and its status line against the
-           storage's own bytes (files.status), "Open a PDF from this device"
+           storage's own bytes (files.status), "Open PDF…"
            refused, reading and thumbnails, Read mode (entered from the bar,
            which puts the window in full screen too, a page turned and the
-           zoom changed, left by Exit read mode or the corner control on that
+           zoom changed, left by Exit Read Mode or the menu bar's row on that
            page at that zoom, with the window back; then left by Esc, the
            shell's key in full screen), find from the top bar
-           alone (the left panel given back), a highlight and its reply
+           alone (the sidebar given back), a highlight and its reply
            dated on this machine's clock, a rotation and its undo, combine
            with a page range, initials placed by Fill & Sign, a text edit with
            an alignment and a colour, save, a damaged file; then one cover
@@ -30,8 +30,12 @@ private headless weston (the pixman renderer, never idle), which stops with it.
            left at, a PDF placed as files.import leaves one (`Imported
            PDF.pdf`), every current cover kept, not drawn again, and a PDF
            removed from Home taking its cover with it
+  form     a real form (form_pdf: text, a check box, a choice, a read-only
+           field), filled on its page by the real engine: typing in place, Tab,
+           Return and Esc, the value on the page once and in the page's own
+           picture after, Undo, Save, and the values after a restart
   full     storage with no room left: the engine's refusal, then a removal
-  empty    no PDFs: the empty library and "Open a PDF from this device" (a
+  empty    no PDFs: the empty library and "Open PDF…" (a
            hidden window never has focus, so the files service refuses the
            dialog and the app shows that refusal; on Linux with no dialog
            helper there is no files.import, and the app says so)
@@ -231,30 +235,30 @@ class Driver:
             time.sleep(0.3)
         raise AssertionError(f"fewer than {count} page pictures after {timeout} s")
 
-    def click(self, x, y):
+    def click(self, x, y, **mods):
         # Never outside the app: in a shell that is the desk, the dock or another window.
         ax, ay, aw, ah = self.area()
         assert ax <= x <= ax + aw and ay <= y <= ay + ah, f"({x}, {y}) is outside the app's window {[ax, ay, aw, ah]}"
-        self.remote("click", x=x, y=y, wait=1)
+        self.remote("click", x=x, y=y, wait=1, **mods)
         time.sleep(0.4)
 
     def tap(self, text, kind=None, below=0.0, exact=True):
         x, y, w, h = self.find(text, kind, below, exact=exact)["r"]
         self.click(x + w / 2, y + h / 2)
 
-    def tap_above(self, text, rise, below=0.0):
+    def tap_above(self, text, rise, below=0.0, **mods):
         """Tap `rise` points above a label: a page tile above its number."""
         x, y, w, h = self.find(text, "Label", below)["r"]
-        self.click(x + w / 2, y - rise)
+        self.click(x + w / 2, y - rise, **mods)
 
     def reveal(self, text, kind="Label", tries=12, exact=True):
         """Scroll until `text` is drawn below the screen's header and clear of
         its bottom bar, or as far as the screen scrolls: down first when it is
         not drawn at all, then back up."""
         ax, ay, aw, ah = self.area()
-        top = ay + 170
-        # PDF Tools' status line takes the last 44 points of the app.
-        floor = ay + ah - 48
+        top = ay + 80
+        # PDF Tools' status bar takes the last 23 points of the app.
+        floor = ay + ah - 26
         step, last = 240, None
         for attempt in range(tries):
             try:
@@ -303,6 +307,15 @@ class Driver:
     def key(self, code, **mods):
         self.remote("k", c=code, wait=1, **mods)
         time.sleep(0.25)
+
+    def right_click(self, x, y):
+        """A secondary click: the view under it opens its menu at the pointer."""
+        ax, ay, aw, ah = self.area()
+        assert ax <= x <= ax + aw and ay <= y <= ay + ah, f"({x}, {y}) is outside the app's window {[ax, ay, aw, ah]}"
+        self.remote("m", k="move", x=x, y=y, wait=1)
+        self.remote("m", k="down", x=x, y=y, b=1, wait=1)
+        self.remote("m", k="up", x=x, y=y, b=1, wait=1)
+        time.sleep(0.4)
 
     def grab(self, out, name):
         time.sleep(0.8)
@@ -432,16 +445,10 @@ class Shell(Driver):
             time.sleep(0.3)
         raise AssertionError(f"the shell never logged {needle!r}")
 
-    def menu(self, words):
-        """The shell's menu (⌘Space), filtered by typing, then Return."""
-        self.key("Space", cmd=1)
-        for char in words.lower():
-            self.key("Space" if char == " " else "Key" + char.upper())
-        self.key("Return")
-
-    def style(self, name, words):
+    def style(self, name):
+        """As its row does: a Mac's Spotlight leaves a style's dark twin to System Settings."""
         since = len(self.log.read_text(errors="replace"))
-        self.menu(words)
+        self.remote("event", data="mac-row:desktop." + name)
         self.logged(f"wm: desktop style {name} applied", since)
         time.sleep(1.5)
 
@@ -501,7 +508,7 @@ def top_page(app):
 
 
 def zoom(app):
-    """The pill's zoom, as a scale: '90%' is 0.9."""
+    """The zoom shown, as a scale: '90%' is 0.9."""
     for w in app.widgets():
         found = re.fullmatch(r"(\d+)%", w.get("t") or "")
         if found:
@@ -518,7 +525,8 @@ def click_page(app, px, py, page_width=None):
 
 
 def pill_next(app):
-    """The pill's next page: the first icon button right of 'N / M'."""
+    """The next page: the first icon button right of 'N / M' (the toolbar's, or
+    in Read mode the floating bar's)."""
     label = next(w for w in app.widgets() if re.fullmatch(r"\d+ / \d+", w.get("t") or ""))
     row, (x, y, w, h) = icon_buttons_near(app, label["t"], "Label")
     bx, by, bw, bh = [r for r in row if r[0] >= x + w - 1][0]
@@ -533,20 +541,12 @@ def range_fields(app):
 
 
 def open_add_list(app, names=("Board minutes.pdf", "Field guide.pdf", "Apartment lease.pdf")):
-    """Combine's Add files, tapped until its list of PDFs shows: a tap that
-    lands while the card is drawn again is lost (seen once in a dark pass),
-    and a second tap on an open list would close it, so it is tapped again
-    only while no PDF of the list shows."""
+    """Combine's Add Files… push button, whose list of PDFs shows. (A press now survives
+    a card drawn again while it is down: a render waits for what holds the press.)"""
     def shown():
         return any(w["ty"] == "Label" and w.get("t") in names for w in app.widgets())
-    for attempt in range(3):
-        app.tap("Add files", "Label")
-        try:
-            wait_until(shown, "the list of PDFs to add did not open", timeout=5)
-            return
-        except AssertionError:
-            if attempt == 2:
-                raise
+    app.tap("Add Files…")
+    wait_until(shown, "the list of PDFs to add did not open", timeout=5)
 
 
 def range_field_of(app, name, timeout=15.0):
@@ -571,7 +571,7 @@ def range_field_of(app, name, timeout=15.0):
 
 
 def press_combine(app):
-    """Combine's own button, at the end of its card (not the mode's tab)."""
+    """Combine's own button, at the foot of its pane (not the mode's segment)."""
     app.scroll(600)
     buttons = [w for w in app.widgets() if w["ty"] in ("Button", "ButtonFlat") and w.get("t") == "Combine"]
     x, y, w, h = max(buttons, key=lambda b: b["r"][1])["r"]
@@ -594,9 +594,112 @@ def click_icon_left_of(app, text, nth=1, kind="Button"):
     app.click(bx + bw / 2, by + bh / 2)
 
 
-def tap_tile(app, number, rise=70):
+def tap_tile(app, number, rise=70, **mods):
     """Pages mode: tap a page tile above its number."""
-    app.tap_above(str(number), rise, below=150)
+    app.tap_above(str(number), rise, below=150, **mods)
+
+
+def to_home(app):
+    """The tab strip's +, at its end (the only 26 by 22 tool): Home, to open another PDF."""
+    def plus():
+        return [w["r"] for w in app.widgets() if w["ty"] in ("Button", "ButtonFlat") and not w.get("t")
+                and abs(w["r"][2] - 26) < 1 and abs(w["r"][3] - 22) < 1]
+    wait_until(plus, "no + in the tab strip")
+    x, y, w, h = plus()[-1]
+    app.click(x + w / 2, y + h / 2)
+
+
+def tab_close(app, title):
+    """The close of `title`'s tab: its cell's "×", at the cell's start, left of its words."""
+    tab = app.find(title, "Label")["r"]
+    crosses = [w["r"] for w in app.widgets() if w.get("t") == "×" and w["r"][0] < tab[0]]
+    assert crosses, f"no close on {title}'s tab"
+    x, y, w, h = max(crosses, key=lambda r: r[0])
+    app.click(x + w / 2, y + h / 2)
+
+
+def menu_pick(app, title, timeout=10.0):
+    """A row of the native menu that is open: rows stay listed after their menu closes, so
+    the open menu's are the last ones."""
+    def rows():
+        return [w["r"] for w in app.widgets() if w["ty"] == "PopupMenuItem" and w.get("t") == title]
+    wait_until(rows, f"no menu row {title!r}", timeout=timeout)
+    x, y, w, h = rows()[-1]
+    app.click(x + w / 2, y + h / 2)
+
+
+MODES = ("Read", "Comment", "Fill & Sign", "Pages", "Combine", "Edit")
+
+
+def mode(app, title):
+    """A mode: its segment in the toolbar, or its row in the pop-up the segments fold
+    into when the window can't show them all beside the document's whole name (a Mac's
+    toolbar). A Mac lays the menu's checked row over its button, so near the window's
+    top the earlier rows can wait above the menu's scroll arrow."""
+    top = app.area()[1] + 45
+    def shown():
+        return [w for w in app.widgets() if w.get("t") in MODES and w["ty"] in ("Button", "ButtonFlat") and w["r"][1] < top]
+    wait_until(shown, "no modes in the toolbar")
+    bar = shown()
+    segment = [w["r"] for w in bar if w["t"] == title]
+    if len(bar) > 1 and segment:
+        x, y, w, h = segment[0]
+        app.click(x + w / 2, y + h / 2)
+        return
+    x, y, w, h = bar[0]["r"]
+    app.click(x + w / 2, y + h / 2)
+    for _ in range(4):
+        rows = [w for w in app.widgets() if w["ty"] == "PopupMenuItem" and w.get("t") in MODES and w["r"][3] >= 20]
+        if any(w["t"] == title for w in rows):
+            menu_pick(app, title)
+            return
+        assert rows, "the modes menu drew no whole row"
+        first = min(MODES.index(w["t"]) for w in rows)
+        x, y, w, h = rows[-1]["r"]
+        app.remote("m", k="scroll", x=x + w / 2, y=y + h / 2, dy=-400 if MODES.index(title) < first else 400, wait=1)
+        time.sleep(0.3)
+    raise AssertionError(f"no row {title!r} in the modes menu")
+
+
+SIDE_VIEWS = ("Pages", "Outline", "Comments")
+
+
+def side_shown(app):
+    """The view the sidebar's pop-up shows, or None with the sidebar folded."""
+    ax, ay, aw, ah = app.area()
+    for w in app.widgets():
+        if w["ty"] == "Button" and w.get("t") in SIDE_VIEWS and w["r"][1] > ay + 45 and w["r"][0] < ax + 40:
+            return w["t"]
+    return None
+
+
+def sidebar_button(app):
+    """The toolbar's first tool: the sidebar, in or out."""
+    label = next(w for w in app.widgets() if re.fullmatch(r"\d+ / \d+", w.get("t") or ""))
+    row, _ = icon_buttons_near(app, label["t"], "Label")
+    bx, by, bw, bh = row[0]
+    app.click(bx + bw / 2, by + bh / 2)
+
+
+def side_view(app, title):
+    """`title` in the sidebar: from the pop-up at its head, opening the sidebar first if it is folded."""
+    if side_shown(app) is None:
+        sidebar_button(app)
+        wait_until(lambda: side_shown(app) is not None, "the sidebar did not open")
+    now = side_shown(app)
+    if now == title:
+        return
+    ax, ay, aw, ah = app.area()
+    app.tap(now, "Button", below=ay + 45)
+    menu_pick(app, title)
+    wait_until(lambda: side_shown(app) == title, f"the sidebar did not show {title}")
+
+
+def fold_side(app):
+    """The sidebar in, by the toolbar's button."""
+    if side_shown(app) is not None:
+        sidebar_button(app)
+    wait_until(lambda: side_shown(app) is None, "the sidebar did not fold")
 
 
 # The fixture run's storage, for the boxes make_fixture.py recorded.
@@ -618,7 +721,7 @@ def name_once(app):
         return
     app.tap("Your name", "TextInput")
     app.type("Maya Chen")
-    app.tap("Save", "Button", below=150)
+    app.tap("Save", "Button", below=100)
     app.gone("Comment as")
 
 
@@ -632,7 +735,7 @@ def fixture_journey(app, out, dark):
     # 01-home shows Home with the report open in a tab.
     app.press("Q3 2026 Board Report.pdf")
     app.images(3)
-    app.tap("Open", "Button")
+    to_home(app)
     app.scroll(-3000)
     app.images(5)
     app.grab(out, f"{p}01-home")
@@ -642,7 +745,7 @@ def fixture_journey(app, out, dark):
     for name in ("Riverside Lease 2026.pdf", "Field Guide to Garden Birds.pdf", "Invoice INV-2041.pdf", "Site Survey Photos.pdf"):
         app.press(name)
         app.images(1)
-        app.tap("Open", "Button")
+        to_home(app)
     app.tap("Q3 2026 Board Report.pdf", "Label")
     app.images(3)
     app.tap("3", "Label", below=150)
@@ -660,28 +763,31 @@ def fixture_journey(app, out, dark):
     app.grab(out, f"{p}03-find")
     app.tap("Done")
 
-    app.tap("Comment", "Button")
+    mode(app, "Comment")
     name_once(app)
-    app.tap("Outline", "Label")
+    side_view(app, "Outline")
     app.tap("Revenue", "Label")
-    app.tap("Outline", "Label")
+    fold_side(app)
     app.see("3 / 24")
     app.images(1)
     app.grab(out, f"{p}04-comment")
 
-    app.tap("Pages", "Button")
+    mode(app, "Pages")
     app.images(12)
     tap_tile(app, 5)
-    tap_tile(app, 6)
+    app.see("1 selected")
+    tap_tile(app, 6, cmd=1)
     app.see("2 selected")
     app.grab(out, f"{p}05-pages")
-    tap_tile(app, 5)
-    tap_tile(app, 6)
+    tap_tile(app, 5, cmd=1)
+    app.see("1 selected")
+    tap_tile(app, 6, cmd=1)
+    app.see("None selected")
 
-    app.tap("Combine", "Button")
-    app.tap("Add files", "Label")
+    mode(app, "Combine")
+    app.tap("Add Files…")
     app.tap("Appendix A - Figures.pdf", "Label")
-    app.tap("Add files", "Label")
+    app.tap("Add Files…")
     app.tap("Cover Letter.pdf", "Label")
     ranges = sorted((w for w in app.widgets() if w["ty"] == "TextInput" and w["r"][2] < 200), key=lambda w: w["r"][1])
     x, y, w, h = ranges[1]["r"]
@@ -690,10 +796,10 @@ def fixture_journey(app, out, dark):
     app.see("(5 pages)")
     app.grab(out, f"{p}06-combine")
 
-    app.tap("Edit", "Button")
-    app.tap("Outline", "Label")
+    mode(app, "Edit")
+    side_view(app, "Outline")
     app.tap("Summary", "Label")
-    app.tap("Outline", "Label")
+    fold_side(app)
     app.see("2 / 24")
     app.images(1)
     click_page(app, *fixture_paragraph("board", 2, 2), 612)  # "The board met on 21 September 2026…"
@@ -701,16 +807,16 @@ def fixture_journey(app, out, dark):
     app.grab(out, f"{p}08-edit")
     app.tap("Cancel", "Button")
 
-    app.tap("Open", "Button")
+    to_home(app)
     app.press("Riverside Lease 2026.pdf")
-    app.tap("Fill & Sign", "Button")
+    mode(app, "Fill & Sign")
     app.see("This form has 7 fields", exact=False)
     app.images(1)
     app.grab(out, f"{p}07-fill-sign")
 
     app.tap("Q3 2026 Board Report.pdf", "Label")
-    app.tap("Read", "Button")
-    app.tap("Outline", "Label")
+    mode(app, "Read")
+    side_view(app, "Outline")
     app.tap("Revenue", "Label")
     app.see("3 / 24")
     app.images(1)
@@ -720,25 +826,27 @@ def fixture_journey(app, out, dark):
 def fixture_states(app, out, dark):
     """The states the brief lists, on the fixture: damaged, protected, unsaved."""
     p = "d" if dark else ""
-    app.tap("Open", "Button")
+    to_home(app)
     app.press("Damaged scan.pdf")
-    app.see("Couldn't open this PDF")
+    app.see("Couldn't Open This PDF")
     app.grab(out, f"{p}s1-damaged")
-    app.tap("Close this tab", "Button")
-    app.tap("Open", "Button")
+    app.tap("OK", "Button")  # a damaged file says so once, with OK, which closes its tab
+    to_home(app)
     app.press("Payroll 2026.pdf")
-    app.see("This PDF is protected with a password")
+    app.see("This PDF Is Protected with a Password")
     app.grab(out, f"{p}s2-protected")
-    app.tap("Close this tab", "Button")
+    app.tap("Close Tab", "Button")
     # a change, then closing its tab asks first
     app.tap("Riverside Lease 2026.pdf", "Label")
     app.tap("Monthly rent *", "Label")
-    app.tap("Type the value", "TextInput")
+    # The field takes the keyboard on its page: no Apply, Return ends it.
+    app.find("Type the value", "TextInput")
     app.type("1850")
-    app.tap("Apply", "Button")
+    app.key("Return")
     app.see("Edited")
-    tab = app.find("Riverside Lease 2026.pdf •", "Label")["r"]
-    app.click(tab[0] + tab[2] + 22, tab[1] + tab[3] / 2)  # its close cross
+    wait_until(lambda: labels(app, "1850") == 2, "the value is not on the page and in the list")
+    app.find("•", "Label")  # the tab says it's unsaved
+    tab_close(app, "Riverside Lease 2026.pdf")
     app.see("Save the changes to “Riverside Lease 2026.pdf”?")
     app.grab(out, f"{p}s3-unsaved")
     app.tap("Cancel", "Button")
@@ -759,12 +867,13 @@ def jail_bytes(jail):
 
 
 def storage_shown(app):
-    """The status line's storage words as (bytes shown, quota in MB), or None."""
+    """Home's status line, "3 PDFs, 49.4 MB available", as (bytes it says are
+    used, the 64 MB it says them against), or None."""
     for w in app.widgets():
-        m = re.fullmatch(r"([\d.]+)(?: (bytes?|KB))? of (\d+) MB used", (w.get("t") or "").strip())
+        m = re.fullmatch(r"\d+ PDFs?, ([\d.]+) (bytes?|KB|MB) available", (w.get("t") or "").strip())
         if m:
-            scale = {None: 1 << 20, "KB": 1 << 10}.get(m.group(2), 1)
-            return float(m.group(1)) * scale, int(m.group(3))
+            scale = {"MB": 1 << 20, "KB": 1 << 10}.get(m.group(2), 1)
+            return QUOTA - float(m.group(1)) * scale, QUOTA >> 20
     return None
 
 
@@ -781,46 +890,41 @@ def check_storage_line(app, jail):
 
 
 def check_today(app, moments):
-    """A comment made at one of `moments` reads "Today HH:MM" on this
+    """A comment made at one of `moments` reads "Today 3:45 PM" on this
     machine's clock: the service gives its local time (the engine stamps it
     in UTC, which after 17:00 here is already tomorrow)."""
-    stamps = {time.strftime("Today %H:%M", time.localtime(t)) for t in moments}
+    stamps = {time.strftime("Today %-I:%M %p", time.localtime(t)) for t in moments}
     wait_until(lambda: any((w.get("t") or "") in stamps for w in app.widgets()), f"no comment dated {sorted(stamps)}")
     return sorted(stamps)
 
 
 def align_segment(app, which):
     """Tap one of the Edit panel's Alignment segments: the row below its label,
-    as wide as Apply and Cancel."""
+    from its label's left edge to Apply's right."""
     label = app.find("Alignment", "Label")["r"]
-    apply_, cancel = app.find("Apply", "Button")["r"], app.find("Cancel", "Button")["r"]
-    left, right = apply_[0], cancel[0] + cancel[2]
-    app.click(left + (ALIGNS.index(which) + 0.5) * (right - left) / 4, label[1] + label[3] + 10 + 20)
+    apply_ = app.find("Apply", "Button")["r"]
+    left, right = label[0], apply_[0] + apply_[2]
+    app.click(left + (ALIGNS.index(which) + 0.5) * (right - left) / 4, label[1] + label[3] + 6 + 14)
 
 
-def pick_colour(app, shown, chip, name, grab=None):
-    """Open the Edit panel's Colour box (showing `shown`) into its row of
-    colours (grabbed as `grab`, (out, name), when given) and tap number
-    `chip` (0: the paragraph's own colour, then the six), which the box then
-    names."""
-    box = app.find(shown, "Label")["r"]
-    left = app.find("Apply", "Button")["r"][0]  # the box's left edge: the column's
-    centre = box[1] + box[3] / 2
-    app.click(box[0] + box[2] / 2, centre)
-    app.gone(shown)
+def pick_colour(app, shown, name, grab=None):
+    """The Edit panel's Color pop-up (showing `shown`), a real menu (grabbed as `grab`,
+    (out, name), when given): `name` chosen, which it then shows."""
+    app.tap(shown, "Button")
     if grab:
+        app.find(name, "PopupMenuItem")
         app.grab(*grab)
-    app.click(left + 1 + 4 + chip * 34 + 15, centre)
-    app.find(name, "Label")
+    menu_pick(app, name)
+    app.find(name, "Button")
 
 
 def combine_button_in_view(app):
-    """Combine's own button (the card's, below the mode bar) is in view above
-    the status line, with no scroll: its rect."""
+    """Combine's own button (the pane's foot's, below the toolbar) is in view
+    above the status bar, with no scroll: its rect."""
     ax, ay, aw, ah = app.area()
-    own = sorted((w for w in app.widgets() if w["ty"] in ("Button", "ButtonFlat") and w.get("t") == "Combine" and w["r"][1] > ay + 53 + 54),
+    own = sorted((w for w in app.widgets() if w["ty"] in ("Button", "ButtonFlat") and w.get("t") == "Combine" and w["r"][1] > ay + 40 + 28),
                  key=lambda w: w["r"][1])
-    assert own and own[-1]["r"][1] + own[-1]["r"][3] <= ay + ah - 44 + 1, f"Combine's own button is not in view: {own}"
+    assert own and own[-1]["r"][1] + own[-1]["r"][3] <= ay + ah - 23 + 1, f"Combine's own button is not in view: {own}"
     return own[-1]["r"]
 
 
@@ -829,14 +933,14 @@ def labels(app, text):
     return len([w for w in app.widgets() if w["ty"] == "Label" and w.get("t") == text])
 
 
-def rail_labels(app):
-    """The rail's items, top to bottom: the Labels in its column, between the
-    mode bar (below the 53-point tab row and the 54-point bar) and the
-    44-point status line."""
+def side_titles(app):
+    """The sidebar pop-up's rows, its menu opened and closed with Esc."""
     ax, ay, aw, ah = app.area()
-    return [w["t"] for w in sorted(app.widgets(), key=lambda w: w["r"][1])
-            if w["ty"] == "Label" and w.get("t") and w["r"][0] < ax + 84
-            and ay + 53 + 54 <= w["r"][1] and w["r"][1] + w["r"][3] <= ay + ah - 44]
+    app.tap(side_shown(app), "Button", below=ay + 45)
+    wait_until(lambda: [w for w in app.widgets() if w["ty"] == "PopupMenuItem"], "the sidebar's pop-up did not open")
+    rows = [w["t"] for w in sorted(app.widgets(), key=lambda w: w["r"][1]) if w["ty"] == "PopupMenuItem"]
+    app.key("Escape")
+    return rows
 
 
 def close_results(app, title):
@@ -847,7 +951,8 @@ def close_results(app, title):
 
 
 def pill_end(app):
-    """The floating bar's last icon button: Read mode's full-screen button."""
+    """The toolbar's last icon button, on the row of the page number: Read mode's
+    full-screen button."""
     label = next(w for w in app.widgets() if re.fullmatch(r"\d+ / \d+", w.get("t") or ""))
     row, _ = icon_buttons_near(app, label["t"], "Label")
     bx, by, bw, bh = row[-1]
@@ -855,23 +960,14 @@ def pill_end(app):
 
 
 def zoom_button(app, step):
-    """The floating bar's zoom out (-1) or in (+1), either side of its zoom."""
+    """The zoom out (-1) or in (+1), either side of the zoom (the toolbar's, or
+    in Read mode the floating bar's)."""
     label = next(w for w in app.widgets() if re.fullmatch(r"\d+%", w.get("t") or ""))
     row, (x, y, w, h) = icon_buttons_near(app, label["t"], "Label")
     if step > 0:
         bx, by, bw, bh = [r for r in row if r[0] >= x + w - 1][0]
     else:
         bx, by, bw, bh = [r for r in row if r[0] + r[2] <= x + 1][-1]
-    app.click(bx + bw / 2, by + bh / 2)
-
-
-def corner_exit(app):
-    """Read mode's corner control: the icon button at the app's top right."""
-    ax, ay, aw, ah = app.area()
-    corner = [w["r"] for w in app.widgets() if w["ty"] in ("Button", "ButtonFlat") and not w.get("t")
-              and w["r"][0] > ax + aw - 90 and w["r"][1] < ay + 90]
-    assert corner, "no corner control in Read mode"
-    bx, by, bw, bh = corner[0]
     app.click(bx + bw / 2, by + bh / 2)
 
 
@@ -896,17 +992,20 @@ def full_screen(app):
 
 def read_mode(app, out, p, dark):
     """Read mode (the user: "there is no full screen read mode?"): entered
-    from the floating bar's last button, the pages alone and, in a shell, the
+    from the toolbar's last button, the pages alone and, in a shell, the
     window in full screen; a page turned and the zoom changed in it; left
-    from the bar's Exit read mode (light) or the corner control (dark), on
+    from the bar's Exit Read Mode (light) or the menu bar's row (dark), on
     that page at that zoom, with the window back where it was."""
     windowed = app.area()
     page = next(w["t"] for w in app.widgets() if re.fullmatch(r"\d+ / \d+", w.get("t") or ""))
     pill_end(app)
-    app.find("Exit read mode", "Button")
+    app.find("Exit Read Mode", "Button")
     full = full_screen(app) if isinstance(app, Shell) else None
     app.gone("Search in document")
-    assert labels(app, "Outline") == 0 and labels(app, "Comments") == 0, "the rail shows in Read mode"
+    assert side_shown(app) is None, "the sidebar shows in Read mode"
+    bar = app.find("Exit Read Mode", "Button")["r"]
+    page_foot = max(w["r"][1] + w["r"][3] for w in app.pictures() if w["r"][2] > 300)
+    assert page_foot <= bar[1] + 1, f"the pages run under Read mode's bar: {page_foot} past {bar[1]}"
     assert not [w for w in app.widgets() if w.get("t") in ("Saved", "Edited")], "the status line shows in Read mode"
     app.find(page, "Label")  # the same page
     app.images(1)
@@ -922,11 +1021,11 @@ def read_mode(app, out, p, dark):
     app.images(1)
     app.grab(out, f"{p}02d-read-mode-zoomed")
     if dark:
-        corner_exit(app)
+        app.remote("event", data="mac-row:mac.app.read_mode")
     else:
-        app.tap("Exit read mode", "Button")
+        app.tap("Exit Read Mode", "Button")
     app.find("Search in document", "TextInput")  # the bars are back
-    app.gone("Exit read mode")
+    app.gone("Exit Read Mode")
     if full is not None:
         wait_until(lambda: same_rect(app.area(), windowed), f"the window did not come back: {app.area()}, was {windowed}")
     app.find(turned, "Label")
@@ -934,7 +1033,7 @@ def read_mode(app, out, p, dark):
     app.images(1)
     app.grab(out, f"{p}02e-read-mode-left")
     RECEIPT.setdefault("read_mode", []).append({"pass": "dark" if dark else "light", "entered_on": page, "left_on": turned,
-                                                "zoom": [before, zoomed], "left_by": "corner control" if dark else "Exit read mode",
+                                                "zoom": [before, zoomed], "left_by": "the View menu's row" if dark else "Exit Read Mode",
                                                 "window": windowed, "full_screen": full, "after": app.area()})
     zoom_button(app, -1)  # the zoom the rest of the journey reads at
     wait_until(lambda: zoom(app) == before, "the zoom did not go back")
@@ -942,20 +1041,20 @@ def read_mode(app, out, p, dark):
 
 def read_mode_escape(app, out, p):
     """Esc, the shell's key while Read mode has the window in full screen
-    (a script gets no keys): the shell ends the full screen, tells the app
+    (the shell takes it from the app there): the shell ends the full screen, tells the app
     (on_app_fullscreen), Read mode ends with it on the same page at the same
     zoom, and the window is back."""
     windowed = app.area()
     page = next(w["t"] for w in app.widgets() if re.fullmatch(r"\d+ / \d+", w.get("t") or ""))
     level = zoom(app)
     pill_end(app)
-    app.find("Exit read mode", "Button")
+    app.find("Exit Read Mode", "Button")
     full = full_screen(app)
     app.images(1)
     app.grab(out, f"{p}02f-read-mode-full-screen")
     app.key("Escape")
     app.find("Search in document", "TextInput")  # Read mode is over
-    app.gone("Exit read mode")
+    app.gone("Exit Read Mode")
     wait_until(lambda: same_rect(app.area(), windowed), f"the window did not come back after Esc: {app.area()}, was {windowed}")
     app.find(page, "Label")
     assert zoom(app) == level, f"Esc left Read mode at {zoom(app)}, it was entered at {level}"
@@ -969,7 +1068,7 @@ NO_IMPORT = "This OctoSense can't open files from the device for PDF Tools."
 
 
 def open_on_linux(app, out, name):
-    """'Open a PDF from this device' on Linux, where no hidden window keeps
+    """'Open PDF…' on Linux, where no hidden window keeps
     the dialog shut: True when the step was taken here. With no dialog helper
     on PATH the shell offers no files.import, so Home says "Not available
     here" beside the button and the button says why. With one, the run's
@@ -979,11 +1078,11 @@ def open_on_linux(app, out, name):
     if not LINUX:
         return False
     if any(shutil.which(helper) for helper in DIALOG_HELPERS):
-        print("   left out 'Open a PDF from this device': a file dialog helper is on PATH")
+        print("   left out 'Open PDF…': a file dialog helper is on PATH")
         RECEIPT.setdefault("open_from_device", []).append({"step": name, "left_out": "a file dialog helper is on PATH"})
         return True
     app.find("Not available here", "Label")
-    app.tap("Open a PDF from this device", "Button")
+    app.tap("Open PDF…", "Button")
     app.find(NO_IMPORT, "Label")
     app.grab(out, name)
     app.gone(NO_IMPORT)  # the banner goes after 8 s; it would cover the next taps
@@ -1003,7 +1102,7 @@ def shell_journey(app, out, dark):
     same tabs, the comment name and initials it kept, its edits."""
     p = "d" if dark else ""
     if dark:
-        app.tap("Open", "Button")  # Home: the light pass ended on a tab
+        to_home(app)  # Home: the light pass ended on a tab
     app.see("Quarterly report.pdf")
     app.images(3)
     app.scroll(-3000)
@@ -1011,7 +1110,7 @@ def shell_journey(app, out, dark):
         RECEIPT["storage_line"] = check_storage_line(app, SHELL_JAIL)
     app.grab(out, f"{p}01-home")
     if not dark and not open_on_linux(app, out, "01b-open-from-device"):
-        app.tap("Open a PDF from this device", "Button")
+        app.tap("Open PDF…", "Button")
         app.find("Couldn't open a PDF from this device", "Label")
         app.find("Bring PDF Tools to the front, then choose the file again.", "Label")
         app.grab(out, "01b-open-from-device")
@@ -1033,16 +1132,14 @@ def shell_journey(app, out, dark):
     if not dark:
         read_mode_escape(app, out, p)
 
-    # One search, in the top bar: the rail offers Pages, Outline and Comments.
-    assert rail_labels(app) == ["Pages", "Outline", "Comments"], f"the rail: {rail_labels(app)}"
-    # The left side the search gives back when it ends: the Comments panel
-    # (light), or the left side folded away (dark).
+    # One search, in the top bar: the sidebar's pop-up offers Pages, Outline and Comments.
+    assert side_titles(app) == ["Pages", "Outline", "Comments"], "the sidebar's pop-up"
+    # The sidebar the search gives back when it ends: the Comments view (light), or
+    # folded away (dark).
     if dark:
-        app.tap("Pages", "Label")  # the rail's Pages, open: folds it
-        wait_until(lambda: labels(app, "Pages") == 1, "the Pages panel did not fold")
+        fold_side(app)
     else:
-        app.tap("Comments", "Label")
-        wait_until(lambda: labels(app, "Comments") == 2, "the Comments panel did not open")
+        side_view(app, "Comments")
     app.tap("Search in document", "TextInput")
     app.type("revenue")
     app.key("Return")
@@ -1052,16 +1149,15 @@ def shell_journey(app, out, dark):
     if dark:
         close_results(app, "9 matches on 4 pages")  # the results' own cross ends the search too
         app.gone("9 matches on 4 pages")
-        wait_until(lambda: labels(app, "Pages") == 1 and labels(app, "Comments") == 1, "the left side did not fold again")
+        wait_until(lambda: side_shown(app) is None, "the sidebar did not fold again")
     else:
         app.tap("Done")
         app.gone("9 matches on 4 pages")
-        wait_until(lambda: labels(app, "Comments") == 2, "Done did not give the Comments panel back")
+        wait_until(lambda: side_shown(app) == "Comments", "Done did not give the Comments view back")
         app.grab(out, f"{p}03b-find-done")
-    app.tap("Pages", "Label")  # the Pages panel again, as the rest of the journey had it
-    wait_until(lambda: labels(app, "Pages") == 2, "the Pages panel did not open")
+    side_view(app, "Pages")  # as the rest of the journey had it
 
-    app.tap("Comment", "Button")
+    mode(app, "Comment")
     name_once(app)
     app.find("1 / 4", "Label")  # find went to the first match
     pill_next(app)
@@ -1075,13 +1171,13 @@ def shell_journey(app, out, dark):
     RECEIPT.setdefault("comment_dates", []).append({"pass": "dark" if dark else "light", "utc_now": time.strftime("%Y-%m-%dT%H:%MZ", time.gmtime()),
                                                     "shown_one_of": check_today(app, (made, time.time()))})
     app.grab(out, f"{p}04-comment")
-    app.tap("Reply...", "TextInput")
+    app.tap("Reply…", "TextInput")
     app.type("Checked against the ledger.")
     app.tap("Post", "Button")
     app.find("Checked against the ledger.", "Label")
     app.grab(out, f"{p}04b-replied")
 
-    app.tap("Pages", "Button")
+    mode(app, "Pages")
     app.images(3)
     upright = app.find("2", "Label", below=150)["r"][1]
     try:
@@ -1089,7 +1185,7 @@ def shell_journey(app, out, dark):
     except AssertionError:
         tap_tile(app, 2)
         app.find("1 selected", "Label")
-    app.tap("Rotate right", "Button")
+    app.tap("Rotate Right", "Button")
     # A page turned on its side draws a wide, low tile: its number rises.
     wait_until(lambda: app.find("2", "Label", below=150)["r"][1] < upright - 20, "page 2 never turned")
     app.images(3)
@@ -1098,7 +1194,7 @@ def shell_journey(app, out, dark):
     wait_until(lambda: abs(app.find("2", "Label", below=150)["r"][1] - upright) < 2, "Undo never turned page 2 back")
     app.grab(out, f"{p}05b-undone")
 
-    app.tap("Combine", "Button")
+    mode(app, "Combine")
     open_add_list(app)
     app.reveal("Board minutes.pdf")  # the list may scroll inside the card
     app.tap("Board minutes.pdf", "Label")
@@ -1120,13 +1216,13 @@ def shell_journey(app, out, dark):
     app.images(1)
     app.grab(out, f"{p}06b-combined")
 
-    app.tap("Open", "Button")
+    to_home(app)
     app.press("Apartment lease.pdf")
     app.images(1)
-    app.tap("Fill & Sign", "Button")
+    mode(app, "Fill & Sign")
     app.find("This PDF has no form fields", "Label", exact=False)
     app.find("Saved", "Label")
-    app.tap("Add initials", "Label")
+    app.tap("Add Initials", "Button")
     try:
         app.find("Initials", "TextInput", timeout=3)  # empty: the light pass
         app.tap("Initials", "TextInput")
@@ -1138,7 +1234,7 @@ def shell_journey(app, out, dark):
     app.images(1)
     app.grab(out, f"{p}07-fill-sign")
 
-    app.tap("Edit", "Button")
+    mode(app, "Edit")
     app.find("Click a paragraph on the page to edit its text.", "Label")
     click_page(app, 120, 168)  # clause 1
     app.find("Paragraph", "Label", exact=False)
@@ -1146,7 +1242,7 @@ def shell_journey(app, out, dark):
     # on what the light one left) flush right in the paragraph's own colour.
     align_segment(app, "right" if dark else "center")
     if not dark:
-        pick_colour(app, "Its own colour", 4, "Red", grab=(out, "08a-colours"))
+        pick_colour(app, "Original Color", "Red", grab=(out, "08a-colours"))
     editor = [w for w in app.widgets() if w["ty"] == "TextInput" and (w.get("t") or "").startswith("This agreement")][0]["r"]
     app.click(editor[0] + editor[2] - 6, editor[1] + editor[3] - 7)  # after its last word
     app.type(" (amended)")
@@ -1160,11 +1256,11 @@ def shell_journey(app, out, dark):
     app.find("Saved", "Label")
     app.grab(out, f"{p}09-saved")
 
-    app.tap("Open", "Button")
+    to_home(app)
     app.press("Damaged scan.pdf")
-    app.find("Couldn't open this PDF", "Label")
+    app.find("Couldn't Open This PDF", "Label")
     app.grab(out, f"{p}10-damaged")
-    app.tap("Close this tab", "Button")
+    app.tap("OK", "Button")  # a damaged file says so once, with OK, which closes its tab
 
 
 def wait_until(check, failure, timeout=30.0):
@@ -1202,13 +1298,13 @@ def restart(app, out):
     app.images(1)
     app.find("1 / 3", "Label", timeout=60)
     app.grab(out, "r02-imported")
-    app.tap("Open", "Button")
+    to_home(app)
     app.press("Quarterly report.pdf")
     app.find("2 / 4", "Label", timeout=60)  # where the shell run left it
     app.images(1)
     app.grab(out, "r03-place-kept")
     # Remove deletes the PDF's kept cover with it.
-    app.tap("Open", "Button")
+    to_home(app)
     name = "Quarterly report combined.pdf"
     index = json.loads((SHELL_JAIL / "accounts/device/library.json").read_text())["docs"]
     cover = index.get(name, {}).get("cover", "")
@@ -1220,16 +1316,188 @@ def restart(app, out):
     RECEIPT["removed_with_its_cover"] = {"pdf": name, "cover": cover}
 
 
+FORM_NAME = "Application form.pdf"
+# The form's fields, as PDF rectangles (from the page's foot) and in the page's points
+# from its top: what a click on one means.
+FORM_FIELDS = {
+    "Full name": [150, 690, 400, 712],
+    "Email": [150, 650, 400, 672],
+    "Agree": [150, 612, 168, 630],
+    "Plan": [150, 570, 300, 592],
+    "Reference": [150, 530, 300, 552],
+}
+
+
+def form_at(name):
+    """The middle of a form field, in the page's points from its top left."""
+    x0, y0, x1, y1 = FORM_FIELDS[name]
+    return (x0 + x1) / 2, 792 - (y0 + y1) / 2
+
+
+def form_pdf(path):
+    """A real AcroForm, written out by hand, for the engine to list and fill: a text
+    field with a value, a required one without, a check box, a choice, a read-only one."""
+    def rect(name):
+        return "[" + " ".join(str(v) for v in FORM_FIELDS[name]) + "]"
+    content = ["BT /F1 16 Tf 72 730 Td (Membership Application) Tj ET"]
+    for label, name in (("Full name:", "Full name"), ("Email:", "Email"), ("I agree:", "Agree"), ("Plan:", "Plan"), ("Reference:", "Reference")):
+        content.append(f"BT /F1 11 Tf 72 {FORM_FIELDS[name][1] + 6} Td ({label}) Tj ET")
+        x0, y0, x1, y1 = FORM_FIELDS[name]
+        content.append(f"{x0} {y0} {x1 - x0} {y1 - y0} re S")
+    stream = "\n".join(content).encode()
+    box = "/Type /Annot /Subtype /Widget /F 4 /P 3 0 R"
+    check_on = b"q 1.5 w 3 9 m 7 4 l 15 14 l S Q"
+
+    def shown(name, value):
+        """A field's value as a real form carries it: an appearance stream, which is
+        what the engine's picture of a page draws."""
+        x0, y0, x1, y1 = FORM_FIELDS[name]
+        body = f"q BT /Helv 12 Tf 0 g 2 6 Td ({value}) Tj ET Q".encode()
+        return b"<< /Type /XObject /Subtype /Form /BBox [0 0 %d %d] /Resources << /Font << /Helv 10 0 R >> >> /Length %d >>\nstream\n%s\nendstream" % (x1 - x0, y1 - y0, len(body), body)
+
+    objects = [
+        b"<< /Type /Catalog /Pages 2 0 R /AcroForm << /Fields [5 0 R 6 0 R 7 0 R 8 0 R 9 0 R] /DA (/Helv 0 Tf 0 g) /DR << /Font << /Helv 10 0 R >> >> >> >>",
+        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 10 0 R >> >> /Annots [5 0 R 6 0 R 7 0 R 8 0 R 9 0 R] >>",
+        b"<< /Length %d >>\nstream\n%s\nendstream" % (len(stream), stream),
+        f"<< {box} /FT /Tx /T (Full name) /V (Ada Park) /DA (/Helv 12 Tf 0 g) /Rect {rect('Full name')} /AP << /N 13 0 R >> >>".encode(),
+        f"<< {box} /FT /Tx /T (Email) /Ff 2 /DA (/Helv 12 Tf 0 g) /Rect {rect('Email')} >>".encode(),
+        f"<< {box} /FT /Btn /T (Agree) /V /Off /AS /Off /Rect {rect('Agree')} /AP << /N << /Yes 11 0 R /Off 12 0 R >> >> >>".encode(),
+        f"<< {box} /FT /Ch /Ff 131072 /T (Plan) /Opt [(Basic) (Standard) (Premium)] /V (Standard) /DA (/Helv 12 Tf 0 g) /Rect {rect('Plan')} /AP << /N 14 0 R >> >>".encode(),
+        f"<< {box} /FT /Tx /Ff 1 /T (Reference) /V (A-1042) /DA (/Helv 12 Tf 0 g) /Rect {rect('Reference')} /AP << /N 15 0 R >> >>".encode(),
+        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>",
+        b"<< /Type /XObject /Subtype /Form /BBox [0 0 18 18] /Length %d >>\nstream\n%s\nendstream" % (len(check_on), check_on),
+        b"<< /Type /XObject /Subtype /Form /BBox [0 0 18 18] /Length 0 >>\nstream\n\nendstream",
+        shown("Full name", "Ada Park"),
+        shown("Plan", "Standard"),
+        shown("Reference", "A-1042"),
+    ]
+    out = bytearray(b"%PDF-1.7\n")
+    offsets = []
+    for n, body in enumerate(objects, 1):
+        offsets.append(len(out))
+        out += b"%d 0 obj\n%s\nendobj\n" % (n, body)
+    xref = len(out)
+    out += b"xref\n0 %d\n0000000000 65535 f \n" % (len(objects) + 1)
+    for at in offsets:
+        out += b"%010d 00000 n \n" % at
+    out += b"trailer\n<< /Size %d /Root 1 0 R >>\nstartxref\n%d\n%%%%EOF\n" % (len(objects) + 1, xref)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(bytes(out))
+
+
+def ink_in(out, name, rect):
+    """How much of `rect` (in points, on the window) is dark in the grab `name`: 0 to 1."""
+    from PIL import Image
+    image = Image.open(out / f"{name}.png").convert("L")
+    window = json.loads((out / f"{name}.json").read_text())["window"]
+    k = image.width / window[0]
+    x, y, w, h = rect
+    crop = image.crop((int(x * k), int(y * k), int((x + w) * k), int((y + h) * k)))
+    pixels = list(crop.getdata())
+    return sum(1 for v in pixels if v < 110) / max(1, len(pixels))
+
+
+def form_rect(app, name):
+    """A form field's rectangle on the window, in points, on the top page."""
+    x, y, w, h = top_page(app)
+    k = zoom(app)
+    x0, y0, x1, y1 = FORM_FIELDS[name]
+    return [x + x0 * k + 2, y + (792 - y1) * k + 2, (x1 - x0) * k - 4, (y1 - y0) * k - 4]
+
+
+def form_journey(app, out, dark):
+    """The form's fields on its page: what they hold shows there, a click types or
+    chooses in place, Tab goes on, Return and Esc end it, and the engine's picture of
+    the page has the words once Fill & Sign is left."""
+    p = "d" if dark else ""
+    if dark:
+        to_home(app)
+    app.press(FORM_NAME)
+    app.images(1)
+    mode(app, "Fill & Sign")
+    app.find("This form has 5 fields", "Label", exact=False)
+    if not dark:
+        app.find("1 required field is empty.", "Label", exact=False)
+    app.images(1)
+    if not dark:
+        # What it holds, on the page and in the index; a required empty one says so.
+        wait_until(lambda: labels(app, "Ada Park") == 2, "the name is not on the page and in the list")
+        app.find("Email *", "Label")
+    app.grab(out, f"{p}01-form")
+    # A click in a field types there, with no panel in between.
+    click_page(app, *form_at("Email"))
+    app.find("Type the value" if not dark else "ada@example.org", "TextInput")
+    if not dark:
+        app.type("ada@example.org")
+    else:
+        app.key("Escape")  # Esc leaves it as it was
+        app.gone("Type the value", timeout=5)
+        wait_until(lambda: labels(app, "ada@example.org") == 2, "Esc changed the value")
+        click_page(app, *form_at("Email"))
+        app.find("ada@example.org", "TextInput")
+    app.grab(out, f"{p}02-typing")
+    # Tab goes on to the next field of the form, and the value stays.
+    app.key("Tab")
+    wait_until(lambda: labels(app, "ada@example.org") == 2, "Tab did not keep the value")
+    if not dark:
+        app.find("Edited", "Label", timeout=10)
+    # A check box turns over at a click; a choice opens its menu.
+    click_page(app, *form_at("Agree"))
+    if not dark:
+        app.find("Checked", "Label")
+    click_page(app, *form_at("Plan"))
+    menu_pick(app, "Premium" if not dark else "Basic")
+    want = "Premium" if not dark else "Basic"
+    wait_until(lambda: labels(app, want) == 2, f"{want} is not on the page and in the list")
+    app.grab(out, f"{p}03-chosen")
+    # A read-only one says so.
+    click_page(app, *form_at("Reference"))
+    app.find("can't be changed", "Label", exact=False)
+    # Elsewhere on the page leaves the field; what it held is kept.
+    click_page(app, 500, 300)
+    # Read: the engine's own picture of the page holds the words, once each.
+    mode(app, "Read")
+    time.sleep(1.5)
+    app.images(1)
+    app.grab(out, f"{p}04-read")
+    for name in ("Full name", "Email", "Plan"):
+        ink = ink_in(out, f"{p}04-read", form_rect(app, name))
+        assert 0.01 < ink < 0.5, f"{name} in the page's own picture: {ink:.3f} of it is dark"
+    # Light turned the check box on, and dark off again.
+    agree = ink_in(out, f"{p}04-read", form_rect(app, "Agree"))
+    assert (agree < 0.03) == dark, f"the check box in the page's own picture: {agree:.3f} of it is dark"
+    RECEIPT.setdefault("form", []).append({"pass": "dark" if dark else "light", "name_ink": ink_in(out, f"{p}04-read", form_rect(app, "Full name"))})
+    if not dark:
+        # Undo takes the last one back, on the page and in the list.
+        mode(app, "Fill & Sign")
+        wait_until(lambda: labels(app, "Premium") == 2, "the choice is not there again")
+        click_icon_left_of(app, "Save", nth=2)
+        wait_until(lambda: labels(app, "Standard") == 2, "Undo did not take the choice back")
+        click_icon_left_of(app, "Save", nth=1)
+        wait_until(lambda: labels(app, "Premium") == 2, "Redo did not bring the choice back")
+    app.tap("Save", "Button")
+    app.find("Saved", "Label", timeout=30)
+    app.grab(out, f"{p}05-saved")
+
+
+def form_restart(app, out):
+    """What was filled and saved, after a restart: on the page, and in the page's own picture."""
+    app.press(FORM_NAME)
+    app.images(1)
+    mode(app, "Fill & Sign")
+    wait_until(lambda: labels(app, "ada@example.org") == 2, "the saved value did not come back")
+    app.find("Basic", "Label")
+    app.grab(out, "r01-form-restarted")
+
+
 def remove_card(app, name):
-    """Remove `name` from Home with its card's trash button, and confirm."""
+    """Remove `name` from Home with its card's Remove…, and confirm."""
     app.reveal(name)
     lx, ly, lw, lh = app.find(name, "Label")["r"]
-    trash = [w["r"] for w in app.widgets() if w["ty"] in ("Button", "ButtonFlat") and not w.get("t") and w["r"][2] < 30
-             and lx - 10 <= w["r"][0] <= lx + 300 and ly <= w["r"][1] <= ly + 90]
-    assert trash, f"no remove button on {name}'s card"
-    bx, by, bw, bh = sorted(trash, key=lambda r: r[1])[0]
-    app.click(bx + bw / 2, by + bh / 2)
-    app.find("Remove it from PDF Tools' storage?", "Label")
+    app.right_click(lx + lw / 2, ly + lh / 2)
+    menu_pick(app, "Remove…")
+    app.find("from PDF Tools?", "Label", exact=False)
     app.tap("Remove", "Button")
     app.find("from PDF Tools.", "Label", exact=False, timeout=20)
 
@@ -1242,12 +1510,14 @@ def full(app, out):
     app.grab(out, "f01-home-full")
     app.scroll(400)
     time.sleep(1)
-    trash = sorted((w for w in app.widgets() if w["ty"] in ("Button", "ButtonFlat") and not w.get("t") and w["r"][2] < 30),
+    # The first card in view, by its pages-and-size line: its menu's Remove….
+    facts = sorted((w for w in app.widgets() if w["ty"] == "Label" and re.fullmatch(r"\d+ pages?  ·  .+", w.get("t") or "")),
                    key=lambda w: (w["r"][1], w["r"][0]))
-    assert trash, "no remove button on the cards"
-    x, y, w, h = trash[0]["r"]
-    app.click(x + w / 2, y + h / 2)
-    app.find("Remove it from PDF Tools' storage?", "Label")
+    assert facts, "no card in view"
+    x, y, w, h = facts[0]["r"]
+    app.right_click(x + w / 2, y + h / 2)
+    menu_pick(app, "Remove…")
+    app.find("from PDF Tools?", "Label", exact=False)
     app.grab(out, "f02-remove-asks")
     app.tap("Remove", "Button")
     app.find("from PDF Tools.", "Label", exact=False, timeout=20)
@@ -1256,23 +1526,23 @@ def full(app, out):
 
 def empty(app, out, dark=False):
     p = "d" if dark else ""
-    app.find("No PDFs here yet", "Label", timeout=60)
+    app.find("No PDFs Yet", "Label", timeout=60)
     app.grab(out, f"{p}e01-empty")
     if not open_on_linux(app, out, f"{p}e02-empty-open"):
-        app.tap("Open a PDF from this device", "Button")
+        app.tap("Open PDF…", "Button")
         app.find("Bring PDF Tools to the front, then choose the file again.", "Label")
         app.grab(out, f"{p}e02-empty-open")
         app.tap("OK", "Button")
 
 
 def missing(app, out):
-    app.see("This device has no PDF engine")
+    app.see("PDF Tools Can't Read PDFs on This Device")
     app.see("Not available here")
     app.grab(out, "m01-missing-home")
     app.press("Field guide.pdf")
-    app.see("This device has no PDF engine")
+    app.see("PDF Tools Can't Read PDFs on This Device")
     app.grab(out, "m02-missing-document")
-    app.tap("Close this tab", "Button")
+    app.tap("Close Tab", "Button")
 
 
 # ---------------------------------------------------------------- runs
@@ -1377,7 +1647,7 @@ def shell_runs(args, runs):
 
             def light_then_dark(app, out):
                 shell_journey(app, out, dark=False)
-                app.style("octosense-dark", "octosense dark")
+                app.style("octosense-dark")
                 shell_journey(app, out, dark=True)
             session("shell", home, light_then_dark)
             # Home drew each PDF's cover once (pdf.cover), and a saved PDF's
@@ -1403,6 +1673,16 @@ def shell_runs(args, runs):
                 RECEIPT["covers_after_restart"] = {"kept_untouched": sorted(current), "drawn_now": sorted(set(again) - set(kept)),
                                                    "gone_now": sorted(set(kept) - set(again))}
         (args.output / "run.json").write_text(json.dumps(RECEIPT, indent=1))
+        if "form" in runs:
+            home = scratch / "form"
+            form_pdf(home / "apps" / APP / LIBRARY / FORM_NAME)
+
+            def form_both(app, out):
+                form_journey(app, out, dark=False)
+                app.style("octosense-dark")
+                form_journey(app, out, dark=True)
+            session("form", home, form_both)
+            session("form-restart", home, form_restart)
         if "full" in runs:
             home = scratch / "full"
             fixture(home / "apps")
@@ -1413,7 +1693,7 @@ def shell_runs(args, runs):
 
             def both(app, out):
                 empty(app, out)
-                app.style("octosense-dark", "octosense dark")
+                app.style("octosense-dark")
                 empty(app, out, dark=True)
             session("empty", home, both)
         (args.output / "run.json").write_text(json.dumps(RECEIPT, indent=1))
@@ -1491,14 +1771,14 @@ def main():
     parser.add_argument("--port", type=int, default=0, help="the remote bridge's port (8915 for a shell, 8911 for card-host)")
     parser.add_argument("--output", type=Path, default=ROOT / "target/pdftools-ui")
     parser.add_argument("--work", type=Path, help="where the runs' OctoSense homes go (default: the system's temporary folder)")
-    parser.add_argument("--only", choices=["shell", "restart", "full", "empty", "missing", "fixture"], action="append")
+    parser.add_argument("--only", choices=["shell", "restart", "form", "full", "empty", "missing", "fixture"], action="append")
     parser.add_argument("--budget-ms", type=int, help="MAKEPAD_SPLASH_BUDGET_MS for the hosts (default: the runtime's 64 ms); for a loaded machine")
     parser.add_argument("--grab-scale", type=float, default=0.5, help="the grabs' scale (the bridge's /g scale): 0.5 is one pixel per point on a 2x screen")
     args = parser.parse_args()
     Driver.scale = args.grab_scale
     Driver.budget_ms = args.budget_ms
     card_host_only = ("missing", "fixture")
-    runs = args.only or (["shell", "restart", "full", "empty"] if args.shell else []) + (list(card_host_only) if args.card_host else [])
+    runs = args.only or (["shell", "restart", "form", "full", "empty"] if args.shell else []) + (list(card_host_only) if args.card_host else [])
     assert runs, "give --shell, --card-host or both"
     if any(run not in card_host_only for run in runs):
         assert args.shell, "these runs need --shell"

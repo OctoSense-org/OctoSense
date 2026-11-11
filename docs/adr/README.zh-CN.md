@@ -20,6 +20,7 @@ OctoSense 仓库的决策：Shell、Shell 服务、系统应用，以及桌面�
 | [0011](0011-apps-own-functions-in-webassembly.zh-CN.md) | 应用自带的 WebAssembly 函数 | 已接受，有限支持：在 macOS、Linux 和 Android 的标准构建中开启 |
 | [0012](0012-app-host-api-discovery.zh-CN.md) | 面向已安装应用的可发现宿主 API | 已实现；契约 1.11.0 已发布；最终源码通过 Mac/OnePlus 验收；RC4 已发布，Mac 归档包 11/11 |
 | [0013](0013-craft-engines-as-pinned-services.zh-CN.md) | Craft 引擎作为固定修订版服务接入 | 提议中；引擎已实测（gridcraft 内核重算 243×，photocraft 1,203 项测试），服务尚未实现 |
+| [0015](0015-macos-look-and-feel.zh-CN.md) | 桌面及其应用的 Mac 外观与操作 | 进行中；已在其分支上实现，得分见拉取请求 |
 
 ## Home（手机 Shell）的决策，2026-09-16 至 2026-09-25
 

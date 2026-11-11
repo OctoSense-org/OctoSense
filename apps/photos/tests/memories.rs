@@ -27,6 +27,7 @@ fn start_timeout(seconds, callback){ timeout_seconds.push(seconds); timers.push(
 fn start_interval(seconds, callback){ timers.push(callback); timers.len() }
 fn stop_timer(id){ cancelled_timers.push(id) }
 let host = {request: fn(method, args, callback){ pending.push({method: method args: args callback: callback}); pending.len() }}
+let ui_desk = false
 let widget = {render: fn(){} set_text: fn(text){} set_visible: fn(visible){} text: fn(){ "" }}
 let ui = {title: widget subtitle: widget back: widget create: widget edit: widget searchbar: widget editor_bar: widget tabs: widget message: widget list: widget memory_controls: widget memory_status: widget viewer: widget main: widget viewer_title: widget viewer_meta: widget viewer_count: widget favorite: widget stage: widget playback: widget tile_grid: widget}
 "#;

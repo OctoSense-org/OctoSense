@@ -1,0 +1,138 @@
+diff --git a/platform/src/os/apple/apple_webview.rs b/platform/src/os/apple/apple_webview.rs
+--- a/platform/src/os/apple/apple_webview.rs
++++ b/platform/src/os/apple/apple_webview.rs
+@@ -263,6 +263,8 @@
+     host_view: ObjcId,
+     web_view: ObjcId,
+     auth: Option<auth_browser::AuthBrowser>,
++    reader_delegate: ObjcId,
++    reader_state: Option<Box<ReaderNavigationState>>,
+     /// The shape on the host's layer now, and what draws it there.
+     shape: HostShape,
+     shape_scale: f64,
+@@ -281,6 +283,8 @@
+             host_view: nil,
+             web_view: nil,
+             auth: None,
++            reader_delegate: nil,
++            reader_state: None,
+             shape: HostShape::default(),
+             shape_scale: 0.0,
+             mask_layer: nil,
+@@ -301,6 +305,8 @@
+             host_view: nil,
+             web_view: nil,
+             auth: Some(auth_browser::AuthBrowser::new(browser_id, url, callback_url, inspectable)),
++            reader_delegate: nil,
++            reader_state: None,
+             shape: HostShape::default(),
+             shape_scale: 0.0,
+             mask_layer: nil,
+@@ -339,6 +345,17 @@
+             if web_view != nil {
+                 if let Some(auth) = &self.auth {
+                     auth.attach(web_view);
++                } else {
++                    // WKWebView keeps a weak navigation delegate. Keep both
++                    // it and its state alive for the lifetime of this view.
++                    let mut state = Box::new(ReaderNavigationState {
++                        browser_id: self.browser_id,
++                        navigation: std::cell::Cell::new(0),
++                    });
++                    let delegate = reader_navigation_delegate(&mut state);
++                    let () = msg_send![web_view, setNavigationDelegate: delegate];
++                    self.reader_delegate = delegate;
++                    self.reader_state = Some(state);
+                 }
+                 let () = msg_send![web_view, setHidden: YES];
+                 self.web_view = web_view;
+@@ -702,6 +719,9 @@
+         }
+         unsafe {
+             if self.web_view != nil {
++                if self.reader_delegate != nil {
++                    let () = msg_send![self.web_view, setNavigationDelegate: nil];
++                }
+                 let () = msg_send![self.web_view, stopLoading];
+             }
+         }
+@@ -709,6 +729,7 @@
+         self.auth = None;
+         unsafe {
+             if self.web_view != nil { let () = msg_send![self.web_view, release]; self.web_view = nil; }
++            if self.reader_delegate != nil { let () = msg_send![self.reader_delegate, release]; self.reader_delegate = nil; }
+             if self.host_view != nil {
+                 let key = self.host_view as usize;
+                 HOST_SHAPES.with(|shapes| { shapes.borrow_mut().remove(&key); });
+@@ -717,6 +738,7 @@
+             }
+             if self.mask_layer != nil { let () = msg_send![self.mask_layer, release]; self.mask_layer = nil; }
+         }
++        self.reader_state = None;
+     }
+ }
+ 
+@@ -727,6 +749,63 @@
+     }
+ }
+ 
++/// A failed main-frame navigation is otherwise just a blank WKWebView. Auth
++/// browsers have their own delegate; ordinary readers report through the same
++/// page-error action the other platforms use.
++#[cfg(target_os = "macos")]
++struct ReaderNavigationState {
++    browser_id: u64,
++    navigation: std::cell::Cell<usize>,
++}
++
++#[cfg(target_os = "macos")]
++fn reader_navigation_delegate(state: &mut ReaderNavigationState) -> ObjcId {
++    static CLASS: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
++    let class = *CLASS.get_or_init(|| {
++        unsafe fn state(this: &Object) -> Option<&ReaderNavigationState> {
++            let ptr = *this.get_ivar::<*mut std::ffi::c_void>("reader_state");
++            (ptr as *const ReaderNavigationState).as_ref()
++        }
++        extern "C" fn started(this: &Object, _: Sel, _: ObjcId, navigation: ObjcId) {
++            unsafe {
++                if let Some(state) = state(this) { state.navigation.set(navigation as usize); }
++            }
++        }
++        extern "C" fn failed(this: &Object, _: Sel, _: ObjcId, navigation: ObjcId, error: ObjcId) {
++            unsafe {
++                let Some(state) = state(this) else { return; };
++                if navigation == nil || state.navigation.get() != navigation as usize || error == nil { return; }
++                let code: i64 = msg_send![error, code];
++                // WebKit sends cancellation when a navigation is intentionally replaced.
++                if code == -999 { return; }
++                let description: ObjcId = msg_send![error, localizedDescription];
++                let description = if description == nil { "The page could not load".to_string() }
++                    else { crate::os::apple::apple_util::nsstring_to_string(description) };
++                crate::cx::Cx::post_action(crate::event::NativeSystemBrowserPageError {
++                    browser_id: state.browser_id,
++                    code: code.clamp(i32::MIN as i64, i32::MAX as i64) as i32,
++                    description,
++                    url: String::new(),
++                });
++            }
++        }
++        let mut declaration = ClassDecl::new("MakepadReaderNavigationDelegate", class!(NSObject)).unwrap();
++        declaration.add_ivar::<*mut std::ffi::c_void>("reader_state");
++        unsafe {
++            declaration.add_method(sel!(webView:didStartProvisionalNavigation:), started as extern "C" fn(&Object, Sel, ObjcId, ObjcId));
++            declaration.add_method(sel!(webView:didFailNavigation:withError:), failed as extern "C" fn(&Object, Sel, ObjcId, ObjcId, ObjcId));
++            declaration.add_method(sel!(webView:didFailProvisionalNavigation:withError:), failed as extern "C" fn(&Object, Sel, ObjcId, ObjcId, ObjcId));
++            if let Some(protocol) = Protocol::get("WKNavigationDelegate") { declaration.add_protocol(protocol); }
++        }
++        declaration.register() as *const Class as usize
++    }) as *const Class;
++    unsafe {
++        let delegate: ObjcId = msg_send![class, new];
++        (*delegate).set_ivar("reader_state", state as *mut ReaderNavigationState as *mut std::ffi::c_void);
++        delegate
++    }
++}
++
+ /// The origin of an embed's page: the referrer its frame gets, which is how an embedded
+ /// player asks a native app to identify itself, by its bundle identifier. Never fetched.
+ #[cfg(target_os = "macos")]

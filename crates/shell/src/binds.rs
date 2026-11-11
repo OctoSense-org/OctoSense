@@ -262,6 +262,93 @@ pub fn keymap() -> Vec<Bind> {
     binds
 }
 
+/// One of a Mac's shortcuts: what `DesktopStyle::Macos` answers to in place of
+/// the tiling keymap, whose chords a Mac's apps use for themselves (⌘S to save,
+/// ⌘F to find, ⌘O to open). A target is a menu row's (`App::shell_menu_activate`).
+pub struct MacBind {
+    pub key: KeyCode,
+    pub cmd: bool,
+    pub shift: bool,
+    pub ctrl: bool,
+    pub alt: bool,
+    pub target: &'static str,
+    /// Its line on the shortcuts sheet. Empty keeps it off the sheet.
+    pub help: &'static str,
+}
+
+pub fn mac_keymap() -> Vec<MacBind> {
+    use KeyCode::*;
+    let bind = |key, cmd, shift, ctrl, alt, target, help| MacBind { key, cmd, shift, ctrl, alt, target, help };
+    let mut binds = vec![
+        bind(KeyW, true, false, false, false, "mac.close", "Close Window"),
+        bind(KeyW, true, true, false, false, "mac.close", ""),
+        bind(KeyQ, true, false, false, false, "mac.quit-app", "Quit App"),
+        bind(Escape, true, false, false, true, "mac.force-quit", "Force Quit Applications"),
+        bind(KeyM, true, false, false, false, "mac.minimize", "Minimize Window"),
+        bind(KeyH, true, false, false, false, "mac.hide", "Hide App"),
+        bind(KeyH, true, false, false, true, "mac.hide-others", "Hide Others"),
+        bind(KeyF, true, false, true, false, "mac.fullscreen", "Enter or Exit Full Screen"),
+        bind(Backtick, true, false, false, false, "mac.next-window", "Next Window"),
+        bind(Backtick, true, true, false, false, "mac.previous-window", "Previous Window"),
+        bind(Tab, false, false, false, true, "mac.next-window", ""),
+        bind(Tab, false, true, false, true, "mac.previous-window", ""),
+        bind(Space, true, false, false, false, "mac.spotlight", "Search Apps and Commands"),
+        bind(Space, true, false, false, true, "mac.launchpad", "Show All Apps"),
+        // A Mac keeps ⌘Space and ⌥⌘Space for itself while another app is in front
+        // of this window's desktop: these are the way in then.
+        bind(Space, false, false, true, true, "mac.spotlight", ""),
+        bind(Space, true, false, true, true, "mac.launchpad", ""),
+        bind(ArrowLeft, false, false, true, false, "mac.desktop-previous", "Previous Desktop"),
+        bind(ArrowRight, false, false, true, false, "mac.desktop-next", "Next Desktop"),
+        bind(Slash, true, false, false, false, "mac.keys", "Keyboard Shortcuts"),
+        bind(Space, true, false, true, false, "mac.emoji", "Emoji & Symbols"),
+        bind(KeyQ, true, true, false, false, "system.quit", "Quit OctoSense"),
+    ];
+    let digits = [Key1, Key2, Key3, Key4, Key5, Key6, Key7, Key8, Key9];
+    for (i, key) in digits.into_iter().enumerate() {
+        let target = ["mac.desktop.0", "mac.desktop.1", "mac.desktop.2", "mac.desktop.3", "mac.desktop.4", "mac.desktop.5", "mac.desktop.6", "mac.desktop.7", "mac.desktop.8"][i];
+        binds.push(bind(key, false, false, true, false, target, if i == 0 { "Switch to Desktop 1 to 9" } else { "" }));
+    }
+    binds
+}
+
+/// The Mac's spelling of a shortcut: `⌃⌥⇧⌘` in that order, then the key.
+pub fn mac_combo_text(bind: &MacBind) -> String {
+    let mut text = String::new();
+    if bind.ctrl { text.push('\u{2303}'); }
+    if bind.alt { text.push('\u{2325}'); }
+    if bind.shift { text.push('\u{21e7}'); }
+    if bind.cmd { text.push('\u{2318}'); }
+    text.push_str(&mac_key_text(bind.key));
+    if bind.help.starts_with("Switch to Desktop") { text.push_str(" to 9"); }
+    text
+}
+
+fn mac_key_text(key: KeyCode) -> String {
+    use KeyCode::*;
+    match key {
+        Space => "Space".into(),
+        Tab => "\u{21e5}".into(),
+        Escape => "\u{238b}".into(),
+        Backtick => "`".into(),
+        Slash => "/".into(),
+        ArrowLeft => "\u{2190}".into(),
+        ArrowRight => "\u{2192}".into(),
+        other => {
+            let raw = format!("{other:?}");
+            raw.strip_prefix("Key").map(str::to_string).unwrap_or(raw)
+        }
+    }
+}
+
+/// The Mac's shortcut a key event is, if any.
+pub fn match_mac_bind(key: KeyCode, m: &KeyModifiers) -> Option<&'static str> {
+    mac_keymap()
+        .into_iter()
+        .find(|b| b.key == key && b.cmd == m.logo && b.shift == m.shift && b.ctrl == m.control && b.alt == m.alt)
+        .map(|b| b.target)
+}
+
 /// How SUPER is spelled on this keyboard. Every desktop accepts both: the
 /// Logo key (⌘ on macOS) and Ctrl+Alt, which is the way in for chords the
 /// host desktop or compositor keeps for itself.
@@ -438,6 +525,12 @@ mod tests {
 
     fn fallback_sup() -> KeyModifiers {
         mods(false, true, true, false)
+    }
+
+    #[test]
+    fn a_macs_window_closes_with_either_chord() {
+        assert_eq!(match_mac_bind(KeyCode::KeyW, &mods(false, false, false, true)), Some("mac.close"));
+        assert_eq!(match_mac_bind(KeyCode::KeyW, &mods(true, false, false, true)), Some("mac.close"));
     }
 
     #[cfg(target_os = "macos")]

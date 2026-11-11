@@ -112,6 +112,124 @@ pub fn set_dark(dark: bool) -> bool {
 pub fn dark() -> bool {
     DARK.load(std::sync::atomic::Ordering::Relaxed)
 }
+
+thread_local! {
+    /// A card lowering for the Mac's Notification Center ([`on_material`]).
+    static ON_MATERIAL: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    /// A card lowering with its buttons at rest ([`QUIET_KIT`]).
+    static QUIET: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    /// A card lowering for a notification in the Mac's Notification Center ([`as_notice`]).
+    static NOTICE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// [`on_material`] for a card in the Mac's Notification Center, which draws its
+/// app's icon beside it as it does beside a notification: the glyph that heads
+/// the card's first row gives way to it ([`without_head_glyph`]).
+pub fn as_notice<R>(lowering: impl FnOnce() -> R) -> R {
+    NOTICE.with(|n| n.set(true));
+    let result = on_material(lowering);
+    NOTICE.with(|n| n.set(false));
+    result
+}
+
+/// The card without the glyph that heads it: an `Icon` first in the row that
+/// comes first in its column, before the row's words (`Row { Icon(.mail)
+/// TextCaption("Mail") … }`). `None`: the card has no such head.
+fn without_head_glyph(root: &octoscript_ui_l0::UiNode) -> Option<octoscript_ui_l0::UiNode> {
+    let col = root.children.first().filter(|col| col.kind == "Col")?;
+    let row = col.children.first().filter(|row| row.kind == "Row")?;
+    row.children.first().filter(|glyph| glyph.kind == "Icon")?;
+    row.children.get(1).filter(|words| words.kind.starts_with("Text"))?;
+    let mut root = root.clone();
+    root.children[0].children[0].children.remove(0);
+    Some(root)
+}
+
+/// Run `lowering` for a card that stands on a material of the shell's (the
+/// Mac's Notification Center, glance_panel.rs). It takes a Mac's type and
+/// controls ([`MATERIAL_METRICS`], [`MATERIAL_KIT`]), and a card naming no
+/// theme of its own lets its page through, with its text a little firmer to
+/// read on what shows behind it.
+pub fn on_material<R>(lowering: impl FnOnce() -> R) -> R {
+    ON_MATERIAL.with(|m| m.set(true));
+    let result = lowering();
+    ON_MATERIAL.with(|m| m.set(false));
+    result
+}
+
+/// What [`on_material`] puts over the palette: after the derivations, which
+/// read the opaque page, and before the kit, which paints it.
+const MATERIAL_PAGE_LIGHT: &str = "let l0_base = argb(0, 0, 0, 0)\nlet l0_base_2 = argb(0, 0, 0, 0)\nlet l0_dim = argb(255, 72, 72, 76)\nlet l0_soft = argb(255, 44, 44, 48)\nlet l0_fill = argb(22, 0, 0, 0)";
+const MATERIAL_PAGE_DARK: &str = "let l0_base = argb(0, 0, 0, 0)\nlet l0_base_2 = argb(0, 0, 0, 0)\nlet l0_dim = argb(214, 255, 255, 255)\nlet l0_soft = argb(240, 255, 255, 255)\nlet l0_fill = argb(36, 255, 255, 255)";
+/// A Mac's sizes on a material, in the kit's units (points x 3/4): 13-point
+/// titles, body and rows with hierarchy by weight, 11-point captions, a
+/// notification's padding, and 6-point corners on what sits inside it.
+const MATERIAL_METRICS: &str = "let font_caption = 8.25\nlet font_row = 9.75\nlet font_body = 9.75\nlet font_value = 9.75\nlet font_title = 9.75\nlet pad_page_x = 14\nlet pad_page_top = 12\nlet pad_page_bot = 13\nlet pad_panel_x = 10\nlet pad_panel_y = 8\nlet pad_tile_x = 10\nlet pad_tile_y = 7\nlet pad_chip_x = 11\nlet pad_chip_y = 6.5\nlet radius_panel = 5\nlet radius_tile = 4\nlet radius_chip = 5\nlet gap_panel_top = 8";
+/// A Mac's controls on a material, after the kit so they win: plain push
+/// buttons, because a stack of cards has no one default (the kit's first is a
+/// phone's green pill), the first a little heavier; the fields small, a small
+/// heading not in capitals, and a card's own spacing a little tighter for the
+/// smaller type.
+const MATERIAL_KIT: &str = r#"
+fn l0_col_gap(g, kids) {
+    if g >= 24 { return {t: "column", fillw: 1, spacing: g * air_factor, c: kids} }
+    return {t: "column", fillw: 1, spacing: g * 0.6, c: kids}
+}
+fn l0_eyebrow(s) { return {t: "text", text: s, size: font_caption, weight: weight_semi, color: l0_soft, fith: 1} }
+fn l0_chip_primary(s) {
+    return {t: "chip", bg: l0_fill, radius: radius_chip, padx: pad_chip_x, pady: pad_chip_y, selected: 0,
+            fitw: 1, fith: 1, c: [ l0_txt(s, font_row, weight_medium, l0_text) ]}
+}
+fn l0_chip(s, on) {
+    if on == 1 {
+        return {t: "chip", bg: l0_active, radius: radius_chip, padx: pad_chip_x, pady: pad_chip_y, selected: 1,
+                fitw: 1, fith: 1, c: [ l0_txt(s, font_row, weight_medium, l0_text) ]}
+    }
+    return {t: "chip", bg: l0_fill, radius: radius_chip, padx: pad_chip_x, pady: pad_chip_y, selected: 0,
+            fitw: 1, fith: 1, c: [ l0_txt(s, font_row, weight_normal, l0_text) ]}
+}
+fn l0_chip_danger(s) {
+    return {t: "chip", bg: l0_danger, radius: radius_chip, padx: 12, pady: pad_chip_y, fillw: 1, alignx: 0.5, aligny: 0.5,
+            c: [ l0_txt(s, 9.75, 500, l0_danger_i) ]}
+}
+fn l0_chip_danger_row(s) {
+    return {t: "chip", bg: l0_danger, radius: radius_chip, padx: 12, pady: pad_chip_y, aligny: 0.5,
+            c: [ l0_txt(s, 9.75, 500, l0_danger_i) ]}
+}
+fn l0_field(text, placeholder, target, changing) {
+    let node = {t: "input", fillw: 1, text: text, placeholder: placeholder,
+            tapto: target, changeto: changing, bg: l0_fill, radius: radius_chip, padx: 8,
+            padtop: 6, padbottom: 6, size: 9.75, color: l0_text}
+    if target == "" { node.id = "l0_multiline" }
+    return node
+}
+"#;
+/// A Mac's notification at rest, after [`MATERIAL_KIT`]: its push buttons keep
+/// their places and sizes with nothing drawn, and show under the pointer or
+/// the keyboard (glance_panel.rs). A chip that is on, a choice the card
+/// shows, stays as it is.
+const QUIET_KIT: &str = r#"
+fn l0_chip_primary(s) {
+    return {t: "chip", bg: argb(0, 0, 0, 0), radius: radius_chip, padx: pad_chip_x, pady: pad_chip_y, selected: 0,
+            fitw: 1, fith: 1, c: [ l0_txt(s, font_row, weight_medium, argb(0, 0, 0, 0)) ]}
+}
+fn l0_chip(s, on) {
+    if on == 1 {
+        return {t: "chip", bg: l0_active, radius: radius_chip, padx: pad_chip_x, pady: pad_chip_y, selected: 1,
+                fitw: 1, fith: 1, c: [ l0_txt(s, font_row, weight_medium, l0_text) ]}
+    }
+    return {t: "chip", bg: argb(0, 0, 0, 0), radius: radius_chip, padx: pad_chip_x, pady: pad_chip_y, selected: 0,
+            fitw: 1, fith: 1, c: [ l0_txt(s, font_row, weight_normal, argb(0, 0, 0, 0)) ]}
+}
+fn l0_chip_danger(s) {
+    return {t: "chip", bg: argb(0, 0, 0, 0), radius: radius_chip, padx: 12, pady: pad_chip_y, fillw: 1, alignx: 0.5, aligny: 0.5,
+            c: [ l0_txt(s, 9.75, 500, argb(0, 0, 0, 0)) ]}
+}
+fn l0_chip_danger_row(s) {
+    return {t: "chip", bg: argb(0, 0, 0, 0), radius: radius_chip, padx: 12, pady: pad_chip_y, aligny: 0.5,
+            c: [ l0_txt(s, 9.75, 500, argb(0, 0, 0, 0)) ]}
+}
+"#;
 const DERIVE_COLOR: &str = l0_kit!("_derive_color.octoscript");
 const DERIVE: &str = l0_kit!("_derive.octoscript");
 const KIT: &str = l0_kit!("_kit.octoscript");
@@ -154,6 +272,8 @@ pub fn lower_with_state(source: &str, data: &serde_json::Value, store: &octoscri
 
 fn lower_report(source: &str, report: octoscript_ui_l0::RealizeReport, l0_ui: bool, dark: bool) -> Result<String, String> {
     let root = report.complete_root()?;
+    let headless = if NOTICE.with(|n| n.get()) { without_head_glyph(root) } else { None };
+    let root = headless.as_ref().unwrap_or(root);
     if octoscript_ui_l0::kit_pack::contains(root) {
         return Err("native kit components are not offered on a glance tile".into());
     }
@@ -164,7 +284,17 @@ fn lower_report(source: &str, report: octoscript_ui_l0::RealizeReport, l0_ui: bo
             return Err(format!("theme axis {axis}: .{value} is not offered on a glance tile"));
         }
     }
-    let kit_source = [PALETTE_BASE, delta, DERIVE_COLOR, DERIVE, KIT, HOST_KIT, &octoscript_ui_l0::kit::lower(root)].join("\n");
+    let material = ON_MATERIAL.with(|m| m.get());
+    let page = if material && mood == if dark { "dark" } else { "light" } {
+        if dark { MATERIAL_PAGE_DARK } else { MATERIAL_PAGE_LIGHT }
+    } else {
+        ""
+    };
+    let (metrics, material_kit) = if material { (MATERIAL_METRICS, MATERIAL_KIT) } else { ("", "") };
+    let quiet_kit = if material && QUIET.with(|q| q.get()) { QUIET_KIT } else { "" };
+    let lowered = octoscript_ui_l0::kit::lower(root);
+    let lowered = if material { material_words(&lowered) } else { lowered };
+    let kit_source = [PALETTE_BASE, delta, DERIVE_COLOR, DERIVE, metrics, page, KIT, HOST_KIT, material_kit, quiet_kit, &lowered].join("\n");
     let tree = octoscript_makepad::design::prepare(&kit_source)?;
     // A measured design (an imported artboard) lowers as the Card runner
     // lowers it; a kit-composed card (columns, rows, text) through the
@@ -175,7 +305,87 @@ fn lower_report(source: &str, report: octoscript_ui_l0::RealizeReport, l0_ui: bo
     let ui = ui.replacen("\n    height: Fill\n", "\n    height: Fit\n", 1);
     let ui = multiline_fields(&ui);
     let ui = theme_fonts(&ui);
+    let ui = if material { material_line_spacing(&ui) } else { ui };
     Ok(format!("width:Fill height:Fit flow:Overlay {ui}"))
+}
+
+/// A Mac's line pitch on a material: 13-point text about 17 apart.
+fn material_line_spacing(ui: &str) -> String {
+    const KEY: &str = "line_spacing: ";
+    const MAC: f64 = 1.1;
+    let mut out = String::with_capacity(ui.len());
+    let mut rest = ui;
+    while let Some(at) = rest.find(KEY) {
+        let (head, tail) = rest.split_at(at + KEY.len());
+        out.push_str(head);
+        let end = tail.find(|c: char| !c.is_ascii_digit() && c != '.').unwrap_or(tail.len());
+        out.push_str(&tail[..end].parse::<f64>().unwrap_or(MAC).min(MAC).to_string());
+        rest = &tail[end..];
+    }
+    out.push_str(rest);
+    out
+}
+
+/// A small heading as a Mac writes it: "SUMMARY" is "Summary", "AI SUMMARY"
+/// is "AI summary", and one that is not all capitals stays as it is.
+fn sentence_case(text: &str) -> String {
+    if text.chars().any(char::is_lowercase) {
+        return text.to_string();
+    }
+    let mut out = String::with_capacity(text.len());
+    let mut first = true;
+    for word in text.split_inclusive(' ') {
+        if word.trim_end() == "AI" {
+            out.push_str(word);
+            first = false;
+            continue;
+        }
+        for c in word.chars() {
+            if first && c.is_alphabetic() {
+                out.push(c);
+                first = false;
+            } else {
+                out.extend(c.to_lowercase());
+            }
+        }
+    }
+    out
+}
+
+/// A caption the card wrote in capitals is a small heading ("NEWS DIGEST"); a
+/// short one is most likely an abbreviation ("ETA") and stays as it is.
+fn sentence_case_caption(text: &str) -> String {
+    let heading = text.split_whitespace().count() > 1 || text.chars().filter(|c| c.is_alphabetic()).count() > 4;
+    if heading { sentence_case(text) } else { text.to_string() }
+}
+
+/// `words` on the literal text of each `call` in a lowered card. What the card
+/// binds to its data is not a literal and stays as the publisher wrote it.
+fn map_literals(lowered: &str, call: &str, words: impl Fn(&str) -> String) -> String {
+    let mut out = String::with_capacity(lowered.len());
+    let mut rest = lowered;
+    while let Some(at) = rest.find(call) {
+        let (head, tail) = rest.split_at(at + call.len());
+        out.push_str(head);
+        let Some(end) = tail.find('"') else {
+            rest = tail;
+            break;
+        };
+        out.push_str(&words(&tail[..end]));
+        rest = &tail[end..];
+    }
+    out.push_str(rest);
+    out
+}
+
+/// A lowered card's own words as a Mac writes them: small headings and
+/// captions in sentence case, a button's in Title Case.
+fn material_words(lowered: &str) -> String {
+    let out = map_literals(lowered, "l0_eyebrow(\"", sentence_case);
+    let out = map_literals(&out, "l0_caption(\"", sentence_case_caption);
+    ["l0_chip_primary(\"", "l0_chip(\"", "l0_chip_danger(\"", "l0_chip_danger_row(\""]
+        .iter()
+        .fold(out, |text, call| map_literals(&text, call, crate::shell::menu::mac::title_case))
 }
 
 /// The card's text in the theme's fonts, as every app's: the backend names
@@ -649,6 +859,15 @@ impl L0Session {
         crate::glance_chat::seed(&self.app, &self.source, &self.data, &self.store)
     }
 
+    /// As [`L0Session::body`] with the card's buttons at rest ([`QUIET_KIT`]),
+    /// and without taking in anything new: what the card says is the same.
+    pub fn quiet_body(&self) -> Result<String, String> {
+        QUIET.with(|q| q.set(true));
+        let result = lower_with_state(&self.source, &self.data_now(), &self.store);
+        QUIET.with(|q| q.set(false));
+        result
+    }
+
     /// The card as it stands now, lowered for a Splash.
     pub fn body(&mut self) -> Result<String, String> {
         if let Some(mail) = &mut self.mail { mail.refresh(); }
@@ -785,6 +1004,9 @@ struct LiveCard {
     session: L0Session,
     body: std::sync::Arc<str>,
     lowered: bool,
+    /// The body with its buttons at rest, and the body it was made from.
+    quiet: std::sync::Arc<str>,
+    quiet_of: Option<std::sync::Arc<str>>,
 }
 
 impl LiveCards {
@@ -794,7 +1016,7 @@ impl LiveCards {
         if self.cards.get(tile).is_some_and(|live| live.published == *card) { return; }
         self.cards.insert(tile.to_string(), LiveCard {
             key: card.key(), published: card.clone(), session: L0Session::for_card(card),
-            body: card.body.clone(), lowered: false,
+            body: card.body.clone(), lowered: false, quiet: "".into(), quiet_of: None,
         });
     }
 
@@ -823,6 +1045,16 @@ impl LiveCards {
 
     pub(crate) fn session_mut(&mut self, tile: &str) -> Option<&mut L0Session> {
         self.cards.get_mut(tile).map(|card| &mut card.session)
+    }
+
+    /// Save only local L0 state, bound to the exact publication and account.
+    /// The session, host sheets and any authority are not retained for Undo.
+    pub(crate) fn snapshot_store(&self, tile: &str, card: &crate::glance::GlanceCard) -> Option<octoscript_ui_l0::InstanceStore> {
+        let live = self.cards.get(tile)?;
+        if live.published != *card || card.l0.is_none() || !live.session.local_changes || !live.session.account_valid() {
+            return None;
+        }
+        Some(live.session.store.clone())
     }
 
     pub(crate) fn restore_store(&mut self, tile: &str, store: octoscript_ui_l0::InstanceStore) {
@@ -856,6 +1088,27 @@ impl LiveCards {
             }
         }
         live.body.clone()
+    }
+
+    /// `body` (what [`LiveCards::body`] gave for `tile`) with the card's buttons
+    /// at rest, as a Mac's notification shows until the pointer comes to it;
+    /// made again whenever the body changes. A script card is as it is.
+    pub fn quiet_body(&mut self, tile: &str, card: &crate::glance::GlanceCard, body: &std::sync::Arc<str>) -> std::sync::Arc<str> {
+        let Some(live) = self.cards.get_mut(tile) else { return body.clone() };
+        if card.l0.is_none() {
+            return body.clone();
+        }
+        if live.quiet_of.as_ref().is_none_or(|of| of.as_ref() != body.as_ref()) {
+            live.quiet = match live.session.quiet_body() {
+                Ok(quiet) => quiet.into(),
+                Err(e) => {
+                    log!("glance panel: {} has no form at rest: {e}", live.key);
+                    body.clone()
+                }
+            };
+            live.quiet_of = Some(body.clone());
+        }
+        live.quiet.clone()
     }
 
     /// Run each live card's queued taps, those of its own tile's isolate
@@ -1207,7 +1460,20 @@ impl GlanceTiles {
     /// answers come back to it. A surface calls this for every event while
     /// it has tiles; pointer events only while the tiles are on screen.
     pub fn handle_event(&mut self, cx: &mut Cx, event: &Event) {
-        for tile in self.tiles.values() {
+        self.handle_event_visible(cx, event, None);
+    }
+
+    /// Keep hidden tiles resident and pumping while withholding input from
+    /// them. A collapsed stack or a clipped tile cannot claim a stale area.
+    pub(crate) fn handle_event_visible(&mut self, cx: &mut Cx, event: &Event, visible: Option<&[String]>) {
+        let input = matches!(event, Event::MouseDown(_) | Event::MouseMove(_) | Event::MouseUp(_)
+            | Event::TouchUpdate(_) | Event::LongPress(_) | Event::Scroll(_)
+            | Event::KeyDown(_) | Event::KeyUp(_) | Event::PhysicalKeyboard(_)
+            | Event::TextInput(_) | Event::TextRangeReplace(_) | Event::TextCopy(_) | Event::TextCut(_)
+            | Event::TextInputStateQuery(_) | Event::ImeAction(_) | Event::SelectionHandleDrag(_)
+            | Event::Drag(_) | Event::Drop(_) | Event::DragEnd | Event::MacosMenuCommand(_)
+            | Event::BackPressed { .. });
+        for (key, tile) in &self.tiles {
             let splash = tile.card.clone();
             let sheet = tile.sheet.clone();
             let modal = sheet.borrow().is_some_and(|s| s.view.visible);
@@ -1215,7 +1481,9 @@ impl GlanceTiles {
             let sheet_input = octosense_appstore::services::is_sheet_input_event(event);
             #[cfg(not(any(feature = "app-hub", native_mobile)))]
             let sheet_input = false; // This build cannot mount host service sheets.
-            if modal && sheet_input {
+            if input && visible.is_some_and(|keys| !keys.contains(key)) {
+                // Do not dispatch this input to a tile whose last frame is hidden.
+            } else if modal && sheet_input {
                 // The foreground service sheet receives input exclusively.
                 sheet.handle_event(cx, event, &mut Scope::empty());
             } else { match isolate_of(cx, &splash) {
@@ -1408,6 +1676,29 @@ pub(crate) fn ensure_vocabulary(cx: &mut Cx) {
 mod tests {
     use super::*;
 
+    /// A Mac's small headings and line pitch on a material.
+    #[test]
+    fn a_card_on_a_material_writes_and_spaces_as_a_mac_does() {
+        assert_eq!(sentence_case("SUMMARY"), "Summary");
+        assert_eq!(sentence_case("AI SUMMARY"), "AI summary");
+        assert_eq!(sentence_case("DRAFT \u{b7} EDIT BEFORE SENDING"), "Draft \u{b7} edit before sending");
+        assert_eq!(sentence_case("News digest"), "News digest", "not all capitals: as it is");
+        assert_eq!(
+            material_words("x l0_eyebrow(\"SUMMARY\") y l0_eyebrow(\"ASK MAIL'S AGENT\") z"),
+            "x l0_eyebrow(\"Summary\") y l0_eyebrow(\"Ask mail's agent\") z"
+        );
+        assert_eq!(
+            material_words("l0_caption(\"NEWS DIGEST\") l0_caption(\"SOURCES\") l0_caption(\"ETA\") l0_caption(d.publisher)"),
+            "l0_caption(\"News digest\") l0_caption(\"Sources\") l0_caption(\"ETA\") l0_caption(d.publisher)",
+            "a heading is written as one; an abbreviation and the publisher's data are not touched"
+        );
+        assert_eq!(
+            material_words("l0_chip_primary(\"Reply\") l0_chip(\"Mark done\", 0) l0_chip_danger(\"delete all\") l0_chip_danger_row(\"sign out\")"),
+            "l0_chip_primary(\"Reply\") l0_chip(\"Mark Done\", 0) l0_chip_danger(\"Delete All\") l0_chip_danger_row(\"Sign Out\")"
+        );
+        assert_eq!(material_line_spacing("a line_spacing: 1.45 font_size: 9 b line_spacing: 1 c"), "a line_spacing: 1.1 font_size: 9 b line_spacing: 1 c");
+    }
+
     #[test]
     fn mail_chat_receives_exact_publication_but_keeps_large_draft_context_valid() {
         let mut binding = crate::glance_chat::ContextBinding {
@@ -1425,6 +1716,54 @@ mod tests {
         assert_eq!(binding.draft, original_draft);
         assert_eq!(binding.source_message["card_id"], "mail-card");
         assert!(binding.validate().is_ok());
+    }
+
+    /// In the Mac's Notification Center a card stands beside its app's icon, as a
+    /// notification does (glance_panel.rs): the glyph heading its first row gives
+    /// way to it, and the row's words stay. A card headed by words is as it was.
+    #[test]
+    fn a_notice_drops_the_glyph_that_heads_its_card() {
+        let (_, _, source, data) = crate::glance::demo_mail().into_iter().nth(1).expect("the shipping card");
+        let card = on_material(|| lower(&source, &data)).expect("lowers");
+        let notice = as_notice(|| lower(&source, &data)).expect("lowers as a notice");
+        assert_ne!(card, notice, "the glyph gives way");
+        assert!(notice.contains("Shipping") && notice.contains("09:15"), "the head's words stay: {notice}");
+        let (digest, data) = crate::glance::demo_digest();
+        assert_eq!(on_material(|| lower(&digest, &data)).expect("lowers"), as_notice(|| lower(&digest, &data)).expect("lowers as a notice"));
+    }
+
+    /// A Mac's notification at rest (glance_panel.rs): its buttons keep their
+    /// places and sizes with nothing drawn, so the pointer arriving changes
+    /// colours alone, and what the card says stays.
+    #[test]
+    fn a_cards_buttons_at_rest_keep_their_places_with_nothing_drawn() {
+        let (_, _, source, data) = crate::glance::demo_mail().into_iter().nth(1).expect("the shipping card");
+        let active = on_material(|| lower(&source, &data)).expect("lowers");
+        QUIET.with(|q| q.set(true));
+        let quiet = on_material(|| lower(&source, &data));
+        QUIET.with(|q| q.set(false));
+        let quiet = quiet.expect("lowers at rest");
+        assert_ne!(active, quiet, "at rest its buttons draw nothing");
+        let colourless = |ui: &str| {
+            let mut out = String::with_capacity(ui.len());
+            let mut rest = ui;
+            while let Some(at) = rest.find('#') {
+                out.push_str(&rest[..=at]);
+                let tail = &rest[at + 1..];
+                rest = &tail[tail.find(|c: char| !c.is_ascii_hexdigit()).unwrap_or(tail.len())..];
+            }
+            out.push_str(rest);
+            out
+        };
+        assert_eq!(colourless(&active), colourless(&quiet), "the same places and sizes at rest as under the pointer");
+        assert!(quiet.contains("Track") && quiet.contains("Mark Done"), "the buttons are there to be found: {quiet}");
+        assert!(quiet.contains("#00000000"), "drawn clear: {quiet}");
+        assert!(quiet.contains("out for delivery today"), "what the card says stays: {quiet}");
+        // Off the material, nothing changes.
+        QUIET.with(|q| q.set(true));
+        let plain = lower(&source, &data);
+        QUIET.with(|q| q.set(false));
+        assert_eq!(plain.expect("lowers"), lower(&source, &data).expect("lowers"));
     }
 
     #[test]
@@ -1876,10 +2215,13 @@ mod tests {
         let mut cx = tile_cx();
         let mut tiles = GlanceTiles::default();
         tiles.open(&mut cx, "os.glanceinput/draft", "os.glanceinput", true, &"probe := GlanceInputProbe{}".into());
-        tiles.handle_event(&mut cx, &Event::TextInput(TextInputEvent { input: "hello".into(), ..Default::default() }));
+        TYPED.with(|t| t.borrow_mut().clear());
+        tiles.handle_event_visible(&mut cx, &Event::TextInput(TextInputEvent { input: "hidden".into(), ..Default::default() }), Some(&[]));
+        assert!(TYPED.with(|t| t.borrow().is_empty()), "a hidden tile cannot take input");
+        tiles.handle_event_visible(&mut cx, &Event::TextInput(TextInputEvent { input: "hello".into(), ..Default::default() }), Some(&["os.glanceinput/draft".into()]));
         assert_eq!(TYPED.with(|t| t.borrow().clone()), "hello", "the typed text reached the card");
-        // The request the card queued goes out on the next event.
-        tiles.handle_event(&mut cx, &Event::Signal);
+        // Even after hiding, the request the card queued still gets pumped.
+        tiles.handle_event_visible(&mut cx, &Event::Signal, Some(&[]));
         assert!(crate::glance::shown().iter().any(|c| c.key() == "os.glanceinput/typed" && c.contained), "published as the tile's app");
         let _ = std::fs::remove_dir_all(root);
     }
@@ -1887,6 +2229,34 @@ mod tests {
     fn mail_session(card_id: &str) -> L0Session {
         let (_, _, source, data) = crate::glance::demo_mail().into_iter().find(|c| c.0 == card_id).unwrap();
         L0Session::new("os.mail", &crate::glance::L0Source { source, data, mail: None })
+    }
+
+    #[test]
+    fn local_state_snapshot_is_bound_to_the_exact_publication() {
+        let (_, title, source, data) = crate::glance::demo_mail().into_iter().find(|c| c.0 == "ana-contract").unwrap();
+        let card = crate::glance::GlanceCard {
+            app: "os.mail".into(), account: None, card_id: "snapshot".into(), title: title.into(),
+            summary: String::new(), viewport: false, priority: 80, published_ms: 1, expires_ms: u64::MAX,
+            open_app: "mail".into(), route: None, body: "".into(), contained: false, digests: Vec::new(),
+            l0: Some(std::sync::Arc::new(crate::glance::L0Source { source, data, mail: None })),
+        };
+        let key = card.key();
+        let mut live = LiveCards::default();
+        live.prepare_native(&key, &card);
+        assert!(live.snapshot_store(&key, &card).is_none(), "untouched cards need no local snapshot");
+        let session = live.session_mut(&key).unwrap();
+        let brief = session.body().unwrap();
+        session.tap(&target_for(&brief, "reply"), None).unwrap();
+        let reply = session.body().unwrap();
+        session.tap(&target_for(&reply, "edit"), Some("Unsent synthetic text 742")).unwrap();
+        let snapshot = live.snapshot_store(&key, &card).expect("the edited card has local state");
+        let mut replacement = card.clone();
+        replacement.published_ms += 1;
+        assert!(live.snapshot_store(&key, &replacement).is_none(), "a replacement cannot inherit the old state");
+        let mut restored = LiveCards::default();
+        restored.prepare_native(&key, &card);
+        restored.restore_store(&key, snapshot);
+        assert!(restored.body(&key, &card, "test").contains("Unsent synthetic text 742"));
     }
 
     #[test]

@@ -7,6 +7,13 @@ offers **Settings → Updates → Open OctoSense app updater**. Choose a channel
 then **Check for updates**. Review the offered version and download size, choose
 **Download update**, then explicitly choose installation after verification.
 
+On a desktop the window is a Software Update pane: **Check for Updates** and
+**Download Update**, the channel in a pop-up, and the time of the last check.
+Choosing another channel in the pop-up checks that channel at once. A failure
+says what happened and offers **Try Again**. Command-R checks, Return presses
+**Check for Updates** or **Download Update**, and Escape cancels what is running.
+The keyboard never starts an installation.
+
 | Channel | Eligible releases |
 | --- | --- |
 | Stable | Stable releases only. |
@@ -28,14 +35,16 @@ installed release and cannot offer an update.
 
 | Platform | Handoff | What the user finishes |
 | --- | --- | --- |
-| macOS, Apple silicon | This source build offers **Install & Restart** in a signed, packaged app with its helper; RC6 opens the verified `.dmg` | Save or resolve any app close questions. The helper replaces the bundle and reopens the same profile. **Open installer manually** remains available. |
+| macOS, Apple silicon | This source build offers **Install & Restart** in a signed, packaged app with its helper; RC6 opens the verified `.dmg` | Save or resolve any app close questions. The helper replaces the bundle and reopens the same profile. **Open Installer Manually** remains available. |
 | Windows, x64 | Starts the verified NSIS `.exe` directly | Follow its prompts; close OctoSense when requested. |
 | Linux, x86_64, Debian package | Saves a copy of the verified `.deb` in the Downloads folder, checks it, and opens it with the desktop's package handler | Approve the package installation, then restart. Without a desktop package handler, install that file with the distribution's package manager. |
 | Linux, x86_64, AppImage | Saves a checked, executable copy in the Downloads folder and opens that folder | Quit OctoSense, replace the old AppImage with the new one, then open it. The updater does not overwrite the running image. |
 | Android, ARM64 | Checks the verified APK against installed Home and stages it with Android's package installer | Review and confirm the operating system's installation prompt. |
 
 Opening an installer does **not** report a completed installation. Checks remain
-manual. The updater does not elevate itself or remove the user's profile.
+manual: OctoSense looks for an update only when you ask it to, or when you choose
+another channel on a desktop; there is no automatic check and no setting for one.
+The updater does not elevate itself or remove the user's profile.
 On macOS, replacement happens only after **Install & Restart**, app close review,
 the old process exiting and a code-signature check against the installed app.
 The operating system's
@@ -62,8 +71,8 @@ checks) and meet that requirement, with the same Team ID and signing identifier
 on an Apple-issued certificate chain. The helper checks the staged app before
 the exchange and again immediately before launching it, and checks the previous
 app before reopening it. An unsigned or ad-hoc signed installation, which is
-every source or development build, is refused with a message; **Open installer
-manually** remains. Debug builds, never release builds, accept unsigned test
+every source or development build, is refused with a message; **Open Installer
+Manually** remains. Debug builds, never release builds, accept unsigned test
 bundles when `OCTOSENSE_UPDATE_UNSIGNED_FIXTURES=1` is set. The update must
 also be newer than the installed app: an older release is signed just as
 validly, so the helper compares the semantic versions again, as preparation
@@ -322,6 +331,16 @@ copy; the Mac App Store-signed one is refused as an installation, because its
 leaf certificate is Apple's. Replacing a signed OctoSense release with another
 signed release by this code remains **unverified**, because no release
 containing it has been signed yet.
+
+The desktop pane was driven in a development shell started with
+`--test-action updater-test:desktop-v0.1.0-rc.5+restart`, which reads the build
+as RC5 while the check, the 281.2 MB download and its verification stay the real
+ones: the channel pop-up, no release on Stable, RC6 offered, downloading, Cancel,
+ready to install, and a scripted click on Install & Restart refused. Without
+`+restart` and with `rc.6`, `updater-test:unsupported` or a refused connection it
+showed up to date, unsupported and Try Again. Preparing, Waiting to Restart and
+an opened installer were not reached this way, so this pane's look in those states
+remains **unverified**.
 
 On an owned API 35 Android emulator, a fixture using the actual Java updater
 adapter and OS PackageInstaller passed 25 acceptance checks, including cleanup: permission changes

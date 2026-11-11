@@ -2,7 +2,8 @@
 // in App Hub's card-host, which serves no host services. It never ships:
 // apps/writer/tests/ui.py puts it in place of engine() in a scratch copy of
 // the bundle, and writes its settings to dev/fixture.json in the app's
-// storage ({"delay": seconds, "fail": ["word.convert", ...]}). Like the
+// storage ({"delay": seconds, "fail": ["word.convert", ...], "cancel": true when
+// the Save panel's person says Cancel}). Like the
 // engine, it reads and writes the paths it is given in the app's storage, so
 // the app runs its one code path. A document it saves is the Markdown it was
 // given, which word.info and word.inspect read back; other formats are
@@ -13,7 +14,7 @@ fn fixture_settings(){
         let f = nil
         if fs.exists("dev/fixture.json") { f = fs.read("dev/fixture.json").parse_json() }
         if f == nil { f = {} }
-        fixture = {delay: field(f, "delay", 0.4) fail: field(f, "fail", [])}
+        fixture = {delay: field(f, "delay", 0.4) fail: field(f, "fail", []) cancel: field(f, "cancel", false)}
     }
     return fixture
 }
@@ -30,6 +31,10 @@ fn fixture_answer(f, method, args){
         return {is_ok: false data: nil error: method + ": word: " + args.path + ": No such file or directory (os error 2)"}
     }
     let text = fs.read(args.path)
+    if method == "files.export" {
+        if f.cancel { return {is_ok: true data: {cancelled: true} error: nil} }
+        return {is_ok: true data: {cancelled: false path: args.path bytes: text.len()} error: nil}
+    }
     if method == "word.convert" {
         let out = text
         if args.format != "docx" && args.format != "md" { out = "Writer dev fixture: a stand-in " + args.format + " file\n" }

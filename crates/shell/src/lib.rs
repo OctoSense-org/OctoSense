@@ -18,6 +18,8 @@ pub mod mail_background;
 pub mod agent_events;
 pub mod ai_bus;
 pub mod app_chat;
+pub mod app_clipboard;
+pub mod app_settings_link;
 pub mod app_fullscreen;
 pub mod app_storage;
 pub mod dev_mode;
@@ -25,6 +27,7 @@ pub mod launch_input;
 pub mod approvals;
 pub mod apps;
 pub mod binds;
+pub mod chosen_files;
 pub mod clients;
 pub mod charts;
 pub mod demo_home;
@@ -32,6 +35,9 @@ pub mod desk;
 pub mod desktop_layout;
 pub mod desktop;
 pub mod desktop_app;
+mod mac_appearance;
+mod mac_menus;
+mod mac_sound;
 pub mod snap;
 pub mod mobile;
 pub mod mobile_navigation;
@@ -95,10 +101,12 @@ pub mod prebuild;
 pub mod preview;
 pub mod process_close;
 pub mod questions;
+pub mod quit_alert;
 pub mod run_view;
 pub mod shell;
 pub mod theme;
 pub mod tile;
+pub mod window_frames;
 pub mod wm_reply;
 pub mod ext;
 pub mod glance;
@@ -140,6 +148,8 @@ mod mail_compose;
 use glance::NoteTargets as GlanceNoteTargets;
 // The App derive takes a plain type name for a field.
 use approvals::RequestNotices as ApprovalNotices;
+use mac_appearance::Choice as MacAppearance;
+use mac_appearance::Picture as MacPicture;
 use app_fullscreen::Presenter as FullscreenPresenter;
 pub mod system_chat;
 pub use octosense_ai_host as ai_host;
@@ -148,6 +158,8 @@ pub use octosense_ai_host as ai_host;
 // (the phone's Settings app) wraps this `App` and plugs in through `ext`.
 
 pub use makepad_widgets;
+use makepad_widgets::makepad_platform::file_dialogs::{FileDialog, FileDialogAction};
+use makepad_widgets::makepad_platform::ime::HostedEdit;
 use makepad_widgets::makepad_platform::thread::{Lane, SignalToUI, TaskHandle};
 use makepad_widgets::*;
 
@@ -168,6 +180,7 @@ use clients::{spawn_client, ClientLine, LaunchPolicy, WarmPool, WarmStatus};
 use makepad_widgets::makepad_platform::shared_framebuf::{
     shared_swapchain_from_host_swapchain, HostSwapchain,
 };
+use chosen_files::Grants as ChosenGrants;
 use hub::{send_to_app, ClientId, HubEvent, WmHub};
 use layout::{Axis, Dir, DividerHit, FullscreenMode, LRect};
 use makepad_studio_protocol::{AppToStudio, StudioToApp};
@@ -220,6 +233,10 @@ script_mod! {
                 // WindowDragQuery answers Caption over the bar strip (minus
                 // its buttons) so the window still drags.
                 show_caption_bar: false
+                // A desktop keeps the keyboard where it is on a press nothing
+                // claims, so a press on the menu bar leaves a text field's focus
+                // alone. The release outside a field still takes it.
+                grab_key_focus: #(MOBILE_ONLY)
                 body +: {
                     // The bar lies over the top of the scene: the scene starts
                     // below it while it is docked (`App::place_bar` keeps the
@@ -275,7 +292,6 @@ script_mod! {
                         // Published glance cards (glance_panel.rs), F9.
                         shell_glance := ShellGlancePanel{}
                         shell_panel := ShellPanel{}
-                        shell_menu := ShellMenu{}
                         // The approval surface (approvals/): the shell's
                         // approval and first-use sheets, the time-box
                         // indicator, and Settings > Assistant > Approvals.
@@ -286,6 +302,10 @@ script_mod! {
                         // "Ask <app>" (app_chat/): an app agent's
                         // conversation, both lanes, beside the system chat.
                         shell_app_chat := ShellSystemChat{ app_panel: true }
+                        // Menus over the chat panels: a Mac's status menus drop
+                        // where Ask OctoSense floats, and a menu is what was
+                        // just opened, in every style.
+                        shell_menu := ShellMenu{}
                         // Cards and notifications stay above phone chat;
                         // approval sheets and the developer banner remain above them.
                         shell_glance_sheet := ShellGlanceSheet{}
@@ -345,6 +365,8 @@ script_mod! {
 const BAR_HEIGHT_FALLBACK: f64 = 26.0;
 /// `developer_options_activate`'s target for the phone's finished gesture.
 const DEVELOPER_PHONE_ON: &str = "setup.developer.phone-on";
+/// A Mac's words for an app that didn't open. What went wrong is in the log.
+const COULD_NOT_OPEN: &str = "Try again. If it keeps happening, quit OctoSense and open it again.";
 
 /// The bar's height and the left padding its content starts at. macOS puts
 /// its traffic lights on the left; Linux and Windows put caption buttons on
@@ -496,6 +518,13 @@ pub struct App {
     /// kept holding the keyboard and every key was dropped.
     #[rust]
     pub keyboard_holder: Option<ClientId>,
+    /// The window that last heard `WmEvent::Focus { focused: true }`.
+    #[rust]
+    focus_seen: Option<ClientId>,
+    /// A press spent on closing a process app's menu (`app_menu_pointer`): until its
+    /// release, its moves and release are nobody's.
+    #[rust]
+    menu_press_spent: bool,
     /// `--gallery`: the shell-surface gallery instead of a desktop.
     #[rust]
     pub gallery: bool,
@@ -693,6 +722,62 @@ pub struct App {
     pub apps: AppRegistry,
     #[rust] pub style_frame: NextFrame,
     #[rust] pub style_time: f64,
+    /// The Files window the Dock's Trash opened.
+    #[rust] trash_window: Option<ClientId>,
+    /// The file panels up for process apps, open and save: whose each is, and what
+    /// that app calls it.
+    #[rust] open_panels: HashMap<LiveId, (ClientId, u64)>,
+    /// The files those panels gave each process, which the shell reads or replaces for
+    /// it (`AppToStudio::ChosenFile`, chosen_files.rs). This session only.
+    #[rust] chosen: ChosenGrants,
+    /// Windows whose apps asked to keep their frame (`WmRequest::FrameAutosave`):
+    /// the key it is kept under (window_frames.rs).
+    #[rust] frame_names: HashMap<ClientId, String>,
+    #[rust] test_mac_menu: Option<(Timer, usize)>,
+    #[rust] test_mac_row: Option<(Timer, String)>,
+    /// `--test-action toast:…` and `glance-notice:…`, posted once the shell is up.
+    #[rust] test_notices: Option<(Timer, Vec<String>)>,
+    /// Something held the keyboard when a Mac menu opened. The release of a
+    /// press outside a text field takes the keyboard away from it; a Mac's
+    /// menus never do, so closing one gives it back (`Cx::revert_key_focus`,
+    /// whose record follows the widget through its redraws).
+    #[rust] mac_menu_focus: bool,
+    /// The press that closed the menu has its release still to come.
+    #[rust] mac_focus_after_up: bool,
+    #[rust] mac_pressed: bool,
+    /// Whether anything held the keyboard when the current press began: the
+    /// bar's click arrives after the release.
+    #[rust] mac_press_focus: bool,
+    /// A text field had the keyboard when the button went down.
+    #[rust] mac_press_typing: bool,
+    /// Or a view a press alone had given it to (`Cx::key_focus_pressed`).
+    #[rust] mac_press_view: bool,
+    /// And what it could do then.
+    #[rust] mac_press_edit: HostedEdit,
+    /// What the field with the keyboard in each process app says it can do.
+    #[rust] client_edits: HashMap<ClientId, HostedEdit>,
+    /// The menu bar rows a process app last sent (`WmRequest::MenuRows`).
+    #[rust] client_menu_rows: HashMap<ClientId, String>,
+    /// Which window's own menus the bar has read.
+    #[rust] mac_titles_of: Option<Option<ClientId>>,
+    #[rust] mac_own_menus: Vec<String>,
+    #[rust] mac_status_items: Vec<BarModule>,
+    #[rust] host_sound_set_until: f64,
+    #[rust] mac_appearance: MacAppearance,
+    #[rust] mac_picture: MacPicture,
+    /// Recent Items: the apps a person opened last, newest first.
+    #[rust] recent_apps: Vec<String>,
+    /// And the documents, by path: what an app asked the shell to open.
+    #[rust] recent_docs: Vec<String>,
+    /// Open at Login: the apps the shell opens when it starts (a Dock menu's
+    /// Options), in the order they were chosen.
+    #[rust] login_apps: Vec<String>,
+    /// The pane System Settings is to show when it next asks.
+    #[rust] settings_pane: Option<String>,
+    #[rust] mac_refocus: Option<Timer>,
+    /// An Edit command, waiting for the keyboard to land where it should go.
+    #[rust] mac_edit_pending: Option<String>,
+    #[rust] mac_edit_later: Option<Timer>,
     #[rust] pub title_press: Option<(ClientId, f64, Vec2d)>,
     #[rust] pub stylesheet: Option<desktop_style::StyleSheet>,
     #[rust] pub phone_frame: NextFrame,
@@ -760,6 +845,8 @@ pub struct DragState {
     start: Vec2d,
     last: Vec2d,
     start_rect: LRect,
+    /// The smallest this drag leaves the window.
+    minimum: (f64, f64),
     /// Which corner the grab belongs to, by the QUADRANT of the grab point
     /// around the window center (DragController.cpp:213-226). The opposite
     /// corner stays put while the drag moves these two edges.
@@ -902,7 +989,7 @@ impl App {
     fn launch_app_with_args(&mut self, cx: &mut Cx, app_id: &str, extra_args: &[String]) {
         let Some(app) = crate::clients::find_app(app_id) else {
             log!("octosense: no app '{}' in the registry", app_id);
-            self.notify(cx, "App unavailable", &format!("Register '{app_id}' in your app catalog to launch it."));
+            self.notify(cx, "App unavailable", "It isn\u{2019}t installed on this device.");
             return;
         };
         let app = &app;
@@ -922,6 +1009,9 @@ impl App {
                 return;
             }
         }
+        // Recent Items lists what a person opens.
+        #[cfg(not(mobile_only))]
+        self.note_recent_app(app_id);
         // Its manifest's storage block (ADR 0004 §11) lays out its folders
         // before the Card runner opens it, system apps included.
         #[cfg(any(feature = "app-hub", native_mobile))]
@@ -961,6 +1051,9 @@ impl App {
                 return;
             }
         }
+        // A Mac's app assigned to a desktop (Dock ▸ Options ▸ Assign To) opens there.
+        #[cfg(not(mobile_only))]
+        self.mac_open_on_assigned_desktop(cx, app_id);
 
         #[cfg(all(unix, any(feature = "app-hub", native_mobile)))]
         if app.bin == "studio-app" && cfg!(dev_mode) {
@@ -1023,9 +1116,13 @@ impl App {
                 log!("wm: launched {} as client {}", app.id, id);
                 state.clients.insert(id, slot);
                 let area = self.desk_area(cx);
+                // A pane with a size of its own opens at it in its own process too.
+                let style = self.state_mut().style.target;
+                let preferred = if style.mobile() { None } else { apps::native_window_hint(app, style == desktop::DesktopStyle::Macos) };
+                let dock = if preferred.is_some() { self.dock_overlay(cx, area) } else { 0.0 };
                 let state = self.state_mut();
                 let gap = state.gap;
-                state.layout.insert(id, area, gap);
+                state.layout.insert_sized(id, area, gap, preferred, dock);
                 let hub_port = state.hub_port;
                 self.desk(cx)
                     .borrow_mut::<WmDesk>()
@@ -1035,7 +1132,11 @@ impl App {
             }
             Err(err) => {
                 log!("wm: launch {} failed: {}", app.id, err);
-                self.notify(cx, "Could not open app", &format!("{}: {err}", app.label));
+                if self.state_mut().style.target == desktop::DesktopStyle::Macos {
+                    self.notify(cx, &format!("{} couldn\u{2019}t open", app.label), COULD_NOT_OPEN);
+                } else {
+                    self.notify(cx, "Could not open app", &format!("{}: {err}", app.label));
+                }
             }
         }
     }
@@ -1470,13 +1571,46 @@ impl App {
             // Terminal) hears nothing from the reply, so the person is told
             // as `launch_app` tells them; an `Open` requester handles the
             // reply itself.
-            WmRequest::Launch { app, .. } if !Self::launchable(app) => {
+            WmRequest::Launch { app, .. } | WmRequest::LaunchOrFocus { app, .. } if !Self::launchable(app) => {
                 self.reply_unavailable(cx, client, app, "");
-                self.notify(cx, "App unavailable", &format!("Register '{app}' in your app catalog to launch it."));
+                self.notify(cx, "App unavailable", "It isn\u{2019}t installed on this device.");
             }
             WmRequest::Launch { app, args } => {
                 let (app, args) = (app.clone(), args.clone());
                 self.launch_app_with_args(cx, &app, &args);
+            }
+            // One window per set of arguments (a Settings window opened twice is
+            // one window): that window to the front, else the launch Launch is.
+            WmRequest::LaunchOrFocus { app, args } => {
+                let (app, args) = (app.clone(), args.clone());
+                let state = self.state_mut();
+                let layout = &state.layout;
+                let open = window_frames::window_for(&app, &args, &state.clients, |id| layout.workspace_of(id).is_some());
+                match open {
+                    Some(window) => self.activate_client(cx, window),
+                    None => self.launch_app_with_args(cx, &app, &args),
+                }
+            }
+            WmRequest::Resize { width, height } => self.resize_client(cx, client, *width, *height),
+            // A process app's own menu bar rows: the bar shows the last it sent.
+            WmRequest::MenuRows { rows } => {
+                self.client_menu_rows.insert(client, rows.clone());
+                if self.state_mut().layout.focused_client() == Some(client) {
+                    self.mac_titles_of = None;
+                    self.update_bar(cx);
+                }
+            }
+            WmRequest::FrameAutosave { name } => self.frame_autosave(cx, client, name),
+            WmRequest::TrashFull { full } => {
+                // Only the app that keeps the Trash says what is in it.
+                let app = self.state_mut().clients.get(&client).map(|s| s.app.clone()).unwrap_or_default();
+                if app == "files" {
+                    log!("wm: Files says the Trash is {}", if *full { "full" } else { "empty" });
+                    if self.state_mut().trash_full != *full {
+                        self.state_mut().trash_full = *full;
+                        self.redraw_all(cx);
+                    }
+                }
             }
             WmRequest::Title { title } => {
                 if let Some(slot) = self.state_mut().clients.get_mut(&client) {
@@ -1525,6 +1659,62 @@ impl App {
         }
     }
 
+    /// A process app's own window to `width` x `height` points of content
+    /// (`WmRequest::Resize`): only while it floats on a desktop, kept on the
+    /// screen and above the smallest window (window_frames.rs).
+    fn resize_client(&mut self, cx: &mut Cx, client: ClientId, width: f64, height: f64) {
+        let state = self.state_mut();
+        let window = state.layout.desktop.get(client);
+        if !window_frames::may_resize(state.style.target.mobile(), state.layout.desktop.enabled, window) {
+            return;
+        }
+        let Some(rect) = window.map(|w| w.rect) else { return };
+        let app = state.clients.get(&client).map(|s| s.app.clone()).unwrap_or_default();
+        let unified = state.style.target == desktop::DesktopStyle::Macos && clients::unified_chrome(&app);
+        let title_h = if unified { 0.0 } else { state.style.target.title_height() };
+        let area = self.desk_area(cx);
+        let dock = self.dock_overlay(cx, area);
+        let Some(rect) = window_frames::resize_rect(rect, width, height, title_h, area, dock) else { return };
+        self.state_mut().layout.set_float_rect(client, rect);
+        self.redraw_all(cx);
+    }
+
+    /// `WmRequest::FrameAutosave`: the frame kept under the app's id and `name`
+    /// comes back now, on a visible display; the window's frame is kept under it
+    /// when it closes or the shell quits ([`Self::keep_frame`]).
+    fn frame_autosave(&mut self, cx: &mut Cx, client: ClientId, name: &str) {
+        let Some(app) = self.state_mut().clients.get(&client).map(|s| s.app.clone()) else { return };
+        let Some(key) = window_frames::key(&app, name) else {
+            log!("wm: {app} (client {client}) named a frame the shell does not keep: {name:?}");
+            return;
+        };
+        self.frame_names.insert(client, key.clone());
+        let state = self.state_mut();
+        if !window_frames::may_resize(state.style.target.mobile(), state.layout.desktop.enabled, state.layout.desktop.get(client)) {
+            return;
+        }
+        let Some(saved) = window_frames::recall(&key) else { return };
+        let area = self.desk_area(cx);
+        let dock = self.dock_overlay(cx, area);
+        let rect = window_frames::restored(saved, area, dock);
+        log!("wm: {app} (client {client}) back at its kept frame {key}");
+        self.state_mut().layout.set_float_rect(client, rect);
+        self.redraw_all(cx);
+    }
+
+    /// Keep the frame of `client`'s window under the name its app gave
+    /// (`WmRequest::FrameAutosave`), once, before the window leaves the desk.
+    fn keep_frame(&mut self, client: ClientId) {
+        let Some(key) = self.frame_names.remove(&client) else { return };
+        let Some(state) = self.state.as_ref() else { return };
+        if state.style.target.mobile() || !state.layout.desktop.enabled {
+            return;
+        }
+        if let Some(window) = state.layout.desktop.get(client) {
+            window_frames::remember(&key, window.rect);
+        }
+    }
+
     /// A client asked us to open a file in its associated app as a normal
     /// tiled window (`WmRequest::Open`). `WmRequest::Preview` (Quick Look)
     /// goes through `handle_preview_request`'s warm-viewer cache instead.
@@ -1548,6 +1738,9 @@ impl App {
             }
         };
         log!("wm: opening {} as client {}", req.path.display(), id);
+        // Recent Items' Documents list what a person opens.
+        #[cfg(not(mobile_only))]
+        self.note_recent_doc(&req.path);
         self.state_mut().clients.insert(id, slot);
         self.sync_geometry(cx);
         let area = self.desk_area(cx);
@@ -1563,6 +1756,165 @@ impl App {
     }
 
     /// Send a hosted client a `WmEvent` over its own studio socket — the
+    /// The focus moved (a press, a key, a launch, a window closing). The window that
+    /// had it never hears a press that misses it, and a Mac closes its open menu then.
+    fn tell_focus_change(&mut self, cx: &mut Cx) {
+        if self.state.is_none() || self.state_mut().style.target.mobile() {
+            return;
+        }
+        let focused = self.state_mut().layout.focused_client();
+        if focused == self.focus_seen {
+            return;
+        }
+        if let Some(old) = self.focus_seen {
+            let _ = self.dismiss_module_menu(cx, old);
+            self.send_wm_event(old, WmEvent::Focus { focused: false });
+        }
+        if let Some(new) = focused {
+            self.send_wm_event(new, WmEvent::Focus { focused: true });
+        }
+        self.focus_seen = focused;
+    }
+
+    /// Process Sheets closes its menus on a WM focus-loss message. Its
+    /// in-process root has no corresponding module lifecycle hook yet, so
+    /// use its public menu operation instead of sending a synthetic Escape
+    /// that could cancel an edit or a dialog. Other module roots are untouched.
+    fn dismiss_module_menu(&mut self, cx: &mut Cx, client: ClientId) -> bool {
+        #[cfg(any(feature = "app-sheets", native_mobile))]
+        if self.module_host.is_module(client) {
+            return self.module_host.dispatch(cx, client, "dismissing a menu", |cx, root| {
+                if root.borrow::<makepad_sheets::view::MpSheets>().is_none() {
+                    return false;
+                }
+                let open = [ids!(menu_layer), ids!(tab_menu_layer), ids!(cell_menu_layer)]
+                    .iter().any(|id| {
+                        let layer = root.widget(cx, *id);
+                        !layer.is_empty() && layer.visible()
+                    });
+                if !open {
+                    return false;
+                }
+                if let Some(mut sheets) = root.borrow_mut::<makepad_sheets::view::MpSheets>() {
+                    sheets.close_menus(cx);
+                    return true;
+                }
+                false
+            }).unwrap_or(false);
+        }
+        #[cfg(not(any(feature = "app-sheets", native_mobile)))]
+        let _ = (cx, client);
+        false
+    }
+
+    /// A press on the bare desktop leaves the focus where it was, but closes the
+    /// focused window's open menu.
+    fn tell_press_on_desktop(&mut self, cx: &mut Cx, event: &Event) {
+        let Event::MouseDown(e) = event else { return };
+        if self.state.is_none() || self.state_mut().style.target.mobile() {
+            return;
+        }
+        let area = self.desk_area(cx);
+        let gap = self.state_mut().gap;
+        // The window itself takes any press nothing else did, under the size of its
+        // body; the surfaces over the desktop (the panes, a sheet, the Dock) never let
+        // one get this far.
+        let taken_by = e.handled.get();
+        let body = self.ui.widget(cx, ids!(main_window.body)).area();
+        let unclaimed = taken_by.is_empty() || taken_by.rect(cx) == body.rect(cx);
+        let on_desktop = unclaimed
+            && area.contains(e.abs.x, e.abs.y)
+            && self.state_mut().layout.client_at(e.abs.x, e.abs.y, area, gap).is_none();
+        if on_desktop {
+            self.close_focused_menu(cx);
+            if e.button.contains(MouseButton::SECONDARY) && self.state_mut().style.target == desktop::DesktopStyle::Macos {
+                self.open_desktop_menu(cx, e.abs);
+            }
+        }
+    }
+
+    /// A process app's pop-up menu is up (`AppToStudio::MenuUp`): a primary press off
+    /// that app's window closes the menu and goes no further, as a Mac spends the press
+    /// that dismisses a menu (A3: the press that closed Terminal's menu went on to the
+    /// clock and opened Notification Center). Its moves and release go nowhere either.
+    /// A right press closes the menu too and goes on, to open the menu it was for. A
+    /// press in the app's window is the app's.
+    fn app_menu_pointer(&mut self, cx: &mut Cx, event: &Event) -> bool {
+        match event {
+            Event::MouseDown(e) => {
+                // A release that never came (the window went away under it) ends with the next press.
+                self.menu_press_spent = false;
+                if self.state_mut().style.target.mobile() {
+                    return false;
+                }
+                let Some(client) = self
+                    .state_mut()
+                    .clients
+                    .iter()
+                    .find(|(_, slot)| slot.menu_up && !slot.stopped && slot.sender.is_some())
+                    .map(|(id, _)| *id)
+                else {
+                    return false;
+                };
+                let area = self.desk_area(cx);
+                let gap = self.state_mut().gap;
+                if self.state_mut().layout.client_at(e.abs.x, e.abs.y, area, gap) == Some(client) {
+                    return false;
+                }
+                // The app lets go of the keyboard (its own menus close on that), hears a
+                // press and its release far off its surface (every menu closes on a press
+                // off it, and no field has the keyboard to lose to the release), and takes
+                // the keyboard back. Its messages arrive in this order.
+                if let Some(slot) = self.state_mut().clients.get_mut(&client) {
+                    slot.menu_up = false;
+                }
+                if self.send_wm_event(client, WmEvent::Focus { focused: false }) {
+                    let (time, far) = (e.time, -100_000.0);
+                    let modifiers = makepad_studio_protocol::RemoteKeyModifiers::from_key_modifiers(&e.modifiers);
+                    let button_raw_bits = MouseButton::PRIMARY.bits();
+                    if let Some(sender) = self.state_mut().clients.get(&client).and_then(|slot| slot.sender.as_ref()) {
+                        crate::hub::send_to_app(sender, vec![
+                            StudioToApp::MouseDown(makepad_studio_protocol::RemoteMouseDown { button_raw_bits, x: far, y: far, time, modifiers }),
+                            StudioToApp::MouseUp(makepad_studio_protocol::RemoteMouseUp { button_raw_bits, x: far, y: far, time, modifiers }),
+                        ]);
+                    }
+                    self.send_wm_event(client, WmEvent::Focus { focused: true });
+                }
+                if !e.button.contains(MouseButton::PRIMARY) {
+                    log!("wm: client {client}'s menu closed by a right press off its window; the press goes on");
+                    return false;
+                }
+                log!("wm: client {client}'s menu closed by a press off its window; the press goes no further");
+                self.menu_press_spent = true;
+                true
+            }
+            Event::MouseMove(_) if self.menu_press_spent => true,
+            Event::MouseUp(_) if self.menu_press_spent => {
+                self.menu_press_spent = false;
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// A press that never reached the focused window closes its open menu all the
+    /// same: it lets go of the keyboard and takes it back.
+    pub(crate) fn close_focused_menu(&mut self, cx: &mut Cx) {
+        let Some(focused) = self.focus_seen else { return };
+        if self.dismiss_module_menu(cx, focused) {
+            // Sheets closed its own menu without giving up the grid's keys.
+            return;
+        }
+        if self.send_wm_event(focused, WmEvent::Focus { focused: false }) {
+            self.send_wm_event(focused, WmEvent::Focus { focused: true });
+        } else if !cx.key_focus().is_empty() {
+            // A module shares this `Cx`, and comes back with the release.
+            cx.set_key_focus(Area::Empty);
+            self.mac_menu_focus = true;
+            self.mac_restore_focus(cx);
+        }
+    }
+
     /// WM->app half of the `makepad_wm_api` protocol. False when the client is
     /// gone or has not connected yet, so a caller whose message MUST land
     /// (a Quick-Look retarget) can park it for `HubEvent::Connected`.
@@ -1962,6 +2314,7 @@ impl App {
     /// popin-out with the frame the tile already has. The slot stays until
     /// the reaper sees the process gone.
     fn leave_layout(&mut self, cx: &mut Cx, client: ClientId) {
+        self.keep_frame(client);
         self.state_mut().layout.remove(client);
         if let Some(mut desk) = self.desk(cx).borrow_mut::<WmDesk>() {
             desk.remove_client(client);
@@ -2126,6 +2479,46 @@ impl App {
             .unwrap_or(false)
     }
 
+    /// A Mac: an app that quit unexpectedly takes its window with it, the menu
+    /// bar passes to the app now in front, and one alert says so, with Reopen,
+    /// Report… and Ignore (quit_alert.rs). Reopen opens the new window where
+    /// this was; Report… shows `why` and what the app last said ([`Self::quit_report`]).
+    fn mac_quit(&mut self, cx: &mut Cx, client: ClientId, label: &str, why: Option<String>) {
+        let app = self.state_mut().clients.get(&client).map(|slot| slot.app.clone()).unwrap_or_default();
+        let window = self.state_mut().layout.desktop.get(client).cloned();
+        let report = self.quit_report(client, label, why);
+        log!("wm: {app} (client {client}) quit unexpectedly; its window closes and an alert says so");
+        self.remove_client(cx, client);
+        quit_alert::push(quit_alert::Alert { app, label: label.to_string(), window, report });
+        self.update_bar(cx);
+        self.redraw_all(cx);
+    }
+
+    /// What a quit alert's Report… shows, read before the client goes: an
+    /// in-process app's error as it said it; else what happened (`why`, its
+    /// first line: the exit) and the end of what the process wrote to its log;
+    /// else nothing, and the report says nothing was recorded.
+    fn quit_report(&mut self, client: ClientId, label: &str, why: Option<String>) -> quit_alert::Report {
+        if let Some(error) = self.module_host.get(client).and_then(|i| i.failure()) {
+            return quit_alert::Report { summary: format!("{label} stopped after an error."), lines: quit_alert::last_lines(error) };
+        }
+        let log = self.state_mut().clients.get(&client).and_then(|slot| slot.log_path.clone());
+        let output = log.and_then(|path| quit_alert::read_tail(&path)).unwrap_or_default();
+        let summary = why.as_deref().and_then(|w| w.lines().next()).map(str::to_string).unwrap_or_else(|| format!("{label} quit unexpectedly."));
+        quit_alert::Report { summary: quit_alert::home_masked(&summary), lines: quit_alert::last_lines(&output) }
+    }
+
+    /// What the person asked a quit alert to reopen.
+    fn reopen_quit(&mut self, cx: &mut Cx) {
+        for alert in quit_alert::take_reopen() {
+            log!("wm: reopening {} after it quit unexpectedly", alert.app);
+            if let Some(window) = alert.window {
+                self.state_mut().layout.desktop.reopen_like(window);
+            }
+            self.launch_app(cx, &alert.app);
+        }
+    }
+
     /// A process app died unexpectedly: everything behind its tile goes
     /// (the bus's registrations, its peer link's calls and contexts, the
     /// process handle) and the tile stays, closed with a Restart.
@@ -2134,6 +2527,8 @@ impl App {
         slot.stopped = true;
         slot.sender = None;
         slot.socket = None;
+        // What the process last called its window was its session's: the window is the app's now.
+        slot.title.clear();
         if let Some(mut child) = slot.child.take() {
             let _ = child.wait();
         }
@@ -2151,6 +2546,9 @@ impl App {
     }
 
     fn remove_client(&mut self, cx: &mut Cx, client: ClientId) {
+        self.client_edits.remove(&client);
+        self.client_menu_rows.remove(&client);
+        self.chosen.forget(client);
         self.studio_clients.retain(|_, id| *id != client);
         log!("wm: removing client {}", client);
         peer_link::process_gone(client);
@@ -2218,6 +2616,7 @@ impl App {
         if let Some(app) = self.state_mut().phone.tiles.forget_client(client) {
             log!("wm: home tile {} lost client {}", app, client);
         }
+        self.keep_frame(client);
         self.state_mut().layout.remove(client);
         self.state_mut().clients.remove(&client);
         hub::revoke_launch_token(client);
@@ -2244,6 +2643,11 @@ impl App {
             self.animate_phone(cx);
         } else {
             self.replay_tile_face(cx, client);
+        }
+        // Asked for by name, a window that was put away comes back.
+        if self.state_mut().layout.desktop.minimized(client) {
+            self.restore_desktop(cx, client);
+            return;
         }
         self.focus_client(cx, client);
     }
@@ -2421,7 +2825,7 @@ impl App {
         let mut answering: Vec<ClientId> = self.state_mut().clients.keys().copied().collect();
         answering.retain(|client| self.process_close.is_pending(*client));
         let now = host::now();
-        let dead: Vec<(ClientId, Option<String>)> = self
+        let dead: Vec<(ClientId, String, Option<String>)> = self
             .state_mut()
             .clients
             .iter_mut()
@@ -2437,21 +2841,31 @@ impl App {
                 }
                 let label = clients::find_app(&slot.app)
                     .map(|app| app.label).unwrap_or_else(|| slot.app.clone());
-                Some((*id, slot.exit_failure(status, &label)))
+                let failure = slot.exit_failure(status, &label);
+                Some((*id, label, failure))
             })
             .collect();
-        for (id, failure) in dead {
+        for (id, label, failure) in dead {
             // ADR 0004 §2: a process app that dies takes only itself down;
-            // its tile stays, closed with a Restart.
+            // its tile stays, closed with a Restart. A Mac's window goes with
+            // it, and an alert says so (`mac_quit`).
             let in_place = self.state_mut().clients.get(&id).is_some_and(|s| s.stops_in_place(failure.is_some()));
-            if in_place {
+            let mac = self.state_mut().style.target == desktop::DesktopStyle::Macos;
+            if in_place && mac {
+                self.mac_quit(cx, id, &label, failure.clone());
+            } else if in_place {
                 self.process_stopped(cx, id);
             } else {
                 self.remove_client(cx, id);
             }
             if let Some(message) = failure {
                 log!("octosense: {message}");
-                self.notify(cx, "App stopped", &message);
+                // A Mac says what happened and what to do; the details are in the log.
+                if !mac {
+                    self.notify(cx, "App stopped", &message);
+                } else if !in_place {
+                    self.notify(cx, &format!("{label} couldn\u{2019}t open"), COULD_NOT_OPEN);
+                }
             }
         }
     }
@@ -2552,8 +2966,13 @@ impl App {
         if !self.ai_pane_is_open(cx) {
             return;
         }
+        let keys = self.mac_ai_keys(cx);
         self.with_ai_pane(cx, |cx, p| p.set_open(cx, false));
-        self.focus_after_layout(cx);
+        match keys {
+            Some(true) => cx.revert_key_focus(),
+            Some(false) => {}
+            None => self.focus_after_layout(cx),
+        }
         self.broadcast_chat_open(cx, false);
         self.update_bar(cx);
         self.redraw_all(cx);
@@ -2630,6 +3049,7 @@ impl App {
         }
         let pane = self.ui.widget(cx, ids!(shell_ai_pane));
         pane.handle_event(cx, event, &mut Scope::empty());
+        self.mac_ai_requests(cx);
         true
     }
 
@@ -2778,6 +3198,7 @@ impl App {
             Some(instance) => (instance.manifest(), instance.root.clone(), instance.vm_id),
             None => return,
         };
+        let manifest = system_chat::view::mac::named_for_person(manifest, &app.label);
         let mut slot = clients::ClientSlot::module(id, &app.id, &app.label);
         // Host services know a script app in front by its manifest id.
         slot.card_app = apps::card_manifest_id(app).map(str::to_owned);
@@ -2785,10 +3206,16 @@ impl App {
         let gap = self.state_mut().gap;
         // A script app may ask its desktop window to open at a size (its
         // manifest's `window`), which the desk clamps; without one, or for
-        // any other module, the default size. Phones ignore it: their apps
-        // are full-screen.
+        // any other module, the default size, except a settings-sized pane
+        // (`apps::native_window_hint`). Phones ignore it: their apps are
+        // full-screen.
         // It ends above a dock that floats over the desk.
-        let preferred = if self.state_mut().style.target.mobile() { None } else { apps::window_hint(cx, app) };
+        let style = self.state_mut().style.target;
+        let preferred = if style.mobile() {
+            None
+        } else {
+            apps::native_window_hint(app, style == desktop::DesktopStyle::Macos).or_else(|| apps::window_hint(cx, app))
+        };
         let dock = if preferred.is_some() { self.dock_overlay(cx, area) } else { 0.0 };
         self.state_mut().layout.insert_sized(id, area, gap, preferred, dock);
         if let (Some((w, h)), Some(window)) = (preferred, self.state_mut().layout.desktop.get(id)) {
@@ -2838,6 +3265,11 @@ impl App {
             for window in windows {
                 self.remove_client(cx, window);
             }
+            if self.state_mut().style.target == desktop::DesktopStyle::Macos {
+                self.module_host.release_failed(cx, client);
+                self.mac_quit(cx, client, &label, None);
+                continue;
+            }
             self.desk(cx)
                 .borrow_mut::<WmDesk>()
                 .map(|mut d| d.with_module_view(cx, client, |cx, v| v.show_failed(cx, &label)));
@@ -2862,6 +3294,7 @@ impl App {
             return;
         };
         log!("wm: restarting {app} after its instance (client {client}) failed");
+        self.state_mut().layout.desktop.reopen_as(client);
         self.request_close(cx, client);
         self.launch_app(cx, &app);
     }
@@ -3031,6 +3464,24 @@ impl App {
                         self.remove_client(cx, window);
                         self.update_bar(cx);
                     }
+                }
+                WindowRequest::Resize { by } => {
+                    // A phone has no windows; a window that fills something
+                    // keeps its place until the person leaves that.
+                    let state = self.state_mut();
+                    if state.style.target.mobile() || !state.layout.desktop.enabled {
+                        continue;
+                    }
+                    let Some(window) = state.layout.desktop.get(owner) else { continue };
+                    if window.maximized || window.fullscreen || window.snap.is_some() {
+                        continue;
+                    }
+                    let rect = window.rect;
+                    let area = self.desk_area(cx);
+                    let dock = self.dock_overlay(cx, area);
+                    let rect = desktop_layout::resized(rect, by.x, by.y, area, dock);
+                    self.state_mut().layout.set_float_rect(owner, rect);
+                    self.redraw_all(cx);
                 }
             }
         }
@@ -3253,6 +3704,8 @@ impl App {
                         .map(|(id, _)| *id);
                     if let Some(client) = client {
                         peer_link::process_gone(client);
+                        // What its panels gave it was that connection's.
+                        self.chosen.forget(client);
                         if let Some(slot) = self.state_mut().clients.get_mut(&client) {
                             slot.sender = None;
                             slot.socket = None;
@@ -3270,6 +3723,82 @@ impl App {
                         self.on_app_msg(cx, client, msg);
                     }
                 }
+            }
+        }
+    }
+
+    /// What the person made of a process app's file panel goes back to the app. A file
+    /// chosen there is the app's to read and replace, through the shell, until that
+    /// process's connection ends (chosen_files.rs).
+    fn answer_open_panels(&mut self, event: &Event) {
+        let Event::Actions(actions) = event else { return };
+        for action in actions {
+            let Some(action) = action.downcast_ref::<FileDialogAction>() else { continue };
+            let Some((client, id)) = self.open_panels.remove(&action.id()) else { continue };
+            match action {
+                FileDialogAction::FileSelected { paths, .. } => {
+                    for path in paths {
+                        self.chosen.grant(client, path);
+                    }
+                    let paths = paths.iter().map(|path| path.to_string_lossy().into_owned()).collect();
+                    self.answer_open_panel(client, id, paths);
+                }
+                FileDialogAction::SaveFileSelected { path, .. } => {
+                    // A folder that went away in the meantime: nothing to save into.
+                    let path = match self.chosen.grant(client, path) {
+                        Some(_) => path.to_string_lossy().into_owned(),
+                        None => String::new(),
+                    };
+                    self.answer_save_panel(client, id, path);
+                }
+                FileDialogAction::SaveFileCancelled { .. } => self.answer_save_panel(client, id, String::new()),
+                _ => self.answer_open_panel(client, id, Vec::new()),
+            }
+        }
+    }
+
+    fn answer_open_panel(&mut self, client: ClientId, id: u64, paths: Vec<String>) {
+        if let Some(sender) = self.state_mut().clients.get(&client).and_then(|slot| slot.sender.as_ref()) {
+            send_to_app(sender, vec![StudioToApp::OpenPanelAnswer { id, paths }]);
+        }
+    }
+
+    fn answer_save_panel(&mut self, client: ClientId, id: u64, path: String) {
+        if let Some(sender) = self.state_mut().clients.get(&client).and_then(|slot| slot.sender.as_ref()) {
+            send_to_app(sender, vec![StudioToApp::SavePanelAnswer { id, path }]);
+        }
+    }
+
+    /// `AppToStudio::ChosenFile`: a file this shell's panel gave `client` is read or
+    /// replaced for it, away from the UI thread; any other path is refused.
+    fn chosen_file(&mut self, cx: &mut Cx, client: ClientId, id: u64, path: String, data: Option<Vec<u8>>) {
+        let Some(sender) = self.state_mut().clients.get(&client).and_then(|slot| slot.sender.clone()) else { return };
+        let real = match self.chosen.granted(client, std::path::Path::new(&path)) {
+            Ok(real) => real,
+            Err(error) => {
+                log!("wm: client {client} asked for a file no panel gave it: refused");
+                send_to_app(&sender, vec![StudioToApp::ChosenFileAnswer { id, data: Vec::new(), error }]);
+                return;
+            }
+        };
+        let answer_to = sender.clone();
+        let work = move || {
+            let done = match data {
+                Some(bytes) => chosen_files::write(&real, &bytes).map(|_| Vec::new()),
+                None => chosen_files::read(&real),
+            };
+            let (data, error) = match done {
+                Ok(data) => (data, String::new()),
+                Err(error) => (Vec::new(), error),
+            };
+            send_to_app(&answer_to, vec![StudioToApp::ChosenFileAnswer { id, data, error }]);
+        };
+        match cx.task_pool().submit(Lane::Heavy, work) {
+            Ok(task) => task.detach(),
+            Err(error) => {
+                log!("wm: could not queue a chosen file for client {client}: {error}");
+                let error = "The disk may be full or unavailable.".to_string();
+                send_to_app(&sender, vec![StudioToApp::ChosenFileAnswer { id, data: Vec::new(), error }]);
             }
         }
     }
@@ -3386,12 +3915,82 @@ impl App {
             AppToStudio::SetClipboard(text) => {
                 cx.copy_to_clipboard(&text);
             }
+            AppToStudio::MenuUp(up) => {
+                log!("wm: client {client}'s menu {}", if up { "is up" } else { "went" });
+                if let Some(slot) = self.state_mut().clients.get_mut(&client) {
+                    slot.menu_up = up;
+                }
+                // A press on a row over its window's toolbar band is the menu's, not a move.
+                if self.ai_bus.is_pane(client) {
+                    self.with_pane_run_view(cx, |_, v| v.set_menu_up(up));
+                } else {
+                    self.desk(cx).borrow_mut::<WmDesk>().map(|mut d| d.with_run_view(cx, client, |_, v| v.set_menu_up(up)));
+                }
+            }
+            #[cfg(target_os = "macos")]
+            AppToStudio::PasteClipboard => {
+                if let (Ok(output), Some(sender)) = (
+                    std::process::Command::new("/usr/bin/pbpaste").output(),
+                    self.state_mut().clients.get(&client).and_then(|slot| slot.sender.as_ref()),
+                ) {
+                    let input = String::from_utf8_lossy(&output.stdout).into_owned();
+                    if !input.is_empty() {
+                        let event = TextInputEvent { input, was_paste: true, replace_last: false, ..Default::default() };
+                        send_to_app(sender, vec![StudioToApp::TextInput(event)]);
+                    }
+                }
+            }
+            AppToStudio::OpenPanel { id, title, location, extensions, multiple } => {
+                // Only the window in front gets to ask the person something. A refusal
+                // reads as a panel they cancelled, so nothing waits on it.
+                if self.state_mut().layout.focused_client() == Some(client) {
+                    log!("wm: client {client} asked for an open panel: the shell's own");
+                    let panel = LiveId::unique();
+                    self.open_panels.insert(panel, (client, id));
+                    let mut dialog = FileDialog::new().set_id(panel).set_title(title).set_multiple(multiple);
+                    if !location.is_empty() {
+                        dialog = dialog.set_location(location.into());
+                    }
+                    if !extensions.is_empty() {
+                        dialog = dialog.add_filter(String::new(), extensions);
+                    }
+                    cx.open_select_file_dialog(dialog);
+                } else {
+                    self.answer_open_panel(client, id, Vec::new());
+                }
+            }
+            // The save panel, on the same terms: the window in front, or a cancel.
+            AppToStudio::SavePanel { id, title, location, name, extensions } => {
+                if self.state_mut().layout.focused_client() == Some(client) {
+                    log!("wm: client {client} asked for a save panel: the shell's own");
+                    let panel = LiveId::unique();
+                    self.open_panels.insert(panel, (client, id));
+                    let mut dialog = FileDialog::new().set_id(panel).set_title(title).set_filename(name);
+                    if !location.is_empty() {
+                        dialog = dialog.set_location(location.into());
+                    }
+                    if !extensions.is_empty() {
+                        dialog = dialog.add_filter(String::new(), extensions);
+                    }
+                    cx.open_save_file_dialog(dialog);
+                } else {
+                    self.answer_save_panel(client, id, String::new());
+                }
+            }
+            AppToStudio::ChosenFile { id, path, data } => self.chosen_file(cx, client, id, path, data),
+            AppToStudio::WidgetSnapshot(response) => {
+                log!("client-widgets {client} {}", response.widgets.serialize_json());
+            }
             AppToStudio::Custom(json) => {
                 if let Some(back) = makepad_platform::ime::HostedBack::parse(&json) {
                     if back.handled == Some(false) && self.state_mut().phone.client == Some(client) {
                         self.state_mut().phone.navigate(mobile::PhoneScreen::Home);
                         self.animate_phone(cx);
                     }
+                    return;
+                }
+                if let Some(edit) = HostedEdit::parse(&json) {
+                    self.client_edits.insert(client, edit);
                     return;
                 }
                 if let Some(ime) = makepad_platform::ime::HostedImeState::parse(&json) {
@@ -3559,6 +4158,7 @@ impl App {
         let path = if path.is_empty() && self.state_mut().style.target == desktop::DesktopStyle::NextStep {
             "workspace"
         } else { path };
+        shell::menu::ASK_APP_HERE.store(self.focused_agent_app().is_some(), std::sync::atomic::Ordering::Relaxed);
         let menu = self.ui.widget(cx, ids!(shell_menu));
         {
             let mut borrowed = menu.borrow_mut::<ShellMenu>();
@@ -3632,6 +4232,17 @@ impl App {
             }
         }
         if consumed {
+            // The Dock stays live over Launchpad, which passes it the pointer
+            // only over it: leaving it, its name goes and its press lets go.
+            if desktop::mac_launchpad() {
+                if let Some(mut shelf) = self.ui.widget(cx, ids!(desktop_shelf)).borrow_mut::<desktop::DesktopShelf>() {
+                    match event {
+                        Event::MouseMove(e) => shelf.hover_at(cx, e.abs),
+                        Event::MouseUp(_) => { shelf.take_press(cx); }
+                        _ => {}
+                    }
+                }
+            }
             self.redraw_all(cx);
         }
         consumed
@@ -3819,6 +4430,9 @@ impl App {
     /// What a menu row does. The ids are the jsonc's dotted paths, with
     /// `apps.<id>` and `style.theme[.import].<name>` from the providers.
     fn shell_menu_activate(&mut self, cx: &mut Cx, target: &str) {
+        if self.mac_menu_activate(cx, target) {
+            return;
+        }
         if target == shell::menu::ASK_APP_ROW {
             self.close_shell_menu(cx);
             self.ask_focused_app(cx);
@@ -3837,7 +4451,7 @@ impl App {
             return;
         }
         if target.starts_with(shell::menu::COMMANDS_ROW) || target == shell::menu::ASSISTANT_RESTART_ROW {
-            self.assistant_commands_activate(cx, target);
+            self.assistant_commands_activate(cx, target, false);
             return;
         }
         if target == shell::menu::APPROVALS_ROW {
@@ -3850,12 +4464,25 @@ impl App {
             self.developer_options_activate(cx, target);
             return;
         }
+        #[cfg(any(feature = "app-hub", native_mobile))]
+        if let Some(pane) = target.strip_prefix("settings.") {
+            self.close_shell_menu(cx);
+            self.open_settings_pane(cx, pane);
+            return;
+        }
         if target=="start.documents" {self.launch_app(cx,"files");return;}
         if target=="start.power" {self.toggle_shell_panel(cx,BarModule::Power);return;}
         #[cfg(not(mobile_only))]
         if let Some(name) = target.strip_prefix("desktop.") {
             if let Some(style) = desktop::DesktopStyle::parse(name) {
-                if style.supports_dark() { self.state_mut().style.dark = name.ends_with("-dark"); }
+                if style == desktop::DesktopStyle::Macos {
+                    // Naming the dark one chooses it. Naming the style keeps Auto.
+                    use mac_appearance::Choice;
+                    let choice = if name.ends_with("-dark") { Choice::Dark } else if self.mac_appearance == Choice::Auto { Choice::Auto } else { Choice::Light };
+                    self.state_mut().style.dark = self.keep_mac_appearance(choice);
+                } else if style.supports_dark() {
+                    self.state_mut().style.dark = name.ends_with("-dark");
+                }
                 self.set_desktop_style(cx, style);
                 return;
             }
@@ -3925,6 +4552,15 @@ impl App {
         if let Some(mut panel) = self.ui.widget(cx, ids!(shell_glance)).borrow_mut::<glance_panel::ShellGlancePanel>() {
             panel.set_open(open);
         }
+        // A Mac's Notification Center takes in the banners of what it lists.
+        if open && self.state.as_ref().is_some_and(|s| s.style.target == desktop::DesktopStyle::Macos) {
+            let banners = std::mem::take(&mut self.glance_toasts).ids();
+            if let Some(mut notes) = self.ui.widget(cx, ids!(shell_notes)).borrow_mut::<shell::notifications::ShellNotifications>() {
+                for id in banners {
+                    notes.dismiss(cx, id);
+                }
+            }
+        }
         // Seen: the bar's glance button goes back from lit.
         if open {
             self.glance_seen_ms = glance::now_ms();
@@ -3966,7 +4602,15 @@ impl App {
         if let Some(old) = self.glance_undo_toast.take() {
             notes.dismiss(cx, old);
         }
-        let summary = if count == 1 { "Card dismissed".to_string() } else { format!("{count} cards cleared") };
+        // A Mac's Notification Center says nothing when a notification is cleared;
+        // Command-Z, while it holds the keyboard, still brings it back.
+        if self.state.as_ref().is_some_and(|s| s.style.target == desktop::DesktopStyle::Macos) {
+            return;
+        }
+        let summary = match count {
+            1 => "Card dismissed".to_string(),
+            _ => format!("{count} cards cleared"),
+        };
         let id = notes.post(
             cx,
             shell::notifications::Notification {
@@ -4075,6 +4719,21 @@ impl App {
     /// Open directly above the current phone screen. Glance supplies a visual
     /// origin only when that exact summary is visible; notifications need no
     /// detour through the feed, no activity launch, and no agent restart.
+    /// A card's banner pressed: its card window, or on a Mac the app that
+    /// sent it (glance_panel.rs `opens_its_app`).
+    fn glance_banner_pressed(&mut self, cx: &mut Cx, key: &str) {
+        if self.state.as_ref().is_some_and(|s| s.style.target == desktop::DesktopStyle::Macos) {
+            if let Some(card) = glance::listed().into_iter().find(|c| c.key() == key).filter(glance_panel::opens_its_app) {
+                log!("wm: glance card {key} opens its app (its banner)");
+                glance::opened(key);
+                self.set_glance_open(cx, false);
+                self.launch_glance_app(cx, &card.open_app, card.route.as_deref());
+                return;
+            }
+        }
+        self.open_glance_card(cx, key);
+    }
+
     pub fn open_glance_card(&mut self, cx: &mut Cx, key: &str) {
         self.set_glance_open(cx, false);
         let phone = self.state.as_ref().is_some_and(|s| s.style.target.mobile());
@@ -4205,6 +4864,9 @@ impl App {
     fn system_chat_changed(&mut self, cx: &mut Cx) {
         system_chat::pump();
         app_chat::pump();
+        // A pane's Open Settings opens the Approvals page.
+        self.approvals_page_opened(cx);
+        self.mac_chat_focus(cx);
         self.host_tools_pump(cx);
         let generation = system_chat::generation().wrapping_add(app_chat::generation());
         if generation != self.system_chat_generation {
@@ -4248,12 +4910,17 @@ impl App {
     /// "Ask <app>" for the focused window's app, when it has an agent
     /// (the bar's button, Shift+F8, Setup › Assistant).
     fn ask_focused_app(&mut self, cx: &mut Cx) {
+        if self.mac_ask_toggled() {
+            self.system_chat_changed(cx);
+            return;
+        }
         let app = self.focused_agent_app();
         match app {
             Some(app) => {
                 log!("ask: {}'s agent", app.id);
                 app_chat::open_app(app);
             }
+            None if self.state_mut().style.target == desktop::DesktopStyle::Macos => self.notify(cx, "This app has no assistant", "Ask OctoSense can help instead: press F8."),
             None => self.notify(cx, "No app agent here", "The focused app has no agent to ask. The system agent (F8) can help instead."),
         }
         self.system_chat_changed(cx);
@@ -4276,6 +4943,12 @@ impl App {
         let outcome = pane.borrow_mut::<system_chat::view::ShellSystemChat>().map(|mut p| p.pointer(cx, event)).unwrap_or(system_chat::view::Outcome::Ignored);
         match outcome {
             system_chat::view::Outcome::Ignored => false,
+            system_chat::view::Outcome::OpenProviders => {
+                app_chat::close();
+                self.launch_app(cx, "ai-providers");
+                self.system_chat_changed(cx);
+                true
+            }
             _ => {
                 self.system_chat_changed(cx);
                 true
@@ -4404,7 +5077,9 @@ impl App {
     /// shell/menu.rs). The one place outside system_chat/ that turns the
     /// system agent's command execution on: the person typed the
     /// confirmation into the menu and chose Allow.
-    fn assistant_commands_activate(&mut self, cx: &mut Cx, target: &str) {
+    /// `shown`: what happened shows in the window it was done from, so only a
+    /// failure needs a banner.
+    fn assistant_commands_activate(&mut self, cx: &mut Cx, target: &str, shown: bool) {
         self.close_shell_menu(cx);
         if let Some(typed) = target.strip_prefix(shell::menu::COMMANDS_ALLOW_ROW).and_then(|t| t.strip_prefix(':')) {
             match system_chat::grants::CommandGesture::settings_phrase(typed) {
@@ -4414,6 +5089,7 @@ impl App {
                     &format!("{} To allow it, type \u{201c}{}\u{201d} in Command execution, then choose Allow.", system_chat::grants::RISK, system_chat::grants::CONFIRM_PHRASE),
                 ),
                 Some(gesture) => match system_chat::grants::set_command_execution(true, Some(gesture)) {
+                    Ok(()) if shown => {}
                     Ok(()) => self.notify(cx, "Command execution is on", "Each command asks you on a sheet first. Restart the assistant to apply."),
                     Err(why) => self.notify(cx, "Command execution is off", &why),
                 },
@@ -4421,12 +5097,13 @@ impl App {
         } else if target == shell::menu::COMMANDS_OFF_ROW {
             match system_chat::grants::set_command_execution(false, None) {
                 Err(why) => self.notify(cx, "Command execution", &why),
+                Ok(()) if shown => {}
                 Ok(()) => self.notify(cx, "Command execution is off", "Restart the assistant to apply."),
             }
         } else if target == shell::menu::ASSISTANT_RESTART_ROW {
             if system_chat::grants::restart_assistant() {
                 self.notify(cx, "Assistant restarting", "Its conversation resumes when it is back.");
-            } else {
+            } else if !shown {
                 self.notify(cx, "Assistant", "It isn't running; the change applies when it starts.");
             }
         }
@@ -4441,8 +5118,17 @@ impl App {
             let route = self.ai_bus.release(&id.0, decision.approved(), &reason);
             self.on_bus_route(cx, route);
         }
+        let mac = self.state.as_ref().is_some_and(|s| s.style.target == desktop::DesktopStyle::Macos);
+        self.approvals_page_opened(cx);
+        self.reopen_quit(cx);
         for n in approvals::take_notices() {
-            let shown = self.notify_shown(cx, &n.title, &n.body);
+            // A Mac's sheet is up already: no banner telling the person to open it.
+            // What expired has its own, at the top right, until it is dismissed.
+            if mac && (n.request.is_some() || n.on_surface) {
+                continue;
+            }
+            let (title, body) = n.words(mac);
+            let shown = self.notify_shown(cx, title, body);
             if let Some(request) = n.request {
                 self.approval_notices.record(request, shown);
             }
@@ -4456,6 +5142,10 @@ impl App {
         let generation = approvals::generation();
         if generation != self.approvals_generation {
             self.approvals_generation = generation;
+            // A Mac's menu bar says how long a time box has left.
+            if mac {
+                self.update_bar(cx);
+            }
             self.redraw_all(cx);
         }
     }
@@ -4516,7 +5206,11 @@ impl App {
             requested: 30.0,
             ..Default::default()
         };
-        if let Some(id) = notes.borrow_mut::<shell::notifications::ShellNotifications>().map(|mut n| n.post(cx, card_toast)) {
+        // A Mac's card goes straight into a Notification Center that is open.
+        let in_the_column = self.state.as_ref().is_some_and(|s| s.style.target == desktop::DesktopStyle::Macos) && self.glance_open(cx);
+        if in_the_column {
+            log!("glance: {} is in the open column", note.key);
+        } else if let Some(id) = notes.borrow_mut::<shell::notifications::ShellNotifications>().map(|mut n| n.post(cx, card_toast)) {
             self.glance_toasts.record(id, &note.key);
             log!("glance: toast {id} opens {}", note.key);
         }
@@ -4543,6 +5237,12 @@ impl App {
     }
 
     /// `osascript` the output volume, then say so on the OSD.
+    /// The sampler's next look at the sound may predate what the shell is about to set.
+    fn hold_host_sound(&mut self) {
+        let round = if launch_input::hidden_windows() { 61.0 } else { 6.0 };
+        self.host_sound_set_until = makepad_widgets::Cx::monotonic_now() + round;
+    }
+
     fn set_volume(&mut self, cx: &mut Cx, level: u32) {
         #[cfg(target_os = "macos")]
         {
@@ -4550,6 +5250,7 @@ impl App {
                 .args(["-e", &format!("set volume output volume {}", level)])
                 .output();
         }
+        self.hold_host_sound();
         self.bar_sample.volume = Some(level);
         self.show_osd(cx, shell::osd::OsdShow::volume(level, self.bar_sample.muted));
         self.update_bar(cx);
@@ -4560,6 +5261,8 @@ impl App {
     /// (`shell/bar.rs` does the sampling — cheap things every second, the
     /// expensive ones every fifth).
     fn update_bar(&mut self, cx: &mut Cx) {
+        // What a Mac shows on every desktop goes along to the next one.
+        self.mac_sync_every_desktop();
         if let Some(clock)=self.bar_sample.clock.split_whitespace().find(|s|s.contains(':')).map(str::to_string) {
             self.state_mut().phone.clock=clock;
         }
@@ -4601,15 +5304,36 @@ impl App {
         data.style = self.state_mut().style.target;
         data.dark = self.state_mut().style.dark;
         data.active_window = (!title.is_empty()).then_some(title);
+        data.active_app = {
+            let state = self.state_mut();
+            state.layout.focused_client().and_then(|c| state.clients.get(&c)).map(|s| s.app_name().to_string())
+        };
+        data.mac_clock = shell::bar::sample_mac_clock();
+        if data.style == desktop::DesktopStyle::Macos {
+            data.mac_titles = self.mac_titles(cx);
+        }
         data.ask_agent = self.focused_agent_app().map(|a| a.name);
         data.open_panel = self.shell_panel_open;
+        if let Some(open) = self.ui.widget(cx, ids!(shell_menu)).borrow::<ShellMenu>().and_then(|menu| menu.mac_open()) {
+            data.open_panel = Some(match open {
+                0 => BarModule::Menu,
+                1 => BarModule::ActiveWindow,
+                n => BarModule::MacMenu(n - 2),
+            });
+        }
+        if data.style == desktop::DesktopStyle::Macos {
+            data.time_box = approvals::time_boxes().iter().map(|(_, _, left)| *left).min();
+            if let Some(item) = self.ui.widget(cx, ids!(shell_menu)).borrow::<ShellMenu>().and_then(|menu| menu.mac_status_open()) {
+                data.open_panel = self.mac_status_items.get(item).copied();
+            }
+        }
         // The glance button: the cards the panel lists, and how many arrived
         // since it was last open; it wears the pill while the panel is up.
         let cards = glance::listed();
         let new = cards.iter().filter(|c| c.published_ms > self.glance_seen_ms).count();
         data.glance = Some((cards.len(), new));
         if self.glance_open(cx) {
-            data.open_panel = Some(BarModule::Glance);
+            data.open_panel = Some(if data.style == desktop::DesktopStyle::Macos { BarModule::Clock } else { BarModule::Glance });
         }
         // The middle window control reads "restore" while maximized.
         data.maximized = self.ui.window(cx, ids!(main_window)).is_fullscreen(cx);
@@ -4735,8 +5459,15 @@ impl App {
             }
         }
         let s = self.status_sample.clone();
-        self.bar_sample.volume = s.volume;
-        self.bar_sample.muted = s.muted;
+        #[cfg(not(mobile_only))]
+        if let Some(dark) = s.mac_dark {
+            self.follow_mac_appearance(cx, dark);
+        }
+        // What the shell just set stands until the sampler has looked again.
+        if makepad_widgets::Cx::monotonic_now() >= self.host_sound_set_until {
+            self.bar_sample.volume = s.volume;
+            self.bar_sample.muted = s.muted;
+        }
         // No sampler (no processes to fork `date` in: the web): the clock
         // is formatted from the platform's own epoch seconds instead.
         self.bar_sample.clock = match (self.clock_alt, s.clock.is_empty()) {
@@ -4860,15 +5591,29 @@ impl App {
         let height = SCENE_TOP;
         let title = self.state.as_ref().map_or(0.0, |s| s.style.target.title_height());
         let scene_top = if bar.visible() && !floating { height } else { 0.0 };
+        // A Mac's menu bar is translucent over the wallpaper: the scene runs up
+        // under it, and what the scene holds still starts below it.
+        let mac_family = self.state.as_ref().is_some_and(|s| s.style.target.mac_family());
+        let (scene_margin, content_margin) = if mac_family { (0.0, scene_top) } else { (scene_top, 0.0) };
         let bar_top = if floating { -(height + title) * (1.0 - edge_reveal::ease(reveal)) } else { 0.0 };
         if let Some(state) = self.state.as_mut() {
             state.top_bar = if floating { height } else { 0.0 };
         }
         let mut moved = false;
         if let Some(mut scene) = self.ui.widget(cx, ids!(scene)).borrow_mut::<scene::WmScene>() {
-            if scene.walk.margin.top != scene_top {
-                scene.walk.margin.top = scene_top;
+            if scene.walk.margin.top != scene_margin {
+                scene.walk.margin.top = scene_margin;
                 moved = true;
+            }
+        }
+        // Launchpad takes the whole screen, the menu bar's strip too.
+        let launchpad = desktop::mac_launchpad() && self.state.as_ref().is_some_and(|s| s.style.target == desktop::DesktopStyle::Macos);
+        for (content, margin) in [(ids!(desk_row), content_margin), (ids!(shell_overlay), if launchpad { 0.0 } else { content_margin })] {
+            if let Some(mut view) = self.ui.view(cx, content).borrow_mut() {
+                if view.walk.margin.top != margin {
+                    view.walk.margin.top = margin;
+                    moved = true;
+                }
             }
         }
         if let Some(mut view) = bar.borrow_mut::<View>() {
@@ -5095,6 +5840,11 @@ impl App {
             WmAction::SystemMenu => self.open_shell_menu(cx, "system", MenuSkin::Menu),
             WmAction::MenuRoute(route) => self.open_shell_menu(cx, route, MenuSkin::Menu),
             WmAction::Keybindings => {
+                #[cfg(any(feature = "app-hub", native_mobile))]
+                if self.state_mut().style.target == desktop::DesktopStyle::Macos {
+                    self.open_settings_pane(cx, "keyboard");
+                    return;
+                }
                 self.open_shell_menu(cx, "learn.keybindings", MenuSkin::Menu)
             }
             WmAction::ThemeMenu => self.open_shell_menu(cx, "style.theme", MenuSkin::Menu),
@@ -5166,6 +5916,15 @@ impl App {
             layout.raise_float(client);
         }
         let (cx_center, cy_center) = rect.center();
+        // A window that is already smaller, on a small desk or at its app's own size, keeps that.
+        let state = self.state_mut();
+        let minimum = match state.clients.get(&client).filter(|_| state.style.target == desktop::DesktopStyle::Macos) {
+            Some(slot) => {
+                let (w, h) = apps::mac_window_minimum(&slot.app);
+                (w.min(rect.w), h.min(rect.h))
+            }
+            None => (desktop_layout::MIN_W, desktop_layout::MIN_H),
+        };
         self.drag = Some(DragState {
             client,
             resize,
@@ -5175,6 +5934,7 @@ impl App {
             start: abs,
             last: abs,
             start_rect: rect,
+            minimum,
             grab_left: abs.x < cx_center,
             grab_top: abs.y < cy_center,
             armed,
@@ -5223,6 +5983,7 @@ impl App {
             drag.grab_top,
         );
         let (resize_x,resize_y)=(drag.resize_x,drag.resize_y);
+        let (min_w,min_h)=drag.minimum;
         drag.last = abs;
         let area = self.desk_area(cx);
         let gap = self.state_mut().gap;
@@ -5231,18 +5992,17 @@ impl App {
             let rect = if resize {
                 // The grabbed corner moves with the pointer; the opposite
                 // one is fixed (DragController.cpp:413-423).
-                use crate::desktop_layout::{MIN_H, MIN_W};
                 let (x, w) = if !resize_x {(start_rect.x,start_rect.w)}else if grab_left {
-                    let w = (start_rect.w - d.x).max(MIN_W);
+                    let w = (start_rect.w - d.x).max(min_w);
                     (start_rect.x + start_rect.w - w, w)
                 } else {
-                    (start_rect.x, (start_rect.w + d.x).max(MIN_W))
+                    (start_rect.x, (start_rect.w + d.x).max(min_w))
                 };
                 let (y, h) = if !resize_y {(start_rect.y,start_rect.h)}else if grab_top {
-                    let h = (start_rect.h - d.y).max(MIN_H);
+                    let h = (start_rect.h - d.y).max(min_h);
                     (start_rect.y + start_rect.h - h, h)
                 } else {
-                    (start_rect.y, (start_rect.h + d.y).max(MIN_H))
+                    (start_rect.y, (start_rect.h + d.y).max(min_h))
                 };
                 LRect::new(x, y, w, h)
             } else {
@@ -5555,6 +6315,38 @@ impl App {
     /// due `ask-appcard:` sends its text to the appcard instance's executor
     /// exactly as the assistant's `ask` call would.
     fn fire_test_timers(&mut self, cx: &mut Cx, te: &TimerEvent) {
+        if self.mac_refocus.as_ref().is_some_and(|timer| timer.is_timer(te).is_some()) {
+            self.mac_refocus = None;
+            if cx.key_focus().is_empty() {
+                cx.revert_key_focus();
+            }
+            if self.mac_edit_pending.is_some() {
+                self.mac_edit_later = Some(cx.start_timeout(0.001));
+            }
+        }
+        if self.mac_edit_later.as_ref().is_some_and(|timer| timer.is_timer(te).is_some()) {
+            self.mac_edit_later = None;
+            if let Some(command) = self.mac_edit_pending.take() {
+                self.mac_edit_now(cx, &command);
+            }
+        }
+        if self.test_mac_menu.as_ref().is_some_and(|(timer, _)| timer.is_timer(te).is_some()) {
+            if let Some((_, index)) = self.test_mac_menu.take() {
+                self.toggle_mac_menu(cx, index);
+            }
+        }
+        if self.test_notices.as_ref().is_some_and(|(timer, _)| timer.is_timer(te).is_some()) {
+            if let Some((_, specs)) = self.test_notices.take() {
+                for spec in specs {
+                    self.fire_test_notice(cx, &spec);
+                }
+            }
+        }
+        if self.test_mac_row.as_ref().is_some_and(|(timer, _)| timer.is_timer(te).is_some()) {
+            if let Some((_, target)) = self.test_mac_row.take() {
+                self.shell_menu_activate(cx, &target);
+            }
+        }
         if let Some((timer, _path)) = self.test_capture.clone() {
             if timer.is_timer(te).is_some() {
                 #[cfg(not(target_os = "android"))]
@@ -5626,6 +6418,38 @@ impl App {
     /// pass, work in every build. The app config's `test_actions` arrive
     /// with a launch that another app may have made (an Android intent
     /// extra), so only a development build takes them (`launch_input`).
+    /// One `--test-action toast:<app icon or ->|<title>|<body>|<action>`, as
+    /// the shell posts one, or `glance-notice:<app>|<title>|<body>`, the notice
+    /// an app's agent sends (`<namespace>.notify`): a card and its banner.
+    fn fire_test_notice(&mut self, cx: &mut Cx, spec: &str) {
+        if let Some(spec) = spec.strip_prefix("toast:") {
+            let parts: Vec<&str> = spec.splitn(4, '|').collect();
+            let part = |i: usize| parts.get(i).copied().unwrap_or("");
+            let note = shell::notifications::Notification {
+                app: "wm".into(),
+                summary: part(1).to_string(),
+                body: part(2).to_string(),
+                icon: Some(shell::ui::Ico::Bell),
+                app_icon: Some(part(0)).filter(|a| !a.is_empty() && *a != "-").map(str::to_string),
+                action: Some(part(3)).filter(|a| !a.is_empty()).map(str::to_string),
+                requested: 30.0,
+                ..Default::default()
+            };
+            if let Some(mut notes) = self.ui.widget(cx, ids!(shell_notes)).borrow_mut::<shell::notifications::ShellNotifications>() {
+                notes.post(cx, note);
+            }
+            self.redraw_all(cx);
+        }
+        #[cfg(any(feature = "app-hub", native_mobile))]
+        if let Some(spec) = spec.strip_prefix("glance-notice:") {
+            let parts: Vec<&str> = spec.splitn(3, '|').collect();
+            let part = |i: usize| parts.get(i).copied().unwrap_or("");
+            let card_id: String = part(1).chars().filter(char::is_ascii_alphanumeric).take(58).collect();
+            let args = serde_json::json!({"title": part(1), "body": part(2), "card_id": format!("test-{card_id}")});
+            log!("wm: test notice from {}: {:?}", part(0), glance_notice::notify(part(0), &args).map(|_| "published"));
+        }
+    }
+
     fn run_test_actions(&mut self, cx: &mut Cx) {
         let mut args: Vec<String> = std::env::args().collect();
         for action in launch_input::test_actions() {
@@ -5690,6 +6514,36 @@ impl App {
                             state.host_fullscreen = true;
                         }
                         self.redraw_all(cx);
+                        i += 2;
+                        continue;
+                    }
+                    // toast:… and glance-notice:…: `fire_test_notice`.
+                    if name.starts_with("toast:") || name.starts_with("glance-notice:") {
+                        let (timer, mut specs) = self.test_notices.take().unwrap_or_else(|| (cx.start_timeout(1.5), Vec::new()));
+                        specs.push(name.clone());
+                        self.test_notices = Some((timer, specs));
+                        i += 2;
+                        continue;
+                    }
+                    // window-size:<w>x<h>: the shell's window at that size, as a
+                    // smaller screen would have it (the Dock fits it by shrinking).
+                    if let Some((w, h)) = name.strip_prefix("window-size:").and_then(|s| s.split_once('x')) {
+                        if let (Ok(w), Ok(h)) = (w.parse::<f64>(), h.parse::<f64>()) {
+                            self.ui.window(cx, ids!(main_window)).resize(cx, dvec2(w, h));
+                        }
+                        i += 2;
+                        continue;
+                    }
+                    // mac-row:<target> does what a Mac menu row does, and
+                    // mac-menu:<i> opens that menu of the menu bar.
+                    if let Some(index) = name.strip_prefix("mac-menu:").and_then(|i| i.parse::<usize>().ok()) {
+                        self.test_mac_menu = Some((cx.start_timeout(1.5), index));
+                        i += 2;
+                        continue;
+                    }
+                    if let Some(target) = name.strip_prefix("mac-row:") {
+                        let target = target.to_string();
+                        self.test_mac_row = Some((cx.start_timeout(1.5), target));
                         i += 2;
                         continue;
                     }
@@ -5781,14 +6635,36 @@ impl App {
                         i += 2;
                         continue;
                     }
-                    // style:<android|ios>: switch to that phone shell first,
-                    // so a later launch-<app id> opens the app at a phone's
-                    // size (an app's phone layout, checked on a desktop).
+                    if self.mac_ai_test_action(cx, name) {
+                        i += 2;
+                        continue;
+                    }
+                    // updater-test:<release tag>[+restart]|unsupported: read this development
+                    // build as that release, to reach the Updates pane's states
+                    // (`octosense_updater_ui::pretend`). A release build ignores it.
+                    #[cfg(any(feature = "app-updater", native_mobile))]
+                    if let Some(value) = name.strip_prefix("updater-test:") {
+                        octosense_updater_ui::pretend(value);
+                        i += 2;
+                        continue;
+                    }
+                    // style:<id>[-dark]: switch to that style first, so a later
+                    // launch-<app id> opens the app in it. A phone style
+                    // (android, ios) also opens the app at a phone's size (an
+                    // app's phone layout, checked on a desktop).
                     if let Some(style) = name.strip_prefix("style:") {
-                        match style.trim() {
-                            "android" => self.set_desktop_style(cx, desktop::DesktopStyle::Android),
-                            "ios" => self.set_desktop_style(cx, desktop::DesktopStyle::Ios),
-                            other => log!("wm: --test-action style: no phone style {other:?} (android or ios)"),
+                        let style = style.trim();
+                        match desktop::DesktopStyle::parse(style) {
+                            Some(parsed) => {
+                                if parsed.supports_dark() && style.ends_with("-dark") {
+                                    self.state_mut().style.dark = true;
+                                    // What the Appearance rows tick says the same; nothing is kept.
+                                    #[cfg(not(mobile_only))]
+                                    if parsed == desktop::DesktopStyle::Macos { self.mac_appearance = mac_appearance::Choice::Dark; }
+                                }
+                                self.set_desktop_style(cx, parsed);
+                            }
+                            None => log!("wm: --test-action style: no style {style:?}"),
                         }
                         i += 2;
                         continue;
@@ -5827,6 +6703,14 @@ impl App {
                     if approvals::test_action(name) {
                         log!("wm: --test-action {}", name);
                         self.redraw_all(cx);
+                        i += 2;
+                        continue;
+                    }
+                    // GitHub's and Google Calendar's reviews as samples, in this shell only.
+                    #[cfg(any(feature = "app-hub", native_mobile))]
+                    if name == "sample-reviews" {
+                        log!("wm: --test-action {}", name);
+                        connected_review::register_samples();
                         i += 2;
                         continue;
                     }
@@ -6177,6 +7061,9 @@ mod app_hub_lifecycle_tests {
             top_reveal: 0.0,
             top_bar: 0.0,
             presentation: None,
+            dock_pins: Vec::new(),
+            expose: None,
+            trash_full: false,
         });
         // Real module isolates exercise shutdown and client removal without
         // requiring a downloaded Card or changing the machine's catalog.
@@ -6326,6 +7213,9 @@ impl MatchEvent for App {
             top_reveal: 0.0,
             top_bar: 0.0,
             presentation: None,
+            dock_pins: mac_menus::load_dock_pins(),
+            expose: None,
+            trash_full: desktop::trash_starts_full(),
             style: Default::default(),
             material,
             roles,
@@ -6343,12 +7233,32 @@ impl MatchEvent for App {
         log!("wm: modules linked: {:?}", self.apps.linked_ids());
         // Use the normal style-switch path before the first frame, so phone
         // state, controls, icons and hosted-app styles all agree from startup.
+        // A Mac's desktop picture, as the person left it, for whenever the Mac
+        // style is chosen.
+        #[cfg(not(mobile_only))]
+        { self.mac_picture = MacPicture::load(); }
+        // Recent Items, as the person left them.
+        #[cfg(not(mobile_only))]
+        { self.recent_apps = mac_menus::load_recent_apps(); }
+        #[cfg(not(mobile_only))]
+        { self.recent_docs = mac_menus::load_recent_docs(); }
+        // Open at Login, as the person left it.
+        #[cfg(not(mobile_only))]
+        { self.login_apps = mac_menus::load_login_apps(); }
+        // A Mac's appearance, as the person left it.
+        #[cfg(not(mobile_only))]
+        if startup_style == desktop::DesktopStyle::Macos {
+            self.mac_appearance = mac_appearance::Choice::load();
+            self.state_mut().style.dark = self.mac_appearance.dark(shell::bar::sample_mac_dark());
+        }
         if startup_style != self.state_mut().style.target {
             self.set_desktop_style(cx, startup_style);
             // The first frame starts settled in the selected style; only
             // later user-initiated style switches animate between layouts.
             self.state_mut().style.step(1.0);
         }
+        crate::shell::menu::MAC_KEYS.store(startup_style == crate::desktop::DesktopStyle::Macos, std::sync::atomic::Ordering::Relaxed);
+        desktop_style::set_process_style(cx, (startup_style == crate::desktop::DesktopStyle::Macos).then_some(desktop_style::DesktopStyle::Macos));
         mobile_island::install_producers();
         self.reapprove_hosted_cards(cx);
         if cfg!(native_mobile) {
@@ -6451,6 +7361,9 @@ impl MatchEvent for App {
 
         // OCTOSENSE_GLANCE_DEMO=1: a sample News digest on the glance screen.
         glance::publish_demo_if_asked();
+        // The apps the person asked to open at login.
+        #[cfg(not(mobile_only))]
+        self.open_login_apps(cx);
         // Scripted verification: --test-action fires WM actions with no
         // keyboard involved (some chords belong to the host OS).
         self.run_test_actions(cx);
@@ -6481,7 +7394,7 @@ impl MatchEvent for App {
             match wa.cast::<shell::notifications::ShellNotificationsAction>() {
                 shell::notifications::ShellNotificationsAction::Activated(id) if self.glance_toasts.contains(id) => {
                     if let Some(key) = self.glance_toasts.activated(id) {
-                        self.open_glance_card(cx, &key);
+                        self.glance_banner_pressed(cx, &key);
                     }
                 }
                 shell::notifications::ShellNotificationsAction::Dismissed(id) => self.glance_toasts.dismissed(id),
@@ -6498,12 +7411,17 @@ impl MatchEvent for App {
             // The shell surfaces: the bar's presses and wheel, the menu's
             // activations, the flyouts' controls.
             match wa.cast::<ShellBarAction>() {
-                ShellBarAction::Press(module) => match module {
+                ShellBarAction::Press(module) => { self.close_focused_menu(cx); match module {
                     #[cfg(not(mobile_only))]
                     BarModule::Appearance => self.toggle_desktop_appearance(cx),
                     #[cfg(not(mobile_only))]
                     BarModule::Style => self.open_style_menu(cx),
-                    BarModule::Menu => self.toggle_launcher(cx),
+                    BarModule::Menu if self.state_mut().style.target == desktop::DesktopStyle::Macos => self.toggle_mac_menu(cx, 0),
+                    BarModule::ActiveWindow if self.state_mut().style.target == desktop::DesktopStyle::Macos => self.toggle_mac_menu(cx, 1),
+                    BarModule::MacMenu(i) => self.toggle_mac_menu(cx, i + 2),
+                    BarModule::Menu => {
+                        if self.state_mut().style.target.mac_family() { self.toggle_system_mark_menu(cx) } else { self.toggle_launcher(cx) }
+                    }
                     BarModule::Workspace(i) => {
                         let ws = self.bar_workspaces.get(i).copied().unwrap_or(i);
                         self.do_action(cx, WmAction::Workspace(ws));
@@ -6513,11 +7431,36 @@ impl MatchEvent for App {
                             self.focus_client(cx, focus);
                         }
                     }
+                    // With no agent in the app in front, a Mac's assistant item is OctoSense's own.
+                    BarModule::AskAgent if self.state_mut().style.target == desktop::DesktopStyle::Macos && self.focused_agent_app().is_none() => {
+                        if system_chat::is_open() {
+                            system_chat::close();
+                        } else {
+                            system_chat::open();
+                            self.focus_system_chat(cx);
+                        }
+                        self.system_chat_changed(cx);
+                    }
                     BarModule::AskAgent => self.ask_focused_app(cx),
                     BarModule::Glance => {
                         let open = self.glance_open(cx);
                         self.set_glance_open(cx, !open);
                     }
+                    // A Mac's clock opens its Notification Center.
+                    BarModule::Clock if self.state.as_ref().is_some_and(|s| s.style.target == desktop::DesktopStyle::Macos) => {
+                        let open = self.glance_open(cx);
+                        self.set_glance_open(cx, !open);
+                    }
+                    BarModule::TimeBox | BarModule::Desktops | BarModule::ControlCenter => self.open_status_menu(cx, module),
+                    // A Mac's Spotlight item opens Spotlight, as Command-Space does, and closes it.
+                    BarModule::Spotlight => {
+                        if self.ui.widget(cx, ids!(shell_menu)).borrow::<ShellMenu>().is_some_and(|m| m.is_open()) {
+                            self.close_shell_menu(cx);
+                        } else {
+                            self.open_shell_menu(cx, "", MenuSkin::Menu);
+                        }
+                    }
+                    BarModule::Audio | BarModule::Network | BarModule::Bluetooth | BarModule::Power if self.state_mut().style.target == desktop::DesktopStyle::Macos => self.open_status_menu(cx, module),
                     control @ (BarModule::WindowMin | BarModule::WindowMax | BarModule::WindowClose) => {
                         // The gallery's bar is a picture of one: its
                         // controls log (shell/gallery.rs), never close or
@@ -6527,8 +7470,9 @@ impl MatchEvent for App {
                         }
                     }
                     other => self.toggle_shell_panel(cx, other),
-                },
+                } }
                 ShellBarAction::RightPress(module) => match module {
+                    BarModule::Desktops | BarModule::Audio | BarModule::Network | BarModule::Bluetooth | BarModule::Power if self.state_mut().style.target == desktop::DesktopStyle::Macos => self.open_status_menu(cx, module),
                     // The Omarchy button's right click opens a terminal.
                     #[cfg(not(mobile_only))]
                     BarModule::Appearance => self.toggle_desktop_appearance(cx),
@@ -6546,6 +7490,7 @@ impl MatchEvent for App {
                         self.update_bar(cx);
                     }
                     BarModule::Audio => {
+                        self.hold_host_sound();
                         self.bar_sample.muted = !self.bar_sample.muted;
                         #[cfg(target_os = "macos")]
                         {
@@ -6574,7 +7519,7 @@ impl MatchEvent for App {
                     }
                 }
                 ShellBarAction::Wheel(module, dir) => {
-                    if module == BarModule::Audio {
+                    if module == BarModule::Audio && self.state_mut().style.target != desktop::DesktopStyle::Macos {
                         let level = self.bar_sample.volume.unwrap_or(0) as f64;
                         let next = (level + dir * 5.0).clamp(0.0, 100.0) as u32;
                         self.set_volume(cx, next);
@@ -6587,8 +7532,18 @@ impl MatchEvent for App {
             // launch apps or open the real card (the ghost-launch bug).
             if wa.widget_uid == self.ui.widget(cx, ids!(shell_menu)).widget_uid() {
                 match wa.cast::<ShellMenuAction>() {
-                    ShellMenuAction::Activate(target) => self.shell_menu_activate(cx, &target),
-                    ShellMenuAction::Cancel => self.close_shell_menu(cx),
+                    ShellMenuAction::Activate(target) => {
+                        self.mac_restore_focus(cx);
+                        self.shell_menu_activate(cx, &target);
+                        self.update_bar(cx);
+                    }
+                    ShellMenuAction::Cancel => {
+                        self.close_shell_menu(cx);
+                        self.mac_restore_focus(cx);
+                        self.update_bar(cx);
+                    }
+                    ShellMenuAction::MacSwitched => self.update_bar(cx),
+                    ShellMenuAction::MacSlide(target, level) => self.mac_menu_slide(cx, &target, level),
                     ShellMenuAction::None => {}
                 }
             }
@@ -6634,6 +7589,7 @@ impl MatchEvent for App {
                 // A press on the app's own content in this window: for a few
                 // seconds the app may take it full screen (app_fullscreen.rs).
                 MpRunViewAction::Pressed { client } => self.note_window_press(client),
+                MpRunViewAction::TitlePress { client, abs, time } => self.press_title(cx, client, abs, time),
                 MpRunViewAction::Restart { client } => self.restart_failed_module(cx, client),
                 MpRunViewAction::None => {}
             }
@@ -6658,6 +7614,11 @@ impl MatchEvent for App {
             #[cfg(all(unix, any(feature = "app-hub", native_mobile)))]
             if cfg!(dev_mode) {
                 self.drain_studio(cx);
+            }
+            // "Open Mail" on a Mac's sheet that couldn't send for want of the account.
+            #[cfg(any(feature = "app-hub", native_mobile))]
+            if connected_review::take_open_mail() {
+                self.launch_app(cx, "mail");
             }
             self.drain_hub(cx);
             self.drain_client_lines(cx);
@@ -6763,6 +7724,16 @@ impl App {
     }
 
     pub fn shell_handle_event(&mut self, cx: &mut Cx, event: &Event) {
+        // Focus can move to the window under a press before its Clicked action
+        // reaches the WM. Save the old module's own widget at input start.
+        let input_start = matches!(event, Event::MouseDown(_) | Event::KeyDown(_))
+            || matches!(event, Event::TouchUpdate(update) if update.touches.iter().any(|point| point.state == makepad_platform::event::TouchState::Start));
+        if input_start && self.state.as_ref().is_some_and(|state| !state.style.target.mobile()) {
+            if let Some(client) = self.keyboard_holder {
+                let _ = self.desk(cx).borrow_mut::<WmDesk>()
+                    .and_then(|mut desk| desk.with_tile(cx, client, |cx, tile| tile.remember_keyboard(cx)));
+            }
+        }
         // A separate manual quit/close cancels a pending update, rather than
         // converting that unrelated action into permission to replace the app.
         if self.update_restart_waiting && matches!(event, Event::QuitRequested(_) | Event::WindowCloseRequested(_)) {
@@ -6778,6 +7749,7 @@ impl App {
         platform_services::handle_event(cx, event);
         #[cfg(any(feature = "app-hub", native_mobile))]
         files_service::handle_event(cx, event);
+        self.answer_open_panels(event);
         #[cfg(any(feature = "app-hub", native_mobile))]
         device_calendar::handle_event(cx, event);
         self.webview_render.handle_event(cx, event);
@@ -6799,7 +7771,11 @@ impl App {
         // draw: an app's hook may redraw.
         if !matches!(event, Event::Draw(_)) {
             #[cfg(any(feature = "app-hub", native_mobile))]
-            self.serve_window_requests(cx);
+            {
+                self.serve_window_requests(cx);
+                self.serve_clipboard_requests(cx);
+                self.serve_settings_requests(cx);
+            }
             self.sync_presentation(cx);
         }
         // Modules' peer links (#142): the links opened during this event,
@@ -6937,6 +7913,20 @@ impl App {
                 self.state_mut().host_fullscreen = fullscreen;
                 self.redraw_all(cx);
             }
+            // A smaller shell keeps its windows on its desk, above a Dock that may just have
+            // come back from full screen. Not a phone preview's: its window is a different
+            // size on purpose, and desktop windows wait behind it.
+            let change = ev.new_geom.inner_size - ev.old_geom.inner_size;
+            if (change.x < 0.0 || change.y < 0.0) && self.state.as_ref().is_some_and(|s| !s.style.target.mobile()) {
+                let before = self.desk_area(cx);
+                let area = LRect::new(before.x, before.y, (before.w + change.x).max(1.0), (before.h + change.y).max(1.0));
+                let dock = self.dock_overlay(cx, before);
+                // A Mac keeps a window it refits the desk's outer gap clear of the Dock.
+                let clear = self.state.as_ref().filter(|s| s.style.target == desktop::DesktopStyle::Macos).map_or(0.0, |s| s.gaps_out);
+                let desktop = &mut self.state_mut().layout.desktop;
+                desktop.dock = dock;
+                desktop.desk_shrank(before, area, clear);
+            }
             // An app's presentation follows the window's real full screen
             // (app_fullscreen.rs): one it asked for arrived, or the person left.
             if self.state.is_some() {
@@ -6962,12 +7952,17 @@ impl App {
                 dq.response.set(WindowDragQueryResponse::Client);
             }
         }
+        // A process app's menu is up: a press off its window only closes it.
+        if self.state.is_some() && self.app_menu_pointer(cx, event) {
+            return;
+        }
         #[cfg(not(mobile_only))]
         if self.state.is_some() && !self.state_mut().style.target.mobile() {
             if let Event::MouseDown(e)=event {
                 let module=self.shell_bar(cx).borrow::<shell::bar::ShellBar>().and_then(|b|b.module_at(e.abs));
-                if module==Some(BarModule::Appearance) {self.toggle_desktop_appearance(cx);return;}
+                if module==Some(BarModule::Appearance) {self.close_focused_menu(cx);self.toggle_desktop_appearance(cx);return;}
                 if module==Some(BarModule::Style) {
+                    self.close_focused_menu(cx);
                     self.open_style_menu(cx);
                     return;
                 }
@@ -7052,6 +8047,8 @@ impl App {
         if self.phone_search_event(cx,event) {return;}
         if self.state.is_some() && self.phone_pointer(cx,event) {return;}
         if self.state.is_some() && self.snap_event(cx,event) {return;}
+        // A Mac's App Exposé takes the keyboard and the desk while it is up.
+        if self.state.is_some() && self.expose_event(cx,event) {return;}
         if self.state.is_some() && self.floating_bar_pointer(cx,event) {return;}
         if self.state.is_some() && self.desktop_pointer(cx,event) {return;}
         // The AI pane owns the pointer inside its rect while it is open:
@@ -7084,8 +8081,11 @@ impl App {
         // SUPER + mouse:272 / mouse:273 — move and resize (tiling.lua).
         // Taken before the tiles see it, so the drag never reaches a child.
         if self.state.is_some() && !self.state_mut().style.target.mobile() {
+            // A Mac has neither chord: ⌘-click and ⌘-scroll are the app's (a Finder
+            // selection, a link).
+            let chords = self.state_mut().style.target != desktop::DesktopStyle::Macos;
             match event {
-                Event::MouseDown(e) if super_chord(&e.modifiers) => {
+                Event::MouseDown(e) if chords && super_chord(&e.modifiers) => {
                     let resize = e.button.contains(MouseButton::SECONDARY);
                     if self.begin_drag(cx, e.abs, resize) {
                         return;
@@ -7122,7 +8122,7 @@ impl App {
                     return;
                 }
                 // SUPER + wheel over the desk cycles workspaces.
-                Event::Scroll(e) if super_chord(&e.modifiers) => {
+                Event::Scroll(e) if chords && super_chord(&e.modifiers) => {
                     if e.scroll.y.abs() > 0.5 {
                         self.scroll_workspace(cx, e.scroll.y > 0.0);
                     }
@@ -7143,6 +8143,30 @@ impl App {
                     self.redraw_all(cx);
                     return;
                 }
+                // A Mac's approval sheet, first-use alert or Approvals page: Escape
+                // and what scrolls (approvals/mod.rs `key`).
+                if approvals::key(&self.ui, cx, e) {
+                    self.alt_armed = false;
+                    self.approvals_changed(cx);
+                    return;
+                }
+                // A host service's sheet over the focused Mac window: Escape is its Cancel.
+                #[cfg(any(feature = "app-hub", native_mobile))]
+                if e.key_code == KeyCode::Escape && self.state_mut().style.target == desktop::DesktopStyle::Macos {
+                    let focused = self.state_mut().layout.focused_client();
+                    if focused.and_then(|client| self.module_host.dispatch(cx, client, "Escape", |cx, root| connected_review::escape_host_sheet(cx, root, event))).unwrap_or(false) {
+                        self.alt_armed = false;
+                        return;
+                    }
+                }
+                #[cfg(any(feature = "app-hub", native_mobile))]
+                if matches!(e.key_code, KeyCode::ReturnKey | KeyCode::NumpadEnter) && self.state_mut().style.target == desktop::DesktopStyle::Macos {
+                    let focused = self.state_mut().layout.focused_client();
+                    if focused.and_then(|client| self.module_host.dispatch(cx, client, "Return", |cx, root| connected_review::return_host_sheet(cx, root, event))).unwrap_or(false) {
+                        self.alt_armed = false;
+                        return;
+                    }
+                }
                 // The shell menu grabs the keyboard while it is up.
                 if self.shell_menu_key(cx, e) {
                     self.alt_armed = false;
@@ -7155,8 +8179,13 @@ impl App {
                     self.alt_armed = false;
                     return;
                 }
+                // A chat panel's own keys: its message menu, Shift+Command+C (system_chat/view/mac.rs).
+                if self.mac_chat_keys(cx, e) {
+                    self.alt_armed = false;
+                    return;
+                }
                 // "Ask <app>"'s prompt, while its pane has the keyboard.
-                if app_chat::key(e) {
+                if self.chat_answers_keys(cx, true) && app_chat::key(e) {
                     self.alt_armed = false;
                     self.system_chat_changed(cx);
                     return;
@@ -7168,7 +8197,7 @@ impl App {
                     return;
                 }
                 // The system chat's prompt, while its pane is open.
-                if system_chat::key(e) {
+                if self.chat_answers_keys(cx, false) && system_chat::key(e) {
                     self.alt_armed = false;
                     self.system_chat_changed(cx);
                     return;
@@ -7192,6 +8221,7 @@ impl App {
                     return;
                 }
                 if self.phone_key(cx,e) {return;}
+                if e.key_code == KeyCode::Escape && self.mac_ai_escape(cx) {return;}
                 // F10 is the assistant, everywhere (aicontrol decision 8):
                 // under the WM the bare key opens the pane for whatever is
                 // focused, before the keymap and before any tile.
@@ -7212,9 +8242,27 @@ impl App {
                     }
                     return;
                 }
-                if self.desktop_key(cx,e) {return;}
+                // A Mac answers to its own shortcuts, and every other chord is
+                // the app's: ⌘S saves and ⌘F finds here, as they do on a Mac.
+                if self.state_mut().style.target == desktop::DesktopStyle::Macos {
+                    if let Some(target) = binds::match_mac_bind(e.key_code, &e.modifiers) {
+                        if target == "mac.close" && self.focused_sheet_up(cx) {
+                            return;
+                        }
+                        if !(target == "mac.close" && !e.modifiers.shift && (self.focused_app_closes_tabs() || self.app_row_takes_close_key(cx))) {
+                            self.shell_menu_activate(cx, target);
+                            self.update_bar(cx);
+                            return;
+                        }
+                    }
+                    if self.mac_app_key(cx, e) {
+                        return;
+                    }
+                }
+                let mac_keys = self.state_mut().style.target == desktop::DesktopStyle::Macos;
+                if !mac_keys && self.desktop_key(cx,e) {return;}
                 let armed = self.alt_armed;
-                if let Some(action) = match_bind_armed(e.key_code, &e.modifiers, armed) {
+                if let Some(action) = match_bind_armed(e.key_code, &e.modifiers, armed).filter(|_| !mac_keys) {
                     // Any key but the prefix itself disarms it.
                     if action != WmAction::ArmAltLayer {
                         self.alt_armed = false;
@@ -7238,6 +8286,11 @@ impl App {
         }
         if let Event::Shutdown = event {
             prebuild::shutdown();
+            // The windows that keep their frames keep them for the next run.
+            let kept: Vec<ClientId> = self.frame_names.keys().copied().collect();
+            for client in kept {
+                self.keep_frame(client);
+            }
             if let Some(state) = &mut self.state {
                 clients::shutdown_clients(&mut state.clients);
             }
@@ -7271,6 +8324,16 @@ impl App {
                 self.pump_warm(cx);
             }
         }
+        // A Mac's widget gallery, while it is up and the glance panel holds the
+        // keyboard with no field focused: what is typed searches it
+        // (glance_panel.rs `gallery_text`).
+        if let Event::TextInput(t) = event {
+            if self.state.is_some() && t.full_state_sync.is_none() && cx.key_focus().is_empty()
+                && self.ui.widget(cx, ids!(shell_glance)).borrow_mut::<glance_panel::ShellGlancePanel>().is_some_and(|mut p| p.gallery_text(cx, &t.input, t.replace_last)) {
+                self.redraw_all(cx);
+                return;
+            }
+        }
         // The chat panes' prompts: text input and the input method (see
         // system_chat/composer.rs). A pane whose prompt holds the key focus
         // takes its text and answers the input method's state query; plain
@@ -7294,6 +8357,88 @@ impl App {
                 self.host_tools_pump(cx);
                 return;
             }
+            // The remote's `/event?data=module-failed`: the face a window in front shows when
+            // its in-process app stops after an error, to look at. Nothing is released. A Mac's
+            // window closes and its alert comes up, as for a real stop.
+            if data == "module-failed" {
+                if let Some(client) = self.state_mut().layout.focused_client() {
+                    let label = self.state_mut().clients.get(&client).map(|slot| slot.app_name().to_string()).unwrap_or_default();
+                    if self.state_mut().style.target == desktop::DesktopStyle::Macos {
+                        self.mac_quit(cx, client, &label, None);
+                    } else {
+                        self.desk(cx).borrow_mut::<WmDesk>().map(|mut d| d.with_module_view(cx, client, |cx, v| v.show_failed(cx, &label)));
+                    }
+                    self.redraw_all(cx);
+                }
+            }
+            // The remote's `/event?data=host-sheet:<Splash>`, and with nothing after the colon
+            // to close it: a host service's sheet over the window in front, to look at.
+            if let Some(source) = data.strip_prefix("host-sheet:") {
+                if let Some(client) = self.state_mut().layout.focused_client() {
+                    self.module_host.dispatch(cx, client, "a sheet to look at", |cx, root| {
+                        let sheet = root.splash(cx, ids!(sheet));
+                        sheet.set_text(cx, source);
+                        if let Some(mut sheet) = sheet.borrow_mut() {
+                            sheet.view.visible = !source.is_empty();
+                        };
+                    });
+                    self.redraw_all(cx);
+                }
+                return;
+            }
+            // The remote's `/event?data=toast:…` or `glance-notice:…`: a banner now, as
+            // `--test-action` gives one soon after launch (`fire_test_notice`).
+            if data.starts_with("toast:") || data.starts_with("glance-notice:") {
+                self.fire_test_notice(cx, data);
+                return;
+            }
+            // The remote's `/event?data=wm:<action>`: an action a key or a menu may not reach
+            // on this style (`move-to-2` sends the focused window to the second desktop).
+            if let Some(action) = data.strip_prefix("wm:").and_then(test_action) {
+                self.do_action(cx, action);
+                return;
+            }
+            // The remote's `/event?data=mac-row:<target>`: a menu row's act, whatever
+            // is open (a test flips the appearance this way: a Mac's bar has no item for it).
+            if let Some(target) = data.strip_prefix("mac-row:") {
+                self.shell_menu_activate(cx, target);
+                self.update_bar(cx);
+                return;
+            }
+            // The remote's `/event?data=bar-cells`: where the bar's items are now,
+            // so a test clicks a status item by name however far the clock's
+            // width has moved it.
+            if data == "bar-cells" {
+                let bar = self.shell_bar(cx);
+                if let Some(bar) = bar.borrow::<shell::bar::ShellBar>() {
+                    for (module, cell) in bar.cells() {
+                        log!("bar-cell {:?} {} {} {} {}", module, cell.pos.x, cell.pos.y, cell.size.x, cell.size.y);
+                    }
+                }
+                if let Some(shelf) = self.ui.widget(cx, ids!(desktop_shelf)).borrow::<desktop::DesktopShelf>() {
+                    for (cell, hit) in shelf.drawn_cells() {
+                        log!("dock-cell {:?} {} {} {} {}", hit, cell.pos.x, cell.pos.y, cell.size.x, cell.size.y);
+                    }
+                }
+                if let Some(menu) = self.ui.widget(cx, ids!(shell_menu)).borrow::<ShellMenu>() {
+                    for (label, row) in menu.mac_drawn_rows() {
+                        log!("menu-row {} | {} {} {} {}", label, row.pos.x, row.pos.y, row.size.x, row.size.y);
+                    }
+                }
+                return;
+            }
+            // The remote's `/event?data=client-widgets:<app>`: a process app's widgets, in
+            // the log, over its hub connection. A `network: none` app's sandbox refuses
+            // it a listening socket, so it cannot open an instrument of its own.
+            if let Some(app) = data.strip_prefix("client-widgets:") {
+                for (client, slot) in self.state_mut().clients.iter().filter(|(_, slot)| slot.app == app) {
+                    if let Some(sender) = &slot.sender {
+                        let request = makepad_studio_protocol::WidgetSnapshotRequest { request_id: *client };
+                        hub::send_to_app(sender, vec![StudioToApp::WidgetSnapshot(request)]);
+                    }
+                }
+                return;
+            }
         }
         if let Event::Signal = event {
             if self.state.is_some() {
@@ -7313,7 +8458,9 @@ impl App {
                 self.glance_generation = glance::generation();
                 // A new card opens the glance panel on a desktop, unless a
                 // card window is up; the bar's glance button counts the cards.
-                let fresh = glance::listed().iter().any(|c| c.published_ms > self.glance_seen_ms);
+                // A Mac leaves its Notification Center shut: the banner says it.
+                let fresh = glance::listed().iter().any(|c| c.published_ms > self.glance_seen_ms)
+                    && self.state.as_ref().is_none_or(|s| s.style.target != desktop::DesktopStyle::Macos);
                 let sheet_open = self.ui.widget(cx, ids!(shell_glance_sheet)).borrow::<glance_sheet::ShellGlanceSheet>().is_some_and(|s| s.is_open());
                 if fresh && !sheet_open && !self.state_mut().style.target.mobile() && !self.glance_open(cx) {
                     log!("wm: a new glance card opens the glance panel");
@@ -7349,11 +8496,24 @@ impl App {
 
         self.sync_glance_presentation(cx);
         self.match_event(cx, event);
+        // A desktop stacks things over its apps' web views: they hear of it at the frame's end.
+        let whole_frame = match event {
+            Event::Draw(draw) => {
+                let desktop = self.state.as_ref().is_some_and(|state| !state.style.target.mobile());
+                makepad_widgets::web_reader::begin_web_view_frame(desktop)
+                    .then(|| Event::Draw(DrawEvent { redraw_all: true, ..draw.clone() }))
+            }
+            _ => None,
+        };
+        let walked = whole_frame.as_ref().unwrap_or(event);
         if let Some(state) = self.state.as_mut() {
             let mut scope = Scope::with_data(state);
-            self.ui.handle_event(cx, event, &mut scope);
+            self.ui.handle_event(cx, walked, &mut scope);
         } else {
-            self.ui.handle_event(cx, event, &mut Scope::empty());
+            self.ui.handle_event(cx, walked, &mut Scope::empty());
+        }
+        if matches!(event, Event::Draw(_)) {
+            makepad_widgets::web_reader::end_web_view_frame(cx);
         }
         self.sync_glance_presentation(cx);
         // A focus that couldn't land at launch (tile not yet drawn) is
@@ -7384,6 +8544,7 @@ impl App {
         if let Event::MouseMove(e) = event {
             self.update_divider_cursor(cx, e.abs);
         }
+        self.tell_press_on_desktop(cx, event);
     }
 }
 
@@ -7394,7 +8555,21 @@ impl AppMain for App {
     }
 
     fn handle_event(&mut self, cx: &mut Cx, event: &Event) {
+        if matches!(event, Event::MouseDown(_)) {
+            self.mac_pressed = true;
+            self.mac_press_focus = !cx.key_focus().is_empty();
+            self.mac_press_typing = self.mac_press_focus && !cx.key_focus_kept() && !CxDraw::key_focus_is_control(cx);
+            self.mac_press_view = cx.key_focus_pressed();
+            self.mac_press_edit = cx.hosted_edit();
+        }
         self.shell_handle_event(cx, event);
+        self.tell_focus_change(cx);
+        if matches!(event, Event::MouseUp(_)) {
+            self.mac_pressed = false;
+            if std::mem::take(&mut self.mac_focus_after_up) {
+                self.mac_refocus = Some(cx.start_timeout(0.001));
+            }
+        }
     }
 }
 

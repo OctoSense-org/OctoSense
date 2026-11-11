@@ -39,7 +39,7 @@
 //! [`media::prune`]).
 
 use std::cell::{Cell, RefCell};
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -47,8 +47,8 @@ use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
 
 use deckcraft_engine::cmd::file as engine_file;
-use deckcraft_engine::{DocState, Session};
-use deckcraft_model::Presentation;
+use deckcraft_engine::{Clipboard, DocState, Session};
+use deckcraft_model::{Presentation, Slide, SlideId};
 use octosense_appstore::makepad_widgets::splash_storage::{self, StorageAccess};
 use octosense_engine_area::Area;
 use serde_json::{json, Value as Json};
@@ -234,6 +234,157 @@ thread_local! {
     /// next [`sweep`] releases their documents. A `Cell`, which a listener
     /// can always fill.
     static CLOSED: Cell<Vec<usize>> = const { Cell::new(Vec::new()) };
+    /// One copied item per app, storage scope and isolate. It can outlive
+    /// its source deck, but follows the caller's lifetime and idle bound.
+    static COPIES: RefCell<Vec<KeptCopy>> = const { RefCell::new(Vec::new()) };
+}
+
+/// The immutable part of a copy that a paste needs. The source presentation
+/// and media bytes remain shared through their `Arc`s.
+#[derive(Clone)]
+pub(crate) struct ClipboardSnapshot {
+    pub token: u64,
+    pub origin: String,
+    pub source: Arc<Presentation>,
+    pub slide: u32,
+    pub clipboard: Clipboard,
+}
+
+struct KeptCopy {
+    app: String,
+    owner: PathBuf,
+    heap: usize,
+    binding: Binding,
+    last_used: Instant,
+    snapshot: ClipboardSnapshot,
+    destinations: HashMap<(String, u32), u32>,
+}
+
+impl KeptCopy {
+    fn alive(&self, now: Instant) -> bool {
+        match &self.binding {
+            Binding::Isolate { heap, scope } => splash_storage::storage_for_heap(*heap, &self.app).is_some_and(|now| now.same_scope(scope)),
+            Binding::Unbound => now.saturating_duration_since(self.last_used) < IDLE,
+        }
+    }
+}
+
+/// Retain the last successful copy for this caller. A fixed bound prevents
+/// closed unbound callers from accumulating clips indefinitely.
+pub(crate) fn remember_copy(cx: &Ctx, doc: &OpenDoc, source: Arc<Presentation>, slide: u32) -> u64 {
+    static NEXT: AtomicU64 = AtomicU64::new(1);
+    let token = NEXT.fetch_add(1, Ordering::Relaxed);
+    let clipboard = doc.session.clipboard.clone();
+    let source = copy_context(&source, slide, &clipboard);
+    let kept = KeptCopy {
+        app: cx.app.to_string(), owner: doc.owner.clone(), heap: cx.isolate,
+        binding: bind(cx), last_used: Instant::now(), destinations: HashMap::new(),
+        snapshot: ClipboardSnapshot { token, origin: doc.handle.clone(), source, slide, clipboard },
+    };
+    COPIES.with(|copies| {
+        let mut copies = copies.borrow_mut();
+        copies.retain(|item| !(item.app == kept.app && item.owner == kept.owner && item.heap == kept.heap));
+        if copies.len() >= MAX_OPEN_ALL {
+            if let Some((i, _)) = copies.iter().enumerate().min_by_key(|(_, item)| item.last_used) { copies.remove(i); }
+        }
+        copies.push(kept);
+    });
+    token
+}
+
+/// Keep the copied objects plus the design and media they need, rather than
+/// retaining every other slide in a document after its tab closes.
+fn copy_context(source: &Presentation, slide: u32, clipboard: &Clipboard) -> Arc<Presentation> {
+    let mut context = source.clone();
+    let original = source.slide(SlideId(slide));
+    context.slides = original.map(|s| Arc::new(Slide { id: s.id, layout: s.layout, ..Slide::default() })).into_iter().collect();
+    let mut layouts = BTreeSet::new();
+    if let Some(s) = original { layouts.insert(s.layout.0); }
+    for s in &clipboard.slides { layouts.insert(s.layout.0); }
+    context.masters.retain(|master| master.layouts.iter().any(|layout| layouts.contains(&layout.id.0)));
+    if context.masters.is_empty() {
+        if let Some(master) = source.masters.first() { context.masters.push(master.clone()); }
+    }
+    context.sections.clear();
+    context.custom_shows.clear();
+    context.notes_master = None;
+    context.handout_master = None;
+    context.props = Default::default();
+    if clipboard.slides.is_empty() { context.header_footer = Default::default(); }
+    context.raw_ext = None;
+
+    fn collect(value: &Json, ids: &mut BTreeSet<u32>) {
+        match value {
+            Json::Array(items) => items.iter().for_each(|item| collect(item, ids)),
+            Json::Object(fields) => for (key, value) in fields {
+                if matches!(key.as_str(), "media" | "poster" | "preview" | "sound") {
+                    if let Some(id) = value.as_u64().and_then(|id| u32::try_from(id).ok()) { ids.insert(id); }
+                }
+                collect(value, ids);
+            },
+            _ => {}
+        }
+    }
+    if let Ok(value) = serde_json::to_value((&clipboard.shapes, &clipboard.slides, &context.masters, &context.default_text_style)) {
+        let mut ids = BTreeSet::new();
+        collect(&value, &mut ids);
+        for item in &clipboard.media { ids.insert(item.id.0); }
+        for (_, id) in &context.embedded_fonts { ids.insert(id.0); }
+        context.media.retain(|item| ids.contains(&item.id.0));
+    }
+    Arc::new(context)
+}
+
+/// Only the caller that made this exact copy may retrieve it.
+pub(crate) fn copied(cx: &Ctx, token: u64) -> Result<ClipboardSnapshot, String> {
+    let owner = owner(cx.area);
+    COPIES.with(|copies| {
+        let mut copies = copies.borrow_mut();
+        let item = copies.iter_mut().find(|item| item.app == cx.app && item.owner == owner && item.heap == cx.isolate && item.snapshot.token == token)
+            .ok_or_else(|| invalid("the copied item is no longer available; copy it again"))?;
+        item.last_used = Instant::now();
+        Ok(item.snapshot.clone())
+    })
+}
+
+/// Keep the same-deck paste offset with the retained copy, but never update
+/// a newer copy that replaced it while a call was in flight.
+pub(crate) fn copied_pastes(cx: &Ctx, token: u64, pastes: u32) {
+    let owner = owner(cx.area);
+    COPIES.with(|copies| {
+        if let Some(item) = copies.borrow_mut().iter_mut().find(|item| {
+            item.app == cx.app && item.owner == owner && item.heap == cx.isolate && item.snapshot.token == token
+        }) {
+            item.snapshot.clipboard.pastes = pastes;
+            item.last_used = Instant::now();
+        }
+    });
+}
+
+/// Repeated cross-deck pastes on one slide step aside instead of stacking.
+pub(crate) fn copied_on(cx: &Ctx, token: u64, document: &str, slide: u32) -> Result<u32, String> {
+    let owner = owner(cx.area);
+    COPIES.with(|copies| {
+        let copies = copies.borrow();
+        let item = copies.iter().find(|item| item.app == cx.app && item.owner == owner && item.heap == cx.isolate && item.snapshot.token == token)
+            .ok_or_else(|| invalid("the copied item is no longer available; copy it again"))?;
+        Ok(*item.destinations.get(&(document.to_string(), slide)).unwrap_or(&0))
+    })
+}
+
+pub(crate) fn copied_on_advance(cx: &Ctx, token: u64, document: &str, slide: u32) {
+    let owner = owner(cx.area);
+    COPIES.with(|copies| {
+        if let Some(item) = copies.borrow_mut().iter_mut().find(|item| {
+            item.app == cx.app && item.owner == owner && item.heap == cx.isolate && item.snapshot.token == token
+        }) {
+            let key = (document.to_string(), slide);
+            if item.destinations.len() >= 256 && !item.destinations.contains_key(&key) { item.destinations.clear(); }
+            let n = item.destinations.entry(key).or_insert(0);
+            *n = n.saturating_add(1);
+            item.last_used = Instant::now();
+        }
+    });
 }
 
 /// App Hub's `services::on_isolate_closed` listener ([`crate::register`]):
@@ -242,6 +393,14 @@ thread_local! {
 /// call holds the table (a listener reached from inside one), the key waits
 /// for the next [`sweep`].
 pub(crate) fn isolate_closed(heap: usize) {
+    let copies_released = COPIES.with(|copies| {
+        let Ok(mut copies) = copies.try_borrow_mut() else { return false };
+        copies.retain(|item| item.heap != heap);
+        true
+    });
+    if !copies_released {
+        CLOSED.with(|closed| { let mut keys = closed.take(); keys.push(heap); closed.set(keys); });
+    }
     let released = DOCS.with(|docs| {
         let mut docs = docs.try_borrow_mut().ok()?;
         let (gone, kept): (Vec<OpenDoc>, Vec<OpenDoc>) = std::mem::take(&mut docs.open).into_iter().partition(|doc| doc.bound_to(&[heap]));
@@ -307,6 +466,7 @@ pub(crate) fn sweep() {
 
 pub(crate) fn sweep_at(now: Instant) {
     let closed = CLOSED.with(Cell::take);
+    COPIES.with(|copies| copies.borrow_mut().retain(|item| !closed.contains(&item.heap) && item.alive(now)));
     let gone: Vec<OpenDoc> = DOCS.with(|docs| {
         let mut docs = docs.borrow_mut();
         let (gone, kept): (Vec<OpenDoc>, Vec<OpenDoc>) = std::mem::take(&mut docs.open).into_iter().partition(|doc| doc.bound_to(&closed) || !doc.alive(now));

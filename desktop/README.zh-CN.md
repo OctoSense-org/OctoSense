@@ -37,7 +37,7 @@
 | `src/main.rs` | 入口（包名 `octosense`）：在 Shell 的 `App` 上调用 `octosense_main!()`。Shell 本身（平铺、launcher、dock、顶栏、托管、应用注册表、`shell/`、`octosense/`）在 [`../crates/shell/src`](../crates/shell/src)。 |
 | `config/apps.json` | 默认的开发者程序目录：OctoSense 挑选的 Makepad 应用（`apps.overlay.json` 中的 `pick`），每个也是 [`../native-apps.json`](../native-apps.json) 中的原生应用。`apps.makepad.json` 供 `--apps` 使用，包含上游注册表策展的全部应用；`apps.overlay.json` 保存重新生成两者时应用的调整。 |
 | `system-apps.json` | 本构建打包哪些系统应用，以及从哪里打包（`../apps`）。 |
-| `scripts/` | `package.py`（发布包，见[发布构建](#发布构建)）、`upstream.py`（WM 来源记录与目录重新生成）、`smoke.py`（原生冒烟测试）及它们的 Python 测试，`system_apps_remote.sh`、`ai_providers_remote.sh` 和 `glance_remote.sh`（以隐藏窗口 `--remote` 端到端运行系统应用、AI 提供商与一览屏），以及 `provision-appcard-llm.sh`（Android）。 |
+| `scripts/` | `package.py`（发布包，见[发布构建](#发布构建)）、`upstream.py`（WM 来源记录与目录重新生成）、`smoke.py`（原生冒烟测试）及它们的 Python 测试，`system_apps_remote.sh`、`ai_providers_remote.py` 和 `glance_remote.sh`（以隐藏窗口 `--remote` 端到端运行系统应用、AI 提供商与一览屏），以及 `provision-appcard-llm.sh`（Android）。 |
 | `packaging/` | 发布包的 cargo-packager 配置（`release.json`）、应用图标（`icons/`、`make_icons.py`）以及 macOS `Info.plist` 补充项和 entitlements。 |
 | `upstream/makepad.json` | 从 Makepad `apps/wm` 导入的每个文件的来源记录。 |
 | `resources/android/` | Android manifest 模板。主题、壁纸、图标和启动脚本属于 Shell，在 [`../crates/shell/resources`](../crates/shell/resources)。 |
@@ -218,7 +218,7 @@ launcher 把四类应用列在一起：
 
 | 类别 | 来源 | 运行方式 | Launcher id |
 | --- | --- | --- | --- |
-| **系统应用**：新闻、相册、地图、相机、邮件、日历（仅桌面）、AI 提供商、YouTube、Quick Deck、PDF Tools 和 Writer（三者均仅桌面：它们使用的 `deck`、`pdf` 和 `word` 引擎在 `craft-engines` 之后） | `../apps/<name>/bundle`，由 `system-apps.json` 选择，打包进构建 | App Hub 的 Card 运行器中隔离运行的 Splash 程序，每个应用一个 isolate，绑定已验证的应用身份、独立存储及宿主同意边界 | `<name>`（清单 id `os.<name>`） |
+| **系统应用**：新闻、相册、地图、相机、邮件、日历（仅桌面）、系统设置（仅桌面）、AI 提供商、YouTube、Quick Deck、PDF Tools 和 Writer（三者均仅桌面：它们使用的 `deck`、`pdf` 和 `word` 引擎在 `craft-engines` 之后） | `../apps/<name>/bundle`，由 `system-apps.json` 选择，打包进构建 | App Hub 的 Card 运行器中隔离运行的 Splash 程序，每个应用一个 isolate，绑定已验证的应用身份、独立存储及宿主同意边界 | `<name>`（清单 id `os.<name>`） |
 | **商店应用** | 签名的 App Hub 目录，从商店（`apphub`）安装 | 同一个 Card 运行器。每次打开都会对照目录检查；更新会关闭旧实例。 | `hub:<manifest-id>` |
 | **原生模块** | 链接进本二进制的 Rust crate | 进程内的 `AppModule`。只允许受信任的代码：App Hub、AppCard、Rinx、Reference 以及各 `app-*` feature。 | 模块 id |
 | **开发者程序** | `config/apps.json` | tile 中的独立进程，通过 Makepad 的 `--stdin-loop` 托管协议运行，首次启动时构建 | 目录 `id` |
@@ -293,6 +293,8 @@ OCTOSENSE_HUB_CATALOG=legacy \
 ### 开发者程序与目录
 
 `config/apps.json` 列出 Reference 和 OctoSense 挑选的 Makepad 应用（Browser、Files、Task、Terminal、Sheets、Clock、Weather、Finance、Notes、Reminders、Calculator、Route，以及 Image 和 PDF 查看器）。Calculator、Clock、Notes、Reminders 和 Weather 是原生应用（[`../native-apps.json`](../native-apps.json)）：在桌面端和手机上都默认链接、在进程内打开，打开期间它们的只读工具提供给系统 Agent。Task 是只作为独立进程运行的原生应用（`"module": null`），在沙箱中运行。Terminal 同时以链接方式提供（`app-terminal`，默认开启）；它在 `config/apps.json` 中的条目是它在 macOS 和 Windows 上使用的独立进程形式，链接的模块是进程内形式。`aichat` 条目是助手面板自己的进程（F10），由面板启动；任何列表都不显示它。id 写在状态目录下 `wm/launcher.hides` 中的 launcher 条目会被隐藏。
+
+在 macOS 上，F10 面板以紧凑尺寸打开。拖动底边可以腾出更多空间，双击标题可恢复初始尺寸。
 
 目录查找顺序：给了 `--apps <file>` 就用它；否则若存在 `~/.octosense/apps.json` 就用它；否则用 `config/apps.json`。目录是一个 JSON 数组，每个条目选择一种启动目标：
 
@@ -405,10 +407,11 @@ cargo makepad android run -p octosense --release
 
 ## 桌面样式与设置
 
-- 八种桌面样式。桌面构建启动时使用 **OctoSense** 样式，带 Liquid Glass 窗框，顶栏有 **Light / Dark** 切换；其余样式为 Omarchy、macOS、Windows、Windows 2000、NeXTSTEP、iOS 和 Android。主题源文件在 `../crates/shell/resources/themes/`，壁纸来源见 [crates/shell/resources/wallpapers/README.md](../crates/shell/resources/wallpapers/README.md)。
+- 八种桌面样式。Mac 上的构建启动时使用 **macOS** 样式：半透明菜单栏显示当前应用名称，时钟在右侧，系统标志的菜单里有样式列表，窗口带红绿灯按钮，顶栏的太阳或月亮图标切换明暗外观。其他桌面启动时使用 **OctoSense** 样式，带 Liquid Glass 窗框，顶栏有 **Light / Dark** 切换；其余样式为 Omarchy、macOS、Windows、Windows 2000、NeXTSTEP、iOS 和 Android。主题源文件在 `../crates/shell/resources/themes/`，壁纸来源见 [crates/shell/resources/wallpapers/README.md](../crates/shell/resources/wallpapers/README.md)。
 - **全屏。** 点窗口的绿色按钮或按 ⌘F，窗口会像在 macOS 上一样进入全屏：它覆盖整个屏幕，顶栏、它自己的标题栏和程序坞都会隐藏。把指针停在屏幕顶边，顶栏和窗口标题栏就会出现（标题栏上的绿色按钮可退出全屏）；停在底边，程序坞就会升起。指针离开后不久它们会再次收起，而它们打开的菜单显示期间会保持出现。若想改为最大化（停在程序坞之上），可按住 Option 点绿色按钮、按 ⌘⌥F 或双击标题栏。
 - **应用的演示全屏。** 应用可以在用户点按或点击时让自己的窗口进入全屏，用于幻灯片放映或阅读模式（`window.fullscreen`）。此时屏幕边缘不会唤出顶栏、标题栏或程序坞；OctoSense 窗口如果还不在全屏中，也会进入全屏，结束后再退出。按 **Esc** 结束演示全屏，提示会显示三秒。以这种方式在真实显示器上进入全屏尚**未经验证**。
 - **全屏时的程序坞。** OctoSense 窗口本身全屏时（在 macOS 上点绿色按钮或按 ⌃⌘F），OctoSense 和 macOS 样式也会这样隐藏程序坞，就像 macOS 在全屏应用旁隐藏 Dock 一样；此时新窗口可以占用全部高度。没有任何全屏时，程序坞始终显示。在 Wayland 下，最大化的窗口也算全屏；makepad 在 Windows 和 X11 上不报告全屏，所以在那里只有 OctoSense 内的全屏窗口会让程序坞隐藏。隐藏窗口运行的 shell 可用 `MAKEPAD_HIDE_WINDOWS=1 MAKEPAD_REMOTE=127.0.0.1:8932 target/debug/octosense --test-action launch-calculator --test-action fullscreen`（窗口全屏）或 `--test-action host-fullscreen`（OctoSense 窗口全屏）获得这些行为。在真实显示器上，两者都尚**未经验证**。
+- **程序坞图标的菜单。** 在 macOS 样式中，右键点按程序坞图标会打开它的菜单。未运行的应用提供“打开”。运行中的应用列出它的窗口，然后是“隐藏”和“退出”；可以再开一个窗口的应用还有“新建窗口”。已最小化窗口的缩略图提供“打开”和“关闭”。右键点按空白桌面会在指针处打开一个小菜单：“Appearance”“Keyboard Shortcuts”和“More Settings”。
 - 快捷键：**⌘Space** 菜单，**⌘W** 关闭 tile，**⌘F** tile 全屏，**⌘1…0** 切换工作区，**⌘Shift1…0** 移动 tile。在 macOS 上，**⌘A** 交给当前应用执行全选；**Ctrl+Alt+A** 仍用于窗口管理器的备用修饰层前缀。**Learn → Keybindings** 列出全部快捷键；见 [KEYBINDINGS.md](KEYBINDINGS.md)。
 - 状态保存在 `~/.octosense`（`OCTOSENSE_HOME`）；被托管的应用通过 `MAKEPAD_HOME` 获得它。
 - AI 面板（**F10**）的本地模型：[docs/local-ai.md](docs/local-ai.md)。没有模型桌面也能正常工作。
@@ -445,13 +448,15 @@ python3 -m unittest discover -s desktop/scripts -p 'test_*.py'
 python3 desktop/scripts/upstream.py catalog
 ```
 
-原生冒烟测试会打开自己的窗口，把状态隔离在临时目录中，并通过远程控制桥驱动 Shell。它们需要图形界面访问权限和一次事先完成的 release 构建（迁入 `desktop/` 后**未验证**：`smoke.py` 仍在 `desktop/apps/reference` 查找 Reference）：
+原生冒烟测试会隐藏自己的窗口，把状态隔离在临时目录中，并通过远程控制桥驱动 Shell。它们需要已登录的会话和一次事先完成的 release 构建。受托管的应用在沙盒下没有自己的检测端口，所以测试通过 Shell 的 `client-widgets` 路由读取它，并通过菜单行的测试路由切换样式：
 
 ```sh
 cargo build --release --locked -p octosense
 python3 desktop/scripts/smoke.py --styles
-python3 desktop/scripts/smoke.py --cargo-run --default-catalog
+python3 desktop/scripts/smoke.py --default-catalog
 ```
+
+`--cargo-run` 改用 `cargo run` 启动 Shell（**未验证**）。
 
 每次修改的结果记录在 [docs/validation.md](docs/validation.md) 中。
 

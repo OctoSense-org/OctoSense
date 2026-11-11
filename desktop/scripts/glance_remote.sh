@@ -10,9 +10,9 @@
 # service at startup):
 #
 # 1. desktop: `--test-action glance` opens the glance panel (F9); the digest
-#    card is laid out in it; a click on the card opens News.
+#    card is laid out in it; a click on the card opens its card window.
 # 2. phone layout: `--test-action page:-1` switches to the iOS shell on its
-#    glance page; the digest card leads the feed; a tap opens News.
+#    glance page; the digest card leads the feed; a tap opens its sheet.
 #
 # Grabs are kept as evidence (desktop-glance.png, phone-glance.png).
 set -euo pipefail
@@ -88,9 +88,9 @@ IFS=, read -r X Y W H <<<"$RECT"
 [ "$H" -gt 72 ] && [ "$H" -le 260 ] || fail "tile height $H outside the tile range"
 pass "the digest card is laid out in the glance panel at ${W}x${H}"
 click $((X + W / 2)) $((Y + H / 2))
-wait_log "wm: glance card opens news"
-wait_log "wm: launched news"
-pass "clicking the card opens News"
+wait_log "wm: glance card os.news/digest opens in the card window"
+wait_log "wm: glance opens resident workspace os.news/digest"
+pass "clicking the card opens its card window"
 grep -q "panicked" "$LOG" && fail "panic in $LOG"
 
 # 2. The phone layout's glance page.
@@ -101,8 +101,7 @@ sleep 4
 grab phone-glance
 # The glance column's first tile: under the 64-point header, 20 in.
 click 200 230
-wait_log "\[phone\] glance card opens news"
-wait_log "wm: launched news"
-pass "the phone glance page shows the digest first and a tap opens News"
+wait_log "glance sheet: opened os.news/digest"
+pass "the phone glance page shows the digest first and a tap opens its sheet"
 grep -q "panicked" "$LOG" && fail "panic in $LOG"
 echo "grabs: $WORK/grabs"

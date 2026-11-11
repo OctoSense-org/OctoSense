@@ -33,14 +33,16 @@ fn import_and_export_accept_only_app_relative_file_arguments() {
         parse_operation("export", &json!({"path":"notes/a.txt"})).unwrap(),
         Operation::Export {
             path: "notes/a.txt".into(),
-            name: "a.txt".into()
+            name: "a.txt".into(),
+            bundled: false
         }
     );
     assert_eq!(
         parse_operation("export", &json!({"path":"notes/a.txt","name":"Shared.txt"})).unwrap(),
         Operation::Export {
             path: "notes/a.txt".into(),
-            name: "Shared.txt".into()
+            name: "Shared.txt".into(),
+            bundled: false
         }
     );
     for path in [
@@ -137,9 +139,16 @@ fn photo_picker_checks_content_not_filename_and_reuses_jailed_destination() {
     assert_eq!(
         parse_operation("pick_photo", &json!({"path":"/photos/new.png"})).unwrap(),
         Operation::PickPhoto {
-            path: "/photos/new.png".into()
+            path: "/photos/new.png".into(),
+            full_size: false,
         }
     );
+    assert_eq!(
+        parse_operation("pick_photo", &json!({"path":"a.png","full_size":true})).unwrap(),
+        Operation::PickPhoto { path: "a.png".into(), full_size: true }
+    );
+    assert!(parse_operation("pick_photo", &json!({"path":"a.png","full_size":"yes"})).is_err());
+    assert!(parse_operation("import", &json!({"path":"a.png","full_size":true})).is_err());
     assert!(parse_operation("pick_photo", &json!({"path":"../private/photo.png"})).is_err());
     assert!(parse_operation(
         "pick_photo",
@@ -235,7 +244,8 @@ fn an_import_reports_only_a_clean_display_name() {
 #[test]
 fn imports_take_documents_above_the_script_write_limit_within_the_quota() {
     let import = Operation::Import { path: "a.pdf".into() };
-    let photo = Operation::PickPhoto { path: "a.png".into() };
+    let photo = Operation::PickPhoto { path: "a.png".into(), full_size: false };
+    assert_eq!(Operation::PickPhoto { path: "a.png".into(), full_size: true }.selection_limit(u64::MAX), MAX_IMPORT);
     assert!(MAX_IMPORT > MAX_FILE_BYTES && MAX_IMPORT <= MAX_IMPORT_BYTES);
     assert_eq!(MAX_IMPORT, if cfg!(target_os = "android") { 16 << 20 } else { 64 << 20 });
     assert_eq!(import.selection_limit(u64::MAX), MAX_IMPORT);
@@ -524,4 +534,38 @@ fn queued_foreground_authority_expires_before_launch_but_not_chooser_completion(
     let manifest = json!({"capabilities":["files","storage"]});
     assert!(check_authorization(true, Some(&manifest), || Ok(manifest.clone())).is_ok(),
         "the already-open native chooser may retain focus while its authorized result completes");
+}
+
+#[test]
+fn a_bundled_export_reads_inside_the_apps_own_bundle_only() {
+    let top = std::env::temp_dir().join(format!("octosense-bundled-{}", std::process::id()));
+    let host = top.join("bundle");
+    std::fs::create_dir_all(host.join("photos")).unwrap();
+    std::fs::write(host.join("photos/a.jpg"), b"sample").unwrap();
+    std::fs::write(top.join("private"), b"secret").unwrap();
+    assert_eq!(read_bundled("os.none", &host, "photos/a.jpg").unwrap(), b"sample");
+    assert!(read_bundled("os.none", &host, "../private").is_err());
+    assert!(read_bundled("os.none", &host, "photos").is_err());
+    assert!(read_bundled("os.none", &host, "photos/none.jpg").is_err());
+    // What's compiled in instead of packed, for its own app.
+    octosense_appstore::system::register_system_app(octosense_appstore::system::SystemApp {
+        id: "os.bundled-export",
+        name: "Bundled",
+        pack: "",
+        assets: &[("photos/big.jpg", b"compiled")],
+    });
+    assert_eq!(read_bundled("os.bundled-export", &host, "photos/big.jpg").unwrap(), b"compiled");
+    assert_eq!(read_bundled("os.bundled-export", &host, "photos/a.jpg").unwrap(), b"sample");
+    assert!(read_bundled("os.none", &host, "photos/big.jpg").is_err());
+    #[cfg(unix)]
+    {
+        std::os::unix::fs::symlink(top.join("private"), host.join("photos/link")).unwrap();
+        assert!(read_bundled("os.none", &host, "photos/link").is_err());
+    }
+    std::fs::remove_dir_all(&top).unwrap();
+    assert_eq!(
+        parse_operation("export", &json!({"path":"photos/a.jpg","name":"a.jpg","bundled":true})).unwrap(),
+        Operation::Export { path: "photos/a.jpg".into(), name: "a.jpg".into(), bundled: true }
+    );
+    assert!(parse_operation("import", &json!({"path":"a.jpg","bundled":true})).is_err());
 }

@@ -12,29 +12,38 @@ def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--binary', type=Path, default=ROOT/'target/release/octosense')
     p.add_argument('--output', type=Path, required=True)
+    p.add_argument('--desktop', action='store_true', help='The desktop tree: a sidebar and a toolbar')
     args = p.parse_args()
     out = args.output.resolve()
     out.mkdir(parents=True, exist_ok=True)
     os.environ.update(OCTOSENSE_HOME=str(out/'home'), OCTOSENSE_APP_DATA=str(out/'apps'), OCTOS_APP_CORE_DIR=str(out/'core'))
     title = None
+    actions = ['--test-action', 'launch-news'] if args.desktop else ['--test-action', 'phone:ios', '--test-action', 'launch-news']
     for attempt in range(2):
-        a = AppNative(args.binary.resolve(), ['--test-action', 'phone:ios', '--test-action', 'launch-news'], out, 'news-'+str(attempt))
+        a = AppNative(args.binary.resolve(), actions, out, 'news-'+str(attempt))
         try:
-            a.label('News')
+            a.label('Today' if args.desktop else 'News')
             time.sleep(1)
             if attempt == 0:
                 row = a.wait(lambda: next((r for r in a.rows() if r.get('ty') == 'Label' and r.get('i') == 'title' and r.get('t')), None), timeout=40)
                 title = row['t']
                 a.capture('news-feed')
                 a.click_row(row)
-                a.click('Save')
-                a.wait(lambda: a.find(text='Saved'))
-                a.click('‹ News')
+                if args.desktop:
+                    # A desktop's reader tools are icons, and its sidebar stays beside the story.
+                    a.click_row(a.reachable(identifier='save_tool'))
+                    a.wait(lambda: a.find(identifier='unsave_tool'))
+                else:
+                    a.click('Save')
+                    a.wait(lambda: a.find(text='Saved'))
+                    a.click('‹ News')
                 a.click('Saved')
                 a.label(title)
                 a.capture('news-saved')
                 a.field('search', 'no-match-this-native-test')
-                a.call('k', k='press', c='Escape', wait=1)
+                # Escape puts a phone's keyboard away; on a desktop it clears the search.
+                if not args.desktop:
+                    a.call('k', k='press', c='Escape', wait=1)
                 time.sleep(.3)
                 assert not any(r.get('i') == 'title' and r.get('ty') == 'Label' for r in a.rows())
                 a.label('No stories match your search.')

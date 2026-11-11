@@ -148,7 +148,11 @@ impl MailClip {
         self.view.widget(cx, ids!(review)).set_visible(cx, !self.original);
         self.view.button(cx, ids!(original)).set_text(cx, if self.original { "Reply" } else { "Original" });
         self.view.button(cx, ids!(details)).set_text(cx, if self.details { "Done" } else { "Details" });
+        let mac = crate::shell::menu::MAC_KEYS.load(std::sync::atomic::Ordering::Relaxed);
         let status = s.error.as_deref().unwrap_or_else(|| match d["status"].as_str() {
+            Some("accepted") if mac => "Sent",
+            Some("outcome_unknown") if mac => "Mail can't tell whether this was sent. Check Sent.",
+            Some("failed_before_delivery") if mac => "Not sent. Review it to try again.",
             Some("accepted") => "SMTP accepted · delivery unconfirmed",
             Some("outcome_unknown") => "Send outcome unknown · check Sent before retrying",
             Some("sending") => "Sending…",

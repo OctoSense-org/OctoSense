@@ -617,6 +617,9 @@ impl Driver {
         }
         let effects = self.model.apply(method, &params);
         self.effects.extend(effects);
+        if self.model.take_reload() {
+            self.load_history();
+        }
     }
 
     fn reply(&mut self, pending: Pending, result: Option<&Value>, error: Option<&Value>) {
@@ -645,6 +648,7 @@ impl Driver {
                     self.backoff = Duration::from_millis(500);
                     self.model.set_phase(Phase::Ready);
                     self.sync_tools();
+                    self.model.forget_hidden_turn();
                     self.load_history();
                     for cmd in std::mem::take(&mut self.queued) {
                         self.command(cmd);
@@ -654,7 +658,9 @@ impl Driver {
             Pending::History { fallback } => match (error_text, result) {
                 (None, Some(result)) => {
                     let rows = if fallback { &result["messages"] } else { &result["messages"] };
-                    self.model.load_history(rows);
+                    if !self.model.clearing() {
+                        self.model.load_history(rows);
+                    }
                     // What history replaced: say again what waits.
                     self.sync_tools();
                 }
@@ -671,6 +677,7 @@ impl Driver {
             }
             Pending::NewConversation => {
                 if let Some(why) = error_text {
+                    self.model.forget_hidden_turn();
                     self.model.notice(format!("Could not start a new conversation: {why}"));
                 }
                 self.load_history();

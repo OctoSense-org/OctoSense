@@ -93,11 +93,13 @@ OctoSense repository into the same workspace, then run this from your App Flow c
 ### Shared appearance
 
 News, Photos, Mail, Calendar, Maps, AI providers, YouTube, Quick Deck, PDF Tools and Writer share the interface
-in [`interface.splash`](interface.splash): theme-aware page/card/field surfaces,
-readable secondary text, 44-point actions and 48-point inputs. Desktop content
-has a maximum width; narrow windows keep the same actions. Camera and media
-viewers retain a dark viewing surface. App Hub uses the same spacing and action
-hierarchy in its native module. Expanded Glance cards and in-card chat use the
+in [`interface.splash`](interface.splash): theme-aware surfaces and readable
+secondary text. On a phone that means pages, 44-point actions and 48-point inputs.
+On a desktop every style's sheet sets `theme.ui_pointer`, and an app draws the way
+a Mac app does: a sidebar and a toolbar, 13-point text, 28-point controls, white
+content and hairlines (the conventions are in [AGENTS.md](AGENTS.md#the-mac-look-on-a-desktop)).
+Camera and media viewers retain a dark viewing surface. App Hub follows the same
+conventions in its native module. Expanded Glance cards and in-card chat use the
 shared shell on both desktop and phone.
 
 When a keyboard shrinks a focused hosted app, the shell reveals the active
@@ -124,16 +126,16 @@ profiles. Phone-sized desktop captures are not physical-device verification.
 | App | Id | What it does | Capabilities (manifest) | Network hosts (manifest) | Host services |
 | --- | --- | --- | --- | --- | --- |
 | [News](news/bundle) | `os.news` | Hacker News, TechMeme and Google News feeds in tabs (Today, HN, TechMeme, Google, Saved), with a reader for stories | `storage`, `net`, `images`, `web`, `news`, `glance` | `hn.algolia.com`, `www.techmeme.com`, `news.google.com`, `api.gdeltproject.org`, `feeds.bbci.co.uk`, `feeds.npr.org`, `www.theguardian.com`, `feeds.arstechnica.com` | [`news`](news/host-service) |
-| [Photos](photos/bundle) | `os.photos` | A sample library with AI-curated Memories, optional story prompts, saved stories and slideshows; moments, albums, people, favorites, a grid with selection, a full-screen viewer | `storage`, `glance`, `model` | none (the host calls the model) | `model.complete`; its own `photos` service on the desktop: `photos.notify` through the shell's notice hook, `photos.info` on the photo engine; on the phone, which leaves that engine out, the shell notice service answers `photos.notify` and `photos.info` is unavailable (full-size photos use the asset mount) |
-| [Maps](maps/bundle) | `os.maps` | `MapView` map of places that can always be dragged and zoomed: search near the visible area, place cards with OpenStreetMap details (hours, phone, website, cuisine), saved places as pins, a long press for "What's here", directions with a changeable start and up to two stops, and a drive mode with turn-by-turn and a 2D/3D view; starts at the device's GPS fix when there is one; every map draws makepad's pre-baked world map (`makepad.nl`), with buildings raised in the 3D drive view; the place details read OpenStreetMap through Overpass | `storage`, `net`, `location`, `web`, `glance` | `photon.komoot.io`, `router.project-osrm.org`, `overpass-api.de`, `overpass.kumi.systems`, `overpass.openstreetmap.fr`, `makepad.nl` | `maps.notify` via the shell notice service |
+| [Photos](photos/bundle) | `os.photos` | A sample library with AI-curated Memories, optional story prompts, saved stories and slideshows; moments, albums, people, favorites, a grid with selection, a full-screen viewer; on a desktop, importing, exporting and deleting photos and an inspector | `storage`, `files`, `glance`, `model` | none (the host calls the model) | `model.complete`; its own `photos` service on the desktop: `photos.notify` through the shell's notice hook, `photos.info` on the photo engine; on the phone, which leaves that engine out, the shell notice service answers `photos.notify` and `photos.info` is unavailable (full-size photos use the asset mount) |
+| [Maps](maps/bundle) | `os.maps` | `MapView` map of places that can always be dragged and zoomed: search near the visible area, place cards with OpenStreetMap details (hours, phone, website, cuisine), saved places as pins, a long press for "What's here", directions with a changeable start and up to two stops, and a drive mode with turn-by-turn and a 2D/3D view; starts at the device's GPS fix when there is one; on a Mac a search's places show as framed pins, the column lists a route's alternatives and steps, a drive is a preview, the map has a chosen look and a 3D view, and a route waits for a start from the host's location service or the person; every map draws makepad's pre-baked world map (`makepad.nl`), with buildings raised in the 3D drive view; the place details read OpenStreetMap through Overpass | `storage`, `net`, `location`, `web`, `glance` | `photon.komoot.io`, `router.project-osrm.org`, `overpass-api.de`, `overpass.kumi.systems`, `overpass.openstreetmap.fr`, `makepad.nl` | `maps.notify` via the shell notice service |
 | [Camera](camera/bundle) | `os.camera` (Home) | Photo and video over the runtime's `CameraPreview` widget, flash and zoom, a thumbnail of the last shot and a viewer | `storage`, `camera`, `microphone`, `library`, `glance` | none | `camera.notify` via the shell notice service |
 | [Mail](mail/bundle) | `os.mail` | Accounts, folders, message list, reader (HTML rebuilt by the service) and composer; its agent puts notice cards on the glance screen (`mail.notify`) | `storage`, `mail`, `glance` | none (the service connects, not the app) | [`mail`](mail/host-service) |
 | [AI providers](ai-providers/bundle) | `os.ai-providers` | The assistant's LLM providers: a primary and fallbacks, each with a model pull-down from octos's catalog and Test connection; an add wizard (family, model, route, key, test); Show QR for phone and import by camera, image or paste | `storage`, `llm` | none (the service connects, not the app) | [`llm`](ai-providers/host-service) |
-| [YouTube](youtube/bundle) | `os.youtube` | YouTube search (the runtime's keyless `sys.video`, which reads YouTube's own results page), result rows with thumbnails and LIVE or length badges, topic chips, playback of YouTube's mobile watch page in `WebReader`, and a history of what was played on this device | `storage`, `net`, `glance` | `www.youtube.com`, `m.youtube.com`, `i.ytimg.com` | `youtube.notify` via the shell notice service |
+| [YouTube](youtube/bundle) | `os.youtube` | YouTube search (the runtime's keyless `sys.video`, which reads YouTube's own results page), result rows with thumbnails and LIVE or length badges, topic chips, playback in `WebReader` (on a Mac YouTube's embedded player, elsewhere its mobile watch page), and a history of what was played on this device | `storage`, `net`, `glance` | `www.youtube.com`, `m.youtube.com`, `i.ytimg.com` | `youtube.notify` via the shell notice service |
 | [Calendar](calendar/bundle) | `os.calendar` | Month/day calendar, event details and editor; app-owned event/agenda cards in Glance, with saved-event navigation | `calendar`, `glance` | none | [`calendar`](calendar/host-service) (Calendar-owned executor; granted cross-app tools) |
 | [Quick Deck](quickdeck/bundle) | `os.quickdeck` (desktop) | A presentation editor: a library of decks with their covers, an editor with a slide navigator, a canvas and an inspector (Format, Layout, Theme, Notes), text edited in place, pictures, shapes, tables and charts with their data, a slide sorter with sections, New from an outline (typed, or drafted by the person's own AI provider), Present and Export (.pptx, PDF, pictures); a deck's video and audio played in the editor and in Present where the system has a player; open a presentation from the device. See [its README](quickdeck/README.md), with the runs that test it | `storage`, `files`, `deck`, `model` | none | the [`deck`](deck/host-service) engine service's open-document methods in [design/SERVICE.md](quickdeck/design/SERVICE.md), in the app's own storage; the shell's `files.status` and `files.import`; `model.complete` for Draft with AI |
 | [PDF Tools](pdftools/bundle) | `os.pdftools` (desktop) | The PDFs in its own storage: a library with each first page, a document view with page thumbnails, text with find, and info; a page view; merge in three steps (choose, order, done) and split every few pages or where you choose; open a PDF from the device (up to 64 MiB) and remove one. See [its README](pdftools/README.md), with the hidden-shell journey that tests it | `storage`, `files`, `pdf` | none | the [`pdf`](pdf/host-service) engine service in the app's own storage: `pdf.info`, `pdf.render`, `pdf.text`, `pdf.merge`, `pdf.split`; the shell's `files.status` and `files.import` |
-| [Writer](writer/bundle) | `os.writer` (desktop) | A calm editor on a white page (a line starting with `#` is a heading, `-` a bullet, `>` a quote), a document list, Save as a Word document, a preview of the saved document with an outline from its headings, and export to PDF, Markdown, HTML or OpenDocument; drafts autosave in the app's storage | `storage`, `word` | none | [`word`](word/host-service) (`word.convert`, `word.info`, `word.inspect`), in Writer's own storage |
+| [Writer](writer/bundle) | `os.writer` (desktop) | A document editor on a white page where text formats as you type (a line starting with `#` becomes a heading, `-` a bullet, `>` a quote, `**word**` bold), a sidebar with the library and the outline, Save as a Word document, a preview of the saved document, and export through the Save panel to PDF, Markdown, HTML or OpenDocument; drafts autosave in the app's storage | `storage`, `word`, `files` | none | [`word`](word/host-service) (`word.convert`, `word.info`, `word.inspect`), in Writer's own storage |
 | [AppCard](appcard) | native, opt-in | The AppCard assistant: a routing brain picks or composes an app agent, which generates a live Splash or webview card. Shells link it only with `app-appcard`; not shipped by default | n/a (not a bundle) | n/a | the shell's octos kernel |
 
 Capability names come from the shared `octosense-app-contract` 1.x crate
@@ -151,7 +153,11 @@ See [capabilities and execution boundaries](../docs/capabilities.md).
   history worked; closing the player ends the page (makepad#43, in the
   runtime). Playback opens YouTube's mobile watch page, which autoplays muted
   and shows its own "Open App" prompt. Search reads YouTube's results page and
-  depends on its layout.
+  depends on its layout. On a Mac (hidden shells on a Mac mini, 2026-11-04) it
+  plays through YouTube's embedded player with `open_embed`, and a video YouTube
+  won't show there says so and offers Open in Browser. YouTube refuses an address
+  it takes for a bot for about an hour, which looks the same. Not tried on a Mac:
+  a window on a real screen, a click inside the player, and sound.
 - **Camera**: the Redmi Note 12 test package (2026-10-07) passed delayed
   first-use permission, front/back switching, Photo/Video preview selection and
   background resume. The stretched `Fill` preview is corrected; native GPU
@@ -586,6 +592,298 @@ a phone, where every app fills the screen, nothing changes:
 `{applied: false, fullscreen: false, fills_screen: true}`. The service is the
 shell's (`crates/shell/src/app_fullscreen.rs`), not App Hub's, and
 `runtime.list` does not list it yet.
+
+### The `clipboard` service
+
+The shell's own service for copying text. `clipboard.write {text}` puts text
+on the clipboard when the person taps or clicks something in the app (a Copy
+Link row), and answers `{copied: true}`. It takes the same press as
+`window.fullscreen`, on a desktop a press on the app in its own window in the
+last 5 seconds, and it is never an agent's. A refusal starts with
+`gesture_required:`, `agent_call:`, `not_a_window:`, `invalid_arguments:` (one
+`text` string of at most 1 MiB) or `busy:`. No app reads the clipboard: that
+stays a person's paste into a field. No capability is needed. The service is
+the shell's (`crates/shell/src/app_clipboard.rs`), not App Hub's.
+
+### The `settings` service
+
+`settings.open {pane: "ai-providers"}` opens AI Providers when the person taps or
+clicks something in the app, so an app that needs a model can send someone to
+set one up (Photos' `Open AI Providers…`). `{pane: "location"}` opens the Mac's own
+location settings, for an app that was refused the location (Maps' `Open System
+Settings…`); other systems answer without opening anything. Both take the same press as
+`clipboard.write`, it opens nothing else, and it is never an agent's. A refusal
+starts with `gesture_required:`, `agent_call:`, `not_a_window:`,
+`invalid_arguments:` or `busy:`. The service is the shell's
+(`crates/shell/src/app_settings_link.rs`).
+
+System Settings (`os.settings`) is the one app with the rest of the service:
+`settings.state`, `settings.set {key, value}`, `settings.commands {on}`,
+`settings.restart_assistant`, and more panes for `settings.open`. Another app's
+call to them is refused. Turning command execution on takes the words a person
+types on a sheet the host draws; the app can only ask for the sheet.
+
+### Focus, keys and three traps
+
+`ui.<field>.focus()` gives a `TextInput` the keyboard, as a click on it would. A
+field that has not drawn yet takes it on its first draw. After setting an
+existing value, `ui.<field>.select_all()` selects the actual text, so the next
+input replaces it and an arrow key can move the caret within it. Any widget's
+`has_focus()` says whether it is set to hold the keyboard after the current
+event; an undrawn widget returns false.
+
+A `GestureView` with an `on_key` holds the keyboard too, after a press on it or
+`ui.<id>.focus()`:
+
+```
+grid := GestureView{
+    on_tap: |x, y, cmd, shift| pick(x, y, cmd, shift)
+    on_key: |key, cmd, shift| moved(key, cmd, shift)
+    list := ScrollYView{...}
+}
+```
+
+`key` is the key's name: `"ArrowLeft"`, `"Escape"`, `"Space"`, `"ReturnKey"`,
+`"Backspace"`, `"KeyA"`. `cmd` is Command on a Mac and Control elsewhere. `on_tap`
+gets the same two as its third and fourth arguments, for a list that picks with
+them; a press on a view inside still goes to that view, so a row's own handler
+calls `ui.grid.focus()`. `ui.<scroller>.scroll_y()` and `ui.<scroller>.set_scroll_y(y)`
+read and set a scroll view's place, for a list that keeps the row the keys moved
+to in sight.
+
+A press on a button, a check box or a radio button leaves the keyboard with the
+view that holds it through `on_key`, as a toolbar does on a Mac: the list's keys
+keep working after it. A sheet or a field that took the keyboard gives it back
+only when the app says so: call `ui.grid.focus()` when it closes.
+
+A `TextInput`'s `on_escape: |text|` is called on the Escape key, for a search field
+that clears itself or a sheet that closes.
+
+A sheet's buttons answer the keyboard on their own: Return presses a
+`Button{key_default: true}` and Escape a `Button{key_cancel: true}` while it shows. While
+one shows, the sheet owns the keyboard: nothing under it hears a key, and what had the
+keyboard has it again when the sheet leaves. Of stacked sheets, the frontmost answers. Use
+these marks only on a sheet's buttons. A question with a destructive answer gives both to
+its blue Cancel.
+
+Tab moves the keyboard to the next text field and selects its words, Shift+Tab to
+the one before, in reading order and going round. It stays among one script's
+fields: an app's own, or those of a host's sheet over it. Buttons and other
+controls are passed over, as on a Mac. A sheet or a popover says where Tab stops
+with `nav_group: true` on its outer `View`. A `TextInput` that is an editing
+surface, such as a message body, says `keeps_tab: true`: Tab can arrive there and
+does not leave. A field that stands for a whole form's, one input drawn over the field
+the person is on, takes Tab itself with `on_tab: |text, shift|`: alone in its
+`nav_group`, it has no next stop of its own, and the app draws the next field.
+
+With a mouse, a region's `render()` waits while the widget it would replace holds the
+mouse's press or owns an open menu, and the newest result draws when that ends. A
+press that a cover's arrival or a timer would have drawn away still counts as its
+click, and a menu stays open over a row drawn again. On a Mac a result that has
+arrived is drawn before a press is handled, so a click just after a region drew again
+lands on what is there now and not on what stands behind it. The app does nothing for
+any of this. Touch doesn't wait.
+
+- A body `if … else` ends both branches the same way. With a plain widget ending
+  one and `name := Widget{…}` ending the other, the enclosing named view vanishes
+  with no error at that line (`widget 'x' not found in tree`). Wrap the named one
+  in a `View`.
+- A `height: Fill` child in a `height: Fit` parent collapses, and its later
+  children are not drawn. Say `height: Fit` on the child when the parent fits.
+- An `if`/`else` statement whose first block ends in a statement that leaves no
+  value (a `for`, a `let`, or one ending in `;`), while its `else` block ends in
+  an expression such as a call, leaves the script's stack
+  one value short whenever the first block runs. The function stops at its next
+  statement with `pop_stack_value on empty stack`, reported at that statement's
+  first token. The other way round is fine. Pick first and act after, as Photos'
+  `desk_recover` does, or end both blocks with a loop.
+
+### Right-click menus
+
+A `GestureView` can offer a menu on a right click or a Control-click anywhere
+on it, children included:
+
+```
+GestureView{
+    menu: ["Open", "Copy Link", "-", "Delete…"]
+    on_menu: |title| act_on(title)
+    menu_urls: ["", "", page]
+    Label{text: "A row"}
+}
+```
+
+`"-"` draws a separator. `on_menu` gets the title, then the x and y where the
+view was pressed. An entry in `menu_urls` is by position in `menu`, and that
+item goes straight to the page by a link's own path out, without calling the
+script. `ui.<id>.open_menu()` opens the same menu below the view, for a toolbar
+button that pulls down. A view with no `menu` treats a right click as
+`on_long_press`. A view with a `menu` and no other handler leaves a left press
+to whatever is around it. A phone has neither button, so keep the same actions
+on a long press or a visible control.
+
+A left press off an open menu only closes it, and what lies under the pointer
+does not hear it. A right press off it closes it and opens the menu of what it
+landed on. A press on the bar, the Dock, the desktop or another window closes it too.
+
+While its menu is open the view wears a ring in the focus color, as a Mac's Finder
+rings what a menu acts on. `menu_ring: "frame"` names the child it goes round
+instead, by its id: a card's picture, so the ring never crosses the card's words.
+Give that child room for the ring outside the picture (a padding of 3) and draw a
+keyboard's ring the same way, so the two look alike.
+
+A pop-up button is the same view round a button, with the choices given when it
+opens:
+
+```
+pick := GestureView{
+    width: Fit height: 28
+    on_menu: |title| choose(title)
+    UiPopup{text: chosen on_click: || ui.pick.open_menu(names, chosen)}
+}
+```
+
+`ui.<id>.open_menu(titles, current)` lays the menu over the view, the row called
+`current` ticked and over the button, its words over the button's. A stated
+`menu_current: "Paris"` ticks the same row in a view's right-click menu. An
+action menu has no tick. `open_menu(titles, "", x, y)` opens it at that point
+of the view instead, as a map's `on_context` does below, and a fifth argument
+is its `menu_urls`.
+
+A menu taller than the app's window scrolls with the wheel, inside the window.
+
+### Web pages
+
+`WebReader` shows a web page in the platform's own web view. `open` is for a
+page, `open_embed` for a video:
+
+```splash
+reader := WebReader{width: Fill height: Fill on_ready: || player_up() on_error: || player_failed()}
+```
+
+```text
+ui.reader.open(url)                  // true when it opened
+ui.reader.open_embed(player, page)   // a Mac: the player alone. Elsewhere: its page
+ui.reader.close()
+ui.reader.is_open()
+ui.reader.error()                    // why the last page failed
+```
+
+On a Mac, `open_embed` fills the view with `player`, the https address of a player
+meant for embedding, and the view stays clear until the player paints, so what the
+app draws behind it shows while it loads. `on_ready` runs when the player is up. A
+player that refuses calls `on_error`, `error()` ends in `the player said <code>`,
+and the view hides: to ask again, `close()` first. Elsewhere `open_embed` opens
+`page`, and `on_ready` runs when the web view says a page has loaded (Linux,
+Windows) or at once, where it never says (Android, iOS). A plain `open` on a Mac or
+a phone never calls `on_ready`.
+
+A web view lies over everything its window draws, so what is in front has to say
+so. On a desktop style, menus, tips, modals, host sheets, other windows, the Dock,
+the bar and its menus, banners, the Glance column and the assistant panels do. On a
+Mac the page cuts that part out and goes on showing the rest, so a video under a
+menu keeps playing around it. It takes no clicks where it doesn't show, and it is
+rounded at its window's corners. Elsewhere the page hides while anything overlaps
+it. A phone's page is as it always was.
+
+An app's own panel over a reader says so with `over_web: true` on its outer `View`:
+
+```splash
+clear_sheet := View{visible: false width: Fill height: Fill flow: Overlay new_batch: true over_web: true
+    ...
+}
+```
+
+It is then in front of the readers drawn before it, not of one inside it. A dim
+drawn without it stops at the page, which goes on showing undimmed. `/web` on the
+remote gives each page's picture and, as `mask`, what a person sees of it;
+`paste_web_views` in `tools/app-ux/capture.py` applies it, so a grab shows a covered
+page covered.
+
+### A map
+
+`MapView` draws makepad's world map. Maps calls these on a Mac; a phone's tree
+uses none of them, and they work on any style:
+
+```splash
+CachedView{width: Fill height: Fill texture_depth: true
+    map := MapView{width: Fill height: Fill
+        on_context: |lat, lon, pin, x, y| ui.keys.open_menu(["Drop Pin"], "", x, y)
+    }
+}
+```
+
+`on_context` is a right press or Control-click: `pin` is the pin's position as in
+`on_marker`, or -1; `x` and `y` are from the map's top left. With it set, a right
+drag no longer turns the map; an Option drag still does. A `MapView` that tilts
+needs the `CachedView` round it: drawn straight onto the window it has no depth
+buffer of its own, its tiles don't show when tilted, and the window's background
+shows through its land.
+
+- `ui.map.fit_points("37.33,-121.88;37.40,-121.90")` frames those points in the
+  middle of the view, straightening the map and keeping its tilt.
+  `fit_route(true)` does the same for the route, without the room a drive keeps
+  for its banner.
+- `ui.map.jump_to(lat, lon, zoom)` goes there at once, with no flight.
+- `ui.map.tiles_state()` is `"ready"`, `"loading"` (more than a tenth of what the
+  view shows is still on its way) or `"failed"`. `ui.map.retry_tiles()` asks for the
+  failed ones again.
+- `ui.map.set_location(lat, lon, accuracy_m)` and `clear_location()` draw and clear
+  the dot from a position the app sampled through `location.sample`.
+- `ui.map.set_map_theme(0)` for light or `1` for dark overrides `dark_theme`.
+  `set_map_3d(true)` tilts a plain map with its buildings raised.
+
+`sys.navroutes(lat1, lon1, lat2, lon2, vias)` asks OSRM for a drive and its
+alternatives, like `sys.navroute`. It gives `"—"` while it loads, `"n/a"` when it
+failed, and otherwise JSON text: a list of
+`{min, m, via, polyline, steps: [{instr, kind, modifier, m, lat, lon}]}`.
+`sys.locale("distance_unit")` is `"mi"` or `"km"` by the Mac's region, and `"km"`
+elsewhere.
+
+### YouTube search
+
+`sys.video(query, index, field)` reads the YouTube result for a query. After it
+reports a terminal failure, `sys.video_retry(query)` clears that failed fetch;
+the next `sys.video` call requests the same query again. Pending and successful
+fetches are left alone, and the app's network permissions still apply.
+
+### The Mac's menu bar
+
+In the macOS style the menu bar asks the app in front for rows of its own each
+time a menu opens, and on each key with Command held:
+
+```
+fn app_menus(){
+    [
+        {menu: "File" title: "New Note" key: "cmd+N" command: "new"}
+        {menu: "File"}
+        {menu: "View" title: "Sorted" command: "sorted" checked: sorted}
+        {menu: "Message" title: "Reply" key: "shift+cmd+R" command: "reply" enabled: reading != nil}
+    ]
+}
+fn on_menu_command(command){
+    if command == "new" { new_note() }
+}
+```
+
+`menu` is App, File, Edit, View or Help, or a name of the app's own, which comes
+between View and Window. A row without a title is a rule. `key` is shown in a
+Mac's glyphs (`shift+cmd+R`, `ctrl+cmd+S`, `cmd+left`, `cmd+delete`), and a key
+with `cmd` belongs to its row wherever the keyboard is in the window, as on a
+Mac, except that a text field keeps what its editing answers to: A, C, V, X, Z,
+the arrows and Delete. A row named Undo, Redo, Cut, Copy, Paste or Select All in
+the Edit menu stands in for the standard one while there is no text to act on. `command: "key:cmd+B"`
+sends the app that key instead of calling `on_menu_command`, and leaves a real
+key press alone, for a widget that already answers to it. `enabled` is true when
+left out. A choice from a menu counts as a press for the services that want one.
+`submenu` puts the row in a submenu of that name inside its menu, where the
+submenu's first row would be (Task's View > Update Frequency). Rows stay
+bounded: 64 rows, 60 characters a title. A process app, which has no script to
+ask, sends the same rows as JSON with `makepad_wm_api::menu_rows` whenever one
+changes, and hears a chosen row as `WmEvent::MenuCommand { command }` (a
+`key:` row as its key).
+
+A style other than macOS never asks. Rows say what is true at that moment, so
+keep `app_menus` quick and free of side effects.
 
 ### The `mail` service
 

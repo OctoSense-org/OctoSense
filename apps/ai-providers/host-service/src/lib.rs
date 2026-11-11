@@ -560,7 +560,7 @@ impl LlmService {
     /// call) is refused instead, and a sheet already up stays. Whether it rose.
     fn raise(&mut self, app_id: &str, may_prompt: bool, reply: Replier, kind: Kind, sheet: String, host: &mut dyn ServiceHost) -> bool {
         if !may_prompt {
-            reply.send(Err("Open AI providers to do this: it needs its sheet.".into()));
+            reply.send(Err("Open AI Providers to do this: it needs its sheet.".into()));
             return false;
         }
         if let Some(earlier) = self.pending.lock().unwrap().take() {
@@ -1072,7 +1072,7 @@ impl HostService for LlmService {
         let id = text(&call.args, "id").to_string();
         match call.method() {
             "connect_client" => {
-                if call.app_id != "os.ai-providers" { return reply.send(Err("Open AI providers to connect a client.".into())); }
+                if call.app_id != "os.ai-providers" { return reply.send(Err("Open AI Providers to connect a client.".into())); }
                 self.raise(&call.app_id, call.may_prompt, reply, Kind::Connect, sheets::connect_client(), host);
             }
             method if method.starts_with("sheet.client_") => {

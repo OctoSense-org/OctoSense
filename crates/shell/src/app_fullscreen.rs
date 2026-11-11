@@ -639,7 +639,7 @@ impl App {
 
     /// The window of script app `app` whose Card runner runs `isolate`. A
     /// failed instance's window has no app in it to ask.
-    fn window_of(&mut self, cx: &mut Cx, app: &str, isolate: usize) -> Option<ClientId> {
+    pub(crate) fn window_of(&mut self, cx: &mut Cx, app: &str, isolate: usize) -> Option<ClientId> {
         let candidates: Vec<(ClientId, Option<String>)> = self
             .state
             .as_ref()?

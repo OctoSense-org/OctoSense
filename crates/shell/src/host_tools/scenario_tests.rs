@@ -726,11 +726,11 @@ fn an_unanswered_approval_expires_and_the_next_input_runs() {
 
     // The deadline: denied (never approved), with why, and kept visible.
     let expired = s.until("the approval expired", 60, || crate::approvals::with(|a| a.router.expired().iter().find(|e| e.id == approval).cloned()).flatten());
-    assert_eq!(expired.reason, "no answer in 4 s");
-    assert_eq!(expired.status(), "Expired: no answer in 4 s");
+    assert_eq!(expired.reason, "no answer in 4 seconds");
+    assert_eq!(expired.status(), "Expired: no answer in 4 seconds");
     assert_eq!((expired.heading.as_str(), expired.caller.as_str()), ("News \u{00b7} news.share", "News's agent"));
     let entry = crate::approvals::with(|a| a.router.audit.all().iter().rev().find(|e| e.id == approval.0).cloned()).flatten().expect("audited");
-    assert_eq!((entry.by.as_str(), entry.result.as_str(), entry.reason.as_str()), ("expired", "denied", "expired: no answer in 4 s"));
+    assert_eq!((entry.by.as_str(), entry.result.as_str(), entry.reason.as_str()), ("expired", "denied", "expired: no answer in 4 seconds"));
     assert!(!crate::approvals::with(|a| a.router.is_pending(&approval)).unwrap());
     assert!(s.share_approval().is_none(), "withdrawn from the sheet");
     // The model heard the refusal and is still working (it sleeps).

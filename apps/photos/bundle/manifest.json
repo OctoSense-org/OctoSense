@@ -3,11 +3,29 @@
   "id": "os.photos",
   "version": "1.0.0",
   "name": "Photos",
-  "integrity": { "bundle_blake3": "" },
-  "capabilities": ["storage", "glance", "model"],
+  "integrity": {
+    "bundle_blake3": ""
+  },
+  "capabilities": [
+    "storage",
+    "files",
+    "glance",
+    "model"
+  ],
   "agent": {
     "profile": "read-only",
-    "tools": ["ask_user_question"],
-    "model": { "needs": ["tool_calling"] }
-  }
+    "tools": [
+      "ask_user_question"
+    ],
+    "model": {
+      "needs": [
+        "tool_calling"
+      ]
+    }
+  },
+  "window": {
+    "width": 1120,
+    "height": 740
+  },
+  "schema_minor": 1
 }

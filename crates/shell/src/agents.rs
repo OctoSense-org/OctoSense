@@ -274,7 +274,7 @@ pub fn ask(app: &AgentApp) -> Access {
     if access(&app.id) == Access::Allowed {
         return Access::Allowed;
     }
-    let summary = crate::approvals::consent::AgentSummary::from_manifest(&app.id, &app.name, &app.manifest, &app.octos, "The model set in AI providers");
+    let summary = crate::approvals::consent::AgentSummary::from_manifest(&app.id, &app.name, &app.manifest, &app.octos, "The model set in AI Providers");
     match crate::approvals::consent_ask(summary) {
         crate::approvals::consent::State::Allowed => Access::Allowed,
         _ => access(&app.id),

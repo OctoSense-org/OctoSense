@@ -575,6 +575,17 @@ pub fn key(e: &KeyEvent) -> bool {
         return false;
     }
     use crate::system_chat::composer::Key;
+    // A Mac: a disabled field takes no keys but Escape; while the person's
+    // turn runs Return keeps the draft.
+    if crate::system_chat::view::mac::active() {
+        let k = crate::system_chat::composer::key(e);
+        if status() != Status::Ready && !matches!(k, Key::Close | Key::Pass) {
+            return crate::system_chat::composer::keeps_unused(e);
+        }
+        if k == Key::Send && person_running() && snapshot().open_question().is_none() {
+            return true;
+        }
+    }
     match crate::system_chat::composer::key(e) {
         Key::Close => close(),
         Key::Send => send_draft(),
@@ -616,6 +627,9 @@ pub fn key(e: &KeyEvent) -> bool {
 pub fn text_input(event: &makepad_widgets::makepad_platform::event::TextInputEvent) -> bool {
     if !is_focused() {
         return false;
+    }
+    if crate::system_chat::view::mac::typing_blocked(status() == Status::Ready) {
+        return true;
     }
     let submit = with(|p| {
         if p.draft.text_input(event) {

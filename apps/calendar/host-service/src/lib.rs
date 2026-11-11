@@ -6,6 +6,7 @@
 //! | `calendar.events` | `{from?, to?, limit?}` | `{events: [{id, title, start, end, location, notes, timezone?, request_id?}]}`, soonest first |
 //! | `calendar.add_event` | `{title, start, end?, location?, notes?, timezone?, request_id?}` | `{id, start, reused?}` |
 //! | `calendar.remove_event` | `{id}` | `{removed}` |
+//! | `calendar.restore_event` | `{id}` | `{restored, id}`: Calendar's own Undo of a remove |
 //! | `calendar.notify` | `{event}` or `{title, when, location?, notes?}`, and `{card_id?, priority?}` | `{card_id, replaced, expires_at}` once an event card is on the glance screen, with a notification |
 //! | `calendar.agenda` | `{days?}` | the same, for an agenda card: the next three events within `days` (7) |
 //!
@@ -16,6 +17,11 @@
 //! A stable request_id makes exact retries reuse the saved event. Events live in the
 //! host's own directory (`<host_dir>/calendar/events.json`), outside every
 //! app's jail.
+//!
+//! **Undo.** What a remove took is kept, in memory for this run only: the
+//! event and its Glance cards. `calendar.restore_event` puts the event back
+//! exactly, id and all, and shows its card again without another
+//! notification. Calendar's Edit > Undo uses it; it is no agent tool.
 //!
 //! **Calendar owns execution.** The service accepts only `os.calendar`.
 //! Other agents use explicitly granted shareable tools through the shell's
@@ -39,6 +45,19 @@ mod cards;
 pub use cards::{on_withdraw_card, publications, set_dismissed, Publication};
 pub use ui::focus_event;
 static EVENT_WRITES: Mutex<()> = Mutex::new(());
+/// What removes took, for Undo, the latest last: each store's events with
+/// their cards. Memory only, so a restart forgets them, as it does the app's
+/// own history.
+static REMOVED: Mutex<Vec<(std::path::PathBuf, Event, Vec<cards::Publication>)>> = Mutex::new(Vec::new());
+/// Removes kept for Undo (Calendar's own history keeps 50 steps).
+const REMOVED_MAX: usize = 50;
+
+fn keep_removed(host_dir: &Path, event: Event, cards: Vec<cards::Publication>) {
+    let mut kept = REMOVED.lock().unwrap_or_else(|e| e.into_inner());
+    kept.retain(|(dir, e, _)| !(dir == host_dir && e.id == event.id));
+    kept.push((host_dir.to_path_buf(), event, cards));
+    if kept.len() > REMOVED_MAX { kept.remove(0); }
+}
 
 /// The one app this service answers.
 pub const APP: &str = "os.calendar";
@@ -143,34 +162,34 @@ fn stamp(t: NaiveDateTime) -> String {
     t.format("%Y-%m-%dT%H:%M").to_string()
 }
 
-/// How an event's time reads on a card: `Fri 2 Oct · 15:00–16:00`, a day
-/// alone for an event at midnight with no end.
-pub fn when_text(start: &str, end: Option<&str>) -> String {
-    let Ok(s) = parse_time(start) else { return start.to_string() };
-    let day = s.format("%a %-d %b").to_string();
-    let all_day = s.format("%H:%M").to_string() == "00:00" && end.is_none();
-    if all_day {
-        return day;
-    }
-    match end.and_then(|e| parse_time(e).ok()) {
-        Some(e) if e.date() == s.date() => format!("{day} \u{00b7} {}\u{2013}{}", s.format("%H:%M"), e.format("%H:%M")),
-        Some(e) => format!("{day} \u{00b7} {} \u{2013} {}", s.format("%H:%M"), e.format("%a %-d %b %H:%M")),
-        None => format!("{day} \u{00b7} {}", s.format("%H:%M")),
-    }
+/// A time as the app writes it: `3:00 PM`.
+fn clock(t: &NaiveDateTime) -> String {
+    t.format("%-I:%M %p").to_string()
 }
 
-/// An event's day and time for the card's two tiles: `Fri 2 Oct` and
-/// `15:00–16:00` (`All day` for a day alone).
+/// How an event's time reads on a card, as it does in the app:
+/// `Fri, Oct 2 · 3:00 PM – 4:00 PM`, a day alone for an event at midnight with
+/// no end.
+pub fn when_text(start: &str, end: Option<&str>) -> String {
+    let (day, time) = day_and_time(start, end);
+    if time.is_empty() || time == "All day" {
+        return day;
+    }
+    format!("{day} \u{00b7} {time}")
+}
+
+/// An event's day and time for the card's two tiles: `Fri, Oct 2` and
+/// `3:00 PM – 4:00 PM` (`All day` for a day alone).
 pub fn day_and_time(start: &str, end: Option<&str>) -> (String, String) {
     let Ok(s) = parse_time(start) else { return (start.to_string(), String::new()) };
-    let day = s.format("%a %-d %b").to_string();
+    let day = s.format("%a, %b %-d").to_string();
     if s.format("%H:%M").to_string() == "00:00" && end.is_none() {
         return (day, "All day".into());
     }
     let time = match end.and_then(|e| parse_time(e).ok()) {
-        Some(e) if e.date() == s.date() => format!("{}\u{2013}{}", s.format("%H:%M"), e.format("%H:%M")),
-        Some(e) => format!("{} \u{2013} {}", s.format("%H:%M"), e.format("%-d %b %H:%M")),
-        None => s.format("%H:%M").to_string(),
+        Some(e) if e.date() == s.date() => format!("{} \u{2013} {}", clock(&s), clock(&e)),
+        Some(e) => format!("{} \u{2013} {} at {}", clock(&s), e.format("%b %-d"), clock(&e)),
+        None => clock(&s),
     };
     (day, time)
 }
@@ -269,7 +288,7 @@ pub fn handle(app: &str, method: &str, args: &Value, host_dir: &Path, now: Naive
     if app != APP {
         return Err("calendar is Calendar's own service".into());
     }
-    let _write = matches!(method, "add_event" | "update_event" | "remove_event").then(|| EVENT_WRITES.lock().unwrap_or_else(|e| e.into_inner()));
+    let _write = matches!(method, "add_event" | "update_event" | "remove_event" | "restore_event").then(|| EVENT_WRITES.lock().unwrap_or_else(|e| e.into_inner()));
     let publish_card = |card: Value| match publish {
         Some(p) => p(app, card),
         None => Err("This device shows no glance cards.".into()),
@@ -353,14 +372,43 @@ pub fn handle(app: &str, method: &str, args: &Value, host_dir: &Path, now: Naive
                 let expected: Event = serde_json::from_value(expected.clone()).map_err(|_| "Read the event before deleting it.")?;
                 if !events.iter().any(|e| e.id == id && *e == expected) { return Err("This event changed elsewhere. Reload before deleting it.".into()); }
             }
-            let before = events.len();
+            let gone = events.iter().find(|e| e.id == id).cloned();
             events.retain(|e| e.id != id);
-            let removed = events.len() != before;
+            let removed = gone.is_some();
             if removed {
                 save(host_dir, &events)?;
             }
             let mut result = json!({"removed": removed});
-            if removed { if let Err(error) = cards::remove(host_dir,id) { result["card_warning"] = json!(error); } }
+            if let Some(gone) = gone {
+                // Its cards as they were, for Undo, before they go.
+                let cards = cards::of_event(host_dir, id);
+                if let Err(error) = cards::remove(host_dir,id) { result["card_warning"] = json!(error); }
+                keep_removed(host_dir, gone, cards);
+            }
+            Ok(result)
+        }
+        "restore_event" => {
+            let id = text(args, "id");
+            let mut kept = REMOVED.lock().unwrap_or_else(|e| e.into_inner());
+            let Some(at) = kept.iter().rposition(|(dir, e, _)| dir == host_dir && e.id == id) else {
+                return Err("This event can't be put back.".into());
+            };
+            let mut events = load(host_dir);
+            let event = kept[at].1.clone();
+            // Never two events with one id, or one request twice.
+            if events.iter().any(|e| e.id == event.id || (!event.request_id.is_empty() && e.request_id == event.request_id)) {
+                kept.remove(at);
+                return Err("This event is already in Calendar.".into());
+            }
+            events.push(event);
+            while events.len() > EVENTS_MAX {
+                events.remove(0);
+            }
+            save(host_dir, &events)?;
+            let (_, event, cards) = kept.remove(at);
+            drop(kept);
+            let mut result = json!({"restored": true, "id": event.id});
+            if let Err(error) = cards::put_back(host_dir, &event, cards, publish) { result["card_warning"] = json!(error); }
             Ok(result)
         }
         "notify" => {
@@ -464,7 +512,7 @@ mod tests {
         let found = handle(APP, "events", &json!({"from":"2026-10-06T08:59:00-07:00", "to":"2026-10-06T09:01:00-07:00"}), &d, now, None).unwrap();
         assert_eq!(found["events"].as_array().unwrap().len(), 1, "offset filters select the actual instant");
         let agenda = agenda_card_args(&events, 7, now);
-        assert!(agenda["data"]["day"]["pick1_body"].as_str().unwrap().contains("09:00 PDT"));
+        assert!(agenda["data"]["day"]["pick1_body"].as_str().unwrap().contains("9:00 AM PDT"));
         let _ = std::fs::remove_dir_all(d);
     }
 
@@ -485,9 +533,9 @@ mod tests {
         assert_eq!(stamp(at("2026-10-02 15:00")), "2026-10-02T15:00");
         assert_eq!(stamp(at("2026-10-02")), "2026-10-02T00:00");
         assert!(parse_time("tomorrow").is_err());
-        assert_eq!(when_text("2026-10-02T15:00", Some("2026-10-02T16:30")), "Fri 2 Oct \u{00b7} 15:00\u{2013}16:30");
-        assert_eq!(when_text("2026-10-02", None), "Fri 2 Oct", "a day alone");
-        assert_eq!(day_and_time("2026-10-02T15:00", Some("2026-10-02T16:30")), ("Fri 2 Oct".to_string(), "15:00\u{2013}16:30".to_string()));
+        assert_eq!(when_text("2026-10-02T15:00", Some("2026-10-02T16:30")), "Fri, Oct 2 \u{00b7} 3:00 PM \u{2013} 4:30 PM");
+        assert_eq!(when_text("2026-10-02", None), "Fri, Oct 2", "a day alone");
+        assert_eq!(day_and_time("2026-10-02T15:00", Some("2026-10-02T16:30")), ("Fri, Oct 2".to_string(), "3:00 PM \u{2013} 4:30 PM".to_string()));
         assert_eq!(day_and_time("2026-10-02", None).1, "All day");
     }
 
@@ -512,6 +560,56 @@ mod tests {
     }
 
     #[test]
+    fn undo_puts_a_removed_event_back_whole_with_its_card_and_no_new_banner() {
+        let d = dir("restore");
+        let now = at("2026-10-01T09:00");
+        let seen: Arc<Mutex<Vec<Value>>> = Arc::default();
+        let log = seen.clone();
+        let publisher: CardPublisher = Arc::new(move |_app, args| {
+            log.lock().unwrap().push(args.clone());
+            Ok(json!({"card_id": args["card_id"], "expires_at": chrono::Utc::now().timestamp_millis() as u64 + 86_400_000}))
+        });
+        let shown = |d: &Path| cards::publications(d, chrono::Utc::now().timestamp_millis() as u64).unwrap().len();
+        let added = handle(APP, "add_event", &json!({"title": "Dentist", "start": "2026-10-02T15:00", "location": "Main St"}), &d, now, None).unwrap();
+        let id = added["id"].as_str().unwrap().to_string();
+        handle(APP, "notify", &json!({"event": id}), &d, now, Some(&publisher)).unwrap();
+        let before = load(&d);
+        let restore = |d: &Path| handle(APP, "restore_event", &json!({"id": id}), d, now, Some(&publisher));
+        let remove = |d: &Path| handle(APP, "remove_event", &json!({"id": id, "expected": before[0]}), d, now, None).unwrap();
+        assert_eq!(restore(&d).unwrap_err(), "This event can't be put back.", "nothing was removed");
+        remove(&d);
+        assert!(load(&d).is_empty() && shown(&d) == 0);
+        assert_eq!(restore(&d).unwrap()["restored"], true);
+        assert_eq!(load(&d), before, "the same event, id and all");
+        {
+            let seen = seen.lock().unwrap();
+            assert_eq!(seen.len(), 2);
+            assert_eq!((seen[1]["card_id"].as_str(), seen[1]["notify"].as_bool()), (Some(id.as_str()), Some(false)), "its card again, with no new banner");
+        }
+        assert_eq!(shown(&d), 1);
+        assert!(restore(&d).is_err(), "once");
+        // Redo removes it again, and Undo again puts it back.
+        remove(&d);
+        restore(&d).unwrap();
+        assert_eq!((load(&d), shown(&d)), (before.clone(), 1));
+        // A dismissed card comes back dismissed, and isn't shown.
+        cards::set_dismissed(&d, &id, true).unwrap();
+        remove(&d);
+        restore(&d).unwrap();
+        assert_eq!((seen.lock().unwrap().len(), shown(&d)), (3, 0));
+        cards::set_dismissed(&d, &id, false).unwrap();
+        assert_eq!(shown(&d), 1, "kept as it was");
+        // Another event since took its id: no second one.
+        remove(&d);
+        handle(APP, "add_event", &json!({"title": "Other", "start": "2026-10-02T11:00"}), &d, now, None).unwrap();
+        assert_eq!(restore(&d).unwrap_err(), "This event is already in Calendar.");
+        assert_eq!(restore(&d).unwrap_err(), "This event can't be put back.");
+        assert_eq!(load(&d).len(), 1);
+        assert!(handle("os.mail", "restore_event", &json!({"id": id}), &d, now, None).is_err(), "Calendar's own service");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
     fn cards_are_the_fixed_cards_filled_from_the_events() {
         let d = dir("cards");
         let now = at("2026-10-01T09:00");
@@ -529,9 +627,9 @@ mod tests {
         assert_eq!(seen.len(), 3);
         assert!(seen.iter().all(|(app, args)| app == APP && args["notify"] == true && args["open"]["app"] == "calendar"));
         let ev = &seen[0].1["data"]["ev"];
-        assert_eq!((ev["title"].as_str(), ev["metric1_value"].as_str(), ev["metric2_value"].as_str(), ev["subtitle"].as_str()), (Some("Dentist"), Some("Fri 2 Oct"), Some("15:00\u{2013}16:00"), Some("Main St")));
+        assert_eq!((ev["title"].as_str(), ev["metric1_value"].as_str(), ev["metric2_value"].as_str(), ev["subtitle"].as_str()), (Some("Dentist"), Some("Fri, Oct 2"), Some("3:00 PM \u{2013} 4:00 PM"), Some("Main St")));
         assert_eq!(seen[0].1["source"], EVENT_CARD);
-        assert_eq!((seen[1].1["data"]["ev"]["metric2_value"].as_str(), seen[1].1["data"]["ev"]["subtitle"].as_str()), (Some("12:30"), Some("No place given")));
+        assert_eq!((seen[1].1["data"]["ev"]["metric2_value"].as_str(), seen[1].1["data"]["ev"]["subtitle"].as_str()), (Some("12:30 PM"), Some("No place given")));
         let day = &seen[2].1["data"]["day"];
         assert_eq!((day["title"].as_str(), day["pick1_title"].as_str(), day["pick2_title"].as_str()), (Some("Your next event"), Some("Dentist"), Some("")));
         assert!(handle(APP, "notify", &json!({}), &d, now, Some(&publisher)).is_err(), "names no event");

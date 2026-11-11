@@ -2,7 +2,8 @@
 //! system agent's command execution (ADR 0004 §12; off by default).
 //!
 //! - **Only the person turns it on.** [`set`] needs a [`CommandGesture`],
-//!   which only the Settings row makes, and only from the confirmation the
+//!   which only the Settings row, or the sheet System Settings raises on the
+//!   host's own surface, makes, and only from the confirmation the
 //!   person typed ([`CONFIRM_PHRASE`], shown with the risk: [`RISK`]), the
 //!   pattern of developer mode's `PersonGesture` (#118). No agent, app, bus
 //!   call or host service can make one (a test scans the sources). Turning
@@ -57,16 +58,21 @@ pub struct Grants {
     pub command_execution: bool,
 }
 
+/// Whether this is [`CONFIRM_PHRASE`] (case and spacing ignored).
+pub fn is_confirm_phrase(typed: &str) -> bool {
+    typed.split_whitespace().collect::<Vec<_>>().join(" ").to_lowercase() == CONFIRM_PHRASE
+}
+
 /// Proof that the person typed the confirmation into Settings. Only
 /// [`CommandGesture::settings_phrase`] makes one, and only the shell's
-/// Settings row calls it.
+/// handler of the Settings row and of System Settings' host-owned sheet
+/// (`app_settings_link.rs`) calls it.
 pub struct CommandGesture(());
 
 impl CommandGesture {
     /// The person typed [`CONFIRM_PHRASE`] (case and spacing ignored).
     pub(crate) fn settings_phrase(typed: &str) -> Option<CommandGesture> {
-        let typed = typed.split_whitespace().collect::<Vec<_>>().join(" ").to_lowercase();
-        (typed == CONFIRM_PHRASE).then_some(CommandGesture(()))
+        is_confirm_phrase(typed).then_some(CommandGesture(()))
     }
 }
 

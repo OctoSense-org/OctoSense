@@ -3,6 +3,17 @@
   "id": "os.writer",
   "version": "0.1.0",
   "name": "Writer",
-  "integrity": { "bundle_blake3": "" },
-  "capabilities": ["storage", "word"]
+  "integrity": {
+    "bundle_blake3": ""
+  },
+  "capabilities": [
+    "storage",
+    "files",
+    "word"
+  ],
+  "window": {
+    "width": 1120,
+    "height": 740
+  },
+  "schema_minor": 1
 }

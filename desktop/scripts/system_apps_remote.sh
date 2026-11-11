@@ -124,12 +124,11 @@ launch mail
 wait_log "card: os.mail running under"
 sleep 2
 grab mail-welcome
-snap "Add account" | grep -q "^card Splash" || fail "Mail shows no Add account"
-# The button is the Splash's; click its centre as drawn in the welcome pane.
-read -r X Y < <(get "snap?q=card" | python3 -c '
+# A phone's tree says "Add account", a desktop's "Add Account…".
+read -r X Y < <(get "snap?q=Add" | python3 -c '
 import json,sys
-cards=[e for e in json.load(sys.stdin)["s"] if e["i"]=="card" and "account = nil" in (e.get("t") or "")]
-x,y,w,h=cards[-1]["r"]; print(x+w/2, y+h*0.567)')
+rows=[e for e in json.load(sys.stdin)["s"] if (e.get("t") or "") in ("Add account","Add Account…")]
+x,y,w,h=rows[-1]["r"]; print(x+w/2, y+h/2)') || fail "Mail shows no Add account"
 get "click?x=$X&y=$Y&wait=1" >/dev/null
 for _ in $(seq 1 20); do snap "Add a mail account" | grep -q "^sheet Splash" && break; sleep 0.5; done
 snap "Add a mail account" | grep -q "^sheet Splash" || fail "Mail's sign-in sheet did not open"
@@ -147,7 +146,7 @@ if [[ " $APPS " == *" ai-providers "* ]]; then
     wait_log "card: os.ai-providers running under"
     sleep 2
     grab ai-providers
-    snap "No models yet" | grep -q "^card Splash" || fail "AI providers shows no empty list"
+    snap "No Models Yet" | grep -q "^card Splash" || fail "AI providers shows no empty list"
     NAME=$(label_of ai-providers)
     [ -z "$(ls -A "$WORK/octos" 2>/dev/null)" ] || echo "note: octos core dir is not empty"
     pass "$NAME opened: $(grep -o 'card: os.ai-providers running under.*' "$LOG" | head -1)"

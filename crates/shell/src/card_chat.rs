@@ -32,6 +32,115 @@ script_mod! {
                 speaker := Label {width: Fill height: Fit draw_text.text_style: theme.font_bold{font_size: 12}}
                 body := Label {width: Fill height: Fit draw_text.wrap: Words draw_text.text_style: theme.font_regular{font_size: 15 line_spacing: 1.4}}
             }
+            // A Mac's rows: 13-point text, and a person's message that hugs
+            // its words.
+            MacMessage := View {
+                width: Fill height: Fit flow: Down spacing: 2
+                padding: Inset{left: 16 right: 16 top: 6 bottom: 6}
+                speaker := Label {
+                    width: Fill height: Fit padding: 0
+                    draw_text.text_style: theme.font_bold{font_size: 9.75}
+                    draw_text.color: theme.color_text
+                }
+                body := Label {
+                    width: Fill height: Fit padding: 0
+                    draw_text.wrap: Words
+                    draw_text.text_style: theme.font_regular{font_size: 9.75 line_spacing: 1.3}
+                    draw_text.color: theme.color_text
+                }
+            }
+            MacPerson := View {
+                width: Fill height: Fit flow: Right align: Align{x: 1.0}
+                padding: Inset{left: 64 right: 16 top: 6 bottom: 6}
+                bubble := RoundedView {
+                    width: Fit max_width: 380 height: Fit flow: Down
+                    padding: Inset{left: 10 right: 10 top: 6 bottom: 6}
+                    draw_bg +: {color: #8080802c border_radius: 5}
+                    speaker := Label {visible: false width: Fit height: Fit padding: 0 text: ""}
+                    body := Label {
+                        width: Fit max_width: 360 height: Fit padding: 0
+                        draw_text.wrap: Words
+                        draw_text.text_style: theme.font_regular{font_size: 9.75 line_spacing: 1.3}
+                        draw_text.color: theme.color_text
+                    }
+                }
+            }
+        }
+        // A Mac's composer: a field that grows from 28 points, its focus ring
+        // outside its edge (the rect keeps 3 points around the well), and
+        // Send; over it, why asking is off and the button that fixes it.
+        mac_dock := View {
+            visible: false
+            width: Fill height: Fit flow: Down spacing: 6
+            padding: Inset{left: 13 right: 16 top: 8 bottom: 9}
+            mac_row := View {
+                visible: false
+                width: Fill height: Fit flow: Right spacing: 8 align: Align{y: 0.5}
+                padding: Inset{left: 3}
+                mac_status := Label {
+                    width: Fill height: Fit padding: 0
+                    draw_text.wrap: Words
+                    draw_text.text_style: theme.font_regular{font_size: 9.0 line_spacing: 1.2}
+                    draw_text.color: theme.color_text_placeholder
+                    text: ""
+                }
+                mac_reply := ButtonFlat {
+                    visible: false
+                    width: Fit height: 28 margin: 0 padding: Inset{left: 12 right: 12}
+                    text: "View Updated Email"
+                    draw_bg +: {color: #80808024 color_hover: #80808038 color_down: #8080804c color_focus: #80808024 border_size: 0 border_radius: 3.5}
+                    draw_text +: {text_style: theme.font_regular{font_size: 9.75}
+                        color: theme.color_text color_hover: theme.color_text color_down: theme.color_text color_focus: theme.color_text}
+                }
+                mac_fix := ButtonFlat {
+                    visible: false
+                    width: Fit height: 28 margin: 0 padding: Inset{left: 12 right: 12}
+                    text: "Allow\u{2026}"
+                    draw_bg +: {color: #x0071e3 color_hover: #x0071e3 color_down: #x005bbf color_focus: #x0071e3 border_size: 0 border_radius: 3.5}
+                    draw_text +: {text_style: theme.font_regular{font_size: 9.75}
+                        color: #ffffff color_hover: #ffffff color_down: #ffffff color_focus: #ffffff}
+                }
+            }
+            mac_form := View {
+                width: Fill height: Fit flow: Right spacing: 5 align: Align{y: 1.0}
+                mac_input := TextInputFlat {
+                    width: Fill height: Fit min_height: 34 max_height: 100 margin: 0
+                    padding: Inset{left: 11 right: 11 top: 9 bottom: 9}
+                    is_multiline: true
+                    submit_on_enter: true
+                    empty_text: "Ask about this card\u{2026}"
+                    draw_bg +: {
+                        ring: instance(vec4(0.0, 0.48, 1.0, 0.5))
+                        well: instance(vec4(1.0, 1.0, 1.0, 0.85))
+                        edge: instance(vec4(0.5, 0.5, 0.5, 0.35))
+                        off: instance(0.0)
+                        pixel: fn() {
+                            let sdf = Sdf2d.viewport(self.pos * self.rect_size)
+                            // The ring stands outside the well: a fill under a clear well would tint it.
+                            sdf.box(1.5, 1.5, self.rect_size.x - 3.0, self.rect_size.y - 3.0, 4.25)
+                            sdf.stroke(vec4(self.ring.rgb, self.ring.w * self.focus * (1.0 - self.off)), 3.0)
+                            sdf.box(3.0, 3.0, self.rect_size.x - 6.0, self.rect_size.y - 6.0, 3.5)
+                            sdf.fill_keep(vec4(self.well.rgb, self.well.w * (1.0 - self.off * 0.7)))
+                            sdf.stroke(vec4(self.edge.rgb, self.edge.w * (1.0 - self.off * 0.5)), 1.0)
+                            return sdf.result
+                        }
+                    }
+                    draw_text.text_style: theme.font_regular{font_size: 9.75 line_spacing: 1.25}
+                    draw_cursor.color: theme.color_focus
+                    draw_selection +: {
+                        color: theme.color_bg_highlight_inline color_hover: theme.color_bg_highlight_inline
+                        color_focus: theme.color_bg_highlight_inline color_down: theme.color_bg_highlight_inline
+                        color_2: vec4(-1.0) color_2_hover: vec4(-1.0) color_2_focus: vec4(-1.0) color_2_down: vec4(-1.0)
+                    }
+                }
+                mac_send := ButtonFlat {
+                    width: Fit height: 28 margin: Inset{bottom: 3} padding: Inset{left: 14 right: 14}
+                    text: "Send"
+                    draw_bg +: {color: #x0071e3 color_hover: #x0071e3 color_down: #x005bbf color_focus: #x0071e3 color_disabled: #80808024 border_size: 0 border_radius: 3.5}
+                    draw_text +: {text_style: theme.font_regular{font_size: 9.75}
+                        color: #ffffff color_hover: #ffffff color_down: #ffffff color_focus: #ffffff color_disabled: #80808099}
+                }
+            }
         }
         dock := View {
             width: Fill height: Fit flow: Down spacing: 8
@@ -77,6 +186,41 @@ script_mod! {
 
 #[derive(Clone, Default, Debug, PartialEq)]
 struct MessageRow { speaker: String, text: String }
+
+/// What a Mac's button over the composer does.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Fix {
+    /// Ask for the first-use permission.
+    Allow,
+    /// Asking was turned off: the page where it is turned on.
+    Settings,
+    /// No model yet.
+    Providers,
+}
+
+/// Whether a model answers here: only a build that hosts the kernel has one.
+#[cfg(kernel)]
+fn provider_ready() -> bool {
+    crate::system_chat::provider_configured(octosense_ai_host::kernel::profile().as_deref())
+}
+#[cfg(not(kernel))]
+fn provider_ready() -> bool {
+    false
+}
+
+/// A Mac's words for a card's chat that cannot be used, and the fix.
+fn mac_blocked(name: &str, consent: crate::agents::Access, account_valid: bool, model: bool) -> Option<(String, Option<(&'static str, Fix)>)> {
+    use crate::agents::Access;
+    if !account_valid {
+        return Some(("This card\u{2019}s account is signed out.".into(), None));
+    }
+    match consent {
+        Access::NotAsked => Some((format!("{name} needs your permission to use its assistant."), Some(("Allow\u{2026}", Fix::Allow)))),
+        Access::Off => Some((format!("You turned off the assistant for {name}."), Some(("Open Settings\u{2026}", Fix::Settings)))),
+        Access::Allowed if !model => Some(("OctoSense needs an AI model before it can answer.".into(), Some(("Open AI Providers\u{2026}", Fix::Providers)))),
+        Access::Allowed => None,
+    }
+}
 
 /// Split long answers into paragraph rows so even a single long model turn
 /// can be virtualized. Row identity is stable until the transcript changes.
@@ -133,20 +277,87 @@ pub struct CardChat {
     #[rust] native_style: Option<NativeStyle>,
     #[rust] reply_requested: bool,
     #[rust] publisher: String,
+    /// A Mac's tree is the one in use.
+    #[rust] mac_on: bool,
+    /// The script was applied again: the trees' visibility with it.
+    #[rust] tree_dirty: bool,
+    /// Take the keyboard after the next draw (the Chat tab was chosen).
+    #[rust] want_focus: bool,
+    #[rust] fix: Option<Fix>,
+    #[rust] providers_requested: bool,
+    /// A Mac: the card's assistant can be asked now.
+    #[rust] usable_now: bool,
 }
 
 impl ScriptHook for CardChat {
     fn on_after_apply(&mut self, _vm: &mut ScriptVm, apply: &Apply, _scope: &mut Scope, _value: ScriptValue) {
-        if !apply.is_eval() { self.ink = None; self.style_revision = 0; }
+        if !apply.is_eval() { self.ink = None; self.style_revision = 0; self.tree_dirty = true; }
     }
 }
 
 impl CardChat {
+    /// The composer in use.
+    fn input(&self, cx: &Cx) -> TextInputRef {
+        if self.mac_on { self.view.text_input(cx, ids!(mac_input)) } else { self.view.text_input(cx, ids!(input)) }
+    }
+
+    /// Choose a Mac's tree or the other styles', keeping what was typed.
+    fn choose_tree(&mut self, cx: &mut Cx) {
+        let on = crate::system_chat::view::mac::active();
+        if !on && !self.mac_on {
+            self.tree_dirty = false;
+            return;
+        }
+        if on == self.mac_on && !self.tree_dirty { return; }
+        self.tree_dirty = false;
+        if on != self.mac_on {
+            let draft = self.input(cx).text();
+            self.mac_on = on;
+            self.input(cx).set_text(cx, &draft);
+        }
+        self.view.widget(cx, ids!(mac_dock)).set_visible(cx, on);
+        self.view.widget(cx, ids!(dock)).set_visible(cx, !on);
+        self.ink = None;
+        self.generation = None;
+    }
+
+    /// The Chat tab was chosen: the keyboard goes to the field.
+    pub fn want_keyboard(&mut self) {
+        self.want_focus = true;
+    }
+
+    pub fn take_providers_request(&mut self) -> bool { std::mem::take(&mut self.providers_requested) }
+
+    /// A Mac's colours, from the text colour in force.
+    fn mac_ink(&mut self, cx: &mut Cx, ink: Vec4f) {
+        let dark = ink.x > 0.5;
+        let hint = crate::shell::alpha(ink, if dark { 0.72 } else { 0.68 });
+        let (ring, well, edge) = if dark {
+            (crate::shell::alpha(crate::shell::rgb(10, 132, 255), 0.6), crate::shell::alpha(crate::shell::rgb(255, 255, 255), 0.07), crate::shell::alpha(ink, 0.2))
+        } else {
+            (crate::shell::alpha(crate::shell::rgb(0, 122, 255), 0.5), crate::shell::alpha(crate::shell::rgb(255, 255, 255), 0.85), crate::shell::alpha(ink, 0.18))
+        };
+        let mut input = self.view.widget(cx, ids!(mac_input));
+        script_apply_eval!(cx, input, {
+            draw_bg +: {ring: #(ring) well: #(well) edge: #(edge)}
+            draw_text +: {color: #(ink) color_hover: #(ink) color_focus: #(ink) color_empty: #(hint) color_empty_hover: #(hint) color_empty_focus: #(hint)}
+        });
+        let mut reply = self.view.widget(cx, ids!(mac_reply));
+        script_apply_eval!(cx, reply, {draw_text +: {color: #(ink) color_hover: #(ink) color_down: #(ink) color_focus: #(ink)}});
+        if let Some(mut label) = self.view.label(cx, ids!(mac_status)).borrow_mut() { label.draw_text.color = hint; }
+        self.view.redraw(cx);
+    }
+
     pub fn set_ink(&mut self, cx: &mut Cx, ink: Vec4f) {
+        self.choose_tree(cx);
         self.apply_selected_style(cx);
         let ink = self.native_style.as_ref().map_or(ink, |style| style.text);
         if self.ink == Some(ink) { return; }
         self.ink = Some(ink);
+        if self.mac_on {
+            self.mac_ink(cx, ink);
+            return;
+        }
         let face = self.native_style.as_ref().map_or_else(|| {
             if ink.x + ink.y + ink.z < 1.5 { crate::shell::rgb(240, 243, 248) } else { crate::shell::rgb(35, 39, 48) }
         }, |style| style.face);
@@ -213,7 +424,7 @@ impl CardChat {
         self.view.redraw(cx);
     }
 
-    pub fn has_unsent_input(&self, cx: &Cx) -> bool { !self.view.text_input(cx, ids!(input)).text().trim().is_empty() }
+    pub fn has_unsent_input(&self, cx: &Cx) -> bool { !self.input(cx).text().trim().is_empty() }
     pub fn take_reply_request(&mut self) -> bool { std::mem::take(&mut self.reply_requested) }
     /// Rebind transcript/status while retaining the person's unsubmitted text.
     pub fn refresh(&mut self) { self.generation = None; }
@@ -224,7 +435,8 @@ impl CardChat {
         self.pending = None;
         self.answering = false;
         self.available = false;
-        self.view.text_input(cx, ids!(input)).set_text(cx, "");
+        self.fix = None;
+        self.input(cx).set_text(cx, "");
     }
 
     pub fn sync(&mut self, cx: &mut Cx, session: &mut crate::glance_card::L0Session) {
@@ -234,6 +446,10 @@ impl CardChat {
         let generation = (crate::glance_chat::generation(), crate::mail_card::generation(), access.0, access.1, consent);
         if self.generation.as_ref() == Some(&generation) { return; }
         self.generation = Some(generation);
+        if self.mac_on {
+            self.sync_mac(cx, session, consent);
+            return;
+        }
         self.view.widget(cx, ids!(enable)).set_visible(cx, session.account_valid()
             && consent == crate::agents::Access::NotAsked);
         let first = self.rows.is_empty();
@@ -266,7 +482,83 @@ impl CardChat {
         self.view.redraw(cx);
     }
 
+    /// A Mac: rows in plain words, a disabled field with its reason and its
+    /// fix when the card's assistant cannot be asked.
+    fn sync_mac(&mut self, cx: &mut Cx, session: &mut crate::glance_card::L0Session, consent: crate::agents::Access) {
+        let name = crate::approvals::sheet::app_label(&self.publisher);
+        let first = self.rows.is_empty();
+        let mut note = String::new();
+        match session.chat_snapshot() {
+            Ok(snapshot) => {
+                self.rows = message_rows(&snapshot);
+                self.answering = snapshot["status"] == "answering";
+                self.available = snapshot["status"] != "unavailable";
+            }
+            Err(_) => {
+                self.available = false;
+                self.answering = false;
+                self.rows.clear();
+            }
+        }
+        let mail = session.mail_reply();
+        // The demo Mail card answers with its canned reply and no model.
+        let model = crate::glance_chat::answers_without_model() || provider_ready();
+        let blocked = mac_blocked(&name, consent, session.account_valid(), model);
+        let usable = self.available && blocked.is_none();
+        self.fix = blocked.as_ref().and_then(|(_, fix)| fix.map(|(_, fix)| fix));
+        if let Some((why, fix)) = &blocked {
+            note = why.clone();
+            if let Some((label, _)) = fix {
+                self.view.button(cx, ids!(mac_fix)).set_text(cx, label);
+            }
+        } else if !self.available {
+            note = "This conversation isn\u{2019}t available.".into();
+        } else if self.answering {
+            note = "Thinking\u{2026}".into();
+        } else if mail.is_some_and(|d| d["body_origin"] == "model_chat") {
+            note = "Reply updated and saved.".into();
+        } else if mail.is_some() {
+            note = "Changes save to your reply.".into();
+        }
+        let reply = self.available && mail.is_some_and(|d| d["body_origin"] == "model_chat");
+        // The alert is up and asks the same thing: one question, one place to answer it.
+        let has_fix = self.fix.is_some_and(|fix| fix != Fix::Allow || !crate::approvals::consent_prompt_up());
+        self.view.widget(cx, ids!(mac_fix)).set_visible(cx, has_fix);
+        self.view.widget(cx, ids!(mac_reply)).set_visible(cx, reply && !has_fix);
+        self.view.label(cx, ids!(mac_status)).set_text(cx, &note);
+        self.view.widget(cx, ids!(mac_row)).set_visible(cx, !note.is_empty() || has_fix || reply);
+        let input = self.view.text_input(cx, ids!(mac_input));
+        let placeholder = if mail.is_some() { "Change the time, tone or wording\u{2026}".to_string() } else { "Ask about this card\u{2026}".to_string() };
+        if input.empty_text() != placeholder { input.set_empty_text(cx, placeholder); }
+        if let Some(mut field) = input.borrow_mut() {
+            field.set_is_read_only(cx, !usable);
+        }
+        let off = if usable { 0.0_f64 } else { 1.0 };
+        let mut well = self.view.widget(cx, ids!(mac_input));
+        script_apply_eval!(cx, well, {draw_bg +: {off: #(off)}});
+        if !usable && cx.has_key_focus(input.area()) {
+            cx.set_key_focus(Area::Empty);
+        }
+        if self.rows.is_empty() && self.available {
+            let (title, text) = if mail.is_some() {
+                ("Your Reply", "Ask to change the time, tone or wording. Your saved reply is in Email, where you can edit it and review it before sending.")
+            } else {
+                ("Ask About This Card", "Ask a question about this card, or ask for a change.")
+            };
+            self.rows.push(MessageRow { speaker: title.into(), text: text.into() });
+        }
+        if first { self.view.portal_list(cx, ids!(transcript)).scroll_to_end(cx); }
+        self.usable_now = usable;
+        self.update_send(cx);
+        self.view.redraw(cx);
+    }
+
     fn update_send(&self, cx: &mut Cx) {
+        if self.mac_on {
+            let disabled = !self.usable_now || self.answering || self.input(cx).text().trim().is_empty();
+            self.view.button(cx, ids!(mac_send)).set_disabled(cx, disabled);
+            return;
+        }
         let disabled = !self.available || self.answering || self.view.text_input(cx, ids!(input)).text().trim().is_empty();
         self.view.button(cx, ids!(send)).set_disabled(cx, disabled);
     }
@@ -276,9 +568,13 @@ impl CardChat {
     pub fn submitted(&mut self, cx: &mut Cx, result: Result<(), String>) {
         match result {
             Ok(()) => {
-                self.view.text_input(cx, ids!(input)).set_text(cx, "");
+                self.input(cx).set_text(cx, "");
                 self.view.portal_list(cx, ids!(transcript)).scroll_to_end(cx);
                 self.generation = None;
+            }
+            Err(error) if self.mac_on => {
+                self.view.label(cx, ids!(mac_status)).set_text(cx, &crate::system_chat::view::mac::plain_notice(&error));
+                self.view.widget(cx, ids!(mac_row)).set_visible(cx, true);
             }
             Err(error) => self.view.label(cx, ids!(status)).set_text(cx, &error),
         }
@@ -296,15 +592,30 @@ impl Widget for CardChat {
                 self.generation = None;
             }
         }
-        if self.view.button(cx, ids!(reply)).clicked(&actions) { self.reply_requested = true; }
-        let input = self.view.text_input(cx, ids!(input));
+        if self.view.button(cx, ids!(reply)).clicked(&actions) || self.view.button(cx, ids!(mac_reply)).clicked(&actions) { self.reply_requested = true; }
+        if self.view.button(cx, ids!(mac_fix)).clicked(&actions) {
+            match self.fix {
+                Some(Fix::Allow) => {
+                    if let Some(app) = crate::agents::find(&self.publisher) {
+                        crate::agents::ask(&app);
+                        self.generation = None;
+                    }
+                }
+                Some(Fix::Settings) => crate::approvals::open_settings(),
+                Some(Fix::Providers) => self.providers_requested = true,
+                None => {}
+            }
+        }
+        let input = self.input(cx);
         if input.changed(&actions).is_some() {
             // Local editing only. No host storage, model calls, or L0 parsing.
             self.update_send(cx);
         }
-        let clicked = self.view.button(cx, ids!(send)).clicked(&actions);
-        let submitted = input.returned(&actions).is_some_and(|(_, modifiers)| modifiers.logo || modifiers.control);
-        if (clicked || submitted) && self.available && !self.answering {
+        let clicked = self.view.button(cx, if self.mac_on { ids!(mac_send) } else { ids!(send) }).clicked(&actions);
+        // A Mac sends on Return (Shift+Return breaks the line).
+        let submitted = input.returned(&actions).is_some_and(|(_, modifiers)| modifiers.logo || modifiers.control || self.mac_on);
+        let can = !self.mac_on || self.usable_now;
+        if (clicked || submitted) && can && self.available && !self.answering {
             let text = input.text();
             if !text.trim().is_empty() { self.pending = Some(text); }
         }
@@ -316,10 +627,25 @@ impl Widget for CardChat {
                 list.set_item_range(cx, 0, self.rows.len());
                 while let Some(id) = list.next_visible_item(cx) {
                     let Some(row) = self.rows.get(id) else { continue };
-                    let item = list.item(cx, id, if row.speaker == "You" {id!(Person)} else {id!(Message)});
-                    item.label(cx, ids!(speaker)).set_text(cx, &row.speaker);
-                    item.label(cx, ids!(speaker)).set_visible(cx, !row.speaker.is_empty());
-                    item.label(cx, ids!(body)).set_text(cx, &row.text);
+                    // A Mac: a person's bubble and the assistant's text need
+                    // no name over them.
+                    let (template, speaker) = if self.mac_on {
+                        match row.speaker.as_str() {
+                            "You" => (id!(MacPerson), ""),
+                            "Assistant" | "Notice" => (id!(MacMessage), ""),
+                            other => (id!(MacMessage), other),
+                        }
+                    } else {
+                        (if row.speaker == "You" {id!(Person)} else {id!(Message)}, row.speaker.as_str())
+                    };
+                    let item = list.item(cx, id, template);
+                    item.label(cx, ids!(speaker)).set_text(cx, speaker);
+                    item.label(cx, ids!(speaker)).set_visible(cx, !speaker.is_empty());
+                    if self.mac_on && row.speaker == "Notice" {
+                        item.label(cx, ids!(body)).set_text(cx, &crate::system_chat::view::mac::plain_notice(&row.text));
+                    } else {
+                        item.label(cx, ids!(body)).set_text(cx, &row.text);
+                    }
                     if let Some(style) = &self.native_style {
                         if let Some(mut label) = item.label(cx, ids!(body)).borrow_mut() {
                             if label.draw_text.text_style.font_family != style.regular.font_family { label.draw_text.text_style.font_family = style.regular.font_family.clone(); }
@@ -330,11 +656,15 @@ impl Widget for CardChat {
                     }
                     if let Some(ink) = self.ink {
                         if let Some(mut label) = item.label(cx, ids!(body)).borrow_mut() { label.draw_text.color = ink; }
-                        if let Some(mut label) = item.label(cx, ids!(speaker)).borrow_mut() { label.draw_text.color = crate::shell::alpha(ink, 0.65); }
+                        let speaker_ink = if self.mac_on { ink } else { crate::shell::alpha(ink, 0.65) };
+                        if let Some(mut label) = item.label(cx, ids!(speaker)).borrow_mut() { label.draw_text.color = speaker_ink; }
                     }
                     item.draw_all(cx, scope);
                 }
             }
+        }
+        if std::mem::take(&mut self.want_focus) && self.mac_on && self.usable_now {
+            self.view.text_input(cx, ids!(mac_input)).set_key_focus(cx);
         }
         DrawStep::done()
     }
@@ -343,6 +673,19 @@ impl Widget for CardChat {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A Mac says why a card cannot be asked, in one sentence, with its fix.
+    #[test]
+    fn a_macs_blocked_chat_has_a_reason_and_a_fix() {
+        use crate::agents::Access;
+        let (why, fix) = mac_blocked("Mail", Access::NotAsked, true, true).unwrap();
+        assert_eq!(why, "Mail needs your permission to use its assistant.");
+        assert_eq!(fix, Some(("Allow\u{2026}", Fix::Allow)));
+        assert_eq!(mac_blocked("Mail", Access::Off, true, true).unwrap().1, Some(("Open Settings\u{2026}", Fix::Settings)));
+        assert_eq!(mac_blocked("Mail", Access::Allowed, true, false).unwrap().1, Some(("Open AI Providers\u{2026}", Fix::Providers)));
+        assert_eq!(mac_blocked("Mail", Access::Allowed, true, true), None);
+        assert_eq!(mac_blocked("Mail", Access::Allowed, false, true).unwrap().1, None, "signing in is not this field's to fix");
+    }
 
     #[test]
     fn selected_glance_style_keeps_native_chat_and_draft_with_readable_selection() {

@@ -3,37 +3,178 @@
 // Bundles carry this prelude so they work in the contained standalone host too.
 // Resolve the current theme after a host restyle, not a retained prelude alias.
 let theme = mod.theme
+// A desktop shell's style sheet says `ui_pointer = true`: the app gets pointer
+// metrics and the Mac layouts (13-point text, 28-point controls, a sidebar and
+// a toolbar). Anything else, a phone or a bare host, keeps the touch metrics.
+let ui_desk = try { theme.ui_pointer == true } catch { false }
+// A Mac's window has no title bar over an app that says so to the shell
+// (crates/shell/src/clients.rs, unified_chrome): the app draws to the window's top
+// edge, its toolbar is 52 points tall, and the lights sit over the leading 84 points
+// of the toolbar, or over the top of a sidebar. Other desktops keep a title bar.
+let ui_unified = ui_desk && try { theme.ui_unified == true } catch { false }
+fn ui_by(touch, desk){ if ui_desk { desk } else { touch } }
 let ui_ink = theme.color_text
 let ui_page = theme.color_bg_app
 let ui_light = dot(ui_ink, #x36b61200) < 0.5
-let ui_surface = if ui_light { #xffffff } else { mix(ui_page, ui_ink, 0.06) }
-let ui_field = mix(ui_page, ui_ink, 0.075)
-let ui_hover = mix(ui_page, ui_ink, 0.12)
-let ui_border = mix(ui_page, ui_ink, 0.22)
-let ui_muted = mix(ui_ink, ui_page, 0.24)
-let ui_link = mix(ui_ink, #x356bce, 0.25)
-let ui_primary = #x285cd6
-let ui_success = mix(ui_ink, #x28a55b, 0.20)
-let ui_danger = mix(ui_ink, #xe13b53, 0.20)
-let UiButton = ButtonFlat{height: 44 margin: 0 padding: Inset{left: 14 right: 14}
-    draw_bg +: {border_radius: 12.0 border_size: 0.0 color: #x00000000 color_hover: ui_hover color_down: ui_field color_focus: ui_hover}
-    draw_text +: {color: ui_link color_hover: ui_link color_down: ui_link color_focus: ui_link text_style: theme.font_bold{font_size: 14}}
+let ui_surface = if ui_light { #xffffff } else { mix(ui_page, ui_ink, ui_by(0.06, 0.07)) }
+let ui_field = if ui_desk && ui_light { #xffffff } else { mix(ui_page, ui_ink, ui_by(0.075, 0.07)) }
+let ui_hover = mix(ui_page, ui_ink, ui_by(0.12, 0.07))
+let ui_border = mix(ui_page, ui_ink, ui_by(0.22, 0.14))
+let ui_muted = mix(ui_ink, ui_page, ui_by(0.24, 0.26))
+// The Mac's system colours where the page is a Mac's, near white or near black;
+// a retro style's mid-gray page keeps text that is mostly ink.
+let ui_lum = dot(ui_page, #x36b61200)
+let ui_mac = ui_desk && (ui_lum > 0.86 || ui_lum < 0.25)
+let ui_link = if ui_mac { if ui_light { #x0060c0 } else { #x6cb8ff } } else { mix(ui_ink, #x356bce, 0.25) }
+let ui_primary = ui_by(#x285cd6, #x0071e3)
+let ui_success = if ui_mac { if ui_light { #x1a7030 } else { #x30d158 } } else { mix(ui_ink, #x28a55b, 0.20) }
+let ui_danger = if ui_mac { if ui_light { #xc70012 } else { #xffa097 } } else { mix(ui_ink, #xe13b53, 0.20) }
+// The Mac's surfaces: a sidebar and a toolbar a shade off the page, a selection
+// in the sidebar's own gray, a push button's face.
+let ui_sidebar = mix(ui_page, ui_ink, 0.03)
+let ui_bar = if ui_light { #xededf0 } else { #x303033 }
+let ui_selected = mix(ui_page, ui_ink, 0.11)
+let ui_button = if ui_light { #xffffff } else { mix(ui_page, ui_ink, 0.16) }
+// What a list or a document sits on: white in the light; in the dark, darker than
+// the window around it, as a Mac's content is.
+let ui_content = if ui_mac { if ui_light { #xffffff } else { #x1e1e1e } } else { ui_surface }
+// A selected row: the accent when it is the row the person is on, white text on it.
+let ui_accent_row = if ui_light { #x0064d2 } else { #x0a60c8 }
+// A Mac dims the window behind a sheet, more in the dark; the shell's own sheets
+// and the native apps' dim as much.
+let ui_sheet_dim = if ui_light { #x00000024 } else { #x00000052 }
+// A touch size in the type scale; on the desktop, the Mac's size for that role
+// (Makepad's font_size is three quarters of a point).
+fn ui_fs(n){
+    if !ui_desk { return n }
+    if n <= 12 { return 8.25 }
+    if n <= 13 { return 9 }
+    if n <= 16 { return 9.75 }
+    if n <= 18 { return 11.25 }
+    if n <= 21 { return 12.75 }
+    if n <= 24 { return 13.5 }
+    if n <= 28 { return 16.5 }
+    19.5
+}
+let ui_icons = {}
+fn ui_icon(name){
+    let handle = ui_icons[name]
+    if handle == nil {
+        handle = http_resource("{{assets}}/icons/ui-" + name + ".svg")
+        ui_icons[name] = handle
+    }
+    handle
+}
+let UiButton = ButtonFlat{height: ui_by(44, 28) margin: 0 padding: Inset{left: ui_by(14, 12) right: ui_by(14, 12)} spacing: 6
+    icon_walk: Walk{width: 15 height: 15}
+    draw_bg +: {border_radius: ui_by(12.0, 3.0) border_size: ui_by(0.0, 1.0) border_color: ui_border
+        color: ui_by(#x00000000, ui_button) color_hover: ui_by(ui_hover, mix(ui_button, ui_ink, 0.04)) color_down: ui_by(ui_field, mix(ui_button, ui_ink, 0.1)) color_focus: ui_by(ui_hover, ui_button)}
+    draw_text +: {color: ui_by(ui_link, ui_ink) color_hover: ui_by(ui_link, ui_ink) color_down: ui_by(ui_link, ui_ink) color_focus: ui_by(ui_link, ui_ink)
+        text_style: ui_by(theme.font_bold{font_size: 14}, theme.font_regular{font_size: 9.75})}
+    draw_icon +: {color: ui_ink}
 }
 let UiPrimary = UiButton{
-    draw_bg +: {color: ui_primary color_hover: #x3468df color_down: #x204cb8 color_focus: #x204cb8}
+    draw_bg +: {border_size: 0.0 color: ui_primary color_hover: ui_by(#x3468df, #x006edb) color_down: ui_by(#x204cb8, #x0060c0) color_focus: ui_by(#x204cb8, ui_primary)}
     draw_text +: {color: #xffffff color_hover: #xffffff color_down: #xffffff color_focus: #xffffff}
+    draw_icon +: {color: #xffffff}
 }
-let UiPill = UiButton{draw_bg +: {color: ui_surface border_radius: 22.0} draw_text +: {color: ui_ink color_hover: ui_ink color_down: ui_ink color_focus: ui_ink}}
-let UiField = TextInput{width: Fill height: 48 margin: 0 padding: Inset{left: 14 right: 14 top: 12 bottom: 12}
+let UiPill = UiButton{height: ui_by(44, 24) padding: Inset{left: ui_by(14, 10) right: ui_by(14, 10)}
+    draw_bg +: {color: ui_by(ui_surface, #x00000000) border_size: 0.0 border_radius: ui_by(22.0, 3.0)}
+    draw_text +: {color: ui_ink color_hover: ui_ink color_down: ui_ink color_focus: ui_ink}}
+let UiField = TextInput{width: Fill height: ui_by(48, 28) margin: 0 padding: Inset{left: ui_by(14, 8) right: ui_by(14, 8) top: ui_by(12, 6) bottom: ui_by(12, 6)}
     draw_bg +: {color: ui_field color_hover: ui_field color_focus: ui_field color_empty: ui_field
-        border_color: ui_border border_color_hover: ui_link border_color_focus: ui_link border_color_empty: ui_border border_radius: 12.0}
-    draw_text +: {color: ui_ink color_hover: ui_ink color_focus: ui_ink color_empty: ui_muted color_empty_hover: ui_muted color_empty_focus: ui_muted text_style: theme.font_regular{font_size: 15}}
+        border_color: ui_border border_color_hover: ui_by(ui_link, ui_border) border_color_focus: ui_link border_color_empty: ui_border border_radius: ui_by(12.0, 3.0)}
+    draw_text +: {color: ui_ink color_hover: ui_ink color_focus: ui_ink color_empty: ui_muted color_empty_hover: ui_muted color_empty_focus: ui_muted text_style: theme.font_regular{font_size: ui_by(15, 9.75)}}
     draw_selection.color: #x557dcc55
 }
-let UiCard = RoundedView{width: Fill height: Fit flow: Down spacing: 12 padding: 20
-    show_bg: true draw_bg +: {color: ui_surface border_radius: 16.0}}
-let UiCaption = Label{padding: 0 flow: Flow.Right{wrap: true} width: Fill draw_text +: {color: ui_muted text_style: theme.font_regular{font_size: 13 line_spacing: 1.4}}}
-let UiTitle = Label{padding: 0 flow: Flow.Right{wrap: true} width: Fill draw_text +: {color: ui_ink text_style: theme.font_bold{font_size: 28 line_spacing: 1.2}}}
+let UiCard = RoundedView{width: Fill height: Fit flow: Down spacing: ui_by(12, 8) padding: ui_by(20, 14)
+    show_bg: true draw_bg +: {color: ui_surface border_radius: ui_by(16.0, 5.0) border_size: ui_by(0.0, 1.0) border_color: ui_by(#x00000000, ui_border)}}
+let UiCaption = Label{padding: 0 flow: Flow.Right{wrap: true} width: Fill draw_text +: {color: ui_muted text_style: theme.font_regular{font_size: ui_by(13, 8.25) line_spacing: 1.4}}}
+let UiTitle = Label{padding: 0 flow: Flow.Right{wrap: true} width: Fill draw_text +: {color: ui_ink text_style: theme.font_bold{font_size: ui_by(28, 16.5) line_spacing: 1.2}}}
+// The Mac's parts. They are drawn on a desktop only; a phone keeps its pages.
+// A shader's border_radius is half the corner it draws: 3 is a 6-point corner.
+let UiSep = SolidView{width: Fill height: 1 draw_bg.color: ui_border}
+let UiVSep = SolidView{width: 1 height: Fill draw_bg.color: ui_border}
+let UiGlyph = Svg{width: 16 height: 16 animating: false draw_svg +: {color: ui_muted}}
+let UiTool = ButtonFlat{height: 28 margin: 0 padding: Inset{left: 8 right: 8} spacing: 5 icon_walk: Walk{width: 16 height: 16}
+    draw_bg +: {border_radius: 3.0 border_size: 0.0 color: #x00000000 color_hover: ui_hover color_down: ui_selected color_focus: #x00000000}
+    draw_text +: {color: ui_ink color_hover: ui_ink color_down: ui_ink color_focus: ui_ink text_style: theme.font_regular{font_size: 9.75}}
+    draw_icon +: {color: ui_ink}
+}
+let UiToolIcon = UiTool{width: 30 padding: 0 spacing: 0 text: ""}
+// A tool whose click hides it or the pane it sits on: it comes back unwashed.
+let UiPaneTool = UiToolIcon{reset_hover_on_click: true}
+// The clear button inside a search field, shown while it holds text.
+let UiSearchClear = UiPaneTool{visible: false width: 24 height: 24 icon_walk: Walk{width: 14 height: 14}
+    draw_bg +: {color_hover: #x00000000 color_down: #x00000000}
+    draw_icon +: {svg: ui_icon("search-clear") color: ui_muted}}
+let UiToolbar = SolidView{width: Fill height: if ui_unified { 52 } else { 40 } flow: Right align: Align{y: 0.5} spacing: 4 padding: Inset{left: 12 right: 10} draw_bg.color: ui_bar}
+// A toolbar that starts at the window's leading edge, with no sidebar beside it.
+let UiWindowToolbar = UiToolbar{padding: Inset{left: if ui_unified { 84 } else { 12 } right: 10}}
+let UiBarTitle = Label{clip_y: false padding: 0 text: "" max_lines: 1 draw_text +: {color: ui_ink text_style: theme.font_bold{font_size: 11.25}}}
+let UiBarSub = Label{clip_y: false padding: 0 text: "" max_lines: 1 draw_text +: {color: ui_muted text_style: theme.font_regular{font_size: 8.25}}}
+let UiSidebar = SolidView{width: 208 height: Fill flow: Down padding: Inset{left: 8 right: 8 top: if ui_unified { 52 } else { 8 } bottom: 8} spacing: 1 draw_bg.color: ui_sidebar}
+let UiSideHead = Label{padding: Inset{left: 8 top: 12 bottom: 4} text: "" draw_text +: {color: ui_muted text_style: theme.font_bold{font_size: 8.25}}}
+let UiSideRow = ButtonFlat{width: Fill height: 28 margin: 0 padding: Inset{left: 8 right: 8} spacing: 7 align: Align{x: 0.0 y: 0.5}
+    icon_walk: Walk{width: 16 height: 16} label_walk: Walk{width: Fill height: Fit}
+    draw_bg +: {border_radius: 3.0 border_size: 0.0 color: #x00000000 color_hover: #x00000000 color_down: ui_selected color_focus: #x00000000}
+    draw_text +: {color: ui_ink color_hover: ui_ink color_down: ui_ink color_focus: ui_ink text_style: theme.font_regular{font_size: 9.75}}
+    draw_icon +: {color: ui_link}
+}
+let UiSideRowOn = UiSideRow{draw_bg +: {color: ui_selected color_hover: ui_selected color_focus: ui_selected}}
+let UiSeg = ButtonFlat{height: 24 margin: 0 padding: Inset{left: 12 right: 12}
+    draw_bg +: {border_radius: 2.5 border_size: 0.0 color: #x00000000 color_hover: ui_hover color_down: ui_selected color_focus: #x00000000}
+    draw_text +: {color: ui_ink color_hover: ui_ink color_down: ui_ink color_focus: ui_ink text_style: theme.font_regular{font_size: 9.75}}
+}
+let UiSegOn = UiSeg{draw_bg +: {color: ui_button color_hover: ui_button color_focus: ui_button border_size: 1.0 border_color: ui_border}}
+let UiSegments = RoundedView{width: Fit height: 28 flow: Right align: Align{y: 0.5} spacing: 2 padding: 2 show_bg: true draw_bg +: {color: ui_selected border_radius: 3.5}}
+let UiSearch = UiField{padding: Inset{left: 26 right: 8 top: 6 bottom: 6}}
+let UiGroup = RoundedView{width: Fill height: Fit flow: Down show_bg: true draw_bg +: {color: ui_surface border_radius: 5.0 border_size: 1.0 border_color: ui_border}}
+let UiFormRow = View{width: Fill height: Fit flow: Right align: Align{y: 0.5} spacing: 12 padding: Inset{left: 14 right: 14 top: 8 bottom: 8}}
+let UiFormLabel = Label{clip_y: false padding: 0 width: Fill text: "" draw_text +: {color: ui_ink text_style: theme.font_regular{font_size: 9.75}}}
+let UiListRow = View{width: Fill height: Fit flow: Right align: Align{y: 0.5} spacing: 10 padding: Inset{left: 14 right: 14 top: 8 bottom: 8}}
+// A two-line row of a list: a line in the body size, a line under it in the small.
+let UiRowTitle = Label{clip_y: false padding: 0 width: Fill text: "" max_lines: 1 text_overflow: Ellipsis draw_text +: {color: ui_ink text_style: theme.font_regular{font_size: 9.75}}}
+let UiRowNote = Label{clip_y: false padding: 0 width: Fill text: "" max_lines: 1 text_overflow: Ellipsis draw_text +: {color: ui_muted text_style: theme.font_regular{font_size: 8.25}}}
+// A form: the label right-aligned in a 110-point column to the left of its control.
+let UiFormKey = Label{clip_y: false padding: 0 width: 110 text: "" align: Align{x: 1.0} draw_text +: {color: ui_ink text_style: theme.font_regular{font_size: 9.75}}}
+let UiFormLine = View{width: Fill height: Fit flow: Right align: Align{y: 0.5} spacing: 8}
+// A pop-up button: the choice, and the up-down mark at its trailing edge (an
+// Overlay of this over UiPopupMark).
+let UiPopup = UiButton{padding: Inset{left: 10 right: 28} align: Align{x: 0.0 y: 0.5}}
+let UiPopupMark = View{width: Fit height: Fit padding: Inset{right: 8} new_batch: true
+    Svg{width: 13 height: 13 animating: false draw_svg +: {svg: ui_icon("updown") color: ui_muted}}}
+// A small count or state beside a name.
+let UiBadge = RoundedView{width: Fit height: Fit padding: Inset{left: 6 right: 6 top: 2 bottom: 2} new_batch: true show_bg: true draw_bg +: {color: mix(ui_surface, ui_ink, 0.1) border_radius: 2.5}}
+let UiBadgeText = Label{clip_y: false padding: 0 text: "" draw_text +: {color: ui_ink text_style: theme.font_bold{font_size: 8.25}}}
+// A status bar along a window's bottom: small text on the bar's colour.
+let UiFootBar = SolidView{width: Fill height: 24 flow: Right align: Align{y: 0.5} spacing: 8 padding: Inset{left: 12 right: 12} draw_bg.color: ui_bar}
+// An empty list or an empty window: a glyph, a title, a line, and, under them, what
+// to do about it. Centred in what the empty state fills.
+let UiEmpty = View{width: Fill height: Fill flow: Down align: Align{x: 0.5 y: 0.5} spacing: 6 padding: 24
+    glyph := Svg{width: 36 height: 36 margin: Inset{bottom: 4} animating: false draw_svg +: {color: ui_muted}}
+    title := Label{clip_y: false padding: 0 text: "" draw_text +: {color: ui_ink text_style: theme.font_bold{font_size: 11.25}}}
+    note := Label{clip_y: false padding: 0 text: "" draw_text +: {color: ui_muted text_style: theme.font_regular{font_size: 9.75}}}
+}
+// A Mac's alert carries its app's icon, as the native apps' alerts do: 64 points
+// on top in the alert below. The shell draws it in its style's frame (`ReviewAppIcon`,
+// crates/shell/src/connected_review.rs; `app` is the bundle's id, "os.writer"); a host
+// without the shell has none, and the alert keeps its words alone.
+let UiAlertIcon = try { mod.widgets.ReviewAppIcon } catch { nil }
+let ui_alert_icon = ui_mac && UiAlertIcon != nil
+// A Mac's alert as macOS has drawn it since 11 (Files' Empty Trash): 260 points
+// wide, the app's 64-point icon on top, the title and its words centred under it,
+// then the buttons. Two sit side by side, each as wide as the other, the default
+// on the right (UiAlertRow, each button `width: Fill`); three or more stand one
+// over another, the default on top (UiAlertStack). A host with no app icon shows
+// the words alone. Off a Mac an app keeps its own sheet.
+let UiAlertPanel = RoundedShadowView{width: 260 height: Fit flow: Down align: Align{x: 0.5} padding: Inset{left: 16 right: 16 top: 20 bottom: 16} new_batch: true cursor: MouseCursor.Default
+    draw_bg +: {color: ui_surface border_size: 1.0 border_color: ui_border border_radius: 10.0 shadow_color: #x00000040 shadow_radius: 18.0 shadow_offset: vec2(0.0, 4.0)}}
+// A Label's margin counts twice: 10 and 6 points between icon, title and words.
+let UiAlertTitle = Label{clip_y: false width: Fill padding: 0 margin: Inset{top: 5} align: Align{x: 0.5} flow: Flow.Right{wrap: true} text: "" draw_text +: {color: ui_ink text_style: theme.font_bold{font_size: 9.75 line_spacing: 1.3}}}
+let UiAlertNote = Label{clip_y: false width: Fill padding: 0 margin: Inset{top: 3} align: Align{x: 0.5} flow: Flow.Right{wrap: true} text: "" draw_text +: {color: ui_ink text_style: theme.font_regular{font_size: 8.25 line_spacing: 1.3}}}
+let UiAlertRow = View{width: Fill height: Fit flow: Right spacing: 8 margin: Inset{top: 16}}
+let UiAlertStack = View{width: Fill height: Fit flow: Down spacing: 8 margin: Inset{top: 16}}
 // END shared app interface
 // Writer: write in a calm editor, keep your documents, save them as Word
 // (DOCX) files, preview the saved document and export a copy, through the
@@ -48,9 +189,16 @@ let UiTitle = Label{padding: 0 flow: Flow.Right{wrap: true} width: Fill draw_tex
 //   documents/<n>.docx  the saved document (word.convert)
 //   exports/<n>.<ext>   copies in other formats (word.convert)
 //
-// Formatting is plain text: a line starting with # is a heading (## and ###
+// A draft is plain text: a line starting with # is a heading (## and ###
 // for smaller ones), - a bullet, 1. a numbered item, > a quote; **bold** and
 // *italic* work inside a line. Every line is a paragraph.
+//
+// Two trees, as in Mail and Calendar: TouchRoot keeps the pages, where that text is
+// what you type. DeskRoot is the Mac's word processor: a sidebar with the library and
+// the open document's outline, beside a white sheet on a gray canvas under a toolbar
+// and a format bar, with Export as a sheet. Its page is the host's DocumentEditor,
+// which shows the same text as it will print and formats the selection. The script
+// is shared; what only the desktop needs is guarded with ui_desk.
 
 // ---- text rules -------------------------------------------------------------
 // Pure functions: no storage, widgets or clock. They decide what the list
@@ -91,8 +239,10 @@ fn leaf(path){ return path.replace(regex("^.*/"), "") }
 // numbering in the document, not a word. (Each line is matched after a
 // newline: in a global match, the runtime dropped the match `^` made at the
 // start of the text once more matches followed.)
+// Chinese and Japanese leave no spaces between words, so each character counts
+// as one, as a Mac's word count has it.
 fn count_words(text){
-    return text.match_str(regex("\\S*\\w\\S*", "g")).len() - ("\n" + text).match_str(regex("\\n[ \\t]*\\d+[.)][ \\t]", "g")).len()
+    return text.replace(regex("[぀-ヿ㐀-鿿豈-﫿]", "g"), " x ").match_str(regex("\\S*\\w\\S*", "g")).len() - ("\n" + text).match_str(regex("\\n[ \\t]*\\d+[.)][ \\t]", "g")).len()
 }
 // At most `n` characters of `s` (to_chars gives the character codes, and
 // to_string turns the shortened codes back into text).
@@ -102,11 +252,13 @@ fn clip(s, n){
     while chars.len() > n { chars.pop() }
     return chars.to_string().trim() + "…"
 }
-// A line without its Markdown markers.
+// A line without its Markdown: markers and emphasis go, and a character the draft
+// escaped (`\#`, `\*`, typed as words) is that character, as it shows on the page.
 let marker_re = regex("^\\s*(?:#+\\s+|[-*+>]\\s+|\\d+[.)]\\s+)")
-let emphasis_re = regex("[*_`]+", "g")
+let emphasis_re = regex("(\\\\[!-/:-@\\[-`{-~])|[*_`]+", "g")
+let escape_re = regex("\\\\([!-/:-@\\[-`{-~])", "g")
 fn clean_line(line){
-    return line.replace(marker_re, "").replace(emphasis_re, "").trim()
+    return line.replace(marker_re, "").replace(emphasis_re, "$1").replace(escape_re, "$1").trim()
 }
 fn title_of(text){
     let m = text.match_str(regex("[^\\n]*\\S[^\\n]*"))
@@ -302,6 +454,159 @@ fn engine_message(what, error){
     return "Writer couldn't " + what + ". The engine said: " + e
 }
 
+// ---- the desktop: the styles a line can have -----------------------------------
+// The page knows the caret and the selection: it formats what is selected and says
+// what the caret is in. The draft underneath stays the plain text above.
+
+let para_styles = [
+    {id: "body" name: "Body" mark: ""}
+    {id: "h1" name: "Heading 1" mark: "# "}
+    {id: "h2" name: "Heading 2" mark: "## "}
+    {id: "h3" name: "Heading 3" mark: "### "}
+    {id: "bullet" name: "Bulleted List" mark: "- "}
+    {id: "number" name: "Numbered List" mark: "1. "}
+    {id: "quote" name: "Quote" mark: "> "}
+]
+fn style_name(id){
+    if id == "code" { return "Code" }
+    for s in para_styles { if s.id == id { return s.name } }
+    return "Body"
+}
+
+// ---- the desktop: what the preview adds to word.inspect's blocks ---------------
+// The inspected blocks say which list an item is in, not what kind it is. So the
+// marks come from the draft the document was saved from: one per list line, its
+// number or "" for a bullet. A run of items counts on from its first number, as the
+// page does, whatever the later lines say.
+let number_re = regex("^[ \\t]*\\d+[.)]")
+let nested_re = regex("^(?:  |\\t)")
+fn list_marks(text){
+    let out = []
+    let counts = [nil nil]
+    for line in text.split("\n") {
+        if line.search(item_re) == 0 {
+            let level = 0
+            if line.search(nested_re) == 0 { level = 1 }
+            let m = line.match_str(number_re)
+            if m == nil {
+                counts[level] = nil
+                out.push("")
+            } else {
+                let n = counts[level]
+                if n == nil { n = floor(m.value.replace(regex("[^0-9]", "g"), "").to_f64()) } else { n = n + 1 }
+                counts[level] = n
+                out.push("" + n + ".")
+            }
+            if level == 0 { counts[1] = nil }
+        } else {
+            counts[0] = nil
+            counts[1] = nil
+        }
+    }
+    return out
+}
+// Puts each item's mark on its block, when items and marks pair up one to one; when
+// they don't, every item stays a bullet.
+fn mark_items(blocks, marks){
+    let items = []
+    for b in blocks { if kind_of(b) == "item" { items.push(b) } }
+    if items.len() != marks.len() { return false }
+    let i = 0
+    for b in items {
+        b.mark = marks[i]
+        i = i + 1
+    }
+    return true
+}
+// A run's emphasis: 1 italic, 2 bold, 3 both.
+fn run_emphasis(r){
+    let props = field(r, "props", {})
+    let n = 0
+    if field(props, "bold", false) == true { n = n + 2 }
+    if field(props, "italic", false) == true { n = n + 1 }
+    return n
+}
+// A paragraph's emphasis when one run covers all of it (what the format bar's tools
+// write); 0 otherwise. A run's offsets are bytes of the paragraph's text.
+fn whole_emphasis(b){
+    let runs = field(b, "runs", [])
+    if runs.len() != 1 || runs[0].start != 0 || runs[0].end < b.text.len() { return 0 }
+    return run_emphasis(runs[0])
+}
+fn html_slice(bytes, from, to){
+    let part = "".to_bytes()
+    let i = from
+    while i < to {
+        part.push(bytes[i])
+        i = i + 1
+    }
+    return part.to_string().replace(regex("&", "g"), "&amp;").replace(regex("<", "g"), "&lt;").replace(regex(">", "g"), "&gt;")
+}
+// A paragraph with only some of it emphasised, as the Html widget reads it; "" for
+// any other. Slicing runs in script and a render has an instruction budget, so a
+// render spends at most `job.left` bytes on it, and any more stay plain text.
+fn partial_html(b, job){
+    let runs = field(b, "runs", [])
+    if runs.len() == 0 || whole_emphasis(b) != 0 { return "" }
+    let any = false
+    for r in runs { if run_emphasis(r) != 0 { any = true } }
+    let size = b.text.len()
+    if !any || size > job.left { return "" }
+    job.left = job.left - size
+    let bytes = b.text.to_bytes()
+    let out = ""
+    let at = 0
+    for r in runs {
+        if r.start > at { out = out + html_slice(bytes, at, r.start) }
+        let piece = html_slice(bytes, r.start, r.end)
+        let e = run_emphasis(r)
+        if e == 1 || e == 3 { piece = "<i>" + piece + "</i>" }
+        if e >= 2 { piece = "<b>" + piece + "</b>" }
+        out = out + piece
+        at = r.end
+    }
+    if at < size { out = out + html_slice(bytes, at, size) }
+    return out
+}
+
+// ---- the desktop: the library's sections --------------------------------------
+let side_library = [
+    {id: "recents" name: "Recents" icon: "clock"}
+    {id: "all" name: "All Documents" icon: "doc"}
+]
+let side_status = [
+    {id: "drafts" name: "Drafts" icon: "compose"}
+    {id: "saved" name: "Saved as Word" icon: "check"}
+]
+let recents_shown = 12
+fn section_name(id){
+    for s in side_library { if s.id == id { return s.name } }
+    for s in side_status { if s.id == id { return s.name } }
+    return "Recents"
+}
+fn docs_in(id, docs){
+    let out = []
+    for d in docs {
+        if id == "all" { out.push(d) }
+        if id == "recents" && out.len() < recents_shown { out.push(d) }
+        if id == "drafts" && d.docx == "" { out.push(d) }
+        if id == "saved" && d.docx != "" { out.push(d) }
+    }
+    return out
+}
+// The toolbar's line under a section's name.
+fn side_count(id, shown, total){
+    if id == "drafts" { return plural(shown, "draft", "drafts") }
+    if id == "saved" { return plural(shown, "document", "documents") + " saved as Word" }
+    return plural(total, "document", "documents")
+}
+// What a page in the library says about its Word file.
+fn doc_badge(d){
+    if d.docx == "" { return "" }
+    if d.saved_rev == d.rev { return "DOCX" }
+    return "Edited"
+}
+
 // ---- state ----------------------------------------------------------------
 // Everything Writer remembers is one object kept on `mod`. Switching between
 // light and dark runs this file again to restyle it: the widgets keep what
@@ -316,6 +621,10 @@ if st == nil {
         doc_is_new: false     // made with New and not stored yet
         kept_text: ""         // the open draft as last written to storage
         draft_timer: nil
+        count_timer: nil      // desktop: the status line's count, a moment after a change
+        desk_dirty: false     // desktop: the page differs from what's written
+        draft_error: false    // the latest draft and index could not both be kept
+        word_errors: []       // conversions whose Word file could not be recorded
         next_seq: 0
         busy: false
         busy_at: 0            // when the running engine action started
@@ -328,6 +637,27 @@ if st == nil {
         shown: []             // the blocks the preview draws
         shown_limit: 240      // how many of them it draws now ("Show more")
         pending_delete: false
+        side: "recents"       // desktop: the library's section
+        side_open: true       // desktop: the sidebar, in a window wide enough for it
+        side_narrow: false    // desktop: the sidebar, in a narrow window
+        under: "docs"         // desktop: the pane the Export sheet covers
+        export_format: "pdf"  // desktop: the format the Export sheet has chosen
+        doc_empty: true       // desktop: the open draft has no text yet
+        caret_line: 0         // desktop: the line the caret is on
+        edit_outline: []      // desktop: the open draft's headings, [{level text line}]
+        edit_headings: ""     // desktop: the same, as the page last said them
+        mark: 0               // desktop: the outline entry Preview has scrolled to
+        day: 0                // desktop: the day the library's dates were drawn
+        width: 0              // desktop: the window's width, once the shell has said
+        retry: ""             // desktop: what the notice's Try Again was trying to do
+        resize_n: 0           // desktop: the last resize, for the redraw that follows it
+        find_open: false      // desktop: the find bar shows under the format bar
+        find_words: ""        // desktop: what the find bar looks for
+        find_replacing: false // desktop: the find bar shows its Replace row (Find and Replace…)
+        replace_words: ""     // desktop: what Replace puts in place of a match
+        chosen: false         // desktop: the page has a selection (Edit's Delete and Transformations)
+        fmt: {style: "body" bold: false italic: false}
+        fmt_mixed: false      // desktop: a Mac's selection runs over lines of more than one style
         formats: [
             {id: "pdf" name: "PDF" note: "For sharing and printing" state: "" text: ""}
             {id: "md" name: "Markdown" note: "Plain text that keeps headings and lists" state: "" text: ""}
@@ -362,23 +692,45 @@ fn boot(){
         if v != nil { st.docs = field(v, "docs", []) }
     }
     render_docs()
+    if ui_desk {
+        st.day = local_time(time_now()).day
+        desk_side_sync()
+    }
     st.booted = true
 }
 // After a restyle (see "state" above): the same screen, its lists drawn again
 // with the new look.
 fn resume(){
+    let asked = st.pending_delete
     pane(st.screen)
+    if ui_desk && asked { show_delete(true) }
     render_docs()
     if st.doc != nil && !is_busy() { refresh_editor(ui.editor_text.text()) }
-    ui.outline_rows.render()
+    if !ui_desk { ui.outline_rows.render() }
     ui.preview_body.render()
     ui.export_rows.render()
+    if ui_desk {
+        sync_draft_notice()
+        desk_side_sync()
+        ui.format_bar.render()
+        // Restore the page's caret when no other editor control is open. The
+        // find bar may already have taken focus while the new look was applied.
+        if st.screen == "editor" && !st.pending_delete && st.find_open != true { ui.editor_text.focus() }
+    }
 }
 start_timeout(0.05, || boot())
 // Relative times ("5 min ago") on the visible screen stay true.
 start_interval(30.0, || refresh_times())
 fn refresh_times(){
     if is_busy() { return }
+    if ui_desk {
+        // A Mac's dates only change at midnight, and the page's words are the page's.
+        let day = local_time(time_now()).day
+        if st.screen == "docs" && day != st.day { render_rows() }
+        st.day = day
+        if st.screen == "editor" && st.doc != nil { refresh_editor(ui.editor_text.text()) }
+        return
+    }
     if st.screen == "docs" { ui.doc_rows.render() }
     if st.screen == "editor" && st.doc != nil { show_status(st.doc.words) }
 }
@@ -387,7 +739,7 @@ start_timeout(1.5, || { if !st.booted { boot() } })
 
 // ---- engine -------------------------------------------------------------
 
-// Every word.* call goes through here. The answer always arrives on a later
+// Every word.* call, and the Mac's files.export, goes through here. The answer always arrives on a later
 // turn: a refused request calls back at once, inside host.request, and work
 // done in that nested call is fragile.
 fn engine(method, args, done){
@@ -398,25 +750,97 @@ fn engine(method, args, done){
 
 fn pane(name){
     st.screen = name
-    ui.docs.set_visible(name == "docs")
-    ui.editor.set_visible(name == "editor")
-    ui.preview.set_visible(name == "preview")
+    let base = name
+    if ui_desk {
+        // Export is a sheet over the pane it was opened from.
+        if name == "export" { base = st.under } else { st.under = name }
+        // Delete's question is about the moment it was asked.
+        if st.pending_delete { show_delete(false) }
+        ui.edit_segs.render()
+        ui.preview_segs.render()
+        desk_sheet_sync()
+    }
+    if ui_desk && base != "editor" && st.find_open == true {
+        st.find_open = false
+        ui.find_bar.set_visible(false)
+    }
+    ui.docs.set_visible(base == "docs")
+    ui.editor.set_visible(base == "editor")
+    ui.preview.set_visible(base == "preview")
     ui.export.set_visible(name == "export")
+    if ui_desk {
+        desk_sync_tools()
+        ui.side_rows.render()
+        desk_side_follow()
+        sync_word_errors()
+    }
 }
 fn notice(where, text){
+    if ui_desk && where == "editor" { ui.editor_retry.set_visible(false) }
     if where == "editor" { ui.editor_notice_text.set_text(text) ui.editor_notice.set_visible(text != "") }
     if where == "preview" { ui.preview_notice_text.set_text(text) ui.preview_notice.set_visible(text != "") }
 }
 fn render_docs(){
+    if ui_desk { render_library() return }
     ui.doc_count.set_text(plural(st.docs.len(), "document", "documents") + " on this device")
     ui.doc_count.set_visible(st.docs.len() > 0)
     ui.new_top.set_visible(st.docs.len() > 0)
     ui.doc_rows.render()
 }
 
+// The desktop's library: the sidebar, the toolbar's title, the pages or an empty
+// state in place of them.
+fn render_library(){
+    let shown = docs_in(st.side, st.docs).len()
+    ui.library_title.set_text(section_name(st.side))
+    ui.doc_count.set_text(side_count(st.side, shown, st.docs.len()))
+    ui.doc_count.set_visible(shown > 0)
+    // New Document stays in the toolbar, as Pages keeps it in one place; with nothing
+    // written yet, or no draft, the empty pane offers it in its middle too: a new
+    // document is a draft until it is saved.
+    if ui_unified { ui.mac_new.set_visible(true) } else { ui.new_top.set_visible(true) }
+    ui.empty_new.set_visible(st.docs.len() == 0 || st.side == "drafts")
+    // The saved list can be empty while drafts exist. Take the person directly
+    // to those documents, including when the sidebar is hidden.
+    ui.empty_all.set_visible(st.docs.len() > 0 && st.side == "saved")
+    ui.side_rows.render()
+    ui.box_recents.set_visible(st.side == "recents" && shown > 0)
+    ui.box_all.set_visible(st.side == "all" && shown > 0)
+    ui.box_drafts.set_visible(st.side == "drafts" && shown > 0)
+    ui.box_saved.set_visible(st.side == "saved" && shown > 0)
+    ui.docs_empty.set_visible(shown == 0)
+    if shown == 0 {
+        if st.docs.len() == 0 {
+            ui.title.set_text("No Documents Yet")
+            ui.note.set_text("Write here, then save it as a Word document or export a PDF. Everything stays on this device.")
+        } else if st.side == "drafts" {
+            ui.title.set_text("No Drafts")
+            ui.note.set_text("A new document stays here until you save it as Word.")
+        } else {
+            ui.title.set_text("Nothing Saved as Word Yet")
+            ui.note.set_text("Open a document and click Save, and it appears here.")
+        }
+    }
+    render_rows()
+}
+// Each section has its own scroller, so it keeps its own place.
+fn render_rows(){
+    if st.side == "recents" { ui.rows_recents.render() }
+    if st.side == "all" { ui.rows_all.render() }
+    if st.side == "drafts" { ui.rows_drafts.render() }
+    if st.side == "saved" { ui.rows_saved.render() }
+}
+fn show_side(id){
+    st.side = id
+    render_library()
+}
+
 // ---- documents ------------------------------------------------------------
 
 fn new_doc(){
+    // File > New is also available while editing. Do not replace the page
+    // until its pending text has actually been kept.
+    if st.doc != nil && !flush_now() { return }
     st.next_seq = st.next_seq + 1
     st.doc = {id: "d" + floor(time_now()) + "-" + st.next_seq title: "" snippet: "" created: time_now() updated: time_now() words: 0 rev: 0 saved_rev: -1 saved_at: 0 docx: "" exports: []}
     st.doc_is_new = true
@@ -433,23 +857,42 @@ fn open_doc(d){
     show_editor()
 }
 fn show_editor(){
-    st.pending_delete = false
-    ui.delete_button.set_text("Delete")
+    show_delete(false)
     notice("editor", "")
+    st.desk_dirty = false
     refresh_editor(ui.editor_text.text())
+    if ui_desk {
+        st.caret_line = 0
+        st.edit_headings = ""
+        desk_outline_sync()
+        ui.format_bar.render()
+    }
     pane("editor")
+    // A document opens with the caret at its start, ready to type.
+    if ui_desk { ui.editor_text.focus() }
+}
+// Delete asks for a second press; on the desktop the question is a sheet.
+fn show_delete(armed){
+    st.pending_delete = armed
+    if ui_desk {
+        if armed && st.doc != nil { ui.delete_title.set_text("Delete “" + shown_title(st.doc) + "”?") }
+        ui.delete_sheet.set_visible(armed)
+        desk_sheet_sync()
+        return
+    }
+    if armed { ui.delete_button.set_text("Tap again to delete") } else { ui.delete_button.set_text("Delete") }
 }
 fn back_to_docs(){
-    flush_now()
+    if !flush_now() { return false }
     st.doc = nil
     pane("docs")
     render_docs()
+    return true
 }
 fn delete_doc(){
     if st.doc == nil || is_busy() { return }
     if !st.pending_delete {
-        st.pending_delete = true
-        ui.delete_button.set_text("Tap again to delete")
+        show_delete(true)
         return
     }
     let d = st.doc
@@ -462,6 +905,7 @@ fn delete_doc(){
         for x in st.docs { if x.id != d.id { kept.push(x) } }
         st.docs = kept
         store_index()
+        clear_word_error(d.id)
     }
     st.doc = nil
     pane("docs")
@@ -477,21 +921,46 @@ fn save_state(){
     return "Draft kept"
 }
 fn show_status(words){
+    if ui_desk {
+        ui.editor_status.set_text(plural(words, "word", "words") + desk_state_part())
+        desk_title_sync()
+        return
+    }
     ui.editor_status.set_text(plural(words, "word", "words") + " · " + save_state())
 }
 fn refresh_editor(text){
+    if ui_desk { st.doc_empty = text.trim() == "" }
     show_status(count_words(text))
-    ui.tip.set_visible(text == "")
+    if ui_desk { desk_sync_tools() } else { ui.tip.set_visible(text == "") }
 }
 fn draft_changed(text){
-    ui.tip.set_visible(text == "")
-    if st.pending_delete { st.pending_delete = false ui.delete_button.set_text("Delete") }
+    if ui_desk {
+        st.doc_empty = text.trim() == ""
+        desk_sync_tools()
+        // The count and "Edited" follow the page, as a word processor's do; only the writing waits.
+        st.desk_dirty = text != st.kept_text
+        if st.count_timer != nil { stop_timer(st.count_timer) }
+        st.count_timer = start_timeout(0.12, || desk_count_now())
+    } else {
+        ui.tip.set_visible(text == "")
+    }
+    if st.pending_delete { show_delete(false) }
     if st.draft_timer != nil { stop_timer(st.draft_timer) }
     st.draft_timer = start_timeout(0.6, || flush())
 }
+fn desk_count_now(){
+    st.count_timer = nil
+    if st.doc == nil { return }
+    if !is_busy() { show_status(count_words(ui.editor_text.text())) }
+    // The outline follows the page as the count does: every change, kept or not yet.
+    desk_outline_sync()
+}
 fn flush_now(){
     if st.draft_timer != nil { stop_timer(st.draft_timer) st.draft_timer = nil }
-    flush()
+    return flush()
+}
+fn sync_draft_notice(){
+    if ui_desk { ui.draft_notice.set_visible(field(st, "draft_error", false) == true) }
 }
 // Write the draft and its index entry when the text changed. The runtime can
 // cut a turn short (its per-turn time budget), so the entry is worked out
@@ -499,28 +968,161 @@ fn flush_now(){
 // next flush retries whatever did not finish.
 fn flush(){
     st.draft_timer = nil
-    if st.doc == nil { return }
+    if st.doc == nil { return true }
     let text = ui.editor_text.text()
-    if text == st.kept_text || (st.doc_is_new && text.trim() == "") {
+    let had_draft_error = field(st, "draft_error", false) == true
+    // If the index write failed after the draft write, even a later reversion
+    // to kept_text must be written again before it can be considered kept.
+    if !had_draft_error && (text == st.kept_text || (st.doc_is_new && text.trim() == "")) {
+        st.desk_dirty = false
         refresh_editor(text)
-        return
+        return true
     }
     let title = title_of(text)
     let snippet = snippet_of(text)
     let words = count_words(text)
-    if !fs.exists("drafts") { fs.mkdir("drafts") }
-    fs.write(draft_path(st.doc), text)
-    st.doc.title = title
-    st.doc.snippet = snippet
-    st.doc.words = words
-    st.doc.updated = time_now()
-    st.doc.rev = st.doc.rev + 1
+    // Stage metadata before writing. Keep the live object itself (which an
+    // in-flight Word conversion may hold) unchanged until both writes succeed.
+    let updated = st.doc.to_json().parse_json()
+    updated.title = title
+    updated.snippet = snippet
+    updated.words = words
+    updated.updated = time_now()
+    updated.rev = updated.rev + 1
+    let next_docs = front(updated, st.docs)
+    let kept = try {
+        if !fs.exists("drafts") { fs.mkdir("drafts") }
+        fs.write(draft_path(updated), text)
+        fs.write("index.json", {schema: 1 docs: next_docs}.to_json())
+        true
+    } catch { false }
+    if !kept {
+        st.desk_dirty = true
+        st.draft_error = true
+        if ui_desk { sync_draft_notice() }
+        else { notice("editor", "Writer couldn't keep your latest changes. Keep this document open and try editing again when storage is available.") }
+        refresh_editor(text)
+        return false
+    }
+    st.doc.title = updated.title
+    st.doc.snippet = updated.snippet
+    st.doc.words = updated.words
+    st.doc.updated = updated.updated
+    st.doc.rev = updated.rev
     st.docs = front(st.doc, st.docs)
-    store_index()
     st.doc_is_new = false
     st.kept_text = text
+    st.draft_error = false
+    st.desk_dirty = false
+    sync_draft_notice()
+    if !ui_desk && had_draft_error { notice("editor", "") }
     show_status(words)
-    ui.tip.set_visible(false)
+    if ui_desk { desk_outline_sync() } else { ui.tip.set_visible(false) }
+    return true
+}
+
+// ---- format bar (desktop) ---------------------------------------------------
+// What the page says the caret or the selection is in, and what the bar does to it.
+fn desk_format_changed(style, bold, italic, line, chosen){
+    st.chosen = chosen
+    let mixed = ui_unified && chosen && desk_mixed(style, line)
+    let f = st.fmt
+    if style != f.style || bold != f.bold || italic != f.italic || mixed != st.fmt_mixed {
+        st.fmt = {style: style bold: bold italic: italic}
+        st.fmt_mixed = mixed
+        ui.format_bar.render()
+    }
+    let rows = desk_outline()
+    let before = desk_current(rows)
+    st.caret_line = line
+    if desk_current(rows) != before {
+        ui.side_rows.render()
+        desk_side_follow()
+    }
+}
+// A list or quote tool: pressed again, the lines go back to body text.
+fn flip_style(id){
+    if st.fmt.style == id { ui.editor_text.set_style("body") } else { ui.editor_text.set_style(id) }
+}
+fn flip_emphasis(weight){
+    if weight == 2 { ui.editor_text.bold() } else { ui.editor_text.italic() }
+}
+// The style pop-up: a Mac's, over its button, the current style ticked.
+fn open_styles(){
+    let names = []
+    for s in para_styles { names.push(s.name) }
+    ui.style_pick.open_menu(names, desk_style_shown(""))
+}
+// The style the pop-up and the page's menu show: none of them for a selection that runs
+// over lines of more than one style (a Mac's, round 9 C7), as Pages' says "Multiple".
+fn desk_style_shown(mixed){
+    if st.fmt_mixed { return mixed }
+    style_name(st.fmt.style)
+}
+// What kind of line the page reads a draft's line as (markdown-editor's draft.rs: a
+// fence's lines and a table's rows are code, a rule is body text), by its index; the
+// page's blocks are the draft's lines, one for one. (Named line_*: the snippets have a rule_re.)
+let line_fence_re = regex("^[ \\t]*(```|~~~)")
+let line_rule_re = regex("^[ \\t]*(?:(?:-[ \\t]*){3,}|(?:\\*[ \\t]*){3,}|(?:_[ \\t]*){3,})$")
+let line_hashes_re = regex("^[ \\t]*(#{1,6})(?:[ \\t]|$)")
+let line_bullet_re = regex("^[ \\t]*[-*+](?:[ \\t]|$)")
+let line_numbered_re = regex("^[ \\t]*[0-9]{1,9}[.)](?:[ \\t]|$)")
+let line_quote_re = regex("^[ \\t]*>")
+let line_table_re = regex("^[ \\t]*[|]")
+fn draft_style(lines, k){
+    let fenced = false
+    let i = 0
+    while i < k {
+        if lines[i].search(line_fence_re) == 0 { fenced = !fenced }
+        i = i + 1
+    }
+    let line = lines[k]
+    if fenced || line.search(line_fence_re) == 0 || line.search(line_table_re) == 0 { return "code" }
+    if line.search(line_rule_re) == 0 { return "body" }
+    let m = line_hashes_re.exec(line)
+    if m != nil {
+        let n = m.captures[1].len()
+        if n == 1 { return "h1" }
+        if n == 2 { return "h2" }
+        return "h3"
+    }
+    if line.search(line_bullet_re) == 0 { return "bullet" }
+    if line.search(line_numbered_re) == 0 { return "number" }
+    if line.search(line_quote_re) == 0 { return "quote" }
+    "body"
+}
+// A selection is of more than one style when the line its caret is on is of another style
+// than the line it starts on, which is the one the page names. (A selection made upwards
+// has its caret on its first line: the page says nothing of the line it ends on, so that
+// one shows its first line's style.)
+fn desk_mixed(style, line){
+    let lines = ui.editor_text.text().split("\n")
+    if line < 0 || line >= lines.len() { return false }
+    draft_style(lines, line) != style
+}
+// A Mac's page menu: the clipboard's commands and the format bar's, the style the caret is
+// in ticked, as TextEdit's and Pages' menus tick it. A right click asks for it, and once
+// the page has said what it selected (the word under the pointer), the menu opens there.
+let PAGE_MENU = ["Cut" "Copy" "Paste" "-" "Bold" "Italic" "-" "Body" "Heading 1" "Heading 2" "Heading 3" "Bulleted List" "Numbered List" "Quote"]
+fn desk_page_context(x, y){
+    if desk_sheet_up { return }
+    start_timeout(0.05, || {
+        if desk_sheet_up || st.screen != "editor" { return }
+        ui.page_menu.open_menu(PAGE_MENU, desk_style_shown(""), x, y)
+    })
+}
+fn desk_style_chosen(title){
+    for s in para_styles { if s.name == title { ui.editor_text.set_style(s.id) } }
+}
+// The page's context menu: the format bar's commands, and the clipboard's.
+fn desk_page_menu(title){
+    if desk_sheet_up { return }
+    if title == "Cut" { ui.editor_text.cut() return }
+    if title == "Copy" { ui.editor_text.copy() return }
+    if title == "Paste" { ui.editor_text.paste() return }
+    if title == "Bold" { flip_emphasis(2) return }
+    if title == "Italic" { flip_emphasis(1) return }
+    for s in para_styles { if s.name == title { ui.editor_text.set_style(s.id) return } }
 }
 
 // The draft as Markdown (see md_slice), a slice per turn, then `done(md)`.
@@ -551,14 +1153,20 @@ fn set_busy(){
 }
 fn save_then(what, next){
     if is_busy() || st.doc == nil { return }
-    flush_now()
+    if !flush_now() { return }
     if ui.editor_text.text().trim() == "" {
         notice("editor", "Write something first, then save it as a Word document.")
         return
     }
     set_busy()
     notice("editor", "")
-    ui.save_button.set_text("Saving…")
+    if ui_desk {
+        // The word says it in the status line: the toolbar doesn't move.
+        desk_sync_tools()
+        ui.editor_status.set_text(plural(count_words(st.kept_text), "word", "words") + " · Saving…")
+    } else {
+        ui.save_button.set_text("Saving…")
+    }
     let d = st.doc
     let rev = d.rev
     let source = "work/" + d.id + ".md"
@@ -566,32 +1174,137 @@ fn save_then(what, next){
     to_markdown(st.kept_text, fn(md){ convert_draft(what, next, d, rev, source, out, md) })
 }
 fn convert_draft(what, next, d, rev, source, out, md){
-    if !fs.exists("work") { fs.mkdir("work") }
-    fs.write(source, md)
+    let prepared = try {
+        if !fs.exists("work") { fs.mkdir("work") }
+        fs.write(source, md)
+        true
+    } catch { false }
+    if !prepared {
+        st.busy = false
+        if !ui_desk { ui.save_button.set_text("Save") }
+        if st.doc != nil && st.doc.id == d.id {
+            notice("editor", "Writer couldn't " + what + ". Try again.")
+            desk_offer(what)
+            refresh_editor(ui.editor_text.text())
+        }
+        return
+    }
     engine("word.convert", {path: source out: out format: "docx"}, fn(r){
         st.busy = false
-        ui.save_button.set_text("Save")
+        if !ui_desk { ui.save_button.set_text("Save") }
         remove_file(source)
         if !r.is_ok {
-            notice("editor", engine_message(what, r.error))
+            notice("editor", said_message(what, r.error))
+            desk_offer(what)
             if st.doc != nil { refresh_editor(ui.editor_text.text()) }
             return
         }
-        if d.docx != "" && d.docx != out { remove_file(d.docx) }
-        d.docx = out
-        d.saved_rev = rev
-        d.saved_at = time_now()
-        store_index()
+        // Commit the new Word file's metadata before removing an older name.
+        // Another edit may have arrived while conversion was in flight, so
+        // stage from the current document but retain the converted revision.
+        let updated = d.to_json().parse_json()
+        updated.docx = out
+        updated.saved_rev = rev
+        updated.saved_at = time_now()
+        let next_docs = []
+        let found = false
+        for item in st.docs {
+            if item.id == d.id { next_docs.push(updated) found = true }
+            else { next_docs.push(item) }
+        }
+        if !found { return }
+        let indexed = try {
+            fs.write("index.json", {schema: 1 docs: next_docs}.to_json())
+            true
+        } catch { false }
+        if !indexed {
+            report_word_error(d.id, what)
+            if st.doc != nil && st.doc.id == d.id { refresh_editor(ui.editor_text.text()) }
+            return
+        }
+        let previous = d.docx
+        d.docx = updated.docx
+        d.saved_rev = updated.saved_rev
+        d.saved_at = updated.saved_at
+        clear_word_error(d.id)
+        // An old copy that cannot be removed is safer than hiding a completed
+        // save or deleting it before the index refers to its replacement.
+        if previous != "" && previous != out { try { remove_file(previous) } catch { nil } }
         if st.doc != nil && st.doc.id == d.id { refresh_editor(ui.editor_text.text()) next() }
     })
 }
-fn save_doc(){ save_then("save Word documents", || {}) }
+fn save_doc(){
+    if ui_desk && st.doc_empty { return }
+    save_then("save Word documents", || {})
+}
+// The Mac's failure notice can go again. What it was trying is kept by name:
+// only st outlives an appearance change, the functions don't.
+fn desk_offer(what){
+    if !ui_desk { return }
+    st.retry = what
+    ui.editor_retry.set_visible(true)
+}
+fn desk_retry(){
+    notice("editor", "")
+    if st.retry == "show a preview" { open_preview() } else if st.retry == "export copies" { export_tool() } else { save_doc() }
+}
+// A conversion may finish after the person has navigated to the library or
+// another document. Keep each failed document reachable until it is saved.
+fn report_word_error(id, what){
+    let kept = []
+    for e in field(st, "word_errors", []) { if e.id != id { kept.push(e) } }
+    kept.push({id: id what: what})
+    st.word_errors = kept
+    if ui_desk { sync_word_errors() }
+    else if st.doc != nil && st.doc.id == id { notice("editor", "Writer couldn't finish saving the Word document. Try again.") }
+}
+fn clear_word_error(id){
+    let kept = []
+    for e in field(st, "word_errors", []) { if e.id != id { kept.push(e) } }
+    st.word_errors = kept
+    if ui_desk { sync_word_errors() }
+}
+fn sync_word_errors(){
+    if !ui_desk { return }
+    let pending = field(st, "word_errors", [])
+    let current = nil
+    let other = false
+    for e in pending {
+        if st.doc != nil && st.doc.id == e.id && st.screen == "editor" { current = e }
+        else { other = true }
+    }
+    ui.word_error_docs.set_visible(pending.len() > 0)
+    ui.word_error_editor.set_visible(other)
+    ui.word_error_preview.set_visible(pending.len() > 0)
+    if current != nil && !is_busy() {
+        notice("editor", "Writer couldn't finish saving the Word document. Try again.")
+        desk_offer(current.what)
+    }
+}
+fn open_next_word_error(){
+    if desk_sheet_up || is_busy() { return }
+    let selected = nil
+    for e in field(st, "word_errors", []) {
+        if selected == nil && (st.doc == nil || st.doc.id != e.id || st.screen != "editor") { selected = e }
+    }
+    if selected == nil { return }
+    let target = nil
+    for d in st.docs { if d.id == selected.id { target = d } }
+    if target == nil { clear_word_error(selected.id) return }
+    if st.doc != nil && st.doc.id == target.id {
+        back_to_editor()
+    } else {
+        if st.doc != nil && !back_to_docs() { return }
+        open_doc(target)
+    }
+    sync_word_errors()
+}
 
 // ---- preview --------------------------------------------------------------
 
 fn open_preview(){
     if is_busy() || st.doc == nil { return }
-    flush_now()
+    if !flush_now() { return }
     if ui.editor_text.text().trim() == "" {
         notice("editor", "Write something first, then preview it.")
         return
@@ -609,13 +1322,15 @@ fn open_preview(){
 fn read_preview(){
     if is_busy() || st.doc == nil { return }
     set_busy()
+    if ui_desk { desk_sync_tools() }
     ui.editor_status.set_text("Opening the preview…")
     let d = st.doc
     engine("word.info", {path: d.docx}, fn(info){
         if !info.is_ok {
             st.busy = false
             if st.doc == nil || st.doc.id != d.id { return }
-            notice("editor", engine_message("show a preview", info.error))
+            notice("editor", said_message("show a preview", info.error))
+            desk_offer("show a preview")
             refresh_editor(ui.editor_text.text())
             return
         }
@@ -626,7 +1341,8 @@ fn show_preview(d, info, r){
     st.busy = false
     if st.doc == nil || st.doc.id != d.id { return }
     if !r.is_ok {
-        notice("editor", engine_message("show a preview", r.error))
+        notice("editor", said_message("show a preview", r.error))
+        desk_offer("show a preview")
         refresh_editor(ui.editor_text.text())
         return
     }
@@ -635,14 +1351,58 @@ fn show_preview(d, info, r){
     st.section = -1
     st.shown = st.blocks
     st.shown_limit = 240
+    if ui_desk {
+        st.mark = 0
+        desk_side_follow()
+        ui.preview_name.set_text(shown_title(d))
+        // (A turn's instruction budget: a very long document's items stay bullets.)
+        if st.blocks.len() <= 800 { mark_items(st.blocks, list_marks(st.kept_text)) }
+    }
     ui.preview_info.set_text(plural(field(info, "pages", 1), "page", "pages") + "  ·  " + plural(field(info, "words", d.words), "word", "words") + "  ·  " + plural(field(info, "paragraphs", 0), "paragraph", "paragraphs") + "  ·  " + leaf(d.docx))
-    ui.outline_card.set_visible(st.outline.len() > 0)
-    ui.section_bar.set_visible(false)
+    if !ui_desk {
+        show_outline()
+        ui.section_bar.set_visible(false)
+    }
     notice("preview", "")
     refresh_editor(ui.editor_text.text())
     pane("preview")
-    ui.outline_rows.render()
+    if ui_desk {
+        ui.preview_scroll.scroll_to_top()
+    } else {
+        ui.outline_rows.render()
+    }
     ui.preview_body.render()
+}
+// The outline, when there are headings.
+fn show_outline(){
+    ui.outline_card.set_visible(st.outline.len() > 0)
+}
+// The shell calls this when the app's window changes size, on every frame of its
+// opening animation too.
+fn on_app_resize(width, height){
+    if !ui_desk || width <= 0 { return }
+    let cols = desk_cols()
+    let side = desk_side_on()
+    let moved = width != st.width
+    st.width = width
+    if st.booted {
+        if desk_side_on() != side { desk_side_sync() }
+        if st.screen == "docs" && desk_cols() != cols { render_rows() }
+        if moved { desk_after_resize() }
+    }
+}
+// A part that draws on its own stays where it was when the window moves it, until it
+// is drawn again: the toolbar's segments, the export sheet's list.
+fn desk_after_resize(){
+    st.resize_n = st.resize_n + 1
+    let n = st.resize_n
+    start_timeout(0.12, || {
+        if n != st.resize_n { return }
+        ui.edit_segs.render()
+        ui.preview_segs.render()
+        if st.screen == "export" { ui.export_rows.render() }
+        desk_title_sync()
+    })
 }
 fn show_section(k){
     st.section = k
@@ -675,6 +1435,7 @@ fn show_more(){
 fn back_to_editor(){
     pane("editor")
     refresh_editor(ui.editor_text.text())
+    if ui_desk { ui.editor_text.focus() }
 }
 
 // ---- export ---------------------------------------------------------------
@@ -685,11 +1446,23 @@ fn open_export(){
         f.state = ""
         f.text = ""
         let e = export_of(st.doc, f.id)
-        if e != nil { f.text = "Last copy " + when(e.at) + "  ·  " + size_text(e.bytes) }
+        if e != nil && ui_desk && field(e, "handed", true) { f.text = "Last exported " + desk_lower(desk_when(e.at)) + "  ·  " + size_text(e.bytes) }
+        if e != nil && !ui_desk { f.text = "Last copy " + when(e.at) + "  ·  " + size_text(e.bytes) }
     }
-    ui.export_doc.set_text(shown_title(st.doc))
+    if ui_desk { ui.export_doc.set_text("Export “" + shown_title(st.doc) + "”") } else { ui.export_doc.set_text(shown_title(st.doc)) }
     pane("export")
     ui.export_rows.render()
+}
+// The desktop's Export tool, in the editor too: the sheet copies the saved
+// document, so a draft newer than it is saved first, as Preview does.
+fn export_tool(){
+    if is_busy() || st.doc == nil { return }
+    if !flush_now() { return }
+    if st.doc.docx != "" && !fs.exists(st.doc.docx) {
+        st.doc.docx = ""
+        store_index()
+    }
+    if st.doc.docx != "" && st.doc.saved_rev == st.doc.rev { open_export() } else { save_then("export copies", || open_export()) }
 }
 fn export_as(f){
     if is_busy() || st.doc == nil || st.doc.docx == "" { return }
@@ -700,6 +1473,10 @@ fn export_as(f){
     let d = st.doc
     let out = export_path(d.docx, f.id)
     engine("word.convert", {path: d.docx out: out format: f.id}, fn(r){
+        if r.is_ok && ui_desk {
+            desk_hand_over(d, f, out, field(r.data, "bytes", 0))
+            return
+        }
         st.busy = false
         if r.is_ok {
             let bytes = field(r.data, "bytes", 0)
@@ -712,7 +1489,43 @@ fn export_as(f){
             f.text = "Saved in Writer: " + out + "  ·  " + size_text(bytes)
         } else {
             f.state = "fail"
-            f.text = engine_message("export copies", r.error)
+            f.text = said_message("export copies", r.error)
+        }
+        ui.export_rows.render()
+    })
+}
+// On a Mac the copy goes where the person says: the shell's Save panel. Writer is
+// told how it went, and the file's name; never where it went, which stays the
+// person's to know. So there is no Show in Finder here.
+fn desk_hand_over(d, f, out, bytes){
+    let name = leaf(out)
+    // The panel takes a name of at most 128 bytes.
+    if name.len() > 128 { name = "Document." + f.id }
+    engine("files.export", {path: out name: name}, fn(r){
+        st.busy = false
+        let cancelled = r.is_ok && field(r.data, "cancelled", false) == true
+        let kept = []
+        for e in d.exports { if e.format != f.id { kept.push(e) } }
+        kept.push({format: f.id out: out bytes: bytes at: time_now() handed: !cancelled})
+        d.exports = kept
+        store_index()
+        if cancelled {
+            f.state = ""
+            f.text = ""
+        } else if r.is_ok {
+            f.state = "done"
+            f.text = "Saved as “" + name + "”  ·  " + size_text(bytes)
+            // A Mac's Export sheet goes away once the Save panel has saved, as Pages' does;
+            // the next one says when this copy was made.
+            if ui_unified {
+                f.state = ""
+                f.text = ""
+                pane(st.under)
+                return
+            }
+        } else {
+            f.state = "kept"
+            f.text = "Writer couldn't open the Save panel, so the copy stays in Writer as “" + name + "”."
         }
         ui.export_rows.render()
     })
@@ -748,7 +1561,7 @@ let CellHead = Label{width: Fill text: "" draw_text +: {color: paper_ink text_st
 let OutlineRow = Label{width: Fill text: "" draw_text +: {color: ink text_style: theme.font_regular{font_size: 14}}}
 let OutlineRowOn = Label{width: Fill text: "" draw_text +: {color: ui_link text_style: theme.font_bold{font_size: 14}}}
 
-SolidView{width: Fill height: Fill flow: Overlay align: Align{x: 0.5} draw_bg.color: ui_page
+let TouchRoot = SolidView{width: Fill height: Fill flow: Overlay align: Align{x: 0.5} draw_bg.color: ui_page
     // Documents: the list of what you have written, newest first.
     docs := View{width: Fill max_width: 840 height: Fill flow: Down
         View{width: Fill height: Fit flow: Down spacing: 2 padding: Inset{left: 20 right: 16 top: 16 bottom: 8}
@@ -957,3 +1770,1037 @@ SolidView{width: Fill height: Fill flow: Overlay align: Align{x: 0.5} draw_bg.co
         }
     }
 }
+
+// ---- the Mac's word processor ------------------------------------------------
+// The document's own sizes come from the word engine's built-in styles: body 12
+// points, headings 20, 16 and 14 in its heading blue, on a Letter page 612 wide.
+// font_size is three quarters of a point. The sheet and the small pages keep
+// their paper in both appearances, as a printed page does. A label here says
+// `clip_y: false`: with no padding, its tight line box clips g, y and p.
+fn my_icon(name){
+    let key = "writer-" + name
+    let handle = ui_icons[key]
+    if handle == nil {
+        handle = http_resource("{{assets}}/icons/" + name + ".svg")
+        ui_icons[key] = handle
+    }
+    handle
+}
+let page_shadow = if ui_light { #x00000038 } else { #x00000090 }
+let doc_blue = #x0f4761
+let doc_green = #x1f7f36
+let DocH1 = Label{clip_y: false width: Fill padding: 0 margin: Inset{top: 10} text: "" draw_text +: {color: doc_blue text_style: theme.font_regular{font_size: 15 line_spacing: 1.25}}}
+let DocH2 = Label{clip_y: false width: Fill padding: 0 margin: Inset{top: 6} text: "" draw_text +: {color: doc_blue text_style: theme.font_regular{font_size: 12 line_spacing: 1.25}}}
+let DocH3 = Label{clip_y: false width: Fill padding: 0 margin: Inset{top: 4} text: "" draw_text +: {color: doc_blue text_style: theme.font_regular{font_size: 10.5 line_spacing: 1.25}}}
+let DocPara = Label{clip_y: false width: Fill padding: 0 text: "" draw_text +: {color: paper_ink text_style: theme.font_regular{font_size: 9 line_spacing: 1.3}}}
+let DocQuote = Label{clip_y: false width: Fill padding: Inset{top: 6} align: Align{x: 0.5} text: "" draw_text +: {color: #x404040 text_style: theme.font_italic{font_size: 9 line_spacing: 1.3}}}
+let DocMono = Label{clip_y: false width: Fill padding: 0 text: "" draw_text +: {color: paper_ink text_style: theme.font_code{font_size: 8.25}}}
+let DocCell = Label{clip_y: false width: Fill padding: 0 text: "" draw_text +: {color: paper_ink text_style: theme.font_regular{font_size: 8.25 line_spacing: 1.3}}}
+let DocHtml = Html{width: Fill height: Fit padding: 0 font_color: paper_ink font_size: 9 draw_text +: {color: paper_ink}
+    text_style_normal +: {font_size: 9 line_spacing: 1.3} text_style_bold +: {font_size: 9 line_spacing: 1.3}
+    text_style_italic +: {font_size: 9 line_spacing: 1.3} text_style_bold_italic +: {font_size: 9 line_spacing: 1.3}}
+fn doc_font(size, spacing, e){
+    if e == 3 { return theme.font_bold_italic{font_size: size line_spacing: spacing} }
+    if e == 2 { return theme.font_bold{font_size: size line_spacing: spacing} }
+    if e == 1 { return theme.font_italic{font_size: size line_spacing: spacing} }
+    return theme.font_regular{font_size: size line_spacing: spacing}
+}
+let DocCellHead = Label{clip_y: false width: Fill padding: 0 text: "" draw_text +: {color: paper_ink text_style: theme.font_bold{font_size: 8.25 line_spacing: 1.3}}}
+let Sheet = RectShadowView{width: Fill max_width: 612 flow: Down draw_bg +: {color: paper shadow_color: page_shadow shadow_radius: 8.0 shadow_offset: vec2(0.0, 1.0)}}
+let StatusText = Label{padding: 0 text: "" max_lines: 1 clip_y: false draw_text +: {color: muted text_style: theme.font_regular{font_size: 8.25}}}
+let BarNotice = SolidView{width: Fill height: Fit flow: Right align: Align{y: 0.5} spacing: 8 padding: Inset{left: 14 right: 10 top: 5 bottom: 5} draw_bg.color: ui_sidebar}
+let BarNoticeText = Label{clip_y: false width: Fill padding: 0 text: "" draw_text +: {color: ink text_style: theme.font_regular{font_size: 9 line_spacing: 1.3}}}
+let DeskWordError = View{width: Fill height: Fit flow: Down
+    BarNotice{
+        UiGlyph{draw_svg +: {svg: ui_icon("info") color: muted}}
+        BarNoticeText{text: "A Word document couldn't be saved. Open it to try again."}
+        UiButton{reset_hover_on_click: true text: "Open Document" padding: Inset{left: 12 right: 12} on_click: || open_next_word_error()}
+    }
+    UiSep{}
+}
+// A control its own click hides: hidden, it hears no "pointer left", and would come
+// back still washed.
+let PaneTool = UiTool{reset_hover_on_click: true}
+// A tool that can't do anything yet looks it, in the disabled tint a Mac's toolbar uses (well
+// short of the secondary grey), and takes the width it will have, so nothing moves.
+let desk_off = mix(ui_bar, ui_ink, 0.32)
+let DeskToolOff = UiTool{enabled: false visible: false draw_bg +: {color_hover: #x00000000 color_down: #x00000000}
+    draw_text +: {color: desk_off color_hover: desk_off color_down: desk_off color_focus: desk_off} draw_icon +: {color: desk_off}}
+let DeskSegOff = UiSeg{enabled: false draw_bg +: {color_hover: #x00000000 color_down: #x00000000}
+    draw_text +: {color: desk_off color_hover: desk_off color_down: desk_off color_focus: desk_off}}
+// A Mac's toolbar item, as Pages' and TextEdit's (and Quick Deck's): the icon over its name
+// in the toolbar's small type, the whole item one press. Save is the File menu's (⌘S), as
+// theirs is. Its width comes from its name (mac_item_w).
+let MacItem = UiTool{height: 44 flow: Down align: Align{x: 0.5 y: 0.5} padding: 0 spacing: 1 reset_hover_on_click: true
+    icon_walk: Walk{width: 20 height: 20 margin: Inset{top: 3 bottom: 3}}
+    draw_bg +: {color: #x00000000 color_hover: #x00000000 color_down: #x00000000 color_focus: #x00000000}
+    draw_text +: {text_style: theme.font_regular{font_size: 8.25}}}
+let MacItemOff = MacItem{enabled: false visible: false
+    draw_text +: {color: desk_off color_hover: desk_off color_down: desk_off color_focus: desk_off} draw_icon +: {color: desk_off}}
+fn mac_item_w(label){ max(44, ceil(label.len() * 6.4) + 14) }
+// The name under a toolbar control that isn't an item (the Edit and Preview segments).
+let MacItemName = Label{clip_y: false padding: 0 text: "" draw_text +: {color: ui_ink text_style: theme.font_regular{font_size: 8.25}}}
+// The sidebar's button, first in every toolbar; with no sidebar, it starts clear of the lights.
+let DeskSidebarTool = UiPaneTool{draw_icon +: {svg: ui_icon("sidebar")} on_click: || desk_toggle_side()}
+let DeskLightsGap = View{visible: false width: 72 height: 1}
+// The format bar's tools leave the caret on the page.
+let FmtTool = UiToolIcon{grab_key_focus: false}
+// A tool that's on: in dark the shared selected tone sits too close to the bar, so it takes the chosen segment's.
+let fmt_on = if ui_light { ui_selected } else { mix(ui_page, ui_ink, 0.28) }
+let FmtOn = FmtTool{draw_bg +: {color: fmt_on color_hover: fmt_on color_focus: fmt_on}}
+let ExportNote = Label{clip_y: false width: Fill padding: 0 text: "" draw_text +: {color: muted text_style: theme.font_regular{font_size: 8.25 line_spacing: 1.3}}}
+// A section's head in a sidebar. (The shared part's padding counts twice on a Label, which puts it right of the rows.)
+let SideHead = UiSideHead{padding: Inset{left: 4 top: 12 bottom: 4}}
+// The sidebar's rows fade out as they scroll up under the title bar, as a Mac's source list
+// does under its material, rather than being sliced flat. At rest it lies over the first
+// head's room above its words.
+let SideFade = SolidView{width: Fill height: 12 draw_bg +: {color: ui_sidebar
+    pixel: fn(){ return mix(vec4(self.color.rgb, 1.0), vec4(0.0, 0.0, 0.0, 0.0), self.pos.y) }
+}}
+let DeskSideNote = Label{clip_y: false width: Fill padding: Inset{left: 4 top: 2 bottom: 2} text: "" draw_text +: {color: muted text_style: theme.font_regular{font_size: 8.25 line_spacing: 1.3}}}
+// A sheet: it comes down from under the toolbar over a dimmed window.
+let desk_shadow = if ui_light { #x00000038 } else { #x00000090 }
+let desk_danger = if ui_light { ui_danger } else { #xffa29b }
+// On a chosen row the shared green and red fall just under 4.5:1 in light.
+let desk_row_ok = if ui_light { #x15642a } else { ui_success }
+let desk_row_fail = if ui_light { #xb80011 } else { desk_danger }
+// The shared chosen segment sits only ten levels above its track in dark: too faint to read.
+let desk_seg_on = if ui_light { ui_button } else { mix(ui_page, ui_ink, 0.28) }
+let DeskSegOn = UiSegOn{draw_bg +: {color: desk_seg_on color_hover: desk_seg_on color_focus: desk_seg_on}}
+// A right click on it is for nothing, and not for what's under it.
+let DeskDim = GestureView{width: Fill height: Fill on_tap: |x, y| {} on_long_press: |x, y| {}
+    SolidView{width: Fill height: Fill draw_bg.color: ui_sheet_dim}
+}
+let DeskSheetPlace = View{width: Fill height: Fill flow: Down align: Align{x: 0.5} padding: Inset{top: if ui_unified { 53 } else { 41 } left: 16 right: 16}}
+let DeskSheetPanel = RoundedShadowView{height: Fit flow: Down spacing: 10 padding: Inset{left: 20 right: 20 top: 18 bottom: 16} cursor: MouseCursor.Default
+    draw_bg +: {color: ui_surface border_size: 1.0 border_color: ui_border border_radius: 5.0 shadow_color: desk_shadow shadow_radius: 18.0 shadow_offset: vec2(0.0, 4.0)}}
+let DeskSheetTitle = Label{clip_y: false width: Fill padding: 0 flow: Flow.Right{wrap: true} text: "" draw_text +: {color: ui_ink text_style: theme.font_bold{font_size: 9.75 line_spacing: 1.3}}}
+let DeskSheetNote = Label{clip_y: false width: Fill padding: 0 flow: Flow.Right{wrap: true} text: "" draw_text +: {color: ui_muted text_style: theme.font_regular{font_size: 8.25 line_spacing: 1.3}}}
+let DeskSheetButtons = View{width: Fill height: Fit flow: Right spacing: 8 align: Align{x: 1.0 y: 0.5} margin: Inset{top: 6}}
+// A format's radio button.
+let DeskRadioOn = RoundedView{width: 14 height: 14 flow: Overlay align: Align{x: 0.5 y: 0.5} show_bg: true draw_bg +: {color: ui_primary border_radius: 3.5}
+    RoundedView{width: 6 height: 6 show_bg: true draw_bg +: {color: #xffffff border_radius: 1.5}}
+}
+let DeskRadioOff = RoundedView{width: 14 height: 14 show_bg: true draw_bg +: {color: ui_field border_size: 1.0 border_color: ui_muted border_radius: 3.5}}
+let DeskPrimaryOff = UiButton{enabled: false draw_bg +: {color_hover: ui_button color_down: ui_button color_focus: ui_button}
+    draw_text +: {color: ui_muted color_hover: ui_muted color_down: ui_muted color_focus: ui_muted}}
+// A GestureView answers a press that lands inside it whatever lies on top, so while a
+// sheet is up, and for a moment after (the press that closes it still comes up), what
+// is under it doesn't answer.
+let desk_sheet_up = false
+fn desk_sheet_sync(){
+    desk_page_sync()
+    if st.screen == "export" || st.pending_delete {
+        desk_sheet_up = true
+        return
+    }
+    start_timeout(0.15, || { if st.screen != "export" && !st.pending_delete { desk_sheet_up = false } })
+}
+// The page has the keyboard when nothing covers it.
+fn desk_page_sync(){
+    ui.editor_text.set_active(st.screen == "editor" && !st.pending_delete)
+}
+
+// The toolbar's commands, when they can do something. Save and Export wait for a
+// first word, and all of them for the save that's running.
+let desk_segs_empty = nil
+fn desk_sync_tools(){
+    let busy = is_busy()
+    let off = st.doc_empty || busy
+    if ui_unified {
+        ui.mac_export.set_visible(!off)
+        ui.mac_export_off.set_visible(off)
+    } else {
+        ui.save_button.set_visible(!off)
+        ui.save_off.set_visible(off)
+        ui.export_button.set_visible(!off)
+        ui.export_off.set_visible(off)
+    }
+    if desk_segs_empty != st.doc_empty {
+        desk_segs_empty = st.doc_empty
+        ui.edit_segs.render()
+    }
+}
+// What the status line says about the file: Saved, or Edited.
+fn desk_state_part(){
+    if st.doc == nil { return "" }
+    if st.doc.docx != "" && st.doc.saved_rev == st.doc.rev && !st.desk_dirty { return " · Saved " + desk_lower(desk_when(st.doc.saved_at)) }
+    if st.doc_empty { return "" }
+    " · Edited"
+}
+// An edited document's title says so, as TextEdit's and Pages' do: "<name> — Edited". A
+// long name gives way first and the words stay: it is cut, with an ellipsis, to the room the
+// toolbar leaves it (the tools take 316 points after it, a Mac's 216, the sidebar or the lights and the
+// sidebar button 257 or 124 before it; a bold letter is taken at 7.6 points, a little over
+// what the title's letters take).
+fn desk_title_sync(){
+    if !ui_desk || st.doc == nil { return }
+    let name = shown_title(st.doc)
+    if desk_state_part() != " · Edited" {
+        ui.doc_name.set_text(name)
+        return
+    }
+    let left = 124
+    if desk_side_on() { left = 257 }
+    let tools = 316
+    if ui_unified { tools = 216 }
+    let fits = floor((st.width - left - tools) / 7.6) - 9
+    if st.width > 0 && fits >= 8 && name.to_chars().len() > fits { name = clip(name, fits - 1) }
+    ui.doc_name.set_text(name + " — Edited")
+}
+fn desk_lower(text){
+    text.replace("Today", "today").replace("Yesterday", "yesterday")
+}
+
+// The sidebar, which a toolbar button collapses. In a narrow window it starts
+// collapsed, so the page keeps its room.
+fn desk_side_on(){
+    if st.width > 0 && st.width < 860 { return st.side_narrow }
+    st.side_open
+}
+fn desk_side_sync(){
+    let on = desk_side_on()
+    ui.side_box.set_visible(on)
+    let gap = ui_unified && !on
+    ui.lights_gap1.set_visible(gap)
+    ui.lights_gap2.set_visible(gap)
+    ui.lights_gap3.set_visible(gap)
+    // A part that draws on its own stays where it was until it is drawn again.
+    ui.edit_segs.render()
+    ui.preview_segs.render()
+    if st.screen == "docs" { render_rows() }
+    desk_title_sync()
+}
+// A Mac's menu bar asks for these while Writer is in front.
+fn app_menus(){
+    let free = !desk_sheet_up && !is_busy()
+    let doc = free && st.doc != nil
+    let text = doc && !st.doc_empty
+    let editing = doc && st.screen == "editor"
+    let found = st.find_words != nil && st.find_words != ""
+    // Delete and Transformations act on a selection, as the page last said. (The shell's rows
+    // have no submenu, so Transformations' three stand in the Edit menu itself.)
+    let chosen = editing && st.chosen
+    let side = desk_side_on()
+    [
+        {menu: "File" title: "New Document" key: "cmd+N" command: "new" enabled: free}
+        {menu: "File"}
+        {menu: "File" title: "Save" key: "cmd+S" command: "save" enabled: editing && text}
+        {menu: "File" title: "Export…" key: "shift+cmd+E" command: "export" enabled: text}
+        {menu: "File"}
+        {menu: "File" title: "Delete…" command: "delete" enabled: doc}
+        {menu: "Edit" title: "Paste and Match Style" key: "alt+shift+cmd+V" command: "paste_plain" enabled: editing}
+        {menu: "Edit" title: "Delete" command: "delete_selection" enabled: chosen}
+        {menu: "Edit"}
+        {menu: "Edit" title: "Find…" key: "cmd+F" command: "find" enabled: editing}
+        {menu: "Edit" title: "Find and Replace…" key: "alt+cmd+F" command: "find_replace" enabled: editing}
+        {menu: "Edit" title: "Find Next" key: "cmd+G" command: "find_next" enabled: editing && found}
+        {menu: "Edit" title: "Find Previous" key: "shift+cmd+G" command: "find_previous" enabled: editing && found}
+        {menu: "Edit"}
+        {menu: "Edit" title: "Make Upper Case" command: "upper" enabled: chosen}
+        {menu: "Edit" title: "Make Lower Case" command: "lower" enabled: chosen}
+        {menu: "Edit" title: "Capitalize" command: "capitalize" enabled: chosen}
+        {menu: "View" title: "Edit" key: "cmd+1" command: "edit" enabled: doc && st.screen == "preview" checked: st.screen == "editor"}
+        {menu: "View" title: "Preview" key: "cmd+2" command: "preview" enabled: editing && text checked: st.screen == "preview"}
+        {menu: "View"}
+        {menu: "View" title: if side { "Hide Sidebar" } else { "Show Sidebar" } key: "ctrl+cmd+S" command: "sidebar" enabled: free}
+        {menu: "Format" title: "Bold" key: "cmd+B" command: "key:cmd+B" enabled: editing}
+        {menu: "Format" title: "Italic" key: "cmd+I" command: "key:cmd+I" enabled: editing}
+    ]
+}
+fn on_menu_command(command){
+    if desk_sheet_up || is_busy() { return }
+    if command == "new" { new_doc() }
+    else if command == "save" { save_doc() }
+    else if command == "export" { export_tool() }
+    else if command == "delete" { delete_doc() }
+    else if command == "edit" { back_to_editor() }
+    else if command == "preview" { open_preview() }
+    else if command == "sidebar" { desk_toggle_side() }
+    else if command == "find" { find_open() }
+    else if command == "find_replace" { find_replace_open() }
+    else if command == "find_next" { find_step(1) }
+    else if command == "find_previous" { find_step(-1) }
+    else { desk_edit_command(command) }
+}
+// The Edit menu's own commands on the page.
+fn desk_edit_command(command){
+    if !ui_desk || st.doc == nil || st.screen != "editor" { return }
+    if command == "paste_plain" { ui.editor_text.paste_matching() }
+    else if command == "delete_selection" { ui.editor_text.delete_selected() }
+    else if command == "upper" || command == "lower" || command == "capitalize" { ui.editor_text.change_case(command) }
+}
+// Find, as a Mac's text apps have it: Command-F shows the bar under the format bar and
+// its field takes the words, the match is selected on the page as they are typed;
+// Return and Command-G go on, Shift-Command-G back, round the document. Escape or Done
+// put the bar away and the keyboard goes back to the page, on the match.
+fn find_show(said){
+    let r = said.parse_json()
+    let words = st.find_words
+    let found = false
+    if words == nil || words == "" { ui.find_count.set_text("") }
+    else if r.count == 0 { ui.find_count.set_text("Not Found") }
+    else { ui.find_count.set_text("" + r.index + " of " + r.count) found = true }
+    find_arrows(found)
+}
+// With nothing found the arrows have nowhere to go, and are dimmed, as a Mac's are.
+fn find_arrows(found){
+    ui.find_prev.set_visible(found)
+    ui.find_next.set_visible(found)
+    ui.find_prev_off.set_visible(!found)
+    ui.find_next_off.set_visible(!found)
+}
+fn find_open(){ find_bar_open(false) }
+// Find and Replace…: the same bar with its Replace row.
+fn find_replace_open(){ find_bar_open(true) }
+fn find_bar_open(replacing){
+    if !ui_desk || st.doc == nil || st.screen != "editor" { return }
+    st.find_open = true
+    st.find_replacing = replacing
+    ui.find_bar.set_visible(true)
+    ui.replace_row.set_visible(replacing)
+    ui.find_field.focus()
+    if st.find_words != nil && st.find_words != "" { find_show(ui.editor_text.find(st.find_words, 0)) }
+}
+fn find_can_replace(){ ui_desk && st.doc != nil && st.screen == "editor" && st.find_words != nil && st.find_words != "" }
+// Replace puts the Replace row's words in place of the match and goes on to the next, the
+// keyboard staying in the bar; Replace All puts them in place of every match, one change
+// for Undo. What they replace keeps its bold and italic.
+fn replace_one(){
+    if !find_can_replace() { return }
+    find_show(ui.editor_text.replace_found(st.find_words, st.replace_words, false))
+}
+fn replace_all(){
+    if !find_can_replace() { return }
+    let r = ui.editor_text.replace_found(st.find_words, st.replace_words, true).parse_json()
+    if r.replaced == 0 { ui.find_count.set_text("Not Found") }
+    else { ui.find_count.set_text("" + r.replaced + " replaced") }
+    // The replacement can itself contain the search words, so use the remaining
+    // match count instead of assuming Replace All always leaves no matches.
+    find_arrows(r.count > 0)
+}
+fn find_changed(text){
+    st.find_words = text
+    ui.find_clear.set_visible(text != "")
+    find_show(ui.editor_text.find(text, 0))
+}
+fn find_clear(){
+    ui.find_field.set_text("")
+    find_changed("")
+    ui.find_field.focus()
+}
+fn find_step(step){
+    if !ui_desk || st.doc == nil || st.screen != "editor" || st.find_words == nil || st.find_words == "" { return }
+    find_show(ui.editor_text.find(st.find_words, step))
+    // With the bar away, the page has the keyboard, on the match.
+    if st.find_open != true { ui.editor_text.find_done() }
+}
+fn find_close(){
+    if st.find_open != true { return }
+    st.find_open = false
+    ui.find_bar.set_visible(false)
+    ui.editor_text.find_done()
+}
+fn desk_toggle_side(){
+    if st.width > 0 && st.width < 860 { st.side_narrow = !st.side_narrow } else { st.side_open = !st.side_open }
+    desk_side_sync()
+}
+// One rule for the sidebar's selection: with a document open, the heading the page
+// has reached; with no heading to show, or no document, the library's section.
+fn desk_section(id){
+    if desk_sheet_up { return }
+    if st.doc != nil && !back_to_docs() { return }
+    st.side = id
+    render_library()
+}
+fn desk_outline_on(){ st.doc != nil && st.under != "docs" }
+fn desk_outline(){
+    if !desk_outline_on() { return [] }
+    if st.under == "preview" { return st.outline }
+    st.edit_outline
+}
+fn desk_current(rows){
+    if rows.len() == 0 { return -1 }
+    if st.under == "preview" { return min(st.mark, rows.len() - 1) }
+    let current = 0
+    let k = 0
+    while k < rows.len() {
+        if rows[k].line <= st.caret_line { current = k }
+        k = k + 1
+    }
+    current
+}
+// The outline's current row stays in sight as the document goes on under it, the
+// whole row, as a Mac's source list scrolls its selection into view: the scroller
+// takes a mark for a 36-point row and a long heading takes two lines, so the mark
+// after the row (the next row's, or the one under the last row) comes into view,
+// then the row's own, which scrolls back only if its top went above the view.
+fn desk_side_follow(){
+    let k = desk_current(desk_outline())
+    if k >= 0 {
+        ui.side_scroll.reveal_mark(k + 1)
+        ui.side_scroll.reveal_mark(k)
+    }
+}
+fn desk_outline_sync(){
+    let said = ui.editor_text.headings()
+    if said == st.edit_headings { return }
+    st.edit_headings = said
+    st.edit_outline = said.parse_json()
+    ui.side_rows.render()
+}
+fn desk_go_heading(k){
+    if desk_sheet_up { return }
+    let rows = desk_outline()
+    if k >= rows.len() { return }
+    if st.under == "preview" {
+        // A long document draws in steps: this far, at least.
+        if rows[k].index >= st.shown_limit {
+            st.shown_limit = rows[k].index + 240
+            ui.preview_body.render()
+        }
+        st.mark = k
+        ui.preview_scroll.scroll_to_mark(k)
+    } else {
+        st.caret_line = rows[k].line
+        ui.editor_text.go_to_line(rows[k].line)
+    }
+    ui.side_rows.render()
+    desk_side_follow()
+}
+// Preview's scroll came near what's drawn so far.
+fn desk_preview_more(){
+    if st.shown.len() > st.shown_limit { show_more() }
+}
+// Preview scrolled on to another heading.
+fn desk_mark(k){
+    if st.mark == k { return }
+    st.mark = k
+    ui.side_rows.render()
+    desk_side_follow()
+}
+
+// Context menus: a page in the library, the library around them, the preview.
+fn desk_card_menu(d, title){
+    if desk_sheet_up { return }
+    if title == "Open" { open_doc(d) return }
+    if title == "Export…" {
+        open_doc(d)
+        export_tool()
+        return
+    }
+    if title == "Delete…" {
+        st.doc = d
+        st.doc_is_new = false
+        show_delete(true)
+    }
+}
+fn desk_library_menu(title){
+    if desk_sheet_up { return }
+    if title == "New Document" { new_doc() }
+}
+fn desk_preview_menu(title){
+    if desk_sheet_up { return }
+    if title == "Edit" { back_to_editor() }
+    if title == "Export…" { open_export() }
+    if title == "Delete…" { delete_doc() }
+}
+// Delete asked from the library leaves no document open.
+fn desk_cancel_delete(){
+    show_delete(false)
+    if st.screen == "docs" { st.doc = nil }
+}
+// A Mac's dates: "Today at 3:45 PM", "Yesterday at 8:12 AM", "Nov 2, 2026".
+fn desk_when(t){
+    if t == nil || t == 0 { return "" }
+    let m = local_time(t)
+    let now = time_now()
+    let today = local_time(now)
+    let yesterday = local_time(now - 86400)
+    let h = m.hour % 12
+    if h == 0 { h = 12 }
+    let minute = if m.minute < 10 { "0" + m.minute } else { "" + m.minute }
+    let half = if m.hour < 12 { " AM" } else { " PM" }
+    let clock = "" + h + ":" + minute + half
+    if m.year == today.year && m.month == today.month && m.day == today.day { return "Today at " + clock }
+    if m.year == yesterday.year && m.month == yesterday.month && m.day == yesterday.day { return "Yesterday at " + clock }
+    months[m.month - 1] + " " + m.day + ", " + m.year
+}
+// What the Word service said, in the person's words. (A phone keeps engine_message's.)
+fn said_message(what, error){
+    if !ui_desk { return engine_message(what, error) }
+    let e = ""
+    if error != nil { e = error }
+    if e.search("not granted") >= 0 && e.search("word") >= 0 { return "Writer can't " + what + " yet: this OctoSense doesn't let apps make Word documents. Your draft is safe in Writer." }
+    if e.search("no service answers") >= 0 { return "Writer can't " + what + " here: this device can't make Word documents. Your draft is safe in Writer." }
+    "Writer couldn't " + what + ". Your draft is safe in Writer."
+}
+// Export's sheet: the format chosen, and what a finished copy says.
+fn desk_format(){
+    for f in st.formats { if f.id == st.export_format { return f } }
+    st.formats[0]
+}
+fn desk_exported(){
+    for f in st.formats { if f.state == "done" || f.state == "kept" { return true } }
+    false
+}
+fn desk_choose(id){
+    if st.export_format == id { return }
+    st.export_format = id
+    ui.export_rows.render()
+}
+// A list's mark takes more room from two digits on.
+fn mark_wide(text){ text.len() > 2 }
+fn desk_format_name(f){
+    if f.id == "html" { return "Web Page" }
+    f.name
+}
+
+// The pages of a section: a white sheet with its first lines, and its name under it.
+fn doc_grid(id){
+    let cols = desk_cols()
+    View{width: Fill height: Fit flow: Down padding: Inset{left: 16 right: 16 top: 20 bottom: 24}
+        for row in desk_rows_of(docs_in(id, st.docs), cols) {
+            View{width: Fill height: Fit flow: Right
+                for d in row { doc_card(d) }
+                // A short last row keeps the columns of the rows above it.
+                for k in desk_blanks(cols - row.len()) { View{width: Fill height: 1} }
+            }
+        }
+    }
+}
+// How many pages fit across the window, each in a cell at least 190 wide.
+fn desk_cols(){
+    if st.width <= 0 { return 4 }
+    let side = 0
+    if desk_side_on() { side = 209 }
+    max(1, floor((st.width - side - 32) / 190))
+}
+fn desk_rows_of(docs, cols){
+    let rows = []
+    let row = []
+    for d in docs {
+        row.push(d)
+        if row.len() == cols {
+            rows.push(row)
+            row = []
+        }
+    }
+    if row.len() > 0 { rows.push(row) }
+    rows
+}
+fn desk_blanks(n){
+    let out = []
+    let k = 0
+    while k < n {
+        out.push(k)
+        k = k + 1
+    }
+    out
+}
+fn doc_card(d){
+    let badge = doc_badge(d)
+    let commands = ["Open" "-" "Delete…"]
+    if d.words > 0 { commands = ["Open" "Export…" "-" "Delete…"] }
+    GestureView{width: Fill height: Fit flow: Down align: Align{x: 0.5} padding: Inset{bottom: 18} on_tap: |x, y| { if desk_sheet_up { return } open_doc(d) }
+        menu: commands on_menu: |title| desk_card_menu(d, title)
+        // A Mac's right click rings the page, not the cell, as Finder's and Pages' do.
+        menu_ring: if ui_unified { "thumb" } else { "" }
+        thumb := RectShadowView{width: 124 height: 160 flow: Down spacing: 4 padding: Inset{left: 11 right: 11 top: 13 bottom: 8}
+            draw_bg +: {color: paper shadow_color: page_shadow shadow_radius: 5.0 shadow_offset: vec2(0.0, 1.0)}
+            Label{width: Fill padding: 0 max_lines: 3 text_overflow: Ellipsis clip_y: false text: shown_title(d) draw_text +: {color: paper_ink text_style: theme.font_bold{font_size: 5.25 line_spacing: 1.2}}}
+            if d.snippet != "" { Label{width: Fill padding: 0 max_lines: 11 text_overflow: Ellipsis clip_y: false text: d.snippet draw_text +: {color: paper_muted text_style: theme.font_regular{font_size: 4.5 line_spacing: 1.3}}} }
+            View{width: Fill height: Fill}
+            if badge == "DOCX" { Label{clip_y: false padding: 0 text: "DOCX" draw_text +: {color: doc_green text_style: theme.font_bold{font_size: 5.25}}} }
+            if badge == "Edited" { Label{clip_y: false padding: 0 text: "Edited" draw_text +: {color: paper_muted text_style: theme.font_bold{font_size: 5.25}}} }
+        }
+        Label{width: Fill padding: Inset{left: 8 right: 8 top: 9} max_lines: 2 text_overflow: Ellipsis clip_y: false align: Align{x: 0.5} text: shown_title(d) draw_text +: {color: ink text_style: theme.font_regular{font_size: 9.75 line_spacing: 1.2}}}
+        Label{clip_y: false width: Fill padding: Inset{left: 6 right: 6 top: 1} align: Align{x: 0.5} text: desk_when(d.updated) draw_text +: {color: muted text_style: theme.font_regular{font_size: 8.25}}}
+    }
+}
+
+// A find arrow with nowhere to go. Here, not among the text rules: they run without the
+// shared interface in the shell's tests (writer_model_tests.rs).
+let find_off = mix(ui_bar, ui_ink, 0.32)
+let DeskRoot = SolidView{width: Fill height: Fill flow: Overlay draw_bg.color: ui_page
+    View{width: Fill height: Fill flow: Right
+        // The sidebar stays beside everything: the library's sections, and the open
+        // document's outline. A toolbar button collapses it.
+        side_box := View{width: Fit height: Fill flow: Right
+            UiSidebar{
+                if ui_desk {
+                    View{width: Fill height: Fill flow: Overlay
+                        side_scroll := DocumentScroller{width: Fill height: Fill flow: Down
+                            side_rows := View{width: Fill height: Fit flow: Down spacing: 1 on_render: || {
+                                let rows = desk_outline()
+                                let current = desk_current(rows)
+                                SideHead{text: "Library"}
+                                for s in side_library {
+                                    if s.id == st.side && rows.len() == 0 { UiSideRowOn{text: s.name draw_icon +: {svg: ui_icon(s.icon)} on_click: || desk_section(s.id)} }
+                                    else { UiSideRow{text: s.name draw_icon +: {svg: ui_icon(s.icon)} on_click: || desk_section(s.id)} }
+                                }
+                                SideHead{text: "Status"}
+                                for s in side_status {
+                                    if s.id == st.side && rows.len() == 0 { UiSideRowOn{text: s.name draw_icon +: {svg: ui_icon(s.icon)} on_click: || desk_section(s.id)} }
+                                    else { UiSideRow{text: s.name draw_icon +: {svg: ui_icon(s.icon)} on_click: || desk_section(s.id)} }
+                                }
+                                if desk_outline_on() {
+                                    SideHead{text: "Outline"}
+                                    if rows.len() == 0 { DeskSideNote{text: "Headings you write appear here."} }
+                                    for k in rows.len() {
+                                        DocMark{mark: k
+                                            GestureView{width: Fill height: Fit on_tap: |x, y| desk_go_heading(k)
+                                                // A long heading takes a second line, as Pages' table of contents wraps one.
+                                                RoundedView{width: Fill height: Fit flow: Right align: Align{y: 0.5} padding: Inset{left: 8 + (rows[k].level - 1) * 12 right: 8 top: 6 bottom: 6} new_batch: true show_bg: true
+                                                    draw_bg +: {color: if current == k { ui_selected } else { #x00000000 } border_radius: 3.0}
+                                                    Label{width: Fill padding: 0 max_lines: 2 text_overflow: Ellipsis clip_y: false text: rows[k].text draw_text +: {color: ink text_style: theme.font_regular{font_size: 9.75}}}
+                                                }
+                                            }
+                                        }
+                                    }
+                                    // Where the last row ends (desk_side_follow).
+                                    if rows.len() > 0 { DocMark{mark: rows.len() width: Fill height: 1} }
+                                }
+                            }}
+                        }
+                        SideFade{}
+                    }
+                }
+            }
+            UiVSep{}
+        }
+        View{width: Fill height: Fill flow: Overlay
+            // The library: the documents as pages on white.
+            docs := View{width: Fill height: Fill flow: Down
+                UiToolbar{
+                    lights_gap1 := DeskLightsGap{}
+                    sidebar_tool1 := DeskSidebarTool{}
+                    View{width: Fill height: Fit flow: Down spacing: 1 margin: Inset{left: 2}
+                        library_title := UiBarTitle{clip_y: false text: "Recents"}
+                        doc_count := UiBarSub{width: Fill text_overflow: Ellipsis clip_y: false visible: false}
+                    }
+                    new_top := PaneTool{visible: false text: "New Document" icon_walk: Walk{width: 13 height: 13} draw_icon +: {svg: ui_icon("plus")} on_click: || new_doc()}
+                    if ui_unified {
+                        View{width: Fit height: Fill flow: Right align: Align{y: 0.5}
+                            mac_new := MacItem{visible: false width: mac_item_w("New Document") text: "New Document" draw_icon +: {svg: ui_icon("compose")} on_click: || new_doc()}
+                        }
+                    }
+                }
+                UiSep{}
+                word_error_docs := DeskWordError{visible: false}
+                GestureView{width: Fill height: Fill flow: Overlay menu: ["New Document"] on_menu: |title| desk_library_menu(title)
+                    SolidView{width: Fill height: Fill flow: Overlay new_batch: true draw_bg.color: ui_content
+                        // A render re-applies a view's own declaration, `visible: false` too, so
+                        // each section's scroller is shown and hidden from a box around it.
+                        box_recents := View{width: Fill height: Fill flow: Down
+                            rows_recents := ScrollYView{width: Fill height: Fill flow: Down on_render: || { doc_grid("recents") }}
+                        }
+                        box_all := View{visible: false width: Fill height: Fill flow: Down
+                            rows_all := ScrollYView{width: Fill height: Fill flow: Down on_render: || { doc_grid("all") }}
+                        }
+                        box_drafts := View{visible: false width: Fill height: Fill flow: Down
+                            rows_drafts := ScrollYView{width: Fill height: Fill flow: Down on_render: || { doc_grid("drafts") }}
+                        }
+                        box_saved := View{visible: false width: Fill height: Fill flow: Down
+                            rows_saved := ScrollYView{width: Fill height: Fill flow: Down on_render: || { doc_grid("saved") }}
+                        }
+                        docs_empty := UiEmpty{visible: false
+                            glyph +: {draw_svg +: {svg: ui_icon("doc")}}
+                            title +: {clip_y: false text: "No Documents Yet"}
+                            note +: {width: Fill max_width: 340 clip_y: false align: Align{x: 0.5} draw_text +: {text_style: theme.font_regular{font_size: 9.75 line_spacing: 1.3}}}
+                            empty_new := UiPrimary{reset_hover_on_click: true text: "New Document" margin: Inset{top: 8} on_click: || new_doc()}
+                            empty_all := UiPrimary{visible: false reset_hover_on_click: true text: "Show All Documents" margin: Inset{top: 8} on_click: || desk_section("all")}
+                        }
+                    }
+                }
+            }
+
+            // A document: its toolbar and format bar, the sheet, the status.
+            editor := View{visible: false width: Fill height: Fill flow: Overlay
+                View{width: Fill height: Fill flow: Down
+                    UiToolbar{
+                        lights_gap2 := DeskLightsGap{}
+                        sidebar_tool2 := DeskSidebarTool{}
+                        // The name gives way first, truncated, and the tools keep their room.
+                        doc_name := UiBarTitle{width: Fill text_overflow: Ellipsis clip_y: false margin: Inset{left: 2 right: 8} text: "Untitled"}
+                        edit_segs := View{width: Fit height: Fit margin: Inset{right: 6} on_render: || {
+                            if ui_unified {
+                                View{width: Fit height: Fit flow: Down align: Align{x: 0.5} spacing: 2
+                                    UiSegments{new_batch: true
+                                        DeskSegOn{text: "Edit"}
+                                        if st.doc_empty { DeskSegOff{text: "Preview"} }
+                                        else { UiSeg{reset_hover_on_click: true text: "Preview" on_click: || open_preview()} }
+                                    }
+                                    MacItemName{text: "View"}
+                                }
+                            } else {
+                                UiSegments{new_batch: true
+                                    DeskSegOn{text: "Edit"}
+                                    if st.doc_empty { DeskSegOff{text: "Preview"} }
+                                    else { UiSeg{reset_hover_on_click: true text: "Preview" on_click: || open_preview()} }
+                                }
+                            }
+                        }}
+                        save_button := UiTool{visible: !ui_unified text: "Save" draw_icon +: {svg: my_icon("save")} on_click: || save_doc()}
+                        save_off := DeskToolOff{text: "Save" draw_icon +: {svg: my_icon("save")}}
+                        export_button := PaneTool{visible: !ui_unified text: "Export…" draw_icon +: {svg: ui_icon("export")} on_click: || export_tool()}
+                        export_off := DeskToolOff{text: "Export…" draw_icon +: {svg: ui_icon("export")}}
+                        if ui_unified {
+                            View{width: Fit height: Fill flow: Right align: Align{y: 0.5}
+                                mac_export := MacItem{width: mac_item_w("Export") text: "Export" draw_icon +: {svg: ui_icon("export")} on_click: || export_tool()}
+                                mac_export_off := MacItemOff{width: mac_item_w("Export") text: "Export" draw_icon +: {svg: ui_icon("export")}}
+                            }
+                        }
+                        // Delete… is in the File menu and the library's, as Pages keeps it off a document's toolbar.
+                    }
+                    UiSep{}
+                    format_bar := SolidView{width: Fill height: 36 flow: Right align: Align{y: 0.5} spacing: 2 padding: Inset{left: 12 right: 10} draw_bg.color: ui_bar on_render: || {
+                        View{width: 140 height: 28 flow: Overlay align: Align{x: 1.0 y: 0.5} margin: Inset{right: 6}
+                            style_pick := GestureView{width: Fill height: 28 menu_words_at: 10 on_menu: |title| desk_style_chosen(title)
+                                style_button := UiPopup{grab_key_focus: false width: Fill text: desk_style_shown("Multiple") on_click: || open_styles()}
+                            }
+                            UiPopupMark{}
+                        }
+                        if st.fmt.bold { fmt_bold := FmtOn{draw_icon +: {svg: my_icon("fmt-bold")} on_click: || flip_emphasis(2)} }
+                        else { fmt_bold := FmtTool{draw_icon +: {svg: my_icon("fmt-bold")} on_click: || flip_emphasis(2)} }
+                        if st.fmt.italic { fmt_italic := FmtOn{draw_icon +: {svg: my_icon("fmt-italic")} on_click: || flip_emphasis(1)} }
+                        else { fmt_italic := FmtTool{draw_icon +: {svg: my_icon("fmt-italic")} on_click: || flip_emphasis(1)} }
+                        UiVSep{height: 18 margin: Inset{left: 6 right: 6}}
+                        if st.fmt.style == "bullet" { fmt_bullets := FmtOn{draw_icon +: {svg: my_icon("fmt-bullets")} on_click: || flip_style("bullet")} }
+                        else { fmt_bullets := FmtTool{draw_icon +: {svg: my_icon("fmt-bullets")} on_click: || flip_style("bullet")} }
+                        if st.fmt.style == "number" { fmt_numbers := FmtOn{draw_icon +: {svg: my_icon("fmt-numbers")} on_click: || flip_style("number")} }
+                        else { fmt_numbers := FmtTool{draw_icon +: {svg: my_icon("fmt-numbers")} on_click: || flip_style("number")} }
+                        if st.fmt.style == "quote" { fmt_quote := FmtOn{draw_icon +: {svg: my_icon("fmt-quote")} on_click: || flip_style("quote")} }
+                        else { fmt_quote := FmtTool{draw_icon +: {svg: my_icon("fmt-quote")} on_click: || flip_style("quote")} }
+                    }}
+                    UiSep{}
+                    find_bar := View{visible: false width: Fill height: Fit flow: Down
+                        SolidView{width: Fill height: Fit flow: Down spacing: 4 padding: Inset{left: 12 right: 10 top: 4 bottom: 4} draw_bg.color: ui_bar nav_group: true
+                            View{width: Fill height: 28 flow: Right align: Align{y: 0.5} spacing: 8
+                                View{width: 240 height: 28 flow: Overlay align: Align{y: 0.5}
+                                    find_field := UiSearch{padding: Inset{left: 26 right: 24 top: 6 bottom: 6} empty_text: "Find"
+                                        on_change: |text| find_changed(text) on_escape: |text| find_close()
+                                        // A field gives up the keyboard on Return; a find bar's keeps it, to go on.
+                                        on_return: |text| { find_step(1) ui.find_field.focus() }}
+                                    UiGlyph{width: 14 height: 14 margin: Inset{left: 8} draw_svg +: {svg: ui_icon("search")}}
+                                    View{width: Fill height: Fill flow: Right align: Align{x: 1.0 y: 0.5}
+                                        find_clear := UiSearchClear{on_click: || find_clear()}
+                                    }
+                                }
+                                find_count := Label{clip_y: false padding: 0 text: "" draw_text +: {color: ui_muted text_style: theme.font_regular{font_size: 8.25}}}
+                                View{width: Fill height: 1}
+                                UiSegments{
+                                    find_prev := UiPaneTool{visible: false width: 26 height: 24 icon_walk: Walk{width: 14 height: 14} draw_icon +: {svg: ui_icon("chevron-left")} on_click: || { find_step(-1) ui.find_field.focus() }}
+                                    find_next := UiPaneTool{visible: false width: 26 height: 24 icon_walk: Walk{width: 14 height: 14} draw_icon +: {svg: ui_icon("chevron-right")} on_click: || { find_step(1) ui.find_field.focus() }}
+                                    find_prev_off := UiPaneTool{enabled: false width: 26 height: 24 icon_walk: Walk{width: 14 height: 14} draw_bg +: {color_disabled: #x00000000} draw_icon +: {svg: ui_icon("chevron-left") color: find_off}}
+                                    find_next_off := UiPaneTool{enabled: false width: 26 height: 24 icon_walk: Walk{width: 14 height: 14} draw_bg +: {color_disabled: #x00000000} draw_icon +: {svg: ui_icon("chevron-right") color: find_off}}
+                                }
+                                UiButton{reset_hover_on_click: true text: "Done" on_click: || find_close()}
+                            }
+                            // Find and Replace: the words to put in, under the words to find.
+                            replace_row := View{visible: false width: Fill height: 28 flow: Right align: Align{y: 0.5} spacing: 8
+                                View{width: 240 height: 28 flow: Overlay align: Align{y: 0.5}
+                                    replace_field := UiField{padding: Inset{left: 8 right: 8 top: 6 bottom: 6} empty_text: "Replace"
+                                        on_change: |text| { st.replace_words = text } on_escape: |text| find_close()
+                                        on_return: |text| { replace_one() ui.replace_field.focus() }}
+                                }
+                                View{width: Fill height: 1}
+                                // The keyboard stays in the bar, as after Return in the field.
+                                UiButton{reset_hover_on_click: true text: "Replace" on_click: || { replace_one() ui.replace_field.focus() }}
+                                UiButton{reset_hover_on_click: true text: "Replace All" on_click: || { replace_all() ui.replace_field.focus() }}
+                            }
+                        }
+                        UiSep{}
+                    }
+                    editor_notice := View{visible: false width: Fill height: Fit flow: Down
+                        BarNotice{
+                            UiGlyph{draw_svg +: {svg: ui_icon("info") color: muted}}
+                            editor_notice_text := BarNoticeText{}
+                            editor_retry := UiButton{visible: false reset_hover_on_click: true text: "Try Again" padding: Inset{left: 12 right: 12} margin: Inset{right: 6} on_click: || desk_retry()}
+                            UiButton{reset_hover_on_click: true text: "OK" padding: Inset{left: 14 right: 14} on_click: || notice("editor", "")}
+                        }
+                        UiSep{}
+                    }
+                    draft_notice := View{visible: false width: Fill height: Fit flow: Down
+                        BarNotice{
+                            UiGlyph{draw_svg +: {svg: ui_icon("info") color: muted}}
+                            BarNoticeText{text: "Your latest changes aren't saved. Keep this document open and try again."}
+                            draft_retry := UiButton{reset_hover_on_click: true text: "Try Again" padding: Inset{left: 12 right: 12} on_click: || flush_now()}
+                        }
+                        UiSep{}
+                    }
+                    word_error_editor := DeskWordError{visible: false}
+                    SolidView{width: Fill height: Fill flow: Down align: Align{x: 0.5} padding: Inset{left: 24 right: 24} draw_bg.color: ui_page
+                        // Only a desktop's tree reads this name: a phone keeps its text field.
+                        if ui_desk && ui_unified {
+                            // A Mac's: a right click asks for the menu (desk_page_context), which opens
+                            // from the corner view with the caret's style ticked.
+                            GestureView{width: Fill max_width: 612 height: Fill flow: Overlay clip_x: false clip_y: false
+                                on_long_press: |x, y| desk_page_context(x, y)
+                                editor_text := DocumentEditor{width: Fill height: Fill page_gap: 22
+                                    paper := Sheet{height: Fill}
+                                    on_change: |text| draft_changed(text)
+                                    on_format: |style, bold, italic, line, chosen| desk_format_changed(style, bold, italic, line, chosen)
+                                    on_save: || save_doc()
+                                }
+                                page_menu := GestureView{width: 1 height: 1 on_menu: |title| desk_page_menu(title)}
+                            }
+                        }
+                        if ui_desk && !ui_unified {
+                            GestureView{width: Fill max_width: 612 height: Fill flow: Down clip_x: false clip_y: false
+                                menu: ["Cut" "Copy" "Paste" "-" "Bold" "Italic" "-" "Body" "Heading 1" "Heading 2" "Heading 3" "Bulleted List" "Numbered List" "Quote"]
+                                on_menu: |title| desk_page_menu(title)
+                                editor_text := DocumentEditor{width: Fill height: Fill page_gap: 22
+                                    paper := Sheet{height: Fill}
+                                    on_change: |text| draft_changed(text)
+                                    on_format: |style, bold, italic, line, chosen| desk_format_changed(style, bold, italic, line, chosen)
+                                    on_save: || save_doc()
+                                }
+                            }
+                        }
+                    }
+                    UiSep{}
+                    UiFootBar{
+                        editor_status := StatusText{}
+                    }
+                }
+            }
+
+            // Preview: the saved Word document as the engine reads it back.
+            preview := View{visible: false width: Fill height: Fill flow: Down
+                UiToolbar{
+                    lights_gap3 := DeskLightsGap{}
+                    sidebar_tool3 := DeskSidebarTool{}
+                    preview_name := UiBarTitle{width: Fill text_overflow: Ellipsis clip_y: false margin: Inset{left: 2 right: 8} text: ""}
+                    preview_segs := View{width: Fit height: Fit margin: Inset{right: 6} on_render: || {
+                        if ui_unified {
+                            View{width: Fit height: Fit flow: Down align: Align{x: 0.5} spacing: 2
+                                UiSegments{new_batch: true
+                                    UiSeg{reset_hover_on_click: true text: "Edit" on_click: || back_to_editor()}
+                                    DeskSegOn{text: "Preview"}
+                                }
+                                MacItemName{text: "View"}
+                            }
+                        } else {
+                            UiSegments{new_batch: true
+                                UiSeg{reset_hover_on_click: true text: "Edit" on_click: || back_to_editor()}
+                                DeskSegOn{text: "Preview"}
+                            }
+                        }
+                    }}
+                    // The same tools as Edit, so nothing moves between the two; what's shown here is already saved.
+                    DeskToolOff{visible: !ui_unified text: "Save" draw_icon +: {svg: my_icon("save")}}
+                    PaneTool{visible: !ui_unified text: "Export…" draw_icon +: {svg: ui_icon("export")} on_click: || open_export()}
+                    if ui_unified {
+                        View{width: Fit height: Fill flow: Right align: Align{y: 0.5}
+                            MacItem{width: mac_item_w("Export") text: "Export" draw_icon +: {svg: ui_icon("export")} on_click: || open_export()}
+                        }
+                    }
+                }
+                UiSep{}
+                preview_notice := View{visible: false width: Fill height: Fit flow: Down
+                    BarNotice{
+                        UiGlyph{draw_svg +: {svg: ui_icon("info") color: muted}}
+                        preview_notice_text := BarNoticeText{}
+                        UiButton{reset_hover_on_click: true text: "OK" padding: Inset{left: 14 right: 14} on_click: || notice("preview", "")}
+                    }
+                    UiSep{}
+                }
+                word_error_preview := DeskWordError{visible: false}
+                SolidView{width: Fill height: Fill flow: Down draw_bg.color: ui_page
+                    if ui_desk {
+                        GestureView{width: Fill height: Fill flow: Down menu: ["Edit" "Export…" "-" "Delete…"] on_menu: |title| desk_preview_menu(title)
+                            preview_scroll := DocumentScroller{width: Fill height: Fill flow: Down align: Align{x: 0.5} padding: Inset{left: 24 right: 24 top: 22 bottom: if ui_unified { 0 } else { 28 }}
+                                on_mark: |k| desk_mark(k)
+                                on_near_end: || desk_preview_more()
+                                Sheet{height: Fit min_height: 792 padding: Inset{left: 72 right: 72 top: 60 bottom: 72}
+                            preview_body := View{width: Fill height: Fit flow: Down spacing: 8 on_render: || {
+                                let n = 0
+                                let mark = -1
+                                let job = {left: 4000}
+                                let last = ""
+                                for b in st.shown {
+                                    n = n + 1
+                                    let kind = "skip"
+                                    if n <= st.shown_limit { kind = kind_of(b) }
+                                    let e = 0
+                                    let html = ""
+                                    if kind == "h1" || kind == "h2" || kind == "h3" || kind == "para" || kind == "item" { e = whole_emphasis(b) }
+                                    if kind == "para" || kind == "item" { html = partial_html(b, job) }
+                                    // A heading the outline lists is marked, for the outline to scroll to.
+                                    let level = heading_level(b)
+                                    if level > 0 && level <= 3 && b.text.trim() != "" && n <= st.shown_limit {
+                                        mark = mark + 1
+                                        let k = mark
+                                        DocMark{mark: k
+                                            if kind == "h1" { DocH1{text: b.text draw_text +: {text_style: doc_font(15, 1.25, e)}} }
+                                            if kind == "h2" { DocH2{text: b.text draw_text +: {text_style: doc_font(12, 1.25, e)}} }
+                                            if kind == "h3" { DocH3{text: b.text draw_text +: {text_style: doc_font(10.5, 1.25, e)}} }
+                                        }
+                                    } else {
+                                        if kind == "h1" { DocH1{text: b.text draw_text +: {text_style: doc_font(15, 1.25, e)}} }
+                                        if kind == "h2" { DocH2{text: b.text draw_text +: {text_style: doc_font(12, 1.25, e)}} }
+                                        if kind == "h3" { DocH3{text: b.text draw_text +: {text_style: doc_font(10.5, 1.25, e)}} }
+                                    }
+                                    if kind == "para" {
+                                        if html != "" { DocHtml{body: html} } else { DocPara{text: b.text draw_text +: {text_style: doc_font(9, 1.3, e)}} }
+                                    }
+                                    if kind == "item" {
+                                        let mark_text = field(b, "mark", "")
+                                        // As the document's list style: the mark at 18, the text at 36.
+                                        let cell = 18
+                                        if mark_wide(mark_text) { cell = 26 }
+                                        View{width: Fill height: Fit flow: Right padding: Inset{left: list_indent(b) + 18}
+                                            View{width: cell height: Fit
+                                                if mark_text == "" { RoundedView{width: 5 height: 5 margin: Inset{top: 5} show_bg: true draw_bg +: {color: paper_ink border_radius: 1.25}} }
+                                                else { DocPara{width: Fit text: mark_text} }
+                                            }
+                                            if html != "" { DocHtml{body: html} } else { DocPara{text: b.text draw_text +: {text_style: doc_font(9, 1.3, e)}} }
+                                        }
+                                    }
+                                    if kind == "quote" { DocQuote{text: b.text} }
+                                    // A code fence's lines come as paragraphs, with the blank ones the
+                                    // draft's line breaks put between them: one band, without those.
+                                    if kind == "code" && b.text.trim() != "" {
+                                        let overlap = 0
+                                        if last == "code" { overlap = -8 }
+                                        SolidView{width: Fill height: Fit new_batch: true padding: Inset{left: 10 right: 10 top: 4 bottom: 4} margin: Inset{top: overlap} draw_bg.color: #xf2f2f5
+                                            DocMono{text: b.text}
+                                        }
+                                    }
+                                    if kind != "skip" && (kind != "code" || b.text.trim() != "") { last = kind }
+                                    if kind == "rule" { SolidView{width: Fill height: 1 draw_bg.color: paper_line} }
+                                    if kind == "gap" { View{width: Fill height: 4} }
+                                    if kind == "table" {
+                                        View{width: Fill height: Fit flow: Down spacing: 4
+                                            for r in b.cells.len() {
+                                                View{width: Fill height: Fit flow: Right spacing: 10
+                                                    for c in b.cells[r] {
+                                                        if r == 0 { DocCellHead{text: c} }
+                                                        if r > 0 { DocCell{text: c} }
+                                                    }
+                                                }
+                                                SolidView{width: Fill height: 1 draw_bg.color: paper_line}
+                                            }
+                                        }
+                                    }
+                                }
+                                // A long document draws in steps: the next as scrolling comes near this.
+                                DocMark{end: true width: Fill height: 1}
+                        }}
+                                }
+                                // A Mac's page ends above the canvas's foot: its bottom edge is in sight at the end.
+                                if ui_unified { View{width: Fill height: 28} }
+                            }
+                        }
+                    }
+                }
+                UiSep{}
+                UiFootBar{
+                    preview_info := StatusText{width: Fill text_overflow: Ellipsis}
+                }
+            }
+        }
+    }
+
+    // Export: choose a format, then Export…; the Save panel asks where the copy goes.
+    export := View{visible: false width: Fill height: Fill flow: Overlay new_batch: true
+        DeskDim{}
+        DeskSheetPlace{
+            DeskSheetPanel{width: Fill max_width: 480
+                export_doc := DeskSheetTitle{}
+                export_rows := View{width: Fill height: Fit flow: Down on_render: || {
+                    let chosen = desk_format()
+                    View{width: Fill height: Fit flow: Down spacing: 10
+                        UiGroup{new_batch: true
+                            for i f in st.formats {
+                                if i > 0 { UiSep{margin: Inset{left: 14 right: 14}} }
+                                // A finished copy: its name on the left, its size under "Exported".
+                                let note = f.text
+                                let size = ""
+                                if f.state == "done" {
+                                    let parts = f.text.split("  ·  ")
+                                    note = parts[0]
+                                    size = parts[1]
+                                }
+                                let on = f.id == st.export_format
+                                GestureView{width: Fill height: Fit padding: 4 on_tap: |x, y| desk_choose(f.id)
+                                    View{width: Fill height: Fit flow: Right align: Align{y: 0.5} spacing: 10 padding: Inset{left: 10 right: 10 top: 5 bottom: 5}
+                                        if on { DeskRadioOn{} } else { DeskRadioOff{} }
+                                        View{width: Fill height: Fit flow: Down spacing: 2
+                                            Label{clip_y: false width: Fill padding: 0 text: desk_format_name(f) draw_text +: {color: ink text_style: theme.font_regular{font_size: 9.75}}}
+                                            ExportNote{text: f.note}
+                                            if f.state == "fail" { Label{clip_y: false width: Fill padding: 0 flow: Flow.Right{wrap: true} text: f.text draw_text +: {color: desk_row_fail text_style: theme.font_regular{font_size: 8.25 line_spacing: 1.3}}} }
+                                            if f.state != "fail" && note != "" { ExportNote{flow: Flow.Right{wrap: true} text: note} }
+                                        }
+                                        if f.state == "busy" {
+                                            View{width: Fit height: Fit flow: Right align: Align{y: 0.5} spacing: 6
+                                                LoadingSpinner{width: 13 height: 13 draw_bg +: {color: muted stroke_width: 1.5}}
+                                                Label{clip_y: false padding: 0 text: "Exporting…" draw_text +: {color: muted text_style: theme.font_regular{font_size: 9}}}
+                                            }
+                                        }
+                                        if f.state == "done" {
+                                            View{width: Fit height: Fit flow: Down align: Align{x: 1.0} spacing: 2
+                                                Label{clip_y: false padding: 0 text: "Exported" draw_text +: {color: desk_row_ok text_style: theme.font_regular{font_size: 9}}}
+                                                Label{clip_y: false padding: 0 text: size draw_text +: {color: muted text_style: theme.font_regular{font_size: 8.25}}}
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        DeskSheetButtons{
+                            if chosen.state == "done" {
+                                UiButton{reset_hover_on_click: true text: "Export Again…" on_click: || export_as(desk_format())}
+                                UiPrimary{key_default: true key_cancel: true reset_hover_on_click: true text: "Done" on_click: || pane(st.under)}
+                            }
+                            if chosen.state != "done" {
+                                UiButton{key_cancel: true reset_hover_on_click: true text: if desk_exported() { "Done" } else { "Cancel" } on_click: || pane(st.under)}
+                                if is_busy() { DeskPrimaryOff{text: "Export…"} }
+                                if !is_busy() && (chosen.state == "fail" || chosen.state == "kept") { UiPrimary{key_default: true reset_hover_on_click: true text: "Try Again" on_click: || export_as(desk_format())} }
+                                if !is_busy() && chosen.state == "" { UiPrimary{key_default: true reset_hover_on_click: true text: "Export…" on_click: || export_as(desk_format())} }
+                            }
+                        }
+                    }
+                }}
+            }
+        }
+    }
+
+    // Delete: the document, its Word file and its copies go. On a Mac it is the alert
+    // macOS has drawn since 11 (the shared UiAlert parts): the app's icon on top, the
+    // words centred under it, Delete and Cancel side by side and as wide as each other,
+    // Cancel, the default, on the right. Another desktop keeps its sheet.
+    delete_sheet := View{visible: false width: Fill height: Fill flow: Overlay new_batch: true
+        DeskDim{}
+        DeskSheetPlace{
+            if ui_unified {
+                UiAlertPanel{
+                    if ui_alert_icon { UiAlertIcon{app: "os.writer" width: 64 height: 64} }
+                    delete_title := UiAlertTitle{}
+                    UiAlertNote{text: "Its draft and Word document go too. Copies you exported stay where you saved them. This can't be undone."}
+                    UiAlertRow{
+                        UiButton{width: Fill reset_hover_on_click: true text: "Delete" draw_text +: {color: desk_danger color_hover: desk_danger color_down: desk_danger color_focus: desk_danger} on_click: || delete_doc()}
+                        UiPrimary{width: Fill key_default: true key_cancel: true reset_hover_on_click: true text: "Cancel" on_click: || desk_cancel_delete()}
+                    }
+                }
+            } else {
+                DeskSheetPanel{width: if ui_alert_icon { 430 } else { 360 }
+                    View{width: Fill height: Fit flow: Right spacing: 14
+                        if ui_alert_icon { UiAlertIcon{app: "os.writer" width: 52 height: 52} }
+                        View{width: Fill height: Fit flow: Down spacing: 6
+                            delete_title := DeskSheetTitle{}
+                            DeskSheetNote{text: "Its draft and Word document go too. Copies you exported stay where you saved them. This can't be undone."}
+                        }
+                    }
+                    DeskSheetButtons{
+                        UiButton{reset_hover_on_click: true text: "Delete" draw_text +: {color: desk_danger color_hover: desk_danger color_down: desk_danger color_focus: desk_danger} on_click: || delete_doc()}
+                        UiPrimary{key_default: true key_cancel: true reset_hover_on_click: true text: "Cancel" on_click: || desk_cancel_delete()}
+                    }
+                }
+            }
+        }
+    }
+}
+
+if ui_desk { DeskRoot{} } else { TouchRoot{} }

@@ -52,12 +52,16 @@
 
 use makepad_widgets::*;
 
+pub mod mac;
+
 use super::composer::{Composer, LineLayout, Pane};
 use super::markdown as md;
 use super::model::{ApprovalState, ChatModel, Item, Phase, Role, ToolStatus};
 use crate::approvals::view::Buttons;
-use crate::shell::ui::{contains, rect, wrap_styled_spaced, DrawShellFill, HAlign, Ico, ShellDraw, Trace};
-use crate::shell::{alpha, MaterialTokens, ShellPalette, ShellTokens};
+use crate::shell::ui::{contains, rect, wrap_styled_spaced_between, DrawShellFill, HAlign, Ico, ShellDraw, Trace};
+use crate::shell::ai_pane::DrawMacSpinner;
+use crate::shell::{alpha, darker, MaterialTokens, ShellPalette, ShellTokens};
+use mac::MacState;
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -119,6 +123,7 @@ script_mod! {
         height: Fill
         draw_bg +: {}
         d +: {}
+        draw_compose +: {svg: crate_resource("self:resources/icons/compose.svg")}
     }
 }
 
@@ -282,6 +287,12 @@ enum Hit {
     Pane,
     /// The desktop pane's frame ([`Grip`]).
     Grip(Grip),
+    /// A Mac: try the connection again, or ask for the app's consent again.
+    Retry,
+    /// A Mac: Settings' list of assistants.
+    OpenSettings,
+    /// A Mac: the overlay scroller's knob.
+    Knob,
 }
 
 /// What a pointer event did.
@@ -290,7 +301,7 @@ pub enum Outcome {
     /// Not the pane's.
     Ignored,
     Taken,
-    /// "Open AI providers": the shell launches it.
+    /// "Open AI Providers": the shell launches it.
     OpenProviders,
 }
 
@@ -299,7 +310,7 @@ pub fn phase_text(phase: &Phase) -> String {
     match phase {
         Phase::Idle | Phase::Connecting => "Connecting to the assistant\u{2026}".into(),
         Phase::NoKernel(why) => format!("The assistant isn't available on this device: {why}."),
-        Phase::NoProvider => "No model provider is set up yet. Add one in AI providers.".into(),
+        Phase::NoProvider => "No model provider is set up yet. Add one in AI Providers.".into(),
         Phase::Ready => "The system agent \u{00b7} ready".into(),
         Phase::Running { .. } => "Working\u{2026}".into(),
         Phase::Reconnecting(why) => format!("{why}; reconnecting\u{2026}"),
@@ -480,6 +491,10 @@ enum LineKind {
     Rule,
     /// Under a finished reply: its Copy button.
     Actions,
+    /// A Mac: a line of the person's own message, in a bubble.
+    Person,
+    /// A Mac: a tool's or an approval's line, with its glyph.
+    Status(mac::StatusGlyph),
 }
 
 /// The height of a reply's row of actions.
@@ -609,12 +624,25 @@ struct TranscriptKey {
     scale: f64,
 }
 
+/// The room an inline code chip has on each side of its words, beside the
+/// words around it rather than over their spaces.
+const CHIP_PAD: f64 = 3.0;
+
 /// Styled runs wrapped to `width`, each run measured in its weight at `px`
 /// (the drawn size), each line with whether its break took a space.
 fn wrap_runs(d: &mut ShellDraw, cx: &mut Cx2d, runs: &md::Runs, width: f64, px: f64, bold: bool) -> Vec<(md::Runs, bool)> {
     let runs: Vec<(&str, md::Style)> = runs.iter().map(|(t, s)| (t.as_str(), *s)).collect();
-    // Code runs in the theme's code face, the rest in its regular or bold.
-    wrap_styled_spaced(&runs, width, |t, s| if s.code { d.with_code(|d| d.measure(cx, false, px, t)) } else { d.measure(cx, bold || s.bold, px, t) })
+    // Code runs in the theme's code face with their chip's room, the rest in its regular or bold.
+    // The space after code is the words' own, as the one before it is: the chip has the same
+    // room on each side.
+    let between = |before: md::Style, after: md::Style| if before.code && !after.code { after } else { before };
+    wrap_styled_spaced_between(&runs, width, |t, s| {
+        if s.code {
+            d.with_code(|d| d.measure(cx, false, px, t)) + if t.trim().is_empty() { 0.0 } else { CHIP_PAD * 2.0 }
+        } else {
+            d.measure(cx, bold || s.bold, px, t)
+        }
+    }, between)
 }
 
 /// A code line wrapped to `width` between characters, its spaces kept (a
@@ -723,6 +751,11 @@ pub struct ShellSystemChat {
     /// The "Ask <app>" panel ([`crate::app_chat`]) instead of the system chat.
     #[live]
     app_panel: bool,
+    /// A Mac: the New Conversation tool and the spinner ([`mac`]).
+    #[live]
+    draw_compose: DrawSvg,
+    #[live]
+    spinner: DrawMacSpinner,
     /// The pane's own area: what `redraw` repaints (`draw_bg` draws
     /// nothing, so its area alone would repaint nothing).
     #[redraw]
@@ -809,6 +842,9 @@ pub struct ShellSystemChat {
     field_drag: bool,
     #[rust]
     field_press: (f64, usize),
+    /// The Mac's panel ([`mac`]).
+    #[rust]
+    mac: MacState,
 }
 
 /// The conversation a pane shows: the system chat's or an app's.
@@ -938,7 +974,19 @@ impl ShellSystemChat {
     }
 
     fn hit_at(&self, p: Vec2d) -> Option<Hit> {
+        if self.mac.active {
+            return mac::hit_exact(&self.hits, p);
+        }
         hit_in(&self.hits, p)
+    }
+
+    /// A grip's cursor; a Mac's title keeps the arrow.
+    fn grip_cursor(&self, grip: Grip) -> MouseCursor {
+        if self.mac.active && grip == Grip::Move {
+            MouseCursor::Default
+        } else {
+            grip.cursor()
+        }
     }
 
     /// The prompt's character boundary under `p`: where a click puts the
@@ -967,6 +1015,11 @@ impl ShellSystemChat {
         if !source.is_open() || self.pane.size.x <= 0.0 {
             self.drag = None;
             return Outcome::Ignored;
+        }
+        if self.mac.active {
+            if let Some(outcome) = self.mac_pointer(cx, source, event) {
+                return outcome;
+            }
         }
         // A drag in the prompt selects, wherever it goes, until the button
         // comes up.
@@ -1010,7 +1063,7 @@ impl ShellSystemChat {
             match event {
                 Event::MouseMove(e) => {
                     self.placed = Some(dragged(drag.grip, drag.from, e.abs - drag.start, self.screen));
-                    cx.set_cursor(drag.grip.cursor());
+                    cx.set_cursor(self.grip_cursor(drag.grip));
                     self.redraw(cx);
                     return Outcome::Taken;
                 }
@@ -1037,9 +1090,11 @@ impl ShellSystemChat {
                 }
                 let grip = self.grip_at(e.abs);
                 // Over the transcript's text (not a button): the text cursor.
-                let text = grip.is_none() && hover.is_none() && contains(self.select.region, e.abs);
+                // A Mac's field wears it too, and its buttons the arrow.
+                let in_field = self.mac.active && self.hit_at(e.abs) == Some(Hit::Field);
+                let text = in_field || (grip.is_none() && hover.is_none() && contains(self.select.region, e.abs));
                 if let Some(g) = grip {
-                    cx.set_cursor(g.cursor());
+                    cx.set_cursor(self.grip_cursor(g));
                 } else if text {
                     cx.set_cursor(MouseCursor::Text);
                 } else if self.grip_hover.is_some() || self.text_hover {
@@ -1063,7 +1118,7 @@ impl ShellSystemChat {
                     }
                     self.down = None;
                     self.drag = Some(PaneDrag { grip, start: e.abs, from: self.pane });
-                    cx.set_cursor(grip.cursor());
+                    cx.set_cursor(self.grip_cursor(grip));
                     return Outcome::Taken;
                 }
                 // In the prompt: the caret goes where pressed (Shift: the
@@ -1221,6 +1276,9 @@ impl ShellSystemChat {
         if self.area.is_empty() {
             return;
         }
+        if self.mac.active && !cx.has_key_focus(self.area) {
+            mac::note_keys_before(cx);
+        }
         cx.set_key_focus(self.area);
         self.ime_text = None;
         self.show_ime(cx);
@@ -1329,6 +1387,11 @@ impl ShellSystemChat {
             }
             _ => false,
         }
+    }
+
+    /// The prompt holds the key focus, the pane open or not.
+    pub fn held_keyboard(&self, cx: &Cx) -> bool {
+        !self.area.is_empty() && cx.has_key_focus(self.area)
     }
 
     /// Give up the key focus (the pane closed).
@@ -1632,10 +1695,10 @@ impl ShellSystemChat {
         // No provider: say so, with the way to fix it.
         if source == Source::System && model.phase() == &Phase::NoProvider {
             let mut b = Buttons { d: &mut self.d, tok, hover };
-            let w = b.width(cx, "Open AI providers");
-            let r = b.draw(cx, x, top + 12.0, w, "Open AI providers", true);
+            let w = b.width(cx, "Open AI Providers");
+            let r = b.draw(cx, x, top + 12.0, w, "Open AI Providers", true);
             hits.push((r, Hit::OpenProviders));
-            shown.push("Open AI providers".into());
+            shown.push("Open AI Providers".into());
         }
 
         // The transcript, newest at the bottom, scrolled back by `scroll`;
@@ -1705,7 +1768,7 @@ impl ShellSystemChat {
                 }
                 LineKind::Code => self.d.solid(cx, rect(x, line_top, cw, lh), alpha(ink, 0.07)),
                 LineKind::Quote => self.d.solid(cx, rect(x + 3.0, line_top, 2.0, lh), alpha(ink, 0.35)),
-                LineKind::Text => {}
+                LineKind::Text | LineKind::Person | LineKind::Status(_) => {}
             }
             let lx = x + line.indent;
             // Each run drawn goes to the selection's tracker at its place in
@@ -1777,7 +1840,15 @@ fn act(source: Source, hit: Hit) -> Outcome {
             Hit::Stop => crate::app_chat::stop(),
             Hit::StopSystemAgent => crate::app_chat::stop_system_agent(),
             Hit::Option { question, count, label } => crate::app_chat::answer_option(&question, count, &label),
-            Hit::New | Hit::OpenProviders | Hit::Copy(_) | Hit::Field | Hit::Pane | Hit::Grip(_) => {}
+            // A Mac: its panel's states with a fix.
+            Hit::OpenProviders => return Outcome::OpenProviders,
+            Hit::Retry => {
+                if let Some(app) = crate::app_chat::app() {
+                    crate::app_chat::open_app(app);
+                }
+            }
+            Hit::OpenSettings => crate::approvals::open_settings(),
+            Hit::New | Hit::Copy(_) | Hit::Field | Hit::Pane | Hit::Grip(_) | Hit::Knob => {}
         }
         return Outcome::Taken;
     }
@@ -1789,8 +1860,11 @@ fn act(source: Source, hit: Hit) -> Outcome {
         Hit::StopSystemAgent => {}
         Hit::Option { question, count, label } => super::answer_option(&question, count, &label),
         Hit::OpenProviders => return Outcome::OpenProviders,
+        // A Mac: connect again now, not at the next retry.
+        Hit::Retry => super::open(),
+        Hit::OpenSettings => crate::approvals::open_settings(),
         // Copy needs the clipboard: `ShellSystemChat::copy_item`.
-        Hit::Copy(_) | Hit::Field | Hit::Pane | Hit::Grip(_) => {}
+        Hit::Copy(_) | Hit::Field | Hit::Pane | Hit::Grip(_) | Hit::Knob => {}
     }
     Outcome::Taken
 }
@@ -1806,9 +1880,21 @@ impl Widget for ShellSystemChat {
             screen.size.y = (screen.size.y - crate::shell::dev_banner::HEIGHT).max(0.0);
         }
         self.d.begin_surface(cx);
-        self.draw_pane(cx, screen);
+        self.mac.active = mac::active();
+        if self.mac.active {
+            self.draw_mac(cx, screen);
+        } else {
+            self.draw_pane(cx, screen);
+        }
         self.d.end_surface(cx);
+        // A message's menu, over both panels (view/mac.rs).
+        if self.mac.active {
+            self.mac_draw_menu(cx);
+        }
         cx.end_turtle_with_area(&mut self.area);
+        if self.mac.active {
+            self.mac_after_draw(cx);
+        }
         // While the prompt holds the key focus, keep the input method up
         // (the platform dedups the request, and ignores it after the
         // person dismissed the keyboard until the next press) and tell it
@@ -1829,7 +1915,20 @@ impl Widget for ShellSystemChat {
         DrawStep::done()
     }
 
+    /// A Mac: what the panel shows and where its controls are, for the
+    /// widget tree (a test's eyes). Other styles keep theirs empty.
+    fn text(&self) -> String {
+        if self.mac.active {
+            self.mac_tree_text()
+        } else {
+            String::new()
+        }
+    }
+
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, _scope: &mut Scope) {
+        if self.mac.active && self.mac_event(cx, event) {
+            self.redraw(cx);
+        }
         // "Copied" goes back to Copy.
         if self.copied_timer.is_event(event).is_some() {
             self.copied_timer = Timer::empty();

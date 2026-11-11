@@ -1,0 +1,36 @@
+diff --git a/apps/route/src/view/desk.rs b/apps/route/src/view/desk.rs
+index 04688aeae..50f8eed66 100644
+--- a/apps/route/src/view/desk.rs
++++ b/apps/route/src/view/desk.rs
+@@ -1340,10 +1340,12 @@ pub(super) fn desk_sync(&mut self, cx: &mut Cx) {
+             self.view.widget(cx, ids!(side_state_note)).set_visible(cx, !notice.note.is_empty());
+             self.view.widget(cx, ids!(side_spinner)).set_visible(cx, notice.busy);
+             self.view.widget(cx, ids!(side_state_glyph)).set_visible(cx, !notice.busy);
+-            self.view.widget(cx, ids!(side_retry)).set_visible(cx, notice.retry.is_some());
+-            // It says what it retries: the map's own button can be up beside it.
+-            let words = match notice.retry {
+-                Some(Retry::Route) => "Find Route Again",
++            let clear = pane == Pane::Results && *notice == NO_RESULTS;
++            self.view.widget(cx, ids!(side_retry)).set_visible(cx, clear || notice.retry.is_some());
++            // Say which action this notice offers: the map can show its own retry beside it.
++            let words = match (clear, notice.retry) {
++                (true, _) => "Clear Search",
++                (_, Some(Retry::Route)) => "Find Route Again",
+                 _ => "Search Again",
+             };
+             self.view.button(cx, ids!(side_retry)).set_text(cx, words);
+@@ -1695,7 +1697,13 @@ pub(super) fn desk_actions(&mut self, cx: &mut Cx, actions: &Actions) {
+             self.side_back(cx);
+         }
+         if self.view.button(cx, ids!(side_retry)).clicked(actions) {
+-            self.retry_notice(cx);
++            if self.side.pane == Pane::Results && self.side.notice.as_ref() == Some(&NO_RESULTS) {
++                self.clear_search(cx);
++                self.focus_field(cx, ids!(search_input));
++                self.focus_later(cx, ids!(search_input));
++            } else {
++                self.retry_notice(cx);
++            }
+         }
+         for (end, field) in [(End::From, ids!(from_input)), (End::To, ids!(to_input))] {
+             let input = self.view.text_input(cx, field);

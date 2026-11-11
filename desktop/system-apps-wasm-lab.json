@@ -12,6 +12,7 @@
     "quickdeck",
     "pdftools",
     "writer",
+    "settings",
     "wasmlab"
   ],
   "assets": {}

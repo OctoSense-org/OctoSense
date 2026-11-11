@@ -110,6 +110,7 @@ def main():
                                                cwd=ROOT, env=env, stdout=log, stderr=log)
                     try:
                         wait_for("Collections", "Label")
+                        time.sleep(1)  # The window is still opening: a press now is lost.
                         if attempt == 1:
                             wait_for(STORY["title"], "Label")
                             assert len(requests) == 1, "opening Photos must not call AI"

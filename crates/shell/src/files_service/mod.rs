@@ -94,16 +94,19 @@ impl Drop for Reservation {
 #[derive(Debug, PartialEq)]
 enum Operation {
     Import { path: String },
-    PickPhoto { path: String },
+    /// `full_size`: a person's own photo, up to an import's bound, where a
+    /// reference image keeps to the per-file bound.
+    PickPhoto { path: String, full_size: bool },
     Share { text: String },
-    Export { path: String, name: String },
+    /// `bundled`: `path` names a file of the app's own bundle, not of its storage.
+    Export { path: String, name: String, bundled: bool },
 }
 
 impl Operation {
     /// What the native loader may read for this selection: the operation's
     /// own bound, never more than the app's whole storage quota.
     fn selection_limit(&self, quota: u64) -> u64 {
-        let bound = if matches!(self, Self::Import { .. }) { MAX_IMPORT } else { MAX_FILE_BYTES };
+        let bound = if matches!(self, Self::Import { .. } | Self::PickPhoto { full_size: true, .. }) { MAX_IMPORT } else { MAX_FILE_BYTES };
         bound.min(quota)
     }
 }
@@ -184,12 +187,15 @@ fn parse_operation(method: &str, args: &Value) -> Result<Operation, String> {
         "export" => true,
         _ => return Err("method_unavailable: Unknown files method".into()),
     };
-    if args
-        .keys()
-        .any(|key| key != "path" && !(export && key == "name"))
-    {
-        return Err("invalid_arguments: Only path and an optional export name are accepted".into());
+    if args.keys().any(|key| {
+        key != "path" && !(export && (key == "name" || key == "bundled")) && !(method == "pick_photo" && key == "full_size")
+    }) {
+        return Err("invalid_arguments: Only path, an export's name and bundled, and a photo's full_size are accepted".into());
     }
+    let flag = |key: &str| match args.get(key) {
+        None => Ok(false),
+        Some(value) => value.as_bool().ok_or(format!("invalid_arguments: {key} must be true or false")),
+    };
     let path = args
         .get("path")
         .and_then(Value::as_str)
@@ -204,7 +210,7 @@ fn parse_operation(method: &str, args: &Value) -> Result<Operation, String> {
     }
     if !export {
         return Ok(if method == "pick_photo" {
-            Operation::PickPhoto { path }
+            Operation::PickPhoto { path, full_size: flag("full_size")? }
         } else {
             Operation::Import { path }
         });
@@ -225,7 +231,7 @@ fn parse_operation(method: &str, args: &Value) -> Result<Operation, String> {
     }
     splash_storage::resolve_jailed(root, name)?;
     let name = name.to_owned();
-    Ok(Operation::Export { path, name })
+    Ok(Operation::Export { path, name, bundled: flag("bundled")? })
 }
 
 /// `files.status` for the calling isolate. `storage` is its live storage
@@ -255,6 +261,35 @@ fn status_answer(storage: Option<&StorageAccess>, jail_bytes: impl FnOnce() -> O
 /// jail is the root App Hub gives the app's isolates: `<apps root>/<app>`.
 fn jail_bytes(app: &str) -> Option<u64> {
     crate::app_storage::host()?.usage(app).ok().map(|usage| usage.jail_bytes)
+}
+
+/// A file of the app's own bundle, on its way out by the person's choice: a
+/// sample that came with the app has no copy in its storage.
+fn read_bundled(app: &str, host: &std::path::Path, path: &str) -> Result<Vec<u8>, String> {
+    use std::io::Read;
+    // Artwork too large to pack is compiled in, at bundle paths.
+    let compiled = octosense_appstore::system::system_app(app)
+        .and_then(|system| system.assets.iter().find(|(name, _)| *name == path).map(|(_, bytes)| *bytes));
+    if let Some(bytes) = compiled {
+        if bytes.len() as u64 > MAX_IMPORT {
+            return Err("too_large: The file is over the export bound".into());
+        }
+        return Ok(bytes.to_vec());
+    }
+    let missing = "not_found: This app has no such file";
+    let root = host.canonicalize().map_err(|_| missing)?;
+    let real = splash_storage::resolve_jailed(host, path)?.canonicalize().map_err(|_| missing)?;
+    // A link in a bundle stays in the bundle.
+    if !real.starts_with(&root) || !real.is_file() {
+        return Err(missing.into());
+    }
+    let file = std::fs::File::open(real).map_err(|_| missing)?;
+    let mut bytes = Vec::new();
+    file.take(MAX_IMPORT + 1).read_to_end(&mut bytes).map_err(|_| "export_unavailable: Couldn't read the file")?;
+    if bytes.len() as u64 > MAX_IMPORT {
+        return Err("too_large: The file is over the export bound".into());
+    }
+    Ok(bytes)
 }
 
 fn admission(app: &str, host: &std::path::Path) -> Result<Value, String> {
@@ -347,13 +382,13 @@ impl HostService for FilesService {
             ),
             (
                 "pick_photo",
-                "Choose one PNG, JPEG or WebP image into a new app file; at most 1 MiB, requires storage",
-                json!({"type":"object","required":["path"],"additionalProperties":false,"properties":{"path":{"type":"string","minLength":1,"maxLength":2048}}}),
+                "Choose one PNG, JPEG or WebP image into a new app file; at most 1 MiB, or an import's bound with full_size, requires storage",
+                json!({"type":"object","required":["path"],"additionalProperties":false,"properties":{"path":{"type":"string","minLength":1,"maxLength":2048},"full_size":{"type":"boolean"}}}),
             ),
             (
                 "export",
-                "Save a snapshot of one app file to a native destination; requires storage",
-                json!({"type":"object","required":["path"],"additionalProperties":false,"properties":{"path":{"type":"string","minLength":1,"maxLength":2048},"name":{"type":"string","minLength":1,"maxLength":128}}}),
+                "Save a snapshot of one app file, or with bundled one file of the app's own bundle, to a native destination; requires storage",
+                json!({"type":"object","required":["path"],"additionalProperties":false,"properties":{"path":{"type":"string","minLength":1,"maxLength":2048},"name":{"type":"string","minLength":1,"maxLength":128},"bundled":{"type":"boolean"}}}),
             ),
         ] {
             methods.push(HostApiMethod::new(format!("files.{method}"), 1, "files", summary, input,
@@ -545,7 +580,7 @@ pub fn handle_event(cx: &mut Cx, event: &Event) {
                     .is_ok()
                 }));
             let export = match &work.operation {
-                Operation::Import { path } | Operation::PickPhoto { path } => {
+                Operation::Import { path } | Operation::PickPhoto { path, .. } => {
                     if let Err(e) = storage.validate_path(path) {
                         work.reply.send(Err(e));
                         return;
@@ -554,6 +589,7 @@ pub fn handle_event(cx: &mut Cx, event: &Event) {
                     let limit = work.operation.selection_limit(storage.quota());
                     cx.set_virtual_file_limits(limit, limit);
                     let photo = matches!(work.operation, Operation::PickPhoto { .. });
+                    let full_size = matches!(work.operation, Operation::PickPhoto { full_size: true, .. });
                     let dialog = if photo {
                         dialog.add_filter(
                             "Images (PNG, JPEG, WebP)".into(),
@@ -565,7 +601,9 @@ pub fn handle_event(cx: &mut Cx, event: &Event) {
                     cx.open_select_file_dialog(
                         dialog
                             .set_title(
-                                if photo {
+                                if full_size {
+                                    "Import a photo"
+                                } else if photo {
                                     "Choose an image (maximum 1 MiB)"
                                 } else {
                                     "Import a file into this app"
@@ -578,8 +616,9 @@ pub fn handle_event(cx: &mut Cx, event: &Event) {
                     cx.set_virtual_file_limits(previous.max_file_size, previous.max_total_size);
                     None
                 }
-                Operation::Export { path, name } => {
-                    let bytes = match storage.read_bytes(path) {
+                Operation::Export { path, name, bundled } => {
+                    let read = if *bundled { read_bundled(&work.call.app_id, &work.call.host_dir, path) } else { storage.read_bytes_up_to(path, MAX_IMPORT) };
+                    let bytes = match read {
                         Ok(bytes) => bytes,
                         Err(e) => {
                             work.reply.send(Err(e));
@@ -635,7 +674,7 @@ fn complete(cx: &mut Cx, pending: Pending, action: &FileDialogAction) {
     };
     match (&work.operation, action) {
         (
-            Operation::Import { path } | Operation::PickPhoto { path },
+            Operation::Import { path } | Operation::PickPhoto { path, .. },
             FileDialogAction::FileLoaded { files, .. },
         ) if files.len() == 1 => {
             let file = &files[0];

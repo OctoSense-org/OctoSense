@@ -211,15 +211,15 @@ fn a_question_expires_declined_and_shows_as_expired() {
     assert!(!model.tick(1_599));
     assert!(model.tick(1_600));
     let r = model.get(id).unwrap().clone();
-    assert_eq!(r.state, State::Expired("no answer in 10 min".into()));
+    assert_eq!(r.state, State::Expired("no answer in 10 minutes".into()));
     let sent = sent.lock().unwrap().clone();
     assert_eq!(sent.len(), 1);
     assert!(sent[0][0].get("selected_labels").is_none());
-    assert!(sent[0][0]["free_text"].as_str().unwrap().contains("expired, no answer in 10 min"));
+    assert!(sent[0][0]["free_text"].as_str().unwrap().contains("expired, no answer in 10 minutes"));
     assert!(model.answer(id, &[QuestionReply::option("#a")], &PersonAnswer::from_shell_surface()).is_err(), "no late answer");
     assert!(model.open_in_apps().is_empty(), "no longer asked");
     assert_eq!(model.expired_in_apps().len(), 1, "still shown, as expired");
-    assert_eq!(heard.lock().unwrap().last().unwrap().2, State::Expired("no answer in 10 min".into()));
+    assert_eq!(heard.lock().unwrap().last().unwrap().2, State::Expired("no answer in 10 minutes".into()));
     model.dismiss(id);
     assert!(model.expired_in_apps().is_empty());
 }
