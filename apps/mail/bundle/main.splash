@@ -2254,8 +2254,8 @@ fn app_menus(){
     if ui_unified {
         let quoting = free && composing && compose_head != "" && !compose_ask && !preparing_review &&
             compose_state != "awaiting_approval" && compose_state != "sending"
-        rows.push({menu: "Format" submenu: "Quote Level" title: "Increase" command: "quote_more" enabled: quoting && compose_level < 3})
-        rows.push({menu: "Format" submenu: "Quote Level" title: "Decrease" command: "quote_less" enabled: quoting && compose_level > 0})
+        rows.push({menu: "Format" submenu: "Quote Level" title: "Increase" key: "cmd+'" command: "quote_more" enabled: quoting && compose_level < 3})
+        rows.push({menu: "Format" submenu: "Quote Level" title: "Decrease" key: "alt+cmd+'" command: "quote_less" enabled: quoting && compose_level > 0})
     }
     rows
 }

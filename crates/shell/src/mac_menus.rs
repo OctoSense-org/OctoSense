@@ -225,6 +225,7 @@ fn parse_key(spec: &str) -> Option<(KeyCode, KeyModifiers)> {
         "=" => KeyCode::Equals,
         "[" => KeyCode::LBracket,
         "]" => KeyCode::RBracket,
+        "'" => KeyCode::Quote,
         "delete" => KeyCode::Backspace,
         "return" => KeyCode::ReturnKey,
         "space" => KeyCode::Space,
@@ -1915,6 +1916,9 @@ mod tests {
         assert_eq!(key_glyphs("shift+cmd+R"), "\u{21e7}\u{2318}R");
         assert_eq!(key_glyphs("cmd+shift+ctrl+f"), "\u{2303}\u{21e7}\u{2318}F");
         assert_eq!(key_glyphs("cmd+,"), "\u{2318},");
+        // Mail's Format > Quote Level, as a Mac's Mail has it.
+        assert_eq!(key_glyphs("cmd+'"), "\u{2318}'");
+        assert_eq!(key_glyphs("alt+cmd+'"), "\u{2325}\u{2318}'");
         assert_eq!(key_glyphs("delete"), "\u{232b}");
         assert_eq!(key_glyphs(""), "");
     }
@@ -1927,6 +1931,10 @@ mod tests {
         assert!(!key_matches("cmd+N", &press(KeyCode::KeyN, false, false)));
         assert!(key_matches("shift+cmd+R", &press(KeyCode::KeyR, true, true)));
         assert!(key_matches("cmd+,", &press(KeyCode::Comma, true, false)));
+        assert!(key_matches("cmd+'", &press(KeyCode::Quote, true, false)));
+        let alt_quote = KeyEvent { key_code: KeyCode::Quote, modifiers: KeyModifiers { logo: true, alt: true, ..Default::default() }, ..Default::default() };
+        assert!(key_matches("alt+cmd+'", &alt_quote));
+        assert!(!key_matches("cmd+'", &alt_quote));
         assert!(!key_matches("bad+N", &press(KeyCode::KeyN, true, false)));
         assert!(!key_matches("", &press(KeyCode::KeyN, true, false)));
     }
