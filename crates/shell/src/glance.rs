@@ -1254,7 +1254,6 @@ pub fn demo_mail() -> Vec<(&'static str, &'static str, String, Value)> {
             "title": "UPS · Your desk lamp has shipped",
             "subtitle": "Tracking 1Z 999 AA1 01 2345 6784",
             "as_of": "09:15",
-            "summary": "The desk lamp from Lumen & Co. is out for delivery today; no signature needed.",
             "metric1_label": "Status", "metric1_value": "Out for delivery",
             "metric2_label": "ETA", "metric2_value": "Today by 8 pm",
             "url1": "ups.com/track · 1Z999AA10123456784"

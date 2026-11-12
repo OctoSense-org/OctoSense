@@ -763,6 +763,8 @@ pub struct App {
     #[rust] mac_own_menus: Vec<String>,
     #[rust] mac_status_items: Vec<BarModule>,
     #[rust] host_sound_set_until: f64,
+    /// Until when a Wi-Fi or Bluetooth switch the person turned stands over the samples.
+    #[rust] host_radio_set_until: f64,
     #[rust] mac_appearance: MacAppearance,
     #[rust] mac_picture: MacPicture,
     /// Recent Items: the apps a person opened last, newest first.
@@ -1856,7 +1858,11 @@ impl App {
         let taken_by = e.handled.get();
         let body = self.ui.widget(cx, ids!(main_window.body)).area();
         let unclaimed = taken_by.is_empty() || taken_by.rect(cx) == body.rect(cx);
+        // A Mac's Notification Center column over the desktop answers its own presses.
+        let in_glance = self.state_mut().style.target == desktop::DesktopStyle::Macos
+            && self.ui.widget(cx, ids!(shell_glance)).borrow::<glance_panel::ShellGlancePanel>().is_some_and(|panel| panel.covers(e.abs));
         let on_desktop = unclaimed
+            && !in_glance
             && area.contains(e.abs.x, e.abs.y)
             && self.state_mut().layout.client_at(e.abs.x, e.abs.y, area, gap).is_none();
         if on_desktop {
@@ -4761,6 +4767,7 @@ impl App {
             glance_panel::ShellGlancePanelAction::OpenCard { key } => self.open_glance_card(cx, &key),
             glance_panel::ShellGlancePanelAction::Dismissed { count } => self.glance_dismissed(cx, count),
             glance_panel::ShellGlancePanelAction::Undo => self.glance_undo(cx),
+            glance_panel::ShellGlancePanelAction::WidgetMenu { app, size, x, y } => self.open_widget_menu(cx, &app, &size, dvec2(x, y)),
             glance_panel::ShellGlancePanelAction::None => {}
         }
     }
@@ -4857,6 +4864,9 @@ impl App {
     }
 
     fn launch_glance_app(&mut self, cx: &mut Cx, app: &str, route: Option<&str>) {
+        if let Some(route) = route {
+            log!("wm: glance opens {app} at {route:?}");
+        }
         #[cfg(any(feature = "app-hub", native_mobile))]
         {
             // Glance stores the publisher's manifest ID, whereas installed
@@ -4876,9 +4886,34 @@ impl App {
                     self.notify(cx, "Calendar", &error);
                 }
             }
+            self.launch_app(cx, app);
+            return;
         }
+        // Another system app's notice that says what it is about (Maps' way
+        // to a place): the app takes the route as it opens (`glance.take_open`),
+        // or, already open, the shell hands it over at once (`open:<route>`).
+        #[cfg(any(feature = "app-hub", native_mobile))]
+        let system = route.and_then(|route| {
+            let id = octosense_app_hub_app::system_apps().into_iter().map(|a| a.id).find(|id| id.strip_prefix(octosense_appstore::system::SYSTEM_ID_PREFIX) == Some(app))?;
+            crate::glance_routes::queue(id, route);
+            Some((id, route))
+        });
         let _ = route;
         self.launch_app(cx, app);
+        #[cfg(any(feature = "app-hub", native_mobile))]
+        if let Some((id, route)) = system {
+            let focused = self.state_mut().layout.focused_client();
+            let front = focused.filter(|client| self.state_mut().clients.get(client).is_some_and(|slot| slot.app == app));
+            if let Some(client) = front {
+                let command = format!("open:{route}");
+                let called = self.module_host.dispatch(cx, client, "its route", |cx, root| root.splash(cx, ids!(card)).call_script_fn_with_strings(cx, id!(on_menu_command), &[command.as_str()]));
+                if called == Some(true) {
+                    crate::glance_routes::take(id);
+                    cx.with_vm_and_async(|_| {});
+                }
+                log!("wm: glance route {route:?} handed to {app} ({})", if called == Some(true) { "open" } else { "when it asks" });
+            }
+        }
     }
 
     /// Back dismisses the IME, then review, then the workspace.
@@ -5418,6 +5453,13 @@ impl App {
         self.host_sound_set_until = makepad_widgets::Cx::monotonic_now() + round;
     }
 
+    /// A Wi-Fi or Bluetooth switch the person turned shows as turned until the
+    /// sampler has looked again.
+    fn hold_host_radios(&mut self) {
+        let round = if launch_input::hidden_windows() { 61.0 } else { 6.0 };
+        self.host_radio_set_until = makepad_widgets::Cx::monotonic_now() + round;
+    }
+
     fn set_volume(&mut self, cx: &mut Cx, level: u32) {
         #[cfg(target_os = "macos")]
         {
@@ -5654,7 +5696,10 @@ impl App {
         self.status_tick = self.status_tick.wrapping_add(1);
         self.bar_sample.battery = s.battery;
         self.bar_sample.network = s.network;
-        self.bar_sample.bluetooth = s.bluetooth;
+        if makepad_widgets::Cx::monotonic_now() >= self.host_radio_set_until {
+            self.bar_sample.bluetooth = s.bluetooth;
+            self.bar_sample.wifi = s.wifi.clone();
+        }
         // Keep the flyout's own copy in step with the bar's.
         let panel = self.ui.widget(cx, ids!(shell_panel));
         {
@@ -6585,8 +6630,9 @@ impl App {
     /// with a launch that another app may have made (an Android intent
     /// extra), so only a development build takes them (`launch_input`).
     /// One `--test-action toast:<app icon or ->|<title>|<body>|<action>`, as
-    /// the shell posts one, or `glance-notice:<app>|<title>|<body>`, the notice
-    /// an app's agent sends (`<namespace>.notify`): a card and its banner.
+    /// the shell posts one, or `glance-notice:<app>|<title>|<body>[|<route>]`,
+    /// the notice an app's agent sends (`<namespace>.notify`): a card and its
+    /// banner, opening the app at the route when it gives one.
     fn fire_test_notice(&mut self, cx: &mut Cx, spec: &str) {
         if let Some(spec) = spec.strip_prefix("toast:") {
             let parts: Vec<&str> = spec.splitn(4, '|').collect();
@@ -6608,10 +6654,13 @@ impl App {
         }
         #[cfg(any(feature = "app-hub", native_mobile))]
         if let Some(spec) = spec.strip_prefix("glance-notice:") {
-            let parts: Vec<&str> = spec.splitn(3, '|').collect();
+            let parts: Vec<&str> = spec.splitn(4, '|').collect();
             let part = |i: usize| parts.get(i).copied().unwrap_or("");
             let card_id: String = part(1).chars().filter(char::is_ascii_alphanumeric).take(58).collect();
-            let args = serde_json::json!({"title": part(1), "body": part(2), "card_id": format!("test-{card_id}")});
+            let mut args = serde_json::json!({"title": part(1), "body": part(2), "card_id": format!("test-{card_id}")});
+            if !part(3).is_empty() {
+                args["route"] = serde_json::json!(part(3));
+            }
             log!("wm: test notice from {}: {:?}", part(0), glance_notice::notify(part(0), &args).map(|_| "published"));
         }
     }

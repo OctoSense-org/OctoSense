@@ -33,6 +33,9 @@ const TILE_ROW: f64 = 44.0;
 /// A Sound menu's output: its row, and the round button its device's glyph sits in.
 const DEVICE_ROW: f64 = 32.0;
 const DEVICE: f64 = 26.0;
+/// A Wi-Fi or Bluetooth menu's switch, beside its name: the track's size.
+const SWITCH_W: f64 = 26.0;
+const SWITCH_H: f64 = 15.0;
 /// A release this long after the press that opened a menu chooses the row under
 /// it: press on a title, drag to a row, let go.
 const DRAG_RELEASE: f64 = 0.3;
@@ -199,6 +202,9 @@ fn spotlight_tint(target: &str, dark: bool) -> Vec4f {
         "settings.appearance" => rgb(28, 28, 30),
         "settings.assistant" => rgb(138, 92, 245),
         "settings.general" | "settings.keyboard" => rgb(142, 142, 147),
+        // The web's, in the blue of the browser a Mac hands it to.
+        SPOTLIGHT_WEB_ROW if dark => rgb(10, 132, 255),
+        SPOTLIGHT_WEB_ROW => rgb(0, 122, 255),
         _ => rgb(112, 118, 130),
     }
 }
@@ -252,6 +258,10 @@ fn spotlight_group(kind: &str) -> usize {
 /// What a result's group is called, over the first row of each, as a Mac's
 /// Spotlight heads every group: the first result is the Top Hit, even alone.
 fn spotlight_caption(rows: &[MenuRow], i: usize) -> Option<&'static str> {
+    // Searching the web is no result: it ends the list, unheaded.
+    if rows[i].target == SPOTLIGHT_WEB_ROW {
+        return None;
+    }
     if i == 0 {
         return Some("Top Hit");
     }
@@ -279,6 +289,29 @@ pub fn spotlight_rows(rows: &mut Vec<MenuRow>, needle: &str) {
         let top = rows.remove(best);
         rows.insert(0, top);
     }
+}
+
+/// Spotlight's Search the Web row (mac_menus.rs opens the words typed in the
+/// person's browser, from `mac.web:<words>`).
+pub const SPOTLIGHT_WEB_ROW: &str = "mac.web";
+
+/// What is typed, searched for on the web: a Mac's Spotlight ends its results
+/// with it, and shows it at once when nothing here matches.
+pub fn spotlight_web_row(rows: &mut Vec<MenuRow>, typed: &str) {
+    let typed = typed.trim();
+    if typed.is_empty() {
+        return;
+    }
+    rows.push(MenuRow {
+        label: format!("Search the Web for \u{201c}{typed}\u{201d}"),
+        detail: String::new(),
+        icon: Some(Ico::Globe),
+        target: SPOTLIGHT_WEB_ROW.to_string(),
+        kind: MenuKind::Action,
+        disabled: false,
+        has_children: false,
+        divider: false,
+    });
 }
 
 /// A list a result opened: the Mac's case, and the word its windows use for the
@@ -330,6 +363,11 @@ pub struct MacRow {
     /// The Control Center module a row sits in, from 1: one module's rows share
     /// its rounded box.
     pub module: u8,
+    /// A Wi-Fi or Bluetooth menu's first row: its name in bold and a switch,
+    /// on or off, at its right. Choosing the row turns it over.
+    pub switch: Option<bool>,
+    /// A glyph at a device row's right end: a Wi-Fi network's lock.
+    pub trailing: Option<Ico>,
 }
 
 impl MacRow {
@@ -365,6 +403,14 @@ impl MacRow {
     }
     pub fn module(mut self, module: u8) -> Self {
         self.module = module;
+        self
+    }
+    /// A Wi-Fi or Bluetooth menu's name and its switch.
+    pub fn switch(label: &str, target: &str, on: bool) -> Self {
+        Self { label: label.into(), target: target.into(), enabled: true, head: true, switch: Some(on), ..Default::default() }
+    }
+    pub fn trailing(mut self, ico: Ico) -> Self {
+        self.trailing = Some(ico);
         self
     }
     pub fn key(mut self, shortcut: &str) -> Self {
@@ -831,7 +877,14 @@ impl ShellMenu {
             if row.device.is_some() {
                 height += DEVICE_ROW;
                 let label = self.d.measure(cx, false, TEXT, &row.label);
-                width = width.max(PAD_X + 9.0 + DEVICE + 8.0 + label + PAD_X + 14.0);
+                let trailing = if row.trailing.is_some() { 22.0 } else { 0.0 };
+                width = width.max(PAD_X + 9.0 + DEVICE + 8.0 + label + trailing + PAD_X + 14.0);
+                continue;
+            }
+            if row.switch.is_some() {
+                height += ROW;
+                let label = self.d.measure(cx, true, TEXT, &row.label);
+                width = width.max(label_x + label + 24.0 + SWITCH_W + PAD_X + 9.0);
                 continue;
             }
             height += ROW;
@@ -904,8 +957,27 @@ impl ShellMenu {
                 self.d.rounded(cx, circle, DEVICE * 0.5, if current { accent } else { fade(ink, 0.1) });
                 self.d.icon_centered(cx, ico, circle, 13.0, if current { rgb(255, 255, 255) } else { ink });
                 let text_x = circle.pos.x + DEVICE + 8.0;
-                self.d.label_elided(cx, rect(text_x, y, (band.pos.x + band.size.x - text_x - 6.0).max(1.0), DEVICE_ROW), false, TEXT, ink, super::super::ui::HAlign::Left, &row.label);
+                let end = band.pos.x + band.size.x - if row.trailing.is_some() { 28.0 } else { 6.0 };
+                self.d.label_elided(cx, rect(text_x, y, (end - text_x).max(1.0), DEVICE_ROW), false, TEXT, ink, super::super::ui::HAlign::Left, &row.label);
+                if let Some(glyph) = row.trailing {
+                    self.d.icon_centered(cx, glyph, rect(band.pos.x + band.size.x - 26.0, y, 18.0, DEVICE_ROW), 11.0, fade(ink, 0.62));
+                }
                 y += DEVICE_ROW;
+                continue;
+            }
+            if let Some(switched) = row.switch {
+                // The name in bold and its switch at the right, as a Mac's Wi-Fi and
+                // Bluetooth menus open: a grey wash under the pointer, no blue band.
+                let band = rect(card.pos.x + PAD_X, y, card.size.x - PAD_X * 2.0, ROW);
+                hits.push(band);
+                if cursor == Some(i) && row.enabled {
+                    self.d.rounded(cx, band, 3.0, fade(ink, 0.1));
+                }
+                let left = card.pos.x + label_x;
+                let right = card.pos.x + card.size.x - PAD_X - 9.0;
+                self.d.label_elided(cx, rect(left, y, (right - left - SWITCH_W - 8.0).max(1.0), ROW), true, TEXT, ink, super::super::ui::HAlign::Left, &row.label);
+                self.draw_mac_switch(cx, rect(right - SWITCH_W, y + ((ROW - SWITCH_H) * 0.5).round(), SWITCH_W, SWITCH_H), switched, ink, accent);
+                y += ROW;
                 continue;
             }
             let band = rect(card.pos.x + PAD_X, y, card.size.x - PAD_X * 2.0, ROW);
@@ -974,6 +1046,14 @@ impl ShellMenu {
                 self.d.solid(cx, rect(band.pos.x + 8.0, (y + h * 0.5).floor(), band.size.x - 16.0, 1.0), fade(ink, 0.12));
                 continue;
             }
+            if let Some(switched) = row.switch {
+                if cursor == Some(i) {
+                    self.d.rounded(cx, band, 6.0, fade(ink, 0.08));
+                }
+                self.d.label_elided(cx, rect(band.pos.x + 8.0, y, (band.size.x - 24.0 - SWITCH_W).max(1.0), h), true, TEXT, ink, super::super::ui::HAlign::Left, &row.label);
+                self.draw_mac_switch(cx, rect(band.pos.x + band.size.x - 8.0 - SWITCH_W, y + ((h - SWITCH_H) * 0.5).round(), SWITCH_W, SWITCH_H), switched, ink, accent);
+                continue;
+            }
             // A module's name, words to read in it, or a row to choose (its settings).
             let chosen = cursor == Some(i) && row.takes_cursor();
             if chosen {
@@ -999,6 +1079,16 @@ impl ShellMenu {
         let place = rect(x, mid - SIZE * 0.5, SIZE, SIZE);
         self.d.icon_centered(cx, ico, place, SIZE + 5.0, rgb(255, 255, 255));
         self.d.icon_centered(cx, ico, place, SIZE, accent);
+    }
+
+    /// A Mac's switch in a menu: the track in the accent colour while on, its white
+    /// knob at the end it stands at.
+    fn draw_mac_switch(&mut self, cx: &mut Cx2d, track: Rect, on: bool, ink: Vec4f, accent: Vec4f) {
+        self.d.rounded(cx, track, track.size.y * 0.5, if on { accent } else { fade(ink, 0.18) });
+        let knob = track.size.y - 2.0;
+        let at = if on { track.pos.x + track.size.x - knob - 1.0 } else { track.pos.x + 1.0 };
+        self.d.rounded(cx, rect(at - 0.5, track.pos.y + 0.5, knob + 1.0, knob + 1.0), (knob + 1.0) * 0.5, fade(rgb(0, 0, 0), 0.16));
+        self.d.rounded(cx, rect(at, track.pos.y + 1.0, knob, knob), knob * 0.5, rgb(255, 255, 255));
     }
 
     /// A Mac's sound slider: a capsule filled up to its knob, the speaker on the fill.
@@ -1345,8 +1435,8 @@ impl ShellMenu {
         }
         about.more = Rect::default();
         if more {
-            // As About This Mac: More Info… opens Settings' General, where the
-            // version and its updates are.
+            // As About This Mac: More Info… opens Settings' General > About,
+            // where the version is.
             use crate::approvals::mac_kit::{mac_ink, push_button, Face, CONTROL_H};
             let label = "More Info\u{2026}";
             let w = (self.d.measure(cx, false, 13.0, label) + 28.0).max(96.0).ceil();
@@ -1356,8 +1446,9 @@ impl ShellMenu {
             y = r.pos.y + r.size.y;
         }
         if foot {
-            // Under everything else, smaller and fainter, as a Mac's is.
-            self.d.label(cx, rect(card.pos.x + 16.0, y + 8.0, width - 32.0, 16.0), false, 10.0, fade(ink, 0.55), super::super::ui::HAlign::Center, &about.foot);
+            // Under everything else, smaller and fainter, as a Mac's is, and
+            // still 4.5:1 on the light card.
+            self.d.label(cx, rect(card.pos.x + 16.0, y + 8.0, width - 32.0, 16.0), false, 10.0, fade(ink, 0.66), super::super::ui::HAlign::Center, &about.foot);
         }
         self.about = Some(about);
     }
@@ -1579,10 +1670,11 @@ impl ShellMenu {
     }
 
     /// A search result can show its own icon and kind beside the list when the
-    /// desktop has room. Nested lists and narrow windows keep the whole width.
+    /// desktop has room. Nested lists and narrow windows keep the whole width,
+    /// and so does a search with nothing found but the web to search.
     fn spotlight_has_preview(&self, screen: Rect, width: f64) -> bool {
         width >= SPOTLIGHT_PREVIEW_MIN_WIDTH && screen.size.y >= 420.0
-            && self.model.path.is_empty() && !self.model.filter.is_empty() && !self.model.rows.is_empty()
+            && self.model.path.is_empty() && !self.model.filter.is_empty() && self.model.rows.iter().any(|row| row.target != SPOTLIGHT_WEB_ROW)
     }
 
     /// Nothing typed and no list open: Spotlight shows no rows to choose.
@@ -1891,10 +1983,8 @@ impl ShellMenu {
         self.row_rects.clear();
         let (columns, rows, cell_w, cell_h, x0, y0) = self.launchpad_grid(screen);
         let page = (columns * rows).max(1);
+        // Nothing found: an empty page under the field, as a Mac's Launchpad shows.
         if self.model.rows.is_empty() {
-            let y = y0 + (cell_h * rows as f64 - 64.0) * 0.4;
-            self.d.label(cx, rect(screen.pos.x, y, screen.size.x, 32.0), false, 22.0, white, super::super::ui::HAlign::Center, "No Results");
-            self.d.label(cx, rect(screen.pos.x, y + 34.0, screen.size.x, 20.0), false, 13.0, fade(white, 0.92), super::super::ui::HAlign::Center, "Check the spelling, or try a different name.");
             return;
         }
         let first = (self.model.scroll / page) * page;
@@ -2156,6 +2246,25 @@ mod launchpad_tests {
         let mut alone = vec![row("settings.appearance", "Appearance")];
         spotlight_rows(&mut alone, "dark");
         assert_eq!(spotlight_caption(&alone, 0), Some("Top Hit"), "a lone result is the Top Hit");
+    }
+
+    /// What is typed can be searched for on the web: the last row, unheaded,
+    /// and the only one when nothing here matches.
+    #[test]
+    fn a_macs_spotlight_ends_with_search_the_web() {
+        let mut rows = vec![row("apps.mail", "Mail")];
+        spotlight_rows(&mut rows, "ma");
+        spotlight_web_row(&mut rows, " Ma ");
+        assert_eq!(rows.iter().map(|r| r.label.as_str()).collect::<Vec<_>>(), ["Mail", "Search the Web for \u{201c}Ma\u{201d}"]);
+        assert_eq!((rows[1].target.as_str(), rows[1].kind, rows[1].icon), (SPOTLIGHT_WEB_ROW, MenuKind::Action, Some(Ico::Globe)));
+        assert_eq!(spotlight_caption(&rows, 1), None, "no group over it");
+        let mut nothing = Vec::new();
+        spotlight_web_row(&mut nothing, "mazzq");
+        assert_eq!(nothing.len(), 1);
+        assert_eq!(spotlight_caption(&nothing, 0), None, "no Top Hit over a web search");
+        let mut blank = Vec::new();
+        spotlight_web_row(&mut blank, "  ");
+        assert!(blank.is_empty(), "nothing typed, nothing to search for");
     }
 }
 

@@ -1119,7 +1119,7 @@ index 0000000000000000000000000000000000000000..4b22017a324f0e1c02ab64b7df3a3fde
 @@ -0,0 +1 @@
 +<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect width="24" height="24" fill="none" stroke="none"/><rect x="8" y="8" width="12.5" height="12.5" rx="2.5"/><path d="M16 5.5A2.5 2.5 0 0 0 13.5 3.5H6A2.5 2.5 0 0 0 3.5 6v7.5A2.5 2.5 0 0 0 5.5 16"/></svg>
 diff --git a/apps/browser/src/chrome.rs b/apps/browser/src/chrome.rs
-index 6b326fe02c8bae5fd9cb113fdb76eaef5cb3bed3..d06a3bb93d49abe3511d7acba1f5a674127c6882 100644
+index 6b326fe02c8bae5fd9cb113fdb76eaef5cb3bed3..fc982e235f1beadae70c08a5a745ab56637bd555 100644
 --- a/apps/browser/src/chrome.rs
 +++ b/apps/browser/src/chrome.rs
 @@ -16,6 +16,7 @@
@@ -1232,8 +1232,31 @@ index 6b326fe02c8bae5fd9cb113fdb76eaef5cb3bed3..d06a3bb93d49abe3511d7acba1f5a674
          back_btn := MpToolButton{icon_walk: Walk{width: 14 height: 14} draw_icon.svg: crate_resource("self:resources/icons/mac/chevron-left.svg")}
          forward_btn := MpToolButton{icon_walk: Walk{width: 14 height: 14} draw_icon.svg: crate_resource("self:resources/icons/mac/chevron-right.svg")}
  
-@@ -429,7 +518,10 @@ fn by(touch, mac){ if desk { mac } else { touch } }
+@@ -427,9 +516,33 @@ fn by(touch, mac){ if desk { mac } else { touch } }
+             }
+         }
  
++        // Safari's tab overview: Search Tabs where the address field and Reload
++        // were (a Mac's; the app shows it while the overview is up).
++        tabs_search_frame := FieldFrame{
++            visible: false
++            width: 400
++            flow: Overlay
++            tabs_search := FieldInput{
++                empty_text: "Search Tabs"
++                padding: Inset{left: 25 right: 8 top: 6.7 bottom: 5.3}
++            }
++            View{
++                width: Fit
++                height: 28
++                padding: Inset{left: 7 top: 7}
++                Icon{
++                    icon_walk: Walk{width: 14 height: 14}
++                    draw_icon +: {svg: crate_resource("self:resources/icons/mac/search.svg") color: muted}
++                }
++            }
++        }
++
          Filler{}
  
 +        // Safari's Share, New Tab and tab overview, at the trailing end.
@@ -1243,7 +1266,7 @@ index 6b326fe02c8bae5fd9cb113fdb76eaef5cb3bed3..d06a3bb93d49abe3511d7acba1f5a674
          // Safari's toolbar has no menu of its own: on a Mac its rows are the
          // menu bar's (File, View, History, Bookmarks) and the page's.
          menu_btn := MpToolButton{visible: !unified draw_icon.svg: crate_resource("self:resources/icons/mac/ellipsis.svg")}
-@@ -531,6 +623,55 @@ fn by(touch, mac){ if desk { mac } else { touch } }
+@@ -531,6 +644,55 @@ fn by(touch, mac){ if desk { mac } else { touch } }
      }
      mod.widgets.MpDefaultButton = MpDefaultButton
  
@@ -1299,7 +1322,7 @@ index 6b326fe02c8bae5fd9cb113fdb76eaef5cb3bed3..d06a3bb93d49abe3511d7acba1f5a674
      // A Mac's sheet over the window: the whole window dims, the bars with it,
      // and it takes every press the card does not. The card hangs from the bars'
      // foot (the app sets `sheet_space` to their height when it opens). What it
-@@ -589,6 +730,38 @@ fn by(touch, mac){ if desk { mac } else { touch } }
+@@ -589,6 +751,38 @@ fn by(touch, mac){ if desk { mac } else { touch } }
                      text: ""
                      draw_text +: {color: muted text_style: theme.font_regular{font_size: 9.0}}
                  }
@@ -1338,7 +1361,7 @@ index 6b326fe02c8bae5fd9cb113fdb76eaef5cb3bed3..d06a3bb93d49abe3511d7acba1f5a674
                  sheet_field := View{
                      width: Fill
                      height: Fit
-@@ -602,6 +775,20 @@ fn by(touch, mac){ if desk { mac } else { touch } }
+@@ -602,6 +796,20 @@ fn by(touch, mac){ if desk { mac } else { touch } }
                          }
                      }
                  }
@@ -1359,7 +1382,7 @@ index 6b326fe02c8bae5fd9cb113fdb76eaef5cb3bed3..d06a3bb93d49abe3511d7acba1f5a674
                  View{
                      width: Fill
                      height: Fit
-@@ -1040,3 +1227,286 @@ fn draw_walk(&mut self, cx: &mut Cx2d, _scope: &mut Scope, walk: Walk) -> DrawSt
+@@ -1040,3 +1248,286 @@ fn draw_walk(&mut self, cx: &mut Cx2d, _scope: &mut Scope, walk: Walk) -> DrawSt
          DrawStep::done()
      }
  }
@@ -1647,7 +1670,7 @@ index 6b326fe02c8bae5fd9cb113fdb76eaef5cb3bed3..d06a3bb93d49abe3511d7acba1f5a674
 +    }
 +}
 diff --git a/apps/browser/src/main.rs b/apps/browser/src/main.rs
-index 1970c9cd47b6227a93f62dc161ff50fab575ed89..546e1f3303191144b947ac19a210110cbbfdb404 100644
+index 1970c9cd47b6227a93f62dc161ff50fab575ed89..9af359d64c4018da6fbab3594719a4a867848ed7 100644
 --- a/apps/browser/src/main.rs
 +++ b/apps/browser/src/main.rs
 @@ -16,9 +16,14 @@
@@ -1703,7 +1726,7 @@ index 1970c9cd47b6227a93f62dc161ff50fab575ed89..546e1f3303191144b947ac19a210110c
                      cell_b0 := SavedCell{fav_b0 := Favorite{text: ""} name_b0 := SavedName{}}
                      cell_b1 := SavedCell{fav_b1 := Favorite{text: ""} name_b1 := SavedName{}}
                      cell_b2 := SavedCell{fav_b2 := Favorite{text: ""} name_b2 := SavedName{}}
-@@ -334,6 +349,54 @@
+@@ -334,6 +349,82 @@
          }
      }
  
@@ -1730,6 +1753,9 @@ index 1970c9cd47b6227a93f62dc161ff50fab575ed89..546e1f3303191144b947ac19a210110c
 +        }
 +        draw_text +: {color: ink color_hover: ink color_down: ink color_focus: ink text_style: theme.font_regular{font_size: 10}}
 +    }
++    // It runs the window's full height, as Safari's does: the window's top is
++    // its, the lights over it and the Sidebar tool after them, where the toolbar
++    // had it; the toolbar and the row of tabs are to its right.
 +    let BrowserSidebar = View{
 +        visible: false
 +        width: 220
@@ -1739,11 +1765,23 @@ index 1970c9cd47b6227a93f62dc161ff50fab575ed89..546e1f3303191144b947ac19a210110c
 +            width: Fill
 +            height: Fill
 +            flow: Down
-+            spacing: 2
-+            padding: Inset{left: 10 right: 10 top: 10 bottom: 10}
 +            draw_bg +: {color: side_ground}
-+            side_bookmarks := SideRow{text: "Bookmarks" draw_icon +: {svg: crate_resource("self:resources/icons/mac/book.svg")}}
-+            side_history := SideRow{text: "History" draw_icon +: {svg: crate_resource("self:resources/icons/mac/clock.svg")}}
++            side_top := View{
++                width: Fill
++                height: 52
++                flow: Right
++                padding: Inset{left: 84 top: 12}
++                side_toggle := MpToolButton{icon_walk: Walk{width: 22 height: 22} draw_icon.svg: crate_resource("self:resources/icons/mac/sidebar.svg")}
++            }
++            View{
++                width: Fill
++                height: Fill
++                flow: Down
++                spacing: 2
++                padding: Inset{left: 10 right: 10 top: 10 bottom: 10}
++                side_bookmarks := SideRow{text: "Bookmarks" draw_icon +: {svg: crate_resource("self:resources/icons/mac/book.svg")}}
++                side_history := SideRow{text: "History" draw_icon +: {svg: crate_resource("self:resources/icons/mac/clock.svg")}}
++            }
 +        }
 +        SolidView{width: 1 height: Fill draw_bg +: {color: hairline}}
 +    }
@@ -1752,13 +1790,26 @@ index 1970c9cd47b6227a93f62dc161ff50fab575ed89..546e1f3303191144b947ac19a210110c
 +        visible: false
 +        width: Fill
 +        height: Fill
++        flow: Overlay
 +        tab_overview := TabOverview{}
++        // Search Tabs found no tab: said in the middle, as a Mac's search does.
++        overview_none := View{
++            visible: false
++            width: Fill
++            height: Fill
++            align: Align{x: 0.5 y: 0.4}
++            Label{
++                padding: 0
++                text: "No Results"
++                draw_text +: {color: muted text_style: theme.font_regular{font_size: 12}}
++            }
++        }
 +    }
 +
      // Nothing of the sort on a phone.
      let NoPage = View{visible: false width: 0 height: 0}
  
-@@ -342,6 +405,7 @@
+@@ -342,6 +433,7 @@
          unified: unified
          ring_on: theme.color_focus
          ring_off: hairline
@@ -1766,7 +1817,19 @@ index 1970c9cd47b6227a93f62dc161ff50fab575ed89..546e1f3303191144b947ac19a210110c
          ink: ink
          muted: muted
          grey: grey
-@@ -359,11 +423,18 @@
+@@ -351,19 +443,28 @@
+                 window.title: "browser"
+                 body +: {
+                     flow: Overlay
++                    // A Mac's sidebar, from the window's top to its foot; the bars
++                    // and the page to its right. Elsewhere there is none.
+                     View{
+                         width: Fill
+                         height: Fill
+-                        flow: Down
+-                        bars := if desk { DeskBars{} } else { TouchBars{} }
++                        flow: Right
++                        side := if unified { BrowserSidebar{} } else { NoPage{} }
                          View{
                              width: Fill
                              height: Fill
@@ -1775,8 +1838,8 @@ index 1970c9cd47b6227a93f62dc161ff50fab575ed89..546e1f3303191144b947ac19a210110c
 -                            start_page := if desk { StartPage{} } else { NoPage{} }
 -                            fail_page := if desk { FailPage{} } else { NoPage{} }
 -                            places_page := if unified { MpPlacesPage{} } else { NoPage{} }
-+                            flow: Right
-+                            side := if unified { BrowserSidebar{} } else { NoPage{} }
++                            flow: Down
++                            bars := if desk { DeskBars{} } else { TouchBars{} }
 +                            View{
 +                                width: Fill
 +                                height: Fill
@@ -1790,7 +1853,7 @@ index 1970c9cd47b6227a93f62dc161ff50fab575ed89..546e1f3303191144b947ac19a210110c
                          }
                      }
                      // The ⋮ menu: a square panel under the button.
-@@ -376,6 +447,8 @@
+@@ -376,6 +477,8 @@
                          menu := if desk { DeskMenu{} } else { TouchMenu{} }
                      }
                      browser_sheet := if unified { MpBrowserSheet{} } else { NoPage{} }
@@ -1799,7 +1862,7 @@ index 1970c9cd47b6227a93f62dc161ff50fab575ed89..546e1f3303191144b947ac19a210110c
                  }
              }
          }
-@@ -418,6 +491,8 @@ pub fn is_app_shortcut(key_event: &KeyEvent, mac: bool) -> bool {
+@@ -418,6 +521,8 @@ pub fn is_app_shortcut(key_event: &KeyEvent, mac: bool) -> bool {
              KeyCode::KeyD | KeyCode::KeyY => !shift && !alt,
              KeyCode::KeyB => alt && !shift,
              KeyCode::Backspace => shift && !alt,
@@ -1808,7 +1871,7 @@ index 1970c9cd47b6227a93f62dc161ff50fab575ed89..546e1f3303191144b947ac19a210110c
              _ => false,
          }
      {
-@@ -447,6 +522,116 @@ pub fn is_app_shortcut(key_event: &KeyEvent, mac: bool) -> bool {
+@@ -447,6 +552,116 @@ pub fn is_app_shortcut(key_event: &KeyEvent, mac: bool) -> bool {
      )
  }
  
@@ -1925,7 +1988,7 @@ index 1970c9cd47b6227a93f62dc161ff50fab575ed89..546e1f3303191144b947ac19a210110c
  /// URLs given on the command line (everything that is not a flag).
  fn initial_urls() -> Vec<String> {
      let mut urls = Vec::new();
-@@ -464,14 +649,24 @@ fn initial_urls() -> Vec<String> {
+@@ -464,14 +679,24 @@ fn initial_urls() -> Vec<String> {
      urls
  }
  
@@ -1958,7 +2021,7 @@ index 1970c9cd47b6227a93f62dc161ff50fab575ed89..546e1f3303191144b947ac19a210110c
  ];
  
  /// The bookmarks the Start Page shows: its cell, tile and name.
-@@ -506,6 +701,13 @@ fn initial_urls() -> Vec<String> {
+@@ -506,6 +731,13 @@ fn initial_urls() -> Vec<String> {
  /// written this long after it last had to be.
  const HISTORY_WRITE_SECONDS: f64 = 1.0;
  
@@ -1972,7 +2035,7 @@ index 1970c9cd47b6227a93f62dc161ff50fab575ed89..546e1f3303191144b947ac19a210110c
  /// A sheet over the window (a Mac's).
  #[derive(Clone, Debug)]
  enum Sheet {
-@@ -514,10 +716,23 @@ enum Sheet {
+@@ -514,10 +746,30 @@ enum Sheet {
      ClearHistory,
  }
  
@@ -1980,6 +2043,13 @@ index 1970c9cd47b6227a93f62dc161ff50fab575ed89..546e1f3303191144b947ac19a210110c
 -fn clear_history_note(pages: usize) -> String {
 -    let what = if pages == 1 { "the one page".to_string() } else { format!("all {pages} pages") };
 -    format!("This removes {what} in your history. Bookmarks, open tabs and website data stay.")
++/// Search Tabs, as Safari's: a tab answers when its title or its address holds
++/// the words, whatever their case; no words, every tab does.
++fn tab_matches(title: &str, url: &str, words: &str) -> bool {
++    let words = words.trim().to_lowercase();
++    words.is_empty() || title.to_lowercase().contains(&words) || url.to_lowercase().contains(&words)
++}
++
 +/// What Clear History says it will do, over its "Clear:" range: `pages` is
 +/// how many that range takes.
 +fn clear_history_note(range: ClearRange, pages: usize) -> String {
@@ -2000,7 +2070,7 @@ index 1970c9cd47b6227a93f62dc161ff50fab575ed89..546e1f3303191144b947ac19a210110c
  }
  
  /// How long a page that looks like the engine's error page may take to answer
-@@ -585,6 +800,9 @@ pub struct App {
+@@ -585,6 +837,9 @@ pub struct App {
      ring_on: Vec4f,
      #[live]
      ring_off: Vec4f,
@@ -2010,7 +2080,7 @@ index 1970c9cd47b6227a93f62dc161ff50fab575ed89..546e1f3303191144b947ac19a210110c
      #[rust]
      omnibox_focused: bool,
      /// The window lost the keyboard, not the field: what's typed waits for it.
-@@ -658,6 +876,9 @@ pub struct App {
+@@ -658,6 +913,9 @@ pub struct App {
      /// Which of the ⋮ menu's rows can act now.
      #[rust]
      menu_can: [bool; 8],
@@ -2020,7 +2090,7 @@ index 1970c9cd47b6227a93f62dc161ff50fab575ed89..546e1f3303191144b947ac19a210110c
      /// Bookmarks and History, a Mac's.
      #[rust]
      places: Places,
-@@ -687,6 +908,27 @@ pub struct App {
+@@ -687,6 +945,32 @@ pub struct App {
      /// The sheet's field has the keyboard.
      #[rust]
      sheet_focused: bool,
@@ -2042,13 +2112,18 @@ index 1970c9cd47b6227a93f62dc161ff50fab575ed89..546e1f3303191144b947ac19a210110c
 +    /// Safari's tab overview is up (a Mac's).
 +    #[rust]
 +    overview_open: bool,
++    /// What the tab overview's Search Tabs holds, and whether it has the keyboard.
++    #[rust]
++    tabs_query: String,
++    #[rust]
++    tabs_search_focused: bool,
 +    /// The Share menu's commands, by row.
 +    #[rust]
 +    share_commands: Vec<Option<ShareCommand>>,
  }
  
  struct AiBrowserTarget<'a> {
-@@ -732,6 +974,8 @@ fn with_webview<R>(&self, cx: &mut Cx, f: impl FnOnce(&mut Cx, &mut WebView) ->
+@@ -732,6 +1016,8 @@ fn with_webview<R>(&self, cx: &mut Cx, f: impl FnOnce(&mut Cx, &mut WebView) ->
      }
  
      fn new_tab(&mut self, cx: &mut Cx, url: Option<String>) {
@@ -2057,7 +2132,7 @@ index 1970c9cd47b6227a93f62dc161ff50fab575ed89..546e1f3303191144b947ac19a210110c
          let url = url.unwrap_or_else(|| palette().new_tab_url());
          let is_ntp = theme::is_new_tab_url(&url);
          self.with_webview(cx, |cx, wv| {
-@@ -750,6 +994,23 @@ fn remember_closed(&mut self, url: &str) {
+@@ -750,6 +1036,23 @@ fn remember_closed(&mut self, url: &str) {
          }
      }
  
@@ -2081,7 +2156,7 @@ index 1970c9cd47b6227a93f62dc161ff50fab575ed89..546e1f3303191144b947ac19a210110c
      fn close_active_tab(&mut self, cx: &mut Cx) {
          let info = self
              .with_webview(cx, |_cx, wv| wv.active_info())
-@@ -905,6 +1166,42 @@ fn sync_menu_rows(&mut self, cx: &mut Cx, info: &webview::ActiveInfo) {
+@@ -905,6 +1208,42 @@ fn sync_menu_rows(&mut self, cx: &mut Cx, info: &webview::ActiveInfo) {
          }
      }
  
@@ -2124,7 +2199,7 @@ index 1970c9cd47b6227a93f62dc161ff50fab575ed89..546e1f3303191144b947ac19a210110c
      fn paint_menu_rows(&mut self, cx: &mut Cx) {
          for (index, (row, _)) in self.menu_rows().iter().enumerate() {
              let can = self.menu_can[index];
-@@ -955,8 +1252,12 @@ fn style_applied(&mut self, cx: &mut Cx) {
+@@ -955,8 +1294,14 @@ fn style_applied(&mut self, cx: &mut Cx) {
          }
          self.toolbar_width = 0.0;
          self.layout_toolbar(cx);
@@ -2135,10 +2210,12 @@ index 1970c9cd47b6227a93f62dc161ff50fab575ed89..546e1f3303191144b947ac19a210110c
 +        for tool in [ids!(sidebar_btn), ids!(sidebar_gap), ids!(share_btn), ids!(tabs_btn)] {
 +            self.ui.widget(cx, tool).set_visible(cx, self.unified);
 +        }
++        self.place_sidebar_tool(cx);
++        self.say_overview_field(cx);
          self.ui.view(cx, ids!(menu)).set_visible(cx, self.menu_open);
          // A row keeps the words of the sheet it first came up on.
          if self.desk {
-@@ -964,17 +1265,23 @@ fn style_applied(&mut self, cx: &mut Cx) {
+@@ -964,17 +1309,23 @@ fn style_applied(&mut self, cx: &mut Cx) {
          }
          self.ui.widget(cx, ids!(find_bar)).set_visible(cx, self.find_open);
          self.paint_omnibox_ring(cx);
@@ -2164,21 +2241,34 @@ index 1970c9cd47b6227a93f62dc161ff50fab575ed89..546e1f3303191144b947ac19a210110c
              }
              self.paint_start_bookmarks(cx);
          }
-@@ -997,9 +1304,10 @@ fn layout_toolbar(&mut self, cx: &mut Cx) {
+@@ -997,9 +1348,11 @@ fn layout_toolbar(&mut self, cx: &mut Cx) {
              return;
          }
          self.toolbar_width = width;
 -        let leading = if self.unified { 84.0 } else { 12.0 } + 62.0;
 -        // New Tab, and on other desktops the ⋮ menu: a Mac's toolbar has none.
 -        let trailing = 12.0 + if self.unified { 30.0 } else { 62.0 };
-+        // A Mac's Sidebar tool and its gap come before the arrows.
-+        let leading = if self.unified { 84.0 + 40.0 } else { 12.0 } + 62.0;
++        // A Mac's Sidebar tool and its gap come before the arrows, after the
++        // lights; beside the sidebar the toolbar has neither.
++        let leading = if self.unified && !self.sidebar_open { 84.0 + 40.0 } else { 12.0 } + 62.0;
 +        // A Mac's Share, New Tab and tab overview; other desktops' New Tab and ⋮ menu.
 +        let trailing = 12.0 + if self.unified { 94.0 } else { 62.0 };
          let free = (width - leading - trailing - 20.0).max(120.0);
          let field = (width * 0.52).clamp(280.0, 620.0).min(free);
          // The two spacings beside the gap are the toolbar's.
-@@ -1053,7 +1361,8 @@ fn sync_field(&mut self, cx: &mut Cx) {
+@@ -1012,6 +1365,11 @@ fn layout_toolbar(&mut self, cx: &mut Cx) {
+         script_apply_eval!(cx, frame, {
+             width: #(field)
+         });
++        // The tab overview's Search Tabs stands where the address field does.
++        let mut search = self.ui.widget(cx, ids!(tabs_search_frame));
++        script_apply_eval!(cx, search, {
++            width: #(field)
++        });
+         self.ui.redraw(cx);
+     }
+ 
+@@ -1053,7 +1411,8 @@ fn sync_field(&mut self, cx: &mut Cx) {
      /// one tab has no row of tabs; the app's own pages cover what the engine
      /// has when they have something to say.
      fn refresh_desk_chrome(&mut self, cx: &mut Cx, tab_count: usize, info: &webview::ActiveInfo) {
@@ -2188,7 +2278,7 @@ index 1970c9cd47b6227a93f62dc161ff50fab575ed89..546e1f3303191144b947ac19a210110c
          // Back from Bookmarks or History is the page they're over.
          let over = self.places_open.is_some();
          self.set_tool(cx, ids!(back_btn), info.can_go_back || over);
-@@ -1082,15 +1391,121 @@ fn refresh_desk_chrome(&mut self, cx: &mut Cx, tab_count: usize, info: &webview:
+@@ -1082,15 +1441,183 @@ fn refresh_desk_chrome(&mut self, cx: &mut Cx, tab_count: usize, info: &webview:
              self.shown_failed = failure.is_some();
              self.sync_field(cx);
          }
@@ -2222,7 +2312,63 @@ index 1970c9cd47b6227a93f62dc161ff50fab575ed89..546e1f3303191144b947ac19a210110c
 +        }
 +        self.sidebar_open = open;
 +        self.ui.widget(cx, ids!(side)).set_visible(cx, open);
++        self.place_sidebar_tool(cx);
 +        self.refresh_chrome(cx);
++    }
++
++    /// Safari's Sidebar tool: in the toolbar after the lights while the sidebar
++    /// is put away; in the sidebar's top after them while it shows, the toolbar
++    /// then starting past the sidebar with nothing of the lights' to clear.
++    /// Neither stays lit: the one pressed goes, and the one that comes in its
++    /// place has heard no pointer.
++    fn place_sidebar_tool(&mut self, cx: &mut Cx) {
++        if !self.unified {
++            return;
++        }
++        let open = self.sidebar_open;
++        for tool in [ids!(sidebar_btn), ids!(sidebar_gap)] {
++            self.ui.widget(cx, tool).set_visible(cx, !open);
++        }
++        self.ui.button(cx, ids!(sidebar_btn)).reset_hover(cx);
++        self.ui.button(cx, ids!(side_toggle)).reset_hover(cx);
++        let left = if open { 12.0 } else { 84.0 };
++        let mut toolbar = self.ui.widget(cx, ids!(toolbar));
++        script_apply_eval!(cx, toolbar, {
++            padding.left: #(left)
++        });
++        // The field is placed again in the toolbar's new room.
++        self.toolbar_width = 0.0;
++        self.ui.redraw(cx);
++    }
++
++    /// The tab overview's toolbar, as Safari's: Search Tabs where the address
++    /// field and Reload were, back to them when it closes.
++    fn say_overview_field(&mut self, cx: &mut Cx) {
++        if !self.unified {
++            return;
++        }
++        let open = self.overview_open;
++        self.ui.widget(cx, ids!(omnibox_frame)).set_visible(cx, !open);
++        self.ui.widget(cx, ids!(tabs_search_frame)).set_visible(cx, open);
++        self.paint_ring(cx, ids!(tabs_search_frame), open && self.tabs_search_focused);
++    }
++
++    /// Search Tabs: what it holds now, and the cards that answer it.
++    fn search_tabs(&mut self, cx: &mut Cx, words: &str) {
++        if self.tabs_query == words {
++            return;
++        }
++        self.tabs_query = words.to_string();
++        if let Some(mut overview) = self.ui.widget(cx, ids!(tab_overview)).borrow_mut::<TabOverview>() {
++            overview.reset(cx);
++        }
++        self.refresh_chrome(cx);
++    }
++
++    /// Escape in the overview empties Search Tabs before it puts the overview away.
++    fn clear_tab_search(&mut self, cx: &mut Cx) {
++        self.ui.text_input(cx, ids!(tabs_search)).set_text(cx, "");
++        self.search_tabs(cx, "");
 +    }
 +
 +    /// The sidebar's row for the page in front wears the sidebar's grey, as a
@@ -2293,6 +2439,12 @@ index 1970c9cd47b6227a93f62dc161ff50fab575ed89..546e1f3303191144b947ac19a210110c
 +            return;
 +        }
 +        self.overview_open = open;
++        // Search Tabs starts empty each time, where the address field was.
++        self.tabs_query.clear();
++        self.tabs_search_focused = false;
++        self.ui.text_input(cx, ids!(tabs_search)).set_text(cx, "");
++        self.ui.widget(cx, ids!(overview_none)).set_visible(cx, false);
++        self.say_overview_field(cx);
 +        if open {
 +            self.set_menu_open(cx, false);
 +            if self.find_open {
@@ -2313,7 +2465,22 @@ index 1970c9cd47b6227a93f62dc161ff50fab575ed89..546e1f3303191144b947ac19a210110c
      }
  
      /// A desktop's tool that can do nothing now: grey, and it doesn't answer.
-@@ -1330,6 +1745,19 @@ fn refresh_chrome(&mut self, cx: &mut Cx) {
+@@ -1242,6 +1769,14 @@ fn retry_failed_page(&mut self, cx: &mut Cx) {
+     // --- Find on Page --------------------------------------------------------
+ 
+     fn open_find(&mut self, cx: &mut Cx) {
++        // Over the tab overview it is Search Tabs (Bookmarks or History stay
++        // behind it).
++        if self.overview_open {
++            let search = self.ui.text_input(cx, ids!(tabs_search));
++            search.set_key_focus(cx);
++            search.borrow_mut().map(|mut inner| inner.select_all(cx));
++            return;
++        }
+         // Over Bookmarks or History it is their search.
+         if self.places_open.is_some() {
+             self.places_page(cx).focus_search(cx);
+@@ -1330,6 +1865,27 @@ fn refresh_chrome(&mut self, cx: &mut Cx) {
          self.refresh_ai_context(&info);
  
          let tab_count = summaries.len();
@@ -2326,14 +2493,22 @@ index 1970c9cd47b6227a93f62dc161ff50fab575ed89..546e1f3303191144b947ac19a210110c
 +            }
 +        }
 +        if self.overview_open {
++            let query = self.tabs_query.clone();
++            // A Start Page's address is the app's own: only its title answers.
++            let found: Vec<_> = summaries
++                .iter()
++                .filter(|tab| tab_matches(&tab.title, if theme::is_new_tab_url(&tab.url) { "" } else { tab.url.as_str() }, &query))
++                .cloned()
++                .collect();
++            self.ui.widget(cx, ids!(overview_none)).set_visible(cx, found.is_empty() && !query.trim().is_empty());
 +            if let Some(mut overview) = self.ui.widget(cx, ids!(tab_overview)).borrow_mut::<TabOverview>() {
-+                overview.set_tabs(cx, summaries.clone());
++                overview.set_tabs(cx, found);
 +            }
 +        }
          if let Some(mut strip) = self.ui.widget(cx, ids!(tab_strip)).borrow_mut::<TabStrip>() {
              strip.set_tabs(cx, summaries);
          }
-@@ -1385,6 +1813,7 @@ fn refresh_chrome(&mut self, cx: &mut Cx) {
+@@ -1385,6 +1941,7 @@ fn refresh_chrome(&mut self, cx: &mut Cx) {
              self.refresh_desk_chrome(cx, tab_count, &info);
              self.note_visits(cx);
              self.sync_menu_rows(cx, &info);
@@ -2341,7 +2516,7 @@ index 1970c9cd47b6227a93f62dc161ff50fab575ed89..546e1f3303191144b947ac19a210110c
          }
  
          // The page's title alone, as a Mac browser's window has it.
-@@ -1591,6 +2020,7 @@ fn say_places(&mut self, cx: &mut Cx) {
+@@ -1591,6 +2148,7 @@ fn say_places(&mut self, cx: &mut Cx) {
      }
  
      fn show_places(&mut self, cx: &mut Cx, kind: PlacesKind) {
@@ -2349,7 +2524,7 @@ index 1970c9cd47b6227a93f62dc161ff50fab575ed89..546e1f3303191144b947ac19a210110c
          self.set_menu_open(cx, false);
          if self.find_open {
              self.close_find(cx);
-@@ -1678,23 +2108,61 @@ fn go_forward(&mut self, cx: &mut Cx) {
+@@ -1678,23 +2236,61 @@ fn go_forward(&mut self, cx: &mut Cx) {
          self.refresh_chrome(cx);
      }
  
@@ -2419,7 +2594,7 @@ index 1970c9cd47b6227a93f62dc161ff50fab575ed89..546e1f3303191144b947ac19a210110c
      fn can_save_page(&mut self, cx: &mut Cx) -> bool {
          let url = self.with_webview(cx, |_cx, wv| wv.active_info().url).unwrap_or_default();
          places::worth_keeping(&url) && !self.shown_failed
-@@ -1708,18 +2176,58 @@ fn ask_bookmark(&mut self, cx: &mut Cx) {
+@@ -1708,18 +2304,58 @@ fn ask_bookmark(&mut self, cx: &mut Cx) {
          }
      }
  
@@ -2480,7 +2655,7 @@ index 1970c9cd47b6227a93f62dc161ff50fab575ed89..546e1f3303191144b947ac19a210110c
      fn open_sheet(&mut self, cx: &mut Cx, sheet: Sheet, field: &str) {
          self.set_menu_open(cx, false);
          let asks_words = matches!(sheet, Sheet::Bookmark { .. });
-@@ -1753,11 +2261,22 @@ fn say_sheet(&mut self, cx: &mut Cx) {
+@@ -1753,11 +2389,22 @@ fn say_sheet(&mut self, cx: &mut Cx) {
                  height: #(foot)
              });
          }
@@ -2504,7 +2679,7 @@ index 1970c9cd47b6227a93f62dc161ff50fab575ed89..546e1f3303191144b947ac19a210110c
          self.ui.label(cx, ids!(sheet_title)).set_text(cx, title);
          self.ui.label(cx, ids!(sheet_note)).set_text(cx, &note);
          self.ui.widget(cx, ids!(sheet_note)).set_visible(cx, !note.is_empty());
-@@ -1773,6 +2292,7 @@ fn close_sheet(&mut self, cx: &mut Cx) {
+@@ -1773,6 +2420,7 @@ fn close_sheet(&mut self, cx: &mut Cx) {
          self.sheet = None;
          self.focus_sheet_pending = false;
          self.sheet_focused = false;
@@ -2512,7 +2687,7 @@ index 1970c9cd47b6227a93f62dc161ff50fab575ed89..546e1f3303191144b947ac19a210110c
          self.ui.widget(cx, ids!(browser_sheet)).set_visible(cx, false);
          for button in [ids!(sheet_cancel), ids!(sheet_confirm), ids!(sheet_remove)] {
              self.ui.button(cx, button).reset_hover(cx);
-@@ -1788,11 +2308,16 @@ fn confirm_sheet(&mut self, cx: &mut Cx) {
+@@ -1788,11 +2436,16 @@ fn confirm_sheet(&mut self, cx: &mut Cx) {
          match self.sheet.clone() {
              Some(Sheet::Bookmark { url, .. }) => {
                  let title = self.ui.text_input(cx, ids!(sheet_input)).text();
@@ -2531,7 +2706,7 @@ index 1970c9cd47b6227a93f62dc161ff50fab575ed89..546e1f3303191144b947ac19a210110c
                  self.history_dirty = true;
              }
              None => return,
-@@ -1844,14 +2369,19 @@ fn handle_shortcut(&mut self, cx: &mut Cx, ke: &KeyEvent) -> bool {
+@@ -1844,14 +2497,19 @@ fn handle_shortcut(&mut self, cx: &mut Cx, ke: &KeyEvent) -> bool {
          if self.unified {
              // A menu at the pointer has the keys while it's up.
              let page_menu = self.with_webview(cx, |_cx, wv| wv.page_menu_open()).unwrap_or(false);
@@ -2553,18 +2728,22 @@ index 1970c9cd47b6227a93f62dc161ff50fab575ed89..546e1f3303191144b947ac19a210110c
                      _ => return false,
                  }
                  return true;
-@@ -1874,6 +2404,10 @@ fn handle_shortcut(&mut self, cx: &mut Cx, ke: &KeyEvent) -> bool {
+@@ -1874,6 +2532,14 @@ fn handle_shortcut(&mut self, cx: &mut Cx, ke: &KeyEvent) -> bool {
                  self.close_find(cx);
                  return true;
              }
 +            if self.overview_open {
-+                self.set_overview(cx, false);
++                if self.tabs_query.is_empty() {
++                    self.set_overview(cx, false);
++                } else {
++                    self.clear_tab_search(cx);
++                }
 +                return true;
 +            }
              // A field that's being typed in hears its own first. The page's
              // search empties before the page goes, as a Mac's search field does.
              if self.places_open.is_some() && !self.omnibox_focused {
-@@ -1908,6 +2442,17 @@ fn handle_shortcut(&mut self, cx: &mut Cx, ke: &KeyEvent) -> bool {
+@@ -1908,6 +2574,17 @@ fn handle_shortcut(&mut self, cx: &mut Cx, ke: &KeyEvent) -> bool {
                      self.ask_clear_history(cx);
                      return true;
                  }
@@ -2582,7 +2761,20 @@ index 1970c9cd47b6227a93f62dc161ff50fab575ed89..546e1f3303191144b947ac19a210110c
                  _ => {}
              }
          }
-@@ -2027,32 +2572,30 @@ fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
+@@ -1928,7 +2605,11 @@ fn handle_shortcut(&mut self, cx: &mut Cx, ke: &KeyEvent) -> bool {
+             }
+             KeyCode::KeyT | KeyCode::KeyN => self.new_tab(cx, None),
+             KeyCode::KeyW => self.close_active_tab(cx),
+-            KeyCode::KeyL => self.focus_omnibox(cx),
++            KeyCode::KeyL => {
++                // The address field is the page's: the overview goes first.
++                self.set_overview(cx, false);
++                self.focus_omnibox(cx);
++            }
+             KeyCode::KeyR => {
+                 if self.page_can_act(cx) {
+                     self.with_webview(cx, |cx, wv| wv.reload(cx));
+@@ -2027,32 +2708,30 @@ fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
                      self.with_webview(cx, |cx, wv| wv.activate(cx, id));
                      self.refresh_chrome(cx);
                  }
@@ -2630,12 +2822,12 @@ index 1970c9cd47b6227a93f62dc161ff50fab575ed89..546e1f3303191144b947ac19a210110c
                  WebViewAction::None => {}
              }
              self.heard_places_page(cx, action.cast::<MpPlacesPageAction>());
-@@ -2081,18 +2624,41 @@ fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
+@@ -2081,18 +2760,41 @@ fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
          if self.ui.button(cx, ids!(new_tab_btn)).clicked(actions) {
              self.new_tab(cx, None);
          }
 +        if self.unified {
-+            if self.ui.button(cx, ids!(sidebar_btn)).clicked(actions) {
++            if self.ui.button(cx, ids!(sidebar_btn)).clicked(actions) || self.ui.button(cx, ids!(side_toggle)).clicked(actions) {
 +                let open = !self.sidebar_open;
 +                self.set_sidebar(cx, open);
 +            }
@@ -2677,7 +2869,7 @@ index 1970c9cd47b6227a93f62dc161ff50fab575ed89..546e1f3303191144b947ac19a210110c
                  }
              }
          }
-@@ -2160,6 +2726,10 @@ fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
+@@ -2160,6 +2862,10 @@ fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
              if self.ui.button(cx, ids!(sheet_remove)).clicked(actions) {
                  self.remove_from_sheet(cx);
              }
@@ -2688,7 +2880,7 @@ index 1970c9cd47b6227a93f62dc161ff50fab575ed89..546e1f3303191144b947ac19a210110c
              let sheet_input = self.ui.text_input(cx, ids!(sheet_input));
              for action in actions.filter_widget_actions_cast::<TextInputAction>(sheet_input.widget_uid()) {
                  match action {
-@@ -2174,6 +2744,20 @@ fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
+@@ -2174,6 +2880,20 @@ fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
                      _ => {}
                  }
              }
@@ -2709,7 +2901,41 @@ index 1970c9cd47b6227a93f62dc161ff50fab575ed89..546e1f3303191144b947ac19a210110c
          }
          if self.ui.button(cx, ids!(menu_gpu)).clicked(actions) {
              self.set_menu_open(cx, false);
-@@ -2316,10 +2900,24 @@ fn script_mod(vm: &mut ScriptVm) -> ScriptValue {
+@@ -2256,6 +2976,33 @@ fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
+             }
+         }
+ 
++        // The tab overview's Search Tabs (a Mac's).
++        if self.unified {
++            let search = self.ui.text_input(cx, ids!(tabs_search));
++            if let Some(words) = search.changed(actions) {
++                self.search_tabs(cx, &words);
++            }
++            for action in actions {
++                let Some(widget_action) = action.as_widget_action() else {
++                    continue;
++                };
++                if widget_action.widget_uid != search.widget_uid() {
++                    continue;
++                }
++                match widget_action.cast::<TextInputAction>() {
++                    TextInputAction::KeyFocus => {
++                        self.tabs_search_focused = true;
++                        self.paint_ring(cx, ids!(tabs_search_frame), true);
++                    }
++                    TextInputAction::KeyFocusLost => {
++                        self.tabs_search_focused = false;
++                        self.paint_ring(cx, ids!(tabs_search_frame), false);
++                    }
++                    _ => {}
++                }
++            }
++        }
++
+         // Find on Page.
+         let find_input = self.ui.text_input(cx, ids!(find_input));
+         if let Some(text) = find_input.changed(actions) {
+@@ -2316,10 +3063,24 @@ fn script_mod(vm: &mut ScriptVm) -> ScriptValue {
          chrome::script_mod(vm);
          webview::script_mod(vm);
          places_page::script_mod(vm);
@@ -2734,7 +2960,7 @@ index 1970c9cd47b6227a93f62dc161ff50fab575ed89..546e1f3303191144b947ac19a210110c
          // Back by a press somewhere else: the keyboard went there, and what was typed goes.
          if self.omnibox_kept && !self.window_away && cx.key_focus() != self.ui.text_input(cx, ids!(omnibox)).area() {
              self.omnibox_let_go(cx);
-@@ -2387,6 +2985,16 @@ fn handle_event(&mut self, cx: &mut Cx, event: &Event) {
+@@ -2387,6 +3148,16 @@ fn handle_event(&mut self, cx: &mut Cx, event: &Event) {
                  Some(makepad_wm_api::WmEvent::Adopted) if self.ai_port.is_none() => {
                      self.ai_port = AiServicePort::open(cx, ai::manifest());
                  }
@@ -2751,7 +2977,7 @@ index 1970c9cd47b6227a93f62dc161ff50fab575ed89..546e1f3303191144b947ac19a210110c
                  Some(makepad_wm_api::WmEvent::Focus { focused }) => {
                      self.window_away = !focused;
                      // A press outside this window never reaches it: losing the focus is what says so.
-@@ -2516,6 +3124,84 @@ pub fn app_main() {
+@@ -2516,6 +3287,84 @@ pub fn app_main() {
      panic!("browser is desktop-only");
  }
  
@@ -3418,10 +3644,10 @@ index cddb81d785c65776d3d10a1906f7dd47a79d823a..b08ba07bed0e271775f2c1c888a4f0c0
      }
  }
 diff --git a/apps/browser/src/tabs.rs b/apps/browser/src/tabs.rs
-index 3af0b1a943c804f91d23af6147d463c5059ce7b0..cfdd07b053e3b6552c82c93dd5cee77f870dcc3a 100644
+index 3af0b1a943c804f91d23af6147d463c5059ce7b0..e6a11ff9c9815f071600cc7fee41128cf5c5b794 100644
 --- a/apps/browser/src/tabs.rs
 +++ b/apps/browser/src/tabs.rs
-@@ -104,7 +104,7 @@ pub fn display_title(&self) -> String {
+@@ -104,14 +104,28 @@ pub fn display_title(&self) -> String {
      }
  }
  
@@ -3430,7 +3656,9 @@ index 3af0b1a943c804f91d23af6147d463c5059ce7b0..cfdd07b053e3b6552c82c93dd5cee77f
  #[derive(Clone, Debug)]
  pub struct TabSummary {
      pub id: TabId,
-@@ -112,6 +112,18 @@ pub struct TabSummary {
+     pub title: String,
++    /// Its page's address (what a Mac's Search Tabs looks in, with the title).
++    pub url: String,
      pub loading: bool,
      pub active: bool,
      pub favicon: Option<Texture>,
@@ -3449,7 +3677,11 @@ index 3af0b1a943c804f91d23af6147d463c5059ce7b0..cfdd07b053e3b6552c82c93dd5cee77f
  }
  
  #[derive(Default)]
-@@ -212,11 +224,34 @@ pub fn summaries(&self) -> Vec<TabSummary> {
+@@ -209,14 +223,38 @@ pub fn summaries(&self) -> Vec<TabSummary> {
+             .map(|(i, t)| TabSummary {
+                 id: t.id,
+                 title: t.display_title(),
++                url: t.url.clone(),
                  loading: t.loading,
                  active: i == self.active,
                  favicon: t.favicon.clone(),
@@ -10507,7 +10739,7 @@ index 3a100a99289ce4e462a2b34ad58729bb1125c56d..0a027a71f99d80341ad56ed9067d7a3e
  pub mod thumbs;
  pub mod widget;
 diff --git a/apps/image/src/main.rs b/apps/image/src/main.rs
-index bd92f2ea782c3c52201f59d60bc5865266a1d6c6..bbbecf6ae5f9182dd8e8db15dcbd41cdf25b2d11 100644
+index bd92f2ea782c3c52201f59d60bc5865266a1d6c6..3b6cb7460b4d94ea9b37e815bd179b2b87f8cb68 100644
 --- a/apps/image/src/main.rs
 +++ b/apps/image/src/main.rs
 @@ -4,7 +4,9 @@
@@ -11001,10 +11233,16 @@ index bd92f2ea782c3c52201f59d60bc5865266a1d6c6..bbbecf6ae5f9182dd8e8db15dcbd41cd
              }
          }
  
-@@ -516,7 +779,21 @@ fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
+@@ -515,8 +778,27 @@ fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
+         }
          if self.ui.button(cx, ids!(thumbs_button)).clicked(actions) || self.ui.button(cx, ids!(thumbs_on)).clicked(actions) {
              self.toggle_thumbs(cx);
-         }
++            // A Mac's sidebar tool shows no plate for what it did: the sidebar
++            // says it is open, the tool stays as it was until the pointer moves.
++            if self.unified {
++                self.ui.button(cx, ids!(thumbs_button)).reset_hover(cx);
++            }
++        }
 +        if self.ui.button(cx, ids!(info_button)).clicked(actions)
 +            || self.ui.button(cx, ids!(info_on)).clicked(actions)
 +            || self.ui.button(cx, ids!(info_close)).clicked(actions)
@@ -11017,13 +11255,13 @@ index bd92f2ea782c3c52201f59d60bc5865266a1d6c6..bbbecf6ae5f9182dd8e8db15dcbd41cd
 +        }
 +        if self.ui.button(cx, ids!(open_with)).clicked(actions) || self.ui.button(cx, ids!(full_open)).clicked(actions) {
 +            self.open_in_viewer(cx);
-+        }
+         }
          if self.ui.button(cx, ids!(try_again)).clicked(actions) {
 +            self.info_file = None;
              self.failed = false;
              self.size = (0, 0);
              self.with_viewer(cx, |viewer, cx| viewer.retry(cx));
-@@ -531,23 +808,17 @@ fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
+@@ -531,23 +813,17 @@ fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
              (ids!(fit_on), Command::Fit),
              (ids!(actual_button), Command::Actual),
              (ids!(actual_on), Command::Actual),
@@ -11050,7 +11288,7 @@ index bd92f2ea782c3c52201f59d60bc5865266a1d6c6..bbbecf6ae5f9182dd8e8db15dcbd41cd
  enum Command {
      Previous,
      Next,
-@@ -555,9 +826,117 @@ enum Command {
+@@ -555,9 +831,117 @@ enum Command {
      ZoomIn,
      Fit,
      Actual,
@@ -11168,7 +11406,7 @@ index bd92f2ea782c3c52201f59d60bc5865266a1d6c6..bbbecf6ae5f9182dd8e8db15dcbd41cd
      fn with_viewer(&self, cx: &mut Cx, f: impl FnOnce(&mut MpImageView, &mut Cx)) {
          let widget = self.ui.widget(cx, ids!(viewer));
          let Some(mut viewer) = widget.borrow_mut::<MpImageView>() else {
-@@ -661,6 +1040,80 @@ fn sync_thumbs(&mut self, cx: &mut Cx) {
+@@ -661,6 +1045,80 @@ fn sync_thumbs(&mut self, cx: &mut Cx) {
          self.thumbs_showing = show;
      }
  
@@ -11249,7 +11487,7 @@ index bd92f2ea782c3c52201f59d60bc5865266a1d6c6..bbbecf6ae5f9182dd8e8db15dcbd41cd
      /// What the toolbar says under the name: its place in the folder and its size.
      fn subtitle(&self) -> String {
          let (index, count) = self.place;
-@@ -684,8 +1137,13 @@ fn update_chrome(&mut self, cx: &mut Cx) {
+@@ -684,8 +1142,13 @@ fn update_chrome(&mut self, cx: &mut Cx) {
          let sheet = self.ui.widget(cx, ids!(open_sheet)).as_mp_open_sheet().is_open();
  
          // A desktop's window always has its toolbar; a Quick Look panel's has
@@ -11265,7 +11503,7 @@ index bd92f2ea782c3c52201f59d60bc5865266a1d6c6..bbbecf6ae5f9182dd8e8db15dcbd41cd
          for id in [ids!(toolbar), ids!(toolbar_line)] {
              self.ui.widget(cx, id).set_visible(cx, toolbar);
          }
-@@ -694,6 +1152,8 @@ fn update_chrome(&mut self, cx: &mut Cx) {
+@@ -694,6 +1157,8 @@ fn update_chrome(&mut self, cx: &mut Cx) {
          }
          self.ui.widget(cx, ids!(sheet_dim)).set_visible(cx, sheet);
          self.ui.widget(cx, ids!(tools)).set_visible(cx, !panel);
@@ -11274,7 +11512,7 @@ index bd92f2ea782c3c52201f59d60bc5865266a1d6c6..bbbecf6ae5f9182dd8e8db15dcbd41cd
          self.ui.widget(cx, ids!(status_row)).set_visible(cx, !self.desk);
          self.sync_thumbs(cx);
          // A Quick Look panel says nothing while it is empty.
-@@ -724,13 +1184,19 @@ fn update_chrome(&mut self, cx: &mut Cx) {
+@@ -724,19 +1189,25 @@ fn update_chrome(&mut self, cx: &mut Cx) {
          open.set_visible(cx, !loading && !retrying);
          open.set_text(cx, if hosted && !self.desk { "Open Files" } else { "Open\u{2026}" });
  
@@ -11295,9 +11533,19 @@ index bd92f2ea782c3c52201f59d60bc5865266a1d6c6..bbbecf6ae5f9182dd8e8db15dcbd41cd
 +        self.ui.label(cx, ids!(panel_place)).set_text(cx, &subtitle);
 +        self.ui.widget(cx, ids!(panel_place)).set_visible(cx, !subtitle.is_empty());
  
-         // A Mac's toolbar has the sidebar's tool, as Preview's does, and its
-         // pressed form while the sidebar is out.
-@@ -747,9 +1213,10 @@ fn update_chrome(&mut self, cx: &mut Cx) {
+-        // A Mac's toolbar has the sidebar's tool, as Preview's does, and its
+-        // pressed form while the sidebar is out.
++        // A Mac's toolbar has the sidebar's tool, as Preview's does. It never
++        // stays lit while the thumbnails show: Preview's sidebar button doesn't.
+         let sidebar_tool = self.desk && self.unified && !panel;
+-        open_panel::show_form(&self.ui.widget(cx, ids!(thumbs_button)), cx, sidebar_tool && !self.thumbs_showing);
+-        open_panel::show_form(&self.ui.widget(cx, ids!(thumbs_on)), cx, sidebar_tool && self.thumbs_showing);
++        open_panel::show_form(&self.ui.widget(cx, ids!(thumbs_button)), cx, sidebar_tool);
++        open_panel::show_form(&self.ui.widget(cx, ids!(thumbs_on)), cx, false);
+         for id in [ids!(thumbs_button), ids!(thumbs_on)] {
+             open_panel::set_enabled(&self.ui.widget(cx, id), cx, named && !sheet);
+         }
+@@ -747,11 +1218,19 @@ fn update_chrome(&mut self, cx: &mut Cx) {
              open_panel::set_enabled(&self.ui.widget(cx, id), cx, many && !sheet);
          }
          open_panel::set_enabled(&self.ui.widget(cx, ids!(open_button)), cx, !sheet);
@@ -11306,10 +11554,20 @@ index bd92f2ea782c3c52201f59d60bc5865266a1d6c6..bbbecf6ae5f9182dd8e8db15dcbd41cd
              open_panel::set_enabled(&self.ui.widget(cx, id), cx, showing && !sheet);
          }
 +        open_panel::set_enabled(&self.ui.widget(cx, ids!(more_button)), cx, !sheet);
++        // A Mac's toolbar keeps its items in place without a picture, as
++        // Preview's does: the zoom stays, dimmed, so the walk and the zoom tools
++        // don't move when a picture comes in.
++        let keep_zoom = self.unified && !panel && !showing;
++        if keep_zoom {
++            self.ui.label(cx, ids!(zoom_dim)).set_text(cx, "100%");
++        }
          self.ui.widget(cx, ids!(zoom_label)).set_visible(cx, showing && !sheet);
-         self.ui.widget(cx, ids!(zoom_dim)).set_visible(cx, showing && sheet);
+-        self.ui.widget(cx, ids!(zoom_dim)).set_visible(cx, showing && sheet);
++        self.ui.widget(cx, ids!(zoom_dim)).set_visible(cx, (showing && sheet) || keep_zoom);
          for (off, on, active) in [
-@@ -759,20 +1226,67 @@ fn update_chrome(&mut self, cx: &mut Cx) {
+             (ids!(fit_button), ids!(fit_on), showing && self.fit),
+             (ids!(actual_button), ids!(actual_on), showing && self.actual),
+@@ -759,20 +1238,67 @@ fn update_chrome(&mut self, cx: &mut Cx) {
              open_panel::show_form(&self.ui.widget(cx, off), cx, !active);
              open_panel::show_form(&self.ui.widget(cx, on), cx, active);
          }
@@ -11380,7 +11638,7 @@ index bd92f2ea782c3c52201f59d60bc5865266a1d6c6..bbbecf6ae5f9182dd8e8db15dcbd41cd
          match self.preview.on_wm_event(event) {
              PreviewAction::Show(path) => {
                  if let Some(mut viewer) =
-@@ -810,6 +1324,8 @@ fn set_title(&mut self, cx: &mut Cx) {
+@@ -810,6 +1336,8 @@ fn set_title(&mut self, cx: &mut Cx) {
          // is; a Quick Look panel keeps its own form.
          let title = match (self.desk, self.preview.is_preview(), self.name.is_empty()) {
              (true, false, false) => self.name.clone(),
@@ -11389,7 +11647,7 @@ index bd92f2ea782c3c52201f59d60bc5865266a1d6c6..bbbecf6ae5f9182dd8e8db15dcbd41cd
              (true, _, _) => self.preview.title("Image Viewer"),
              (false, _, _) => self.preview.title("image"),
          };
-@@ -825,13 +1341,38 @@ fn script_mod(vm: &mut ScriptVm) -> ScriptValue {
+@@ -825,13 +1353,38 @@ fn script_mod(vm: &mut ScriptVm) -> ScriptValue {
          makepad_image::widget::script_mod(vm);
          makepad_image::thumbs::script_mod(vm);
          makepad_image::open_panel::script_mod(vm);
@@ -11428,7 +11686,7 @@ index bd92f2ea782c3c52201f59d60bc5865266a1d6c6..bbbecf6ae5f9182dd8e8db15dcbd41cd
              }
          }
          // A new style sheet was just applied (the app's first look under a
-@@ -843,7 +1384,19 @@ fn handle_event(&mut self, cx: &mut Cx, event: &Event) {
+@@ -843,7 +1396,19 @@ fn handle_event(&mut self, cx: &mut Cx, event: &Event) {
          }
          if let Event::WindowGeomChange(change) = event {
              self.width = change.new_geom.inner_size.x;
@@ -11448,7 +11706,7 @@ index bd92f2ea782c3c52201f59d60bc5865266a1d6c6..bbbecf6ae5f9182dd8e8db15dcbd41cd
          }
          if self.next_frame.is_event(event).is_some() && self.size == (0, 0) && !self.name.is_empty() && !self.failed {
              self.ui.widget(cx, ids!(spinner)).redraw(cx);
-@@ -854,11 +1407,159 @@ fn handle_event(&mut self, cx: &mut Cx, event: &Event) {
+@@ -854,11 +1419,159 @@ fn handle_event(&mut self, cx: &mut Cx, event: &Event) {
      }
  }
  
@@ -11608,7 +11866,7 @@ index bd92f2ea782c3c52201f59d60bc5865266a1d6c6..bbbecf6ae5f9182dd8e8db15dcbd41cd
  /// Parses a `#rrggbb` (or `#rgb`) hex string into a `Vec4f`, alpha 1.0.
  fn parse_hex_color(value: &str) -> Option<Vec4f> {
      let digits = value.strip_prefix('#').unwrap_or(value);
-@@ -879,6 +1580,90 @@ fn parse_hex_color(value: &str) -> Option<Vec4f> {
+@@ -879,6 +1592,90 @@ fn parse_hex_color(value: &str) -> Option<Vec4f> {
      Some(Vec4f::from_u32(rgba))
  }
  
@@ -13173,7 +13431,7 @@ index 18ba3704dcfaa5e98a2806a1b66a42390d1d844e..b78f37eb3d8199f16d0ff14209e9b7d8
              24.0
          } else {
 diff --git a/apps/notes/src/ui.rs b/apps/notes/src/ui.rs
-index da7587697ca519bdbfdb1091eb2f050fada154dc..4e7537e54fcc09202b15915138bea12558d71f85 100644
+index da7587697ca519bdbfdb1091eb2f050fada154dc..440eb90c1c7ad1bd37da931b4764e33ca6f84278 100644
 --- a/apps/notes/src/ui.rs
 +++ b/apps/notes/src/ui.rs
 @@ -33,7 +33,11 @@ fn by(touch, pointer){ if desk { pointer } else { touch } }
@@ -13216,6 +13474,15 @@ index da7587697ca519bdbfdb1091eb2f050fada154dc..4e7537e54fcc09202b15915138bea125
 +            metadata := Plain{height: by(16, 14) flow: Right spacing: if unified { 4 } else { 8 } date := Meta{width: Fit} folder_glyph := Plain{visible: false width: 11 height: Fill align: Align{y: 0.5} glyph := Icon{width: 11 height: 11 icon_walk: Walk{width: 11 height: 11} draw_icon +: {color: d_muted svg: crate_resource("self:resources/icons/mac_folder.svg")}}} folder := Meta{width: Fill}}
          }
          rule := Rule{bottom: true margin: Inset{left: by(20, 16) right: by(20, 16)}}
+     }
+@@ -334,7 +344,7 @@ fn by(touch, pointer){ if desk { pointer } else { touch } }
+         scroll := ScrollYView{
+             width: Fill height: Fill flow: Down
+             title := Ink{visible: false text: "Folders"}
+-            account := Meta{width: Fill height: Fit margin: Inset{bottom: 3} padding: Inset{left: 8 top: 6} text: "On This Device" paper: d_sidebar secondary: d_muted draw_text.text_style: theme.font_bold{font_size: 8.25}}
++            account := Meta{width: Fill height: Fit margin: Inset{bottom: 3} padding: Inset{left: 8 top: 6} text: if unified { "On My Mac" } else { "On This Device" } paper: d_sidebar secondary: d_muted draw_text.text_style: theme.font_bold{font_size: 8.25}}
+             group := Plain{height: Fit flow: Down rows := FolderRows{}}
+         }
      }
 @@ -464,6 +474,69 @@ fn by(touch, pointer){ if desk { pointer } else { touch } }
      } else {
@@ -13323,7 +13590,17 @@ index da7587697ca519bdbfdb1091eb2f050fada154dc..4e7537e54fcc09202b15915138bea125
                      sheet_cancel := DeskPush{text: "Cancel"}
                      sheet_ok := DeskPrimary{text: "OK"}
                      // A question before something goes for good: Cancel is the default.
-@@ -583,14 +662,7 @@ fn by(touch, pointer){ if desk { pointer } else { touch } }
+@@ -537,7 +616,8 @@ fn by(touch, pointer){ if desk { pointer } else { touch } }
+             }
+             ScrollYView{
+                 width: Fill height: Fill flow: Down
+-                account := Meta{width: Fill height: Fit margin: Inset{bottom: 3} padding: Inset{left: 8 top: 6} align: Align{y: 0.5} text: "On This Device" paper: d_sidebar secondary: d_muted draw_text.text_style: theme.font_bold{font_size: 8.25}}
++                // A Mac's Notes names the notes kept on the computer "On My Mac".
++                account := Meta{width: Fill height: Fit margin: Inset{bottom: 3} padding: Inset{left: 8 top: 6} align: Align{y: 0.5} text: if unified { "On My Mac" } else { "On This Device" } paper: d_sidebar secondary: d_muted draw_text.text_style: theme.font_bold{font_size: 8.25}}
+                 rows := FolderRows{}
+             }
+             Plain{height: 36 flow: Right padding: Inset{left: 8 right: 8} align: Align{y: 0.5}
+@@ -583,14 +663,7 @@ fn by(touch, pointer){ if desk { pointer } else { touch } }
                  divider_a := Rule{width: 1 height: Fill}
                  notes_list := PaperColumn{
                      width: 320 flow: Down draw_bg.color: by(theme.color_bg_app, d_surface)
@@ -13339,7 +13616,7 @@ index da7587697ca519bdbfdb1091eb2f050fada154dc..4e7537e54fcc09202b15915138bea125
                      header_rule := Rule{visible: by(false, true)}
                      search_slot := Plain{height: by(48, 40) padding: Inset{left: by(12, 8) right: by(12, 8) top: by(2, 6) bottom: by(2, 6)} search := Search{}}
                      deleted_head := DeletedHead{}
-@@ -600,24 +672,7 @@ fn by(touch, pointer){ if desk { pointer } else { touch } }
+@@ -600,24 +673,7 @@ fn by(touch, pointer){ if desk { pointer } else { touch } }
                  divider_b := Rule{width: 1 height: Fill}
                  editor := PaperColumn{
                      flow: Down draw_bg.color: by(theme.color_bg_app, d_surface)
@@ -13365,7 +13642,7 @@ index da7587697ca519bdbfdb1091eb2f050fada154dc..4e7537e54fcc09202b15915138bea125
                      toolbar_rule := Rule{visible: by(false, true)}
                      document := NotesTextSurface{width: Fill height: Fill padding: Inset{left: by(32, 24) right: by(32, 24) top: 12 bottom: by(32, 24)}}
                      empty := Plain{visible: false flow: Down align: Align{x: 0.5 y: 0.5} spacing: by(12, 6) title := Ink{text: "No Notes" draw_text.text_style: theme.font_bold{font_size: by(15, 11.25)}} explanation := Meta{text: "Choose a note or create a new one." paper: by(theme.color_bg_app, d_surface) draw_text.text_style.font_size: by(9, 9.75)} compose := LinkOrPush{nav_name: "New Note" caption.text: "New Note" margin: Inset{top: by(0, 6)}}}
-@@ -645,7 +700,7 @@ fn by(touch, pointer){ if desk { pointer } else { touch } }
+@@ -645,7 +701,7 @@ fn by(touch, pointer){ if desk { pointer } else { touch } }
                          width: Fill height: Fit flow: Down
                          pin := MenuTap{width: Fill nav_name: "Pin" caption.text: "Pin"}
                          move := MenuTap{width: Fill nav_name: "Move" caption.text: by("Move", "Move…")}
@@ -14175,10 +14452,10 @@ index 210d61ec14e8078883842e6e57bf184bcafaf861..1bcc835a545a3f69915e233313d5f099
          assert!(!page_of("0 0 100 100 re f").has_text());
 diff --git a/apps/pdf/src/find_list.rs b/apps/pdf/src/find_list.rs
 new file mode 100644
-index 0000000000000000000000000000000000000000..5dc4019d2b5a47451ef4087cc2a191e93843723a
+index 0000000000000000000000000000000000000000..3e0e89e74f72268c3b3706bd660c3ffdb2563537
 --- /dev/null
 +++ b/apps/pdf/src/find_list.rs
-@@ -0,0 +1,348 @@
+@@ -0,0 +1,358 @@
 +//! Find's matches in the sidebar, as Preview lists them: each in its words,
 +//! the match in bold, and its page. A press makes one current; the current one
 +//! is marked, and kept in view as the keys walk the matches.
@@ -14193,6 +14470,12 @@ index 0000000000000000000000000000000000000000..5dc4019d2b5a47451ef4087cc2a191e9
 +pub const LIST_WIDTH: f64 = 240.0;
 +/// The space a word gap is, at the rows' size: a label drops one at its ends.
 +const WORD_GAP: f64 = 2.5;
++/// The gap before a Mac's bold match. The match's first letter stands further
++/// into its label than the words' letters stand into theirs (in the grabs the
++/// gap before it was 7 points of paper where the row's other word gaps are 4
++/// to 5), so two points less margin goes before it: the row reads as one run
++/// of text, as Preview's result rows do.
++const MATCH_GAP: f64 = 0.5;
 +/// A row's insets, left and right, and the gap before its page: as the
 +/// layout below sets them.
 +const ROW_INSET_LEFT: f64 = 14.0;
@@ -14344,6 +14627,9 @@ index 0000000000000000000000000000000000000000..5dc4019d2b5a47451ef4087cc2a191e9
 +    page_ink: Vec4f,
 +    #[live]
 +    page_ink_chosen: Vec4f,
++    /// A Mac's rows: the gap before the match is `MATCH_GAP`.
++    #[live]
++    mac: bool,
 +    #[rust]
 +    rows: Vec<FoundRow>,
 +    #[rust]
@@ -14429,7 +14715,8 @@ index 0000000000000000000000000000000000000000..5dc4019d2b5a47451ef4087cc2a191e9
 +            let match_width = text_width(cx, &words_label, &words.words);
 +            let after_gap = if gap_after { WORD_GAP } else { 0.0 };
 +            let after_least = if after.is_empty() { 0.0 } else { after_gap + text_width(cx, &after_label, "\u{2026}") };
-+            let gap = |lead: &str| if gap_before && !lead.is_empty() { WORD_GAP } else { 0.0 };
++            let lead_gap = if self.mac { MATCH_GAP } else { WORD_GAP };
++            let gap = |lead: &str| if gap_before && !lead.is_empty() { lead_gap } else { 0.0 };
 +            let mut lead = before.to_string();
 +            while !lead.is_empty() && text_width(cx, &before_label, &lead) + gap(&lead) + match_width + after_least > room {
 +                lead = without_first_word(&lead);
@@ -14604,7 +14891,7 @@ index d37729649d198b78414cfa768db183d0cdc2845b..90db4cc1c2fd28c5a6c4380ee8b0d485
      fn no_document_is_a_valid_start() {
          assert_eq!(parse_args(argv(&[])), Args::default());
 diff --git a/apps/pdf/src/main.rs b/apps/pdf/src/main.rs
-index 8812a372d68c4cdf2fb21a6df5abb979321f8a4e..001097f9b67c6b37a27c59b0b446c386fb9fe651 100644
+index 8812a372d68c4cdf2fb21a6df5abb979321f8a4e..17461fa01e593243d4f62a68577ed65179c57ff0 100644
 --- a/apps/pdf/src/main.rs
 +++ b/apps/pdf/src/main.rs
 @@ -4,9 +4,12 @@
@@ -14633,7 +14920,7 @@ index 8812a372d68c4cdf2fb21a6df5abb979321f8a4e..001097f9b67c6b37a27c59b0b446c386
      let PrimaryButton = ButtonFlat{
          height: by(44, 28) margin: 0 padding: Inset{left: by(16, 12) right: by(16, 12)}
          draw_bg +: {border_radius: 3.0 border_size: 0.0 color: #x0071e3 color_hover: #x006edb color_down: #x0060c0 color_focus: #x0071e3}
-@@ -270,193 +279,250 @@ fn by(touch, mac){ if desk { mac } else { touch } }
+@@ -270,193 +279,263 @@ fn by(touch, mac){ if desk { mac } else { touch } }
      let DeskToolbar = SolidView{
          width: Fill
          height: if unified { 52 } else { 40 }
@@ -14743,11 +15030,6 @@ index 8812a372d68c4cdf2fb21a6df5abb979321f8a4e..001097f9b67c6b37a27c59b0b446c386
 -                            border_radius: 3.0
 -                            border_color: hairline border_color_hover: hairline border_color_down: hairline border_color_empty: hairline
 -                            border_color_focus: theme.color_focus
--                        }
--                        draw_text +: {
--                            color: ink color_hover: ink color_focus: ink color_down: ink
--                            color_empty: muted color_empty_hover: muted color_empty_focus: muted
--                            text_style: theme.font_regular{font_size: 9.75}
 +                    flow: Right
 +                    align: Align{y: 0.5}
 +                    spacing: 2
@@ -14757,6 +15039,18 @@ index 8812a372d68c4cdf2fb21a6df5abb979321f8a4e..001097f9b67c6b37a27c59b0b446c386
 +
 +                    // A TextInput draws whatever its `visible` says: the View is what hides.
 +                    page_box := View{
++                        width: Fit
++                        height: Fit
++                        // Without a document a Mac's keeps the field's place, dimmed and
++                        // inert, as Preview keeps its toolbar items.
++                        page_dim := RoundedView{
++                            visible: false
++                            width: 44
++                            height: 28
++                            margin: Inset{left: 4 right: 8}
++                            draw_bg +: {color: mix(field, bar, 0.5) border_size: 1.0 border_radius: 3.0 border_color: mix(hairline, bar, 0.4)}
++                        }
++                        page_live := View{
 +                        width: Fit
 +                        height: Fit
 +                        page_field := TextInput{
@@ -14779,6 +15073,11 @@ index 8812a372d68c4cdf2fb21a6df5abb979321f8a4e..001097f9b67c6b37a27c59b0b446c386
 +                                text_style: theme.font_regular{font_size: 9.75}
 +                            }
                          }
+-                        draw_text +: {
+-                            color: ink color_hover: ink color_focus: ink color_down: ink
+-                            color_empty: muted color_empty_hover: muted color_empty_focus: muted
+-                            text_style: theme.font_regular{font_size: 9.75}
+                         }
                      }
                  }
 -            }
@@ -14800,6 +15099,8 @@ index 8812a372d68c4cdf2fb21a6df5abb979321f8a4e..001097f9b67c6b37a27c59b0b446c386
 -                draw_text +: {color: dimmed}
 -            }
 -            zoom_in_button := Tool{draw_icon +: {svg: crate_resource("self://resources/icons/magnify-plus.svg")}}
+-
+-            fit_gap := View{width: 8 height: Fit}
 +                zoom_out_button := Tool{draw_icon +: {svg: crate_resource("self://resources/icons/magnify-minus.svg")}}
 +                zoom_label := BarLabel{
 +                    width: 44
@@ -14815,15 +15116,15 @@ index 8812a372d68c4cdf2fb21a6df5abb979321f8a4e..001097f9b67c6b37a27c59b0b446c386
 +                }
 +                zoom_in_button := Tool{draw_icon +: {svg: crate_resource("self://resources/icons/magnify-plus.svg")}}
  
--            fit_gap := View{width: 8 height: Fit}
-+                fit_gap := View{width: 8 height: Fit}
- 
 -            fit_segments := Segments{
 -                fit_width_button := Seg{text: "Fit Width"}
 -                fit_width_on := SegOn{text: "Fit Width"}
 -                fit_page_button := Seg{text: "Fit Page"}
 -                fit_page_on := SegOn{text: "Fit Page"}
 -            }
++                fit_gap := View{width: 8 height: Fit}
+ 
+-            View{width: 8 height: Fit}
 +                fit_segments := Segments{
 +                    fit_width_button := Seg{text: "Fit Width"}
 +                    fit_width_on := SegOn{text: "Fit Width"}
@@ -14831,14 +15132,11 @@ index 8812a372d68c4cdf2fb21a6df5abb979321f8a4e..001097f9b67c6b37a27c59b0b446c386
 +                    fit_page_on := SegOn{text: "Fit Page"}
 +                }
  
--            View{width: 8 height: Fit}
+-            open_button := Tool{draw_icon +: {svg: crate_resource("self://resources/icons/folder.svg")}}
 +                View{width: 8 height: Fit}
  
--            open_button := Tool{draw_icon +: {svg: crate_resource("self://resources/icons/folder.svg")}}
-+                open_button := Tool{draw_icon +: {svg: crate_resource("self://resources/icons/folder.svg")}}
- 
 -            find_button := Tool{visible: false draw_icon +: {svg: crate_resource("self://resources/icons/search.svg")}}
-+                find_button := Tool{visible: false draw_icon +: {svg: crate_resource("self://resources/icons/search.svg")}}
++                open_button := Tool{draw_icon +: {svg: crate_resource("self://resources/icons/folder.svg")}}
  
 -            // Where Preview's search field is: the toolbar's trailing edge.
 -            find_tools := View{
@@ -14849,7 +15147,8 @@ index 8812a372d68c4cdf2fb21a6df5abb979321f8a4e..001097f9b67c6b37a27c59b0b446c386
 -                align: Align{y: 0.5}
 -                spacing: 2
 -                margin: Inset{left: 8}
--
++                find_button := Tool{visible: false draw_icon +: {svg: crate_resource("self://resources/icons/search.svg")}}
+ 
 -                // A count keeps one width, so the toolbar's tools hold still as it
 -                // changes; what won't fit has room of its own.
 -                find_status_box := View{
@@ -15036,7 +15335,7 @@ index 8812a372d68c4cdf2fb21a6df5abb979321f8a4e..001097f9b67c6b37a27c59b0b446c386
              }
          }
      }
-@@ -557,6 +623,24 @@ fn by(touch, mac){ if desk { mac } else { touch } }
+@@ -557,6 +636,24 @@ fn by(touch, mac){ if desk { mac } else { touch } }
                                          failed_open := PrimaryButton{text: "Open\u{2026}"}
                                      }
                                  }
@@ -15061,7 +15360,7 @@ index 8812a372d68c4cdf2fb21a6df5abb979321f8a4e..001097f9b67c6b37a27c59b0b446c386
                              }
  
                              status_row := RectView{
-@@ -605,6 +689,17 @@ fn by(touch, mac){ if desk { mac } else { touch } }
+@@ -605,6 +702,17 @@ fn by(touch, mac){ if desk { mac } else { touch } }
  /// The most letters Find's fixed count box holds ("999 of 999", "No Results").
  const FIND_COUNT_CHARS: usize = 10;
  
@@ -15079,7 +15378,7 @@ index 8812a372d68c4cdf2fb21a6df5abb979321f8a4e..001097f9b67c6b37a27c59b0b446c386
  #[derive(Script, ScriptHook)]
  pub struct App {
      #[live]
-@@ -645,6 +740,28 @@ pub struct App {
+@@ -645,6 +753,28 @@ pub struct App {
      /// of the person's home folder.
      #[rust]
      open_home: Option<PathBuf>,
@@ -15108,7 +15407,7 @@ index 8812a372d68c4cdf2fb21a6df5abb979321f8a4e..001097f9b67c6b37a27c59b0b446c386
  }
  
  impl MatchEvent for App {
-@@ -802,6 +919,25 @@ fn with_viewer(&self, cx: &mut Cx, f: impl FnOnce(&mut MpPdfView, &mut Cx)) {
+@@ -802,6 +932,25 @@ fn with_viewer(&self, cx: &mut Cx, f: impl FnOnce(&mut MpPdfView, &mut Cx)) {
      /// as `Event::Custom(json)`; this is what the viewer half of the
      /// protocol does with it. `PreviewUnload` never ends the process.
      fn handle_wm_event(&mut self, cx: &mut Cx, event: &makepad_wm_api::WmEvent) {
@@ -15134,7 +15433,7 @@ index 8812a372d68c4cdf2fb21a6df5abb979321f8a4e..001097f9b67c6b37a27c59b0b446c386
          match self.preview.on_wm_event(event) {
              PreviewAction::Show(path) => {
                  self.with_viewer(cx, |v, cx| v.open(cx, &path));
-@@ -823,6 +959,8 @@ fn set_title(&mut self, cx: &mut Cx) {
+@@ -823,6 +972,8 @@ fn set_title(&mut self, cx: &mut Cx) {
          let name = self.preview.showing().and_then(|path| path.file_name());
          let title = match (self.desk, self.preview.is_preview(), name) {
              (true, false, Some(name)) => name.to_string_lossy().to_string(),
@@ -15143,7 +15442,7 @@ index 8812a372d68c4cdf2fb21a6df5abb979321f8a4e..001097f9b67c6b37a27c59b0b446c386
              (true, _, _) => self.preview.title("PDF Viewer"),
              (false, _, _) => self.preview.title("pdf"),
          };
-@@ -831,29 +969,92 @@ fn set_title(&mut self, cx: &mut Cx) {
+@@ -831,29 +982,97 @@ fn set_title(&mut self, cx: &mut Cx) {
      }
  
      fn handle_toolbar(&mut self, cx: &mut Cx, actions: &Actions) {
@@ -15163,6 +15462,11 @@ index 8812a372d68c4cdf2fb21a6df5abb979321f8a4e..001097f9b67c6b37a27c59b0b446c386
 +        }
 +        if self.clicked(cx, actions, ids!(thumbs_button)) || self.clicked(cx, actions, ids!(thumbs_on)) {
 +            self.with_viewer(cx, |v, cx| v.toggle_thumbs(cx));
++            // A Mac's sidebar tool shows no plate for what it did: the sidebar
++            // says it is open, the tool stays as it was until the pointer moves.
++            if self.unified {
++                self.ui.button(cx, ids!(thumbs_button)).reset_hover(cx);
++            }
 +        }
 +        // A pull-down opens on the press, as a Mac's does.
 +        if self.ui.button(cx, ids!(more_button)).pressed(actions) {
@@ -15252,7 +15556,7 @@ index 8812a372d68c4cdf2fb21a6df5abb979321f8a4e..001097f9b67c6b37a27c59b0b446c386
          }
      }
  
-@@ -1024,6 +1225,16 @@ fn handle_find(&mut self, cx: &mut Cx, actions: &Actions) {
+@@ -1024,6 +1243,16 @@ fn handle_find(&mut self, cx: &mut Cx, actions: &Actions) {
                  field.take_key_focus(cx);
              }
          }
@@ -15269,7 +15573,31 @@ index 8812a372d68c4cdf2fb21a6df5abb979321f8a4e..001097f9b67c6b37a27c59b0b446c386
          self.sync_find_focus(cx);
      }
  
-@@ -1105,7 +1316,16 @@ fn paint_chrome(&mut self, cx: &mut Cx) {
+@@ -1080,15 +1309,16 @@ fn paint_chrome(&mut self, cx: &mut Cx) {
+             .set_text(cx, &format!("{}%", status.zoom_pct));
+ 
+         // A touch toggle lights its `sel`; a desktop's swaps a button for its
+-        // pressed form.
+-        for (off, sel, on, active) in [
+-            (ids!(fit_width_button), ids!(fit_width_button.sel), ids!(fit_width_on), status.fit_width),
+-            (ids!(fit_page_button), ids!(fit_page_button.sel), ids!(fit_page_on), status.fit_page),
+-            (ids!(thumbs_button), ids!(thumbs_button.sel), ids!(thumbs_on), status.thumbs),
++        // pressed form. A Mac's sidebar tool never stays lit while the
++        // thumbnails show, as Preview's doesn't.
++        for (off, sel, on, active, lit) in [
++            (ids!(fit_width_button), ids!(fit_width_button.sel), ids!(fit_width_on), status.fit_width, status.fit_width),
++            (ids!(fit_page_button), ids!(fit_page_button.sel), ids!(fit_page_on), status.fit_page, status.fit_page),
++            (ids!(thumbs_button), ids!(thumbs_button.sel), ids!(thumbs_on), status.thumbs, status.thumbs && !self.unified),
+         ] {
+             self.ui.widget(cx, sel).set_visible(cx, active);
+-            open_panel::show_form(&self.ui.widget(cx, on), cx, active);
+-            open_panel::show_form(&self.ui.widget(cx, off), cx, !self.desk || !active);
++            open_panel::show_form(&self.ui.widget(cx, on), cx, lit);
++            open_panel::show_form(&self.ui.widget(cx, off), cx, !self.desk || !lit);
+         }
+ 
+         self.ui
+@@ -1105,7 +1335,16 @@ fn paint_chrome(&mut self, cx: &mut Cx) {
  
          // A desktop's window always has its toolbar; a Quick Look panel's has
          // only the name, to keep the lights off the page. A phone keeps its bars.
@@ -15287,7 +15615,7 @@ index 8812a372d68c4cdf2fb21a6df5abb979321f8a4e..001097f9b67c6b37a27c59b0b446c386
          self.ui.widget(cx, ids!(toolbar)).set_visible(cx, toolbar);
          self.ui.widget(cx, ids!(toolbar_line)).set_visible(cx, self.desk && toolbar);
          self.ui.widget(cx, ids!(sheet_bar)).set_visible(cx, toolbar);
-@@ -1139,10 +1359,12 @@ fn paint_chrome(&mut self, cx: &mut Cx) {
+@@ -1139,10 +1378,12 @@ fn paint_chrome(&mut self, cx: &mut Cx) {
                  self.next_frame = cx.new_next_frame();
              }
  
@@ -15302,7 +15630,7 @@ index 8812a372d68c4cdf2fb21a6df5abb979321f8a4e..001097f9b67c6b37a27c59b0b446c386
              let place = if !open {
                  String::new()
              } else if status.loaded < status.page_count {
-@@ -1150,10 +1372,16 @@ fn paint_chrome(&mut self, cx: &mut Cx) {
+@@ -1150,12 +1391,24 @@ fn paint_chrome(&mut self, cx: &mut Cx) {
              } else {
                  format!("Page {} of {}", status.page, status.page_count)
              };
@@ -15315,12 +15643,35 @@ index 8812a372d68c4cdf2fb21a6df5abb979321f8a4e..001097f9b67c6b37a27c59b0b446c386
 +            self.ui.widget(cx, ids!(panel_place)).set_visible(cx, !place.is_empty());
  
              self.ui.widget(cx, ids!(tools)).set_visible(cx, !panel);
+-            self.ui.widget(cx, ids!(page_box)).set_visible(cx, open);
+-            self.ui.widget(cx, ids!(page_gap)).set_visible(cx, !open);
 +            // Quick Look opens what it shows in the app that opens it, as a Mac's does.
 +            self.ui.widget(cx, ids!(open_with)).set_visible(cx, panel && open);
-             self.ui.widget(cx, ids!(page_box)).set_visible(cx, open);
-             self.ui.widget(cx, ids!(page_gap)).set_visible(cx, !open);
++            // A Mac's toolbar keeps its items in place without a document, as
++            // Preview's does: the page field and the zoom stay, dimmed and inert,
++            // so the arrows and the zoom tools don't move when a PDF opens.
++            let keep = self.unified && !panel && !open;
++            self.ui.widget(cx, ids!(page_box)).set_visible(cx, open || keep);
++            self.ui.widget(cx, ids!(page_live)).set_visible(cx, open);
++            self.ui.widget(cx, ids!(page_dim)).set_visible(cx, keep);
++            self.ui.widget(cx, ids!(page_gap)).set_visible(cx, !open && !keep);
              for id in [ids!(thumbs_button), ids!(thumbs_on)] {
-@@ -1191,6 +1419,7 @@ fn paint_chrome(&mut self, cx: &mut Cx) {
+                 let widget = self.ui.widget(cx, id);
+                 open_panel::set_enabled(&widget, cx, open && !sheet);
+@@ -1169,9 +1422,10 @@ fn paint_chrome(&mut self, cx: &mut Cx) {
+                 open_panel::set_enabled(&self.ui.widget(cx, id), cx, open && !sheet);
+             }
+             open_panel::set_enabled(&self.ui.widget(cx, ids!(open_button)), cx, !sheet);
+-            self.ui.label(cx, ids!(zoom_dim)).set_text(cx, &format!("{}%", status.zoom_pct));
++            let zoom_words = if keep { "100%".to_string() } else { format!("{}%", status.zoom_pct) };
++            self.ui.label(cx, ids!(zoom_dim)).set_text(cx, &zoom_words);
+             self.ui.widget(cx, ids!(zoom_label)).set_visible(cx, open && !sheet);
+-            self.ui.widget(cx, ids!(zoom_dim)).set_visible(cx, open && sheet);
++            self.ui.widget(cx, ids!(zoom_dim)).set_visible(cx, (open && sheet) || keep);
+             for (off, on, active) in [
+                 (ids!(fit_width_button), ids!(fit_width_on), open && status.fit_width),
+                 (ids!(fit_page_button), ids!(fit_page_on), open && status.fit_page),
+@@ -1191,6 +1445,7 @@ fn paint_chrome(&mut self, cx: &mut Cx) {
                  if field.text() != self.find_query {
                      field.set_text(cx, &self.find_query);
                  }
@@ -15328,7 +15679,7 @@ index 8812a372d68c4cdf2fb21a6df5abb979321f8a4e..001097f9b67c6b37a27c59b0b446c386
                  let words = self.find_words();
                  let short = words.chars().count() <= FIND_COUNT_CHARS;
                  self.ui.widget(cx, ids!(find_status_box)).set_visible(cx, short);
-@@ -1205,24 +1434,33 @@ fn paint_chrome(&mut self, cx: &mut Cx) {
+@@ -1205,24 +1460,33 @@ fn paint_chrome(&mut self, cx: &mut Cx) {
                      open_panel::set_enabled(&self.ui.widget(cx, id), cx, walks);
                  }
              }
@@ -15343,7 +15694,7 @@ index 8812a372d68c4cdf2fb21a6df5abb979321f8a4e..001097f9b67c6b37a27c59b0b446c386
 +            // toolbar's end, whose menu has them, as a Mac's toolbar does. With
 +            // the search field open the field narrows a little first, so at the
 +            // window's first size every tool stays.
-+            let room = toolbar_room(self.width, self.unified, !panel, open, finding, can_find);
++            let room = toolbar_room(self.width, self.unified, !panel, open || keep, finding, can_find);
 +            self.room = Some(room);
              for id in [ids!(fit_segments), ids!(fit_gap)] {
 -                self.ui.widget(cx, id).set_visible(cx, !compact);
@@ -15373,7 +15724,7 @@ index 8812a372d68c4cdf2fb21a6df5abb979321f8a4e..001097f9b67c6b37a27c59b0b446c386
          } else {
              open_files.set_visible(cx, idle || failed);
          }
-@@ -1268,20 +1506,48 @@ fn script_mod(vm: &mut ScriptVm) -> ScriptValue {
+@@ -1268,20 +1532,48 @@ fn script_mod(vm: &mut ScriptVm) -> ScriptValue {
          makepad_wm_theme::apply(vm);
          Palette::for_vm(vm).publish(vm);
          makepad_pdf::thumbs::script_mod(vm);
@@ -15422,7 +15773,7 @@ index 8812a372d68c4cdf2fb21a6df5abb979321f8a4e..001097f9b67c6b37a27c59b0b446c386
              self.set_title(cx);
              self.paint_chrome(cx);
              self.ui.widget(cx, ids!(open_sheet)).as_mp_open_sheet().refresh(cx);
-@@ -1299,10 +1565,31 @@ fn handle_event(&mut self, cx: &mut Cx, event: &Event) {
+@@ -1299,10 +1591,31 @@ fn handle_event(&mut self, cx: &mut Cx, event: &Event) {
      }
  }
  
@@ -15558,7 +15909,7 @@ index 0000000000000000000000000000000000000000..137d68ce1e66ae732ef4c0aa36b2f214
 +    }
 +}
 diff --git a/apps/pdf/src/widget.rs b/apps/pdf/src/widget.rs
-index aac93c8e7b66490825454c79deecc62d6b19c0a0..8c8f5a5ef25f16dc17a976580e99d36fd3a53182 100644
+index aac93c8e7b66490825454c79deecc62d6b19c0a0..42c1cb2374f593d9d78ed2bd0f54ff30a2f2176f 100644
 --- a/apps/pdf/src/widget.rs
 +++ b/apps/pdf/src/widget.rs
 @@ -16,6 +16,7 @@
@@ -15569,19 +15920,33 @@ index aac93c8e7b66490825454c79deecc62d6b19c0a0..8c8f5a5ef25f16dc17a976580e99d36f
  use crate::loader::{file_name, spawn_load, PdfLoadEvent, PdfLoadMsg};
  use crate::thumbs::{
      MpPdfThumbsAction, MpPdfThumbsRef, MpPdfThumbsWidgetExt, STRIP_WIDTH,
-@@ -118,6 +119,11 @@
+@@ -118,6 +119,12 @@
              visible: false
          }
  
 +        // While Find has words, its matches stand in for the thumbnails.
 +        find_list := mod.widgets.MpPdfFindList{
 +            visible: false
++            mac: mac
 +        }
 +
          doc := SolidView{
              width: Fill
              height: Fill
-@@ -281,6 +287,10 @@ pub struct MpPdfView {
+@@ -235,6 +242,12 @@ pub struct MpPdfView {
+     popup_menu: ScriptValue,
+     #[rust]
+     context_menu: ContextMenu,
++    /// A Mac's menu over selected words starts with the rows for them, as
++    /// Preview's does: how many rows come before Copy, and the words.
++    #[rust]
++    menu_lead: usize,
++    #[rust]
++    menu_words: String,
+ 
+     /// What each page says, for Find: one per parsed page.
+     #[rust]
+@@ -281,6 +294,10 @@ pub struct MpPdfView {
      keys_enabled: bool,
      #[rust]
      thumbs_open: bool,
@@ -15592,7 +15957,7 @@ index aac93c8e7b66490825454c79deecc62d6b19c0a0..8c8f5a5ef25f16dc17a976580e99d36f
      #[rust]
      error: Option<String>,
      /// This process is a warm Quick Look viewer (`--preview`): Escape/Q
-@@ -356,15 +366,19 @@ fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+@@ -356,15 +373,19 @@ fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
              Event::MouseMove(me) => self.last_mouse = me.abs,
              Event::Actions(actions) => {
                  let thumbs = self.view.mp_pdf_thumbs(cx, ids!(thumbs));
@@ -15617,7 +15982,7 @@ index aac93c8e7b66490825454c79deecc62d6b19c0a0..8c8f5a5ef25f16dc17a976580e99d36f
                      }
                  }
              }
-@@ -406,6 +420,8 @@ pub fn open(&mut self, cx: &mut Cx, path: &Path) {
+@@ -406,6 +427,8 @@ pub fn open(&mut self, cx: &mut Cx, path: &Path) {
          self.texts.clear();
          self.any_text = false;
          self.finder.clear();
@@ -15626,7 +15991,7 @@ index aac93c8e7b66490825454c79deecc62d6b19c0a0..8c8f5a5ef25f16dc17a976580e99d36f
          self.page_count = 0;
          self.loaded = 0;
          self.error = None;
-@@ -454,6 +470,8 @@ pub fn unload(&mut self, cx: &mut Cx) {
+@@ -454,6 +477,8 @@ pub fn unload(&mut self, cx: &mut Cx) {
          self.thumb_strip(cx).set_pages(cx, Vec::new());
          self.thumbs_open = false;
          self.view.widget(cx, ids!(thumbs)).set_visible(cx, false);
@@ -15635,7 +16000,7 @@ index aac93c8e7b66490825454c79deecc62d6b19c0a0..8c8f5a5ef25f16dc17a976580e99d36f
          self.list(cx).set_first_id_and_scroll(0, 0.0);
          cx.redraw_all();
      }
-@@ -464,6 +482,17 @@ pub fn set_preview(&mut self, preview: bool) {
+@@ -464,6 +489,17 @@ pub fn set_preview(&mut self, preview: bool) {
          self.preview = preview;
      }
  
@@ -15653,7 +16018,7 @@ index aac93c8e7b66490825454c79deecc62d6b19c0a0..8c8f5a5ef25f16dc17a976580e99d36f
      /// Escape / Q: hide the panel when hosted as a Quick Look, quit
      /// otherwise.
      fn close(&mut self, cx: &mut Cx) {
-@@ -539,6 +568,14 @@ pub fn actual_size(&mut self, cx: &mut Cx) {
+@@ -539,6 +575,14 @@ pub fn actual_size(&mut self, cx: &mut Cx) {
      }
  
      pub fn toggle_thumbs(&mut self, cx: &mut Cx) {
@@ -15668,7 +16033,7 @@ index aac93c8e7b66490825454c79deecc62d6b19c0a0..8c8f5a5ef25f16dc17a976580e99d36f
          self.thumbs_open = !self.thumbs_open;
          self.view
              .widget(cx, ids!(thumbs))
-@@ -647,6 +684,7 @@ pub fn find_search(&mut self, cx: &mut Cx, query: &str) {
+@@ -647,6 +691,7 @@ pub fn find_search(&mut self, cx: &mut Cx, query: &str) {
          if let Some(found) = self.finder.search(query, &self.texts, from) {
              self.reveal_match(cx, found);
          }
@@ -15676,24 +16041,24 @@ index aac93c8e7b66490825454c79deecc62d6b19c0a0..8c8f5a5ef25f16dc17a976580e99d36f
          cx.redraw_all();
      }
  
-@@ -655,15 +693,74 @@ pub fn find_step(&mut self, cx: &mut Cx, forward: bool) {
+@@ -655,15 +700,74 @@ pub fn find_step(&mut self, cx: &mut Cx, forward: bool) {
          if let Some(found) = self.finder.step(forward) {
              self.reveal_match(cx, found);
          }
 +        self.sync_find_list(cx, false);
-         cx.redraw_all();
-     }
- 
--    /// Find closed: the marks go, the page stays where it is.
++        cx.redraw_all();
++    }
++
 +    /// A match pressed in the sidebar's list.
 +    fn find_select(&mut self, cx: &mut Cx, index: usize) {
 +        if let Some(found) = self.finder.select(index) {
 +            self.reveal_match(cx, found);
 +        }
 +        self.sync_find_list(cx, false);
-+        cx.redraw_all();
-+    }
-+
+         cx.redraw_all();
+     }
+ 
+-    /// Find closed: the marks go, the page stays where it is.
 +    /// Find closed: the marks go, the page stays where it is, and the
 +    /// sidebar is the thumbnails again, if they were out.
      pub fn find_end(&mut self, cx: &mut Cx) {
@@ -15752,7 +16117,82 @@ index aac93c8e7b66490825454c79deecc62d6b19c0a0..8c8f5a5ef25f16dc17a976580e99d36f
      /// Bring a match into view, if it is not: a third of the way down the view,
      /// and along a page wider than the window.
      fn reveal_match(&mut self, cx: &mut Cx, found: TextMatch) {
-@@ -867,6 +964,7 @@ fn drain_loader(&mut self, cx: &mut Cx) {
+@@ -783,8 +887,20 @@ fn open_page_menu(&mut self, cx: &mut Cx, press: &MouseDownEvent) {
+         }
+         let page = self.current_page(cx);
+         let row = ContextRow::new;
+-        let rows = vec![
+-            row("Copy", !self.selected_text(cx).is_empty()),
++        let words = self.selected_text(cx);
++        // A Mac's, over selected words, first offers what can be done with
++        // them in Preview's order: Search With Google hands the search to the
++        // person's browser. (Look Up, Translate, Share and the highlight rows
++        // need services a process app doesn't have here: see the report.)
++        let mut rows = Vec::new();
++        if self.mac && !words.trim().is_empty() {
++            rows.push(row("Search With Google", true));
++            rows.push(ContextRow::rule());
++        }
++        self.menu_lead = rows.len();
++        self.menu_words = words.clone();
++        rows.extend([
++            row("Copy", !words.is_empty()),
+             ContextRow::rule(),
+             row("Zoom In", self.zoom < MAX_ZOOM - 1e-9),
+             row("Zoom Out", self.zoom > MIN_ZOOM + 1e-9),
+@@ -794,10 +910,10 @@ fn open_page_menu(&mut self, cx: &mut Cx, press: &MouseDownEvent) {
+             ContextRow::rule(),
+             row("Previous Page", page > 0),
+             row("Next Page", page + 1 < self.page_count),
+-        ];
++        ]);
+         let ticked = match self.fit {
+-            FitMode::Width => Some(MENU_FIT_WIDTH),
+-            FitMode::Page => Some(MENU_FIT_PAGE),
++            FitMode::Width => Some(MENU_FIT_WIDTH + self.menu_lead),
++            FitMode::Page => Some(MENU_FIT_PAGE + self.menu_lead),
+             FitMode::Free => None,
+         };
+         let owner = ContextMenuOwner { source: &self.view.source, template: self.popup_menu, area: self.view.area() };
+@@ -805,7 +921,13 @@ fn open_page_menu(&mut self, cx: &mut Cx, press: &MouseDownEvent) {
+     }
+ 
+     fn menu_chose(&mut self, cx: &mut Cx, row: usize) {
+-        match row {
++        if row < self.menu_lead {
++            if row == 0 {
++                self.search_with_google(cx);
++            }
++            return;
++        }
++        match row - self.menu_lead {
+             MENU_COPY => {
+                 let text = self.selected_text(cx);
+                 if !text.is_empty() {
+@@ -823,6 +945,22 @@ fn menu_chose(&mut self, cx: &mut Cx, row: usize) {
+         }
+     }
+ 
++    /// Search With Google, for the words the menu was opened over: the
++    /// person's browser opens on the search. Hosted, that is the desktop's
++    /// Browser, which the window manager launches with the address; alone,
++    /// the computer's own.
++    fn search_with_google(&mut self, cx: &mut Cx) {
++        let words = self.menu_words.split_whitespace().collect::<Vec<_>>().join(" ");
++        if words.is_empty() {
++            return;
++        }
++        let url = google_search_url(&words);
++        let request = makepad_wm_api::WmRequest::Launch { app: "browser".to_string(), args: vec![url.clone()] };
++        if !makepad_wm_api::send(cx, &request) {
++            cx.open_url(&url, OpenUrlInPlace::No);
++        }
++    }
++
+     // ---- loading ----
+ 
+     fn cancel_load(&mut self) {
+@@ -867,6 +1005,7 @@ fn drain_loader(&mut self, cx: &mut Cx) {
                          if let Some(found) = self.finder.more_pages(&self.texts, from) {
                              self.reveal_match(cx, found);
                          }
@@ -15760,7 +16200,7 @@ index aac93c8e7b66490825454c79deecc62d6b19c0a0..8c8f5a5ef25f16dc17a976580e99d36f
                      }
                      if self.thumbs_open {
                          let shared = self.document(cx).borrow().map(|d| d.pages().to_vec());
-@@ -1218,7 +1316,7 @@ fn emit_status(&mut self, cx: &mut Cx) {
+@@ -1218,7 +1357,7 @@ fn emit_status(&mut self, cx: &mut Cx) {
              zoom_pct: (self.zoom * 100.0).round() as i32,
              fit_width: self.fit == FitMode::Width,
              fit_page: self.fit == FitMode::Page,
@@ -15769,6 +16209,27 @@ index aac93c8e7b66490825454c79deecc62d6b19c0a0..8c8f5a5ef25f16dc17a976580e99d36f
              error: self.error.clone(),
              find_at: self.finder.position(),
              find_total: self.finder.total(),
+@@ -1239,6 +1378,20 @@ fn emit_status(&mut self, cx: &mut Cx) {
+ /// the layout without reaching into the strip's module.
+ pub const THUMB_STRIP_WIDTH: f64 = STRIP_WIDTH;
+ 
++/// Google's address for a search of `words`: a query string's escapes, a
++/// space as `+`, and every byte outside the unreserved set as `%XX`.
++fn google_search_url(words: &str) -> String {
++    let mut query = String::new();
++    for byte in words.bytes() {
++        match byte {
++            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => query.push(byte as char),
++            b' ' => query.push('+'),
++            _ => query.push_str(&format!("%{byte:02X}")),
++        }
++    }
++    format!("https://www.google.com/search?q={query}")
++}
++
+ #[cfg(test)]
+ mod tests {
+     use super::*;
 diff --git a/apps/reminders/resources/icons/done.svg b/apps/reminders/resources/icons/done.svg
 new file mode 100644
 index 0000000000000000000000000000000000000000..9b69ced860839d5f4fb73392be9cdf8cb1bc707b
@@ -18617,7 +19078,7 @@ index 6c63a3422350202e73044f3653ef4f7fc281c13f..7d7d06b7ea657c2135428132e6d4ab30
 +    }
  }
 diff --git a/apps/sheets/src/theme.rs b/apps/sheets/src/theme.rs
-index 0fcf50c91120d6062216f8c86830077de1284544..9a6335f94d08a937429d675ae3443e96bcb2bf78 100644
+index 0fcf50c91120d6062216f8c86830077de1284544..3cf6f94c8a72232913d0585bc640615e7784ad0e 100644
 --- a/apps/sheets/src/theme.rs
 +++ b/apps/sheets/src/theme.rs
 @@ -75,6 +75,8 @@ pub struct Colors {
@@ -18629,7 +19090,16 @@ index 0fcf50c91120d6062216f8c86830077de1284544..9a6335f94d08a937429d675ae3443e96
      pub ink: Vec4f,
      pub muted: Vec4f,
      pub surface: Vec4f,
-@@ -97,6 +99,7 @@ pub fn colors(cx: &mut Cx) -> Colors {
+@@ -83,6 +85,8 @@ pub struct Colors {
+     pub selected: Vec4f,
+     pub sel_fill: Vec4f,
+     pub primary: Vec4f,
++    /// A Mac's selected sheet tab: raised from the tab bar, lighter than it in both appearances.
++    pub tab_on: Vec4f,
+ }
+ 
+ pub fn colors(cx: &mut Cx) -> Colors {
+@@ -97,6 +101,7 @@ pub fn colors(cx: &mut Cx) -> Colors {
          fg: rgba(&hex_of("foreground")),
          fg_dark: rgba(&hex_of("dark_foreground")),
          desk: false,
@@ -18637,7 +19107,15 @@ index 0fcf50c91120d6062216f8c86830077de1284544..9a6335f94d08a937429d675ae3443e96
          ink: Vec4f::default(),
          muted: Vec4f::default(),
          surface: Vec4f::default(),
-@@ -112,6 +115,7 @@ pub fn colors(cx: &mut Cx) -> Colors {
+@@ -105,6 +110,7 @@ pub fn colors(cx: &mut Cx) -> Colors {
+         selected: Vec4f::default(),
+         sel_fill: Vec4f::default(),
+         primary: Vec4f::default(),
++        tab_on: Vec4f::default(),
+     };
+     cx.with_vm(|vm| {
+         let look = vm.module(id!(sheets_look));
+@@ -112,6 +118,7 @@ pub fn colors(cx: &mut Cx) -> Colors {
          if !colors.desk {
              return;
          }
@@ -18645,8 +19123,20 @@ index 0fcf50c91120d6062216f8c86830077de1284544..9a6335f94d08a937429d675ae3443e96
          for (key, role) in [
              (id!(ink), &mut colors.ink),
              (id!(muted), &mut colors.muted),
-@@ -242,6 +246,8 @@ pub fn install(vm: &mut ScriptVm) {
+@@ -121,6 +128,7 @@ pub fn colors(cx: &mut Cx) -> Colors {
+             (id!(selected), &mut colors.selected),
+             (id!(sel_fill), &mut colors.sel_fill),
+             (id!(primary), &mut colors.primary),
++            (id!(tab_on), &mut colors.tab_on),
+             (id!(accent), &mut colors.accent),
+             (id!(negative), &mut colors.red),
+             (id!(positive), &mut colors.green),
+@@ -240,8 +248,12 @@ pub fn install(vm: &mut ScriptVm) {
+             header_on: mix(header, ink, 0.1)
+             grid_line: mix(surface, ink, 0.12)
              bar: if light { #xededf0 } else { #x303033 }
++            // Numbers' selected sheet tab, raised from the bar: white in light, a lighter grey in dark.
++            tab_on: if light { #xffffff } else { #x4a4a4d }
              line: mix(page, ink, 0.14)
              muted: mix(ink, page, 0.30)
 +            // A Mac's placeholder is the label at a quarter, lighter than what was typed.
@@ -18654,7 +19144,7 @@ index 0fcf50c91120d6062216f8c86830077de1284544..9a6335f94d08a937429d675ae3443e96
              hover: mix(page, ink, 0.07)
              selected: mix(page, ink, 0.11)
              button: if light { #xffffff } else { mix(page, ink, 0.16) }
-@@ -256,6 +262,8 @@ pub fn install(vm: &mut ScriptVm) {
+@@ -256,6 +268,8 @@ pub fn install(vm: &mut ScriptVm) {
              link: if light { #x0060c0 } else { #x6cb8ff }
              negative: if light { #xc70012 } else { #xffa097 }
              positive: if light { #x1a7030 } else { #x30d158 }
@@ -18664,7 +19154,7 @@ index 0fcf50c91120d6062216f8c86830077de1284544..9a6335f94d08a937429d675ae3443e96
      });
  }
 diff --git a/apps/sheets/src/view.rs b/apps/sheets/src/view.rs
-index b72dde854695c435b99b3c9c9a6455731a9abf0a..c4f662d4313855ea04ac4058579687979ecfa330 100644
+index b72dde854695c435b99b3c9c9a6455731a9abf0a..f6cb4445afbcaf438e432fa4bef4323f138c3e57 100644
 --- a/apps/sheets/src/view.rs
 +++ b/apps/sheets/src/view.rs
 @@ -7,12 +7,13 @@
@@ -18772,7 +19262,20 @@ index b72dde854695c435b99b3c9c9a6455731a9abf0a..c4f662d4313855ea04ac405857968797
              text_style: theme.font_regular{font_size: 9.75}
          }
      }
-@@ -833,6 +889,91 @@ fn chosen_place(path: &std::path::Path) -> Option<PathBuf> {
+@@ -623,6 +679,12 @@ fn chosen_place(path: &std::path::Path) -> Option<PathBuf> {
+             text_style: theme.font_regular{font_size: 9}
+         }
+     }
++    // A Mac's sheet tab, as Numbers': a rounded tab inside the bar, apart from its neighbours.
++    let DeskTabMac = DeskTab{
++        height: 22
++        padding: Inset{left: 12 right: 12}
++        draw_bg +: {border_radius: 3.0}
++    }
+     // ---- A sheet: attached under the toolbar, as Image Viewer's and PDF Viewer's are.
+     let DeskPush = ButtonFlat{
+         width: Fit
+@@ -833,6 +895,91 @@ fn chosen_place(path: &std::path::Path) -> Option<PathBuf> {
          cursor: MouseCursor.Arrow
          grab_key_focus: false
      }
@@ -18843,28 +19346,28 @@ index b72dde854695c435b99b3c9c9a6455731a9abf0a..c4f662d4313855ea04ac405857968797
 +            padding: Inset{left: 8 right: 8}
 +            draw_bg +: {color: look.bar}
 +
++            spacing: 4
 +            add_tab := DeskToolIcon{
 +                width: 26
 +                height: 22
-+                margin: Inset{right: 4}
 +                icon_walk: Walk{width: 13 height: 13}
 +                draw_icon +: {svg: crate_resource("self://resources/icons/plus.svg")}
 +            }
-+            tab0 := DeskTab{text: "Sheet1"}
-+            tab1 := DeskTab{text: "" visible: false}
-+            tab2 := DeskTab{text: "" visible: false}
-+            tab3 := DeskTab{text: "" visible: false}
-+            tab4 := DeskTab{text: "" visible: false}
-+            tab5 := DeskTab{text: "" visible: false}
-+            tab6 := DeskTab{text: "" visible: false}
-+            tab7 := DeskTab{text: "" visible: false}
++            tab0 := DeskTabMac{text: "Sheet1"}
++            tab1 := DeskTabMac{text: "" visible: false}
++            tab2 := DeskTabMac{text: "" visible: false}
++            tab3 := DeskTabMac{text: "" visible: false}
++            tab4 := DeskTabMac{text: "" visible: false}
++            tab5 := DeskTabMac{text: "" visible: false}
++            tab6 := DeskTabMac{text: "" visible: false}
++            tab7 := DeskTabMac{text: "" visible: false}
 +        }
 +        DeskLine{}
 +    }
  
      let DeskParts = mod.widgets.SheetsDeskRoot{
          width: Fill
-@@ -957,6 +1098,9 @@ fn chosen_place(path: &std::path::Path) -> Option<PathBuf> {
+@@ -957,6 +1104,9 @@ fn chosen_place(path: &std::path::Path) -> Option<PathBuf> {
                      height: Fill
                      flow: Down
  
@@ -18874,7 +19377,7 @@ index b72dde854695c435b99b3c9c9a6455731a9abf0a..c4f662d4313855ea04ac405857968797
                      // ---- The formula bar: a plain row over the grid.
                      formula_bar := SolidView{
                          width: Fill
-@@ -1092,37 +1236,42 @@ fn chosen_place(path: &std::path::Path) -> Option<PathBuf> {
+@@ -1092,37 +1242,42 @@ fn chosen_place(path: &std::path::Path) -> Option<PathBuf> {
                              color: look.ink
                          }
                      }
@@ -18943,7 +19446,7 @@ index b72dde854695c435b99b3c9c9a6455731a9abf0a..c4f662d4313855ea04ac405857968797
                      // ---- The status bar: what is selected, and its readouts.
                      statusbar := SolidView{
                          width: Fill
-@@ -1363,6 +1512,42 @@ fn chosen_place(path: &std::path::Path) -> Option<PathBuf> {
+@@ -1363,6 +1518,42 @@ fn chosen_place(path: &std::path::Path) -> Option<PathBuf> {
              }
          }
  
@@ -18986,7 +19489,7 @@ index b72dde854695c435b99b3c9c9a6455731a9abf0a..c4f662d4313855ea04ac405857968797
          // The functions, and what a narrow toolbar hands over.
          menu_layer := DeskMenuLayer{
              menu_card := DeskMenuCard{
-@@ -1407,7 +1592,9 @@ fn chosen_place(path: &std::path::Path) -> Option<PathBuf> {
+@@ -1407,7 +1598,9 @@ fn chosen_place(path: &std::path::Path) -> Option<PathBuf> {
          tab_menu_layer := DeskMenuLayer{
              DeskMenuCard{
                  rename_tab := DeskMenuRow{text: "Rename Sheet"}
@@ -18997,7 +19500,7 @@ index b72dde854695c435b99b3c9c9a6455731a9abf0a..c4f662d4313855ea04ac405857968797
              }
          }
  
-@@ -1419,6 +1606,15 @@ fn chosen_place(path: &std::path::Path) -> Option<PathBuf> {
+@@ -1419,6 +1612,15 @@ fn chosen_place(path: &std::path::Path) -> Option<PathBuf> {
                  cell_paste := DeskMenuRow{text: "Paste"}
                  DeskMenuGap{visible: true}
                  cell_clear := DeskMenuRow{text: "Clear Contents"}
@@ -19013,7 +19516,7 @@ index b72dde854695c435b99b3c9c9a6455731a9abf0a..c4f662d4313855ea04ac405857968797
              }
          }
      }
-@@ -1544,28 +1740,34 @@ enum MenuChoice {
+@@ -1544,28 +1746,34 @@ enum MenuChoice {
      Function(usize),
      Align(HAlign),
      Number(NumFormat),
@@ -19055,7 +19558,7 @@ index b72dde854695c435b99b3c9c9a6455731a9abf0a..c4f662d4313855ea04ac405857968797
          }
      }
  
-@@ -1575,6 +1777,7 @@ fn starts_group(self, index: usize, previous: Option<MenuChoice>) -> bool {
+@@ -1575,6 +1783,7 @@ fn starts_group(self, index: usize, previous: Option<MenuChoice>) -> bool {
              MenuChoice::Function(function) => FUNCTION_GROUPS.contains(&function),
              MenuChoice::Number(_) => matches!(previous, Some(MenuChoice::Align(_))) && index > 0,
              MenuChoice::Align(_) => false,
@@ -19063,7 +19566,7 @@ index b72dde854695c435b99b3c9c9a6455731a9abf0a..c4f662d4313855ea04ac405857968797
          }
      }
  }
-@@ -1668,6 +1871,12 @@ pub struct MpSheets {
+@@ -1668,6 +1877,12 @@ pub struct MpSheets {
      /// A desktop's tree is up (`follow_style`): a document, sheets and menus.
      #[rust]
      desk: bool,
@@ -19076,7 +19579,7 @@ index b72dde854695c435b99b3c9c9a6455731a9abf0a..c4f662d4313855ea04ac405857968797
      #[rust]
      doc: Document,
      #[rust]
-@@ -2036,8 +2245,12 @@ fn sync_desk_tools(&mut self, cx: &mut Cx, c: &theme::Colors) {
+@@ -2036,8 +2251,12 @@ fn sync_desk_tools(&mut self, cx: &mut Cx, c: &theme::Colors) {
                  draw_bg +: {color: #(face) color_hover: #(hover) color_focus: #(face)}
              });
          }
@@ -19091,7 +19594,7 @@ index b72dde854695c435b99b3c9c9a6455731a9abf0a..c4f662d4313855ea04ac405857968797
          self.paint_tool_states(cx);
      }
  
-@@ -2049,10 +2262,12 @@ fn sync_desk_tools(&mut self, cx: &mut Cx, c: &theme::Colors) {
+@@ -2049,10 +2268,12 @@ fn sync_desk_tools(&mut self, cx: &mut Cx, c: &theme::Colors) {
      /// host's first fill stays on its first action, as it always was.
      fn follow_style(&mut self, cx: &mut Cx, c: &theme::Colors) {
          self.desk = c.desk;
@@ -19105,7 +19608,7 @@ index b72dde854695c435b99b3c9c9a6455731a9abf0a..c4f662d4313855ea04ac405857968797
              Some((desk, ..)) if desk == c.desk => {
                  if self.chrome_synced {
                      self.sync_paint(cx);
-@@ -2061,6 +2276,7 @@ fn follow_style(&mut self, cx: &mut Cx, c: &theme::Colors) {
+@@ -2061,6 +2282,7 @@ fn follow_style(&mut self, cx: &mut Cx, c: &theme::Colors) {
                  // state decides comes back.
                  if c.desk {
                      self.tool_level = None;
@@ -19113,7 +19616,7 @@ index b72dde854695c435b99b3c9c9a6455731a9abf0a..c4f662d4313855ea04ac405857968797
                      self.sync_doc_labels(cx);
                      self.paint_overlays(cx);
                  }
-@@ -2089,11 +2305,8 @@ fn first_sync(&mut self, cx: &mut Cx) {
+@@ -2089,11 +2311,8 @@ fn first_sync(&mut self, cx: &mut Cx) {
          labels.extend(FUNCTIONS.iter().map(|(name, _)| name.to_string()));
          self.view.drop_down(cx, ids!(fx_menu)).set_labels(cx, labels);
          let source = docs::docs();
@@ -19126,7 +19629,7 @@ index b72dde854695c435b99b3c9c9a6455731a9abf0a..c4f662d4313855ea04ac405857968797
          self.view.widget(cx, ids!(demo_pick)).set_visible(cx, has_demos);
          let mut demo_labels = Vec::with_capacity(source.demos().len() + 1);
          demo_labels.push(if self.desk { "Open Demo\u{2026}" } else { "Open demo..." }.to_string());
-@@ -2105,6 +2318,16 @@ fn first_sync(&mut self, cx: &mut Cx) {
+@@ -2105,6 +2324,16 @@ fn first_sync(&mut self, cx: &mut Cx) {
          self.sync_chrome(cx);
      }
  
@@ -19143,7 +19646,23 @@ index b72dde854695c435b99b3c9c9a6455731a9abf0a..c4f662d4313855ea04ac405857968797
      fn tab_id(&self, cx: &Cx, i: usize) -> WidgetRef {
          match i {
              0 => self.view.widget(cx, ids!(tab0)),
-@@ -2197,14 +2420,41 @@ fn apply_format(&mut self, cx: &mut Cx, f: impl Fn(&mut sheet::CellFormat) + Cop
+@@ -2143,10 +2372,12 @@ fn sync_tabs(&mut self, cx: &mut Cx) {
+                     self.tab_button(cx, i).set_text(cx, name);
+                     let mut item = self.tab_id(cx, i);
+                     if c.desk {
+-                        // The active sheet's tab is a piece of the grid's white.
++                        // The active sheet's tab is a piece of the grid's white; a Mac's is
++                        // Numbers' raised tab, lighter than the bar in dark too.
+                         let on = i == active;
+-                        let face = if on { c.surface } else { Vec4f::default() };
+-                        let hover = if on { c.surface } else { c.hover };
++                        let raised = if c.unified { c.tab_on } else { c.surface };
++                        let face = if on { raised } else { Vec4f::default() };
++                        let hover = if on { raised } else { c.hover };
+                         let edge = if on { c.line } else { Vec4f::default() };
+                         let size = if on { 1.0 } else { 0.0 };
+                         let ink = if on { c.ink } else { c.muted };
+@@ -2197,14 +2428,41 @@ fn apply_format(&mut self, cx: &mut Cx, f: impl Fn(&mut sheet::CellFormat) + Cop
      }
  
      fn undo(&mut self, cx: &mut Cx) {
@@ -19185,7 +19704,7 @@ index b72dde854695c435b99b3c9c9a6455731a9abf0a..c4f662d4313855ea04ac405857968797
          self.after_model_change(cx);
      }
  
-@@ -3242,6 +3492,11 @@ fn paint_overlays(&mut self, cx: &mut Cx) {
+@@ -3242,6 +3500,11 @@ fn paint_overlays(&mut self, cx: &mut Cx) {
          ] {
              self.view.widget(cx, id).set_visible(cx, on);
          }
@@ -19197,7 +19716,7 @@ index b72dde854695c435b99b3c9c9a6455731a9abf0a..c4f662d4313855ea04ac405857968797
          self.paint_menu_rows(cx);
          if self.save_open {
              self.paint_save(cx);
-@@ -3321,6 +3576,25 @@ fn paint_ask(&mut self, cx: &mut Cx) {
+@@ -3321,6 +3584,25 @@ fn paint_ask(&mut self, cx: &mut Cx) {
              return;
          };
          let (title, note, left, danger, second, primary) = match ask {
@@ -19223,7 +19742,7 @@ index b72dde854695c435b99b3c9c9a6455731a9abf0a..c4f662d4313855ea04ac405857968797
              Ask::KeepChanges(_) => (
                  format!("Do you want to keep the changes you made to \u{201c}{}\u{201d}?", self.doc.title),
                  "Your changes will be lost if you don\u{2019}t save them.".to_string(),
-@@ -3379,12 +3653,31 @@ fn paint_ask(&mut self, cx: &mut Cx) {
+@@ -3379,12 +3661,31 @@ fn paint_ask(&mut self, cx: &mut Cx) {
  
      // -- menus ---------------------------------------------------------------
  
@@ -19257,7 +19776,7 @@ index b72dde854695c435b99b3c9c9a6455731a9abf0a..c4f662d4313855ea04ac405857968797
          } else {
              self.menu.len().min(MENU_ROWS.len())
          }
-@@ -3392,9 +3685,11 @@ fn menu_row_count(&self) -> usize {
+@@ -3392,9 +3693,11 @@ fn menu_row_count(&self) -> usize {
  
      fn menu_row_id(&self, index: usize) -> &'static [LiveId] {
          if self.cell_menu {
@@ -19271,7 +19790,7 @@ index b72dde854695c435b99b3c9c9a6455731a9abf0a..c4f662d4313855ea04ac405857968797
          } else {
              MENU_ROWS[index.min(MENU_ROWS.len() - 1)]
          }
-@@ -3408,16 +3703,25 @@ fn paint_menu_rows(&mut self, cx: &mut Cx) {
+@@ -3408,16 +3711,25 @@ fn paint_menu_rows(&mut self, cx: &mut Cx) {
          let white = vec4(1.0, 1.0, 1.0, 1.0);
          let format = self.wb.sheet().format(self.active(cx));
          if self.cell_menu {
@@ -19300,7 +19819,7 @@ index b72dde854695c435b99b3c9c9a6455731a9abf0a..c4f662d4313855ea04ac405857968797
                  self.paint_menu_row(cx, id, self.menu_focus == Some(index), false, enabled, &c, white);
              }
              return;
-@@ -3431,10 +3735,12 @@ fn paint_menu_rows(&mut self, cx: &mut Cx) {
+@@ -3431,10 +3743,12 @@ fn paint_menu_rows(&mut self, cx: &mut Cx) {
                  continue;
              };
              row.set_visible(cx, true);
@@ -19315,7 +19834,7 @@ index b72dde854695c435b99b3c9c9a6455731a9abf0a..c4f662d4313855ea04ac405857968797
          }
      }
  
-@@ -3499,7 +3805,10 @@ fn open_more_menu(&mut self, cx: &mut Cx) {
+@@ -3499,7 +3813,10 @@ fn open_more_menu(&mut self, cx: &mut Cx) {
              MenuChoice::Align(HAlign::Center),
              MenuChoice::Align(HAlign::Right),
          ];
@@ -19327,7 +19846,7 @@ index b72dde854695c435b99b3c9c9a6455731a9abf0a..c4f662d4313855ea04ac405857968797
              choices.extend(NUM_FORMATS.iter().map(|num| MenuChoice::Number(*num)));
          }
          self.open_menu(cx, ids!(more_menu), choices);
-@@ -3508,9 +3817,15 @@ fn open_more_menu(&mut self, cx: &mut Cx) {
+@@ -3508,9 +3825,15 @@ fn open_more_menu(&mut self, cx: &mut Cx) {
      fn open_tab_menu(&mut self, cx: &mut Cx, index: usize, at: Vec2d) {
          let window = self.window_rect(cx);
          let strip = self.view.widget(cx, ids!(tabbar)).area().rect(cx);
@@ -19345,7 +19864,7 @@ index b72dde854695c435b99b3c9c9a6455731a9abf0a..c4f662d4313855ea04ac405857968797
          let mut layer = self.view.widget(cx, ids!(tab_menu_layer));
          script_apply_eval!(cx, layer, {
              padding.left: #(left)
-@@ -3531,7 +3846,8 @@ fn open_cell_menu(&mut self, cx: &mut Cx, pos: Pos, at: Vec2d) {
+@@ -3531,7 +3854,8 @@ fn open_cell_menu(&mut self, cx: &mut Cx, pos: Pos, at: Vec2d) {
          let area = self.grid_area(cx);
          cx.set_key_focus(area);
          let window = self.window_rect(cx);
@@ -19355,7 +19874,7 @@ index b72dde854695c435b99b3c9c9a6455731a9abf0a..c4f662d4313855ea04ac405857968797
          let left = (at.x - window.pos.x).min(window.size.x - MENU_WIDTH - 8.0).max(8.0);
          let top = (at.y - window.pos.y).min(window.size.y - height - 8.0).max(8.0);
          let mut layer = self.view.widget(cx, ids!(cell_menu_layer));
-@@ -3580,17 +3896,166 @@ fn cell_menu_choose(&mut self, cx: &mut Cx, row: usize) {
+@@ -3580,25 +3904,179 @@ fn cell_menu_choose(&mut self, cx: &mut Cx, row: usize) {
              }
              1 => self.copy_selection(cx),
              2 => cx.paste_clipboard(),
@@ -19382,9 +19901,9 @@ index b72dde854695c435b99b3c9c9a6455731a9abf0a..c4f662d4313855ea04ac405857968797
 +            _ if self.wb.sheets.len() > 1 && self.unified => self.delete_sheet_now(cx, tab),
 +            _ if self.wb.sheets.len() > 1 => self.put_ask(cx, Ask::DeleteSheet(tab)),
 +            _ => {}
-+        }
-+    }
-+
+         }
+     }
+ 
 +    /// Numbers' Add Row Above or Below, Add Column Before or After: one empty
 +    /// line beside the selection, whose cell in line with it is then selected.
 +    fn add_lines(&mut self, cx: &mut Cx, axis: Axis, after: bool) {
@@ -19499,7 +20018,7 @@ index b72dde854695c435b99b3c9c9a6455731a9abf0a..c4f662d4313855ea04ac405857968797
 +    fn error_pop_wanted(&self, cx: &mut Cx, one_cell: bool, active: Option<Pos>) -> Option<(f64, f64, &'static str)> {
 +        if !self.unified || !one_cell || self.editing.is_some() || self.menu_up() || self.sheet_up() || self.ask.is_some() || self.rename.is_some() {
 +            return None;
-         }
++        }
 +        let (row, col) = active?;
 +        let Value::Err(kind) = self.wb.sheet().value((row, col)) else {
 +            return None;
@@ -19524,10 +20043,10 @@ index b72dde854695c435b99b3c9c9a6455731a9abf0a..c4f662d4313855ea04ac405857968797
 +            padding.top: #(top)
 +        });
 +        layer.set_visible(cx, true);
-     }
- 
++    }
++
      fn menu_choose(&mut self, cx: &mut Cx, choice: MenuChoice) {
-@@ -3598,7 +4063,12 @@ fn menu_choose(&mut self, cx: &mut Cx, choice: MenuChoice) {
+         self.close_menus(cx);
          match choice {
              MenuChoice::Function(index) => self.insert_function(cx, index),
              MenuChoice::Align(align) => self.apply_format(cx, move |f| f.align = align),
@@ -19540,7 +20059,7 @@ index b72dde854695c435b99b3c9c9a6455731a9abf0a..c4f662d4313855ea04ac405857968797
          }
      }
  
-@@ -3922,7 +4392,7 @@ fn desk_actions(&mut self, cx: &mut Cx, actions: &Actions) {
+@@ -3922,7 +4400,7 @@ fn desk_actions(&mut self, cx: &mut Cx, actions: &Actions) {
              return;
          }
          if self.cell_menu {
@@ -19549,7 +20068,7 @@ index b72dde854695c435b99b3c9c9a6455731a9abf0a..c4f662d4313855ea04ac405857968797
                  if self.view.button(cx, id).clicked(actions) {
                      self.cell_menu_choose(cx, index);
                      return;
-@@ -3934,7 +4404,7 @@ fn desk_actions(&mut self, cx: &mut Cx, actions: &Actions) {
+@@ -3934,7 +4412,7 @@ fn desk_actions(&mut self, cx: &mut Cx, actions: &Actions) {
              return;
          }
          if let Some(tab) = self.tab_menu {
@@ -19558,7 +20077,7 @@ index b72dde854695c435b99b3c9c9a6455731a9abf0a..c4f662d4313855ea04ac405857968797
                  if self.view.button(cx, id).clicked(actions) {
                      self.tab_menu_choose(cx, tab, index);
                      return;
-@@ -4035,7 +4505,10 @@ fn desk_actions(&mut self, cx: &mut Cx, actions: &Actions) {
+@@ -4035,7 +4513,10 @@ fn desk_actions(&mut self, cx: &mut Cx, actions: &Actions) {
              self.open_more_menu(cx);
          }
          if let Some(index) = self.view.drop_down(cx, ids!(fmt_menu)).selected(actions) {
@@ -19570,7 +20089,7 @@ index b72dde854695c435b99b3c9c9a6455731a9abf0a..c4f662d4313855ea04ac405857968797
                  self.apply_format(cx, move |f| f.num = num);
              }
              self.focus_wanted = Some(Focus::Grid);
-@@ -4067,6 +4540,8 @@ fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawSte
+@@ -4067,6 +4548,8 @@ fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawSte
          let editing = self.editing;
          let fill = self.fill;
          let mut widths_moved = false;
@@ -19579,7 +20098,7 @@ index b72dde854695c435b99b3c9c9a6455731a9abf0a..c4f662d4313855ea04ac405857968797
  
          while let Some(step) = self.view.draw_walk(cx, scope, walk).step() {
              // The Open sheet's documents.
-@@ -4141,13 +4616,20 @@ fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawSte
+@@ -4141,13 +4624,20 @@ fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawSte
                      grid.cell_text_styled(cx, &cell, "", CellStyle::default());
                      continue;
                  }
@@ -19602,7 +20121,7 @@ index b72dde854695c435b99b3c9c9a6455731a9abf0a..c4f662d4313855ea04ac405857968797
  
                  if fmt.italic {
                      // Hosted-label path: the grid's fast path has no italic.
-@@ -4207,6 +4689,17 @@ fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawSte
+@@ -4207,6 +4697,17 @@ fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawSte
                      }
                  }
              }
@@ -19620,7 +20139,7 @@ index b72dde854695c435b99b3c9c9a6455731a9abf0a..c4f662d4313855ea04ac405857968797
          }
  
          if widths_moved {
-@@ -4558,4 +5051,20 @@ fn dragging_back_onto_the_source_is_a_no_op() {
+@@ -4558,4 +5059,20 @@ fn dragging_back_onto_the_source_is_a_no_op() {
      fn fill_upwards_extends_above_the_source() {
          assert_eq!(drag((5, 0), (5, 0), (2, 0)), ((2, 0), (5, 0)));
      }
@@ -20389,7 +20908,7 @@ index 6174993f5f4754484df315fccd6ab72eefdc46a7..ca78e3172eaa245f622ed9a37269a40b
          let mut info = PerformanceInformation {
              cb: std::mem::size_of::<PerformanceInformation>() as u32,
 diff --git a/apps/task/src/main.rs b/apps/task/src/main.rs
-index eb9419131ccd69cc55f8e85d89c068fd1a0f6761..7e17053f25fa4e543dff570181bfc55c12fa23c3 100644
+index eb9419131ccd69cc55f8e85d89c068fd1a0f6761..1e68c9d4778ea2f87ea2720fdd5b8dcc08bc2dc8 100644
 --- a/apps/task/src/main.rs
 +++ b/apps/task/src/main.rs
 @@ -4,7 +4,8 @@
@@ -20411,7 +20930,7 @@ index eb9419131ccd69cc55f8e85d89c068fd1a0f6761..7e17053f25fa4e543dff570181bfc55c
  
  app_main!(App);
  
-@@ -252,6 +253,63 @@
+@@ -252,6 +253,120 @@
      let DeskChart = TelemetryChart{
          draw_text +: {text_style: theme.font_regular{font_size: 7.5}}
      }
@@ -20452,6 +20971,63 @@ index eb9419131ccd69cc55f8e85d89c068fd1a0f6761..7e17053f25fa4e543dff570181bfc55c
 +        align: Align{x: 0.5}
 +        draw_text +: {color: look.muted text_style: theme.font_bold{font_size: 7.5}}
 +    }
++    // Disk's and Network's graph title is a pop-up, as Activity Monitor's: the
++    // choice in capitals with a chevron after it, a Mac menu of the choices.
++    let FootGraphPick = DropDownFlat{
++        caps: true
++        popup_words_over: true
++        width: Fit
++        height: Fit
++        margin: 0
++        padding: Inset{left: 0 right: 11 top: 0 bottom: 0}
++        draw_text +: {
++            color: look.muted
++            color_hover: uniform(look.ink)
++            color_focus: uniform(look.muted)
++            color_down: uniform(look.ink)
++            text_style: theme.font_bold{font_size: 7.5}
++        }
++        draw_bg +: {
++            arrow_color: uniform(look.muted)
++            pixel: fn() {
++                let sdf = Sdf2d.viewport(self.pos * self.rect_size)
++                let c = vec2(self.rect_size.x - 4.0, self.rect_size.y * 0.5)
++                sdf.move_to(c.x - 2.5, c.y - 1.2)
++                sdf.line_to(c.x, c.y + 1.3)
++                sdf.line_to(c.x + 2.5, c.y - 1.2)
++                sdf.stroke(self.arrow_color, 1.1)
++                return sdf.result
++            }
++        }
++        // A Mac menu: white, a hairline, the row under the pointer in blue.
++        popup_menu: mod.widgets.PopupMenuFlat{
++            width: 90
++            padding: 5
++            menu_item: mod.widgets.PopupMenuItem{
++                padding: Inset{left: 18 right: 10 top: 3 bottom: 3}
++                draw_text +: {
++                    color: look.ink
++                    color_hover: look.on_primary
++                    color_active: look.ink
++                    text_style: theme.font_regular{font_size: 9.75}
++                }
++                draw_bg +: {
++                    border_radius: 2.5
++                    border_size: 0.0
++                    color: #x00000000
++                    color_hover: look.primary
++                    color_active: #x00000000
++                    mark_color_active: look.ink
++                }
++            }
++            draw_bg +: {
++                color: look.menu
++                border_radius: 5.0
++                border_size: 1.0
++                border_color: look.line
++            }
++        }
++    }
 +    // A Mac's Info for a process: each "Label:" right-aligned beside its value,
 +    // as Activity Monitor's Info window heads it.
 +    let InspectRow = View{
@@ -20475,7 +21051,7 @@ index eb9419131ccd69cc55f8e85d89c068fd1a0f6761..7e17053f25fa4e543dff570181bfc55c
      let DeskPushDanger = mod.widgets.TaskDeskPush{
          draw_text +: {color: look.danger color_hover: look.danger color_down: look.danger color_focus: look.danger}
      }
-@@ -364,8 +422,25 @@
+@@ -364,8 +479,25 @@
                              height: Fit
                              flow: Right
                              spacing: 18
@@ -20503,7 +21079,7 @@ index eb9419131ccd69cc55f8e85d89c068fd1a0f6761..7e17053f25fa4e543dff570181bfc55c
                          }
                          View{
                              width: Fill
-@@ -379,6 +454,45 @@
+@@ -379,6 +511,56 @@
                  }
              }
          }
@@ -20535,7 +21111,18 @@ index eb9419131ccd69cc55f8e85d89c068fd1a0f6761..7e17053f25fa4e543dff570181bfc55c
 +                    foot_l3 := FootRow{foot_l3_label := FootLabel{} foot_l3_value := FootValue{}}
 +                }
 +                foot_mid := FootGraphBox{
-+                    foot_mid_title := FootGraphTitle{text: "CPU LOAD"}
++                    foot_mid_title_box := View{
++                        width: Fill
++                        height: Fit
++                        foot_mid_title := FootGraphTitle{text: "CPU LOAD"}
++                    }
++                    foot_mid_pick_box := View{
++                        visible: false
++                        width: Fill
++                        height: Fit
++                        align: Align{x: 0.5}
++                        foot_mid_pick := FootGraphPick{labels: ["Packets" "Data"] selected_item: 1}
++                    }
 +                    foot_mid_graph := mod.widgets.FootGraph{}
 +                }
 +                foot_right := FootReadings{
@@ -20549,7 +21136,7 @@ index eb9419131ccd69cc55f8e85d89c068fd1a0f6761..7e17053f25fa4e543dff570181bfc55c
          }
          // Stop Process asks once, in a sheet under the toolbar. The window waits:
          // a press outside the sheet does nothing, and in the band still drags.
-@@ -447,9 +561,88 @@
+@@ -447,9 +629,88 @@
                  }
              }
          }
@@ -20639,7 +21226,7 @@ index eb9419131ccd69cc55f8e85d89c068fd1a0f6761..7e17053f25fa4e543dff570181bfc55c
              draw_text +: {color: look.ink text_style: theme.font_regular{font_size: 8.25}}
          }
      }
-@@ -502,6 +695,16 @@ pub struct Theme {
+@@ -502,6 +763,16 @@ pub struct Theme {
      /// The raised segment of a desktop's segmented control.
      pub segment: Vec4f,
      pub hover: Vec4f,
@@ -20656,7 +21243,7 @@ index eb9419131ccd69cc55f8e85d89c068fd1a0f6761..7e17053f25fa4e543dff570181bfc55c
  }
  
  impl Default for Theme {
-@@ -527,6 +730,13 @@ fn default() -> Self {
+@@ -527,6 +798,13 @@ fn default() -> Self {
              button: vec4(0.0, 0.0, 0.0, 0.0),
              segment: vec4(0.0, 0.0, 0.0, 0.0),
              hover: vec4(0.0, 0.0, 0.0, 0.0),
@@ -20670,7 +21257,7 @@ index eb9419131ccd69cc55f8e85d89c068fd1a0f6761..7e17053f25fa4e543dff570181bfc55c
          }
      }
  }
-@@ -601,6 +811,13 @@ fn current(cx: &mut Cx) -> Self {
+@@ -601,6 +879,13 @@ fn current(cx: &mut Cx) -> Self {
                  (id!(button), &mut theme.button),
                  (id!(segment), &mut theme.segment),
                  (id!(hover), &mut theme.hover),
@@ -20684,7 +21271,7 @@ index eb9419131ccd69cc55f8e85d89c068fd1a0f6761..7e17053f25fa4e543dff570181bfc55c
              ] {
                  if let Some(value) = vm.bx.heap.value(look, key.into(), NoTrap).as_color() {
                      *role = Vec4f::from_u32(value);
-@@ -664,6 +881,10 @@ fn with_alpha(mut value: Vec4f, alpha: f32) -> Vec4f {
+@@ -664,6 +949,10 @@ fn with_alpha(mut value: Vec4f, alpha: f32) -> Vec4f {
  const MIN_TOP_ROW_HEIGHT: f64 = 140.0;
  /// A desktop's metrics strip, matching `top_row` in its tree.
  const DESK_STRIP_HEIGHT: f64 = 112.0;
@@ -20695,7 +21282,7 @@ index eb9419131ccd69cc55f8e85d89c068fd1a0f6761..7e17053f25fa4e543dff570181bfc55c
  
  /// How the window is laid out at the current size. One place, three states.
  ///
-@@ -778,6 +999,9 @@ pub struct App {
+@@ -778,6 +1067,9 @@ pub struct App {
      /// The process a desktop's Stop Process sheet is asking about.
      #[rust]
      stop_pid: Option<u32>,
@@ -20705,7 +21292,7 @@ index eb9419131ccd69cc55f8e85d89c068fd1a0f6761..7e17053f25fa4e543dff570181bfc55c
      /// What the person chose from the update menu, which a restyle must keep.
      #[rust]
      refresh_choice: Option<usize>,
-@@ -792,6 +1016,28 @@ pub struct App {
+@@ -792,6 +1084,42 @@ pub struct App {
      down_history: Vec<f64>,
      #[rust]
      up_history: Vec<f64>,
@@ -20716,7 +21303,13 @@ index eb9419131ccd69cc55f8e85d89c068fd1a0f6761..7e17053f25fa4e543dff570181bfc55c
 +    #[rust]
 +    foot_data: FootData,
 +    #[rust]
-+    foot_laid: Option<(MacTab, bool)>,
++    foot_laid: Option<(MacTab, bool, bool)>,
++    /// What a Mac's Disk and Network graphs draw, from the pop-up over each, as
++    /// Activity Monitor's: the counts (IO, Packets) or, at first, the bytes (Data).
++    #[rust]
++    foot_disk_io: bool,
++    #[rust]
++    foot_net_packets: bool,
 +    #[rust]
 +    foot_user: Vec<f64>,
 +    #[rust]
@@ -20731,10 +21324,18 @@ index eb9419131ccd69cc55f8e85d89c068fd1a0f6761..7e17053f25fa4e543dff570181bfc55c
 +    foot_received: Vec<f64>,
 +    #[rust]
 +    foot_sent: Vec<f64>,
++    #[rust]
++    foot_reads_in: Vec<f64>,
++    #[rust]
++    foot_writes_out: Vec<f64>,
++    #[rust]
++    foot_packets_in: Vec<f64>,
++    #[rust]
++    foot_packets_out: Vec<f64>,
      /// Warm-pool dormancy — see `Dormancy`.
      #[rust]
      dormancy: Dormancy,
-@@ -859,12 +1105,56 @@ fn send_menu_rows(&mut self, cx: &mut Cx) {
+@@ -859,12 +1187,81 @@ fn send_menu_rows(&mut self, cx: &mut Cx) {
          if !self.theme.mac {
              return;
          }
@@ -20766,12 +21367,37 @@ index eb9419131ccd69cc55f8e85d89c068fd1a0f6761..7e17053f25fa4e543dff570181bfc55c
 +            }
 +            return;
 +        }
++        // View > Quit Process (Option-Command-Q): the toolbar's Stop, which asks first.
++        if command == "quit" {
++            if self.stop_pid.is_none() && self.inspect_pid.is_none() {
++                let request = self.ui.widget(cx, ids!(process_table)).borrow_mut::<ProcessTable>().and_then(|mut table| {
++                    table.ask_to_stop(cx);
++                    table.take_stop_request()
++                });
++                if let Some((pid, name)) = request {
++                    self.open_stop_sheet(cx, pid, &name);
++                }
++            }
++            return;
++        }
++        // View > Clear CPU History (Command-K): the CPU graphs start again from now.
++        if command == "clear-cpu" {
++            self.foot_user.clear();
++            self.foot_system.clear();
++            self.cpu_history.clear();
++            log!("task: view clear-cpu");
++            self.render_foot(cx, false);
++            self.ui.redraw(cx);
++            return;
++        }
 +        let show = match command {
 +            "show:all" => Some((ProcessShow::All, false)),
 +            "show:tree" => Some((ProcessShow::All, true)),
 +            "show:mine" => Some((ProcessShow::Mine, false)),
 +            "show:system" => Some((ProcessShow::System, false)),
 +            "show:others" => Some((ProcessShow::Others, false)),
++            "show:active" => Some((ProcessShow::Active, false)),
++            "show:inactive" => Some((ProcessShow::Inactive, false)),
 +            _ => None,
 +        };
 +        let column = command.strip_prefix("column:").and_then(|col| col.parse::<usize>().ok());
@@ -20792,7 +21418,7 @@ index eb9419131ccd69cc55f8e85d89c068fd1a0f6761..7e17053f25fa4e543dff570181bfc55c
      /// Wakes a dormant warm instance: `WmEvent::Adopted`, or defensively the
      /// first real key/pointer input in case that message was lost. A no-op
      /// past the first call (`Dormancy::wake` only fires once), so mashing
-@@ -887,13 +1177,15 @@ fn drain_snapshots(&mut self, cx: &mut Cx) {
+@@ -887,13 +1284,15 @@ fn drain_snapshots(&mut self, cx: &mut Cx) {
          }
          if let Some(snapshot) = newest {
              self.apply_snapshot(cx, snapshot);
@@ -20809,7 +21435,7 @@ index eb9419131ccd69cc55f8e85d89c068fd1a0f6761..7e17053f25fa4e543dff570181bfc55c
          self.ui.label(cx, ids!(memory_value)).set_text(cx, &bytes(snapshot.mem.used));
          self.ui.label(cx, ids!(down_value)).set_text(cx, &format!("{}/s", bytes(snapshot.net.rx_per_second as u64)));
          self.ui.label(cx, ids!(up_value)).set_text(cx, &format!("{}/s", bytes(snapshot.net.tx_per_second as u64)));
-@@ -979,6 +1271,25 @@ fn apply_snapshot(&mut self, cx: &mut Cx, snapshot: Snapshot) {
+@@ -979,6 +1378,29 @@ fn apply_snapshot(&mut self, cx: &mut Cx, snapshot: Snapshot) {
          self.ui.trend_chart(cx, ids!(down_chart)).set_series(cx, &self.down_history);
          self.ui.trend_chart(cx, ids!(up_chart)).set_series(cx, &self.up_history);
          self.update_aggregate(cx, &snapshot);
@@ -20830,12 +21456,16 @@ index eb9419131ccd69cc55f8e85d89c068fd1a0f6761..7e17053f25fa4e543dff570181bfc55c
 +            push_history(&mut self.foot_written, snapshot.disk.written_per_second);
 +            push_history(&mut self.foot_received, snapshot.net.rx_per_second);
 +            push_history(&mut self.foot_sent, snapshot.net.tx_per_second);
++            push_history(&mut self.foot_reads_in, snapshot.disk.reads_per_second);
++            push_history(&mut self.foot_writes_out, snapshot.disk.writes_per_second);
++            push_history(&mut self.foot_packets_in, snapshot.net.packets_in_per_second);
++            push_history(&mut self.foot_packets_out, snapshot.net.packets_out_per_second);
 +            self.render_foot(cx, false);
 +        }
  
          self.ui.label(cx, ids!(process_title)).set_text(cx, "Processes");
          if let Some(mut table) = self.ui.widget(cx, ids!(process_table)).borrow_mut::<ProcessTable>() {
-@@ -1041,6 +1352,95 @@ fn update_aggregate(&mut self, cx: &mut Cx, snapshot: &Snapshot) {
+@@ -1041,6 +1463,118 @@ fn update_aggregate(&mut self, cx: &mut Cx, snapshot: &Snapshot) {
          self.ui.label(cx, ids!(aggregate_title)).set_text(cx, "Activity history");
      }
  
@@ -20847,15 +21477,25 @@ index eb9419131ccd69cc55f8e85d89c068fd1a0f6761..7e17053f25fa4e543dff570181bfc55c
 +            return;
 +        }
 +        let tab = self.foot_tab;
-+        let layout = foot_layout(tab, &self.foot_data);
++        let counts = self.foot_counts(tab);
++        let layout = foot_layout(tab, &self.foot_data, counts);
 +        let wide = self.layout_size.x <= 0.0 || self.layout_size.x >= FOOT_GRAPH_FROM;
-+        let relayout = relayout || self.foot_laid != Some((tab, wide));
++        let relayout = relayout || self.foot_laid != Some((tab, wide, counts));
 +        if relayout {
-+            self.foot_laid = Some((tab, wide));
++            self.foot_laid = Some((tab, wide, counts));
 +            self.ui.view(cx, ids!(foot_lead)).set_visible(cx, wide && layout.graph_leads);
 +            self.ui.view(cx, ids!(foot_mid)).set_visible(cx, wide && !layout.graph_leads);
 +            let title = if layout.graph_leads { ids!(foot_lead_title) } else { ids!(foot_mid_title) };
 +            self.ui.label(cx, title).set_text(cx, layout.title);
++            // Disk's and Network's title is the pop-up choosing what the graph draws.
++            let choices = tab.foot_choices();
++            self.ui.view(cx, ids!(foot_mid_title_box)).set_visible(cx, choices.is_none());
++            self.ui.view(cx, ids!(foot_mid_pick_box)).set_visible(cx, choices.is_some());
++            if let Some(choices) = choices {
++                let pick = self.ui.drop_down(cx, ids!(foot_mid_pick));
++                pick.set_labels(cx, choices.iter().map(|choice| choice.to_string()).collect());
++                pick.set_selected_item(cx, if counts { 0 } else { 1 });
++            }
 +        }
 +        let sides = [
 +            (&layout.left, [
@@ -20901,9 +21541,20 @@ index eb9419131ccd69cc55f8e85d89c068fd1a0f6761..7e17053f25fa4e543dff570181bfc55c
 +        }
 +    }
 +
++    /// Whether `tab`'s graph draws counts (Disk's IO, Network's Packets) rather
++    /// than bytes, as its pop-up chose.
++    fn foot_counts(&self, tab: MacTab) -> bool {
++        match tab {
++            MacTab::Disk => self.foot_disk_io,
++            MacTab::Network => self.foot_net_packets,
++            _ => false,
++        }
++    }
++
 +    /// The foot graph's histories for `tab`, on its 0..100 scale, and whether
 +    /// they stack: CPU LOAD's system time under user time; memory pressure in
-+    /// its level's colour; reads and writes, or data in and out, on one scale.
++    /// its level's colour; reads and writes, packets in and out, or data in and
++    /// out, each pair on one scale.
 +    fn foot_series(&self, tab: MacTab) -> (Vec<FootSeries>, bool) {
 +        let theme = &self.theme;
 +        let colors = (theme.chart_in, theme.chart_out);
@@ -20923,7 +21574,9 @@ index eb9419131ccd69cc55f8e85d89c068fd1a0f6761..7e17053f25fa4e543dff570181bfc55c
 +                };
 +                (vec![FootSeries { color, points: self.foot_pressure.clone() }], false)
 +            }
++            MacTab::Disk if self.foot_disk_io => (rate_series(&self.foot_reads_in, &self.foot_writes_out, colors), false),
 +            MacTab::Disk => (rate_series(&self.foot_read, &self.foot_written, colors), false),
++            MacTab::Network if self.foot_net_packets => (rate_series(&self.foot_packets_in, &self.foot_packets_out, colors), false),
 +            MacTab::Network => (rate_series(&self.foot_received, &self.foot_sent, colors), false),
 +        }
 +    }
@@ -20931,7 +21584,7 @@ index eb9419131ccd69cc55f8e85d89c068fd1a0f6761..7e17053f25fa4e543dff570181bfc55c
      /// Fold the layout down as the window shrinks. Panels are hidden whole —
      /// never clipped in half — so nothing ever needs a scrollbar for chrome.
      fn apply_layout(&mut self, cx: &mut Cx, size: Vec2d) {
-@@ -1125,6 +1525,24 @@ fn apply_desk_layout(&mut self, cx: &mut Cx, size: Vec2d) {
+@@ -1125,6 +1659,24 @@ fn apply_desk_layout(&mut self, cx: &mut Cx, size: Vec2d) {
          self.layout_size = size;
          self.density = density;
          self.density_applied = true;
@@ -20956,7 +21609,7 @@ index eb9419131ccd69cc55f8e85d89c068fd1a0f6761..7e17053f25fa4e543dff570181bfc55c
          let graph_only = density == Density::Small;
          let strip = graph_only || density != Density::Phone;
          let details = density == Density::Full;
-@@ -1166,6 +1584,39 @@ fn close_stop_sheet(&mut self, cx: &mut Cx) {
+@@ -1166,6 +1718,39 @@ fn close_stop_sheet(&mut self, cx: &mut Cx) {
          self.ui.redraw(cx);
      }
  
@@ -20996,7 +21649,7 @@ index eb9419131ccd69cc55f8e85d89c068fd1a0f6761..7e17053f25fa4e543dff570181bfc55c
      fn layout_from_window(&mut self, cx: &mut Cx) {
          let size = self.ui.window(cx, ids!(main_window)).get_inner_size(cx);
          // Before the first draw the window reports nothing; the geometry event
-@@ -1206,6 +1657,12 @@ fn apply_theme(&mut self, cx: &mut Cx) {
+@@ -1206,6 +1791,12 @@ fn apply_theme(&mut self, cx: &mut Cx) {
                  let mut label = self.ui.label(cx, path);
                  script_apply_eval!(cx, label, {draw_text +: {color: #(muted)}});
              }
@@ -21009,7 +21662,7 @@ index eb9419131ccd69cc55f8e85d89c068fd1a0f6761..7e17053f25fa4e543dff570181bfc55c
          }
          let mut aggregate = self.ui.widget(cx, ids!(aggregate_graph));
          let grid = with_alpha(muted, 0.20);
-@@ -1232,6 +1689,7 @@ fn apply_theme(&mut self, cx: &mut Cx) {
+@@ -1232,6 +1823,7 @@ fn apply_theme(&mut self, cx: &mut Cx) {
          if let Some(mut table) = self.ui.widget(cx, ids!(process_table)).borrow_mut::<ProcessTable>() {
              table.apply_theme(cx, theme);
          }
@@ -21017,7 +21670,24 @@ index eb9419131ccd69cc55f8e85d89c068fd1a0f6761..7e17053f25fa4e543dff570181bfc55c
          self.ui.redraw(cx);
      }
  
-@@ -1277,6 +1735,17 @@ fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
+@@ -1266,6 +1858,16 @@ fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
+         if let Some(choice) = self.ui.drop_down(cx, ids!(refresh_select)).changed(actions) {
+             self.choose_refresh(cx, choice);
+         }
++        // A Mac's Disk or Network graph: its pop-up chooses the counts or the data.
++        if let Some(choice) = self.ui.drop_down(cx, ids!(foot_mid_pick)).changed(actions) {
++            match self.foot_tab {
++                MacTab::Disk => self.foot_disk_io = choice == 0,
++                MacTab::Network => self.foot_net_packets = choice == 0,
++                _ => {}
++            }
++            self.render_foot(cx, true);
++            self.ui.redraw(cx);
++        }
+         if let Some(pid) = self.stop_pid {
+             let force = self.ui.button(cx, ids!(stop_force)).clicked(actions);
+             if force || self.ui.button(cx, ids!(stop_confirm)).clicked(actions) {
+@@ -1277,6 +1879,17 @@ fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
                  self.close_stop_sheet(cx);
              }
          }
@@ -21035,7 +21705,7 @@ index eb9419131ccd69cc55f8e85d89c068fd1a0f6761..7e17053f25fa4e543dff570181bfc55c
      }
  }
  
-@@ -1330,6 +1799,8 @@ fn handle_event(&mut self, cx: &mut Cx, event: &Event) {
+@@ -1330,6 +1943,8 @@ fn handle_event(&mut self, cx: &mut Cx, event: &Event) {
                  Some(makepad_wm_api::WmEvent::MenuCommand { command }) => {
                      if let Some(choice) = command.strip_prefix("rate:").and_then(|i| i.parse().ok()) {
                          self.choose_refresh(cx, choice);
@@ -21044,7 +21714,7 @@ index eb9419131ccd69cc55f8e85d89c068fd1a0f6761..7e17053f25fa4e543dff570181bfc55c
                      }
                  }
                  _ => {}
-@@ -1340,6 +1811,15 @@ fn handle_event(&mut self, cx: &mut Cx, event: &Event) {
+@@ -1340,6 +1955,15 @@ fn handle_event(&mut self, cx: &mut Cx, event: &Event) {
          if self.dormancy.is_dormant() && is_wake_input(event) {
              self.wake(cx);
          }
@@ -21060,7 +21730,7 @@ index eb9419131ccd69cc55f8e85d89c068fd1a0f6761..7e17053f25fa4e543dff570181bfc55c
          // A sheet holds the keyboard: Escape cancels it, Return presses Stop.
          if let Some(pid) = self.stop_pid {
              if let Event::KeyDown(key) = event {
-@@ -1358,6 +1838,19 @@ fn handle_event(&mut self, cx: &mut Cx, event: &Event) {
+@@ -1358,6 +1982,19 @@ fn handle_event(&mut self, cx: &mut Cx, event: &Event) {
          }
          self.match_event(cx, event);
          self.ui.handle_event(cx, event, &mut Scope::empty());
@@ -21080,7 +21750,7 @@ index eb9419131ccd69cc55f8e85d89c068fd1a0f6761..7e17053f25fa4e543dff570181bfc55c
          if self.theme.desk && matches!(event, Event::Actions(_) | Event::KeyDown(_)) {
              let request = self
                  .ui
-@@ -1368,6 +1861,16 @@ fn handle_event(&mut self, cx: &mut Cx, event: &Event) {
+@@ -1368,6 +2005,16 @@ fn handle_event(&mut self, cx: &mut Cx, event: &Event) {
                  self.open_stop_sheet(cx, pid, &name);
              }
          }
@@ -21097,7 +21767,7 @@ index eb9419131ccd69cc55f8e85d89c068fd1a0f6761..7e17053f25fa4e543dff570181bfc55c
      }
  }
  
-@@ -1391,16 +1894,38 @@ fn size_from_args() -> Option<Vec2d> {
+@@ -1391,16 +2038,44 @@ fn size_from_args() -> Option<Vec2d> {
  /// (`REFRESH_CHOICES_MS`).
  const MAC_FREQUENCIES: [(&str, usize); 3] = [("Very Often (1 sec)", 3), ("Often (2 sec)", 4), ("Normally (5 sec)", 5)];
  
@@ -21130,16 +21800,22 @@ index eb9419131ccd69cc55f8e85d89c068fd1a0f6761..7e17053f25fa4e543dff570181bfc55c
 +        ("My Processes", "show:mine", view.show == ProcessShow::Mine),
 +        ("System Processes", "show:system", view.show == ProcessShow::System),
 +        ("Other User Processes", "show:others", view.show == ProcessShow::Others),
++        ("Active Processes", "show:active", view.show == ProcessShow::Active),
++        ("Inactive Processes", "show:inactive", view.show == ProcessShow::Inactive),
 +    ] {
 +        rows.push(format!(r#"{{"menu":"View","title":"{title}","command":"{command}","checked":{on}}}"#));
 +    }
-+    // Activity Monitor's View > Inspect Process, for the selected one.
++    // Activity Monitor's View > Inspect Process and Quit Process, for the
++    // selected one, then Clear CPU History under its own rule.
 +    rows.push(r#"{"menu":"View"}"#.to_string());
 +    rows.push(format!(r#"{{"menu":"View","title":"Inspect Process","key":"cmd+I","command":"inspect","enabled":{}}}"#, view.selected));
++    rows.push(format!(r#"{{"menu":"View","title":"Quit Process","key":"alt+cmd+Q","command":"quit","enabled":{}}}"#, view.selected));
++    rows.push(r#"{"menu":"View"}"#.to_string());
++    rows.push(r#"{"menu":"View","title":"Clear CPU History","key":"cmd+K","command":"clear-cpu"}"#.to_string());
      format!("[{}]", rows.join(","))
  }
  
-@@ -1443,6 +1968,198 @@ pub fn format_bytes_mac(bytes: u64) -> String {
+@@ -1443,6 +2118,201 @@ pub fn format_bytes_mac(bytes: u64) -> String {
      }
  }
  
@@ -21236,15 +21912,18 @@ index eb9419131ccd69cc55f8e85d89c068fd1a0f6761..7e17053f25fa4e543dff570181bfc55c
 +    right: Vec<FootReading>,
 +}
 +
-+/// A Mac's foot panel as Activity Monitor's for `tab`. A reading the system
++/// A Mac's foot panel as Activity Monitor's for `tab`, Disk's and Network's
++/// graph drawing the counts (IO, Packets) when `counts`, else the data: the
++/// per-second readings the graph draws carry its colours. A reading the system
 +/// doesn't give is "—".
-+fn foot_layout(tab: MacTab, data: &FootData) -> FootLayout {
++fn foot_layout(tab: MacTab, data: &FootData, counts: bool) -> FootLayout {
 +    let reading = |label: &'static str, value: String, key: FootKey| FootReading { label, value, key };
 +    let plain = |label: &'static str, value: String| reading(label, value, FootKey::Plain);
 +    let percent = |value: f64| format!("{:.2}%", value.clamp(0.0, 100.0));
 +    let count = |value: f64| with_thousands(value.max(0.0).round() as u64);
 +    let rate = |value: f64| format_bytes_activity(value.max(0.0).round() as u64);
 +    let none = || "—".to_string();
++    let keyed = |drawn: bool, key: FootKey| if drawn { key } else { FootKey::Plain };
 +    match tab {
 +        MacTab::Cpu => FootLayout {
 +            title: "CPU LOAD",
@@ -21284,38 +21963,38 @@ index eb9419131ccd69cc55f8e85d89c068fd1a0f6761..7e17053f25fa4e543dff570181bfc55c
 +            let disk = data.disk;
 +            let known = |value: String| if disk.known { value } else { none() };
 +            FootLayout {
-+                title: "DATA",
++                title: if counts { "IO" } else { "DATA" },
 +                graph_leads: false,
 +                left: vec![
 +                    plain("Reads in:", known(with_thousands(disk.reads))),
 +                    plain("Writes out:", known(with_thousands(disk.writes))),
-+                    plain("Reads in/sec:", known(count(disk.reads_per_second))),
-+                    plain("Writes out/sec:", known(count(disk.writes_per_second))),
++                    reading("Reads in/sec:", known(count(disk.reads_per_second)), keyed(counts, FootKey::In)),
++                    reading("Writes out/sec:", known(count(disk.writes_per_second)), keyed(counts, FootKey::Out)),
 +                ],
 +                right: vec![
 +                    plain("Data read:", known(format_bytes_activity(disk.bytes_read))),
 +                    plain("Data written:", known(format_bytes_activity(disk.bytes_written))),
-+                    reading("Data read/sec:", known(rate(disk.read_per_second)), FootKey::In),
-+                    reading("Data written/sec:", known(rate(disk.written_per_second)), FootKey::Out),
++                    reading("Data read/sec:", known(rate(disk.read_per_second)), keyed(!counts, FootKey::In)),
++                    reading("Data written/sec:", known(rate(disk.written_per_second)), keyed(!counts, FootKey::Out)),
 +                ],
 +            }
 +        }
 +        MacTab::Network => {
 +            let net = data.net;
 +            FootLayout {
-+                title: "DATA",
++                title: if counts { "PACKETS" } else { "DATA" },
 +                graph_leads: false,
 +                left: vec![
 +                    plain("Packets in:", with_thousands(net.packets_in)),
 +                    plain("Packets out:", with_thousands(net.packets_out)),
-+                    plain("Packets in/sec:", count(net.packets_in_per_second)),
-+                    plain("Packets out/sec:", count(net.packets_out_per_second)),
++                    reading("Packets in/sec:", count(net.packets_in_per_second), keyed(counts, FootKey::In)),
++                    reading("Packets out/sec:", count(net.packets_out_per_second), keyed(counts, FootKey::Out)),
 +                ],
 +                right: vec![
 +                    plain("Data received:", format_bytes_activity(net.rx_total)),
 +                    plain("Data sent:", format_bytes_activity(net.tx_total)),
-+                    reading("Data received/sec:", rate(net.rx_per_second), FootKey::In),
-+                    reading("Data sent/sec:", rate(net.tx_per_second), FootKey::Out),
++                    reading("Data received/sec:", rate(net.rx_per_second), keyed(!counts, FootKey::In)),
++                    reading("Data sent/sec:", rate(net.tx_per_second), keyed(!counts, FootKey::Out)),
 +                ],
 +            }
 +        }
@@ -21338,7 +22017,7 @@ index eb9419131ccd69cc55f8e85d89c068fd1a0f6761..7e17053f25fa4e543dff570181bfc55c
  pub fn format_uptime(seconds: u64) -> String {
      let days = seconds / 86_400;
      let hours = seconds % 86_400 / 3_600;
-@@ -1463,7 +2180,7 @@ mod tests {
+@@ -1463,7 +2333,7 @@ mod tests {
      #[test]
      fn the_menu_bar_rates_tick_the_one_in_use() {
          use makepad_widgets::makepad_micro_serde::{DeJson, JsonValue};
@@ -21347,7 +22026,7 @@ index eb9419131ccd69cc55f8e85d89c068fd1a0f6761..7e17053f25fa4e543dff570181bfc55c
          let parsed = JsonValue::deserialize_json(&rows);
          assert!(parsed.is_ok(), "{rows}");
          assert!(rows.contains(r#""title":"Often (2 sec)","command":"rate:4","checked":true"#), "{rows}");
-@@ -1472,7 +2189,177 @@ fn the_menu_bar_rates_tick_the_one_in_use() {
+@@ -1472,7 +2342,202 @@ fn the_menu_bar_rates_tick_the_one_in_use() {
          for (_, rate) in MAC_FREQUENCIES {
              assert!(REFRESH_CHOICES_MS[rate] >= 1000, "a Mac's rates are a second or more");
          }
@@ -21388,6 +22067,13 @@ index eb9419131ccd69cc55f8e85d89c068fd1a0f6761..7e17053f25fa4e543dff570181bfc55c
 +        assert!(rows.contains(r#""title":"Inspect Process","key":"cmd+I","command":"inspect","enabled":false"#), "{rows}");
 +        let selected = mac_menu_rows(3, MacView { selected: true, ..MacView::default() });
 +        assert!(selected.contains(r#""command":"inspect","enabled":true"#), "{selected}");
++        // So does Quit Process; Clear CPU History needs none.
++        assert!(rows.contains(r#""title":"Quit Process","key":"alt+cmd+Q","command":"quit","enabled":false"#), "{rows}");
++        assert!(selected.contains(r#""command":"quit","enabled":true"#), "{selected}");
++        assert!(rows.contains(r#""title":"Clear CPU History","key":"cmd+K","command":"clear-cpu"}"#), "{rows}");
++        let active = mac_menu_rows(3, MacView { show: ProcessShow::Active, ..MacView::default() });
++        assert!(active.contains(r#""title":"Active Processes","command":"show:active","checked":true"#), "{active}");
++        assert!(active.contains(r#""title":"Inactive Processes","command":"show:inactive","checked":false"#), "{active}");
 +        let mine = mac_menu_rows(3, MacView { show: ProcessShow::Mine, ..MacView::default() });
 +        assert!(mine.contains(r#""command":"show:mine","checked":true"#) && mine.contains(r#""command":"show:all","checked":false"#));
 +        // Each tab offers its own columns, as Activity Monitor's View > Columns does.
@@ -21457,11 +22143,11 @@ index eb9419131ccd69cc55f8e85d89c068fd1a0f6761..7e17053f25fa4e543dff570181bfc55c
 +        let words = |layout: &FootLayout| {
 +            layout.left.iter().chain(&layout.right).map(|r| format!("{} {}", r.label, r.value)).collect::<Vec<_>>()
 +        };
-+        let cpu = foot_layout(MacTab::Cpu, &data);
++        let cpu = foot_layout(MacTab::Cpu, &data, false);
 +        assert_eq!((cpu.title, cpu.graph_leads), ("CPU LOAD", false));
 +        assert_eq!(words(&cpu), ["System: 3.20%", "User: 5.13%", "Idle: 91.67%", "Threads: 2,345", "Processes: 512"]);
 +        assert_eq!((cpu.left[0].key, cpu.left[1].key, cpu.left[2].key), (FootKey::Out, FootKey::In, FootKey::Plain));
-+        let memory = foot_layout(MacTab::Memory, &data);
++        let memory = foot_layout(MacTab::Memory, &data, false);
 +        assert_eq!((memory.title, memory.graph_leads), ("MEMORY PRESSURE", true));
 +        assert_eq!(
 +            words(&memory),
@@ -21469,23 +22155,33 @@ index eb9419131ccd69cc55f8e85d89c068fd1a0f6761..7e17053f25fa4e543dff570181bfc55c
 +             "App Memory: 6.00 GB", "Wired Memory: 2.00 GB", "Compressed: 512.0 MB"]
 +        );
 +        // A disk the system doesn't count says so; it isn't zero.
-+        let disk = foot_layout(MacTab::Disk, &data);
++        let disk = foot_layout(MacTab::Disk, &data, false);
 +        assert_eq!(disk.title, "DATA");
 +        assert!(disk.left.iter().chain(&disk.right).all(|r| r.value == "—"), "{:?}", words(&disk));
 +        data.disk = backend::DiskInfo { known: true, reads: 1_234_567, writes: 987_654, written_per_second: 12.0 * 1024.0, ..Default::default() };
 +        assert_eq!(
-+            words(&foot_layout(MacTab::Disk, &data)),
++            words(&foot_layout(MacTab::Disk, &data, false)),
 +            ["Reads in: 1,234,567", "Writes out: 987,654", "Reads in/sec: 0", "Writes out/sec: 0",
 +             "Data read: 0 bytes", "Data written: 0 bytes", "Data read/sec: 0 bytes", "Data written/sec: 12 KB"]
 +        );
-+        let network = foot_layout(MacTab::Network, &data);
++        let network = foot_layout(MacTab::Network, &data, false);
 +        assert_eq!(network.title, "DATA");
 +        assert_eq!(&words(&network)[..3], ["Packets in: 1,234,567", "Packets out: 0", "Packets in/sec: 12"]);
 +        assert_eq!(&words(&network)[4..], ["Data received: 1.50 GB", "Data sent: 0 bytes", "Data received/sec: 2 KB", "Data sent/sec: 0 bytes"]);
 +        assert_eq!((network.right[2].key, network.right[3].key), (FootKey::In, FootKey::Out));
++        assert_eq!((network.left[2].key, network.left[3].key), (FootKey::Plain, FootKey::Plain));
++        // The pop-up's counts: the graph is Packets (IO for a disk), and the counts per second key it.
++        let packets = foot_layout(MacTab::Network, &data, true);
++        assert_eq!(packets.title, "PACKETS");
++        assert_eq!(words(&packets), words(&network), "the readings stay");
++        assert_eq!((packets.left[2].key, packets.left[3].key), (FootKey::In, FootKey::Out));
++        assert_eq!((packets.right[2].key, packets.right[3].key), (FootKey::Plain, FootKey::Plain));
++        let io = foot_layout(MacTab::Disk, &data, true);
++        assert_eq!(io.title, "IO");
++        assert_eq!((io.left[2].key, io.left[3].key, io.right[2].key), (FootKey::In, FootKey::Out, FootKey::Plain));
 +        // Without the breakdown (another backend), Memory Used is what it gives.
 +        let plain = FootData { mem: backend::MemInfo { total: 8 * gb, used: 3 * gb, ..Default::default() }, ..FootData::default() };
-+        let words_plain = words(&foot_layout(MacTab::Memory, &plain));
++        let words_plain = words(&foot_layout(MacTab::Memory, &plain, false));
 +        assert_eq!(&words_plain[1], "Memory Used: 3.00 GB");
 +        assert_eq!(&words_plain[4..], ["App Memory: —", "Wired Memory: —", "Compressed: —"]);
 +    }
@@ -21503,12 +22199,20 @@ index eb9419131ccd69cc55f8e85d89c068fd1a0f6761..7e17053f25fa4e543dff570181bfc55c
 +
 +    #[test]
 +    fn the_process_choices_split_mine_the_systems_and_others() {
++        use backend::ProcState;
 +        let (all, mine, system, others) = (ProcessShow::All, ProcessShow::Mine, ProcessShow::System, ProcessShow::Others);
 +        assert!(all.keeps("bo", "ana"));
 +        assert!(mine.keeps("ana", "ana") && !mine.keeps("root", "ana"));
 +        assert!(system.keeps("root", "ana") && system.keeps("_windowserver", "ana") && system.keeps("88", "ana"));
 +        assert!(!system.keeps("ana", "ana") && !system.keeps("bo", "ana") && !system.keeps("501", "ana"));
 +        assert!(others.keeps("bo", "ana") && !others.keeps("root", "ana") && !others.keeps("ana", "ana") && !others.keeps("_spotlight", "ana"));
++        // Active Processes run, Inactive ones sleep; anyone's, and a state unread is in neither.
++        let (active, inactive) = (ProcessShow::Active, ProcessShow::Inactive);
++        assert!(active.keeps("root", "ana") && inactive.keeps("bo", "ana"));
++        assert!(active.keeps_state(ProcState::Running) && !active.keeps_state(ProcState::Sleeping));
++        assert!(inactive.keeps_state(ProcState::Sleeping) && !inactive.keeps_state(ProcState::Running));
++        assert!(!active.keeps_state(ProcState::Unknown) && !inactive.keeps_state(ProcState::Unknown));
++        assert!(all.keeps_state(ProcState::Unknown) && mine.keeps_state(ProcState::Zombie));
 +    }
 +
 +    /// A Mac writes sizes and rates as Activity Monitor does.
@@ -21527,7 +22231,7 @@ index eb9419131ccd69cc55f8e85d89c068fd1a0f6761..7e17053f25fa4e543dff570181bfc55c
  
      #[test]
 diff --git a/apps/task/src/widgets.rs b/apps/task/src/widgets.rs
-index 96298be339a18c199868fd4fbd932dd870c9e54b..8088b21d4b8cb251b4497ed133c26696135811d2 100644
+index 96298be339a18c199868fd4fbd932dd870c9e54b..65209db94bf524afda55c13408eef0272be4db03 100644
 --- a/apps/task/src/widgets.rs
 +++ b/apps/task/src/widgets.rs
 @@ -7,7 +7,7 @@
@@ -21828,7 +22532,7 @@ index 96298be339a18c199868fd4fbd932dd870c9e54b..8088b21d4b8cb251b4497ed133c26696
  const COL_WIDTHS: [f64; 8] = [70.0, 70.0, 400.0, 110.0, 40.0, 55.0, 145.0, 85.0];
  /// PROGRAM width once the window is too narrow for the full table.
  const COMPACT_NAME_WIDTH: f64 = 220.0;
-@@ -1029,11 +1250,206 @@ fn draw_walk(&mut self, cx: &mut Cx2d, _scope: &mut Scope, walk: Walk) -> DrawSt
+@@ -1029,11 +1250,229 @@ fn draw_walk(&mut self, cx: &mut Cx2d, _scope: &mut Scope, walk: Walk) -> DrawSt
  const DESK_WIDE_FROM: f64 = 1180.0;
  const DESK_COMPACT_COLS: [usize; 5] = [COL_NAME, COL_CPU, COL_MEM, COL_STATE, COL_PID];
  /// A desktop's column labels and widths; the process's name takes the rest.
@@ -21884,6 +22588,16 @@ index 96298be339a18c199868fd4fbd932dd870c9e54b..8088b21d4b8cb251b4497ed133c26696
 +            MacTab::Memory => &[COL_NAME, COL_MEM, COL_REAL_MEM, COL_THREADS, COL_STATE, COL_PID, COL_USER, COL_PPID],
 +            MacTab::Disk => &[COL_NAME, COL_WRITTEN, COL_READ, COL_STATE, COL_PID, COL_USER, COL_PPID],
 +            MacTab::Network => &[COL_NAME, COL_STATE, COL_PID, COL_USER, COL_PPID],
++        }
++    }
++
++    /// The pop-up over the tab's graph, as Activity Monitor's: the counts
++    /// first, then the data. CPU and Memory have a title, not a choice.
++    pub fn foot_choices(self) -> Option<[&'static str; 2]> {
++        match self {
++            MacTab::Disk => Some(["IO", "Data"]),
++            MacTab::Network => Some(["Packets", "Data"]),
++            MacTab::Cpu | MacTab::Memory => None,
 +        }
 +    }
 +
@@ -21988,16 +22702,29 @@ index 96298be339a18c199868fd4fbd932dd870c9e54b..8088b21d4b8cb251b4497ed133c26696
 +    Mine,
 +    System,
 +    Others,
++    Active,
++    Inactive,
 +}
 +
 +impl ProcessShow {
 +    /// Whether a process run by `user` is in, for someone signed in as `me`.
 +    pub fn keeps(self, user: &str, me: &str) -> bool {
 +        match self {
-+            ProcessShow::All => true,
++            ProcessShow::All | ProcessShow::Active | ProcessShow::Inactive => true,
 +            ProcessShow::Mine => user == me,
 +            ProcessShow::System => user != me && is_system_user(user),
 +            ProcessShow::Others => user != me && !is_system_user(user),
++        }
++    }
++
++    /// Whether a process in `state` is in, as Activity Monitor's Active
++    /// Processes (running, not sleeping) and Inactive Processes (sleeping)
++    /// have it. One whose state the sandbox can't read is in neither.
++    pub fn keeps_state(self, state: ProcState) -> bool {
++        match self {
++            ProcessShow::Active => state == ProcState::Running,
++            ProcessShow::Inactive => state == ProcState::Sleeping,
++            _ => true,
 +        }
 +    }
 +}
@@ -22037,7 +22764,7 @@ index 96298be339a18c199868fd4fbd932dd870c9e54b..8088b21d4b8cb251b4497ed133c26696
  /// A tree's indent per level on a desktop, and the room its mark takes.
  const DESK_TREE_INDENT: f64 = 14.0;
  const DESK_TREE_MARK: f64 = 14.0;
-@@ -1076,6 +1492,12 @@ pub struct ProcessTable {
+@@ -1076,6 +1515,12 @@ pub struct ProcessTable {
      /// has not taken the question yet.
      #[rust]
      stop_request: Option<(u32, String)>,
@@ -22050,7 +22777,7 @@ index 96298be339a18c199868fd4fbd932dd870c9e54b..8088b21d4b8cb251b4497ed133c26696
      /// Where the disclosure marks were drawn, by row, for a click on one.
      #[rust]
      twist_rects: Vec<(Rect, usize)>,
-@@ -1109,6 +1531,21 @@ pub struct ProcessTable {
+@@ -1109,6 +1554,21 @@ pub struct ProcessTable {
      ascending: bool,
      #[rust]
      tree_mode: bool,
@@ -22072,7 +22799,7 @@ index 96298be339a18c199868fd4fbd932dd870c9e54b..8088b21d4b8cb251b4497ed133c26696
      /// pids whose subtree is folded away.
      #[rust]
      collapsed: HashSet<u32>,
-@@ -1185,8 +1622,12 @@ pub fn set_compact(&mut self, cx: &mut Cx, compact: bool) {
+@@ -1185,8 +1645,12 @@ pub fn set_compact(&mut self, cx: &mut Cx, compact: bool) {
      }
  
      /// The data columns on screen right now.
@@ -22087,7 +22814,7 @@ index 96298be339a18c199868fd4fbd932dd870c9e54b..8088b21d4b8cb251b4497ed133c26696
              &PHONE_COLS
          } else if self.desk {
              if self.compact {
-@@ -1200,7 +1641,75 @@ fn columns(&self) -> &'static [usize] {
+@@ -1200,9 +1664,77 @@ fn columns(&self) -> &'static [usize] {
              &COMPACT_COLS
          } else {
              &FULL_COLS
@@ -22122,7 +22849,7 @@ index 96298be339a18c199868fd4fbd932dd870c9e54b..8088b21d4b8cb251b4497ed133c26696
 +    pub fn set_tab(&mut self, cx: &mut Cx, tab: MacTab) {
 +        if !self.mac || tab == self.tab {
 +            return;
-         }
++        }
 +        self.sorts[self.tab.index()] = (self.sort_column, self.ascending);
 +        self.tab = tab;
 +        (self.sort_column, self.ascending) = self.sorts[tab.index()];
@@ -22148,9 +22875,9 @@ index 96298be339a18c199868fd4fbd932dd870c9e54b..8088b21d4b8cb251b4497ed133c26696
 +        } else {
 +            self.sync_subtitle(cx);
 +            self.rebuild(cx);
-+        }
-+    }
-+
+         }
+     }
+ 
 +    /// Who Task runs as: its own process's user, else the login's.
 +    fn own_user(&self) -> String {
 +        let pid = std::process::id();
@@ -22160,10 +22887,12 @@ index 96298be339a18c199868fd4fbd932dd870c9e54b..8088b21d4b8cb251b4497ed133c26696
 +            .map(|process| process.user.clone())
 +            .or_else(|| std::env::var("USER").ok())
 +            .unwrap_or_default()
-     }
- 
++    }
++
      fn column_label(&self, col: usize) -> &'static str {
-@@ -1227,7 +1736,7 @@ fn column_width(&self, data_col: usize) -> f64 {
+         if self.viewport_width > 0.0 && self.viewport_width < 500.0 {
+             match col {COL_NAME => "Process", COL_MEM => "Memory", _ => "CPU %"}
+@@ -1227,7 +1759,7 @@ fn column_width(&self, data_col: usize) -> f64 {
                  // The name takes what the numbers leave, so the table fills
                  // the window instead of ending in a band of empty background.
                  let numbers: f64 = self.columns().iter().map(|&col| DESK_WIDTHS[col]).sum();
@@ -22172,7 +22901,7 @@ index 96298be339a18c199868fd4fbd932dd870c9e54b..8088b21d4b8cb251b4497ed133c26696
              } else {
                  DESK_WIDTHS[data_col]
              }
-@@ -1259,17 +1768,21 @@ fn configure_columns(&self, cx: &mut Cx, grid: &DataGridRef) {
+@@ -1259,17 +1791,22 @@ fn configure_columns(&self, cx: &mut Cx, grid: &DataGridRef) {
      /// Filter → sort → (tree order + fold) → grid rows.
      fn rebuild(&mut self, cx: &mut Cx) {
          let needle = self.filter.trim().to_ascii_lowercase();
@@ -22191,6 +22920,7 @@ index 96298be339a18c199868fd4fbd932dd870c9e54b..8088b21d4b8cb251b4497ed133c26696
 -                        || (!self.desk && process.cmdline.to_ascii_lowercase().contains(&needle))
 -                        || process.pid.to_string() == needle
 +                    show.keeps(&process.user, &me)
++                        && show.keeps_state(process.state)
 +                        && (needle.is_empty()
 +                            || process.name.to_ascii_lowercase().contains(&needle)
 +                            // A desktop's table shows no command line, so a row
@@ -22200,7 +22930,7 @@ index 96298be339a18c199868fd4fbd932dd870c9e54b..8088b21d4b8cb251b4497ed133c26696
                  })
                  .collect();
              if self.tree_mode {
-@@ -1282,6 +1795,7 @@ fn rebuild(&mut self, cx: &mut Cx) {
+@@ -1282,6 +1819,7 @@ fn rebuild(&mut self, cx: &mut Cx) {
  
          let column = self.sort_column;
          let ascending = self.ascending;
@@ -22208,7 +22938,7 @@ index 96298be339a18c199868fd4fbd932dd870c9e54b..8088b21d4b8cb251b4497ed133c26696
          let processes = &self.processes;
          kept.sort_by(|&a, &b| {
              let (a, b) = (&processes[a], &processes[b]);
-@@ -1292,7 +1806,12 @@ fn rebuild(&mut self, cx: &mut Cx) {
+@@ -1292,7 +1830,12 @@ fn rebuild(&mut self, cx: &mut Cx) {
                  COL_USER => a.user.cmp(&b.user),
                  COL_STATE => a.state.as_str().cmp(b.state.as_str()),
                  COL_THREADS => a.threads.cmp(&b.threads),
@@ -22222,7 +22952,7 @@ index 96298be339a18c199868fd4fbd932dd870c9e54b..8088b21d4b8cb251b4497ed133c26696
                  _ => a.cpu_pct.partial_cmp(&b.cpu_pct).unwrap_or(Ordering::Equal),
              };
              let order = if ascending { order } else { order.reverse() };
-@@ -1391,7 +1910,7 @@ fn update_status(&mut self, cx: &mut Cx) {
+@@ -1391,7 +1934,7 @@ fn update_status(&mut self, cx: &mut Cx) {
              // The header shows the order and the corner the total: what is
              // left to say is how far a search narrowed it, and who is selected.
              let mut parts = Vec::new();
@@ -22231,7 +22961,7 @@ index 96298be339a18c199868fd4fbd932dd870c9e54b..8088b21d4b8cb251b4497ed133c26696
                  parts.push(format!("{} shown", self.rows.len()));
              }
              parts.join(" · ")
-@@ -1408,9 +1927,11 @@ fn update_status(&mut self, cx: &mut Cx) {
+@@ -1408,9 +1951,11 @@ fn update_status(&mut self, cx: &mut Cx) {
              if none {
                  let loading = self.processes.is_empty();
                  // The search may be right and the process gone: say what matched, not why.
@@ -22246,7 +22976,7 @@ index 96298be339a18c199868fd4fbd932dd870c9e54b..8088b21d4b8cb251b4497ed133c26696
                  self.view.label(cx, ids!(process_empty_note)).set_text(cx, &note);
              }
          }
-@@ -1470,6 +1991,18 @@ fn update_status(&mut self, cx: &mut Cx) {
+@@ -1470,6 +2015,18 @@ fn update_status(&mut self, cx: &mut Cx) {
                  button.redraw(cx);
              }
          }
@@ -22265,7 +22995,7 @@ index 96298be339a18c199868fd4fbd932dd870c9e54b..8088b21d4b8cb251b4497ed133c26696
      }
  
      fn warning_or_accent(&self, armed: bool) -> Vec4f {
-@@ -1496,6 +2029,7 @@ fn toggle_tree(&mut self, cx: &mut Cx) {
+@@ -1496,6 +2053,7 @@ fn toggle_tree(&mut self, cx: &mut Cx) {
              .button(cx, ids!(tree_toggle))
              .set_text(cx, if self.tree_mode { "Process tree" } else { "Process list" });
          self.sync_view_segments(cx);
@@ -22273,7 +23003,7 @@ index 96298be339a18c199868fd4fbd932dd870c9e54b..8088b21d4b8cb251b4497ed133c26696
          self.rebuild(cx);
      }
  
-@@ -1521,6 +2055,53 @@ fn sync_view_segments(&mut self, cx: &mut Cx) {
+@@ -1521,6 +2079,55 @@ fn sync_view_segments(&mut self, cx: &mut Cx) {
          }
      }
  
@@ -22314,6 +23044,8 @@ index 96298be339a18c199868fd4fbd932dd870c9e54b..8088b21d4b8cb251b4497ed133c26696
 +            (ProcessShow::Mine, _) => "My Processes",
 +            (ProcessShow::System, _) => "System Processes",
 +            (ProcessShow::Others, _) => "Other User Processes",
++            (ProcessShow::Active, _) => "Active Processes",
++            (ProcessShow::Inactive, _) => "Inactive Processes",
 +        }
 +    }
 +
@@ -22327,7 +23059,7 @@ index 96298be339a18c199868fd4fbd932dd870c9e54b..8088b21d4b8cb251b4497ed133c26696
      /// Fold/unfold the subtree under `row`, if it has one.
      fn toggle_fold(&mut self, cx: &mut Cx, row: usize) {
          if !self.tree_mode {
-@@ -1543,7 +2124,7 @@ fn process_name(&self, pid: u32) -> String {
+@@ -1543,7 +2150,7 @@ fn process_name(&self, pid: u32) -> String {
  
      /// A desktop's Stop Process asks once, in a sheet the window holds, and
      /// says what goes (`App::open_stop_sheet` takes this request).
@@ -22336,7 +23068,7 @@ index 96298be339a18c199868fd4fbd932dd870c9e54b..8088b21d4b8cb251b4497ed133c26696
          let Some(pid) = self.selected_pid else {
              self.notice = Some("Select a process first.".to_string());
              self.update_status(cx);
-@@ -1562,6 +2143,42 @@ pub fn take_stop_request(&mut self) -> Option<(u32, String)> {
+@@ -1562,6 +2169,42 @@ pub fn take_stop_request(&mut self) -> Option<(u32, String)> {
          self.stop_request.take()
      }
  
@@ -22379,7 +23111,7 @@ index 96298be339a18c199868fd4fbd932dd870c9e54b..8088b21d4b8cb251b4497ed133c26696
      /// The sheet's answer: asked politely, or forced.
      pub fn stop_process(&mut self, cx: &mut Cx, pid: u32, force: bool) {
          let name = self.process_name(pid);
-@@ -1583,6 +2200,11 @@ pub fn stop_process(&mut self, cx: &mut Cx, pid: u32, force: bool) {
+@@ -1583,6 +2226,11 @@ pub fn stop_process(&mut self, cx: &mut Cx, pid: u32, force: bool) {
      /// What a Mac's Activity Monitor does with a key. True when it is taken.
      fn desk_key(&mut self, cx: &mut Cx, key: &KeyEvent) -> bool {
          let filter = self.view.text_input(cx, ids!(filter_input));
@@ -22391,7 +23123,7 @@ index 96298be339a18c199868fd4fbd932dd870c9e54b..8088b21d4b8cb251b4497ed133c26696
          let grid_area = self.view.widget(cx, ids!(process_grid)).area();
          if key.modifiers.is_primary() {
              if key.key_code == KeyCode::KeyF && !key.modifiers.shift && !key.modifiers.alt {
-@@ -1708,6 +2330,19 @@ pub fn apply_theme(&mut self, cx: &mut Cx, theme: Theme) {
+@@ -1708,6 +2356,19 @@ pub fn apply_theme(&mut self, cx: &mut Cx, theme: Theme) {
              self.kill_button_state = None;
              self.row_color = Vec4f::default();
              self.sync_view_segments(cx);
@@ -22411,7 +23143,7 @@ index 96298be339a18c199868fd4fbd932dd870c9e54b..8088b21d4b8cb251b4497ed133c26696
              self.update_status(cx);
              return;
          }
-@@ -1752,9 +2387,12 @@ fn cell(&self, row: &Row, col: usize) -> (String, CellStyle) {
+@@ -1752,9 +2413,12 @@ fn cell(&self, row: &Row, col: usize) -> (String, CellStyle) {
          let process = &self.processes[row.index];
          // On a desktop's grid, `bold` picks the tabular face: numbers, not emphasis.
          let right = CellStyle { align: 1.0, bold: self.desk, ..CellStyle::default() };
@@ -22426,7 +23158,7 @@ index 96298be339a18c199868fd4fbd932dd870c9e54b..8088b21d4b8cb251b4497ed133c26696
              COL_NAME => {
                  // ▲/▼ and not ▶/▼: the code font has the up/down triangles
                  // (the data grid's own sort indicator uses them) but no
-@@ -1776,21 +2414,39 @@ fn cell(&self, row: &Row, col: usize) -> (String, CellStyle) {
+@@ -1776,21 +2440,39 @@ fn cell(&self, row: &Row, col: usize) -> (String, CellStyle) {
              COL_USER => (process.user.clone(), CellStyle::default()),
              COL_STATE => (
                  if self.desk { state_word(process.state) } else { process.state.as_str() }.to_string(),
@@ -22473,7 +23205,7 @@ index 96298be339a18c199868fd4fbd932dd870c9e54b..8088b21d4b8cb251b4497ed133c26696
              }
              _ => {
                  let calm = if self.desk { self.ink } else { self.accent_color };
-@@ -1816,7 +2472,20 @@ fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawSte
+@@ -1816,7 +2498,20 @@ fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawSte
                  // The window's toolbar keeps its tools; the words beside the
                  // rate go first, into the pop-up itself, then the search gives
                  // up some of its width.
@@ -22495,7 +23227,7 @@ index 96298be339a18c199868fd4fbd932dd870c9e54b..8088b21d4b8cb251b4497ed133c26696
                  let worded = width >= 780.0;
                  // On a Mac the rate is in the menu bar's View > Update Frequency.
                  self.view.widget(cx, ids!(refresh_label)).set_visible(cx, worded && !self.mac);
-@@ -1837,6 +2506,16 @@ fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawSte
+@@ -1837,6 +2532,16 @@ fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawSte
                  } else {
                      90.0
                  };
@@ -22512,7 +23244,7 @@ index 96298be339a18c199868fd4fbd932dd870c9e54b..8088b21d4b8cb251b4497ed133c26696
                  let mut filter_box = self.view.view(cx, ids!(filter_box));
                  script_apply_eval!(cx, filter_box, {width: #(search)});
              }
-@@ -1865,6 +2544,13 @@ fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawSte
+@@ -1865,6 +2570,13 @@ fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawSte
                      for (display, &data_col) in columns.iter().enumerate() {
                          grid.set_col_width(display, self.column_width(data_col));
                      }
@@ -22526,7 +23258,7 @@ index 96298be339a18c199868fd4fbd932dd870c9e54b..8088b21d4b8cb251b4497ed133c26696
                      grid.set_sort_indicator(
                          columns
                              .iter()
-@@ -1909,7 +2595,9 @@ fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawSte
+@@ -1909,7 +2621,9 @@ fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawSte
                          self.draw_tree_name(cx, &cell, &row, selected == Some(cell.row));
                          continue;
                      }
@@ -22537,7 +23269,7 @@ index 96298be339a18c199868fd4fbd932dd870c9e54b..8088b21d4b8cb251b4497ed133c26696
                          self.fit_name(cx, &text, cell.rect.size.x - 2.0 * DESK_HEAD_PAD)
                      } else {
                          text
-@@ -1960,6 +2648,19 @@ fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+@@ -1960,6 +2674,19 @@ fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
              if self.view.button(cx, ids!(view_tree)).clicked(actions) && !self.tree_mode {
                  self.toggle_tree(cx);
              }
@@ -22557,7 +23289,7 @@ index 96298be339a18c199868fd4fbd932dd870c9e54b..8088b21d4b8cb251b4497ed133c26696
              // Shift-click skips straight to SIGKILL.
              if let Some(modifiers) = self.view.button(cx, ids!(kill_button)).clicked_modifiers(actions) {
                  if self.desk {
-@@ -1995,7 +2696,10 @@ fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+@@ -1995,7 +2722,10 @@ fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
                          } else {
                              self.sort_column = data_col;
                              // Numbers read best biggest-first, names A-Z.
@@ -22569,7 +23301,7 @@ index 96298be339a18c199868fd4fbd932dd870c9e54b..8088b21d4b8cb251b4497ed133c26696
                          }
                          let grid = self.view.data_grid(cx, ids!(process_grid));
                          self.configure_columns(cx, &grid);
-@@ -2179,7 +2883,17 @@ fn draw_grid_head(&mut self, cx: &mut Cx2d) {
+@@ -2179,7 +2909,17 @@ fn draw_grid_head(&mut self, cx: &mut Cx2d) {
      }
  }
  
@@ -23492,7 +24224,7 @@ index a1e9d45f37b64506bcea7af87d4f0963a0872cc6..889a35f6c217dd8a232cb79bfb9639c6
              for row in rows.iter().copied() {
                  let i = index;
 diff --git a/apps/terminal/src/tabs_desk.rs b/apps/terminal/src/tabs_desk.rs
-index 12799f548b8bd623ac6a236abb96c4d56077bff0..5a43793d02f3e03081585d97ea2913ae958df58f 100644
+index 12799f548b8bd623ac6a236abb96c4d56077bff0..1c3992da12c95d8fc37b03e1f35702d56d050282 100644
 --- a/apps/terminal/src/tabs_desk.rs
 +++ b/apps/terminal/src/tabs_desk.rs
 @@ -5,7 +5,8 @@
@@ -24172,7 +24904,7 @@ index 12799f548b8bd623ac6a236abb96c4d56077bff0..5a43793d02f3e03081585d97ea2913ae
      }
  
      fn draw_shortcut_list(&mut self, cx: &mut Cx2d, c: &DeskPalette, rect: Rect, s: &Settings, mac: bool) {
-@@ -1137,20 +1560,177 @@ fn draw_shortcut_list(&mut self, cx: &mut Cx2d, c: &DeskPalette, rect: Rect, s:
+@@ -1137,20 +1560,180 @@ fn draw_shortcut_list(&mut self, cx: &mut Cx2d, c: &DeskPalette, rect: Rect, s:
          }
      }
  
@@ -24245,7 +24977,10 @@ index 12799f548b8bd623ac6a236abb96c4d56077bff0..5a43793d02f3e03081585d97ea2913ae
 +        let mac = cfg!(target_os = "macos");
 +        let (can, note) = self.key_edit_check(&edit);
 +        let (title, action) = if edit.was.is_some() { ("Change the keyboard shortcut", "OK") } else { ("Add a keyboard shortcut", "Add") };
-+        let height = 20.0 + 18.0 + 12.0 + CONTROL + ROW_GAP + CHECK_ROW + ROW_GAP + CONTROL + NOTE_ROW + 20.0 + CONTROL + 16.0;
++        // A Mac's sheet keeps its buttons 20 points under its last row: the note's
++        // row only while there is one to say.
++        let note_h = if note.is_some() { NOTE_ROW } else { 0.0 };
++        let height = 20.0 + 18.0 + 12.0 + CONTROL + ROW_GAP + CHECK_ROW + ROW_GAP + CONTROL + note_h + 20.0 + CONTROL + 16.0;
 +        let rect = self.begin_sheet(cx, c, KEY_SHEET_WIDTH, height);
 +        let left = rect.pos.x;
 +        let right = left + rect.size.x;
@@ -24356,7 +25091,7 @@ index 12799f548b8bd623ac6a236abb96c4d56077bff0..5a43793d02f3e03081585d97ea2913ae
          self.text_right(cx, Type::Body, left + 64.0, y + CONTROL * 0.5, "Name:", c.ink);
          let field = rect_at(left + 72.0, y, right - 20.0 - (left + 72.0), CONTROL);
          self.framed(cx, field, c.field, c.link, 3.0);
-@@ -1164,44 +1744,53 @@ fn draw_name_sheet(&mut self, cx: &mut Cx2d, c: &DeskPalette) {
+@@ -1164,44 +1747,53 @@ fn draw_name_sheet(&mut self, cx: &mut Cx2d, c: &DeskPalette) {
              start += 1;
          }
          let shown = self.fitted(cx, Type::Body, &chars[start..].iter().collect::<String>(), room);
@@ -24429,7 +25164,7 @@ index 12799f548b8bd623ac6a236abb96c4d56077bff0..5a43793d02f3e03081585d97ea2913ae
          let bottom = rect.pos.y + rect.size.y - 16.0 - CONTROL;
          let cancel_w = self.button_width(cx, "Cancel");
          let delete_w = self.button_width(cx, "Delete");
-@@ -1211,6 +1800,39 @@ fn draw_delete_sheet(&mut self, cx: &mut Cx2d, c: &DeskPalette, profile: &str) {
+@@ -1211,6 +1803,39 @@ fn draw_delete_sheet(&mut self, cx: &mut Cx2d, c: &DeskPalette, profile: &str) {
          self.push_button(cx, c, cancel, "Cancel", DeskHit::DeleteCancel, true, true);
      }
  
@@ -24469,7 +25204,7 @@ index 12799f548b8bd623ac6a236abb96c4d56077bff0..5a43793d02f3e03081585d97ea2913ae
      // ------------------------------------------------------------------
      // Menus
      // ------------------------------------------------------------------
-@@ -1260,6 +1882,12 @@ fn draw_menu(&mut self, cx: &mut Cx2d, c: &DeskPalette) {
+@@ -1260,6 +1885,12 @@ fn draw_menu(&mut self, cx: &mut Cx2d, c: &DeskPalette) {
                          button.pos.y + button.size.y * 0.5 - MENU_PAD - above - MENU_ROW * 0.5,
                      )
                  }
@@ -24482,7 +25217,7 @@ index 12799f548b8bd623ac6a236abb96c4d56077bff0..5a43793d02f3e03081585d97ea2913ae
                  None => (menu.at.x, if menu.at.y + shown_h > whole.pos.y + whole.size.y { menu.at.y - shown_h } else { menu.at.y }),
              };
              let x = x.min(whole.pos.x + whole.size.x - width).max(whole.pos.x);
-@@ -1326,20 +1954,35 @@ fn draw_menu(&mut self, cx: &mut Cx2d, c: &DeskPalette) {
+@@ -1326,20 +1957,35 @@ fn draw_menu(&mut self, cx: &mut Cx2d, c: &DeskPalette) {
      }
  
      fn open_row_menu(&mut self, cx: &mut Cx, row: Row, anchor: Rect) {
@@ -24531,7 +25266,7 @@ index 12799f548b8bd623ac6a236abb96c4d56077bff0..5a43793d02f3e03081585d97ea2913ae
          if items.is_empty() {
              return;
          }
-@@ -1381,7 +2024,14 @@ pub(super) fn open_context_menu(&mut self, cx: &mut Cx, at: DVec2) {
+@@ -1381,7 +2027,14 @@ pub(super) fn open_context_menu(&mut self, cx: &mut Cx, at: DVec2) {
              separated,
              act,
          };
@@ -24547,7 +25282,7 @@ index 12799f548b8bd623ac6a236abb96c4d56077bff0..5a43793d02f3e03081585d97ea2913ae
          if mac {
              items.push(item("Paste", "\u{2318}V".to_owned(), true, false, MenuAct::Paste));
          }
-@@ -1427,8 +2077,16 @@ fn pick_menu_item(&mut self, cx: &mut Cx, index: usize) {
+@@ -1427,8 +2080,16 @@ fn pick_menu_item(&mut self, cx: &mut Cx, index: usize) {
              }
          };
          match act {
@@ -24564,7 +25299,7 @@ index 12799f548b8bd623ac6a236abb96c4d56077bff0..5a43793d02f3e03081585d97ea2913ae
              MenuAct::Paste => with_term(cx, &|cx, term| term.paste_from_system(cx)),
              MenuAct::SelectAll => with_term(cx, &|cx, term| term.run_shortcut(cx, &keybinds::Action::SelectAll)),
              MenuAct::Clear => with_term(cx, &|cx, term| term.run_shortcut(cx, &keybinds::Action::ClearScreen)),
-@@ -1447,10 +2105,97 @@ fn pick_menu_item(&mut self, cx: &mut Cx, index: usize) {
+@@ -1447,10 +2108,97 @@ fn pick_menu_item(&mut self, cx: &mut Cx, index: usize) {
                  }
              }
              MenuAct::RenameTab(index) => self.begin_rename(cx, index),
@@ -24662,7 +25397,7 @@ index 12799f548b8bd623ac6a236abb96c4d56077bff0..5a43793d02f3e03081585d97ea2913ae
      /// A pick from a pop-up. A font is prepared off the UI thread; the rest apply now.
      fn apply_later_if_font(&mut self, cx: &mut Cx, settings: Settings) {
          self.apply(cx, settings);
-@@ -1489,11 +2234,19 @@ fn rect_of(&self, hit: DeskHit) -> Option<Rect> {
+@@ -1489,11 +2237,19 @@ fn rect_of(&self, hit: DeskHit) -> Option<Rect> {
          self.desk_ui.hits.iter().rev().find(|(_, h)| *h == hit).map(|(rect, _)| *rect)
      }
  
@@ -24683,7 +25418,7 @@ index 12799f548b8bd623ac6a236abb96c4d56077bff0..5a43793d02f3e03081585d97ea2913ae
          // A press off the window, its host closing what the app has open, closes the
          // menu as a press off it does: the panel hears only presses on the window.
          if let Event::MouseDown(e) = event {
-@@ -1511,7 +2264,10 @@ pub(super) fn desk_pointer(&mut self, cx: &mut Cx, event: &Event) {
+@@ -1511,7 +2267,10 @@ pub(super) fn desk_pointer(&mut self, cx: &mut Cx, event: &Event) {
                      self.refresh(cx);
                  }
              }
@@ -24695,7 +25430,7 @@ index 12799f548b8bd623ac6a236abb96c4d56077bff0..5a43793d02f3e03081585d97ea2913ae
              Hit::FingerMove(e) => self.desk_hover(cx, e.abs),
              Hit::FingerUp(e) => self.desk_release(cx, e.abs),
              Hit::FingerScroll(e) => self.desk_scroll(cx, e.abs, e.scroll.y),
-@@ -1536,7 +2292,7 @@ fn desk_hover(&mut self, cx: &mut Cx, abs: DVec2) {
+@@ -1536,7 +2295,7 @@ fn desk_hover(&mut self, cx: &mut Cx, abs: DVec2) {
          }
      }
  
@@ -24704,7 +25439,7 @@ index 12799f548b8bd623ac6a236abb96c4d56077bff0..5a43793d02f3e03081585d97ea2913ae
          let hit = self.desk_hit_at(abs);
          if let Some(menu) = self.desk_ui.menu.as_mut() {
              menu.opening = false;
-@@ -1547,6 +2303,15 @@ fn desk_press(&mut self, cx: &mut Cx, abs: DVec2) {
+@@ -1547,6 +2306,15 @@ fn desk_press(&mut self, cx: &mut Cx, abs: DVec2) {
                  return;
              }
          }
@@ -24720,7 +25455,7 @@ index 12799f548b8bd623ac6a236abb96c4d56077bff0..5a43793d02f3e03081585d97ea2913ae
          self.desk_ui.hover = hit;
          self.desk_ui.press = hit;
          match hit {
-@@ -1566,6 +2331,45 @@ fn desk_press(&mut self, cx: &mut Cx, abs: DVec2) {
+@@ -1566,6 +2334,45 @@ fn desk_press(&mut self, cx: &mut Cx, abs: DVec2) {
                      sheet.note = None;
                  }
              }
@@ -24766,7 +25501,7 @@ index 12799f548b8bd623ac6a236abb96c4d56077bff0..5a43793d02f3e03081585d97ea2913ae
              _ => {}
          }
          self.refresh(cx);
-@@ -1618,6 +2422,9 @@ fn desk_scroll(&mut self, cx: &mut Cx, abs: DVec2, dy: f64) {
+@@ -1618,6 +2425,9 @@ fn desk_scroll(&mut self, cx: &mut Cx, abs: DVec2, dy: f64) {
                  self.desk_ui.knob_until = Cx::monotonic_now() + KNOB_SECONDS;
                  cx.stop_timer(self.desk_ui.knob_timer);
                  self.desk_ui.knob_timer = cx.start_timeout(KNOB_SECONDS + 0.05);
@@ -24776,7 +25511,7 @@ index 12799f548b8bd623ac6a236abb96c4d56077bff0..5a43793d02f3e03081585d97ea2913ae
              } else {
                  sheet.scroll = (sheet.scroll as i64 + by).clamp(0, sheet.max_scroll as i64) as usize;
              }
-@@ -1648,13 +2455,49 @@ fn desk_activate(&mut self, cx: &mut Cx, hit: DeskHit) {
+@@ -1648,13 +2458,49 @@ fn desk_activate(&mut self, cx: &mut Cx, hit: DeskHit) {
                      sheet.name = None;
                  }
              }
@@ -24827,7 +25562,7 @@ index 12799f548b8bd623ac6a236abb96c4d56077bff0..5a43793d02f3e03081585d97ea2913ae
              _ => {}
          }
          self.desk_ui.hover = None;
-@@ -1663,6 +2506,11 @@ fn desk_activate(&mut self, cx: &mut Cx, hit: DeskHit) {
+@@ -1663,6 +2509,11 @@ fn desk_activate(&mut self, cx: &mut Cx, hit: DeskHit) {
  
      fn desk_activate_row(&mut self, cx: &mut Cx, row: Row) {
          match row.desk_kind() {
@@ -24839,7 +25574,7 @@ index 12799f548b8bd623ac6a236abb96c4d56077bff0..5a43793d02f3e03081585d97ea2913ae
              DeskKind::Check => self.apply_step(cx, row, 1),
              DeskKind::Popup => {
                  if let Some(rect) = self.rect_of(DeskHit::Control(row)) {
-@@ -1674,6 +2522,8 @@ fn desk_activate_row(&mut self, cx: &mut Cx, row: Row) {
+@@ -1674,6 +2525,8 @@ fn desk_activate_row(&mut self, cx: &mut Cx, row: Row) {
                  if let Some(sheet) = self.desk_ui.settings.as_mut() {
                      sheet.note = None;
                      if row == Row::SaveProfile {
@@ -24848,7 +25583,7 @@ index 12799f548b8bd623ac6a236abb96c4d56077bff0..5a43793d02f3e03081585d97ea2913ae
                          sheet.name = Some(NameEdit::new(&profile));
                      } else if !profile.is_empty() {
                          sheet.asking_delete = true;
-@@ -1719,6 +2569,540 @@ fn desk_delete_profile(&mut self, cx: &mut Cx) {
+@@ -1719,6 +2572,540 @@ fn desk_delete_profile(&mut self, cx: &mut Cx) {
          self.apply(cx, next);
      }
  
@@ -25389,7 +26124,7 @@ index 12799f548b8bd623ac6a236abb96c4d56077bff0..5a43793d02f3e03081585d97ea2913ae
      /// A key while a sheet or a menu is up: nothing reaches the shell.
      pub(super) fn desk_key(&mut self, cx: &mut Cx, key: &KeyEvent) {
          if self.desk_ui.menu.is_some() {
-@@ -1743,8 +3127,14 @@ pub(super) fn desk_text(&mut self, cx: &mut Cx, input: &str) {
+@@ -1743,8 +3130,14 @@ pub(super) fn desk_text(&mut self, cx: &mut Cx, input: &str) {
          }
          if let Some(menu) = self.desk_ui.menu.as_mut() {
              menu.type_select(&typed, Cx::monotonic_now());
@@ -25406,7 +26141,7 @@ index 12799f548b8bd623ac6a236abb96c4d56077bff0..5a43793d02f3e03081585d97ea2913ae
          }
          self.refresh(cx);
      }
-@@ -1774,10 +3164,22 @@ fn desk_settings_key(&mut self, cx: &mut Cx, key: &KeyEvent) {
+@@ -1774,10 +3167,22 @@ fn desk_settings_key(&mut self, cx: &mut Cx, key: &KeyEvent) {
              .settings
              .as_ref()
              .map_or((false, false), |sheet| (sheet.name.is_some(), sheet.asking_delete));
@@ -25430,7 +26165,7 @@ index 12799f548b8bd623ac6a236abb96c4d56077bff0..5a43793d02f3e03081585d97ea2913ae
                  Some(NameKey::Cancel) => {
                      if let Some(sheet) = self.desk_ui.settings.as_mut() {
                          sheet.name = None;
-@@ -1798,6 +3200,15 @@ fn desk_settings_key(&mut self, cx: &mut Cx, key: &KeyEvent) {
+@@ -1798,6 +3203,15 @@ fn desk_settings_key(&mut self, cx: &mut Cx, key: &KeyEvent) {
              }
              return;
          }
@@ -25446,7 +26181,7 @@ index 12799f548b8bd623ac6a236abb96c4d56077bff0..5a43793d02f3e03081585d97ea2913ae
          // The settings are a window of their own on a Mac: Cmd+W closes them.
          if key.key_code == KeyCode::KeyW && key.modifiers.logo && !key.modifiers.shift {
              self.close_settings(cx);
-@@ -1824,6 +3235,8 @@ fn desk_settings_key(&mut self, cx: &mut Cx, key: &KeyEvent) {
+@@ -1824,6 +3238,8 @@ fn desk_settings_key(&mut self, cx: &mut Cx, key: &KeyEvent) {
              KeyCode::ReturnKey | KeyCode::NumpadEnter => match focus {
                  Some(hit @ DeskHit::Control(row)) if row.desk_kind() != DeskKind::Stepper => self.desk_activate(cx, hit),
                  Some(DeskHit::Restore) => self.desk_activate(cx, DeskHit::Restore),
@@ -25455,7 +26190,7 @@ index 12799f548b8bd623ac6a236abb96c4d56077bff0..5a43793d02f3e03081585d97ea2913ae
                  _ if !window => self.desk_ui.settings = None,
                  _ => {}
              },
-@@ -1832,10 +3245,18 @@ fn desk_settings_key(&mut self, cx: &mut Cx, key: &KeyEvent) {
+@@ -1832,10 +3248,18 @@ fn desk_settings_key(&mut self, cx: &mut Cx, key: &KeyEvent) {
                      self.desk_activate(cx, hit);
                  }
              }
@@ -25474,7 +26209,7 @@ index 12799f548b8bd623ac6a236abb96c4d56077bff0..5a43793d02f3e03081585d97ea2913ae
              KeyCode::ArrowLeft => self.desk_move_pane(-1),
              KeyCode::ArrowRight => self.desk_move_pane(1),
              KeyCode::PageUp | KeyCode::PageDown => {
-@@ -1848,6 +3269,47 @@ fn desk_settings_key(&mut self, cx: &mut Cx, key: &KeyEvent) {
+@@ -1848,6 +3272,47 @@ fn desk_settings_key(&mut self, cx: &mut Cx, key: &KeyEvent) {
          }
      }
  
@@ -25522,7 +26257,7 @@ index 12799f548b8bd623ac6a236abb96c4d56077bff0..5a43793d02f3e03081585d97ea2913ae
      fn desk_move_focus(&mut self, dir: i64) {
          let order = self.focus_order();
          if order.is_empty() {
-@@ -1956,4 +3418,47 @@ fn a_long_menu_keeps_what_is_lit_between_its_arrows() {
+@@ -1956,4 +3421,47 @@ fn a_long_menu_keeps_what_is_lit_between_its_arrows() {
          assert_eq!(menu.top, 22);
          assert_eq!(menu.arrows(), (true, false));
      }
@@ -27998,7 +28733,7 @@ index f16ec54b0caf0d6fbcf842fe18d8393b96b1b01b..df822e988a8a0e82b0e4d25e9cc1c9aa
          let mut cx=Cx::new(Box::new(|_,_|{}));
          cx.init_cx_os();
 diff --git a/widgets/src/drop_down.rs b/widgets/src/drop_down.rs
-index cf4a5cf6fe055baba92c36f45004d270de698b23..976d381170a6ab8867c9db6ba26629eac70490af 100644
+index cf4a5cf6fe055baba92c36f45004d270de698b23..f22bd923e024accd6690c096e0c496f0da3fc280 100644
 --- a/widgets/src/drop_down.rs
 +++ b/widgets/src/drop_down.rs
 @@ -483,6 +483,11 @@ pub struct DropDown {
@@ -28013,7 +28748,19 @@ index cf4a5cf6fe055baba92c36f45004d270de698b23..976d381170a6ab8867c9db6ba26629ea
      #[live]
      popup_menu_position: PopupMenuPosition,
  
-@@ -525,6 +530,10 @@ pub(crate) struct PopupMenuGlobal {
+@@ -497,6 +502,11 @@ pub struct DropDown {
+     #[live]
+     popup_words_over: bool,
+ 
++    /// Show the chosen row's words in capitals, the menu keeping them as written:
++    /// a Mac graph's title pop-up, as Activity Monitor's PACKETS over its Network graph.
++    #[live]
++    caps: bool,
++
+     #[rust]
+     is_active: bool,
+ 
+@@ -525,6 +535,10 @@ pub(crate) struct PopupMenuGlobal {
      pub(crate) map: Rc<RefCell<ComponentMap<PopupMenuKey, PopupMenu>>>,
  }
  
@@ -28024,7 +28771,7 @@ index cf4a5cf6fe055baba92c36f45004d270de698b23..976d381170a6ab8867c9db6ba26629ea
  #[derive(Clone, Copy, Eq, Hash, PartialEq)]
  pub(crate) struct PopupMenuKey {
      // ScriptValue only identifies an object within one heap. Popup menus are
-@@ -597,7 +606,7 @@ pub fn retire_popup_menus_for_heap(cx: &mut Cx, heap: usize) -> usize {
+@@ -597,7 +611,7 @@ pub fn retire_popup_menus_for_heap(cx: &mut Cx, heap: usize) -> usize {
          let global = cx.global::<PopupMenuGlobal>().clone();
          let mut map = global.map.borrow_mut();
          let before = map.len();
@@ -28033,7 +28780,24 @@ index cf4a5cf6fe055baba92c36f45004d270de698b23..976d381170a6ab8867c9db6ba26629ea
          before - map.len()
      }
  
-@@ -688,12 +697,16 @@ pub fn draw_walk(&mut self, cx: &mut Cx2d, walk: Walk) {
+@@ -653,8 +667,14 @@ pub fn draw_walk(&mut self, cx: &mut Cx2d, walk: Walk) {
+         self.draw_bg.begin(cx, walk, self.layout);
+ 
+         if let Some(val) = self.labels.get(self.selected_item) {
+-            self.draw_text
+-                .draw_walk(cx, Walk::fit(), Align::default(), val);
++            if self.caps {
++                let caps = val.to_uppercase();
++                self.draw_text
++                    .draw_walk(cx, Walk::fit(), Align::default(), &caps);
++            } else {
++                self.draw_text
++                    .draw_walk(cx, Walk::fit(), Align::default(), val);
++            }
+         } else {
+             self.draw_text
+                 .draw_walk(cx, Walk::fit(), Align::default(), " ");
+@@ -688,12 +708,16 @@ pub fn draw_walk(&mut self, cx: &mut Cx2d, walk: Walk) {
                          if i == self.selected_item {
                              item_pos = Some(cx.turtle().pos());
                          }
@@ -28056,7 +28820,7 @@ index cf4a5cf6fe055baba92c36f45004d270de698b23..976d381170a6ab8867c9db6ba26629ea
                      }
  
                      let area = self.draw_bg.area().rect(cx);
-@@ -716,12 +729,16 @@ pub fn draw_walk(&mut self, cx: &mut Cx2d, walk: Walk) {
+@@ -716,12 +740,16 @@ pub fn draw_walk(&mut self, cx: &mut Cx2d, walk: Walk) {
                  PopupMenuPosition::BelowInput => {
                      for (i, item) in self.labels.iter().enumerate() {
                          let node_id = LiveId(i as u64).into();
@@ -28079,7 +28843,7 @@ index cf4a5cf6fe055baba92c36f45004d270de698b23..976d381170a6ab8867c9db6ba26629ea
                      }
  
                      let area = self.draw_bg.area().rect(cx);
-@@ -859,8 +876,9 @@ fn handle_event(&mut self, cx: &mut Cx, event: &Event, _scope: &mut Scope) {
+@@ -859,8 +887,9 @@ fn handle_event(&mut self, cx: &mut Cx, event: &Event, _scope: &mut Scope) {
                      self.animator_play(cx, ids!(hover.off));
                  }
                  KeyCode::ArrowUp => {
@@ -28091,7 +28855,7 @@ index cf4a5cf6fe055baba92c36f45004d270de698b23..976d381170a6ab8867c9db6ba26629ea
                          cx.widget_action_with_data(
                              &self.action_data,
                              uid,
-@@ -871,8 +889,9 @@ fn handle_event(&mut self, cx: &mut Cx, event: &Event, _scope: &mut Scope) {
+@@ -871,8 +900,9 @@ fn handle_event(&mut self, cx: &mut Cx, event: &Event, _scope: &mut Scope) {
                      }
                  }
                  KeyCode::ArrowDown => {
@@ -28103,7 +28867,7 @@ index cf4a5cf6fe055baba92c36f45004d270de698b23..976d381170a6ab8867c9db6ba26629ea
                          cx.widget_action_with_data(
                              &self.action_data,
                              uid,
-@@ -974,6 +993,15 @@ pub fn set_dimmed_items(&self, cx: &mut Cx, dimmed_items: Vec<bool>) {
+@@ -974,6 +1004,15 @@ pub fn set_dimmed_items(&self, cx: &mut Cx, dimmed_items: Vec<bool>) {
          }
      }
  

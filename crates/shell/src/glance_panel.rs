@@ -56,8 +56,9 @@
 //! ([`ShellGlancePanel::draw_mac_column`]): no panel and no close, only rounded
 //! material cards [`MAC_WIDTH`] wide stacked at the screen's right under the
 //! menu bar, reaching no further down than they do, so a click below them is
-//! a click away. With no card it says "No Notifications" on the desk itself,
-//! with no card behind the words ([`ShellGlancePanel::mac_words_on_desk`]).
+//! a click away. With no card it shows its widgets alone, as a Mac's does;
+//! with no widget either it says "No Notifications" on the desk itself, with no
+//! card behind the words ([`ShellGlancePanel::mac_words_on_desk`]).
 //! The list runs from the column's top down to the Dock (or the screen's foot)
 //! and scrolls by the point under the wheel, as a Mac's does: the cards are
 //! cut at its ends, a thin bar at its right edge shows where it is while it
@@ -128,7 +129,8 @@ const MAC_RING_GAP: f64 = 2.0;
 /// A collapsed stack leaves room for its count, action, and two back edges.
 const MAC_STACK_DEPTH: f64 = 8.0;
 const MAC_GROUP_HEADER: f64 = 30.0;
-const MAC_WIDGET_H: f64 = 138.0;
+/// A small widget's side: square, two to the column's row ([`MacWidgetSize`]).
+const MAC_WIDGET_SMALL: f64 = (MAC_WIDTH - MAC_GAP) / 2.0;
 /// A live card's page margin on a material (glance_card.rs `pad_page_x`).
 const MAC_PAGE_X: f64 = 14.0;
 /// Edit Widgets under the widgets: its row, its capsule's height.
@@ -138,13 +140,19 @@ const MAC_BADGE: f64 = 20.0;
 /// The widget gallery Edit Widgets opens, as a Mac's: its widest, its height,
 /// its sidebar (the search field and the apps that offer widgets), a sidebar
 /// row, its padding, and a widget's preview with its name and line under it.
-const MAC_GALLERY_W: f64 = 720.0;
+const MAC_GALLERY_W: f64 = 800.0;
 const MAC_GALLERY_H: f64 = 300.0;
 const MAC_GALLERY_SIDE: f64 = 176.0;
 const MAC_GALLERY_ROW: f64 = 28.0;
 const MAC_GALLERY_PAD: f64 = 14.0;
-const MAC_GALLERY_TILE_W: f64 = 176.0;
 const MAC_GALLERY_TILE_GAP: f64 = 18.0;
+/// Under a preview: its name, what it shows, and its sizes (S, M, L), round
+/// buttons as a Mac's gallery has them; the room they take, a button, the gap
+/// between two, and the gap between two lines of previews.
+const MAC_GALLERY_LABELS: f64 = 76.0;
+const MAC_SIZE_DOT: f64 = 22.0;
+const MAC_SIZE_GAP: f64 = 6.0;
+const MAC_GALLERY_LINE_GAP: f64 = 12.0;
 
 /// Whether the Mac's form of the panel is up.
 fn mac_style() -> bool {
@@ -188,6 +196,33 @@ impl MacWidget {
     const ALL: [MacWidget; 2] = [Self::Calendar, Self::Clock];
 }
 
+/// A widget's size, as a Mac's: small (square, two to a row), medium (the
+/// row's width) or large (the row's width, two rows tall). The gallery's S, M
+/// and L, and the widget's own menu, choose it; the OctoSense home keeps it.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum MacWidgetSize { #[default] Small, Medium, Large }
+
+impl MacWidgetSize {
+    const ALL: [MacWidgetSize; 3] = [Self::Small, Self::Medium, Self::Large];
+    fn name(self) -> &'static str {
+        match self { Self::Small => "small", Self::Medium => "medium", Self::Large => "large" }
+    }
+    fn letter(self) -> &'static str {
+        match self { Self::Small => "S", Self::Medium => "M", Self::Large => "L" }
+    }
+    fn named(name: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|size| size.name() == name)
+    }
+    /// Its width and height.
+    fn extent(self) -> (f64, f64) {
+        match self {
+            Self::Small => (MAC_WIDGET_SMALL, MAC_WIDGET_SMALL),
+            Self::Medium => (MAC_WIDTH, MAC_WIDGET_SMALL),
+            Self::Large => (MAC_WIDTH, MAC_WIDGET_SMALL * 2.0 + MAC_GAP),
+        }
+    }
+}
+
 /// What a press in the widget gallery is on.
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum MacGalleryHit {
@@ -196,6 +231,8 @@ enum MacGalleryHit {
     App(MacWidget),
     /// A widget's preview: it goes into the column.
     Tile(MacWidget),
+    /// One of a preview's sizes: the widget takes it.
+    Size(MacWidget, MacWidgetSize),
     Search,
     Done,
 }
@@ -217,6 +254,30 @@ fn mac_widgets_off_save(off: &[MacWidget]) {
     let text: String = off.iter().map(|widget| format!("{}\n", widget.app())).collect();
     if let Err(error) = std::fs::create_dir_all(crate::octosense::paths::home()).and_then(|_| std::fs::write(mac_widgets_off_path(), text)) {
         log!("glance panel: could not keep the widgets: {error}");
+    }
+}
+
+/// Where the widgets' sizes are kept: a widget and its size a line
+/// (`calendar medium`); one not named is small.
+fn mac_widget_sizes_path() -> std::path::PathBuf {
+    crate::octosense::paths::home().join("glance-widget-sizes")
+}
+
+fn mac_widget_sizes_parse(text: &str) -> Vec<(MacWidget, MacWidgetSize)> {
+    text.lines().filter_map(|line| {
+        let (app, size) = line.trim().split_once(' ')?;
+        Some((MacWidget::ALL.into_iter().find(|widget| widget.app() == app)?, MacWidgetSize::named(size.trim())?))
+    }).collect()
+}
+
+fn mac_widget_sizes_load() -> Vec<(MacWidget, MacWidgetSize)> {
+    std::fs::read_to_string(mac_widget_sizes_path()).map(|text| mac_widget_sizes_parse(&text)).unwrap_or_default()
+}
+
+fn mac_widget_sizes_save(sizes: &[(MacWidget, MacWidgetSize)]) {
+    let text: String = sizes.iter().map(|(widget, size)| format!("{} {}\n", widget.app(), size.name())).collect();
+    if let Err(error) = std::fs::create_dir_all(crate::octosense::paths::home()).and_then(|_| std::fs::write(mac_widget_sizes_path(), text)) {
+        log!("glance panel: could not keep the widgets' sizes: {error}");
     }
 }
 
@@ -290,6 +351,10 @@ struct MacWidgetContent {
     city: String,
     /// Calendar's events still to come today ([`mac_calendar_events`]).
     events: Option<Vec<MacEvent>>,
+    /// Today as numbers, for a month's grid: the year, the month (1 to 12), the day.
+    year: i32,
+    month_no: u32,
+    day_no: u32,
 }
 
 /// The city of the system's time zone, as a Mac's Clock widget names it: the last
@@ -315,6 +380,9 @@ fn mac_widget_content() -> MacWidgetContent {
         minute: crate::shell::bar::local_time(c"%M").parse().unwrap_or(0),
         city: local_city().unwrap_or_else(|| crate::shell::bar::local_time(c"%Z")),
         events: None,
+        year: crate::shell::bar::local_time(c"%Y").parse().unwrap_or(1970),
+        month_no: crate::shell::bar::local_time(c"%m").parse().unwrap_or(1),
+        day_no: crate::shell::bar::local_time(c"%d").parse().unwrap_or(1),
     }
 }
 
@@ -370,14 +438,14 @@ fn mac_feed(cards: &[crate::glance::GlanceCard], expanded: &HashSet<String>, wid
     rows
 }
 
-/// Which side of its row each row's tile takes: two widgets share a row, the
-/// first at the left; anything else is the row's alone (0).
-fn mac_sides(rows: &[MacFeedRow]) -> Vec<usize> {
+/// Which side of its row each row's tile takes: two small widgets share a
+/// row, the first at the left; anything else is the row's alone (0).
+fn mac_sides(rows: &[MacFeedRow], small: impl Fn(MacWidget) -> bool) -> Vec<usize> {
     let mut run = 0;
     rows.iter().map(|row| {
-        let widget = matches!(row, MacFeedRow::Widget(_));
-        let side = if widget { run % 2 } else { 0 };
-        run = if widget { run + 1 } else { 0 };
+        let pairs = matches!(row, MacFeedRow::Widget(widget) if small(*widget));
+        let side = if pairs { run % 2 } else { 0 };
+        run = if pairs { run + 1 } else { 0 };
         side
     }).collect()
 }
@@ -602,6 +670,9 @@ pub enum ShellGlancePanelAction {
     Dismissed { count: usize },
     /// ⌘Z while the panel holds the keyboard: the last dismissed come back.
     Undo,
+    /// A right click (or a Control-click) on a widget: its menu at the
+    /// pointer, as a Mac's (its sizes, Edit Widgets…, Remove Widget).
+    WidgetMenu { app: String, size: String, x: f64, y: f64 },
     #[default]
     None,
 }
@@ -685,6 +756,9 @@ pub struct ShellGlancePanel {
     /// editing widgets' − and + are, and which a press went down on.
     #[rust]
     mac_widgets_off: Vec<MacWidget>,
+    /// The widgets' sizes, kept in the OctoSense home ([`MacWidgetSize`]).
+    #[rust]
+    mac_widget_sizes: Vec<(MacWidget, MacWidgetSize)>,
     #[rust]
     mac_editing: bool,
     #[rust]
@@ -890,6 +964,7 @@ impl ShellGlancePanel {
         self.mac_gallery_app = None;
         if open {
             self.mac_widgets_off = mac_widgets_off_load();
+            self.mac_widget_sizes = mac_widget_sizes_load();
             self.mac_events = None;
         } else {
             self.mac_expanded.clear();
@@ -948,6 +1023,43 @@ impl ShellGlancePanel {
     fn mac_widgets_shown(&self) -> Vec<MacWidget> {
         MacWidget::ALL.into_iter().filter(|widget| !self.mac_widgets_off.contains(widget)).collect()
     }
+    fn mac_size(&self, widget: MacWidget) -> MacWidgetSize {
+        self.mac_widget_sizes.iter().find(|(kept, _)| *kept == widget).map_or(MacWidgetSize::Small, |(_, size)| *size)
+    }
+    /// Which side of its row each of `rows` takes ([`mac_sides`]).
+    fn mac_row_sides(&self, rows: &[MacFeedRow]) -> Vec<usize> {
+        mac_sides(rows, |widget| self.mac_size(widget) == MacWidgetSize::Small)
+    }
+    fn mac_set_size(&mut self, cx: &mut Cx, widget: MacWidget, size: MacWidgetSize) {
+        if self.mac_size(widget) == size {
+            return;
+        }
+        self.mac_widget_sizes.retain(|(kept, _)| *kept != widget);
+        if size != MacWidgetSize::Small {
+            self.mac_widget_sizes.push((widget, size));
+        }
+        mac_widget_sizes_save(&self.mac_widget_sizes);
+        log!("glance panel: widget {} is {}", widget.app(), size.name());
+        self.redraw(cx);
+    }
+    /// A widget's menu chose a size for it (`calendar`, `medium`).
+    pub fn set_widget_size(&mut self, cx: &mut Cx, app: &str, size: &str) {
+        if let (Some(widget), Some(size)) = (MacWidget::ALL.into_iter().find(|widget| widget.app() == app), MacWidgetSize::named(size)) {
+            self.mac_set_size(cx, widget, size);
+        }
+    }
+    /// Whether a press at `at` is the open column's (or its widget gallery's):
+    /// the desktop's own menu is not its right click.
+    pub fn covers(&self, at: DVec2) -> bool {
+        self.open && (contains(self.column, at) || (self.mac_editing && contains(self.mac_gallery, at)))
+    }
+    /// A widget's menu's Remove Widget: it leaves the column, and the gallery
+    /// offers it again.
+    pub fn remove_widget(&mut self, cx: &mut Cx, app: &str) {
+        if let Some(widget) = self.mac_widgets_shown().into_iter().find(|widget| widget.app() == app) {
+            self.mac_toggle_widget(cx, widget);
+        }
+    }
     /// What the gallery offers: the widgets of the app its sidebar shows (all
     /// of them under All Widgets) that its search finds.
     fn mac_gallery_widgets(&self) -> Vec<MacWidget> {
@@ -1001,6 +1113,7 @@ impl ShellGlancePanel {
                     self.mac_toggle_widget(cx, widget);
                 }
             }
+            MacGalleryHit::Size(widget, size) => self.mac_set_size(cx, widget, size),
             MacGalleryHit::Search => {}
             MacGalleryHit::Done => self.mac_set_editing(cx, false),
         }
@@ -1165,7 +1278,7 @@ impl ShellGlancePanel {
                 match rows.get(n) {
                     Some(MacFeedRow::Group { app, expanded: false, .. }) => self.mac_toggle_group(cx, app, true, true),
                     // The widget beside it, in the same row.
-                    Some(MacFeedRow::Widget(_)) if mac_sides(&rows)[n] == 0 && matches!(rows.get(n + 1), Some(MacFeedRow::Widget(_))) => {
+                    Some(MacFeedRow::Widget(_)) if self.mac_row_sides(&rows).get(n + 1) == Some(&1) => {
                         self.focus = Some(keys[n + 1].clone());
                         self.focus_quiet = false;
                         self.reveal = self.focus.clone();
@@ -1176,7 +1289,7 @@ impl ShellGlancePanel {
             }
             KeyCode::ArrowLeft if plain && mac && at.is_some() => {
                 let n = at.unwrap();
-                if matches!(rows.get(n), Some(MacFeedRow::Widget(_))) && mac_sides(&rows)[n] == 1 {
+                if matches!(rows.get(n), Some(MacFeedRow::Widget(_))) && self.mac_row_sides(&rows)[n] == 1 {
                     self.focus = Some(keys[n - 1].clone());
                     self.focus_quiet = false;
                     self.reveal = self.focus.clone();
@@ -1376,9 +1489,9 @@ impl ShellGlancePanel {
     /// Two local widgets stay below the notifications, as a Mac's small ones: Calendar's
     /// weekday in red over the date and the month, Clock's face with the city under it.
     /// A press opens the app.
-    fn draw_mac_widget(&mut self, cx: &mut Cx2d, widget: MacWidget, values: &MacWidgetContent,
+    fn draw_mac_widget(&mut self, cx: &mut Cx2d, widget: MacWidget, size: MacWidgetSize, values: &MacWidgetContent,
                        r: Rect, surface: &crate::shell::SurfaceTokens, ink: Vec4f, dim: Vec4f, accent: Vec4f) {
-        self.draw_mac_widget_face(cx, widget, values, r, surface, ink, dim);
+        self.draw_mac_widget_face(cx, widget, size, values, r, surface, ink, dim);
         let dark = ink.x + ink.y + ink.z > 1.5;
         if self.mac_editing {
             // Its − takes it out of the column; the gallery offers it again.
@@ -1397,43 +1510,126 @@ impl ShellGlancePanel {
         self.mac_widgets.push((r, widget));
     }
     /// A widget as it shows, in the column or as the gallery's preview of it:
-    /// its material and what it says.
-    fn draw_mac_widget_face(&mut self, cx: &mut Cx2d, widget: MacWidget, values: &MacWidgetContent,
+    /// its material and what it says, laid out for its size as a Mac's.
+    fn draw_mac_widget_face(&mut self, cx: &mut Cx2d, widget: MacWidget, size: MacWidgetSize, values: &MacWidgetContent,
                             r: Rect, surface: &crate::shell::SurfaceTokens, ink: Vec4f, dim: Vec4f) {
         self.mac_card(cx, r, surface);
         let dark = ink.x + ink.y + ink.z > 1.5;
         match widget {
             MacWidget::Calendar => {
                 let red = if dark { vec4(1.0, 0.27, 0.23, 1.0) } else { vec4(1.0, 0.23, 0.19, 1.0) };
-                self.d.label_elided(cx, rect(r.pos.x + 14.0, r.pos.y + 13.0, r.size.x - 28.0, 16.0), true, 11.0, red, HAlign::Left, &values.weekday.to_uppercase());
-                match values.events.as_deref() {
+                let blue = if dark { vec4(0.04, 0.52, 1.0, 1.0) } else { vec4(0.0, 0.48, 1.0, 1.0) };
+                // The date's column: the whole widget when small, its left when medium.
+                let date_w = if size == MacWidgetSize::Medium { 132.0 } else { r.size.x - 28.0 };
+                self.d.label_elided(cx, rect(r.pos.x + 14.0, r.pos.y + 13.0, date_w, 16.0), true, 11.0, red, HAlign::Left, &values.weekday.to_uppercase());
+                let none_today = "No more events today";
+                match (size, values.events.as_deref()) {
                     // The day smaller over the next two events, each by a bar of its calendar's blue.
-                    Some(events) if !events.is_empty() => {
+                    (MacWidgetSize::Small, Some(events)) if !events.is_empty() => {
                         self.d.label_elided(cx, rect(r.pos.x + 13.0, r.pos.y + 27.0, r.size.x - 26.0, 36.0), false, 28.0, ink, HAlign::Left, &values.day);
-                        let blue = if dark { vec4(0.04, 0.52, 1.0, 1.0) } else { vec4(0.0, 0.48, 1.0, 1.0) };
-                        let mut y = r.pos.y + 66.0;
-                        self.d.ring.new_draw_call(cx);
-                        for event in events.iter().take(2) {
-                            self.d.rounded(cx, rect(r.pos.x + 14.0, y + 1.0, 3.0, 28.0), 0.75, blue);
-                            self.d.label_elided(cx, rect(r.pos.x + 23.0, y, r.size.x - 37.0, 15.0), true, 11.0, ink, HAlign::Left, &event.title);
-                            self.d.label_elided(cx, rect(r.pos.x + 23.0, y + 15.0, r.size.x - 37.0, 15.0), false, 11.0, dim, HAlign::Left, &event.when);
-                            y += 32.0;
-                        }
+                        self.draw_mac_events(cx, rect(r.pos.x + 14.0, r.pos.y + 66.0, r.size.x - 28.0, r.size.y - 74.0), events, 2, ink, dim, blue);
                     }
                     // The day, and that nothing more is on it (the month when there is no Calendar).
-                    events => {
+                    (MacWidgetSize::Small, events) => {
                         self.d.label_elided(cx, rect(r.pos.x + 13.0, r.pos.y + 28.0, r.size.x - 26.0, 50.0), false, 42.0, ink, HAlign::Left, &values.day);
-                        let foot = if events.is_some() { "No more events today" } else { values.month.as_str() };
+                        let foot = if events.is_some() { none_today } else { values.month.as_str() };
                         self.d.label_elided(cx, rect(r.pos.x + 14.0, r.pos.y + r.size.y - 34.0, r.size.x - 28.0, 18.0), false, 12.0, dim, HAlign::Left, foot);
+                    }
+                    // The date at the left, at the right what is left of today (or the month).
+                    (MacWidgetSize::Medium, events) => {
+                        self.d.label_elided(cx, rect(r.pos.x + 13.0, r.pos.y + 28.0, date_w, 50.0), false, 42.0, ink, HAlign::Left, &values.day);
+                        self.d.label_elided(cx, rect(r.pos.x + 14.0, r.pos.y + r.size.y - 34.0, date_w, 18.0), false, 12.0, dim, HAlign::Left, &values.month);
+                        let right = rect(r.pos.x + 160.0, r.pos.y + 14.0, r.size.x - 174.0, r.size.y - 28.0);
+                        match events {
+                            Some(events) if !events.is_empty() => self.draw_mac_events(cx, right, events, 4, ink, dim, blue),
+                            Some(_) => self.d.label_elided(cx, rect(right.pos.x, right.pos.y + right.size.y * 0.5 - 9.0, right.size.x, 18.0), false, 12.0, dim, HAlign::Left, none_today),
+                            None => self.draw_mac_month(cx, right, values, ink, dim, red),
+                        }
+                    }
+                    // The date, the month's grid, then what is left of today.
+                    (MacWidgetSize::Large, events) => {
+                        self.d.label_elided(cx, rect(r.pos.x + 13.0, r.pos.y + 28.0, r.size.x - 26.0, 50.0), false, 42.0, ink, HAlign::Left, &values.day);
+                        self.d.label_elided(cx, rect(r.pos.x + 14.0, r.pos.y + 13.0, r.size.x - 28.0, 16.0), false, 11.0, dim, HAlign::Right, &values.month);
+                        self.draw_mac_month(cx, rect(r.pos.x + 14.0, r.pos.y + 86.0, r.size.x - 28.0, 150.0), values, ink, dim, red);
+                        let list = rect(r.pos.x + 14.0, r.pos.y + 252.0, r.size.x - 28.0, r.size.y - 262.0);
+                        self.d.solid(cx, rect(list.pos.x, list.pos.y - 9.0, list.size.x, 1.0), alpha(ink, 0.12));
+                        match events {
+                            Some(events) if !events.is_empty() => self.draw_mac_events(cx, list, events, 3, ink, dim, blue),
+                            Some(_) => self.d.label_elided(cx, rect(list.pos.x, list.pos.y, list.size.x, 18.0), false, 12.0, dim, HAlign::Left, none_today),
+                            None => {}
+                        }
                     }
                 }
             }
-            MacWidget::Clock => {
-                let size = (r.size.y - 46.0).min(r.size.x - 40.0).floor();
-                let face = rect((r.pos.x + (r.size.x - size) * 0.5).round(), r.pos.y + 12.0, size, size);
-                self.draw_mac_clock_face(cx, face, values.hour, values.minute, ink, dark);
-                self.d.label_elided(cx, rect(r.pos.x + 10.0, face.pos.y + size + 7.0, r.size.x - 20.0, 16.0), true, 11.0, dim, HAlign::Center, &values.city);
+            MacWidget::Clock => match size {
+                MacWidgetSize::Small => {
+                    let side = (r.size.y - 46.0).min(r.size.x - 40.0).floor();
+                    let face = rect((r.pos.x + (r.size.x - side) * 0.5).round(), r.pos.y + 12.0, side, side);
+                    self.draw_mac_clock_face(cx, face, values.hour, values.minute, ink, dark);
+                    self.d.label_elided(cx, rect(r.pos.x + 10.0, face.pos.y + side + 7.0, r.size.x - 20.0, 16.0), true, 11.0, dim, HAlign::Center, &values.city);
+                }
+                // The dial at the left, the city and the time beside it.
+                MacWidgetSize::Medium => {
+                    let side = (r.size.y - 28.0).floor();
+                    let face = rect(r.pos.x + 16.0, r.pos.y + 14.0, side, side);
+                    self.draw_mac_clock_face(cx, face, values.hour, values.minute, ink, dark);
+                    let x = face.pos.x + side + 22.0;
+                    let w = r.pos.x + r.size.x - 16.0 - x;
+                    self.d.label_elided(cx, rect(x, r.pos.y + 40.0, w, 18.0), true, 13.0, ink, HAlign::Left, &values.city);
+                    self.d.label_elided(cx, rect(x, r.pos.y + 62.0, w, 40.0), false, 30.0, ink, HAlign::Left, &values.time);
+                    self.d.label_elided(cx, rect(x, r.pos.y + 108.0, w, 16.0), false, 12.0, dim, HAlign::Left, &format!("{} \u{00b7} {}", values.weekday, values.zone));
+                }
+                // A large dial, the city and the time under it.
+                MacWidgetSize::Large => {
+                    let side = (r.size.x - 96.0).min(r.size.y - 96.0).floor();
+                    let face = rect((r.pos.x + (r.size.x - side) * 0.5).round(), r.pos.y + 20.0, side, side);
+                    self.draw_mac_clock_face(cx, face, values.hour, values.minute, ink, dark);
+                    self.d.label_elided(cx, rect(r.pos.x + 14.0, face.pos.y + side + 14.0, r.size.x - 28.0, 18.0), true, 13.0, ink, HAlign::Center, &values.city);
+                    self.d.label_elided(cx, rect(r.pos.x + 14.0, face.pos.y + side + 34.0, r.size.x - 28.0, 18.0), false, 12.0, dim, HAlign::Center, &format!("{} \u{00b7} {}", values.time, values.zone));
+                }
+            },
+        }
+    }
+    /// What is left of today in a Calendar widget: up to `most` events, each
+    /// its title and when by a bar of its calendar's blue.
+    fn draw_mac_events(&mut self, cx: &mut Cx2d, r: Rect, events: &[MacEvent], most: usize, ink: Vec4f, dim: Vec4f, blue: Vec4f) {
+        let mut y = r.pos.y;
+        self.d.ring.new_draw_call(cx);
+        for event in events.iter().take(most) {
+            if y + 30.0 > r.pos.y + r.size.y + 2.0 {
+                break;
             }
+            self.d.rounded(cx, rect(r.pos.x, y + 1.0, 3.0, 28.0), 0.75, blue);
+            self.d.label_elided(cx, rect(r.pos.x + 9.0, y, r.size.x - 9.0, 15.0), true, 11.0, ink, HAlign::Left, &event.title);
+            self.d.label_elided(cx, rect(r.pos.x + 9.0, y + 15.0, r.size.x - 9.0, 15.0), false, 11.0, dim, HAlign::Left, &event.when);
+            y += 32.0;
+        }
+    }
+    /// This month as a Mac's Calendar widget has it: the days' letters, then
+    /// the weeks from Sunday, the weekend greyer and today in a red circle.
+    fn draw_mac_month(&mut self, cx: &mut Cx2d, r: Rect, values: &MacWidgetContent, ink: Vec4f, dim: Vec4f, red: Vec4f) {
+        use chrono::Datelike;
+        let Some(first) = chrono::NaiveDate::from_ymd_opt(values.year, values.month_no, 1) else { return };
+        let Some(last) = first.checked_add_months(chrono::Months::new(1)).and_then(|next| next.pred_opt()) else { return };
+        let lead = first.weekday().num_days_from_sunday() as usize;
+        let weeks = (lead + last.day() as usize).div_ceil(7).max(5);
+        let cell_w = r.size.x / 7.0;
+        let row_h = ((r.size.y - 18.0) / weeks as f64).min(24.0);
+        for (column, letter) in ["S", "M", "T", "W", "T", "F", "S"].into_iter().enumerate() {
+            self.d.label(cx, rect(r.pos.x + column as f64 * cell_w, r.pos.y, cell_w, 14.0), true, 9.0, dim, HAlign::Center, letter);
+        }
+        self.d.ring.new_draw_call(cx);
+        for day in 1..=last.day() {
+            let at = lead + day as usize - 1;
+            let (column, week) = (at % 7, at / 7);
+            let cell = rect(r.pos.x + column as f64 * cell_w, r.pos.y + 18.0 + week as f64 * row_h, cell_w, row_h);
+            let today = day == values.day_no;
+            if today {
+                let d = (row_h - 2.0).min(cell_w - 2.0).floor();
+                self.d.rounded(cx, rect((cell.pos.x + (cell_w - d) * 0.5).round(), (cell.pos.y + (row_h - d) * 0.5).round(), d, d), d * 0.5, red);
+            }
+            let color = if today { vec4(1.0, 1.0, 1.0, 1.0) } else if column == 0 || column == 6 { dim } else { ink };
+            self.d.label(cx, cell, today, 10.0, color, HAlign::Center, &day.to_string());
         }
     }
     /// An editing widget's badge: a − takes it out of the column, a green +
@@ -1494,14 +1690,31 @@ impl ShellGlancePanel {
             foot = foot.min(shelf.pos.y - MAC_MARGIN * 2.0);
         }
         let w = (right - left).min(MAC_GALLERY_W).floor();
-        let h = MAC_GALLERY_H.min(foot - top).floor();
-        if w < MAC_GALLERY_SIDE + MAC_GALLERY_TILE_W + MAC_GALLERY_PAD * 2.0 || h < MAC_WIDGET_H + 80.0 {
+        // The previews, each at its size, a line of them at a time across the
+        // content: where each goes in it, and how tall they make it.
+        let pad = MAC_GALLERY_PAD;
+        let content_w = w - MAC_GALLERY_SIDE - pad * 2.0;
+        let offered = self.mac_gallery_widgets();
+        let mut placed = Vec::with_capacity(offered.len());
+        let (mut across, mut down, mut line_h) = (0.0, 0.0, 0.0_f64);
+        for widget in offered.iter().copied() {
+            let (tile_w, tile_h) = self.mac_size(widget).extent();
+            if across > 0.0 && 8.0 + across + tile_w > content_w {
+                down += line_h + MAC_GALLERY_LABELS + MAC_GALLERY_LINE_GAP;
+                (across, line_h) = (0.0, 0.0);
+            }
+            placed.push((widget, across, down, tile_w, tile_h));
+            across += tile_w + MAC_GALLERY_TILE_GAP;
+            line_h = line_h.max(tile_h);
+        }
+        let tiles_h = if placed.is_empty() { MAC_WIDGET_SMALL } else { down + line_h } + MAC_GALLERY_LABELS;
+        let h = (pad + 38.0 + tiles_h + 8.0 + 24.0 + pad).max(MAC_GALLERY_H).min(foot - top).floor();
+        if content_w < MAC_WIDGET_SMALL + 8.0 || h < MAC_WIDGET_SMALL + 140.0 {
             self.mac_gallery = Rect::default();
             return;
         }
         let g = rect((left + (right - left - w) * 0.5).round(), (foot - h).round(), w, h);
         self.mac_gallery = g;
-        let pad = MAC_GALLERY_PAD;
         self.d.ring.new_draw_call(cx);
         if self.d.material().is_glass() {
             self.d.glass_pill(cx, g, MAC_RADIUS + 4.0, 1.0);
@@ -1569,27 +1782,44 @@ impl ShellGlancePanel {
         let heading = self.mac_gallery_app.map_or("All Widgets", |app| app.app_name());
         self.d.label_elided(cx, rect(content_x + 6.0, g.pos.y + pad, content_w - 12.0, 24.0), true, 15.0, ink, HAlign::Left, heading);
         let tiles_top = g.pos.y + pad + 38.0;
-        let offered = self.mac_gallery_widgets();
         if offered.is_empty() {
-            self.d.label(cx, rect(content_x, tiles_top + MAC_WIDGET_H * 0.5 - 12.0, content_w, 24.0), true, 15.0, dim, HAlign::Center, "No Results");
+            self.d.label(cx, rect(content_x, tiles_top + MAC_WIDGET_SMALL * 0.5 - 12.0, content_w, 24.0), true, 15.0, dim, HAlign::Center, "No Results");
         }
-        let mut x = content_x + 8.0;
         let mut badges = Vec::new();
-        for widget in offered {
-            let tile = rect(x, tiles_top, MAC_GALLERY_TILE_W, MAC_WIDGET_H);
-            if tile.pos.x + tile.size.x > content_x + content_w {
+        for (widget, across, down, tile_w, tile_h) in placed {
+            let tile = rect(content_x + 8.0 + across, tiles_top + down, tile_w, tile_h);
+            if tile.pos.y + tile_h + MAC_GALLERY_LABELS > g.pos.y + g.size.y - pad {
                 break;
             }
-            self.draw_mac_widget_face(cx, widget, values, tile, surface, ink, dim);
+            let size = self.mac_size(widget);
+            self.draw_mac_widget_face(cx, widget, size, values, tile, surface, ink, dim);
             if self.mac_gallery_press == Some(MacGalleryHit::Tile(widget)) {
                 self.d.ring.new_draw_call(cx);
                 self.d.rounded(cx, tile, MAC_RADIUS * 0.5, alpha(ink, 0.08));
             }
-            self.d.label_elided(cx, rect(tile.pos.x, tile.pos.y + tile.size.y + 8.0, tile.size.x, 16.0), true, 12.0, ink, HAlign::Center, widget.app_name());
-            self.d.label_elided(cx, rect(tile.pos.x - 6.0, tile.pos.y + tile.size.y + 25.0, tile.size.x + 12.0, 15.0), false, 11.0, dim, HAlign::Center, widget.blurb());
+            let under = tile.pos.y + tile_h;
+            self.d.label_elided(cx, rect(tile.pos.x, under + 8.0, tile_w, 16.0), true, 12.0, ink, HAlign::Center, widget.app_name());
+            self.d.label_elided(cx, rect(tile.pos.x - 6.0, under + 25.0, tile_w + 12.0, 15.0), false, 11.0, dim, HAlign::Center, widget.blurb());
+            // Its sizes under it, round buttons as a Mac's gallery has them: S, M, L,
+            // the one it has filled.
+            let sizes_w = MAC_SIZE_DOT * 3.0 + MAC_SIZE_GAP * 2.0;
+            let mut dot_x = (tile.pos.x + (tile_w - sizes_w) * 0.5).round();
+            self.d.ring.new_draw_call(cx);
+            for choice in MacWidgetSize::ALL {
+                let dot = rect(dot_x, under + 46.0, MAC_SIZE_DOT, MAC_SIZE_DOT);
+                let pressed = self.mac_gallery_press == Some(MacGalleryHit::Size(widget, choice));
+                let (fill, letter) = if choice == size {
+                    (alpha(ink, 0.8), if dark { vec4(0.0, 0.0, 0.0, 0.88) } else { vec4(1.0, 1.0, 1.0, 1.0) })
+                } else {
+                    (alpha(ink, if pressed { 0.16 } else { 0.08 }), alpha(ink, 0.75))
+                };
+                self.d.rounded(cx, dot, MAC_SIZE_DOT * 0.5, fill);
+                self.d.label(cx, dot, true, 10.0, letter, HAlign::Center, choice.letter());
+                self.mac_gallery_hits.push((dot, MacGalleryHit::Size(widget, choice)));
+                dot_x += MAC_SIZE_DOT + MAC_SIZE_GAP;
+            }
             self.mac_gallery_hits.push((tile, MacGalleryHit::Tile(widget)));
             badges.push((rect(tile.pos.x - 6.0, tile.pos.y - 6.0, MAC_BADGE, MAC_BADGE), widget));
-            x += MAC_GALLERY_TILE_W + MAC_GALLERY_TILE_GAP;
         }
         for (badge, widget) in badges {
             if self.mac_widgets_off.contains(&widget) {
@@ -1623,6 +1853,7 @@ impl ShellGlancePanel {
                 MacGalleryHit::All => "all".to_string(),
                 MacGalleryHit::App(widget) => format!("app_{}", widget.app()),
                 MacGalleryHit::Tile(widget) => format!("tile_{}", widget.app()),
+                MacGalleryHit::Size(widget, size) => format!("size_{}_{}", widget.app(), size.name()),
                 MacGalleryHit::Done => "done".to_string(),
             };
             if !parts.iter().any(|part| part.starts_with(&format!("{name}@"))) {
@@ -1650,7 +1881,7 @@ impl ShellGlancePanel {
                 }
                 MacWidget::Clock => format!("Clock {} {}", values.time, values.zone),
             };
-            part
+            format!("{part} [{}]", self.mac_size(widget).name())
         }).collect();
         if parts.is_empty() { parts.push("none".into()); }
         if self.mac_editing {
@@ -1740,14 +1971,16 @@ impl ShellGlancePanel {
             self.mac_widget_timer = cx.start_timeout((to_minute + 0.08).min(30.0));
         }
         // A Mac's column has no Clear All of its own: a stack has its ×, a notification its close.
-        if cards.is_empty() {
-            // Leave the empty notification message above the local widgets.
+        // Nothing waiting: the widgets alone, and the words only when there is
+        // no widget either.
+        let words = cards.is_empty() && self.mac_widgets_shown().is_empty();
+        if words {
             let r = rect(x, top, MAC_WIDTH, MAC_EMPTY_H);
             self.mac_words_on_desk(cx, r, ink, "No Notifications", true);
         }
         // The list: from the column's top down to the Dock (or the screen's
         // foot), scrolled by the point.
-        let list_top = top + if cards.is_empty() { MAC_EMPTY_H + MAC_GAP } else { 0.0 };
+        let list_top = top + if words { MAC_EMPTY_H + MAC_GAP } else { 0.0 };
         let view = (bottom - list_top).max(MAC_ICON + MAC_PAD * 2.0);
         let rows = self.mac_rows(&cards);
         let mut heights = Vec::with_capacity(rows.len());
@@ -1765,19 +1998,18 @@ impl ShellGlancePanel {
                     let text = plain[members[0]].as_ref().map(|(_, text)| text.as_str()).unwrap_or(first.summary.as_str());
                     self.mac_summary_height(cx, text) + MAC_STACK_DEPTH
                 },
-                MacFeedRow::Widget(_) => MAC_WIDGET_H,
+                MacFeedRow::Widget(widget) => self.mac_size(*widget).extent().1,
                 MacFeedRow::EditWidgets => MAC_EDIT_H,
             });
         }
         // Each card's place down the list, and how far the list can scroll.
-        let sides = mac_sides(&rows);
+        let sides = self.mac_row_sides(&rows);
         let mut tops = Vec::with_capacity(rows.len());
         let mut down = 0.0;
-        for (n, (row, h)) in rows.iter().zip(&heights).enumerate() {
+        for (n, h) in heights.iter().enumerate() {
             tops.push(down);
-            // Two widgets share a row of two equal tiles.
-            let shares = matches!(row, MacFeedRow::Widget(_)) && sides[n] == 0 && matches!(rows.get(n + 1), Some(MacFeedRow::Widget(_)));
-            if !shares {
+            // Two small widgets share a row of two square tiles.
+            if sides.get(n + 1) != Some(&1) {
                 down += h + MAC_GAP;
             }
         }
@@ -1820,9 +2052,9 @@ impl ShellGlancePanel {
                     continue;
                 }
                 MacFeedRow::Widget(widget) => {
-                    let width = (MAC_WIDTH - MAC_GAP) / 2.0;
-                    let left = if sides[i] == 0 { x } else { x + width + MAC_GAP };
-                    self.draw_mac_widget(cx, *widget, &values, rect(left, y, width, h), surface, ink, dim, accent);
+                    let size = self.mac_size(*widget);
+                    let left = if sides[i] == 0 { x } else { x + MAC_WIDGET_SMALL + MAC_GAP };
+                    self.draw_mac_widget(cx, *widget, size, &values, rect(left, y, size.extent().0, h), surface, ink, dim, accent);
                     continue;
                 }
                 MacFeedRow::EditWidgets => {
@@ -2370,9 +2602,18 @@ impl Widget for ShellGlancePanel {
                     return;
                 }
                 if let Some((_, widget)) = self.mac_widgets.iter().find(|(r, _)| contains(*r, e.abs)).copied() {
+                    self.card_press = None;
+                    // A right click (or a Control-click): its menu, as a Mac's.
+                    let menu = e.button.contains(MouseButton::SECONDARY) || (e.button.contains(MouseButton::PRIMARY) && e.modifiers.control);
+                    if menu && !self.mac_editing {
+                        self.mac_consume_up = true;
+                        log!("glance panel: widget {} menu ({})", widget.app(), self.mac_size(widget).name());
+                        cx.widget_action(self.uid, ShellGlancePanelAction::WidgetMenu { app: widget.app().into(), size: self.mac_size(widget).name().into(), x: e.abs.x, y: e.abs.y });
+                        self.redraw(cx);
+                        return;
+                    }
                     // While editing, a widget answers only its − or +.
                     if !self.mac_editing { self.mac_widget_press = Some(widget); }
-                    self.card_press = None;
                     self.redraw(cx);
                     return;
                 }
@@ -2627,7 +2868,7 @@ mod tests {
         assert!(matches!(rows[2], MacFeedRow::Widget(MacWidget::Calendar)));
         assert!(matches!(rows[3], MacFeedRow::Widget(MacWidget::Clock)));
         assert!(matches!(rows[4], MacFeedRow::EditWidgets), "Edit Widgets ends the column");
-        assert_eq!(mac_sides(&rows), vec![0, 0, 0, 1, 0], "Calendar and Clock share a row");
+        assert_eq!(mac_sides(&rows, |_| true), vec![0, 0, 0, 1, 0], "Calendar and Clock share a row");
         assert!(rows[0].shows_card(&cards, "os.mail/second"));
         assert_ne!(rows[0].key(&cards), cards[0].key());
         expanded.insert("os.mail".into());
@@ -2648,13 +2889,32 @@ mod tests {
         let cards = vec![sample_card(None)];
         let rows = mac_feed(&cards, &HashSet::new(), &[MacWidget::Clock]);
         assert!(matches!(rows[..], [MacFeedRow::Card(0), MacFeedRow::Widget(MacWidget::Clock), MacFeedRow::EditWidgets]));
-        assert_eq!(mac_sides(&rows), vec![0, 0, 0], "the Clock alone takes the left");
+        assert_eq!(mac_sides(&rows, |_| true), vec![0, 0, 0], "the Clock alone takes the left");
         let rows = mac_feed(&cards, &HashSet::new(), &[]);
         assert!(matches!(rows[..], [MacFeedRow::Card(0), MacFeedRow::EditWidgets]));
         assert_eq!(rows[1].key(&cards), "\0edit-widgets");
         assert_eq!(mac_widgets_parse("clock\n"), vec![MacWidget::Clock]);
         assert_eq!(mac_widgets_parse("calendar\nclock\n"), MacWidget::ALL.to_vec());
         assert!(mac_widgets_parse("").is_empty() && mac_widgets_parse("weather\n").is_empty());
+    }
+
+    /// A widget's size, as a Mac's: only two small ones share a row, a medium
+    /// or large one has its row, and the sizes kept read back as written.
+    #[test]
+    fn widget_sizes_pair_only_small_widgets_and_read_back() {
+        let rows = mac_feed(&[], &HashSet::new(), &MacWidget::ALL);
+        assert!(matches!(rows[..], [MacFeedRow::Widget(MacWidget::Calendar), MacFeedRow::Widget(MacWidget::Clock), MacFeedRow::EditWidgets]));
+        assert_eq!(mac_sides(&rows, |_| true), vec![0, 1, 0], "two small widgets share a row");
+        assert_eq!(mac_sides(&rows, |widget| widget != MacWidget::Calendar), vec![0, 0, 0], "after a medium Calendar the Clock takes the next row's left");
+        assert_eq!(mac_sides(&rows, |widget| widget != MacWidget::Clock), vec![0, 0, 0], "a small Calendar before a large Clock keeps its row's left");
+        assert_eq!(mac_widget_sizes_parse("calendar medium\nclock large\n"), vec![(MacWidget::Calendar, MacWidgetSize::Medium), (MacWidget::Clock, MacWidgetSize::Large)]);
+        assert!(mac_widget_sizes_parse("calendar huge\nweather small\nclock\n").is_empty(), "unknown widgets and sizes are left out");
+        assert_eq!(MacWidgetSize::Small.extent(), (MAC_WIDGET_SMALL, MAC_WIDGET_SMALL), "a small widget is square");
+        assert_eq!(MacWidgetSize::Medium.extent(), (MAC_WIDTH, MAC_WIDGET_SMALL));
+        assert_eq!(MacWidgetSize::Large.extent(), (MAC_WIDTH, MAC_WIDTH), "a large widget is a square of the column's width");
+        assert_eq!(MAC_WIDGET_SMALL * 2.0 + MAC_GAP, MAC_WIDTH, "two small widgets and their gap fill the row");
+        assert_eq!(MacWidgetSize::ALL.map(MacWidgetSize::letter), ["S", "M", "L"]);
+        assert!(MacWidgetSize::ALL.into_iter().all(|size| MacWidgetSize::named(size.name()) == Some(size)));
     }
 
     /// The widget gallery's search finds a widget by its app's name or by

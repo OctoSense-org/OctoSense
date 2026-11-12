@@ -747,7 +747,8 @@ impl MenuModel {
                     if !ASK_APP_HERE.load(std::sync::atomic::Ordering::Relaxed) {
                         rows.retain(|row| row.target != ASK_APP_ROW);
                     }
-                    mac::spotlight_rows(&mut rows, &needle)
+                    mac::spotlight_rows(&mut rows, &needle);
+                    mac::spotlight_web_row(&mut rows, &self.filter)
                 }
                 MenuSkin::Menu => mac::spotlight_list(&mut rows, &path),
             }
@@ -836,6 +837,8 @@ impl MenuModel {
                 // So does the command-execution confirmation (lib.rs
                 // `assistant_commands_activate` checks it).
                 COMMANDS_ALLOW_ROW => format!("{COMMANDS_ALLOW_ROW}:{}", self.filter),
+                // So do the words Spotlight searches the web for.
+                mac::SPOTLIGHT_WEB_ROW => format!("{}:{}", mac::SPOTLIGHT_WEB_ROW, self.filter.trim()),
                 "workspace.files" => "apps.files".into(),
                 "workspace.tools.terminal" => "apps.terminal".into(),
                 "workspace.tools.task" => "apps.task".into(),

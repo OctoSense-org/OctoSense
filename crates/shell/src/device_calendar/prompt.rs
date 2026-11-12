@@ -26,6 +26,8 @@ script_mod! {
     let sh_control_line = tone(#xc9c9ce, #x545458)
     let sh_off = tone(#xe3e3e8, #x3a3a3c)
     let sh_off_ink = tone(#x636368, #xaeaeb2)
+    // A Mac alert's destructive button draws its title in the system red.
+    let sh_red = tone(#xff3b30, #xff453a)
     mod.widgets.DeviceCalendarIcon=set_type_default() do #(DeviceCalendarIcon::register_widget(vm)){width:48 height:48}
     mod.widgets.DeviceCalendarReviewBase=#(DeviceCalendarReview::register_widget(vm))
     // A Mac's push buttons: the plain one, and the blue default.
@@ -96,9 +98,10 @@ script_mod! {
                         status:=Label{width:Fill height:Fit padding:0 text:"No changes are made until you approve." draw_text.color:sh_muted draw_text.wrap:Words draw_text.text_style.font_size:8.25}
                     }
                     // Two buttons at a time: the default rightmost. Where what this asks
-                    // undoes something, Cancel is the default (`careful`).
+                    // undoes something, Cancel is the default (`careful`) and what it
+                    // asks keeps a red title, as a Mac's destructive button does.
                     View{width:Fill height:Fit flow:Right spacing:8 align:Align{x:1.0 y:0.5} margin:Inset{top:6}
-                        approve_plain:=MacPlain{visible:false text:"Approve" enabled:false}
+                        approve_plain:=MacPlain{visible:false text:"Approve" enabled:false draw_text +: {color:sh_red color_hover:sh_red color_down:sh_red color_focus:sh_red}}
                         cancel:=MacPlain{text:"Cancel"}
                         cancel_blue:=MacBlue{visible:false text:"Cancel"}
                         approve:=MacBlue{text:"Approve" enabled:false}

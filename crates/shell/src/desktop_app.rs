@@ -835,6 +835,10 @@ impl App {
         }
         let chrome_hit = self.desk(cx).borrow_mut::<WmDesk>()
             .and_then(|mut d| d.chrome_pointer(cx, (!inside).then_some(p)));
+        // A Mac window's edge that doesn't size it (below) is its frame all the same.
+        let fixed_edge = chrome_hit
+            .filter(|(client, hit)| matches!(hit, ChromeHit::Resize(..)) && self.zoom_refused(*client))
+            .map(|(client, _)| client);
         // A window that doesn't zoom doesn't size from its edges either, as the gray green
         // light says, unless it widens: then its side edges and corners size its width
         // alone. Its own controls still ask for room (`WindowRequest::Resize`).
@@ -942,6 +946,17 @@ impl App {
                             }
                         }
                     }
+                    return true;
+                }
+                // A press on a Mac window's edge that doesn't size it brings the
+                // window forward and goes no further: the app's field keeps its
+                // focus, as AppKit keeps the first responder through a press on
+                // the frame.
+                if let Some(client) = fixed_edge.filter(|_| self.state_mut().style.target == DesktopStyle::Macos) {
+                    if self.state_mut().layout.is_float(client) {
+                        self.state_mut().layout.raise_float(client);
+                    }
+                    self.focus_client(cx, client);
                     return true;
                 }
             }

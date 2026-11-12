@@ -876,11 +876,10 @@ impl ShellSystemChat {
             Source::System => system_blocked(model.phase()),
             Source::App => app_blocked(&crate::app_chat::app().map(|a| a.name).unwrap_or_default(), &crate::app_chat::status()),
         };
-        // The alert is up and asks the same thing: one question, one place to answer it.
+        // The alert is up and asks the same thing: one question, in one place,
+        // as a Mac asks it. The panel waits behind it with its mark alone.
         if source == Source::App && crate::app_chat::status() == crate::app_chat::Status::NeedsConsent && crate::approvals::consent_prompt_up() {
-            if let Some(b) = blocked.as_mut() {
-                b.action = None;
-            }
+            blocked = Some(Blocked { title: String::new(), note: String::new(), busy: false, action: None, why: None });
         }
         if let Some(why) = blocked.as_ref().and_then(|b| b.why.clone()) {
             if self.mac.logged.as_ref() != Some(&why) {
@@ -1266,13 +1265,16 @@ impl ShellSystemChat {
             self.d.icon(cx, Ico::Sparkle, rect(gx, y.round(), glyph, glyph), inks.glyph);
         }
         y += glyph + 8.0;
-        if spinner {
-            self.d.label_elided(cx, rect(x, y, width, title_h), false, BODY, inks.dim, HAlign::Center, &title);
-        } else {
-            self.d.label_elided(cx, rect(x, y, width, title_h), true, 15.0, inks.ink, HAlign::Center, &title);
+        // Behind an alert that asks, the mark alone: nothing is said twice.
+        if !title.is_empty() {
+            if spinner {
+                self.d.label_elided(cx, rect(x, y, width, title_h), false, BODY, inks.dim, HAlign::Center, &title);
+            } else {
+                self.d.label_elided(cx, rect(x, y, width, title_h), true, 15.0, inks.ink, HAlign::Center, &title);
+            }
+            self.mac.places.push(("empty-title", rect(x, y, width, title_h)));
+            shown.push(format!("empty title: {title}"));
         }
-        self.mac.places.push(("empty-title", rect(x, y, width, title_h)));
-        shown.push(format!("empty title: {title}"));
         y += title_h;
         if !note_lines.is_empty() {
             y += 4.0;
@@ -1307,10 +1309,11 @@ impl ShellSystemChat {
         };
         let text_w = (width - 56.0).max(1.0);
         let glyph = if spinner { 22.0 } else { 36.0 };
-        let title_h = if spinner { 18.0 } else { 20.0 };
+        let title_h = if title.is_empty() { 0.0 } else if spinner { 18.0 } else { 20.0 };
         let note_lines = if note.is_empty() { Vec::new() } else { self.d.wrap(cx, false, BODY, &note, text_w, 4) };
         let note_h = (BODY * 1.4).ceil();
-        let mut height = glyph + 8.0 + title_h;
+        let gap = if title.is_empty() { 0.0 } else { 8.0 };
+        let mut height = glyph + gap + title_h;
         if !note_lines.is_empty() {
             height += 4.0 + note_lines.len() as f64 * note_h;
         }
@@ -2168,7 +2171,7 @@ fn menu_quote(text: &str) -> String {
 
 /// Words as a URL's query value: unreserved characters as they are, every
 /// other byte as %XX, as a text field's menu encodes them.
-fn percent_encode(s: &str) -> String {
+pub(crate) fn percent_encode(s: &str) -> String {
     let mut out = String::with_capacity(s.len() * 3);
     for b in s.bytes() {
         if b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.' | b'~') {
@@ -2181,20 +2184,26 @@ fn percent_encode(s: &str) -> String {
 }
 
 /// Look Up and Search With Google, opened as a text field's menu opens them
-/// (makepad's `link_label::open_external`): the address made canonical,
-/// then the system's handler for it. The panel is the shell's own, not a
-/// contained app's, so no page grant applies, and the person chose the row.
-/// A hidden test shell only says which.
+/// (makepad's `link_label::open_external`).
 fn open_words(cx: &mut Cx, url: &str) {
+    open_in_browser(cx, "assistant", url);
+}
+
+/// An address one of the shell's own surfaces opens for the person (the
+/// assistant's Look Up, Spotlight's Search the Web): made canonical, then the
+/// system's handler for it. The surface is the shell's, not a contained app's,
+/// so no page grant applies, and the person chose the row. A hidden test shell
+/// only says which (`<who>: open <url>`).
+pub(crate) fn open_in_browser(cx: &mut Cx, who: &str, url: &str) {
     use makepad_widgets::makepad_platform::{normalize_external_url, CxOsApi as _, OpenUrlInPlace};
     match normalize_external_url(url) {
         Ok(url) => {
-            log!("assistant: open {url}");
+            log!("{who}: open {url}");
             if !crate::launch_input::hidden_windows() {
                 cx.open_url(&url, OpenUrlInPlace::No);
             }
         }
-        Err(error) => log!("assistant: not opened: {error}"),
+        Err(error) => log!("{who}: not opened: {error}"),
     }
 }
 

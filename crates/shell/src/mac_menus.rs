@@ -349,6 +349,7 @@ fn ask_host_sound(level: u32, muted: bool) {
 pub(crate) fn open_host_settings(pane: &str) {
     let id = match pane {
         "network" => "com.apple.Network-Settings.extension",
+        "wifi" => "com.apple.wifi-settings-extension",
         "bluetooth" => "com.apple.BluetoothSettings",
         "sound" => "com.apple.Sound-Settings.extension",
         "battery" => "com.apple.Battery-Settings.extension",
@@ -908,6 +909,21 @@ impl App {
         self.redraw_all(cx);
     }
 
+    /// A widget's menu in Notification Center, at the pointer, as a Mac's: its
+    /// sizes (the one it has ticked), Edit Widgets… and Remove Widget.
+    pub(super) fn open_widget_menu(&mut self, cx: &mut Cx, app: &str, size: &str, at: Vec2d) {
+        let mut rows: Vec<MacRow> = [("Small", "small"), ("Medium", "medium"), ("Large", "large")].into_iter()
+            .map(|(label, name)| MacRow::item(label, &format!("mac.widget-size.{app}.{name}")).checked(name == size))
+            .collect();
+        rows.extend([MacRow::sep(), MacRow::item("Edit Widgets…", "mac.edit-widgets"), MacRow::sep(), MacRow::item("Remove Widget", &format!("mac.widget-remove.{app}"))]);
+        self.mac_menu_takes_keyboard();
+        if let Some(mut menu) = self.ui.widget(cx, ids!(shell_menu)).borrow_mut::<ShellMenu>() {
+            menu.open_mac_at(cx, MacMenu { rows }, at);
+        }
+        self.update_bar(cx);
+        self.redraw_all(cx);
+    }
+
     /// A status item's rows: how things stand, then the Mac's own settings for it. The Mac
     /// owns these, so a row changes something only where the shell really can.
     fn status_rows(&self, module: BarModule) -> Vec<MacRow> {
@@ -959,14 +975,34 @@ impl App {
                 }
                 return rows;
             }
-            BarModule::Network => {
-                let words = match sample.network { Some(true) => "Connected", Some(false) => "Not Connected", None => "Status Unavailable" };
-                (vec![MacRow::head("Network"), MacRow::info(words)], ("Network Settings\u{2026}", "network"))
-            }
-            BarModule::Bluetooth => {
-                let words = match sample.bluetooth { Some(true) => "On", Some(false) => "Off", None => "Status Unavailable" };
-                (vec![MacRow::head("Bluetooth"), MacRow::info(words)], ("Bluetooth Settings\u{2026}", "bluetooth"))
-            }
+            // A Mac's Wi-Fi menu where it has Wi-Fi: the switch, the network it joined,
+            // the others, then its settings. macOS keeps the networks' names from apps,
+            // so the joined one says it is connected, with its lock, and the others are
+            // in Wi-Fi Settings.
+            BarModule::Network => match &sample.wifi {
+                Some(wifi) => {
+                    let mut rows = vec![MacRow::switch("Wi-Fi", "mac.wifi-power", wifi.on)];
+                    if wifi.on {
+                        rows.push(MacRow::sep());
+                        if wifi.joined {
+                            rows.push(MacRow::info("Known Network"));
+                            let joined = MacRow::device("Connected", "mac.host-settings.wifi", shell::ui::Ico::WifiArcs, true);
+                            rows.push(if wifi.secure { joined.trailing(shell::ui::Ico::Lock) } else { joined });
+                        }
+                        rows.push(MacRow::item("Other Networks\u{2026}", "mac.host-settings.wifi"));
+                    }
+                    (rows, ("Wi-Fi Settings\u{2026}", "wifi"))
+                }
+                None => {
+                    let words = match sample.network { Some(true) => "Connected", Some(false) => "Not Connected", None => "Status Unavailable" };
+                    (vec![MacRow::head("Network"), MacRow::info(words)], ("Network Settings\u{2026}", "network"))
+                }
+            },
+            // A Mac's Bluetooth menu: its switch, then its settings.
+            BarModule::Bluetooth => match sample.bluetooth {
+                Some(on) => (vec![MacRow::switch("Bluetooth", "mac.bluetooth-power", on)], ("Bluetooth Settings\u{2026}", "bluetooth")),
+                None => (vec![MacRow::head("Bluetooth"), MacRow::info("Status Unavailable")], ("Bluetooth Settings\u{2026}", "bluetooth")),
+            },
             BarModule::Audio => {
                 let level = if sample.muted { 0.0 } else { sample.volume.unwrap_or(0) as f64 / 100.0 };
                 // A Mac's Sound menu: the slider, then where the sound goes, each device's
@@ -1065,6 +1101,23 @@ impl App {
             .collect()
     }
 
+    /// The windows Move & Resize's Arrange lays out, the front one first: on the
+    /// desktop in view, neither minimized nor full screen, each able to take a tile.
+    fn mac_arrangeable(&mut self) -> Vec<ClientId> {
+        let state = self.state_mut();
+        let active = state.layout.active;
+        state
+            .layout
+            .desktop
+            .windows
+            .iter()
+            .rev()
+            .filter(|w| !w.minimized && !w.fullscreen && state.layout.workspace_of(w.client) == Some(active))
+            .filter(|w| state.clients.get(&w.client).is_some_and(|s| !s.warm && !s.pane && s.closing.is_none() && !crate::apps::mac_window_fixed(&s.app)))
+            .map(|w| w.client)
+            .collect()
+    }
+
     /// Whether the app in front closes its own tabs with ⌘W.
     pub(super) fn focused_app_closes_tabs(&mut self) -> bool {
         let state = self.state_mut();
@@ -1079,6 +1132,7 @@ impl App {
 
     fn mac_menus(&mut self, rows: &[AppRow], can_edit: bool, pressed: bool, field: makepad_platform::ime::HostedEdit, sheet_up: bool) -> Vec<MacMenu> {
         let windows = self.mac_windows();
+        let arrangeable = self.mac_arrangeable().len();
         let recent = self.mac_recent_rows();
         let ask = self.focused_agent_app().map(|a| a.name);
         // The app menu is named for the app a full-screen Quick Look panel is its.
@@ -1215,6 +1269,8 @@ impl App {
         view.push(MacRow::item(if fullscreen { "Exit Full Screen" } else { "Enter Full Screen" }, "mac.fullscreen").key("\u{2303}\u{2318}F").when(zooms));
         // macOS 15's tiling: Fill, and Move & Resize to a half or a quarter of the room above the Dock.
         let tile = |label: &str, zone: &str| MacRow::item(label, &format!("mac.tile.{zone}")).when(zooms);
+        // Arrange: the front window and the ones behind it, each in its part.
+        let arrange = |label: &str, how: &str| MacRow::item(label, &format!("mac.arrange.{how}")).when(zooms && arrangeable > 1);
         let mut window = vec![
             MacRow::item("Minimize", "mac.minimize").key("\u{2318}M").when(have),
             // A window that only widens zooms its width; it can't fill the screen or tile.
@@ -1234,6 +1290,13 @@ impl App {
                     tile("Top Right", "top-right"),
                     tile("Bottom Left", "bottom-left"),
                     tile("Bottom Right", "bottom-right"),
+                    MacRow::sep(),
+                    MacRow::head("Arrange"),
+                    arrange("Left & Right", "left-right"),
+                    arrange("Right & Left", "right-left"),
+                    arrange("Top & Bottom", "top-bottom"),
+                    arrange("Bottom & Top", "bottom-top"),
+                    arrange("Quarters", "quarters"),
                     MacRow::sep(),
                     MacRow::item("Return to Previous Size", "mac.tile.previous").when(zooms && tiled),
                 ])
@@ -1266,6 +1329,12 @@ impl App {
     pub(super) fn mac_menu_activate(&mut self, cx: &mut Cx, target: &str) -> bool {
         let Some(what) = target.strip_prefix("mac.") else { return false };
         self.close_shell_menu(cx);
+        // Spotlight's Search the Web: the words in the person's browser, as a Mac hands them to Safari.
+        if let Some(words) = what.strip_prefix("web:") {
+            let url = format!("https://www.google.com/search?q={}", crate::system_chat::view::mac::percent_encode(words));
+            crate::system_chat::view::mac::open_in_browser(cx, "spotlight", &url);
+            return true;
+        }
         let focus = self.state_mut().layout.focused_client();
         let focused_app = focus.and_then(|c| self.state_mut().clients.get(&c).map(|s| s.app.clone()));
         // About, Hide and Quit are the app's a full-screen Quick Look panel is its.
@@ -1340,6 +1409,32 @@ impl App {
                     }
                     self.focus_client(cx, client);
                     self.redraw_all(cx);
+                }
+            }
+            // Arrange: the front window takes the first part and each one behind it the
+            // next, the front one placed last so it stays in front.
+            how if how.starts_with("arrange.") => {
+                use crate::snap::Zone;
+                let zones: &[Zone] = match &how["arrange.".len()..] {
+                    "left-right" => &[Zone::Left, Zone::Right],
+                    "right-left" => &[Zone::Right, Zone::Left],
+                    "top-bottom" => &[Zone::Top, Zone::Bottom],
+                    "bottom-top" => &[Zone::Bottom, Zone::Top],
+                    "quarters" => &[Zone::TopLeft, Zone::TopRight, Zone::BottomLeft, Zone::BottomRight],
+                    _ => return true,
+                };
+                let mut windows = self.mac_arrangeable();
+                // The window in front leads, wherever the stack has it.
+                if let Some(at) = focus.and_then(|front| windows.iter().position(|c| *c == front)) {
+                    let front = windows.remove(at);
+                    windows.insert(0, front);
+                }
+                if windows.len() < 2 {
+                    return true;
+                }
+                let placed: Vec<(ClientId, Zone)> = windows.into_iter().zip(zones.iter().copied()).collect();
+                for (client, zone) in placed.into_iter().rev() {
+                    self.apply_snap(cx, client, zone);
                 }
             }
             tile if tile.starts_with("tile.") => {
@@ -1418,6 +1513,35 @@ impl App {
             "spotlight" => self.open_shell_menu(cx, "", MenuSkin::Menu),
             "emoji" => mac_character_palette(),
             "dictation" => mac_start_dictation(),
+            // The Wi-Fi and Bluetooth menus' switches: the Mac's own radio turned over, the
+            // menu left up with it as a Mac's is. A hidden test shell only says so.
+            "wifi-power" => {
+                if let Some(mut wifi) = self.bar_sample.wifi.clone() {
+                    let on = !wifi.on;
+                    let hidden = crate::launch_input::hidden_windows();
+                    let done = hidden || shell::bar::set_wifi_power(&wifi.device, on);
+                    log!("wm: wifi {}{}", if on { "on" } else { "off" }, if hidden { " (a hidden test shell leaves the Mac's as it is)" } else if done { "" } else { ": refused" });
+                    if done {
+                        wifi.on = on;
+                        wifi.joined &= on;
+                        self.bar_sample.wifi = Some(wifi);
+                        self.hold_host_radios();
+                    }
+                    self.open_status_menu(cx, BarModule::Network);
+                }
+            }
+            "bluetooth-power" => {
+                if let Some(was) = self.bar_sample.bluetooth {
+                    let hidden = crate::launch_input::hidden_windows();
+                    let done = hidden || shell::bar::set_bluetooth_power(!was);
+                    log!("wm: bluetooth {}{}", if was { "off" } else { "on" }, if hidden { " (a hidden test shell leaves the Mac's as it is)" } else if done { "" } else { ": refused" });
+                    if done {
+                        self.bar_sample.bluetooth = Some(!was);
+                        self.hold_host_radios();
+                    }
+                    self.open_status_menu(cx, BarModule::Bluetooth);
+                }
+            }
             "cc.network" => self.open_control_center_detail(cx, BarModule::Network),
             "cc.bluetooth" => self.open_control_center_detail(cx, BarModule::Bluetooth),
             // Dark Mode's tile turns the appearance over and leaves Control Center up,
@@ -1437,7 +1561,21 @@ impl App {
                     panel.edit_widgets(cx);
                 }
             }
-            "about-more" => self.open_settings_pane(cx, "general"),
+            // A widget's menu: a size for it, or out of the column.
+            how if how.starts_with("widget-size.") => {
+                if let Some((app, size)) = how["widget-size.".len()..].split_once('.') {
+                    if let Some(mut panel) = self.ui.widget(cx, ids!(shell_glance)).borrow_mut::<glance_panel::ShellGlancePanel>() {
+                        panel.set_widget_size(cx, app, size);
+                    }
+                }
+            }
+            how if how.starts_with("widget-remove.") => {
+                if let Some(mut panel) = self.ui.widget(cx, ids!(shell_glance)).borrow_mut::<glance_panel::ShellGlancePanel>() {
+                    panel.remove_widget(cx, &how["widget-remove.".len()..]);
+                }
+            }
+            // General > About itself, as About This Mac's More Info… lands.
+            "about-more" => self.open_settings_pane(cx, "about"),
             "settings" => self.open_settings_pane(cx, ""),
             #[cfg(not(mobile_only))]
             "appearance.flip" => {

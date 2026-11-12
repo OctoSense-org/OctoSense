@@ -124,6 +124,8 @@ pub struct BarData {
     /// not there.
     pub bluetooth: Option<bool>,
     pub network: Option<bool>,
+    /// The Mac's Wi-Fi, where it has one ([`sample_wifi`]).
+    pub wifi: Option<Wifi>,
     pub volume: Option<u32>,
     pub muted: bool,
     pub brightness: Option<u32>,
@@ -143,6 +145,20 @@ pub struct BarData {
 pub struct Battery {
     pub percent: u32,
     pub charging: bool,
+}
+
+/// The Mac's Wi-Fi, as far as an app may read it. macOS keeps the names of
+/// networks from an app without Location access, so the joined one is known
+/// by its link and its lock alone.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Wifi {
+    /// Its device (`en0`), which turns it on and off.
+    pub device: String,
+    pub on: bool,
+    /// Joined to a network.
+    pub joined: bool,
+    /// The joined network asks for a password.
+    pub secure: bool,
 }
 
 impl BarData {
@@ -191,6 +207,7 @@ impl BarData {
             tray: vec![],
             bluetooth: Some(true),
             network: Some(true),
+            wifi: None,
             volume: Some(62),
             muted: false,
             brightness: Some(80),
@@ -381,6 +398,7 @@ pub struct SampledStatus {
     pub battery: Option<Battery>,
     pub network: Option<bool>,
     pub bluetooth: Option<bool>,
+    pub wifi: Option<Wifi>,
     /// The Mac's own appearance; never read for a hidden test shell.
     pub mac_dark: Option<bool>,
 }
@@ -438,6 +456,7 @@ pub fn start_status_sampler(
                     status.muted = muted;
                     status.battery = sample_battery();
                     status.network = sample_network();
+                    status.wifi = sample_wifi();
                     #[cfg(target_os = "macos")]
                     if !bluetooth_pending {
                         let tx = bluetooth_tx.clone();
@@ -559,6 +578,75 @@ fn default_route_device<'a>(out: &'a str, err: &str, success: bool) -> Option<Op
     }
     if !success { return None; }
     device.map(Some)
+}
+
+/// The Wi-Fi device, whether it is on and the network it joined: quick reads
+/// (`networksetup`, `ipconfig getsummary`). None where there is no Wi-Fi.
+pub fn sample_wifi() -> Option<Wifi> {
+    #[cfg(target_os = "macos")]
+    {
+        let device = wifi_device(&run("networksetup", &["-listallhardwareports"])?)?;
+        let on = run("networksetup", &["-getairportpower", &device])?.trim_end().ends_with(": On");
+        let (joined, secure) = if on { run("ipconfig", &["getsummary", &device]).map_or((false, false), |summary| wifi_link(&summary)) } else { (false, false) };
+        Some(Wifi { device, on, joined, secure })
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        None
+    }
+}
+
+/// The Wi-Fi port's device in `networksetup -listallhardwareports`.
+#[cfg(any(target_os = "macos", test))]
+fn wifi_device(ports: &str) -> Option<String> {
+    let mut lines = ports.lines().map(str::trim);
+    while let Some(line) = lines.next() {
+        if matches!(line.strip_prefix("Hardware Port:").map(str::trim), Some("Wi-Fi" | "AirPort")) {
+            return lines.next()?.strip_prefix("Device:").map(str::trim).filter(|device| !device.is_empty()).map(str::to_string);
+        }
+    }
+    None
+}
+
+/// Whether `ipconfig getsummary`'s Wi-Fi joined a network, and whether that
+/// one has a lock. Only the summary's own fields count, not its addresses'.
+#[cfg(any(target_os = "macos", test))]
+fn wifi_link(summary: &str) -> (bool, bool) {
+    let field = |key: &str| summary.lines().find_map(|line| line.strip_prefix("  ")?.strip_prefix(key)?.strip_prefix(" : ").map(str::trim));
+    let joined = field("LinkStatusActive") == Some("TRUE") && field("SSID").is_some();
+    let secure = joined && field("Security").is_some_and(|kind| !kind.is_empty() && !matches!(kind.to_ascii_uppercase().as_str(), "NONE" | "OPEN"));
+    (joined, secure)
+}
+
+/// Turn the Mac's Wi-Fi on or off, as its menu's switch does. False when
+/// `networksetup` refused.
+pub fn set_wifi_power(device: &str, on: bool) -> bool {
+    run("networksetup", &["-setairportpower", device, if on { "on" } else { "off" }]).is_some()
+}
+
+/// Turn the Mac's Bluetooth on or off, as its menu's switch does: IOBluetooth's
+/// own preference call (the one `blueutil` makes), looked up when it is
+/// needed. False where this macOS has no such call.
+pub fn set_bluetooth_power(on: bool) -> bool {
+    #[cfg(target_os = "macos")]
+    unsafe {
+        let framework = libc::dlopen(c"/System/Library/Frameworks/IOBluetooth.framework/IOBluetooth".as_ptr(), libc::RTLD_LAZY);
+        if framework.is_null() {
+            return false;
+        }
+        let call = libc::dlsym(framework, c"IOBluetoothPreferenceSetControllerPowerState".as_ptr());
+        if call.is_null() {
+            return false;
+        }
+        let set: extern "C" fn(i32) = std::mem::transmute(call);
+        set(on as i32);
+        true
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = on;
+        false
+    }
 }
 
 /// The bluetooth controller's power state — the one bluetooth fact that is
@@ -1630,6 +1718,18 @@ mod tests {
         assert_eq!(default_route_device("", "permission denied\n", false), None);
         assert_eq!(default_route_device("", "", true), None);
         assert_eq!(default_route_device("   interface:  \n", "", true), None);
+    }
+
+    #[test]
+    fn wifi_is_read_from_its_port_and_its_summary_alone() {
+        let ports = "Hardware Port: Ethernet\nDevice: en0\nEthernet Address: x\n\nHardware Port: Wi-Fi\nDevice: en1\nEthernet Address: y\n";
+        assert_eq!(wifi_device(ports).as_deref(), Some("en1"));
+        assert_eq!(wifi_device("Hardware Port: Ethernet\nDevice: en0\n"), None);
+        let summary = "<dictionary> {\n  BSSID : <redacted>\n  IPv4 : <array> {\n    0 : <dictionary> {\n      Security : NONE\n    }\n  }\n  InterfaceType : WiFi\n  LinkStatusActive : TRUE\n  SSID : <redacted>\n  Security : WPA2_PSK\n}\n";
+        assert_eq!(wifi_link(summary), (true, true));
+        assert_eq!(wifi_link(&summary.replace("WPA2_PSK", "NONE")), (true, false), "an open network has no lock");
+        assert_eq!(wifi_link(&summary.replace("LinkStatusActive : TRUE", "LinkStatusActive : FALSE")), (false, false));
+        assert_eq!(wifi_link("<dictionary> {\n  InterfaceType : WiFi\n  LinkStatusActive : TRUE\n}\n"), (false, false), "no network joined");
     }
 
     #[test]

@@ -1719,6 +1719,14 @@ fn boot_after_load(){
         if on_desk { desk_restore_search_focus = false }
     }
     refresh_storage_notice()
+    // Opened from a notification Maps sent: what it is about (`desk_open_route`).
+    if on_desk {
+        desk_booted = true
+        let pending = desk_pending_route
+        desk_pending_route = ""
+        if pending != "" { desk_open_route(pending) }
+        else { host.request("glance.take_open", {}, fn(r){ if r.is_ok { desk_open_route(text_of(r.data, "route")) } }) }
+    }
 }
 fn boot(){
     maps_claim_boot()
@@ -1758,6 +1766,8 @@ let desk_fix = nil              // {lat lon acc}: where it last said
 let desk_take_fix = false       // the person asked for the route to start there
 let desk_map_style = "Standard"  // Standard (the appearance's), Light or Dark
 let desk_tilted = false         // the plain map in 3D
+let desk_booted = false         // the first boot is done: a notification's route can open now
+let desk_pending_route = ""     // one handed over before that, opened once it is
 let desk_units = if ui_desk { sys.locale("distance_unit") } else { "km" }
 let desk_routes = nil           // sys.navroutes for the start, stops and place, the fastest first
 let desk_routes_key = ""        // what they are for
@@ -2272,6 +2282,36 @@ fn desk_directions_from(p){
     location_note("")
     if screen == "route" || (screen == "place" && place_key(place) != place_key(p)) { show("route") }
     else { find_for("to") }
+}
+// What a notification Maps sent is about opens with it, as a Mac's does: its
+// route `directions/<lat>,<lon>/<name>` asks the way there from where the route
+// starts now, `place/<lat>,<lon>/<name>` shows the place. The shell hands it
+// over (`open:<route>`), or Maps asks for it as it opens; anything else, or a
+// drive under way, leaves Maps as it is.
+fn desk_open_route(route){
+    if !desk_booted { desk_pending_route = route return }
+    let parts = ("" + route).split("/")
+    if parts.len() < 3 || screen == "drive" { return }
+    let at = parts[1].split(",")
+    if at.len() != 2 { return }
+    let name = ""
+    for i part in parts { if i >= 2 { name = if name == "" { part } else { name + "/" + part } } }
+    let p = {id: "" name: name.trim() cat: "" label: "" lat: desk_route_number(at[0]) lon: desk_route_number(at[1])}
+    if p.name == "" || !is_a_place(p) { return }
+    if parts[0] == "directions" {
+        desk_directions_to(p)
+        // No start yet: the map shows where the way leads.
+        if !is_a_place(origin) { fly(p.lat, p.lon, CARD_ZOOM - 3) }
+    }
+    else if parts[0] == "place" { open_place(p) }
+}
+// A number written in a route, else nil (read inside the try, as `optional` reads).
+fn desk_route_number(text){
+    let v = try {
+        let x = ("" + text).trim().parse_json()
+        if x.is_number() && x - x == 0 { x } else { nil }
+    } catch { nil }
+    v
 }
 // Miles where the Mac's region uses them: feet under a tenth, tenths under ten.
 fn desk_distance_text(km){
@@ -2855,6 +2895,8 @@ fn app_menus(){
     ]
 }
 fn on_menu_command(command){
+    let opened = ("" + command).strip_prefix("open:")
+    if opened != command { desk_open_route(opened) return }
     let card = screen == "place" && place != nil
     let route = screen == "route"
     if command == "copy_link" { desk_copy(desk_share_url()) }

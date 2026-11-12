@@ -864,6 +864,11 @@ pub struct UpdaterView {
     /// The height of the words the window was last fitted to.
     #[rust]
     fitted: f64,
+    /// A resize the window hasn't taken yet: the pane's height when it was asked for, the
+    /// height asked for, and when. Words that change again before the window takes it are
+    /// measured from the height asked for, or the two requests would add up.
+    #[rust]
+    asked: Option<(f64, f64, std::time::Instant)>,
 }
 
 impl UpdaterView {
@@ -874,13 +879,22 @@ impl UpdaterView {
         let Some(windows) = self.windows.as_ref().filter(|windows| self.mac && windows.is_supported()) else { return };
         let pane = self.view.area().rect(cx);
         let body = self.view.widget(cx, ids!(body)).area().rect(cx);
-        if pane.size.y <= 0.0 || body.size.y <= 0.0 || (body.size.y - self.fitted).abs() < 0.5 {
+        if pane.size.y <= 0.0 || body.size.y <= 0.0 {
+            return;
+        }
+        // The window took the request (or settled where its room allows), or never will.
+        if self.asked.is_some_and(|(from, _, when)| (pane.size.y - from).abs() >= 0.5 || when.elapsed().as_secs_f64() > 1.0) {
+            self.asked = None;
+        }
+        if (body.size.y - self.fitted).abs() < 0.5 {
             return;
         }
         self.fitted = body.size.y;
-        let dy = body.size.y - pane.size.y;
+        let (from, base) = self.asked.map_or((pane.size.y, pane.size.y), |(from, to, _)| (from, to));
+        let dy = body.size.y - base;
         if dy.abs() >= 0.5 {
             windows.resize_by(0.0, dy);
+            self.asked = Some((from, body.size.y, std::time::Instant::now()));
         }
     }
 
