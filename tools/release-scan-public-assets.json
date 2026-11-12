@@ -1,6 +1,6 @@
 {
   "repository": "https://github.com/octos-org/octoscode-app",
-  "revision": "094fe850e531c60b78b659852c5084b9933b7750",
+  "revision": "960bfa139a49a8919bf9ded04d138500e756cc90",
   "reason": "Synthetic UI example data embedded unchanged by crates/octoscode-module/build.rs; only the listed base-pattern spans in complete SHA-256-matching assets are admitted.",
   "assets": [
     {

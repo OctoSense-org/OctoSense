@@ -293,7 +293,7 @@
     {
       "id": "octoscode",
       "crate": "octoscode-module",
-      "source": { "git": "https://github.com/octos-org/octoscode-app.git", "rev": "094fe850e531c60b78b659852c5084b9933b7750", "local": null },
+      "source": { "git": "https://github.com/octos-org/octoscode-app.git", "rev": "960bfa139a49a8919bf9ded04d138500e756cc90", "local": null },
       "module": "octoscode_module::OCTOSCODE_MODULE",
       "bin": null,
       "default_features": false,

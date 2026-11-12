@@ -100,7 +100,7 @@ makepad-clock = { git = "https://github.com/OctoSense-org/makepad.git", rev = "d
 makepad-notes = { git = "https://github.com/OctoSense-org/makepad.git", rev = "d653bc4493619ab979ccff165cf48c0c63b77d19", default-features = false }
 makepad-reminders = { git = "https://github.com/OctoSense-org/makepad.git", rev = "d653bc4493619ab979ccff165cf48c0c63b77d19", default-features = false }
 makepad-weather = { git = "https://github.com/OctoSense-org/makepad.git", rev = "d653bc4493619ab979ccff165cf48c0c63b77d19", default-features = false }
-octoscode-module = { git = "https://github.com/octos-org/octoscode-app.git", rev = "094fe850e531c60b78b659852c5084b9933b7750", default-features = false, features = ["octosense-module"] }
+octoscode-module = { git = "https://github.com/octos-org/octoscode-app.git", rev = "960bfa139a49a8919bf9ded04d138500e756cc90", default-features = false, features = ["octosense-module"] }
 makepad-task = { git = "https://github.com/OctoSense-org/makepad.git", rev = "d653bc4493619ab979ccff165cf48c0c63b77d19" }
 # END native-apps: pins
 # --- Makepad (OctoSense-org/makepad), the revision Octoscript-Makepad's

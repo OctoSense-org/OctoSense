@@ -11249,7 +11249,7 @@ dependencies = [
 [[package]]
 name = "octoscode-client"
 version = "0.1.0"
-source = "git+https://github.com/octos-org/octoscode-app.git?rev=094fe850e531c60b78b659852c5084b9933b7750#094fe850e531c60b78b659852c5084b9933b7750"
+source = "git+https://github.com/octos-org/octoscode-app.git?rev=960bfa139a49a8919bf9ded04d138500e756cc90#960bfa139a49a8919bf9ded04d138500e756cc90"
 dependencies = [
  "log",
  "octos-core",
@@ -11265,7 +11265,7 @@ dependencies = [
 [[package]]
 name = "octoscode-module"
 version = "0.1.0"
-source = "git+https://github.com/octos-org/octoscode-app.git?rev=094fe850e531c60b78b659852c5084b9933b7750#094fe850e531c60b78b659852c5084b9933b7750"
+source = "git+https://github.com/octos-org/octoscode-app.git?rev=960bfa139a49a8919bf9ded04d138500e756cc90#960bfa139a49a8919bf9ded04d138500e756cc90"
 dependencies = [
  "chrono",
  "log",
@@ -11292,7 +11292,7 @@ dependencies = [
 [[package]]
 name = "octoscode-store"
 version = "0.1.0"
-source = "git+https://github.com/octos-org/octoscode-app.git?rev=094fe850e531c60b78b659852c5084b9933b7750#094fe850e531c60b78b659852c5084b9933b7750"
+source = "git+https://github.com/octos-org/octoscode-app.git?rev=960bfa139a49a8919bf9ded04d138500e756cc90#960bfa139a49a8919bf9ded04d138500e756cc90"
 dependencies = [
  "log",
  "octoscode-transport",
@@ -11303,7 +11303,7 @@ dependencies = [
 [[package]]
 name = "octoscode-transport"
 version = "0.1.0"
-source = "git+https://github.com/octos-org/octoscode-app.git?rev=094fe850e531c60b78b659852c5084b9933b7750#094fe850e531c60b78b659852c5084b9933b7750"
+source = "git+https://github.com/octos-org/octoscode-app.git?rev=960bfa139a49a8919bf9ded04d138500e756cc90#960bfa139a49a8919bf9ded04d138500e756cc90"
 dependencies = [
  "android_logger",
  "chrono",
