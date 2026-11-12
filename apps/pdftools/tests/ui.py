@@ -16,7 +16,7 @@ private headless weston (the pixman renderer, never idle), which stops with it.
            dark through the shell's own style menu (the dark pass works on
            what the light pass left): Home and its status line against the
            storage's own bytes (files.status), "Open PDF…"
-           refused, reading and thumbnails, Read mode (entered from the bar,
+           ("Import…" in the Mac style) refused, reading and thumbnails, Read mode (entered from the bar,
            which puts the window in full screen too, a page turned and the
            zoom changed, left by Exit Read Mode or the menu bar's row on that
            page at that zoom, with the window back; then left by Esc, the
@@ -35,7 +35,8 @@ private headless weston (the pixman renderer, never idle), which stops with it.
            Return and Esc, the value on the page once and in the page's own
            picture after, Undo, Save, and the values after a restart
   full     storage with no room left: the engine's refusal, then a removal
-  empty    no PDFs: the empty library and "Open PDF…" (a
+  empty    no PDFs: the empty library and "Open PDF…" ("Import…" in
+           the Mac style; a
            hidden window never has focus, so the files service refuses the
            dialog and the app shows that refusal; on Linux with no dialog
            helper there is no files.import, and the app says so)
@@ -549,6 +550,63 @@ def open_add_list(app, names=("Board minutes.pdf", "Field guide.pdf", "Apartment
     wait_until(shown, "the list of PDFs to add did not open", timeout=5)
 
 
+def unified(app):
+    """A Mac's window: the shell on a Mac draws apps in its unified style (the card
+    host doesn't set the theme's ui_unified)."""
+    return isinstance(app, Shell) and not LINUX
+
+
+def edited(app, timeout=30.0):
+    """Unsaved changes: the status line's Edited, or "— Edited" after a Mac's title."""
+    wait_until(lambda: any(w.get("t") in ("Edited", "— Edited") for w in app.widgets()),
+               "nothing says the document is edited", timeout=timeout)
+
+
+def saved(app, timeout=30.0):
+    """No unsaved changes: the status line's Saved. A Mac's status line says only what is
+    under way, as Preview's title says "— Edited", so there: no "— Edited" and nothing
+    under way."""
+    if not unified(app):
+        app.find("Saved", "Label", timeout=timeout)
+        return
+    wait_until(lambda: not any(w.get("t") in ("— Edited", "Saving…", "Editing") for w in app.widgets()),
+               "the title still says the document is edited", timeout=timeout)
+
+
+def open_pdf(app, name):
+    """Open `name` from the PDFs Home lists. On a Mac the tab strip's + is the Open
+    sheet, as an open panel is: a press picks the PDF and Open opens it. Home's own
+    list, and another style's, open it at the press."""
+    app.press(name)
+    if not any(w.get("t") == "Open a PDF" for w in app.widgets()):
+        return
+    for _ in range(3):
+        app.tap("Open")
+        try:
+            app.gone("Open a PDF", timeout=5.0)
+            return
+        except AssertionError:
+            pass
+    raise AssertionError(f"the Open sheet stayed up after {name!r} was picked and Open pressed")
+
+
+def add_pdf(app, name):
+    """Add `name` from the PDFs Add Files… lists. A Mac's Add Files… is the Open
+    sheet, as an open panel is: a press picks the PDF and Add adds it. Another
+    style's press in its list adds it at once."""
+    app.tap(name, "Label")
+    if not any(w.get("t") == "Add a PDF to Combine" for w in app.widgets()):
+        return
+    for _ in range(3):
+        app.tap("Add")
+        try:
+            app.gone("Add a PDF to Combine", timeout=5.0)
+            return
+        except AssertionError:
+            pass
+    raise AssertionError(f"the sheet stayed up after {name!r} was picked and Add pressed")
+
+
 def range_field_of(app, name, timeout=15.0):
     """The page-range field in `name`'s row of the Combine card (the list may
     have scrolled the other rows away), once the card shows it: just after
@@ -733,7 +791,7 @@ def fixture_journey(app, out, dark):
     app.see("Q3 2026 Board Report.pdf")
     app.images(5)
     # 01-home shows Home with the report open in a tab.
-    app.press("Q3 2026 Board Report.pdf")
+    open_pdf(app, "Q3 2026 Board Report.pdf")
     app.images(3)
     to_home(app)
     app.scroll(-3000)
@@ -743,10 +801,10 @@ def fixture_journey(app, out, dark):
     # The other screens show five PDFs open: open them in the designs'
     # order, then come back to the first.
     for name in ("Riverside Lease 2026.pdf", "Field Guide to Garden Birds.pdf", "Invoice INV-2041.pdf", "Site Survey Photos.pdf"):
-        app.press(name)
+        open_pdf(app, name)
         app.images(1)
         to_home(app)
-    app.tap("Q3 2026 Board Report.pdf", "Label")
+    open_pdf(app, "Q3 2026 Board Report.pdf")
     app.images(3)
     app.tap("3", "Label", below=150)
     app.see("3 / 24")
@@ -786,9 +844,9 @@ def fixture_journey(app, out, dark):
 
     mode(app, "Combine")
     app.tap("Add Files…")
-    app.tap("Appendix A - Figures.pdf", "Label")
+    add_pdf(app, "Appendix A - Figures.pdf")
     app.tap("Add Files…")
-    app.tap("Cover Letter.pdf", "Label")
+    add_pdf(app, "Cover Letter.pdf")
     ranges = sorted((w for w in app.widgets() if w["ty"] == "TextInput" and w["r"][2] < 200), key=lambda w: w["r"][1])
     x, y, w, h = ranges[1]["r"]
     app.click(x + w / 2, y + h / 2)
@@ -808,7 +866,7 @@ def fixture_journey(app, out, dark):
     app.tap("Cancel", "Button")
 
     to_home(app)
-    app.press("Riverside Lease 2026.pdf")
+    open_pdf(app, "Riverside Lease 2026.pdf")
     mode(app, "Fill & Sign")
     app.see("This form has 7 fields", exact=False)
     app.images(1)
@@ -827,12 +885,12 @@ def fixture_states(app, out, dark):
     """The states the brief lists, on the fixture: damaged, protected, unsaved."""
     p = "d" if dark else ""
     to_home(app)
-    app.press("Damaged scan.pdf")
+    open_pdf(app, "Damaged scan.pdf")
     app.see("Couldn't Open This PDF")
     app.grab(out, f"{p}s1-damaged")
     app.tap("OK", "Button")  # a damaged file says so once, with OK, which closes its tab
     to_home(app)
-    app.press("Payroll 2026.pdf")
+    open_pdf(app, "Payroll 2026.pdf")
     app.see("This PDF Is Protected with a Password")
     app.grab(out, f"{p}s2-protected")
     app.tap("Close Tab", "Button")
@@ -951,11 +1009,18 @@ def close_results(app, title):
 
 
 def pill_end(app):
-    """The toolbar's last icon button, on the row of the page number: Read mode's
-    full-screen button."""
+    """Read mode, from where the window offers it: the toolbar's last icon button,
+    on the row of the page number, after the search field (Read mode's full-screen
+    button). A Mac's toolbar ends with the search field, as Preview's does, and its
+    Read mode is the View menu's row."""
     label = next(w for w in app.widgets() if re.fullmatch(r"\d+ / \d+", w.get("t") or ""))
     row, _ = icon_buttons_near(app, label["t"], "Label")
-    bx, by, bw, bh = row[-1]
+    sx, _, sw, _ = app.find("Search in document", "TextInput")["r"]
+    after = [r for r in row if r[0] >= sx + sw - 1]
+    if not after:
+        app.remote("event", data="mac-row:mac.app.read_mode")
+        return
+    bx, by, bw, bh = after[-1]
     app.click(bx + bw / 2, by + bh / 2)
 
 
@@ -1067,6 +1132,22 @@ def read_mode_escape(app, out, p):
 NO_IMPORT = "This OctoSense can't open files from the device for PDF Tools."
 
 
+def import_word(app, timeout=30.0):
+    """The library's button that brings a PDF in: a Mac's says Import…, as its File menu
+    keeps Open PDF…; another style's says Open PDF…."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            words = {w.get("t") for w in app.widgets() if w["ty"] in ("Button", "ButtonFlat")}
+        except (OSError, ValueError, AssertionError):
+            words = set()
+        for word in ("Import…", "Open PDF…"):
+            if word in words:
+                return word
+        time.sleep(0.2)
+    raise AssertionError("no visible Button 'Import…' or 'Open PDF…'")
+
+
 def open_on_linux(app, out, name):
     """'Open PDF…' on Linux, where no hidden window keeps
     the dialog shut: True when the step was taken here. With no dialog helper
@@ -1110,14 +1191,14 @@ def shell_journey(app, out, dark):
         RECEIPT["storage_line"] = check_storage_line(app, SHELL_JAIL)
     app.grab(out, f"{p}01-home")
     if not dark and not open_on_linux(app, out, "01b-open-from-device"):
-        app.tap("Open PDF…", "Button")
+        app.tap(import_word(app), "Button")
         app.find("Couldn't open a PDF from this device", "Label")
         app.find("Bring PDF Tools to the front, then choose the file again.", "Label")
         app.grab(out, "01b-open-from-device")
         app.tap("OK", "Button")
         app.gone("Couldn't open a PDF from this device")
 
-    app.press("Quarterly report.pdf")
+    open_pdf(app, "Quarterly report.pdf")
     app.images(3)
     app.find(" / 4", "Label", exact=False, timeout=60)
     app.tap("1", "Label", below=150)
@@ -1197,7 +1278,7 @@ def shell_journey(app, out, dark):
     mode(app, "Combine")
     open_add_list(app)
     app.reveal("Board minutes.pdf")  # the list may scroll inside the card
-    app.tap("Board minutes.pdf", "Label")
+    add_pdf(app, "Board minutes.pdf")
     app.reveal("Board minutes.pdf")  # its row now
     x, y, w, h = range_field_of(app, "Board minutes.pdf")
     app.click(x + w / 2, y + h / 2)
@@ -1217,11 +1298,11 @@ def shell_journey(app, out, dark):
     app.grab(out, f"{p}06b-combined")
 
     to_home(app)
-    app.press("Apartment lease.pdf")
+    open_pdf(app, "Apartment lease.pdf")
     app.images(1)
     mode(app, "Fill & Sign")
     app.find("This PDF has no form fields", "Label", exact=False)
-    app.find("Saved", "Label")
+    saved(app)
     app.tap("Add Initials", "Button")
     try:
         app.find("Initials", "TextInput", timeout=3)  # empty: the light pass
@@ -1230,7 +1311,7 @@ def shell_journey(app, out, dark):
     except AssertionError:
         app.find("MC", "TextInput")  # kept from the light pass
     click_page(app, 360, 330)  # beside clause 3
-    app.find("Edited", "Label")
+    edited(app)
     app.images(1)
     app.grab(out, f"{p}07-fill-sign")
 
@@ -1253,11 +1334,11 @@ def shell_journey(app, out, dark):
     app.grab(out, f"{p}08b-edited")
 
     app.tap("Save", "Button")
-    app.find("Saved", "Label")
+    saved(app)
     app.grab(out, f"{p}09-saved")
 
     to_home(app)
-    app.press("Damaged scan.pdf")
+    open_pdf(app, "Damaged scan.pdf")
     app.find("Couldn't Open This PDF", "Label")
     app.grab(out, f"{p}10-damaged")
     app.tap("OK", "Button")  # a damaged file says so once, with OK, which closes its tab
@@ -1294,12 +1375,12 @@ def restart(app, out):
     app.images(3)
     app.scroll(-3000)
     app.grab(out, "r01-home")
-    app.press("Imported PDF.pdf")
+    open_pdf(app, "Imported PDF.pdf")
     app.images(1)
     app.find("1 / 3", "Label", timeout=60)
     app.grab(out, "r02-imported")
     to_home(app)
-    app.press("Quarterly report.pdf")
+    open_pdf(app, "Quarterly report.pdf")
     app.find("2 / 4", "Label", timeout=60)  # where the shell run left it
     app.images(1)
     app.grab(out, "r03-place-kept")
@@ -1413,7 +1494,7 @@ def form_journey(app, out, dark):
     p = "d" if dark else ""
     if dark:
         to_home(app)
-    app.press(FORM_NAME)
+    open_pdf(app, FORM_NAME)
     app.images(1)
     mode(app, "Fill & Sign")
     app.find("This form has 5 fields", "Label", exact=False)
@@ -1441,7 +1522,7 @@ def form_journey(app, out, dark):
     app.key("Tab")
     wait_until(lambda: labels(app, "ada@example.org") == 2, "Tab did not keep the value")
     if not dark:
-        app.find("Edited", "Label", timeout=10)
+        edited(app, timeout=10)
     # A check box turns over at a click; a choice opens its menu.
     click_page(app, *form_at("Agree"))
     if not dark:
@@ -1477,13 +1558,13 @@ def form_journey(app, out, dark):
         click_icon_left_of(app, "Save", nth=1)
         wait_until(lambda: labels(app, "Premium") == 2, "Redo did not bring the choice back")
     app.tap("Save", "Button")
-    app.find("Saved", "Label", timeout=30)
+    saved(app, timeout=30)
     app.grab(out, f"{p}05-saved")
 
 
 def form_restart(app, out):
     """What was filled and saved, after a restart: on the page, and in the page's own picture."""
-    app.press(FORM_NAME)
+    open_pdf(app, FORM_NAME)
     app.images(1)
     mode(app, "Fill & Sign")
     wait_until(lambda: labels(app, "ada@example.org") == 2, "the saved value did not come back")
@@ -1529,7 +1610,7 @@ def empty(app, out, dark=False):
     app.find("No PDFs Yet", "Label", timeout=60)
     app.grab(out, f"{p}e01-empty")
     if not open_on_linux(app, out, f"{p}e02-empty-open"):
-        app.tap("Open PDF…", "Button")
+        app.tap(import_word(app), "Button")
         app.find("Bring PDF Tools to the front, then choose the file again.", "Label")
         app.grab(out, f"{p}e02-empty-open")
         app.tap("OK", "Button")
@@ -1539,7 +1620,7 @@ def missing(app, out):
     app.see("PDF Tools Can't Read PDFs on This Device")
     app.see("Not available here")
     app.grab(out, "m01-missing-home")
-    app.press("Field guide.pdf")
+    open_pdf(app, "Field guide.pdf")
     app.see("PDF Tools Can't Read PDFs on This Device")
     app.grab(out, "m02-missing-document")
     app.tap("Close Tab", "Button")
