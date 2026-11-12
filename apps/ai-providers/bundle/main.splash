@@ -200,6 +200,9 @@ let menu_models = []    // its family's catalog models
 // A phone's few models need no filter: Find… is grey until the field is there. A Mac's
 // toolbar keeps its search field whatever the count, dimmed while nothing is saved.
 let filter_there = ui_desk
+// Web Clients acts once a saved model is known; on a Mac the File menu names it too,
+// since the toolbar's tool is a glyph.
+let talk_there = false
 let desk_loaded = false
 let desk_failed = false
 let desk_at = -1
@@ -258,6 +261,7 @@ fn load(){
         }
         ui.add.set_visible(list.len() > 0)
         ui.talk.set_visible(list.len() > 0)
+        talk_there = list.len() > 0
         if ui_desk { ui.talk_off.set_visible(list.len() == 0) }
         ui.saved_heading.set_visible(list.len() > 0)
         ui.export_qr.set_visible(list.len() > 0)
@@ -351,6 +355,13 @@ fn discard_result(id){
 }
 // A Mac's menu bar asks for these while AI Providers is in front.
 fn app_menus(){
+    if ui_unified {
+        return [
+            {menu: "File" title: "Add Model…" key: "cmd+N" command: "add"}
+            {menu: "File" title: "Web Clients…" command: "web_clients" enabled: talk_there}
+            {menu: "Edit" title: "Find…" key: "cmd+F" command: "find" enabled: filter_there}
+        ]
+    }
     [
         {menu: "File" title: "Add Model…" key: "cmd+N" command: "add"}
         {menu: "Edit" title: "Find…" key: "cmd+F" command: "find" enabled: filter_there}
@@ -359,6 +370,9 @@ fn app_menus(){
 fn on_menu_command(command){
     if command == "add" { add_model() }
     else if command == "find" { ui.filter.focus() }
+    else if command == "web_clients" && talk_there {
+        host_sheet("llm.connect_client", {}, fn(r){ if !r.is_ok { status(r.error) } })
+    }
 }
 // The Mac's status bar names what was added; the row itself says which model.
 fn named(label){ if ui_desk { label.split(" · ")[0] } else { label } }
@@ -718,6 +732,7 @@ fn desk_try_again(){
 }
 // Web Clients… stays in the toolbar, off, while no saved model is known.
 fn desk_talk_off(){
+    talk_there = false
     ui.talk.set_visible(false)
     ui.talk_off.set_visible(true)
 }
@@ -1031,11 +1046,10 @@ fn desk_row_body(p, pad, hot){
         UiButton{text: "Details…" on_click: || desk_details(p)}
     }
 }
-// The toolbar's Web Clients… on a Mac: a toolbar item, its glyph over its name.
-let DeskBarItem = UiTool{width: 76 height: 44 flow: Down align: Align{x: 0.5 y: 0.5} padding: 0 spacing: 1
-    icon_walk: Walk{width: 20 height: 20 margin: Inset{top: 3 bottom: 3}}
-    draw_bg +: {color: #x00000000 color_hover: #x00000000 color_down: #x00000000 color_focus: #x00000000 color_disabled: #x00000000}
-    draw_text +: {text_style: theme.font_regular{font_size: 8.25}}}
+// The toolbar's Web Clients on a Mac: a glyph, as the toolbar's other tools are, so the
+// toolbar keeps one display mode; the menu bar's row has its name.
+let DeskBarItem = UiToolIcon{icon_walk: Walk{width: 17 height: 17}
+    draw_bg +: {color_disabled: #x00000000}}
 let DeskHead = Label{clip_y: false padding: 0 text: "" draw_text +: {color: ui_ink text_style: theme.font_bold{font_size: 9.75}}}
 let DeskCount = Label{clip_y: false padding: 0 text: "" draw_text +: {color: ui_muted text_style: theme.font_regular{font_size: 8.25}}}
 let DeskValue = Label{clip_y: false padding: 0 width: Fill text: "" max_lines: 1 text_overflow: Ellipsis draw_text +: {color: ui_ink text_style: theme.font_regular{font_size: 9.75}}}
@@ -1061,8 +1075,11 @@ let DeskDim = GestureView{width: Fill height: Fill on_tap: |x, y| {}
     SolidView{width: Fill height: Fill draw_bg.color: ui_sheet_dim}
 }
 let DeskSheetPlace = View{width: Fill height: Fill flow: Down align: Align{x: 0.5} padding: Inset{top: if ui_unified { 53 } else { 41 } left: 16 right: 16}}
+// On a Mac the app's own sheets (Remove) wear the host's sheets' face (Add, Details,
+// Web Clients), so one app's sheets share one background.
+let desk_sheet_face = if ui_unified { if ui_light { #xf6f6f8 } else { #x2c2c2e } } else { ui_surface }
 let DeskSheetPanel = RoundedShadowView{height: Fit flow: Down spacing: 10 padding: Inset{left: 20 right: 20 top: 18 bottom: 16} cursor: MouseCursor.Default
-    draw_bg +: {color: ui_surface border_size: 1.0 border_color: ui_border border_radius: 5.0 shadow_color: desk_shadow shadow_radius: 18.0 shadow_offset: vec2(0.0, 4.0)}}
+    draw_bg +: {color: desk_sheet_face border_size: 1.0 border_color: ui_border border_radius: 5.0 shadow_color: desk_shadow shadow_radius: 18.0 shadow_offset: vec2(0.0, 4.0)}}
 let DeskSheetTitle = Label{clip_y: false width: Fill padding: 0 flow: Flow.Right{wrap: true} text: "" draw_text +: {color: ui_ink text_style: theme.font_bold{font_size: 9.75}}}
 let DeskSheetNote = Label{clip_y: false width: Fill padding: 0 flow: Flow.Right{wrap: true} text: "" draw_text +: {color: ui_muted text_style: theme.font_regular{font_size: 8.25 line_spacing: 1.3}}}
 let DeskSheetButtons = View{width: Fill height: Fit flow: Right spacing: 8 align: Align{x: 1.0 y: 0.5} margin: Inset{top: 6}}
@@ -1075,11 +1092,10 @@ let DeskRoot = SolidView{width: Fill height: Fill flow: Overlay draw_bg.color: u
             // its items in place (a script can't switch a button off, so two stand in turn).
             if ui_unified {
                 View{width: Fit height: Fill flow: Right align: Align{y: 0.5}
-                    talk := DeskBarItem{visible: false reset_hover_on_click: true text: "Web Clients…" draw_icon +: {svg: ui_icon("globe") color: ui_ink} on_click: || {
+                    talk := DeskBarItem{visible: false reset_hover_on_click: true draw_icon +: {svg: ui_icon("globe") color: ui_ink} on_click: || {
                         host_sheet("llm.connect_client", {}, fn(r){ if !r.is_ok { status(r.error) } })
                     }}
-                    talk_off := DeskBarItem{enabled: false text: "Web Clients…" draw_icon +: {svg: ui_icon("globe") color: desk_tool_off}
-                        draw_text +: {color: desk_tool_off color_hover: desk_tool_off color_down: desk_tool_off color_focus: desk_tool_off}}
+                    talk_off := DeskBarItem{enabled: false draw_icon +: {svg: ui_icon("globe") color: desk_tool_off}}
                 }
             } else {
                 View{width: Fit height: Fit flow: Right align: Align{y: 0.5}

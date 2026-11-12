@@ -2356,6 +2356,20 @@ impl Widget for DocumentEditor {
             self.list(cx).set_first_id_and_scroll(block, at);
             self.want_frame(cx);
         }
+        // A Mac's Edit menu asks the field with the keyboard what it can do, as a
+        // text field tells it (`HostedEdit`). The page's rows don't, so the page
+        // does, for its own selection and history: Cut and Copy grey with nothing
+        // selected, and Undo with nothing to undo, as TextEdit's do.
+        if !self.focus_area.is_empty() && cx.has_key_focus(self.focus_area) {
+            cx.publish_hosted_edit(makepad_widgets::makepad_platform::ime::HostedEdit {
+                field: true,
+                selected: self.anchor != self.caret,
+                has_text: !self.text.is_empty(),
+                writable: true,
+                can_undo: !self.undo.is_empty(),
+                can_redo: !self.redo.is_empty(),
+            });
+        }
         DrawStep::done()
     }
 }

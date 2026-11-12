@@ -801,8 +801,8 @@ impl ShellApprovals {
     /// The problem report Report… shows in the alert's place: the app's icon,
     /// what happened, and under Problem Details its own last words as the shell
     /// recorded them (its error, or the end of what it wrote), wrapped and never
-    /// cut, the last [`crate::quit_alert::REPORT_LINES`] lines; or that nothing
-    /// was recorded. OK puts it away; Reopen opens the app again. Escape is OK.
+    /// cut: its Termination Reason, then the last of the rest, in
+    /// [`crate::quit_alert::REPORT_LINES`] lines; or that nothing was recorded. OK puts it away; Reopen opens the app again. Escape is OK.
     fn mac_quit_report(&mut self, cx: &mut Cx2d, screen: Rect, alert: &crate::quit_alert::Alert, place: &MacPlace, k: &MacInk) {
         let w = REPORT_W.min(screen.size.x - 16.0);
         let inner = w - SHEET_PAD * 2.0;
@@ -813,11 +813,8 @@ impl ShellApprovals {
         let title_lines = wrapped(&mut self.d, cx, true, TEXT, &title, text_w);
         let summary_lines = wrapped(&mut self.d, cx, false, NOTE, &summary, text_w);
         let head_h = (title_lines.len() as f64 * TEXT_LINE + 2.0 + summary_lines.len() as f64 * NOTE_LINE).max(SHEET_ICON);
-        let mut lines = Vec::new();
-        for line in &alert.report.lines {
-            lines.extend(wrapped_exact(&mut self.d, cx, true, NOTE, line, box_w));
-        }
-        let lines = lines.split_off(lines.len().saturating_sub(crate::quit_alert::REPORT_LINES));
+        let wrapped = alert.report.lines.iter().map(|line| wrapped_exact(&mut self.d, cx, true, NOTE, line, box_w)).collect();
+        let lines = crate::quit_alert::shown_rows(&alert.report.lines, wrapped);
         let group_h = if lines.is_empty() { NOTE_LINE * 3.0 } else { lines.len() as f64 * NOTE_LINE + 12.0 };
         let h = SHEET_PAD + head_h + 14.0 + NOTE_LINE + 4.0 + group_h + 16.0 + CONTROL_H + SHEET_PAD;
         let card = Self::mac_card_rect(screen, place, None, w, h);

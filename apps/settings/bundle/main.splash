@@ -212,8 +212,19 @@ let shown_note = ""
 let find_text = ""      // what the sidebar's search field holds
 let back_panes = []     // where Back goes, the nearest last
 let forward_panes = []  // where Forward goes, the nearest last
+let found_on = ""       // on a Mac, the search result chosen and shown
+let search_moved = false // a search has taken the window to another pane: Back returns
+let spot_id = ""        // the setting a search opened, ringed for a moment
+let spot_n = 0
 
+// On a Mac, General is a list, as System Settings' is: About is one of its rows and opens
+// a page of its own, General still chosen in the sidebar.
+fn side_id(){
+    if pane == "about" { return "general" }
+    pane
+}
 fn pane_title(){
+    if pane == "about" { return "About" }
     for p in PANES { if p.id == pane { return p.title } }
     ""
 }
@@ -238,7 +249,7 @@ fn enter(id){
     ui.scroller.set_scroll_y(0)
 }
 fn remember(){
-    mod.settings_view = {pane: pane find: find_text back: back_panes forward: forward_panes}
+    mod.settings_view = {pane: pane find: find_text back: back_panes forward: forward_panes found: found_on moved: search_moved}
 }
 fn step_back(){
     if back_panes.len() == 0 { return }
@@ -260,27 +271,114 @@ fn sync_steps(){
     ui.forward_on.set_visible(forward_panes.len() > 0)
     ui.forward_off.set_visible(forward_panes.len() == 0)
 }
+// On a Mac the search lists the settings it finds, as System Settings does, each under its
+// pane's tile; the first is chosen and shown, and its row is ringed for a moment.
+let FOUND = [
+    {id: "about" pane: "about" title: "About" words: "about version octosense"}
+    {id: "software-update" pane: "general" title: "Software Update" words: "general software update version upgrade"}
+    {id: "app-hub" pane: "general" title: "App Hub" words: "general app hub store install apps"}
+    {id: "look" pane: "appearance" title: "Appearance" words: "appearance light dark auto mode"}
+    {id: "style" pane: "appearance" title: "Desktop Style" words: "appearance desktop style macos windows theme"}
+    {id: "picture" pane: "appearance" title: "Desktop Picture" words: "appearance desktop picture wallpaper background colors colours"}
+    {id: "ai-providers" pane: "assistant" title: "AI Providers" words: "assistant ai providers models"}
+    {id: "assistant" pane: "assistant" title: "Ask OctoSense" words: "assistant ask octosense talk"}
+    {id: "approvals" pane: "assistant" title: "Approvals" words: "assistant approvals rules"}
+    {id: "commands" pane: "assistant" title: "Let the Assistant Run Commands" words: "assistant commands terminal run"}
+    {id: "keys" pane: "keyboard" title: "Keyboard Shortcuts" words: "keyboard shortcuts keys"}
+]
+fn mac_finding(){ ui_unified && find_text != "" }
+fn found_list(){
+    let wanted = find_text.replace(regex("[^A-Za-z0-9 ]", "g"), "").trim()
+    let out = []
+    if wanted == "" { return out }
+    for f in FOUND {
+        if regex(wanted, "i").test(f.title + " " + f.words) {
+            if f.id == "picture" { if st != nil && st.pictures.len() > 0 { out.push(f) } }
+            else if f.id == "ai-providers" { if st != nil && st.has.ai { out.push(f) } }
+            else if f.id == "software-update" { if st != nil && st.has.update { out.push(f) } }
+            else if f.id == "app-hub" { if st != nil && st.has.hub { out.push(f) } }
+            else { out.push(f) }
+        }
+    }
+    out
+}
+fn found_icon(f){
+    if f.pane == "about" { return "gear" }
+    for p in PANES { if p.id == f.pane { return p.icon } }
+    "gear"
+}
+fn found_tint(f){
+    if f.pane == "about" { return pane_tint("general") }
+    pane_tint(f.pane)
+}
+fn open_found(f){
+    found_on = f.id
+    if f.pane != pane {
+        if !search_moved {
+            back_panes.push(pane)
+            forward_panes.clear()
+            search_moved = true
+        }
+        enter(f.pane)
+    } else {
+        remember()
+        ui.side_rows.render()
+    }
+    spot_on(f.id)
+}
+fn spot(id){
+    if spot_id == id { return ui_primary }
+    #x00000000
+}
+fn spot_on(id){
+    spot_id = id
+    spot_n = spot_n + 1
+    ui.body.render()
+    start_timeout(1.8, || spot_off())
+}
+fn spot_off(){
+    spot_n = spot_n - 1
+    if spot_n <= 0 {
+        spot_n = 0
+        spot_id = ""
+        ui.body.render()
+    }
+}
 // Search looks through the panes' names and what's on them, as the sidebar's rows.
 fn pane_found(p){
     let wanted = find_text.replace(regex("[^A-Za-z0-9 ]", "g"), "").trim()
     wanted == "" || regex(wanted, "i").test(p.title + " " + p.words)
 }
 fn any_found(){
+    if mac_finding() { return found_list().len() > 0 }
     for p in PANES { if pane_found(p) { return true } }
     false
 }
 fn set_find(text){
     find_text = text
     ui.find_clear.set_visible(text != "")
+    if text == "" {
+        found_on = ""
+        search_moved = false
+    }
     remember()
     ui.side_rows.render()
     ui.side_none.set_visible(!any_found())
+    if mac_finding() {
+        let found = found_list()
+        if found.len() > 0 { open_found(found[0]) } else { found_on = "" }
+    }
 }
 fn clear_find(){
     ui.find.set_text("")
     set_find("")
 }
 fn take_first_found(){
+    if mac_finding() {
+        let found = found_list()
+        if found.len() > 0 { open_found(found[0]) }
+        return
+    }
     for p in PANES {
         if pane_found(p) {
             show(p.id)
@@ -436,7 +534,7 @@ fn app_menus(){
         {menu: "View" title: "Forward" key: "cmd+]" command: "forward" enabled: forward_panes.len() > 0}
     ]
     for p in PANES {
-        rows.push({menu: "View" title: p.title key: p.key command: "pane:" + p.id checked: p.id == pane})
+        rows.push({menu: "View" title: p.title key: p.key command: "pane:" + p.id checked: p.id == side_id()})
     }
     rows
 }
@@ -503,18 +601,43 @@ let LookPicture = View{width: 72 height: 48 show_bg: true
         }
     }
 }
+// The ring round a setting a search opened, as System Settings rings it for a moment.
+let SetSpot = RoundedView{width: Fill height: Fit flow: Down show_bg: true draw_bg +: {color: #x00000000 border_size: 2.0 border_radius: 6.0 border_color: #x00000000}}
 let LookWord = UiSeg{height: 20 padding: Inset{left: 6 right: 6} draw_bg +: {color_hover: #x00000000 color_down: #x00000000}}
 // A Mac's row that goes somewhere, as System Settings' rows with a chevron: the whole row
 // takes the click, and its chevron says it leads on. Software Update and App Hub open in
 // their own windows (the updater and App Hub are apps of their own), as before.
 fn set_place_row(title, note, place){
     GestureView{width: Fill height: Fit cursor: MouseCursor.Default on_tap: |x, y| open_place(place)
-        UiFormRow{
-            SetWords{
-                UiRowTitle{text: title}
-                UiRowNote{text: note}
+        SetSpot{draw_bg +: {border_color: spot(place)}
+            UiFormRow{
+                SetWords{
+                    UiRowTitle{text: title}
+                    UiRowNote{text: note}
+                }
+                UiGlyph{width: 12 height: 12 draw_svg +: {svg: ui_icon("chevron-right") color: ui_muted}}
             }
-            UiGlyph{width: 12 height: 12 draw_svg +: {svg: ui_icon("chevron-right") color: ui_muted}}
+        }
+    }
+}
+// A grey tile with a white glyph, as each row of System Settings' General list has.
+fn set_tile(icon){
+    RoundedView{width: 20 height: 20 align: Align{x: 0.5 y: 0.5} show_bg: true draw_bg +: {color: #x8e8e93 border_radius: 4.5}
+        UiGlyph{width: 13 height: 13 draw_svg +: {svg: ui_icon(icon) color: #xffffff}}
+    }
+}
+// General's list on a Mac: a tile, the name and the chevron. About opens its own page here;
+// Software Update and App Hub open their apps' windows.
+fn set_general_row(icon, title, place){
+    GestureView{width: Fill height: Fit cursor: MouseCursor.Default on_tap: |x, y| {
+        if place == "about" { show("about") } else { open_place(place) }
+    }
+        SetSpot{draw_bg +: {border_color: spot(place)}
+            UiFormRow{
+                set_tile(icon)
+                UiRowTitle{text: title}
+                UiGlyph{width: 12 height: 12 draw_svg +: {svg: ui_icon("chevron-right") color: ui_muted}}
+            }
         }
     }
 }
@@ -539,6 +662,8 @@ if remembered != nil {
     find_text = remembered.find
     back_panes = remembered.back
     forward_panes = remembered.forward
+    found_on = try { remembered.found } catch { "" }
+    search_moved = try { remembered.moved == true } catch { false }
 }
 start_timeout(0.05, || load())
 start_interval(2, || load())
@@ -553,12 +678,29 @@ SolidView{width: Fill height: Fill flow: Right draw_bg.color: ui_page
             }
         }
         side_rows := View{width: Fill height: Fit flow: Down spacing: 1 on_render: || {
+            if mac_finding() {
+                for f in found_list() {
+                    View{width: Fill height: 28 flow: Overlay
+                        if f.id == found_on {
+                            PaneRowOn{text: f.title padding: Inset{left: 36 right: 8} spacing: 0 icon_walk: Walk{width: 0 height: 0} on_click: || open_found(f)}
+                        }
+                        else {
+                            UiSideRow{text: f.title padding: Inset{left: 36 right: 8} spacing: 0 icon_walk: Walk{width: 0 height: 0} on_click: || open_found(f)}
+                        }
+                        View{width: Fit height: Fill align: Align{y: 0.5} padding: Inset{left: 7}
+                            RoundedView{width: 20 height: 20 align: Align{x: 0.5 y: 0.5} show_bg: true draw_bg +: {color: found_tint(f) border_radius: 2.5}
+                                UiGlyph{width: 13 height: 13 draw_svg +: {svg: ui_icon(found_icon(f)) color: #xffffff}}
+                            }
+                        }
+                    }
+                }
+            }
             for p in PANES {
-                if pane_found(p) {
+                if !mac_finding() && pane_found(p) {
                     // As System Settings: each pane's glyph in white on its own coloured
                     // tile, over the row's leading edge; the row takes the press.
                     View{width: Fill height: 28 flow: Overlay
-                        if p.id == pane {
+                        if p.id == side_id() {
                             PaneRowOn{text: p.title padding: Inset{left: 36 right: 8} spacing: 0 icon_walk: Walk{width: 0 height: 0} on_click: || show(p.id)}
                         }
                         else {
@@ -612,13 +754,21 @@ SolidView{width: Fill height: Fill flow: Right draw_bg.color: ui_page
                         }
                     }
                     if st != nil && pane == "general" && ui_unified {
-                        set_about()
-                        if st.has.update || st.has.hub {
-                            UiGroup{
-                                if st.has.update { set_place_row("Software Update", "Newer versions of OctoSense", "software-update") }
-                                if st.has.update && st.has.hub { UiSep{} }
-                                if st.has.hub { set_place_row("App Hub", "Find, install and remove apps", "app-hub") }
+                        UiGroup{
+                            set_general_row("info", "About", "about")
+                            if st.has.update {
+                                UiSep{}
+                                set_general_row("refresh", "Software Update", "software-update")
                             }
+                            if st.has.hub {
+                                UiSep{}
+                                set_general_row("tray", "App Hub", "app-hub")
+                            }
+                        }
+                    }
+                    if st != nil && pane == "about" {
+                        SetSpot{draw_bg +: {border_color: spot("about")}
+                            set_about()
                         }
                     }
                     if st != nil && pane == "general" && !ui_unified {
@@ -653,7 +803,30 @@ SolidView{width: Fill height: Fill flow: Right draw_bg.color: ui_page
                     }
                     if st != nil && pane == "appearance" {
                         UiGroup{
-                            if st.looks.len() > 0 {
+                            if st.looks.len() > 0 && ui_unified {
+                                SetSpot{draw_bg +: {border_color: spot("look")}
+                                    View{width: Fill height: Fit flow: Right spacing: 12 align: Align{y: 0.5} padding: Inset{left: 14 right: 14 top: 10 bottom: 10}
+                                        SetWords{
+                                            UiRowTitle{text: "Appearance"}
+                                            if has_look("auto") { UiRowNote{text: "Auto follows this computer’s setting"} }
+                                        }
+                                        View{width: Fit height: Fit flow: Right spacing: 12
+                                            for look in LOOKS {
+                                                if has_look(look.id) {
+                                                    View{width: Fit height: Fit flow: Down spacing: 3 align: Align{x: 0.5}
+                                                        GestureView{width: 72 height: 48 cursor: MouseCursor.Default on_tap: |x, y| change("appearance", look.id)
+                                                            LookPicture{draw_bg +: {on: if look.id == st.look { 1.0 } else { 0.0 } night: look.night split: look.split}}
+                                                        }
+                                                        LookWord{text: look.title on_click: || change("appearance", look.id)}
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                UiSep{}
+                            }
+                            if st.looks.len() > 0 && !ui_unified {
                                 View{width: Fill height: Fit flow: Down spacing: 8 padding: Inset{left: 14 right: 14 top: 10 bottom: 10}
                                     UiRowTitle{text: "Appearance"}
                                     View{width: Fill height: Fit flow: Right spacing: 12
@@ -672,31 +845,35 @@ SolidView{width: Fill height: Fill flow: Right draw_bg.color: ui_page
                                 }
                                 UiSep{}
                             }
-                            UiFormRow{
-                                SetWords{
-                                    UiRowTitle{text: "Desktop Style"}
-                                    UiRowNote{text: "The menu bar, the Dock and every window"}
-                                }
-                                View{width: Fit height: 28 flow: Overlay align: Align{x: 1.0 y: 0.5}
-                                    style_pick := GestureView{width: Fit height: 28 menu_words_at: 10 on_menu: |title| style_chosen(title)
-                                        UiPopup{reset_hover_on_click: true text: style_label() on_click: || open_style_menu()}
+                            SetSpot{draw_bg +: {border_color: spot("style")}
+                                UiFormRow{
+                                    SetWords{
+                                        UiRowTitle{text: "Desktop Style"}
+                                        UiRowNote{text: "The menu bar, the Dock and every window"}
                                     }
-                                    UiPopupMark{}
+                                    View{width: Fit height: 28 flow: Overlay align: Align{x: 1.0 y: 0.5}
+                                        style_pick := GestureView{width: Fit height: 28 menu_words_at: 10 on_menu: |title| style_chosen(title)
+                                            UiPopup{reset_hover_on_click: true text: style_label() on_click: || open_style_menu()}
+                                        }
+                                        UiPopupMark{}
+                                    }
                                 }
                             }
                             // A Mac's desktop picture; Omarchy's come with its theme, below.
                             if st.pictures.len() > 0 {
                                 UiSep{}
-                                UiFormRow{
-                                    SetWords{
-                                        UiRowTitle{text: "Desktop Picture"}
-                                        UiRowNote{text: picture_note()}
-                                    }
-                                    View{width: Fit height: 28 flow: Overlay align: Align{x: 1.0 y: 0.5}
-                                        picture_pick := GestureView{width: Fit height: 28 menu_words_at: 10 on_menu: |title| picture_chosen(title)
-                                            UiPopup{reset_hover_on_click: true text: picture_label() on_click: || open_picture_menu()}
+                                SetSpot{draw_bg +: {border_color: spot("picture")}
+                                    UiFormRow{
+                                        SetWords{
+                                            UiRowTitle{text: "Desktop Picture"}
+                                            UiRowNote{text: picture_note()}
                                         }
-                                        UiPopupMark{}
+                                        View{width: Fit height: 28 flow: Overlay align: Align{x: 1.0 y: 0.5}
+                                            picture_pick := GestureView{width: Fit height: 28 menu_words_at: 10 on_menu: |title| picture_chosen(title)
+                                                UiPopup{reset_hover_on_click: true text: picture_label() on_click: || open_picture_menu()}
+                                            }
+                                            UiPopupMark{}
+                                        }
                                     }
                                 }
                             }
@@ -768,13 +945,15 @@ SolidView{width: Fill height: Fill flow: Right draw_bg.color: ui_page
                     if st != nil && pane == "assistant" {
                         SetHead{text: "Commands"}
                         UiGroup{
-                            UiFormRow{
-                                SetWords{
-                                    UiRowTitle{text: "Let the Assistant Run Commands"}
-                                    SetNote{text: st.commands.note}
-                                }
-                                if st.commands.can || st.commands.on {
-                                    commands_switch := SetSwitch{active: st.commands.on on_click: |active| set_commands(active)}
+                            SetSpot{draw_bg +: {border_color: spot("commands")}
+                                UiFormRow{
+                                    SetWords{
+                                        UiRowTitle{text: "Let the Assistant Run Commands"}
+                                        SetNote{text: st.commands.note}
+                                    }
+                                    if st.commands.can || st.commands.on {
+                                        commands_switch := SetSwitch{active: st.commands.on on_click: |active| set_commands(active)}
+                                    }
                                 }
                             }
                             if st.commands.applied == "restart" {
@@ -792,7 +971,7 @@ SolidView{width: Fill height: Fill flow: Right draw_bg.color: ui_page
                     if st != nil && pane == "keyboard" {
                         // What the list is, and that it is only a list: the shell's keys are fixed.
                         if ui_unified {
-                            View{width: Fill height: Fit flow: Down spacing: 3 padding: Inset{left: 2 bottom: 2}
+                            SetSpot{draw_bg +: {border_color: spot("keys")} spacing: 3 padding: Inset{left: 2 bottom: 2}
                                 Label{clip_y: false padding: 0 text: "Keyboard Shortcuts" draw_text +: {color: ui_ink text_style: theme.font_bold{font_size: 9.75}}}
                                 SetNote{text: "Shortcuts for windows, apps and desktops. They work in every app and can’t be changed."}
                             }

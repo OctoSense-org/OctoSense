@@ -600,6 +600,36 @@ def menu_pick(app, title):
     time.sleep(0.3)
 
 
+def unified(app):
+    """A Mac's window: the shell on a Mac draws apps in its unified style while its
+    desktop style is the Mac's, as its log last said; a run's dark pass picks
+    octosense-dark (the card host doesn't set the theme's ui_unified)."""
+    if not isinstance(app, Shell) or LINUX:
+        return False
+    styles = re.findall(r"wm: desktop style (\S+) applied", app.log.read_text(errors="replace"))
+    return bool(styles) and styles[-1].startswith("macos")
+
+
+def edited(app, timeout=30.0):
+    """Unsaved changes: the status line's Edited, or on a Mac "— Edited" after the deck's
+    name in the toolbar, as Keynote's title says."""
+    wait_until(lambda: any(w.get("t") in ("Edited", "— Edited") for w in app.widgets()),
+               "nothing says the deck is edited", timeout=timeout)
+
+
+def save_deck(app, timeout=60.0):
+    """Save: the toolbar's Save, then the status line's Saved. A Mac has no Save item, as
+    Keynote has none: File > Save (Command-S), then no "— Edited" and nothing under way."""
+    if not unified(app):
+        app.tap("Save", "Button")
+        app.find("Saved", "Label", timeout=timeout)
+        return
+    app.key("KeyS", cmd=1)
+    time.sleep(0.5)
+    wait_until(lambda: not any(w.get("t") in ("— Edited", "Saving…") for w in app.widgets()),
+               "the deck's name still says it is edited", timeout=timeout)
+
+
 def bar_has(app, word):
     """Whether the toolbar shows `word`: a phone's and another desktop's keep Undo and Redo there."""
     return any(w["ty"] == "Label" and w.get("t") == word for w in app.widgets())
@@ -1382,7 +1412,12 @@ def tab_close_point(app, title):
 
 
 def close_tab(app, title):
-    app.click(*tab_close_point(app, title))
+    """A deck's tab's close cross. A Mac's window with one deck has no tab bar, as
+    Keynote's and Safari's: File > Close Tab (Command-W) closes it."""
+    if unified(app) and not [w for w in app.widgets() if w.get("i") == "tabs_box" and w["r"][3] > 2]:
+        app.key("KeyW", cmd=1)
+    else:
+        app.click(*tab_close_point(app, title))
     wait_until(lambda: tab_label(app, title) is None, f"the tab {title!r} stayed open", timeout=20)
 
 
@@ -1434,7 +1469,7 @@ def shell_journey(app, out, dark):
     app.click(field[0] + field[2] - 8, field[1] + field[3] - 8)
     app.key("ReturnKey")
     app.type("Questions")
-    app.find("Edited", "Label", timeout=30)
+    edited(app, timeout=30)
     app.grab(out, f"{p}03-text")
     click_slide(app, 900, 520)
     # bold the box
@@ -1483,8 +1518,7 @@ def shell_journey(app, out, dark):
     app.grab(out, f"{p}07-sorter")
     app.tap("Slides", "Button")
     # save
-    app.tap("Save", "Button")
-    app.find("Saved", "Label", timeout=60)
+    save_deck(app)
     # export: through the Save panel (files.export). A hidden run answers it from
     # MAKEPAD_TEST_SAVE_DIR (Shell starts with it), and only a key window may ask.
     sx, sy, sw, sh = slide_rect(app)

@@ -120,6 +120,18 @@ thread_local! {
     static QUIET: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     /// A card lowering for a notification in the Mac's Notification Center ([`as_notice`]).
     static NOTICE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    /// A card lowering for a Mac's card window ([`in_window`]).
+    static IN_WINDOW: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// [`on_material`] for a card in a Mac's card window (glance_sheet.rs): one card
+/// stands in it, so its primary action is the window's default push button
+/// ([`WINDOW_KIT`]).
+pub fn in_window<R>(lowering: impl FnOnce() -> R) -> R {
+    IN_WINDOW.with(|w| w.set(true));
+    let result = on_material(lowering);
+    IN_WINDOW.with(|w| w.set(false));
+    result
 }
 
 /// [`on_material`] for a card in the Mac's Notification Center, which draws its
@@ -230,6 +242,18 @@ fn l0_chip_danger_row(s) {
             c: [ l0_txt(s, 9.75, 500, argb(0, 0, 0, 0)) ]}
 }
 "#;
+/// A Mac's card window, after [`MATERIAL_KIT`]: the one card in it has one
+/// default, its primary action, filled with the accent under white words, as a
+/// Mac marks a window's default button (not by weight).
+const WINDOW_KIT: &str = r#"
+fn l0_chip_primary(s) {
+    return {t: "chip", bg: mac_default, radius: radius_chip, padx: pad_chip_x, pady: pad_chip_y, selected: 0,
+            fitw: 1, fith: 1, c: [ l0_txt(s, font_row, weight_medium, argb(255, 255, 255, 255)) ]}
+}
+"#;
+/// The accent [`WINDOW_KIT`] fills with: a Mac's blue, light and dark.
+const WINDOW_ACCENT_LIGHT: &str = "let mac_default = argb(255, 0, 122, 255)";
+const WINDOW_ACCENT_DARK: &str = "let mac_default = argb(255, 10, 132, 255)";
 const DERIVE_COLOR: &str = l0_kit!("_derive_color.octoscript");
 const DERIVE: &str = l0_kit!("_derive.octoscript");
 const KIT: &str = l0_kit!("_kit.octoscript");
@@ -292,9 +316,14 @@ fn lower_report(source: &str, report: octoscript_ui_l0::RealizeReport, l0_ui: bo
     };
     let (metrics, material_kit) = if material { (MATERIAL_METRICS, MATERIAL_KIT) } else { ("", "") };
     let quiet_kit = if material && QUIET.with(|q| q.get()) { QUIET_KIT } else { "" };
+    let (window_accent, window_kit) = if material && IN_WINDOW.with(|w| w.get()) {
+        (if dark { WINDOW_ACCENT_DARK } else { WINDOW_ACCENT_LIGHT }, WINDOW_KIT)
+    } else {
+        ("", "")
+    };
     let lowered = octoscript_ui_l0::kit::lower(root);
     let lowered = if material { material_words(&lowered) } else { lowered };
-    let kit_source = [PALETTE_BASE, delta, DERIVE_COLOR, DERIVE, metrics, page, KIT, HOST_KIT, material_kit, quiet_kit, &lowered].join("\n");
+    let kit_source = [PALETTE_BASE, delta, DERIVE_COLOR, DERIVE, metrics, page, KIT, HOST_KIT, material_kit, window_accent, window_kit, quiet_kit, &lowered].join("\n");
     let tree = octoscript_makepad::design::prepare(&kit_source)?;
     // A measured design (an imported artboard) lowers as the Card runner
     // lowers it; a kit-composed card (columns, rows, text) through the
@@ -1764,6 +1793,24 @@ mod tests {
         let plain = lower(&source, &data);
         QUIET.with(|q| q.set(false));
         assert_eq!(plain.expect("lowers"), lower(&source, &data).expect("lowers"));
+    }
+
+    /// A Mac's card window holds one card, so its primary action (the request's
+    /// Reply) is the window's default button, the accent under white words, in
+    /// either mode; the Notification Center's stack keeps plain push buttons.
+    #[test]
+    fn a_card_windows_primary_action_is_its_default_button() {
+        let (_, _, source, data) = crate::glance::demo_mail().into_iter().next().expect("the request card");
+        let stacked = on_material(|| lower_in_mode(&source, &data, false)).expect("lowers");
+        let light = in_window(|| lower_in_mode(&source, &data, false)).expect("lowers in a window");
+        let dark = in_window(|| lower_in_mode(&source, &data, true)).expect("lowers in a dark window");
+        assert!(!stacked.contains("#007affff"), "a stack has no one default: {stacked}");
+        assert!(light.contains("#007affff") && light.contains("#ffffffff"), "the accent under white words: {light}");
+        assert!(dark.contains("#0a84ffff") && !dark.contains("#007affff"), "a dark window's accent: {dark}");
+        assert!(light.contains("Reply") && light.contains("Mark Done"), "the same buttons: {light}");
+        // Only while the window lowers.
+        assert!(in_window(|| IN_WINDOW.with(|w| w.get())));
+        assert!(!IN_WINDOW.with(|w| w.get()), "the window's lowering ends with it");
     }
 
     #[test]

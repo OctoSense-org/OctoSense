@@ -139,7 +139,8 @@ pub fn window_hint(_cx: &mut makepad_widgets::Cx, _app: &crate::clients::AppDef)
 }
 
 /// The size a built-in pane opens at on a desktop when it isn't a whole
-/// window of content: the Updates pane is the size of a Software Update pane,
+/// window of content: the Updates pane is the size of a Software Update pane
+/// (on a Mac its tallest state's, and the pane then fits each state's words),
 /// and Reference of its form, with a Mac panel's 20 points below its last
 /// row, under its title bar (28 points on a Mac, 32 elsewhere). Calculator opens at its basic keys, as
 /// a Mac's does: its own controls widen the window for the scientific keys
@@ -148,7 +149,7 @@ pub fn window_hint(_cx: &mut makepad_widgets::Cx, _app: &crate::clients::AppDef)
 /// own 40-point one, 20 points less.
 pub fn native_window_hint(app: &crate::clients::AppDef, mac: bool) -> Option<(f64, f64)> {
     match app.id.as_str() {
-        "updater" => Some((640.0, 330.0)),
+        "updater" => Some((640.0, if mac { 284.0 } else { 330.0 })),
         "reference" => Some((560.0, if mac { 160.0 } else { 164.0 })),
         "calculator" => Some((252.0, if mac && crate::clients::unified_chrome(&app.id) { 405.0 } else { 425.0 })),
         _ => None,
@@ -1073,7 +1074,8 @@ mod tests {
         // the 32-point title bar down, or a Mac's unified 52-point toolbar.
         assert_eq!(super::native_window_hint(&app("calculator"), false), Some((252.0, 425.0)));
         assert_eq!(super::native_window_hint(&app("calculator"), true), Some((252.0, 405.0)));
-        assert_eq!(super::native_window_hint(&app("updater"), true), Some((640.0, 330.0)));
+        assert_eq!(super::native_window_hint(&app("updater"), true), Some((640.0, 284.0)));
+        assert_eq!(super::native_window_hint(&app("updater"), false), Some((640.0, 330.0)));
         assert_eq!(super::native_window_hint(&app("reference"), true), Some((560.0, 160.0)));
         assert_eq!(super::native_window_hint(&app("reference"), false), Some((560.0, 164.0)));
         assert_eq!(super::native_window_hint(&app("notes"), true), None);

@@ -249,12 +249,9 @@ fn spotlight_group(kind: &str) -> usize {
     SPOTLIGHT_GROUPS.iter().position(|(name, _)| *name == kind).unwrap_or(SPOTLIGHT_GROUPS.len())
 }
 
-/// What a result's group is called, over the first row of each, once more than one
-/// kind of thing was found. The first result is the Top Hit.
+/// What a result's group is called, over the first row of each, as a Mac's
+/// Spotlight heads every group: the first result is the Top Hit, even alone.
 fn spotlight_caption(rows: &[MenuRow], i: usize) -> Option<&'static str> {
-    if rows.iter().all(|row| row.detail == rows[0].detail) {
-        return None;
-    }
     if i == 0 {
         return Some("Top Hit");
     }
@@ -1819,7 +1816,8 @@ impl ShellMenu {
                             true, 14.0, ink, super::super::ui::HAlign::Center, title);
         self.d.label_elided(cx, rect(pane.pos.x + 16.0, pane.pos.y + 119.0, pane.size.x - 32.0, 18.0),
                             false, 12.0, fade(ink, 0.66), super::super::ui::HAlign::Center, &row.detail);
-        // An app's facts under a rule, as a Mac's: the labels right-aligned against the values.
+        // An app's facts under a rule, as a Mac's: the labels right-aligned against the values,
+        // in the subtitle's grey, which reads at 4.5:1 or better on the light pane too.
         if let Some(name) = row.target.strip_prefix("apps.") {
             if self.spotlight_facts.as_ref().map(|(target, _)| target.as_str()) != Some(row.target.as_str()) {
                 let facts = spotlight_app_facts(name);
@@ -1832,7 +1830,7 @@ impl ShellMenu {
             let mid = pane.pos.x + (pane.size.x * 0.4).round();
             for (label, value) in &facts {
                 self.d.label_elided(cx, rect(pane.pos.x + 12.0, y, mid - pane.pos.x - 18.0, 16.0),
-                                    false, 11.0, fade(ink, 0.55), super::super::ui::HAlign::Right, label);
+                                    false, 11.0, fade(ink, 0.66), super::super::ui::HAlign::Right, label);
                 self.d.label_elided(cx, rect(mid, y, pane.pos.x + pane.size.x - mid - 14.0, 16.0),
                                     false, 11.0, fade(ink, 0.85), super::super::ui::HAlign::Left, value);
                 y += 18.0;
@@ -2153,7 +2151,11 @@ mod launchpad_tests {
         assert_eq!(titles, [Some("Top Hit"), Some("Applications"), None, Some("Desktop Styles")]);
         let mut only_apps = vec![row("apps.mail", "Mail"), row("apps.maps", "Maps")];
         spotlight_rows(&mut only_apps, "ma");
-        assert_eq!(spotlight_caption(&only_apps, 0), None, "one kind needs no captions");
+        let titles: Vec<Option<&str>> = (0..only_apps.len()).map(|i| spotlight_caption(&only_apps, i)).collect();
+        assert_eq!(titles, [Some("Top Hit"), Some("Applications")], "one kind is headed too");
+        let mut alone = vec![row("settings.appearance", "Appearance")];
+        spotlight_rows(&mut alone, "dark");
+        assert_eq!(spotlight_caption(&alone, 0), Some("Top Hit"), "a lone result is the Top Hit");
     }
 }
 

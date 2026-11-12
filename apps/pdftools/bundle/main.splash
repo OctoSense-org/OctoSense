@@ -820,23 +820,28 @@ if st == nil {
 // A sheet over the window. A GestureView answers a press that lands inside it whatever
 // lies on top, so while one is up, and for a moment after (the press that closes it
 // still comes up), the pages and the lists under it don't answer.
-let pt_modal = st.confirm != nil || st.removing != "" || st.going || st.open_sheet
+// A sheet or an alert is up: Save's question, Remove's, Go to Page, the Open sheet, or a
+// Mac's alert for a file that can't be opened (st.cant_open, added in round 11, so a
+// state kept from before it lacks the key).
+fn cant_open_up(){ optional(st, "cant_open", nil) != nil }
+fn sheet_up(){ st.confirm != nil || st.removing != "" || st.going || st.open_sheet || cant_open_up() }
+let pt_modal = sheet_up()
 // A Mac's menu bar and the keys of its rows wait for a sheet while it's up. The moment
 // after is for the press that closed it, and a key or a menu is never that press: a
 // Command-W just after a double click opened a PDF closed the window, its Close Tab
 // still off. Nor is a click on the tab bar: every sheet hangs under it, so the press
 // that closed one never comes up over a tab or the +.
 fn menus_wait(){
-    if ui_unified { return st.confirm != nil || st.removing != "" || st.going || st.open_sheet }
+    if ui_unified { return sheet_up() }
     pt_modal
 }
 fn sync_modal(){
-    if st.confirm != nil || st.removing != "" || st.going || st.open_sheet {
+    if sheet_up() {
         pt_modal = true
         return
     }
     start_timeout(0.15, || {
-        if st.confirm == nil && st.removing == "" && !st.going && !st.open_sheet { pt_modal = false }
+        if !sheet_up() { pt_modal = false }
     })
 }
 // The heartbeat and the page's watch (below), started again by every run of this file.
@@ -1454,6 +1459,14 @@ fn load_tab(t){
             // Only a lasting refusal marks the PDF on Home.
             let d = doc_named(t.name)
             if d != nil && t.state != "full" && t.state != "failed" { doc_failed(d, a.error) }
+            // A Mac says a file it can't open in an alert, as Preview does, and keeps no tab
+            // for it. A read that may work next time keeps its tab and Try Again.
+            if ui_unified && (t.state == "damaged" || t.state == "protected") {
+                st.cant_open = {state: t.state file: shown_name(t.title)}
+                close_tab(t, true)
+                render_dialog()
+                return
+            }
             refresh_doc()
             return
         }
@@ -1702,7 +1715,7 @@ fn canvas_box(){
     let beside = 0
     if left_open(t) { beside = beside + panel_w(t) + 1 }
     if right_open(t) { beside = beside + right_w(t) + 1 }
-    [max(240, st.width - beside), max(240, st.height - BAR_H - TABS_H - FOOT_H - 2 - toolrow_h(t))]
+    [max(240, st.width - beside), max(240, st.height - BAR_H - TABS_H - pick(ui_unified, 1, FOOT_H + 2) - toolrow_h(t))]
 }
 fn canvas_w(){ canvas_box()[0] }
 fn canvas_h(){ canvas_box()[1] }
@@ -3665,9 +3678,53 @@ fn render_combine(){
     ui.combine_list.render()
     ui.combine_tall_foot.render()
 }
-fn render_status(){ ui.status.render() }
+fn render_status(){
+    ui.status.render()
+    sync_status_float()
+}
+// A Mac's document has no status bar, as Preview has none: what is under way, or went
+// wrong, floats in a banner over the foot of the pages while it lasts
+// (status_float_view). The library keeps its line, as Finder's status bar.
+fn sync_status_float(){
+    let t = cur_tab()
+    let on = ui_unified && t != nil && !reading_on(t) && status_says(t)
+    ui.status_float_box.set_visible(on)
+    if on { ui.status_float.render() }
+}
+// Whether status_view has anything to say for the document `t`, case by case.
+fn status_says(t){
+    if t == nil { return false }
+    let pending = try { t.field_wait == true } catch { false }
+    let retry = try { t.field_retry } catch { nil }
+    if pending || retry != nil || edit_busy(t) || history_busy(t) || comment_delete_busy(t) { return true }
+    let save_problem = try { t.save_problem } catch { "" }
+    let edit_problem = try { t.edit_problem } catch { "" }
+    let comment_problem = try { t.comment_problem } catch { "" }
+    let delete_problem = try { t.comment_delete_problem } catch { nil }
+    let history_problem = try { t.history_problem } catch { nil }
+    if !t.saving && save_problem != "" { return true }
+    if edit_problem != "" { return true }
+    if !comment_busy(t) && comment_problem != "" { return true }
+    if !t.saving && (delete_problem != nil || history_problem != nil) { return true }
+    if other_save_problem(t) != nil || other_edit_problem(t) != nil || other_history_problem(t) != nil { return true }
+    if other_delete_problem(t) != nil || other_comment_problem(t) != nil { return true }
+    (t.state == "ready" && t.saving) || st.space_full || st.said != ""
+}
+// The banner: as wide as the pages' room allows up to 560, 14 above their foot, or
+// above Combine's own foot (its line, a refusal, the 44-point row).
+fn status_float_view(){
+    let t = cur_tab()
+    let foot = 14
+    if t != nil && t.mode == "combine" { foot = foot + 45 + pick(t.combine != nil && t.combine.error != "", 26, 0) }
+    View{width: Fill height: Fit flow: Down align: Align{x: 0.5} padding: Inset{left: 16 right: 16 bottom: foot}
+        RoundedShadowView{width: Fill max_width: 560 height: 32 flow: Down new_batch: true
+            draw_bg +: {color: ui_surface border_size: 1.0 border_color: ui_border border_radius: 8.0 shadow_color: pt_shadow shadow_radius: 12.0 shadow_offset: vec2(0.0, 3.0)}
+            status_view()
+        }
+    }
+}
 fn render_dialog(){
-    ui.dialog_box.set_visible(st.confirm != nil || st.removing != "" || st.going || st.open_sheet)
+    ui.dialog_box.set_visible(sheet_up())
     ui.dialog.render()
     sync_modal()
 }
@@ -3697,7 +3754,8 @@ fn show_with_search(refresh_search){
     ui.home.set_visible(!doc)
     ui.doc.set_visible(doc)
     ui.modebar_box.set_visible(c.modebar)
-    ui.status_box.set_visible(c.status)
+    ui.status_box.set_visible(c.status && !(ui_unified && doc))
+    sync_status_float()
     if doc {
         let ready = t.state == "ready"
         let left = ready && c.panels && c.rail && left_open(t)
@@ -4382,19 +4440,19 @@ fn recent_rows(off){
     rows.push({menu: "File" submenu: "Open Recent" title: "Clear Menu" command: "recent_clear" enabled: !off && list.len() > 0})
     rows
 }
-// A Mac's File menu: Open… (the PDFs in PDF Tools), Open Recent, then Save, Export as
-// PDF… and Close Tab, and Import… for a PDF on this Mac. The other menus are every
-// desktop's.
+// A Mac's File menu: Open… (the PDFs in PDF Tools) and Import… (a PDF on this Mac), Open
+// Recent, then Close Tab, Save and Export as PDF…, as Preview's has Close before Save. The
+// other menus are every desktop's.
 fn mac_menu_rows(rows, free, can_pick){
     let out = [{menu: "File" title: "Open…" key: "cmd+O" command: "library" enabled: free}]
+    out.push({menu: "File" title: "Import…" command: "open" enabled: can_pick})
     for r in recent_rows(!free) { out.push(r) }
     out.push({menu: "File"})
+    for r in rows { if r.menu == "File" && optional(r, "command", "") == "close" { out.push(r) } }
     for r in rows {
         let c = optional(r, "command", "")
-        if r.menu == "File" && (c == "save" || c == "export" || c == "close") { out.push(r) }
+        if r.menu == "File" && (c == "save" || c == "export") { out.push(r) }
     }
-    out.push({menu: "File"})
-    out.push({menu: "File" title: "Import…" command: "open" enabled: can_pick})
     // Reading (the Read tool, or Read mode) Copy and Select All are the page's text, as
     // Preview's are (Select All takes the page's lines from the engine, pdf.lines; Copy
     // puts them on the clipboard).
@@ -5099,7 +5157,7 @@ fn combine_bar(){
     View{width: Fill height: Fit flow: Down
         UiToolbar{height: ROW_H padding: Inset{left: 14 right: 14} spacing: 10 new_batch: true
             Bold{text: "Combine Files"}
-            Small{text: "This PDF and others, in order: drag a grip to reorder"}
+            Small{text: pick(ui_unified, "This PDF and others, in order: drag a row to reorder", "This PDF and others, in order: drag a grip to reorder")}
         }
         UiSep{}
     }
@@ -5590,13 +5648,15 @@ fn thread_panel(){
         }
         UiSep{}
         if st.who.author == "" || st.naming { author_card() }
-        ScrollY{width: Fill height: Fill flow: Down padding: Inset{left: 10 right: 10 top: 10 bottom: 16} spacing: 8
-            if t.pending != nil { pending_card(t) }
+        // A Mac's comments are the rows of a list, edge to edge with a hairline between,
+        // as Preview's highlights and notes are; elsewhere they are cards.
+        ScrollY{width: Fill height: Fill flow: Down padding: Inset{left: pick(ui_unified, 0, 10) right: pick(ui_unified, 0, 10) top: pick(ui_unified, 0, 10) bottom: 16} spacing: pick(ui_unified, 0, 8)
+            if t.pending != nil { View{width: Fill height: Fit padding: pick(ui_unified, 10, 0) pending_card(t)} }
             if t.comments == nil {
-                View{width: Fill height: Fit padding: Inset{left: 4 right: 4} Note{text: pick(t.comments_state == "" || t.comments_state == "loading", "Reading the comments…", t.comments_state)}}
+                View{width: Fill height: Fit padding: Inset{left: pick(ui_unified, 14, 4) right: pick(ui_unified, 14, 4) top: pick(ui_unified, 10, 0)} Note{text: pick(t.comments_state == "" || t.comments_state == "loading", "Reading the comments…", t.comments_state)}}
             }
             if t.comments != nil && t.comments.len() == 0 && t.pending == nil {
-                View{width: Fill height: Fit padding: Inset{left: 4 right: 4} Note{text: comment_hint(t)}}
+                View{width: Fill height: Fit padding: Inset{left: pick(ui_unified, 14, 4) right: pick(ui_unified, 14, 4) top: pick(ui_unified, 10, 0)} Note{text: comment_hint(t)}}
             }
             if t.comments != nil { for c in t.comments { thread_card(t, c) } }
         }
@@ -5677,6 +5737,7 @@ fn status_chosen(t, title){
     for s in STATUSES { if pick(s == "none", "None", status_label(s)) == title { set_status(t, s) } }
 }
 fn thread_card(t, c){
+    if ui_unified { return mac_thread_row(t, c) }
     let open = t.thread == c.id
     let st_label = status_label(optional(c, "status", ""))
     let tone = pick(st_label == "", ui_muted, pt_status_ink)
@@ -5713,6 +5774,49 @@ fn thread_card(t, c){
             }
         }
     }
+    }
+}
+// A Mac's comment is a row of the list, as Preview's highlights and notes are: no card
+// round it, a hairline under it, and its status a pop-up button beside its name, not an
+// outlined pill.
+fn mac_thread_row(t, c){
+    let open = t.thread == c.id
+    let st_label = status_label(optional(c, "status", ""))
+    let busy = history_busy(t) || comment_delete_busy(t)
+    let shown = pick(st_label == "", "None", st_label)
+    GestureView{width: Fill height: Fit flow: Down menu: COMMENT_MENU on_menu: |title| comment_chosen(c, title)
+        GestureView{width: Fill height: 30 flow: Right align: Align{y: 0.5} padding: Inset{left: 14 right: 12} spacing: 7
+            on_tap: |x, y| { if pt_modal { return } let x = cur_tab() if x.thread == c.id { if draft_guard(x, "closing this comment") { return } x.thread = nil render_right() render_canvas() } else { open_thread(x, c) } }
+            RoundedView{width: 10 height: 10 show_bg: true draw_bg +: {color: mark_color(optional(c, "color", "")) border_radius: 2.5}}
+            Body{text: "Page " + c.page}
+            Gap{}
+            if !open { Small{text: comment_when(optional(c, "date", ""), time_now())} }
+            Ico{width: 9 height: 9 draw_svg +: {svg: icon(pick(open, "chevron-up", "chevron-down")) color: ui_muted}}
+        }
+        if !open {
+            View{width: Fill height: Fit flow: Right align: Align{y: 0.5} padding: Inset{left: 14 right: 12 bottom: 8} spacing: 8
+                avatar(optional(c, "author", ""))
+                Second{width: Fill max_lines: 1 text_overflow: TextOverflow.Ellipsis text: pick(optional(c, "author", "") == "", "Comment", optional(c, "author", ""))}
+                if st_label != "" { Small{text: st_label} }
+            }
+        }
+        if open {
+            View{width: Fill height: Fit flow: Down padding: Inset{left: 14 right: 12 top: 2 bottom: 12} spacing: 10
+                message(optional(c, "author", ""), optional(c, "date", ""), optional(c, "text", ""), 0)
+                for r in optional(c, "replies", []) { message(optional(r, "author", ""), optional(r, "date", ""), optional(r, "text", ""), 32) }
+                View{width: Fill height: Fit flow: Right align: Align{y: 0.5} padding: Inset{left: 32} spacing: 8
+                    Second{text: "Status"}
+                    View{width: Fit height: 28 flow: Overlay align: Align{x: 1.0 y: 0.5}
+                        status_pick := GestureView{width: Fit height: 28 menu_words_at: 10 on_menu: |title| status_chosen(cur_tab(), title)
+                            UiPopup{enabled: !busy text: shown on_click: || ui.status_pick.open_menu(status_titles(), shown)}
+                        }
+                        UiPopupMark{}
+                    }
+                }
+                reply_box(t, "Reply…", || post_reply(cur_tab()))
+            }
+        }
+        UiSep{}
     }
 }
 fn reply_box(t, hint, post){
@@ -5813,7 +5917,9 @@ fn mac_field_row(t, f){
         }
         RoundedView{width: Fill height: Fit flow: pick(narrow(), Flow.Down, Flow.Right) spacing: pick(narrow(), 1, 8) margin: Inset{left: 8 right: 8} padding: Inset{left: 6 right: 6 top: 6 bottom: 6} new_batch: true show_bg: true draw_bg +: {color: pick(on, ui_selected, pt_clear) border_radius: 5.0}
             Label{clip_y: false padding: 0 width: pick(narrow(), Fill, 122) flow: Flow.Right{wrap: true} text: optional(f, "name", "") + pick(need, " *", "") draw_text +: {color: pick(need && empty, pick(on, pt_row_danger, ui_danger), pick(narrow(), ui_muted, ui_ink)) text_style: theme.font_regular{font_size: 9.75 line_spacing: 1.2}}}
-            Label{clip_y: false padding: 0 width: Fill flow: Flow.Right{wrap: true} text: pick(empty, "Empty", field_shown(f)) + pick(read_only(f), " (read-only)", "") draw_text +: {color: pick(empty, ui_muted, ui_ink) text_style: theme.font_regular{font_size: 9.75 line_spacing: 1.2}}}
+            // A read-only value is grey and says so in a word of its own, which never breaks.
+            Label{clip_y: false padding: 0 width: Fill flow: Flow.Right{wrap: true} text: pick(empty, "Empty", field_shown(f)) draw_text +: {color: pick(empty || read_only(f), ui_muted, ui_ink) text_style: theme.font_regular{font_size: 9.75 line_spacing: 1.2}}}
+            if read_only(f) { Label{clip_y: false padding: 0 width: Fit text: "Read-only" draw_text +: {color: ui_muted text_style: theme.font_regular{font_size: 8.25}}} }
         }
     }
 }
@@ -6155,7 +6261,7 @@ fn other_problem_status(current, failed, problem){
     let draft = pending_draft(current)
     let state = if current == nil || current.state != "ready" { "" } else { pick(current.saving, "Saving…", pick(dirty, "Edited", pick(draft, "Editing", "Saved"))) }
     // A Mac's title says "— Edited" (mac_modebar): the status bar says only what is under way.
-    if ui_unified && current != nil && current.state == "ready" { state = pick(current.saving, "Saving…", pick(draft, "Editing", "")) }
+    if ui_unified && current != nil && current.state == "ready" { state = pick(current.saving, "Saving…", "") }
     View{width: Fill height: Fill flow: Right align: Align{y: 0.5} padding: Inset{left: 14 right: 14} spacing: 8
         if state != "" && !ui_unified {
             RoundedView{width: 8 height: 8 show_bg: true draw_bg +: {color: pick(dirty || draft || current.saving, pt_warn, ui_success) border_radius: 2.0}}
@@ -6267,13 +6373,13 @@ fn status_view(){
     let state = pick(t.saving, "Saving…", pick(dirty, "Edited", pick(draft, "Editing", "Saved")))
     // A Mac's title says "— Edited" (mac_modebar), as Preview's does: the status bar says
     // only what is under way.
-    if ui_unified { state = pick(t.saving, "Saving…", pick(draft, "Editing", "")) }
+    if ui_unified { state = pick(t.saving, "Saving…", "") }
     if t.state != "ready" { state = "" }
     View{width: Fill height: Fill flow: Right align: Align{y: 0.5} padding: Inset{left: 14 right: 14} spacing: 6
         if state != "" && !ui_unified { RoundedView{width: 8 height: 8 show_bg: true draw_bg +: {color: pick(dirty || draft || t.saving, pt_warn, ui_success) border_radius: 2.0}} }
         Small{text: state}
         if st.space_full { View{width: Fit height: Fit padding: Inset{left: 8} Small{text: "Storage is full: remove a PDF to make room" draw_text +: {color: ui_danger}}} }
-        if st.said != "" { View{width: Fill height: Fit align: Align{x: 1.0} Small{text: st.said}} }
+        if st.said != "" { View{width: Fill height: Fit align: Align{x: pick(ui_unified, 0.0, 1.0)} Small{text: st.said}} }
     }
 }
 
@@ -6283,6 +6389,7 @@ fn status_view(){
 // other: three stand one over another with the default, Save, on top; two sit side
 // by side with the default on the right. Another desktop keeps its sheet.
 fn dialog_view(){
+    if cant_open_up() { return cant_open_view() }
     if st.going { return goto_view() }
     if st.removing != "" { return remove_view() }
     if st.open_sheet { return open_sheet_view() }
@@ -6361,7 +6468,31 @@ fn remove_view(){
         }
     }
 }
+// A file a Mac can't open: Preview's alert, with OK, over whatever was showing.
+fn cant_open_view(){
+    let c = st.cant_open
+    let head = "The file “" + c.file + "” couldn’t be opened."
+    let words = "It may be damaged or use a file format PDF Tools doesn’t recognize."
+    if c.state == "protected" {
+        head = "“" + c.file + "” is locked with a password."
+        words = "PDF Tools can’t open password-protected PDFs yet. Save a copy without the password, then open that."
+    }
+    View{width: Fill height: Fill flow: Overlay
+        SheetDim{}
+        SheetPlace{padding: Inset{top: sheet_top() left: 16 right: 16}
+            UiAlertPanel{
+                if ui_alert_icon { UiAlertIcon{app: "os.pdftools" width: 64 height: 64} }
+                UiAlertTitle{text: head}
+                UiAlertNote{text: words}
+                UiAlertRow{
+                    Primary{width: Fill key_default: true key_cancel: true reset_hover_on_click: true text: "OK" on_click: || cancel_sheet()}
+                }
+            }
+        }
+    }
+}
 fn cancel_sheet(){
+    st.cant_open = nil
     st.confirm = nil
     st.removing = ""
     render_dialog()
@@ -6512,6 +6643,9 @@ SolidView{width: Fill height: Fill flow: Overlay draw_bg.color: ui_page
                     combine_box := SolidView{visible: false width: Fill height: Fill flow: Down draw_bg.color: ui_surface
                         combine_list := ScrollY{width: Fill height: Fill flow: Down on_render: || { tall_list_view() }}
                         combine_tall_foot := SolidView{width: Fill height: Fit flow: Down draw_bg.color: ui_bar on_render: || { tall_foot_view() }}
+                    }
+                    status_float_box := View{visible: false width: Fill height: Fill
+                        status_float := View{width: Fill height: Fill flow: Down align: Align{x: 0.5 y: 1.0} on_render: || { status_float_view() }}
                     }
                     notice_box := View{visible: false width: Fill height: Fill
                         notice := View{width: Fill height: Fill flow: Down align: Align{x: 0.5 y: 0.4} padding: 24 on_render: || { notice_view() }}

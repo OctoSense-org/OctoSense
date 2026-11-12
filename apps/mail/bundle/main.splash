@@ -2233,6 +2233,17 @@ fn app_menus(){
     if ui_unified {
         rows.push({menu: "Mailbox"})
         rows.push({menu: "Mailbox" title: "Mark All Messages as Read" command: "read_all" enabled: free && desk_can_read_all()})
+        // A Mac's Mail goes to a mailbox from the keyboard, Command-1 on: here the sidebar's,
+        // in its order, as many as there are keys.
+        let keys = ["cmd+1", "cmd+2", "cmd+3", "cmd+4", "cmd+5", "cmd+6", "cmd+7", "cmd+8", "cmd+9"]
+        let i = 0
+        for f in folders {
+            if i < keys.len() {
+                if i == 0 { rows.push({menu: "Mailbox"}) }
+                rows.push({menu: "Mailbox" submenu: "Go to Favorite Mailbox" title: f.name key: keys[i] command: "go:" + f.id enabled: free})
+                i = i + 1
+            }
+        }
     }
     let message_rows = [
         {menu: "Message" title: "Send" key: "shift+cmd+D" command: "send" enabled: free && composing && send_ready && !compose_ask}
@@ -2265,6 +2276,9 @@ fn on_menu_command(command){
     if command == "send" {
         if composing && send_ready && !compose_ask { compose_send() }
         return
+    }
+    for f in folders {
+        if command == "go:" + f.id { open_folder(f); return }
     }
     let m = desk_open_row()
     if command == "new" { desk_compose("new") }

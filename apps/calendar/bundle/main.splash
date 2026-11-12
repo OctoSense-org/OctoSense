@@ -1346,8 +1346,8 @@ fn app_menus(){
         {menu: "File" title: "New Event" key: "cmd+N" command: "new" enabled: free}
         {menu: "File" title: "Get Info" key: "cmd+I" command: "info" enabled: event}
         // Undo, Redo, Cut, Copy and Paste stand in for the text ones while no field has the keyboard.
-        {menu: "Edit" title: "Undo" key: "cmd+Z" command: "undo" enabled: free && !dk.busy && desk_can_undo()}
-        {menu: "Edit" title: "Redo" key: "shift+cmd+Z" command: "redo" enabled: free && !dk.busy && dk.redo.len() > 0}
+        {menu: "Edit" title: "Undo" + desk_step_name(dk.undo) key: "cmd+Z" command: "undo" enabled: free && !dk.busy && desk_can_undo()}
+        {menu: "Edit" title: "Redo" + desk_step_name(dk.redo) key: "shift+cmd+Z" command: "redo" enabled: free && !dk.busy && dk.redo.len() > 0}
         {menu: "Edit" title: "Cut" key: "cmd+X" command: "cut" enabled: event}
         {menu: "Edit" title: "Copy" key: "cmd+C" command: "copy" enabled: event}
         {menu: "Edit" title: "Paste" key: "cmd+V" command: "paste" enabled: free && dk.clip != nil}
@@ -3279,6 +3279,16 @@ fn desk_push_step(s){
     dk.undo.push(s)
     if dk.undo.len() > 50 { dk.undo.remove(0) }
     dk.redo = []
+}
+// A Mac's Undo and Redo name the step they take, as Calendar's do ("Undo Delete Event").
+fn desk_step_name(steps){
+    if !ui_unified || steps.len() == 0 { return "" }
+    let s = steps[steps.len() - 1]
+    if s.kind == "delete" { return " Delete Event" }
+    if s.kind == "add" { return " New Event" }
+    let moved = try { s.a.title == s.b.title && s.a.start != s.b.start } catch { false }
+    if moved { return " Move Event" }
+    " Change Event"
 }
 fn desk_no_undo(){
     dk.undo = []

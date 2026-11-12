@@ -650,6 +650,8 @@ if st == nil {
         day: 0                // desktop: the day the library's dates were drawn
         width: 0              // desktop: the window's width, once the shell has said
         retry: ""             // desktop: what the notice's Try Again was trying to do
+        alert_title: ""       // a Mac: the failure alert's words, while it is up
+        alert_note: ""        // a Mac: why it failed, under them
         resize_n: 0           // desktop: the last resize, for the redraw that follows it
         find_open: false      // desktop: the find bar shows under the format bar
         find_words: ""        // desktop: what the find bar looks for
@@ -704,6 +706,7 @@ fn resume(){
     let asked = st.pending_delete
     pane(st.screen)
     if ui_desk && asked { show_delete(true) }
+    if ui_unified && st.alert_title != "" { desk_alert_show() }
     render_docs()
     if st.doc != nil && !is_busy() { refresh_editor(ui.editor_text.text()) }
     if !ui_desk { ui.outline_rows.render() }
@@ -715,7 +718,7 @@ fn resume(){
         ui.format_bar.render()
         // Restore the page's caret when no other editor control is open. The
         // find bar may already have taken focus while the new look was applied.
-        if st.screen == "editor" && !st.pending_delete && st.find_open != true { ui.editor_text.focus() }
+        if st.screen == "editor" && !st.pending_delete && st.alert_title == "" && st.find_open != true { ui.editor_text.focus() }
     }
 }
 start_timeout(0.05, || boot())
@@ -775,7 +778,9 @@ fn pane(name){
         sync_word_errors()
     }
 }
+let editor_said = ""     // what the editor's notice last said
 fn notice(where, text){
+    if where == "editor" { editor_said = text }
     if ui_desk && where == "editor" { ui.editor_retry.set_visible(false) }
     if where == "editor" { ui.editor_notice_text.set_text(text) ui.editor_notice.set_visible(text != "") }
     if where == "preview" { ui.preview_notice_text.set_text(text) ui.preview_notice.set_visible(text != "") }
@@ -1184,7 +1189,7 @@ fn convert_draft(what, next, d, rev, source, out, md){
         if !ui_desk { ui.save_button.set_text("Save") }
         if st.doc != nil && st.doc.id == d.id {
             notice("editor", "Writer couldn't " + what + ". Try again.")
-            desk_offer(what)
+            desk_fail(what)
             refresh_editor(ui.editor_text.text())
         }
         return
@@ -1195,7 +1200,7 @@ fn convert_draft(what, next, d, rev, source, out, md){
         remove_file(source)
         if !r.is_ok {
             notice("editor", said_message(what, r.error))
-            desk_offer(what)
+            desk_fail(what)
             if st.doc != nil { refresh_editor(ui.editor_text.text()) }
             return
         }
@@ -1243,6 +1248,37 @@ fn desk_offer(what){
     if !ui_desk { return }
     st.retry = what
     ui.editor_retry.set_visible(true)
+}
+// A Mac puts a failure that just happened in an alert, as Pages and TextEdit do: what
+// didn't happen to which document, why, then Try Again and OK, the default. Another
+// desktop keeps the notice and its Try Again. A Word file still unsaved when its document
+// opens again keeps the notice (sync_word_errors): it says how the document stands.
+fn desk_fail(what){
+    if !ui_unified { desk_offer(what) return }
+    st.retry = what
+    st.alert_title = desk_alert_title(what)
+    st.alert_note = editor_said
+    notice("editor", "")
+    desk_alert_show()
+}
+fn desk_alert_title(what){
+    let name = if st.doc != nil { shown_title(st.doc) } else { "Untitled" }
+    if what == "show a preview" { return "“" + name + "” couldn’t be previewed." }
+    if what == "export copies" { return "Copies of “" + name + "” couldn’t be exported." }
+    "The document “" + name + "” couldn’t be saved."
+}
+fn desk_alert_show(){
+    ui.alert_title.set_text(st.alert_title)
+    ui.alert_note.set_text(st.alert_note)
+    ui.save_alert.set_visible(st.alert_title != "")
+    desk_sheet_sync()
+}
+fn desk_alert_close(again){
+    st.alert_title = ""
+    st.alert_note = ""
+    ui.save_alert.set_visible(false)
+    desk_sheet_sync()
+    if again { desk_retry() } else if st.screen == "editor" { ui.editor_text.focus() }
 }
 fn desk_retry(){
     notice("editor", "")
@@ -1330,7 +1366,7 @@ fn read_preview(){
             st.busy = false
             if st.doc == nil || st.doc.id != d.id { return }
             notice("editor", said_message("show a preview", info.error))
-            desk_offer("show a preview")
+            desk_fail("show a preview")
             refresh_editor(ui.editor_text.text())
             return
         }
@@ -1342,7 +1378,7 @@ fn show_preview(d, info, r){
     if st.doc == nil || st.doc.id != d.id { return }
     if !r.is_ok {
         notice("editor", said_message("show a preview", r.error))
-        desk_offer("show a preview")
+        desk_fail("show a preview")
         refresh_editor(ui.editor_text.text())
         return
     }
@@ -1890,15 +1926,15 @@ let DeskPrimaryOff = UiButton{enabled: false draw_bg +: {color_hover: ui_button 
 let desk_sheet_up = false
 fn desk_sheet_sync(){
     desk_page_sync()
-    if st.screen == "export" || st.pending_delete {
+    if st.screen == "export" || st.pending_delete || st.alert_title != "" {
         desk_sheet_up = true
         return
     }
-    start_timeout(0.15, || { if st.screen != "export" && !st.pending_delete { desk_sheet_up = false } })
+    start_timeout(0.15, || { if st.screen != "export" && !st.pending_delete && st.alert_title == "" { desk_sheet_up = false } })
 }
 // The page has the keyboard when nothing covers it.
 fn desk_page_sync(){
-    ui.editor_text.set_active(st.screen == "editor" && !st.pending_delete)
+    ui.editor_text.set_active(st.screen == "editor" && !st.pending_delete && st.alert_title == "")
 }
 
 // The toolbar's commands, when they can do something. Save and Export wait for a
@@ -2261,7 +2297,8 @@ fn doc_grid(id){
     let cols = desk_cols()
     View{width: Fill height: Fit flow: Down padding: Inset{left: 16 right: 16 top: 20 bottom: 24}
         for row in desk_rows_of(docs_in(id, st.docs), cols) {
-            View{width: Fill height: Fit flow: Right
+            // A Mac's right click puts a backing round the page, a little past the row.
+            View{width: Fill height: Fit flow: Right clip_x: !ui_unified clip_y: !ui_unified
                 for d in row { doc_card(d) }
                 // A short last row keeps the columns of the rows above it.
                 for k in desk_blanks(cols - row.len()) { View{width: Fill height: 1} }
@@ -2304,8 +2341,10 @@ fn doc_card(d){
     if d.words > 0 { commands = ["Open" "Export…" "-" "Delete…"] }
     GestureView{width: Fill height: Fit flow: Down align: Align{x: 0.5} padding: Inset{bottom: 18} on_tap: |x, y| { if desk_sheet_up { return } open_doc(d) }
         menu: commands on_menu: |title| desk_card_menu(d, title)
-        // A Mac's right click rings the page, not the cell, as Finder's and Pages' do.
+        // A Mac's right click marks the page and its name, not the cell, as Finder's and
+        // Pages' do: a grey backing behind the page, the accent capsule behind the name.
         menu_ring: if ui_unified { "thumb" } else { "" }
+        menu_ring_name: if ui_unified { "name" } else { "" }
         thumb := RectShadowView{width: 124 height: 160 flow: Down spacing: 4 padding: Inset{left: 11 right: 11 top: 13 bottom: 8}
             draw_bg +: {color: paper shadow_color: page_shadow shadow_radius: 5.0 shadow_offset: vec2(0.0, 1.0)}
             Label{width: Fill padding: 0 max_lines: 3 text_overflow: Ellipsis clip_y: false text: shown_title(d) draw_text +: {color: paper_ink text_style: theme.font_bold{font_size: 5.25 line_spacing: 1.2}}}
@@ -2314,7 +2353,9 @@ fn doc_card(d){
             if badge == "DOCX" { Label{clip_y: false padding: 0 text: "DOCX" draw_text +: {color: doc_green text_style: theme.font_bold{font_size: 5.25}}} }
             if badge == "Edited" { Label{clip_y: false padding: 0 text: "Edited" draw_text +: {color: paper_muted text_style: theme.font_bold{font_size: 5.25}}} }
         }
-        Label{width: Fill padding: Inset{left: 8 right: 8 top: 9} max_lines: 2 text_overflow: Ellipsis clip_y: false align: Align{x: 0.5} text: shown_title(d) draw_text +: {color: ink text_style: theme.font_regular{font_size: 9.75 line_spacing: 1.2}}}
+        // On a Mac the name hugs its words, with the capsule's room round them.
+        if ui_unified { name := Label{width: Fit margin: Inset{left: 2 right: 2 top: 8} padding: Inset{left: 6 right: 6 top: 1 bottom: 2} max_lines: 2 text_overflow: Ellipsis clip_y: false align: Align{x: 0.5} text: shown_title(d) draw_text +: {color: ink text_style: theme.font_regular{font_size: 9.75 line_spacing: 1.2}}} }
+        if !ui_unified { Label{width: Fill padding: Inset{left: 8 right: 8 top: 9} max_lines: 2 text_overflow: Ellipsis clip_y: false align: Align{x: 0.5} text: shown_title(d) draw_text +: {color: ink text_style: theme.font_regular{font_size: 9.75 line_spacing: 1.2}}} }
         Label{clip_y: false width: Fill padding: Inset{left: 6 right: 6 top: 1} align: Align{x: 0.5} text: desk_when(d.updated) draw_text +: {color: muted text_style: theme.font_regular{font_size: 8.25}}}
     }
 }
@@ -2796,6 +2837,24 @@ let DeskRoot = SolidView{width: Fill height: Fill flow: Overlay draw_bg.color: u
                     DeskSheetButtons{
                         UiButton{reset_hover_on_click: true text: "Delete" draw_text +: {color: desk_danger color_hover: desk_danger color_down: desk_danger color_focus: desk_danger} on_click: || delete_doc()}
                         UiPrimary{key_default: true key_cancel: true reset_hover_on_click: true text: "Cancel" on_click: || desk_cancel_delete()}
+                    }
+                }
+            }
+        }
+    }
+    // A save, preview or export that failed, on a Mac: the alert Pages and TextEdit show,
+    // the document's name and why, Try Again and OK side by side, OK the default.
+    if ui_unified {
+        save_alert := View{visible: false width: Fill height: Fill flow: Overlay new_batch: true
+            DeskDim{}
+            DeskSheetPlace{
+                UiAlertPanel{
+                    if ui_alert_icon { UiAlertIcon{app: "os.writer" width: 64 height: 64} }
+                    alert_title := UiAlertTitle{}
+                    alert_note := UiAlertNote{}
+                    UiAlertRow{
+                        UiButton{width: Fill reset_hover_on_click: true text: "Try Again" on_click: || desk_alert_close(true)}
+                        UiPrimary{width: Fill key_default: true key_cancel: true reset_hover_on_click: true text: "OK" on_click: || desk_alert_close(false)}
                     }
                 }
             }

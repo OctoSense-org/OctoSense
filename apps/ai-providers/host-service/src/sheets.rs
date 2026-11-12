@@ -405,6 +405,10 @@ fn poll(){{
 }}
 fn close(){{ host.request("llm.sheet.cancel", {{}}, nil) }}
 fn cancel(){{ close() }}
+fn mac_reach(port){{
+    if port == "" {{ return "Only clients on this Mac can reach your assistant." }}
+    return "Clients on this Mac reach your assistant on port " + port + "; other computers can't."
+}}
 fn count_down(){{
     if closing {{ return }}
     left = left - 1
@@ -421,6 +425,9 @@ let QrRow = View{{width: Fit flow: Right}}
 {STYLES}"##
     );
     let expires = format!("{}:{:02}", lifetime_secs / 60, lifetime_secs % 60);
+    // A Mac's sheet names this Mac and the port, as Web Clients' Advanced does: the
+    // server listens on the loopback only, so a QR for another device would mislead.
+    let port = server.rsplit_once(':').map(|(_, port)| port.trim_end_matches('/')).filter(|port| port.parse::<u16>().is_ok()).unwrap_or_default();
     let qr = match qr {
         Some((size, modules)) => format!(
             "        Note{{text: \"Scan it with the device where the web client runs, or open the web client and type the code.\"}}\n        View{{width: Fill height: Fit flow: Down align: Align{{x: 0.5}}\n{}        }}\n",
@@ -430,11 +437,17 @@ let QrRow = View{{width: Fit flow: Right}}
     };
     let content = format!(
         r#"        Title{{text: by("Pair a web client", "Pair a Web Client")}}
-        Note{{text: "Open the web client, enter this device's server and type the code. The code gives that client access once."}}
-{qr}        Caption{{align: Align{{x: by(0.0, 0.5)}} text: "Code"}}
+        if desk_mac {{
+            Note{{text: "Open the web client in a browser on this Mac and type the code. The code gives that client access once."}}
+        }} else {{
+            Note{{text: "Open the web client, enter this device's server and type the code. The code gives that client access once."}}
+{qr}        }}
+        Caption{{align: Align{{x: by(0.0, 0.5)}} text: "Code"}}
         code := Label{{width: Fill align: Align{{x: 0.5}} text: "{code}" draw_text.color: ink draw_text.text_style: theme.font_bold{{font_size: sh_fs(30)}}}}
         countdown := Caption{{align: Align{{x: by(0.0, 0.5)}} text: "Expires in {expires}"}}
-        if desk {{ View{{width: Fill height: Fit flow: Right spacing: 8 align: Align{{y: 0.5}}
+        if desk_mac {{
+            Caption{{align: Align{{x: 0.5}} text: mac_reach("{port}")}}
+        }} else if desk {{ View{{width: Fill height: Fit flow: Right spacing: 8 align: Align{{y: 0.5}}
             DeskKey{{width: Fit text: "Server:"}}
             Field{{is_read_only: true text: "{server}"}}
         }} }} else {{
@@ -444,6 +457,7 @@ let QrRow = View{{width: Fit flow: Right}}
         status := Status{{visible: !desk}}"#,
         code = lit(code),
         server = lit(server),
+        port = lit(port),
     );
     script.push_str(&frame(
         r#"            Plain{text: "Back" on_click: || back()}
@@ -1832,6 +1846,7 @@ mod tests {
         let sheet = pair_client("ABCD2345", "http://127.0.0.1:4000", Some((size, &modules)), 300);
         assert!(sheet.contains("ABCD2345") && sheet.contains("// qr-begin") && sheet.contains("Expires in 5:00"));
         assert!(sheet.contains("llm.sheet.client_back"), "leaving the code's sheet turns pairing off");
+        assert!(sheet.contains("mac_reach(\"4000\")"), "a Mac's sheet names this Mac and the port");
         let without = pair_client("AB\"CD", "http://127.0.0.1:4000", None, 300);
         assert!(!without.contains("// qr-begin") && !without.contains("AB\"CD"), "literals are sanitised");
     }

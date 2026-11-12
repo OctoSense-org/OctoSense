@@ -17,7 +17,8 @@
 //! borderless button that shows over the reply under the pointer; Shift+
 //! Command+C copies the latest reply, and a right click (or a Control-click)
 //! on a message opens a Mac menu, drawn over both panels: on a selection
-//! Look Up, Search With Google and Copy; elsewhere Copy.
+//! Look Up, Search With Google and Copy; elsewhere Copy; then Speech, where
+//! the Mac can speak, and Services, each a submenu as on a Mac.
 
 use super::*;
 use crate::shell::ui::{inset, slide};
@@ -71,6 +72,8 @@ const MENU_LABEL_X: f64 = MENU_PAD + 9.0;
 const MENU_MIN_W: f64 = 150.0;
 /// A rule between a menu's groups, as the shell's own menus have it.
 const MENU_RULE: f64 = 11.0;
+/// The room a row's submenu arrow takes at its right.
+const MENU_ARROW: f64 = 14.0;
 /// A release this soon after the press that opened the menu, with no move
 /// between, leaves it open: that was a click.
 const MENU_RELEASE_S: f64 = 0.3;
@@ -657,8 +660,12 @@ pub(super) struct ChatMenu {
     opened: f64,
     /// The pointer moved, or pressed in it, since: a release chooses.
     armed: bool,
-    /// Each row's words and what it does; a rule has neither.
+    /// Each row's words and what it does; a rule has neither, and a row
+    /// with words that does nothing now is grey.
     rows: Vec<(String, Option<Pick>)>,
+    /// The submenus its rows open ([`Pick::Sub`]), and the one open.
+    subs: Vec<Vec<(String, Option<Pick>)>>,
+    sub: Option<OpenSub>,
     /// The selection it opened on: what Look Up and Search With Google take.
     words: String,
     cursor: Option<usize>,
@@ -667,12 +674,83 @@ pub(super) struct ChatMenu {
     bands: Vec<Rect>,
 }
 
+/// A message menu's submenu while it is open: the row it hangs from, which
+/// of the menu's `subs` it is, where it was laid out, and the row lit in it.
+#[derive(Clone, Debug, Default)]
+struct OpenSub {
+    row: usize,
+    sub: usize,
+    card: Rect,
+    bands: Vec<Rect>,
+    cursor: Option<usize>,
+}
+
+impl ChatMenu {
+    /// Whether `p` is on the menu or its open submenu.
+    fn holds(&self, p: Vec2d) -> bool {
+        contains(self.card, p) || self.sub.as_ref().is_some_and(|open| contains(open.card, p))
+    }
+
+    /// The submenu `row` opens, if it opens one.
+    fn sub_of(&self, row: usize) -> Option<usize> {
+        match self.rows.get(row) {
+            Some((_, Some(Pick::Sub(sub)))) => Some(*sub),
+            _ => None,
+        }
+    }
+
+    /// The pointer at `p`: the live row under it lights. Over a row with a
+    /// submenu that submenu opens; over another of the menu's rows it
+    /// closes; between the two, or off both, it stays. True when what is
+    /// drawn changed.
+    fn point(&mut self, p: Vec2d) -> bool {
+        if let Some(open) = self.sub.as_mut() {
+            if contains(open.card, p) {
+                let cursor = live_at(&self.subs[open.sub], &open.bands, p);
+                let changed = cursor != open.cursor;
+                open.cursor = cursor;
+                return changed;
+            }
+        }
+        let cursor = live_at(&self.rows, &self.bands, p);
+        if cursor.is_none() && self.sub.is_some() {
+            return false;
+        }
+        if cursor == self.cursor {
+            return false;
+        }
+        self.cursor = cursor;
+        self.sub = cursor.and_then(|row| self.sub_of(row).map(|sub| OpenSub { row, sub, ..OpenSub::default() }));
+        true
+    }
+
+    /// What a release at `p` chooses: a live row of the open submenu, or of
+    /// the menu that opens none.
+    fn pick_at(&self, p: Vec2d) -> Option<Pick> {
+        if let Some(open) = self.sub.as_ref().filter(|open| contains(open.card, p)) {
+            let rows = &self.subs[open.sub];
+            return live_at(rows, &open.bands, p).and_then(|i| rows[i].1);
+        }
+        live_at(&self.rows, &self.bands, p).and_then(|i| self.rows[i].1).filter(|pick| !matches!(pick, Pick::Sub(_)))
+    }
+}
+
+/// The row under `p` that does something now.
+fn live_at(rows: &[(String, Option<Pick>)], bands: &[Rect], p: Vec2d) -> Option<usize> {
+    bands.iter().zip(rows).position(|(band, (_, pick))| pick.is_some() && contains(*band, p))
+}
+
 /// What a row of a message's menu does.
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Pick {
     LookUp,
     Search,
     Copy,
+    /// Speech: the selection, or the message, read aloud ([`speech`]).
+    Speak,
+    StopSpeaking,
+    /// Opens the menu's submenu of this index.
+    Sub(usize),
 }
 
 /// What draws an open menu ([`draw_menu`]): each row's words, a rule's empty.
@@ -680,9 +758,14 @@ enum Pick {
 struct MenuLook {
     card: Rect,
     rows: Vec<String>,
+    /// The rows that do nothing now, and the rows that open a submenu.
+    greys: Vec<bool>,
+    arrows: Vec<bool>,
     bands: Vec<Rect>,
     cursor: Option<usize>,
     dark: bool,
+    /// The open submenu's card, beside the row it hangs from.
+    sub: Option<Box<MenuLook>>,
 }
 
 /// The composer's field laid out for a draft ([`ShellSystemChat::mac_field`]).
@@ -945,28 +1028,25 @@ impl ShellSystemChat {
     /// the pane drawn last to draw ([`MENU_LOOK`]).
     fn mac_lay_menu(&mut self, cx: &mut Cx2d, screen: Rect, dark: bool) {
         let Some(menu) = self.mac.menu.as_mut() else { return };
-        let mut width = MENU_MIN_W;
-        for (label, pick) in &menu.rows {
-            if pick.is_some() {
-                width = width.max(MENU_LABEL_X + self.d.measure(cx, false, MENU_TEXT, label) + MENU_PAD + 9.0);
-            }
-        }
-        let tall = |pick: &Option<Pick>| if pick.is_some() { MENU_ROW } else { MENU_RULE };
-        let height: f64 = menu.rows.iter().map(|(_, pick)| tall(pick)).sum();
-        let card = menu_place(menu.at, dvec2(width.ceil(), MENU_PAD * 2.0 + height), screen);
+        let card = menu_place(menu.at, menu_size(&mut self.d, cx, &menu.rows), screen);
         menu.card = card;
-        let mut y = card.pos.y + MENU_PAD;
-        menu.bands = menu
-            .rows
-            .iter()
-            .map(|(_, pick)| {
-                let band = rect(card.pos.x + MENU_PAD, y, card.size.x - MENU_PAD * 2.0, tall(pick));
-                y += band.size.y;
-                band
-            })
-            .collect();
-        let rows = menu.rows.iter().map(|(label, pick)| if pick.is_some() { label.clone() } else { String::new() }).collect();
-        let look = MenuLook { card, rows, bands: menu.bands.clone(), cursor: menu.cursor, dark };
+        menu.bands = menu_bands(card, &menu.rows);
+        let mut look = menu_look(card, &menu.rows, &menu.bands, menu.cursor, dark);
+        // A submenu beside the row it hangs from, its first row level with it,
+        // on the left where the right has no room, as the shell's own menus do.
+        if let Some(open) = menu.sub.as_mut() {
+            let rows = &menu.subs[open.sub];
+            let size = menu_size(&mut self.d, cx, rows);
+            let band = menu.bands[open.row];
+            let right = screen.pos.x + screen.size.x - 4.0;
+            let beside = card.pos.x + card.size.x - 3.0;
+            let x = if beside + size.x > right { card.pos.x - size.x + 3.0 } else { beside };
+            let bottom = screen.pos.y + screen.size.y - 4.0;
+            let y = (band.pos.y - MENU_PAD).min(bottom - size.y).max(screen.pos.y + 4.0);
+            open.card = rect(x, y, size.x, size.y);
+            open.bands = menu_bands(open.card, rows);
+            look.sub = Some(Box::new(menu_look(open.card, rows, &open.bands, open.cursor, dark)));
+        }
         MENU_LOOK.with(|m| *m.borrow_mut() = Some(look));
     }
 
@@ -1772,12 +1852,28 @@ impl ShellSystemChat {
             rows.push((String::new(), None));
         }
         rows.push(("Copy".to_string(), Some(Pick::Copy)));
+        // A Mac's text menu ends with Speech, where the Mac can speak, and Services,
+        // of which no OctoSense app offers one yet (as the app menu says).
+        let mut subs = Vec::new();
+        if speech::can_speak() {
+            rows.push((String::new(), None));
+            rows.push(("Speech".to_string(), Some(Pick::Sub(subs.len()))));
+            subs.push(vec![
+                ("Start Speaking".to_string(), Some(Pick::Speak)),
+                ("Stop Speaking".to_string(), speech::speaking().then_some(Pick::StopSpeaking)),
+            ]);
+        }
+        rows.push((String::new(), None));
+        rows.push(("Services".to_string(), Some(Pick::Sub(subs.len()))));
+        subs.push(vec![("No Services Apply".to_string(), None)]);
         self.mac.menu = Some(ChatMenu {
             target: (!on_selection).then_some(item),
             at: p,
             opened: cx.seconds_since_app_start(),
             armed: false,
             rows,
+            subs,
+            sub: None,
             words,
             cursor: None,
             card: Rect::default(),
@@ -1787,26 +1883,22 @@ impl ShellSystemChat {
     }
 
     /// The pointer while this panel's message menu is up: the row under it
-    /// lights; a release on a row chooses it ([`release_chooses`]); a press
-    /// off the menu closes it and goes no further, as on a Mac.
+    /// lights, and a row with a submenu opens it ([`ChatMenu::point`]); a
+    /// release on a row chooses it ([`release_chooses`]); a press off the
+    /// menu and its submenu closes it and goes no further, as on a Mac.
     fn mac_menu_pointer(&mut self, cx: &mut Cx, event: &Event) -> Outcome {
         let now = cx.seconds_since_app_start();
         let Some(menu) = self.mac.menu.as_mut() else { return Outcome::Ignored };
-        // A rule is no row to light or choose.
-        let live: Vec<bool> = menu.rows.iter().map(|(_, pick)| pick.is_some()).collect();
-        let row_at = |bands: &[Rect], p: Vec2d| bands.iter().zip(&live).position(|(b, live)| *live && contains(*b, p));
         let (mut chosen, mut close, mut changed) = (None, false, false);
         match event {
             Event::MouseMove(e) => {
                 if (e.abs - menu.at).length() > 4.0 {
                     menu.armed = true;
                 }
-                let cursor = row_at(&menu.bands, e.abs);
-                changed = cursor != menu.cursor;
-                menu.cursor = cursor;
+                changed = menu.point(e.abs);
             }
             Event::MouseDown(e) => {
-                if contains(menu.card, e.abs) {
+                if menu.holds(e.abs) {
                     menu.armed = true;
                 } else {
                     close = true;
@@ -1814,13 +1906,13 @@ impl ShellSystemChat {
             }
             Event::MouseUp(e) => {
                 if release_chooses(menu.armed, now - menu.opened) {
-                    chosen = row_at(&menu.bands, e.abs);
+                    chosen = menu.pick_at(e.abs);
                 }
             }
             _ => {}
         }
-        if let Some(row) = chosen {
-            self.mac_menu_choose(cx, row);
+        if let Some(pick) = chosen {
+            self.mac_menu_choose(cx, pick);
         } else if close {
             self.mac_close_menu();
             self.redraw(cx);
@@ -1833,42 +1925,57 @@ impl ShellSystemChat {
     /// A key while this panel's message menu is up: every key is the
     /// menu's. Up and Down light a row, Return or Space chooses it (or
     /// closes the menu when none is lit), a letter lights the row it
-    /// starts, Escape closes the menu.
+    /// starts, Escape closes the menu. Right, Return or Space on a row with
+    /// a submenu opens it with its first row lit, where the keys then move
+    /// and Left goes back.
     pub(super) fn mac_menu_key(&mut self, cx: &mut Cx, e: &KeyEvent) {
         let Some(menu) = self.mac.menu.as_mut() else { return };
-        // The rows the keys stop on: a rule is passed over.
-        let live: Vec<usize> = menu.rows.iter().enumerate().filter(|(_, (_, pick))| pick.is_some()).map(|(i, _)| i).collect();
+        // In a submenu the keys lit a row of, they move there; Left goes back.
+        if let Some(open) = menu.sub.as_mut().filter(|open| open.cursor.is_some()) {
+            let rows = &menu.subs[open.sub];
+            let (mut chosen, mut close) = (None, false);
+            match e.key_code {
+                KeyCode::Escape => close = true,
+                KeyCode::ArrowLeft => {
+                    menu.cursor = Some(open.row);
+                    menu.sub = None;
+                }
+                KeyCode::ReturnKey | KeyCode::NumpadEnter | KeyCode::Space => chosen = open.cursor.and_then(|row| rows[row].1),
+                code => open.cursor = key_moves(rows, open.cursor, code),
+            }
+            if let Some(pick) = chosen {
+                self.mac_menu_choose(cx, pick);
+            } else if close {
+                self.mac_close_menu();
+            }
+            self.redraw(cx);
+            return;
+        }
         let (mut chosen, mut close) = (None, false);
+        let opens = menu.cursor.and_then(|row| menu.sub_of(row).map(|sub| (row, sub)));
         match e.key_code {
             KeyCode::Escape => close = true,
-            KeyCode::ArrowDown => {
-                menu.cursor = match menu.cursor {
-                    None => live.first().copied(),
-                    Some(c) => live.iter().copied().find(|&i| i > c).or(Some(c)),
+            // Right, Return or Space on a row with a submenu opens it, its first live row lit.
+            KeyCode::ArrowRight | KeyCode::ReturnKey | KeyCode::NumpadEnter | KeyCode::Space if opens.is_some() => {
+                if let Some((row, sub)) = opens {
+                    let cursor = key_moves(&menu.subs[sub], None, KeyCode::ArrowDown);
+                    menu.sub = Some(OpenSub { row, sub, cursor, ..OpenSub::default() });
                 }
             }
-            KeyCode::ArrowUp => {
-                menu.cursor = match menu.cursor {
-                    None => live.last().copied(),
-                    Some(c) => live.iter().rev().copied().find(|&i| i < c).or(Some(c)),
-                }
-            }
-            KeyCode::ReturnKey | KeyCode::NumpadEnter | KeyCode::Space => match menu.cursor {
-                Some(row) => chosen = Some(row),
+            KeyCode::ReturnKey | KeyCode::NumpadEnter | KeyCode::Space => match menu.cursor.and_then(|row| menu.rows[row].1) {
+                Some(pick) => chosen = Some(pick),
                 None => close = true,
             },
             code => {
-                let name = format!("{code:?}");
-                if let Some(letter) = name.strip_prefix("Key").filter(|l| l.len() == 1) {
-                    let letter = letter.to_ascii_lowercase();
-                    if let Some(row) = menu.rows.iter().position(|(r, pick)| pick.is_some() && r.to_ascii_lowercase().starts_with(&letter)) {
-                        menu.cursor = Some(row);
-                    }
+                let cursor = key_moves(&menu.rows, menu.cursor, code);
+                if cursor != menu.cursor {
+                    menu.cursor = cursor;
+                    menu.sub = None;
                 }
             }
         }
-        if let Some(row) = chosen {
-            self.mac_menu_choose(cx, row);
+        if let Some(pick) = chosen {
+            self.mac_menu_choose(cx, pick);
         } else if close {
             self.mac_close_menu();
         }
@@ -1877,20 +1984,31 @@ impl ShellSystemChat {
 
     /// A row of the message menu chosen: Copy takes the message, or the
     /// selection the menu opened on; Look Up and Search With Google open its
-    /// words as a text field's menu does ([`open_words`]). The keys stay in
-    /// the panel.
-    fn mac_menu_choose(&mut self, cx: &mut Cx, row: usize) {
+    /// words as a text field's menu does ([`open_words`]); Start Speaking
+    /// reads the selection or the message aloud ([`speech`]). The keys stay
+    /// in the panel.
+    fn mac_menu_choose(&mut self, cx: &mut Cx, pick: Pick) {
         let Some(menu) = self.mac.menu.take() else { return };
         MENU_OWNER.with(|m| m.set(None));
         let words = percent_encode(menu.words.trim());
-        match menu.rows.get(row).and_then(|(_, pick)| *pick) {
-            Some(Pick::Copy) => match menu.target {
+        match pick {
+            Pick::Copy => match menu.target {
                 Some(item) => self.copy_item(cx, item),
                 None => self.mac_copy_selection(cx),
             },
-            Some(Pick::LookUp) => open_words(cx, &format!("dict://{words}")),
-            Some(Pick::Search) => open_words(cx, &format!("https://www.google.com/search?q={words}")),
-            None => {}
+            Pick::LookUp => open_words(cx, &format!("dict://{words}")),
+            Pick::Search => open_words(cx, &format!("https://www.google.com/search?q={words}")),
+            // The selection, or the message the menu opened on.
+            Pick::Speak => match menu.target {
+                Some(item) => {
+                    if let Some(Item::Message { text, .. }) = self.source().snapshot().items.get(item) {
+                        speech::speak(text);
+                    }
+                }
+                None => speech::speak(&menu.words),
+            },
+            Pick::StopSpeaking => speech::stop(),
+            Pick::Sub(_) => {}
         }
         self.redraw(cx);
     }
@@ -1958,15 +2076,11 @@ impl ShellSystemChat {
         if let Some(menu) = &self.mac.menu {
             let c = menu.card;
             let _ = write!(out, "\nmenu | {} {} {} {}", c.pos.x, c.pos.y, c.size.x, c.size.y);
-            for (i, ((label, pick), r)) in menu.rows.iter().zip(&menu.bands).enumerate() {
-                if pick.is_none() {
-                    let _ = write!(out, "\nmenu-rule | {} {} {} {}", r.pos.x, r.pos.y, r.size.x, r.size.y);
-                    continue;
-                }
-                let _ = write!(out, "\nmenu-row {label} | {} {} {} {}", r.pos.x, r.pos.y, r.size.x, r.size.y);
-                if menu.cursor == Some(i) {
-                    let _ = write!(out, "\nmenu-on {label}");
-                }
+            menu_tree_text(&mut out, "menu", &menu.rows, &menu.bands, menu.cursor);
+            if let Some(open) = &menu.sub {
+                let c = open.card;
+                let _ = write!(out, "\nmenu-sub | {} {} {} {}", c.pos.x, c.pos.y, c.size.x, c.size.y);
+                menu_tree_text(&mut out, "menu-sub", &menu.subs[open.sub], &open.bands, open.cursor);
             }
         }
         out
@@ -2106,13 +2220,183 @@ fn draw_menu(d: &mut ShellDraw, cx: &mut Cx2d, look: &MenuLook) {
             d.solid(cx, rect(look.card.pos.x + 14.0, (band.pos.y + band.size.y * 0.5).floor(), look.card.size.x - 28.0, 1.0), alpha(ink, 0.14));
             continue;
         }
-        let on = look.cursor == Some(i);
+        let grey = look.greys.get(i).copied().unwrap_or(false);
+        let on = look.cursor == Some(i) && !grey;
         if on {
             d.rounded(cx, *band, 2.5, accent);
         }
+        // A grey row's words as faint as the shell's own menus draw them.
+        let color = if on { rgb(255, 255, 255) } else if grey { alpha(ink, 0.36) } else { ink };
         let left = look.card.pos.x + MENU_LABEL_X;
-        let w = (band.pos.x + band.size.x - 9.0 - left).max(1.0);
-        d.label_elided(cx, rect(left, band.pos.y, w, MENU_ROW), false, MENU_TEXT, if on { rgb(255, 255, 255) } else { ink }, HAlign::Left, label);
+        let right = band.pos.x + band.size.x - 9.0;
+        let arrow = look.arrows.get(i).copied().unwrap_or(false);
+        let w = (right - left - if arrow { MENU_ARROW } else { 0.0 }).max(1.0);
+        d.label_elided(cx, rect(left, band.pos.y, w, MENU_ROW), false, MENU_TEXT, color, HAlign::Left, label);
+        if arrow {
+            d.icon_centered(cx, Ico::ChevronRight, rect(right - 12.0, band.pos.y, 12.0, MENU_ROW), 10.0, color);
+        }
+    }
+    if let Some(sub) = &look.sub {
+        draw_menu(d, cx, sub);
+    }
+}
+
+/// A menu's size for its rows: the widest words with a submenu's arrow, and
+/// each row's or rule's height, inside the card's padding.
+fn menu_size(d: &mut ShellDraw, cx: &mut Cx2d, rows: &[(String, Option<Pick>)]) -> Vec2d {
+    let mut width = MENU_MIN_W;
+    for (label, pick) in rows {
+        if !label.is_empty() {
+            let arrow = if matches!(pick, Some(Pick::Sub(_))) { MENU_ARROW } else { 0.0 };
+            width = width.max(MENU_LABEL_X + d.measure(cx, false, MENU_TEXT, label) + MENU_PAD + 9.0 + arrow);
+        }
+    }
+    let height: f64 = rows.iter().map(|(label, _)| menu_row_h(label)).sum();
+    dvec2(width.ceil(), MENU_PAD * 2.0 + height)
+}
+
+/// A row's height in a menu: a rule (no words) is thinner.
+fn menu_row_h(label: &str) -> f64 {
+    if label.is_empty() {
+        MENU_RULE
+    } else {
+        MENU_ROW
+    }
+}
+
+/// Each row's band in a menu's card, from the top.
+fn menu_bands(card: Rect, rows: &[(String, Option<Pick>)]) -> Vec<Rect> {
+    let mut y = card.pos.y + MENU_PAD;
+    rows.iter()
+        .map(|(label, _)| {
+            let band = rect(card.pos.x + MENU_PAD, y, card.size.x - MENU_PAD * 2.0, menu_row_h(label));
+            y += band.size.y;
+            band
+        })
+        .collect()
+}
+
+/// What draws a menu's card ([`draw_menu`]), with no submenu.
+fn menu_look(card: Rect, rows: &[(String, Option<Pick>)], bands: &[Rect], cursor: Option<usize>, dark: bool) -> MenuLook {
+    MenuLook {
+        card,
+        rows: rows.iter().map(|(label, _)| label.clone()).collect(),
+        greys: rows.iter().map(|(label, pick)| !label.is_empty() && pick.is_none()).collect(),
+        arrows: rows.iter().map(|(_, pick)| matches!(pick, Some(Pick::Sub(_)))).collect(),
+        bands: bands.to_vec(),
+        cursor,
+        dark,
+        sub: None,
+    }
+}
+
+/// A menu's rows in the tree's text, under `name`: each rule, each row with
+/// its band, a grey row also as `-off`, the lit one also as `-on`.
+fn menu_tree_text(out: &mut String, name: &str, rows: &[(String, Option<Pick>)], bands: &[Rect], cursor: Option<usize>) {
+    for (i, ((label, pick), r)) in rows.iter().zip(bands).enumerate() {
+        if label.is_empty() {
+            let _ = write!(out, "\n{name}-rule | {} {} {} {}", r.pos.x, r.pos.y, r.size.x, r.size.y);
+            continue;
+        }
+        let _ = write!(out, "\n{name}-row {label} | {} {} {} {}", r.pos.x, r.pos.y, r.size.x, r.size.y);
+        if pick.is_none() {
+            let _ = write!(out, "\n{name}-off {label}");
+        } else if cursor == Some(i) {
+            let _ = write!(out, "\n{name}-on {label}");
+        }
+    }
+}
+
+/// Where a key moves a menu's lit row: Down and Up to the next row that does
+/// something (a rule and a grey row are passed over), a letter to the first
+/// such row it starts; any other key leaves it.
+fn key_moves(rows: &[(String, Option<Pick>)], cursor: Option<usize>, code: KeyCode) -> Option<usize> {
+    let live: Vec<usize> = rows.iter().enumerate().filter(|(_, (_, pick))| pick.is_some()).map(|(i, _)| i).collect();
+    match code {
+        KeyCode::ArrowDown => match cursor {
+            None => live.first().copied(),
+            Some(c) => live.iter().copied().find(|&i| i > c).or(Some(c)),
+        },
+        KeyCode::ArrowUp => match cursor {
+            None => live.last().copied(),
+            Some(c) => live.iter().rev().copied().find(|&i| i < c).or(Some(c)),
+        },
+        code => {
+            let name = format!("{code:?}");
+            match name.strip_prefix("Key").filter(|l| l.len() == 1) {
+                Some(letter) => {
+                    let letter = letter.to_ascii_lowercase();
+                    rows.iter().position(|(r, pick)| pick.is_some() && r.to_ascii_lowercase().starts_with(&letter)).or(cursor)
+                }
+                None => cursor,
+            }
+        }
+    }
+}
+
+/// Speech > Start Speaking, as a Mac's text menu has it: the words in the
+/// Mac's own voice (`say`, which reads them from its input, so no word is
+/// taken for an option), one reading at a time; Stop Speaking ends it. A
+/// hidden test shell only says how much it would read.
+mod speech {
+    use std::io::Write as _;
+    use std::process::{Child, Command, Stdio};
+    use std::sync::Mutex;
+
+    const SAY: &str = "/usr/bin/say";
+
+    static VOICE: Mutex<Option<Child>> = Mutex::new(None);
+
+    /// Whether this Mac can speak.
+    pub fn can_speak() -> bool {
+        cfg!(target_os = "macos") && std::path::Path::new(SAY).exists()
+    }
+
+    /// Whether a reading is still going.
+    pub fn speaking() -> bool {
+        let mut voice = VOICE.lock().unwrap_or_else(|e| e.into_inner());
+        let going = voice.as_mut().is_some_and(|child| matches!(child.try_wait(), Ok(None)));
+        if !going {
+            *voice = None;
+        }
+        going
+    }
+
+    pub fn speak(text: &str) {
+        stop();
+        let words = spoken(text);
+        if words.is_empty() || !can_speak() {
+            return;
+        }
+        if crate::launch_input::hidden_windows() {
+            makepad_widgets::log!("assistant: speak {} characters", words.chars().count());
+            return;
+        }
+        match Command::new(SAY).stdin(Stdio::piped()).stdout(Stdio::null()).stderr(Stdio::null()).spawn() {
+            Ok(mut child) => {
+                if let Some(mut input) = child.stdin.take() {
+                    // A long reply fills the pipe before `say` reads it: written aside.
+                    std::thread::spawn(move || {
+                        let _ = input.write_all(words.as_bytes());
+                    });
+                }
+                *VOICE.lock().unwrap_or_else(|e| e.into_inner()) = Some(child);
+            }
+            Err(error) => makepad_widgets::log!("assistant: not spoken: {error}"),
+        }
+    }
+
+    pub fn stop() {
+        if let Some(mut child) = VOICE.lock().unwrap_or_else(|e| e.into_inner()).take() {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+    }
+
+    /// What is read aloud: the words, without Markdown's marks, on one line.
+    pub fn spoken(text: &str) -> String {
+        let plain: String = text.chars().filter(|c| !matches!(c, '*' | '`' | '#' | '>' | '_')).collect();
+        plain.split_whitespace().collect::<Vec<_>>().join(" ")
     }
 }
 
@@ -2395,6 +2679,65 @@ mod tests {
         assert_eq!(menu_quote("ECHO:\n  Which story"), "ECHO: Which story");
         assert_eq!(menu_quote("a very long selection of words to look up"), "a very long selection o\u{2026}");
         assert_eq!(percent_encode("ECHO: café?"), "ECHO%3A%20caf%C3%A9%3F");
+    }
+
+    /// A message's menu: the pointer over Speech opens its submenu beside it,
+    /// into which the pointer goes on and chooses; over Copy it closes. The
+    /// keys pass rules and grey rows, and Right opens a submenu lit.
+    #[test]
+    fn a_message_menus_submenus_open_under_the_pointer_and_from_the_keys() {
+        let rows = vec![
+            ("Copy".to_string(), Some(Pick::Copy)),
+            (String::new(), None),
+            ("Speech".to_string(), Some(Pick::Sub(0))),
+            (String::new(), None),
+            ("Services".to_string(), Some(Pick::Sub(1))),
+        ];
+        let subs = vec![
+            vec![("Start Speaking".to_string(), Some(Pick::Speak)), ("Stop Speaking".to_string(), None)],
+            vec![("No Services Apply".to_string(), None)],
+        ];
+        let card = rect(100.0, 100.0, 160.0, MENU_PAD * 2.0 + MENU_ROW * 3.0 + MENU_RULE * 2.0);
+        let bands = menu_bands(card, &rows);
+        let mut menu = ChatMenu { target: Some(0), at: dvec2(100.0, 100.0), opened: 0.0, armed: true, rows, subs, sub: None, words: String::new(), cursor: None, card, bands };
+        let mid = |r: Rect| dvec2(r.pos.x + r.size.x * 0.5, r.pos.y + r.size.y * 0.5);
+        assert!(menu.point(mid(menu.bands[2])), "Speech lights");
+        let open = menu.sub.clone().expect("its submenu opens");
+        assert_eq!((open.row, open.sub, open.cursor), (2, 0, None));
+        assert_eq!(menu.pick_at(mid(menu.bands[2])), None, "a release on Speech chooses nothing");
+        // Laid out beside it (as mac_lay_menu does), the pointer goes in.
+        let sub_card = rect(card.pos.x + card.size.x - 3.0, menu.bands[2].pos.y - MENU_PAD, 160.0, MENU_PAD * 2.0 + MENU_ROW * 2.0);
+        let sub_bands = menu_bands(sub_card, &menu.subs[0]);
+        if let Some(open) = menu.sub.as_mut() {
+            open.card = sub_card;
+            open.bands = sub_bands.clone();
+        }
+        // Over the rule between them, it stays.
+        assert!(!menu.point(mid(menu.bands[3])) && menu.sub.is_some());
+        assert!(menu.point(mid(sub_bands[0])));
+        assert_eq!(menu.sub.as_ref().and_then(|open| open.cursor), Some(0));
+        assert_eq!(menu.cursor, Some(2), "the row it hangs from stays lit");
+        assert_eq!(menu.pick_at(mid(sub_bands[0])), Some(Pick::Speak));
+        assert_eq!(menu.pick_at(mid(sub_bands[1])), None, "a grey row chooses nothing");
+        assert!(menu.holds(mid(sub_bands[1])));
+        assert!(menu.point(mid(menu.bands[0])) && menu.sub.is_none(), "over Copy it closes");
+        assert_eq!(menu.pick_at(mid(menu.bands[0])), Some(Pick::Copy));
+        // The keys.
+        assert_eq!(key_moves(&menu.rows, Some(0), KeyCode::ArrowDown), Some(2), "past the rule");
+        assert_eq!(key_moves(&menu.rows, Some(4), KeyCode::ArrowDown), Some(4), "the last stays");
+        assert_eq!(key_moves(&menu.rows, None, KeyCode::ArrowUp), Some(4));
+        assert_eq!(key_moves(&menu.rows, Some(0), KeyCode::KeyS), Some(2), "a letter: the first it starts");
+        assert_eq!(key_moves(&menu.subs[0], Some(0), KeyCode::ArrowDown), Some(0), "past a grey row there is none");
+        assert_eq!(key_moves(&menu.subs[1], None, KeyCode::ArrowDown), None, "nothing to light");
+        assert_eq!(menu.sub_of(2), Some(0));
+        assert_eq!(menu.sub_of(0), None);
+    }
+
+    /// What Speech reads: the words, not Markdown's marks.
+    #[test]
+    fn speech_reads_the_words_without_markdowns_marks() {
+        assert_eq!(speech::spoken("**Keep** it `short`,\n> one line."), "Keep it short, one line.");
+        assert_eq!(speech::spoken("  \n "), "");
     }
 
     /// The dim covers all of the window but the panels floating over it:

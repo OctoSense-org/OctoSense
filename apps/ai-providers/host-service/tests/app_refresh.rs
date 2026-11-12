@@ -18,6 +18,7 @@ let scanner = false
 let store = ""
 let image_picker = false
 let filter_there = false
+let talk_there = false
 let query = ""
 let notice = ""
 let rendered = ""

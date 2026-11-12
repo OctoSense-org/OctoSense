@@ -126,6 +126,14 @@ impl App {
         state.roles = roles;
         state.dragging.clear();
         state.style.select(style);
+        // An open updater takes the style's name for its window, or gives a Mac's back.
+        if let Some(def) = clients::find_app("updater") {
+            let label = clients::styled_label(style == DesktopStyle::Macos, &def.id, &def.label);
+            for slot in state.clients.values_mut().filter(|slot| slot.app == def.id) {
+                slot.label = label.clone();
+                slot.title = label.clone();
+            }
+        }
         state.phone.shade.dark = dark;
         // Glance cards that name no theme take the shell's mode.
         crate::glance_card::set_dark(dark);
@@ -334,6 +342,11 @@ impl App {
     /// floating dock hide until the pointer comes to their edge, and the
     /// same press brings it back (`DesktopWindow::fullscreen`).
     pub(super) fn fullscreen_desktop(&mut self, cx: &mut Cx, client: ClientId) {
+        // A Quick Look panel its ⤢ took full screen goes back to its panel, as its ⤡ puts it.
+        if self.preview_cache.is_full_screen(client) {
+            self.toggle_preview_full_screen(cx, client);
+            return;
+        }
         if self.zoom_refused(client) {
             // One that only widens can't fill the screen: its green light zooms its width.
             if self.widens(client) {

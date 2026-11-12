@@ -1753,6 +1753,7 @@ let desk_sel = -1               // the list row the arrow keys are on
 let desk_saved_page = 0         // bounded pages keep large Saved lists responsive
 let desk_own_move = false       // the map's next report of its view is Maps' own framing
 let desk_can_locate = false     // this computer can say where it is
+let desk_fix_failed = false     // the last ask found no location: the route's start offers Try Again
 let desk_fix = nil              // {lat lon acc}: where it last said
 let desk_take_fix = false       // the person asked for the route to start there
 let desk_map_style = "Standard"  // Standard (the appearance's), Light or Dark
@@ -1840,7 +1841,10 @@ fn show_column(s){
         desk_banner_at = -1
         ui.map_keys.focus()
     }
-    if s != "route" { location_note("") }
+    if s != "route" {
+        location_note("")
+        desk_fix_failed = false     // Try Again goes with the words it answers
+    }
     if s == "route" {
         ui.route_list.render()
         // A route opens at its start, wherever the last one was left.
@@ -2423,6 +2427,13 @@ fn desk_open_location_settings(){
     })
 }
 fn desk_location_says(text, again, waiting){
+    // Beside a route, a location that couldn't be had leaves Try Again where Use Your
+    // Location was: only what can work there, as a Mac's Maps offers.
+    let failed = text == DESK_NO_FIX
+    if failed != desk_fix_failed {
+        desk_fix_failed = failed
+        if screen == "route" { ui.route_list.render() }
+    }
     // Said in one place: beside the route it's about, or else over the map.
     if screen == "route" {
         location_note(text)
@@ -3654,12 +3665,13 @@ let DeskRoot = SolidView{width: Fill height: Fill flow: Right draw_bg.color: ui_
                         }
                         location_status := UiCaption{visible: false text: "" draw_text +: {color: desk_muted}}
                         route_list := View{width: Fill height: Fit flow: Down spacing: 8 on_render: || {
+                            if desk_routes_state != "nostart" { desk_fix_failed = false }
                             if desk_routes_state == "nostart" {
                                 DeskEmpty{height: Fit margin: Inset{top: 18} glyph +: {draw_svg +: {svg: ui_icon("route")}}
                                     title +: {text: "Choose a Start"}
                                     note +: {text: "Maps needs to know where this route starts."}
                                     UiPrimary{margin: Inset{top: 8} text: "Choose a Start…" on_click: || find_for("origin")}
-                                    if desk_can_locate { UiButton{text: "Use Your Location" on_click: || desk_use_my_location()} }
+                                    if desk_can_locate { UiButton{text: if desk_fix_failed { "Try Again" } else { "Use Your Location" } on_click: || desk_use_my_location()} }
                                 }
                             }
                             else if desk_routes_state == "failed" {

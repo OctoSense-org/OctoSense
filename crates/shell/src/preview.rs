@@ -219,6 +219,14 @@ pub fn app_for_request(req: &OpenRequest) -> Option<(AppDef, Vec<String>)> {
     Some((app, extra))
 }
 
+/// The file a catalog row's own arguments show in a Quick Look panel
+/// (`--preview <file>`): on a Mac such a row opens as the panel, not as a
+/// window (`App::open_row_panel`).
+pub fn panel_file(args: &[String]) -> Option<String> {
+    let at = args.iter().position(|arg| arg == "--preview")?;
+    args.get(at + 1).filter(|file| !file.starts_with("--")).cloned()
+}
+
 /// Spawn the app for a request. Returns the new client slot.
 pub fn spawn_for_request(
     pool: &makepad_widgets::makepad_platform::thread::TaskPool,
@@ -295,6 +303,16 @@ mod tests {
         };
         let (_, extra) = app_for_request(&plain).unwrap();
         assert_eq!(extra, vec!["/a.png".to_string()]);
+    }
+
+    #[test]
+    fn a_row_asks_for_a_panel_with_the_file_after_its_preview_flag() {
+        let args = |list: &[&str]| list.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        assert_eq!(panel_file(&args(&["--preview", "/a.png", "--remote"])), Some("/a.png".to_string()));
+        assert_eq!(panel_file(&args(&["--stdin-loop", "--preview", "/a b.pdf"])), Some("/a b.pdf".to_string()));
+        assert_eq!(panel_file(&args(&["/a.png"])), None, "a file alone opens a window");
+        assert_eq!(panel_file(&args(&["--preview"])), None);
+        assert_eq!(panel_file(&args(&["--preview", "--remote"])), None);
     }
 
     fn shown(cache: &mut PreviewCache, requester: ClientId, app: &str, client: ClientId, p: &str) {

@@ -168,6 +168,13 @@ fn merge_catalog(base: Vec<AppDef>, bundled: Vec<AppDef>, system: Vec<AppDef>, i
 
 /// Catalog rows, bundled modules and the Card runner's apps (system and
 /// installed through App Hub), read fresh on each call.
+/// An app window's name in a desktop style. A Mac calls the updater Software
+/// Update, as its system menu's row does: its window's title, the Window menu
+/// and the menu bar say it alike.
+pub fn styled_label(mac: bool, app: &str, label: &str) -> String {
+    if mac && app == "updater" { "Software Update".to_string() } else { label.to_string() }
+}
+
 pub fn available_apps() -> Vec<AppDef> {
     registry()
 }
@@ -2687,6 +2694,14 @@ mod tests {
         slot.task_pool = Some(pool);
         slot.child = Some(child);
         drop(slot);
+    }
+
+    /// A Mac names the updater's window as its system menu does; other styles and apps keep their names.
+    #[test]
+    fn a_mac_calls_the_updater_software_update() {
+        assert_eq!(styled_label(true, "updater", "OctoSense Updates"), "Software Update");
+        assert_eq!(styled_label(false, "updater", "OctoSense Updates"), "OctoSense Updates");
+        assert_eq!(styled_label(true, "notes", "Notes"), "Notes");
     }
 
     /// The app host services treat as in front: a system app's manifest id

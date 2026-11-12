@@ -36,10 +36,18 @@ pub(super) struct AppRow {
     checked: bool,
     /// The submenu of `menu` the row goes in ("Update Frequency"), or none.
     submenu: String,
+    /// A page the row opens first, as a click on one of the app's own links
+    /// would (YouTube's Open in Browser); its command then goes to the app.
+    url: String,
 }
 
 fn row_takes_close_key(row: &AppRow) -> bool {
     row.enabled != Some(false) && row.key == "cmd+W"
+}
+
+/// The page the app's row for `command` opens, while that row is enabled.
+fn page_of(rows: &[AppRow], command: &str) -> Option<String> {
+    rows.iter().find(|row| row.command == command && !row.url.is_empty()).filter(|row| row.enabled != Some(false)).map(|row| row.url.clone())
 }
 
 /// What a script app's `app_menus()` answered: the rows the bar will show.
@@ -101,12 +109,25 @@ fn native_rows(app: &str) -> Vec<AppRow> {
             keyed("View", "Scientific", "cmd+2"),
             keyed("View", "History", "cmd+T"),
         ],
+        // Terminal's names for the keys this one answers to (Terminal's own Command-K
+        // clears to the start, as this one's does).
         "terminal" => vec![
             keyed("App", "Settings\u{2026}", "cmd+,"),
             keyed("File", "New Tab", "cmd+T"),
+            keyed("File", "Edit Title", "shift+cmd+I"),
+            keyed("Edit", "Clear to Start", "cmd+K"),
+            AppRow { menu: "Edit".into(), ..Default::default() },
             keyed("Edit", "Find\u{2026}", "cmd+F"),
             keyed("Edit", "Find Next", "cmd+G"),
             keyed("Edit", "Find Previous", "shift+cmd+G"),
+            keyed("View", "Split Pane", "cmd+D"),
+            keyed("View", "Close Split Pane", "shift+cmd+D"),
+            AppRow { menu: "View".into(), ..Default::default() },
+            keyed("View", "Scroll to Top", "cmd+home"),
+            keyed("View", "Scroll to Bottom", "cmd+end"),
+            keyed("View", "Page Up", "cmd+pageup"),
+            keyed("View", "Page Down", "cmd+pagedown"),
+            AppRow { menu: "View".into(), ..Default::default() },
             keyed("View", "Bigger", "cmd+="),
             keyed("View", "Smaller", "cmd+-"),
             keyed("View", "Actual Size", "cmd+0"),
@@ -233,6 +254,10 @@ fn parse_key(spec: &str) -> Option<(KeyCode, KeyModifiers)> {
         "right" => KeyCode::ArrowRight,
         "up" => KeyCode::ArrowUp,
         "down" => KeyCode::ArrowDown,
+        "home" => KeyCode::Home,
+        "end" => KeyCode::End,
+        "pageup" => KeyCode::PageUp,
+        "pagedown" => KeyCode::PageDown,
         one => {
             let mut chars = one.chars();
             let (first, rest) = (chars.next()?, chars.next());
@@ -275,6 +300,10 @@ fn key_glyphs(spec: &str) -> String {
         "right" => out.push('\u{2192}'),
         "up" => out.push('\u{2191}'),
         "down" => out.push('\u{2193}'),
+        "home" => out.push('\u{2196}'),
+        "end" => out.push('\u{2198}'),
+        "pageup" => out.push('\u{21de}'),
+        "pagedown" => out.push('\u{21df}'),
         other => out.push_str(&other.to_uppercase()),
     }
     out
@@ -588,6 +617,10 @@ impl App {
         if self.client_menu_rows.contains_key(&client) && !self.module_host.is_module(client) {
             self.send_wm_event(client, WmEvent::MenuCommand { command: command.to_string() });
             return;
+        }
+        // A row for one of its links opens the page through the app's own checks.
+        if let Some(url) = page_of(&self.mac_app_rows(cx), command) {
+            self.module_host.dispatch(cx, client, "its page", |cx, root| root.splash(cx, ids!(card)).open_page(cx, &url));
         }
         let called = self.module_host.dispatch(cx, client, "its menu command", |cx, root| root.splash(cx, ids!(card)).call_script_fn_with_strings(cx, id!(on_menu_command), &[command]));
         if called == Some(true) {
@@ -1048,10 +1081,12 @@ impl App {
         let windows = self.mac_windows();
         let recent = self.mac_recent_rows();
         let ask = self.focused_agent_app().map(|a| a.name);
+        // The app menu is named for the app a full-screen Quick Look panel is its.
+        let named = self.bar_app_client();
         let state = self.state_mut();
         let focus = state.layout.focused_client();
         let slot = focus.and_then(|c| state.clients.get(&c));
-        let app = slot.map(|s| s.app_name().to_string());
+        let app = named.and_then(|c| state.clients.get(&c)).map(|s| s.app_name().to_string());
         let new_window = slot.and_then(|s| clients::find_app(&s.app)).is_some_and(|a| a.policy == LaunchPolicy::AlwaysNew);
         let tabs = slot.is_some_and(|s| clients::closes_own_tabs(&s.app));
         let have = focus.is_some();
@@ -1129,12 +1164,16 @@ impl App {
         let changes = edits && front_app.as_deref() != Some("terminal");
         // An app's own Undo, Cut or Select All stands in while there is no text to act on,
         // as over a view a press gave the keyboard to.
-        let stands_in = |title: &str| rows.iter().find(|row| row.menu == "Edit" && row.title == title).filter(|_| !edits || pressed).map(app_row);
+        let stands_in = |title: &str| rows.iter().find(|row| row.menu == "Edit" && is_titled(&row.title, title)).filter(|_| !edits || pressed).map(app_row);
         // A field says what it can do now. An editor of an app's own says nothing, and its rows stay live.
         let says = |can: bool| can || !field.field;
         // A Mac's Paste and Match Style and Delete: an app's own row stands in for
-        // either whenever it has one (Writer's).
-        let own_row = |title: &str| rows.iter().find(|row| row.menu == "Edit" && row.title == title).map(app_row);
+        // either whenever it has one (Writer's), but a grey one gives way to the
+        // field's own while there is text to act on: a note's Delete, live while its
+        // list has the keyboard, leaves the text's Delete to the text.
+        let own_row = |title: &str| {
+            rows.iter().find(|row| row.menu == "Edit" && row.title == title).filter(|row| !edits || pressed || row.enabled != Some(false)).map(app_row)
+        };
         let mut edit = vec![
             stands_in("Undo").unwrap_or_else(|| MacRow::item("Undo", "mac.edit.undo").key("\u{2318}Z").when(changes && says(field.can_undo))),
             stands_in("Redo").unwrap_or_else(|| MacRow::item("Redo", "mac.edit.redo").key("\u{21e7}\u{2318}Z").when(changes && says(field.can_redo))),
@@ -1149,8 +1188,12 @@ impl App {
             own_row("Delete").unwrap_or_else(|| MacRow::item("Delete", "mac.edit.delete").when(changes && says(field.selected && field.writable))),
             stands_in("Select All").unwrap_or_else(|| MacRow::item("Select All", "mac.edit.select-all").key("\u{2318}A").when(edits && says(field.has_text))),
         ];
+        // A terminal pastes characters, with no style to match: Terminal has no such row.
+        if front_app.as_deref() == Some("terminal") {
+            edit.retain(|row| row.label != "Paste and Match Style");
+        }
         let standard = ["Undo", "Redo", "Cut", "Copy", "Paste", "Paste and Match Style", "Delete", "Select All"];
-        let own = edit_rows(rows.iter().filter(|row| row.menu == "Edit" && !standard.contains(&row.title.as_str())));
+        let own = edit_rows(rows.iter().filter(|row| row.menu == "Edit" && !standard.iter().any(|title| is_titled(&row.title, title))));
         if !own.is_empty() {
             edit.push(MacRow::sep());
             edit.extend(own);
@@ -1225,6 +1268,9 @@ impl App {
         self.close_shell_menu(cx);
         let focus = self.state_mut().layout.focused_client();
         let focused_app = focus.and_then(|c| self.state_mut().clients.get(&c).map(|s| s.app.clone()));
+        // About, Hide and Quit are the app's a full-screen Quick Look panel is its.
+        let named = self.bar_app_client();
+        let named_app = named.and_then(|c| self.state_mut().clients.get(&c).map(|s| s.app.clone()));
         match what {
             "about" => {
                 let lines = vec![
@@ -1233,7 +1279,7 @@ impl App {
                 ];
                 self.mac_open_about(cx, MacAbout::new("", "OctoSense", lines).foot(COPYRIGHT));
             }
-            "about-app" => match focus.and_then(|c| self.state_mut().clients.get(&c).map(|s| (s.app.clone(), s.app_name().to_string()))) {
+            "about-app" => match named.and_then(|c| self.state_mut().clients.get(&c).map(|s| (s.app.clone(), s.app_name().to_string()))) {
                 Some((app, name)) => {
                     let installed = clients::find_app(&app).is_some_and(|a| apps::card_manifest_id(&a).is_some_and(|id| !id.starts_with("os.")));
                     let lines = if installed {
@@ -1254,7 +1300,7 @@ impl App {
                 }
             }
             "quit-app" => {
-                if let Some(app) = focused_app {
+                if let Some(app) = named_app {
                     for client in self.mac_windows_of(&app) {
                         self.send_wm_event(client, WmEvent::Quitting);
                         self.request_close(cx, client);
@@ -1324,16 +1370,20 @@ impl App {
                 self.apply_snap(cx, client, zone);
             }
             "hide" => {
-                if let Some(app) = focused_app {
+                if let Some(app) = named_app {
+                    // Its Quick Look panel goes with it.
+                    if named != focus {
+                        self.hide_active_preview(cx);
+                    }
                     for client in self.mac_windows_of(&app) {
                         self.hide_desktop(cx, client);
                     }
                 }
             }
             "hide-others" => {
-                let keep = focused_app.as_deref().map(|app| self.mac_windows_of(app)).unwrap_or_default();
+                let keep = named_app.as_deref().map(|app| self.mac_windows_of(app)).unwrap_or_default();
                 for (client, _, _) in self.mac_windows() {
-                    if !keep.contains(&client) {
+                    if !keep.contains(&client) && Some(client) != focus {
                         self.hide_desktop(cx, client);
                     }
                 }
@@ -1857,6 +1907,12 @@ pub(super) fn load_recent_docs() -> Vec<String> {
     list
 }
 
+/// An app's Edit row that is the standard `title`: the same words, or an Undo or
+/// Redo that names its step ("Undo Delete Event"), as a Mac app's do.
+fn is_titled(row: &str, title: &str) -> bool {
+    row == title || (matches!(title, "Undo" | "Redo") && row.strip_prefix(title).is_some_and(|step| step.starts_with(' ')))
+}
+
 fn save_recent(file: &std::path::Path, list: &[String]) {
     if let Err(error) = std::fs::write(file, list.join("\n") + "\n") {
         log!("wm: could not keep Recent Items: {error}");
@@ -1914,6 +1970,10 @@ mod tests {
     fn a_rows_key_reads_in_a_macs_glyphs_and_order() {
         assert_eq!(key_glyphs("cmd+N"), "\u{2318}N");
         assert_eq!(key_glyphs("shift+cmd+R"), "\u{21e7}\u{2318}R");
+        assert_eq!(key_glyphs("cmd+home"), "\u{2318}\u{2196}");
+        assert_eq!(key_glyphs("cmd+pagedown"), "\u{2318}\u{21df}");
+        assert_eq!(parse_key("cmd+end").map(|(code, m)| (code, m.logo)), Some((KeyCode::End, true)));
+        assert_eq!(parse_key("cmd+pageup").map(|(code, _)| code), Some(KeyCode::PageUp));
         assert_eq!(key_glyphs("cmd+shift+ctrl+f"), "\u{2303}\u{21e7}\u{2318}F");
         assert_eq!(key_glyphs("cmd+,"), "\u{2318},");
         // Mail's Format > Quote Level, as a Mac's Mail has it.
@@ -1952,6 +2012,18 @@ mod tests {
         assert_eq!(parse_rows(&long)[0].title.chars().count(), MAX_TITLE_CHARS);
         let many = format!("[{}]", vec![r#"{"menu":"File","title":"x"}"#; 200].join(","));
         assert_eq!(parse_rows(&many).len(), MAX_ROWS);
+    }
+
+    /// Calendar's "Undo Delete Event" is its Undo: it stands in for the shell's own.
+    #[test]
+    fn an_undo_that_names_its_step_is_the_undo() {
+        assert!(is_titled("Undo", "Undo"));
+        assert!(is_titled("Undo Delete Event", "Undo"));
+        assert!(is_titled("Redo Move Event", "Redo"));
+        assert!(!is_titled("Undone", "Undo"));
+        assert!(!is_titled("Undo Delete Event", "Redo"));
+        assert!(!is_titled("Copy Link", "Copy"), "only Undo and Redo name a step");
+        assert!(is_titled("Copy", "Copy"));
     }
 
     /// Find and its kin go in a Find submenu, the case rows in Transformations,
@@ -2013,5 +2085,19 @@ mod tests {
         assert_eq!(rows[2].command, "key:cmd+N");
         // A row with its own command has no key to send.
         assert_eq!(rows[3], AppRow { menu: "File".into(), title: "Quick Notes".into(), command: "move-to:3".into(), enabled: Some(true), submenu: "Move To".into(), ..Default::default() });
+    }
+
+    /// A row for one of an app's links opens its page (YouTube's Open in
+    /// Browser), not while it is grey; a row without one opens nothing.
+    #[test]
+    fn a_row_for_a_link_opens_its_page() {
+        let rows = parse_rows(
+            r#"[{"menu":"Video","submenu":"Share","title":"Copy Link","command":"copy"},
+            {"menu":"Video","title":"Open in Browser","command":"browser","url":"https://www.youtube.com/watch?v=x"}]"#,
+        );
+        assert_eq!(page_of(&rows, "browser").as_deref(), Some("https://www.youtube.com/watch?v=x"));
+        assert_eq!(page_of(&rows, "copy"), None);
+        let grey = parse_rows(r#"[{"menu":"Video","title":"Open in Browser","command":"browser","url":"https://www.youtube.com/watch?v=x","enabled":false}]"#);
+        assert_eq!(page_of(&grey, "browser"), None);
     }
 }

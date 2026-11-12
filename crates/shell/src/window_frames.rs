@@ -41,6 +41,24 @@ pub fn resize_rect(rect: LRect, width: f64, height: f64, title_h: f64, area: LRe
     Some(desktop_layout::resized(rect, w - rect.w, h - rect.h, area, dock))
 }
 
+/// A Mac Quick Look panel its viewer asks to be `width` x `height` points (a
+/// picture's own shape): that size round the panel's centre, made smaller as
+/// a whole to fit the room above the dock less its margins, never below the
+/// smallest window and kept in the room. `None` for a size that is not one.
+pub fn panel_rect(rect: LRect, width: f64, height: f64, area: LRect, dock: f64) -> Option<LRect> {
+    if !(width.is_finite() && height.is_finite() && width > 0.0 && height > 0.0) {
+        return None;
+    }
+    let room = desktop_layout::room(area, dock);
+    let (fit_w, fit_h) = (room.w - 2.0 * desktop_layout::MARGIN_X, room.h - 2.0 * desktop_layout::MARGIN_Y);
+    let scale = (fit_w / width).min(fit_h / height).min(1.0);
+    let w = (width * scale).max(desktop_layout::MIN_W).min(room.w);
+    let h = (height * scale).max(desktop_layout::MIN_H).min(room.h);
+    let x = (rect.x + (rect.w - w) * 0.5).min(room.x + room.w - w).max(room.x);
+    let y = (rect.y + (rect.h - h) * 0.5).min(room.y + room.h - h).max(room.y);
+    Some(LRect::new(x, y, w, h))
+}
+
 /// The open window of `app` started with exactly `args`, the oldest if several:
 /// what [`WmRequest::LaunchOrFocus`](makepad_wm_api::WmRequest::LaunchOrFocus)
 /// brings to the front. A warm standby, the assistant's pane, a Quick Look
@@ -207,6 +225,25 @@ mod tests {
         // A size that is not one changes nothing.
         for (w, h) in [(0.0, 300.0), (-5.0, 300.0), (f64::NAN, 300.0), (300.0, f64::INFINITY)] {
             assert_eq!(resize_rect(r, w, h, 32.0, AREA, 0.0), None);
+        }
+    }
+
+    #[test]
+    fn a_quick_look_panel_takes_its_viewers_shape_round_its_centre() {
+        // The panel as it first floats: 900 x 700, centred on the desk.
+        let r = AREA.centered(900.0, 700.0);
+        assert_eq!(panel_rect(r, 600.0, 400.0, AREA, 0.0), Some(LRect::new(400.0, 265.0, 600.0, 400.0)));
+        // A picture larger than the screen: smaller as a whole, inside the margins, above the dock.
+        let big = panel_rect(r, 4000.0, 3000.0, AREA, 70.0).unwrap();
+        assert_eq!(big.h, 800.0 - 2.0 * desktop_layout::MARGIN_Y);
+        assert!((big.w * 3.0 - big.h * 4.0).abs() < 1e-6, "its shape kept: {big:?}");
+        assert_eq!(big.y + big.h, 830.0, "kept above the dock: {big:?}");
+        // Never below the smallest window.
+        let small = panel_rect(r, 10.0, 10.0, AREA, 0.0).unwrap();
+        assert_eq!((small.w, small.h), (desktop_layout::MIN_W, desktop_layout::MIN_H));
+        // A size that is not one changes nothing.
+        for (w, h) in [(0.0, 300.0), (-5.0, 300.0), (f64::NAN, 300.0), (300.0, f64::INFINITY)] {
+            assert_eq!(panel_rect(r, w, h, AREA, 0.0), None);
         }
     }
 

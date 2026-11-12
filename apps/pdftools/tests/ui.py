@@ -551,9 +551,13 @@ def open_add_list(app, names=("Board minutes.pdf", "Field guide.pdf", "Apartment
 
 
 def unified(app):
-    """A Mac's window: the shell on a Mac draws apps in its unified style (the card
-    host doesn't set the theme's ui_unified)."""
-    return isinstance(app, Shell) and not LINUX
+    """A Mac's window: the shell on a Mac draws apps in its unified style while its
+    desktop style is the Mac's, as its log last said; a run's dark pass picks
+    octosense-dark (the card host doesn't set the theme's ui_unified)."""
+    if not isinstance(app, Shell) or LINUX:
+        return False
+    styles = re.findall(r"wm: desktop style (\S+) applied", app.log.read_text(errors="replace"))
+    return bool(styles) and styles[-1].startswith("macos")
 
 
 def edited(app, timeout=30.0):
@@ -571,6 +575,17 @@ def saved(app, timeout=30.0):
         return
     wait_until(lambda: not any(w.get("t") in ("— Edited", "Saving…", "Editing") for w in app.widgets()),
                "the title still says the document is edited", timeout=timeout)
+
+
+def cant_open(app, protected=False):
+    """A PDF that can't be opened says so; returns the button that puts the words away.
+    On a Mac it is Preview's alert, with OK, and no tab is left for the file. Elsewhere its
+    tab says so: a damaged file's with OK, a protected one's with Close Tab."""
+    if unified(app):
+        app.find("is locked with a password." if protected else "couldn’t be opened.", "Label", exact=False)
+        return "OK"
+    app.see("This PDF Is Protected with a Password" if protected else "Couldn't Open This PDF")
+    return "Close Tab" if protected else "OK"
 
 
 def open_pdf(app, name):
@@ -886,14 +901,14 @@ def fixture_states(app, out, dark):
     p = "d" if dark else ""
     to_home(app)
     open_pdf(app, "Damaged scan.pdf")
-    app.see("Couldn't Open This PDF")
+    done = cant_open(app)
     app.grab(out, f"{p}s1-damaged")
-    app.tap("OK", "Button")  # a damaged file says so once, with OK, which closes its tab
+    app.tap(done, "Button")  # a damaged file says so once, with OK, which closes its tab
     to_home(app)
     open_pdf(app, "Payroll 2026.pdf")
-    app.see("This PDF Is Protected with a Password")
+    done = cant_open(app, protected=True)
     app.grab(out, f"{p}s2-protected")
-    app.tap("Close Tab", "Button")
+    app.tap(done, "Button")
     # a change, then closing its tab asks first
     app.tap("Riverside Lease 2026.pdf", "Label")
     app.tap("Monthly rent *", "Label")
@@ -978,11 +993,13 @@ def pick_colour(app, shown, name, grab=None):
 
 def combine_button_in_view(app):
     """Combine's own button (the pane's foot's, below the toolbar) is in view
-    above the status bar, with no scroll: its rect."""
+    with no scroll, above the status bar where there is one: its rect. A Mac's
+    document has no status bar (what it says floats over the pages)."""
     ax, ay, aw, ah = app.area()
+    bar = 0 if unified(app) else 23
     own = sorted((w for w in app.widgets() if w["ty"] in ("Button", "ButtonFlat") and w.get("t") == "Combine" and w["r"][1] > ay + 40 + 28),
                  key=lambda w: w["r"][1])
-    assert own and own[-1]["r"][1] + own[-1]["r"][3] <= ay + ah - 23 + 1, f"Combine's own button is not in view: {own}"
+    assert own and own[-1]["r"][1] + own[-1]["r"][3] <= ay + ah - bar + 1, f"Combine's own button is not in view: {own}"
     return own[-1]["r"]
 
 
@@ -1339,9 +1356,9 @@ def shell_journey(app, out, dark):
 
     to_home(app)
     open_pdf(app, "Damaged scan.pdf")
-    app.find("Couldn't Open This PDF", "Label")
+    done = cant_open(app)
     app.grab(out, f"{p}10-damaged")
-    app.tap("OK", "Button")  # a damaged file says so once, with OK, which closes its tab
+    app.tap(done, "Button")  # a damaged file says so once, with OK, which closes its tab
 
 
 def wait_until(check, failure, timeout=30.0):

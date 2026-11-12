@@ -1022,11 +1022,15 @@ impl App {
         }
         let hub_port = self.state_mut().hub_port;
 
+        // A Mac's catalog row whose own arguments ask for a Quick Look panel
+        // (`--preview <file>`) opens as that panel, a new one each time.
+        let panel = preview::panel_file(&app.args).filter(|_| extra_args.is_empty() && self.mac_preview());
+
         // launch-or-focus for non-terminal apps: `omarchy-launch-or-focus`
         // matches `\b<pattern>\b` case-insensitively against the window's
         // CLASS OR TITLE and focuses the first hit. A Card app focuses only
         // an instance of itself (`apps::matches_running_app`).
-        if app.policy == LaunchPolicy::OrFocus && extra_args.is_empty() {
+        if app.policy == LaunchPolicy::OrFocus && extra_args.is_empty() && panel.is_none() {
             let mut existing: Vec<ClientId> = self
                 .state_mut()
                 .clients
@@ -1088,7 +1092,7 @@ impl App {
 
         // THE POOL: a standby instance of this app becomes the window now,
         // already drawn, and the pool tops itself back up behind it.
-        if extra_args.is_empty() && self.adopt_warm(cx, app_id) {
+        if extra_args.is_empty() && panel.is_none() && self.adopt_warm(cx, app_id) {
             return;
         }
 
@@ -1112,8 +1116,15 @@ impl App {
             false,
             lines,
         ) {
-            Ok(slot) => {
+            Ok(mut slot) => {
                 log!("wm: launched {} as client {}", app.id, id);
+                if let Some(path) = panel {
+                    slot.is_preview = true;
+                    slot.takes_focus = false;
+                    state.clients.insert(id, slot);
+                    self.open_row_panel(cx, app_id, id, path);
+                    return;
+                }
                 state.clients.insert(id, slot);
                 let area = self.desk_area(cx);
                 // A pane with a size of its own opens at it in its own process too.
@@ -1668,8 +1679,24 @@ impl App {
 
     /// A process app's own window to `width` x `height` points of content
     /// (`WmRequest::Resize`): only while it floats on a desktop, kept on the
-    /// screen and above the smallest window (window_frames.rs).
+    /// screen and above the smallest window (window_frames.rs). A Mac's Quick
+    /// Look panel takes it too (`window_frames::panel_rect`).
     fn resize_client(&mut self, cx: &mut Cx, client: ClientId, width: f64, height: f64) {
+        // A Mac's Quick Look panel is as big as its viewer asks (a picture's
+        // shape), round its centre; full screen it stays full screen.
+        if self.mac_preview() && self.preview_cache.is_showing(client) {
+            if self.preview_cache.is_full_screen(client) {
+                return;
+            }
+            let Some(rect) = self.state_mut().layout.float_rect(client) else { return };
+            let area = self.desk_area(cx);
+            let dock = self.dock_overlay(cx, area);
+            if let Some(rect) = window_frames::panel_rect(rect, width, height, area, dock) {
+                self.state_mut().layout.set_float_rect(client, rect);
+                self.redraw_all(cx);
+            }
+            return;
+        }
         let state = self.state_mut();
         let window = state.layout.desktop.get(client);
         if !window_frames::may_resize(state.style.target.mobile(), state.layout.desktop.enabled, window) {
@@ -2114,6 +2141,30 @@ impl App {
         self.redraw_all(cx);
     }
 
+    /// A Mac's catalog row whose own arguments ask for a Quick Look panel
+    /// (`--preview <file>`): its viewer, just started as `client`, floats as
+    /// the panel, with a panel's ✕ and ⤢. No app asked for it, so it answers
+    /// for itself: its ✕, Escape or Space put it away, and it stays warm for
+    /// the next panel of its kind, as any viewer does.
+    fn open_row_panel(&mut self, cx: &mut Cx, app_id: &str, client: ClientId, path: String) {
+        self.hide_active_preview(cx);
+        self.preview_cache.remember(app_id, client);
+        self.sync_geometry(cx);
+        let hub_port = self.state_mut().hub_port;
+        self.desk(cx).borrow_mut::<WmDesk>().map(|mut d| {
+            d.with_run_view(cx, client, |cx, v| v.set_run_target(cx, client, 0, hub_port))
+        });
+        self.show_preview_float(cx, client);
+        self.preview_cache.active = Some(preview::ActivePreview {
+            requester: client,
+            viewer_app: app_id.to_string(),
+            client,
+            path: std::path::PathBuf::from(path),
+        });
+        log!("wm: {} opens as a Quick Look panel, client {}", app_id, client);
+        self.redraw_all(cx);
+    }
+
     /// Hide the active Quick Look panel: the float goes away, the warm
     /// viewer is told to `PreviewUnload` (drop decoders/textures, idle)
     /// but is NEVER killed here, and the requester is told `PreviewHidden`.
@@ -2133,9 +2184,11 @@ impl App {
         // would drop the tile widget (and with it the child's swapchain and
         // this viewer's warmth) once its close animation finished.
         self.state_mut().layout.remove(active.client);
-        // One a Mac's ⤢ took full screen gives the keyboard back as it goes.
+        // One a Mac's ⤢ took full screen gives the keyboard back as it goes,
+        // and its viewer is told it is full screen no more.
         if self.preview_cache.take_full_screen() == Some(active.client) {
             self.preview_takes_keys(cx, active.client, false);
+            self.tell_wm_fullscreen(active.client, false);
         }
         log!(
             "wm: preview hide client {} ({}), viewer stays warm",
@@ -2146,7 +2199,7 @@ impl App {
         // A retarget parked for a viewer that never connected dies with the
         // panel: showing it later would resurrect a file nobody asked for.
         self.preview_cache.take_pending(active.client);
-        if notify_requester {
+        if notify_requester && active.requester != active.client {
             self.send_wm_event(active.requester, WmEvent::PreviewHidden);
         }
         self.focus_after_layout(cx);
@@ -2173,6 +2226,22 @@ impl App {
         }
         self.hide_active_preview(cx);
         true
+    }
+
+    /// The client whose app the Mac menu bar names: the one in front, or the
+    /// app that asked for the Quick Look panel its ⤢ took full screen. A Mac's
+    /// panel is its app's, though it holds the keyboard. With nothing in front,
+    /// a panel opened from a catalog row (its own requester) names its viewer.
+    fn bar_app_client(&mut self) -> Option<ClientId> {
+        let Some(focus) = self.state_mut().layout.focused_client() else {
+            let panel = self.preview_cache.active.as_ref().filter(|a| a.requester == a.client).map(|a| a.client);
+            return panel.filter(|c| self.state_mut().clients.contains_key(c));
+        };
+        if !self.preview_cache.is_full_screen(focus) {
+            return Some(focus);
+        }
+        let requester = self.preview_cache.active.as_ref().map(|a| a.requester).filter(|r| *r != focus);
+        Some(requester.filter(|r| self.state_mut().clients.contains_key(r)).unwrap_or(focus))
     }
 
     /// The Mac style's Quick Look: its panel's ✕ and Open with… put it away,
@@ -2212,13 +2281,27 @@ impl App {
             state.layout.add_preview_float(client, rect, ws);
         }
         self.preview_takes_keys(cx, client, full);
+        // The viewer learns it, as a tiled client's full screen tells one: then it
+        // draws black to the edges without a header of its own, as Quick Look's does.
+        self.tell_wm_fullscreen(client, full);
         log!("wm: preview client {} {}", client, if full { "full screen" } else { "back in its panel" });
         if full {
             self.focus_client(cx, client);
-        } else if let Some(requester) = self.preview_cache.active.as_ref().map(|a| a.requester) {
+        } else if let Some(requester) = self.preview_cache.active.as_ref().map(|a| a.requester).filter(|r| *r != client) {
             self.focus_client(cx, requester);
+        } else {
+            self.focus_after_layout(cx);
         }
         self.redraw_all(cx);
+    }
+
+    /// A client told whether it is full screen, as `fullscreenstate 0 2` tells one:
+    /// the layout stays the WM's and the client only learns it, as a custom
+    /// message, so a viewer can drop its own header.
+    fn tell_wm_fullscreen(&mut self, client: ClientId, on: bool) {
+        if let Some(sender) = self.state_mut().clients.get(&client).and_then(|slot| slot.sender.as_ref()) {
+            send_to_app(sender, vec![StudioToApp::Custom(format!("{{\"wm_fullscreen\":{on}}}"))]);
+        }
     }
 
     /// A Quick Look viewer takes the keyboard (full screen) or never does
@@ -2577,17 +2660,17 @@ impl App {
     }
 
     /// What a quit alert's Report… shows, read before the client goes: an
-    /// in-process app's error as it said it; else what happened (`why`, its
-    /// first line: the exit) and the end of what the process wrote to its log;
-    /// else nothing, and the report says nothing was recorded.
+    /// in-process app's error as it said it; else the alert's sentence, why the
+    /// process ended (`why`'s first line: the exit) and the last of what went
+    /// wrong in its log ([`quit_alert::process_report`]); else nothing, and the
+    /// report says nothing was recorded.
     fn quit_report(&mut self, client: ClientId, label: &str, why: Option<String>) -> quit_alert::Report {
         if let Some(error) = self.module_host.get(client).and_then(|i| i.failure()) {
             return quit_alert::Report { summary: format!("{label} stopped after an error."), lines: quit_alert::last_lines(error) };
         }
         let log = self.state_mut().clients.get(&client).and_then(|slot| slot.log_path.clone());
         let output = log.and_then(|path| quit_alert::read_tail(&path)).unwrap_or_default();
-        let summary = why.as_deref().and_then(|w| w.lines().next()).map(str::to_string).unwrap_or_else(|| format!("{label} quit unexpectedly."));
-        quit_alert::Report { summary: quit_alert::home_masked(&summary), lines: quit_alert::last_lines(&output) }
+        quit_alert::process_report(label, why.as_deref(), &output)
     }
 
     /// What the person asked a quit alert to reopen.
@@ -2712,6 +2795,7 @@ impl App {
         if let Some(panel) = full.filter(|_| self.preview_cache.full_screen.is_none()) {
             self.state_mut().layout.remove(panel);
             self.preview_takes_keys(cx, panel, false);
+            self.tell_wm_fullscreen(panel, false);
             self.send_wm_event(panel, WmEvent::PreviewUnload);
         }
         if let Some(mut desk) = self.desk(cx).borrow_mut::<WmDesk>() {
@@ -3289,7 +3373,8 @@ impl App {
             None => return,
         };
         let manifest = system_chat::view::mac::named_for_person(manifest, &app.label);
-        let mut slot = clients::ClientSlot::module(id, &app.id, &app.label);
+        let label = clients::styled_label(self.state_mut().style.target == desktop::DesktopStyle::Macos, &app.id, &app.label);
+        let mut slot = clients::ClientSlot::module(id, &app.id, &label);
         // Host services know a script app in front by its manifest id.
         slot.card_app = apps::card_manifest_id(app).map(str::to_owned);
         self.state_mut().clients.insert(id, slot);
@@ -5395,8 +5480,9 @@ impl App {
         data.dark = self.state_mut().style.dark;
         data.active_window = (!title.is_empty()).then_some(title);
         data.active_app = {
+            let client = self.bar_app_client();
             let state = self.state_mut();
-            state.layout.focused_client().and_then(|c| state.clients.get(&c)).map(|s| s.app_name().to_string())
+            client.and_then(|c| state.clients.get(&c)).map(|s| s.app_name().to_string())
         };
         data.mac_clock = shell::bar::sample_mac_clock();
         if data.style == desktop::DesktopStyle::Macos {
@@ -5819,18 +5905,8 @@ impl App {
                 if let Some(focus) = focus {
                     let on = self.state_mut().layout.toggle_client_fullscreen(focus);
                     // fullscreenstate 0 2: the client is told, the layout is
-                    // untouched. Our children learn it as a custom message.
-                    if let Some(slot) = self.state_mut().clients.get(&focus) {
-                        if let Some(sender) = &slot.sender {
-                            send_to_app(
-                                sender,
-                                vec![StudioToApp::Custom(format!(
-                                    "{{\"wm_fullscreen\":{}}}",
-                                    on
-                                ))],
-                            );
-                        }
-                    }
+                    // untouched.
+                    self.tell_wm_fullscreen(focus, on);
                 }
             }
             WmAction::FocusDir(dir) => {

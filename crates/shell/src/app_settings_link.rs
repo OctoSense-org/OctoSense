@@ -134,6 +134,7 @@ fn commands_sheet() -> String {
     use crate::system_chat::grants;
     const SHEET: &str = r##"let theme = mod.theme
 let desk = try { theme.ui_pointer == true } catch { false }
+let mac = desk && try { theme.ui_unified == true } catch { false }
 let dark = dot(theme.color_text, #x36b61200) >= 0.5
 fn tone(light, night){ if dark { night } else { light } }
 let ink = tone(#x1d1d1f, #xf5f5f7)
@@ -149,13 +150,19 @@ let Go = Push{draw_bg +: {border_size: 0.0 color: #x0071e3 color_hover: #x006edb
     draw_text +: {color: #xffffff color_hover: #xffffff color_down: #xffffff color_focus: #xffffff}}
 let Off = Push{enabled: false draw_text +: {color: soft color_hover: soft color_down: soft color_focus: soft}}
 fn cancel(){ host.request("settings.sheet.cancel", {}, nil) }
+// The words as the host reads them: case and spacing aside.
+let words = regex(@WORDS@, "i")
+fn said(text){ text.match_str(words) != nil }
+// A Mac's Allow, the sheet's default button, stays grey until the words are the
+// ones shown, and Return does nothing before then.
 fn typed(text){
-    let some = text.trim() != ""
+    let some = if mac { said(text) } else { text.trim() != "" }
     ui.allow_on.set_visible(some)
     ui.allow_off.set_visible(!some)
 }
 fn allow(){
     if ui.phrase.text().trim() == "" { return }
+    if mac && !said(ui.phrase.text()) { return }
     host.request("settings.sheet.allow", {typed: ui.phrase.text()}, fn(r){
         if !r.is_ok || r.data.accepted != true {
             ui.wrong.set_visible(true)
@@ -184,7 +191,9 @@ SolidView{width: Fill height: Fill flow: Down align: Align{x: 0.5} padding: Inse
 "##;
     let quoted = |text: &str| serde_json::to_string(text).unwrap_or_default();
     let ask = format!("To allow it, type \u{201c}{}\u{201d}.", grants::CONFIRM_PHRASE);
-    SHEET.replace("@RISK@", &quoted(grants::RISK)).replace("@ASK@", &quoted(&ask))
+    // The phrase's words, any spacing between and round them (`grants::is_confirm_phrase`).
+    let words = format!("^\\s*{}\\s*$", grants::CONFIRM_PHRASE.split_whitespace().collect::<Vec<_>>().join("\\s+"));
+    SHEET.replace("@RISK@", &quoted(grants::RISK)).replace("@ASK@", &quoted(&ask)).replace("@WORDS@", &quoted(&words))
 }
 
 #[cfg(any(feature = "app-hub", native_mobile))]

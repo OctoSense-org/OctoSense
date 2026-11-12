@@ -646,8 +646,11 @@ fn zoom_text(z){ "" + round(z * 100) + "%" }
 // inspector (each with its line), then the toolbar, the tabs, the insert strip
 // and the status bar with their lines, and the desk's margins above and below.
 fn canvas_size(width, height, nav, insp, strip){
-    [max(240, width - nav - insp), max(200, height - BAR_H - 1 - TAB_H - 1 - strip - STATUS_H - 1 - 2 * DESK_V)]
+    [max(240, width - nav - insp), max(200, height - BAR_H - 1 - pick(deck_tab_bar(), TAB_H + 1, 0) - strip - STATUS_H - 1 - 2 * DESK_V)]
 }
+// Whether a deck has the tab bar over it: a Mac's shows from the second deck on
+// (tabs_shown), another desktop's and a phone's always.
+fn deck_tab_bar(){ !UNIFIED || mac_tab_list().len() > 1 }
 // The first slide (0-based) of a window of `window` slides around `index`.
 fn window_start(count, index, window){ max(0, min(index - 4, count - window)) }
 // A box [x, y, w, h] after a handle is dragged by (dx, dy) points. Handles
@@ -3752,10 +3755,21 @@ fn set_view(t, v){
         t.export = {kind: "pdf" layout: "slides" per_page: 3 which: "all" range: "" hidden: false busy: false error: ""}
     }
     show()
-    if v == "sorter" { sorter_reveal(t) }
+    if v == "sorter" { sorter_reveal_soon() }
     pump()
 }
-// The sorter opens with the selected slide in view, as the navigator keeps its slide.
+// The sorter opens with the selected slide in view, as Keynote's light table does. Its
+// scroll view keeps a position only once its tiles are laid out (a position past what
+// it holds goes back to the top), so the reveal waits for the tiles' first turn, and
+// once more for a deck whose regions draw on the turns after.
+fn sorter_reveal_soon(){
+    for secs in [0.05, 0.4] {
+        start_timeout(secs, || {
+            let x = deck_tab()
+            if x != nil && x.state == "ready" && x.view == "sorter" { sorter_reveal(x) }
+        })
+    }
+}
 fn sorter_reveal(t){
     if t.cur == nil { return }
     // The picture, its ring and its caption: tile_view's height.
@@ -3769,7 +3783,7 @@ fn sorter_reveal(t){
             top = top + h + 10
         }
     }
-    let seen = st.height - BAR_H - TAB_H - STATUS_H
+    let seen = st.height - BAR_H - pick(deck_tab_bar(), TAB_H, 0) - STATUS_H
     let y = ui.sorter_scroll.scroll_y()
     if top < y {
         ui.sorter_scroll.set_scroll_y(top - 14)
@@ -4709,9 +4723,10 @@ fn on_app_resize(width, height){
 
 // ---- drawing: each region renders on its own ----------------------------------
 
-// The tabs show once something is open.
+// The tabs show once something is open; a Mac's from the second deck on, as Keynote's
+// and Safari's tab bars do (File > Close Tab, Command-W, closes the one deck).
 fn tabs_shown(){
-    if UNIFIED { return st.present == nil && st.screen == "deck" && mac_tab_list().len() > 0 }
+    if UNIFIED { return st.present == nil && st.screen == "deck" && mac_tab_list().len() > 1 }
     st.present == nil && st.tabs.len() > 0
 }
 fn render_tabs(){
@@ -4739,6 +4754,8 @@ fn render_home(){
 fn render_bar(){
     ui.qd_toolbar.render()
     ui.insert_bar.render()
+    // A Mac's deck name says "— Edited" (view_bar_view): it draws again when that changes.
+    if UNIFIED && optional(st, "named_edited", false) != deck_edited() { render_view_bar() }
 }
 // A phone's insert strip, or a desktop's popover.
 fn render_strip(){
@@ -4812,6 +4829,7 @@ fn render_export(){
     let e = t.export
     ui.export_title.set_text("Export “" + t.title + "”")
     ui.export_range.set_text(e.range)
+    ui.export_top.render()
     ui.export_head.render()
     ui.export_which.render()
     ui.export_foot.render()
@@ -4893,7 +4911,9 @@ fn show(){
     ui.home.set_visible(!presenting && t == nil)
     ui.deck.set_visible(deck)
     ui.outline.set_visible(outline)
-    ui.status_box.set_visible(!presenting)
+    // A Mac's outline page has no status bar: the library's count isn't its business, and
+    // its panel counts the slides and points.
+    ui.status_box.set_visible(!presenting && !(UNIFIED && outline))
     ui.present_box.set_visible(presenting)
     ui.export_box.set_visible(deck && t.state == "ready" && t.view == "export")
     insert_pop_show()
@@ -4998,11 +5018,12 @@ fn home_bar(){
     View{width: Fill height: Fill flow: Right align: Align{y: 0.5} spacing: 4 padding: Inset{left: BAR_LEAD right: 10}
         bar_title("Quick Deck", pick(st.lib.len() == 0, "No decks yet", plural(st.lib.len(), "deck", "decks")))
         Gap{}
-        if UNIFIED && tool_words() {
+        // Two items: a Mac's keep their names under their glyphs at any width.
+        if UNIFIED {
             mac_bar_tool("outline", "New from an Outline…", !off, || open_outline())
             mac_bar_tool("folder", pick(st.importing == "pptx", "Choosing…", "Import…"), can_open && !off, || open_from_device())
         }
-        if !UNIFIED || !tool_words() { Flat{text: "New from an Outline…" enabled: !off draw_text +: {color: ink color_focus: ink} draw_icon +: {svg: icon("outline") color: ink} on_click: || open_outline()}
+        if !UNIFIED { Flat{text: "New from an Outline…" enabled: !off draw_text +: {color: ink color_focus: ink} draw_icon +: {svg: icon("outline") color: ink} on_click: || open_outline()}
         Flat{text: pick(st.importing == "pptx", "Choosing a Presentation…", pick(UNIFIED, "Import…", "Open…")) enabled: can_open && !off
             draw_text +: {color: pick(can_open, ink, qd_off) color_focus: pick(can_open, ink, qd_off)}
             draw_icon +: {svg: icon("folder") color: pick(can_open, ink, qd_off)} on_click: || open_from_device()} }
@@ -5088,7 +5109,10 @@ fn refused_words(state){
     "May be damaged"
 }
 // A deck's tools: Text, Picture, Shape, Table and Chart; Save, Export and Present
-// (the one filled button). A Mac's Undo and Redo are Edit's, as Keynote's are,
+// (the one filled button). A Mac's Present is a toolbar item like the others, as
+// Keynote's Play is, and a Mac has no Save item: File > Save (Command-S) saves, as in
+// Keynote, and the deck's name says "— Edited" until then (view_bar_view). A Mac's
+// Undo and Redo are Edit's, as Keynote's are,
 // with Command-Z and Shift-Command-Z; a phone and another desktop, with no menu bar
 // to hold them, keep them here. A desktop's insert
 // tools stand in a layer of their own over the toolbar (insert_bar_view), where the
@@ -5116,12 +5140,13 @@ fn deck_bar(t){
             tool_item("undo", "Undo", 64, false, t.can_undo && !off, || undo(deck_tab(), false))
             tool_item("redo", "Redo", 64, false, t.can_redo && !off, || undo(deck_tab(), true))
             bar_line()
+            bar_tool("save", "Save", !off && !t.saving, || save(deck_tab(), nil))
         }
-        bar_tool("save", "Save", !off && !t.saving, || save(deck_tab(), nil))
         bar_tool("export", "Export…", !off, || set_view(deck_tab(), "export"))
-        View{width: 6 height: 1}
-        if off { PrimaryOff{text: "Present" padding: Inset{left: 8 right: 12} spacing: 2 icon_walk: Walk{width: 16 height: 16} draw_icon +: {svg: icon("play")}} }
-        if !off { Primary{text: "Present" padding: Inset{left: 8 right: 12} spacing: 2 icon_walk: Walk{width: 16 height: 16} draw_icon +: {svg: icon("play")} on_click: || start_present(deck_tab())} }
+        if UNIFIED { bar_tool("play", "Present", !off, || start_present(deck_tab())) }
+        if !UNIFIED { View{width: 6 height: 1} }
+        if off && !UNIFIED { PrimaryOff{text: "Present" padding: Inset{left: 8 right: 12} spacing: 2 icon_walk: Walk{width: 16 height: 16} draw_icon +: {svg: icon("play")}} }
+        if !off && !UNIFIED { Primary{text: "Present" padding: Inset{left: 8 right: 12} spacing: 2 icon_walk: Walk{width: 16 height: 16} draw_icon +: {svg: icon("play")} on_click: || start_present(deck_tab())} }
         if narrow() && t.view == "slides" {
             IconBtn{margin: Inset{left: 4} draw_bg +: {color: pick(st.insp_over, ui_selected, qd_none) color_focus: pick(st.insp_over, ui_selected, qd_none)}
                 draw_icon +: {svg: icon("inspector") color: pick(st.insp_over, ui_link, ui_ink)}
@@ -5133,6 +5158,7 @@ fn deck_bar(t){
 // number between previous and next, and the zoom (Keynote keeps its view and
 // zoom there too).
 fn view_bar_view(){
+    st.named_edited = deck_edited()
     let t = deck_tab()
     if t == nil || t.state != "ready" { return View{width: 1 height: 1} }
     let under = under_view(t)
@@ -5167,10 +5193,12 @@ fn view_bar_view(){
                 draw_text +: {color: ink color_focus: ink}
                 on_click: || { let x = deck_tab() set_zoom(x, fit_now(x), true) }}
         }
-        // The deck's name (name_room).
+        // The deck's name (name_room), and on a Mac "— Edited" after it while there are
+        // unsaved changes, as Keynote's title says.
         if name_room(t) > 0 {
-            View{width: name_room(t) + 16 height: Fit padding: Inset{left: 12 right: 4}
-                UiBarTitle{width: Fill text_overflow: TextOverflow.Ellipsis text: t.title}
+            View{width: name_room(t) + 16 height: Fit flow: Right align: Align{y: 0.5} padding: Inset{left: 12 right: 4} spacing: 6
+                UiBarTitle{width: name_room(t) - edited_w(t) text_overflow: TextOverflow.Ellipsis text: t.title}
+                if UNIFIED && t.edited { Label{clip_y: false padding: 0 text: "— Edited" draw_text +: {color: ui_muted text_style: theme.font_regular{font_size: 11.25}}} }
             }
         }
     }
@@ -5216,6 +5244,14 @@ fn view_bar_w(t){
 // slides the slide's number gives way first when the whole name wants its room (the
 // status bar says "Slide 3 of 12" too). Under 48 points the name isn't shown.
 fn name_w(t){ ceil(("" + t.title).len() * 8.6) + 4 }
+// The room "— Edited" takes after a Mac's deck name, with its spacing. It is kept while
+// the deck is saved too, so that a change doesn't move the tools beside the name.
+fn edited_w(t){ pick(UNIFIED, 62, 0) }
+fn deck_edited(){
+    let t = deck_tab()
+    if t == nil || t.state != "ready" { return false }
+    t.edited == true
+}
 fn name_space(t, counter){
     let middle = pick(under_view(t) == "sorter", sorter_tools_w(), insert_group_w())
     st.width - view_bar_core_w(t, counter) - 16 - 6 - middle - 8 - bar_right_most()
@@ -5228,8 +5264,8 @@ fn counter_shown(t){
 // over it, and its toolbar keeps the room it had for the tools.
 fn name_room(t){
     if !UNIFIED { return 0 }
-    let room = min(name_w(t), name_space(t, counter_shown(t)))
-    pick(room >= 48, room, 0)
+    let room = min(name_w(t) + edited_w(t), name_space(t, counter_shown(t)))
+    pick(room - edited_w(t) >= 48, room, 0)
 }
 // The sorter's tools, as sorter_tools lays them out.
 fn sorter_tools_w(){
@@ -5247,9 +5283,10 @@ fn insert_group_w(){
     for it in INSERT_TOOLS { w = w + insert_w(it) + 2 }
     w
 }
-// The most the toolbar's right part takes: Save, Export… and Present with their words,
-// or with their icons and, in a narrow window, the inspector's button.
-fn bar_right_most(){ pick(tool_words(), pick(UNIFIED, mac_item_w("Save") + mac_item_w("Export…") + 124, 280), 185) + pick(narrow(), 34, 0) }
+// The most the toolbar's right part takes: Save, Export… and Present with their words
+// (a Mac's Export… and Present items), or with their icons and, in a narrow window, the
+// inspector's button.
+fn bar_right_most(){ pick(tool_words(), pick(UNIFIED, mac_item_w("Export…") + mac_item_w("Present") + 14, 280), pick(UNIFIED, 74, 185)) + pick(narrow(), 34, 0) }
 // Another desktop's right part, as deck_bar lays it out: Undo, Redo and the rule after
 // them (each with the row's 2-point spacing), then Save, Export… and Present.
 fn bar_right_titled(){ 2 * (pick(tool_words(), 64, 30) + 2) + 13 + 2 + pick(tool_words(), 262, 167) + pick(narrow(), 34, 0) }
@@ -5847,7 +5884,7 @@ fn nav_reveal(t){
         if i == index { break }
         if !optional(collapsed, "c" + section_of(t, i), false) { top = top + h }
     }
-    let seen = st.height - BAR_H - TAB_H - STATUS_H - 39
+    let seen = st.height - BAR_H - pick(deck_tab_bar(), TAB_H, 0) - STATUS_H - 39
     let y = ui.nav_scroll.scroll_y()
     if top < y {
         ui.nav_scroll.set_scroll_y(top)
@@ -6629,6 +6666,7 @@ fn pick_menu(key, titles, current){
     if key == "table_cell" { ui.pick_table_cell.open_menu(titles, current) }
     if key == "fill_kind" { ui.pick_fill_kind.open_menu(titles, current) }
     if key == "line_kind" { ui.pick_line_kind.open_menu(titles, current) }
+    if key == "cell_fill_kind" { ui.pick_cell_fill_kind.open_menu(titles, current) }
 }
 // A labelled pop-up with its short list: `items` are {id label}, `shown` what the
 // button says, `current` the row with the check. The table's row, column and cell
@@ -6658,6 +6696,7 @@ fn choice(t, key, label, shown, items, current, act){
             if key == "table_cell" { View{width: Fill height: 28 pick_table_cell := GestureView{width: Fill height: 28 menu_words_at: 10 on_menu: chosen popup(shown, open)}} }
             if key == "fill_kind" { View{width: Fill height: 28 pick_fill_kind := GestureView{width: Fill height: 28 menu_words_at: 10 on_menu: chosen popup(shown, open)}} }
             if key == "line_kind" { View{width: Fill height: 28 pick_line_kind := GestureView{width: Fill height: 28 menu_words_at: 10 on_menu: chosen popup(shown, open)}} }
+            if key == "cell_fill_kind" { View{width: Fill height: 28 pick_cell_fill_kind := GestureView{width: Fill height: 28 menu_words_at: 10 on_menu: chosen popup(shown, open)}} }
             if pull {
                 View{width: Fit height: Fit padding: Inset{right: 9} new_batch: true
                     Svg{width: 10 height: 10 animating: false draw_svg +: {svg: ui_icon("chevron-down") color: ui_muted}}}
@@ -7423,11 +7462,7 @@ fn table_section(t, sh){
             if id == "merge" { table_op(deck_tab(), {op: "merge" from: [r0, c0] to: [r0, min(cols - 1, c0 + 1)]}, "merge the cells") }
             if id == "split" { table_op(deck_tab(), {op: "split" cell: [r0, c0]}, "split the cell") }
         })
-        if ui_unified { InspLine{key_top("Cell fill") colour_well(t, "cell", cell_fill_of(t, r0, c0), |hex| {
-            let x = deck_tab()
-            x.cell_fill = {at: "" + r0 + "," + c0 hex: hex}
-            table_op(x, {op: "fill" cells: [[r0, c0]] color: hex}, "fill the cell")
-        })} }
+        if ui_unified { mac_cell_fill(t, r0, c0) }
         if !ui_unified { InspRow{
             InspKey{text: "Cell fill"}
             View{width: Fill height: Fit flow: Right align: Align{y: 0.5}
@@ -7438,6 +7473,32 @@ fn table_section(t, sh){
 }
 // The colour this cell was last given here (the service doesn't say a cell's fill):
 // a well with none shows its empty face.
+// A Mac's cell fill, as Keynote's Cell tab has it: what kind in a pop-up (No Fill or
+// Color Fill), then the colour in a well. The service doesn't say a cell's fill, so
+// until one is given here the pop-up says Choose… and no well shows.
+fn mac_cell_fill(t, r0, c0){
+    let given = cell_fill_of(t, r0, c0)
+    let kind = pick(given == "", "", pick(given == "none", "none", "color"))
+    View{width: Fill height: Fit flow: Down spacing: 6
+        choice(t, "cell_fill_kind", "Cell fill", label_of(FILL_KINDS, kind, "Choose…"), FILL_KINDS, kind, |id| { if id != kind { cell_fill_chosen(deck_tab(), r0, c0, id) } })
+        if kind == "color" { InspLine{key_top("") colour_well(t, "cell", given, |hex| cell_fill_give(deck_tab(), r0, c0, hex))} }
+    }
+}
+fn cell_fill_give(t, r0, c0, hex){
+    if t == nil { return }
+    t.cell_fill = {at: "" + r0 + "," + c0 hex: hex}
+    table_op(t, {op: "fill" cells: [[r0, c0]] color: hex}, "fill the cell")
+}
+// Color Fill takes the deck's first accent, its well open to change it, as a shape's does.
+fn cell_fill_chosen(t, r0, c0, id){
+    if t == nil { return }
+    if id == "none" {
+        cell_fill_give(t, r0, c0, "none")
+        return
+    }
+    t.well = {which: "cell" sel: sel_sig(t)}
+    cell_fill_give(t, r0, c0, swatches_for(t)[1])
+}
 fn cell_fill_of(t, r, c){
     let f = optional(t, "cell_fill", nil)
     if f == nil || f.at != "" + r + "," + c { return "" }
@@ -7853,7 +7914,7 @@ fn full_notes(t){
 fn notes_panel(t){
     let text = full_notes(t)
     t.notes_for = pick(text == nil, nil, t.cur)
-    let h = max(160, st.height - BAR_H - TAB_H - SEG_H - STATUS_H - 110 - 1)
+    let h = max(160, st.height - BAR_H - pick(deck_tab_bar(), TAB_H, 0) - SEG_H - STATUS_H - 110 - 1)
     if text == nil {
         return InspSection{
             heading("Speaker notes")
@@ -8463,6 +8524,8 @@ fn home_view(){
     let days = days_now()
     let cw = floor((st.width - 2 * HOME_SIDE - (cols - 1) * HOME_GAP) / cols)
     let tcols = home_theme_cols()
+    // With no decks yet a Mac's Home is its theme chooser, the themes large, as Keynote's are.
+    if UNIFIED && st.lib.len() == 0 { tcols = min(4, home_cols()) }
     let tw = floor((st.width - 2 * HOME_SIDE - (tcols - 1) * HOME_GAP) / tcols) - 6
     let themes = theme_list()
     let gone = st.engine == "missing" || st.engine == "old"
@@ -8505,7 +8568,8 @@ fn home_view(){
         if st.lib.len() > 0 {
             View{width: Fit height: Fit padding: Inset{top: 18 bottom: 10} heading("Recent")}
             for r in ceil(st.lib.len() / cols) {
-                View{width: Fill height: Fit flow: Right spacing: HOME_GAP margin: Inset{bottom: 14}
+                // A Mac's right click puts a backing round the cover, a little past the row.
+                View{width: Fill height: Fit flow: Right spacing: HOME_GAP margin: Inset{bottom: 14} clip_x: !UNIFIED clip_y: !UNIFIED
                     for c in cols { if r * cols + c < st.lib.len() { deck_card(st.lib[r * cols + c], cw, days) } }
                 }
             }
@@ -8569,7 +8633,12 @@ fn deck_card(d, w, days){
         menu: CARD_MENU
         on_menu: |title| card_chosen(d, title)
         on_tap: |x, y| { if press_free() { open_deck(d) } }
-        RoundedView{width: w height: ch padding: 1 flow: Down align: Align{x: 0.5 y: 0.5} show_bg: true draw_bg +: {color: ui_page border_size: 1.0 border_color: ui_border border_radius: 2.0}
+        // A Mac's right click marks the cover and the name, not the words between them,
+        // as Keynote's document browser and Finder's icon view do: a grey backing behind
+        // the cover, the accent capsule behind the name.
+        menu_ring: if UNIFIED { "cover" } else { "" }
+        menu_ring_name: if UNIFIED { "name" } else { "" }
+        cover := RoundedView{width: w height: ch padding: 1 flow: Down align: Align{x: 0.5 y: 0.5} show_bg: true draw_bg +: {color: ui_page border_size: 1.0 border_color: ui_border border_radius: 2.0}
             // A cover keeps its deck's shape (a 4:3 deck has bars at its sides).
             if src != nil { Image{width: Fill height: Fill fit: ImageFit.Smallest src: src} }
             if src == nil {
@@ -8580,7 +8649,11 @@ fn deck_card(d, w, days){
         }
         View{width: Fill height: Fit flow: Down
             View{width: Fill height: 28 flow: Right align: Align{y: 0.5}
-                Label{clip_y: false padding: 0 width: Fill max_lines: 1 text_overflow: TextOverflow.Ellipsis text: d.title draw_text +: {color: ui_ink text_style: theme.font_regular{font_size: 9.75}}}
+                // On a Mac the name hugs its words, with the capsule's room round them: a
+                // label's padding counts on both sides of its edge, so the row starts 10 to
+                // the left and the words still line up with the cover's edge.
+                if UNIFIED { View{width: Fill height: Fit margin: Inset{left: -10} name := Label{clip_y: false width: Fit padding: Inset{left: 5 right: 5 top: 1 bottom: 2} max_lines: 1 text_overflow: TextOverflow.Ellipsis text: d.title draw_text +: {color: ui_ink text_style: theme.font_regular{font_size: 9.75}}}} }
+                if !UNIFIED { Label{clip_y: false padding: 0 width: Fill max_lines: 1 text_overflow: TextOverflow.Ellipsis text: d.title draw_text +: {color: ui_ink text_style: theme.font_regular{font_size: 9.75}}} }
                 card_more(d)
             }
             View{width: Fill height: Fit flow: Right align: Align{y: 0.5} spacing: 6
@@ -8624,6 +8697,8 @@ fn status_view(){
         }
     }
     let state = pick(t.saving, "Saving…", pick(t.edited, "Edited", "Saved"))
+    // A Mac's says only what is under way: the deck's name says "— Edited", as Keynote's title does.
+    if UNIFIED { state = pick(t.saving, "Saving…", "") }
     if t.state != "ready" { state = "" }
     let middle = ""
     if t.state == "ready" {
@@ -8639,7 +8714,7 @@ fn status_view(){
     SolidView{width: Fill height: Fill flow: Overlay draw_bg.color: ui_bar
         View{width: Fill height: Fill flow: Right align: Align{y: 0.5} padding: Inset{left: 12 right: 12} spacing: 6
             if state != "" {
-                RoundedView{width: 6 height: 6 show_bg: true draw_bg +: {color: pick(t.edited || t.saving, ui_link, ui_success) border_radius: 1.5}}
+                if !UNIFIED { RoundedView{width: 6 height: 6 show_bg: true draw_bg +: {color: pick(t.edited || t.saving, ui_link, ui_success) border_radius: 1.5}} }
                 status_text(state, ui_muted)
             }
             if told != "" { View{width: Fit height: Fit margin: Inset{left: 8} status_text(told, ui_muted)} }
@@ -9512,7 +9587,9 @@ SolidView{width: Fill height: Fill flow: Overlay draw_bg.color: ui_page
     export_box := View{visible: false width: Fill height: Fill flow: Overlay nav_group: true
         QdScrim{}
         View{width: Fill height: Fill flow: Down align: Align{x: 0.5}
-            View{width: Fill height: BAR_H + 1 + pick(ui_desk, TAB_H + 1, 0)}
+            // It hangs from the tab bar's foot while the tabs show, from the toolbar's
+            // when a Mac's window has one deck and no tab bar (sheet_top).
+            export_top := View{width: Fill height: Fit on_render: || { View{width: Fill height: sheet_top()} }}
             ScrollYView{width: Fill height: Fill flow: Down align: Align{x: 0.5} padding: Inset{bottom: 24}
                 RoundedShadowView{width: SHEET_W height: Fit flow: Down padding: Inset{left: 20 right: 20 top: 16 bottom: 16} new_batch: true
                     draw_bg +: {color: ui_surface border_size: 1.0 border_color: ui_border border_radius: 5.0 shadow_color: qd_shadow shadow_radius: 18.0 shadow_offset: vec2(0.0, 4.0)}

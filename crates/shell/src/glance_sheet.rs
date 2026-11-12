@@ -160,9 +160,10 @@ fn mac_style() -> bool {
 }
 
 /// A card lowering in this window: on a Mac it stands on the window's material,
-/// in a Mac's type, as it does in the Notification Center.
+/// in a Mac's type, as it does in the Notification Center, with its primary
+/// action the window's default button.
 fn lowering<R>(lower: impl FnOnce() -> R) -> R {
-    if mac_style() { crate::glance_card::on_material(lower) } else { lower() }
+    if mac_style() { crate::glance_card::in_window(lower) } else { lower() }
 }
 
 /// All peer modes share one row directly above the active pane.

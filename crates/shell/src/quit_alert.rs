@@ -70,15 +70,74 @@ pub fn home_masked(line: &str) -> String {
     out
 }
 
-/// The end of a client's log: its last 16 KiB, as text.
+/// The end of a client's log: its last 16 KiB, as text, from the first whole
+/// line in them.
 pub fn read_tail(path: &std::path::Path) -> Option<String> {
     use std::io::{Read, Seek, SeekFrom};
     let mut file = std::fs::File::open(path).ok()?;
     let len = file.metadata().ok()?.len();
-    file.seek(SeekFrom::Start(len.saturating_sub(16 * 1024))).ok()?;
+    let start = len.saturating_sub(16 * 1024);
+    file.seek(SeekFrom::Start(start)).ok()?;
     let mut bytes = Vec::new();
     file.read_to_end(&mut bytes).ok()?;
-    Some(String::from_utf8_lossy(&bytes).into_owned())
+    let text = String::from_utf8_lossy(&bytes).into_owned();
+    Some(if start > 0 { text.split_once('\n').map(|(_, rest)| rest.to_string()).unwrap_or_default() } else { text })
+}
+
+/// A process's report, as a Mac's reads: the alert's own sentence, then under
+/// Problem Details why the process ended (its signal or exit code, from `why`'s
+/// first line) and the last of what it wrote that was more than information:
+/// its warnings, errors and panics. A process that did not start says so.
+pub fn process_report(label: &str, why: Option<&str>, output: &str) -> Report {
+    let first = why.and_then(|why| why.lines().next()).unwrap_or_default();
+    if first.contains(" did not start: ") {
+        return Report { summary: home_masked(first), lines: last_lines(&more_than_information(output)) };
+    }
+    let mut lines: Vec<String> = termination_reason(first).into_iter().collect();
+    let wrong = last_lines(&more_than_information(output));
+    let room = REPORT_LINES - lines.len();
+    lines.extend(wrong[wrong.len().saturating_sub(room)..].iter().cloned());
+    Report { summary: format!("{label} quit unexpectedly."), lines }
+}
+
+/// How a report's Termination Reason line starts.
+const REASON: &str = "Termination Reason: ";
+
+/// A Mac report's Termination Reason, from an exit as Rust words it: `signal:
+/// 9 (SIGKILL)` reads "SIGKILL (signal 9)", `exit status: 101` "exit code 101".
+fn termination_reason(exit: &str) -> Option<String> {
+    if let Some(rest) = exit.split("signal: ").nth(1) {
+        let number: String = rest.chars().take_while(char::is_ascii_digit).collect();
+        let name = rest.split('(').nth(1).and_then(|name| name.split(')').next()).filter(|name| name.starts_with("SIG"));
+        return Some(match name {
+            Some(name) => format!("{REASON}{name} (signal {number})"),
+            None => format!("{REASON}signal {number}"),
+        });
+    }
+    let code: String = exit.split("exit status: ").nth(1)?.chars().take_while(|c| c.is_ascii_digit() || *c == '-').collect();
+    (!code.is_empty()).then(|| format!("{REASON}exit code {code}"))
+}
+
+/// A report's lines as its box shows them, each wrapped to the box already
+/// (`wrapped[i]` is `lines[i]`'s rows): the Termination Reason on top, whole,
+/// then the last of what went wrong that fits in [`REPORT_LINES`] rows, so a
+/// long error never pushes the reason out.
+pub fn shown_rows(lines: &[String], wrapped: Vec<Vec<String>>) -> Vec<String> {
+    let mut wrapped = wrapped.into_iter();
+    let mut rows = Vec::new();
+    if lines.first().is_some_and(|line| line.starts_with(REASON)) {
+        rows.extend(wrapped.next().unwrap_or_default());
+    }
+    let rest: Vec<String> = wrapped.flatten().collect();
+    let room = REPORT_LINES.saturating_sub(rows.len());
+    rows.extend(rest[rest.len().saturating_sub(room)..].iter().cloned());
+    rows
+}
+
+/// A log's lines without its information and waiting lines (`[I]`, `[.]`):
+/// what is left is what went wrong, and what the process wrote by itself.
+fn more_than_information(output: &str) -> String {
+    output.lines().filter(|line| !line.starts_with("[I]") && !line.starts_with("[.]")).collect::<Vec<_>>().join("\n")
 }
 
 #[derive(Default)]
@@ -187,6 +246,40 @@ mod tests {
         assert!(!reporting(), "the answer puts the report away with its alert");
         show_report();
         assert!(!reporting(), "no alert, no report");
+    }
+
+    /// A process's report says what a Mac's does: the alert's sentence, the
+    /// Termination Reason, then only what went wrong, never its information lines.
+    #[test]
+    fn a_process_report_gives_its_termination_reason_and_what_went_wrong() {
+        let log = "[I] cx.rs:696:9 - memory budget: 8192 MiB\n[W] font.rs:12:3 - no face for U+1F600\n[.] waiting\n[E] pty.rs:40:1 - read failed\nthread 'main' panicked at /Users/someone/x.rs:3:1";
+        let report = process_report("Terminal", Some("Terminal exited unexpectedly (signal: 9 (SIGKILL)).\nLog: /tmp/t.log"), log);
+        assert_eq!(report.summary, "Terminal quit unexpectedly.");
+        assert_eq!(report.lines, ["Termination Reason: SIGKILL (signal 9)", "[W] font.rs:12:3 - no face for U+1F600", "[E] pty.rs:40:1 - read failed", "thread 'main' panicked at ~/x.rs:3:1"]);
+        let report = process_report("Reference App", Some("Reference App exited unexpectedly (exit status: 101)."), "[I] started");
+        assert_eq!(report.lines, ["Termination Reason: exit code 101"], "only information: nothing more to show");
+        assert_eq!(termination_reason("News exited unexpectedly (signal: 6 (SIGABRT) (core dumped))."), Some("Termination Reason: SIGABRT (signal 6)".to_string()));
+        let report = process_report("Maps", Some("Maps did not start: no such file."), "");
+        assert_eq!(report.summary, "Maps did not start: no such file.");
+        assert!(report.lines.is_empty(), "nothing recorded: the report says so");
+        assert!(process_report("Maps", None, "").lines.is_empty());
+    }
+
+    /// Wrapped long errors fill the box from its foot, but the Termination Reason
+    /// keeps the top row.
+    #[test]
+    fn a_reports_long_errors_never_push_its_termination_reason_out() {
+        let lines = vec!["Termination Reason: SIGKILL (signal 9)".to_string(), "[E] a long error".to_string()];
+        let error: Vec<String> = (0..20).map(|i| format!("row {i}")).collect();
+        let rows = shown_rows(&lines, vec![vec![lines[0].clone()], error]);
+        assert_eq!(rows.len(), REPORT_LINES);
+        assert_eq!(rows[0], "Termination Reason: SIGKILL (signal 9)");
+        assert_eq!(rows[1], "row 9", "the last of the error after it");
+        assert_eq!(rows[REPORT_LINES - 1], "row 19");
+        let lines = vec!["[E] no reason".to_string()];
+        let rows = shown_rows(&lines, vec![(0..15).map(|i| format!("row {i}")).collect()]);
+        assert_eq!(rows.first().map(String::as_str), Some("row 3"), "without a reason the last rows fill the box");
+        assert!(shown_rows(&[], Vec::new()).is_empty());
     }
 
     #[test]

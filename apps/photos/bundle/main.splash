@@ -1648,6 +1648,7 @@ fn desk_resize(width, height){
     }
     desk_tools()
     let moved = desk_fit()
+    // Not the time scale: drawn again from a resize, it came back at a stale place.
     if moved { ui.zoom_tools.render() }
     // An empty state sits in the middle of the window; a year's or a month's tiles take its width.
     if moved || route_ids().len() == 0 || desk_scaled() { ui.list.render() }
@@ -1658,6 +1659,9 @@ fn desk_zoom_to(n){
     desk_zoom = desk_cell_for(n)
     desk_fit()
     ui.zoom_tools.render()
+    // The time scale is a batch of its own: drawn again with the zoom tools, it stays in
+    // its place instead of where an earlier pass of the toolbar had it.
+    ui.scale_tools.render()
     ui.list.render()
     desk_remember()
 }
@@ -1726,6 +1730,7 @@ fn desk_sync(){
     if desk_shown == "" {
         // The first sync: a run after an appearance change puts back what was up.
         desk_shown = desk_key()
+        ui.side_tool.render()
         ui.search.set_text(query)
         // A name being typed ended with the run that drew its field (what was typed is the
         // album's): the keys go back to the grid.
@@ -3624,7 +3629,7 @@ let DeskFull = if ui_desk { SolidView{width: Fill height: Fill flow: Overlay dra
                     }}
                     info_tool := DeskIcon{draw_icon +: {svg: ui_icon("info")} on_click: || desk_toggle_info()}
                     info_off := DeskIconOff{visible: false draw_icon +: {svg: ui_icon("info")}}
-                    info_tool_on := DeskIcon{visible: false draw_icon +: {svg: ui_icon("info") color: ui_primary} on_click: || desk_toggle_info()}
+                    info_tool_on := DeskIcon{visible: false draw_icon +: {svg: ui_icon("info") color: if ui_unified { ui_link } else { ui_primary }} on_click: || desk_toggle_info()}
                     share_tool := GestureView{visible: false width: Fit height: Fit menu: ["Export…"] on_menu: |title, x, y, parent| desk_menu_act(title, parent, desk_targets())
                         DeskIcon{draw_icon +: {svg: ui_icon("export")} on_click: || ui.share_tool.open_menu(desk_share_rows())}
                     }
@@ -3710,7 +3715,7 @@ let DeskFull = if ui_desk { SolidView{width: Fill height: Fill flow: Overlay dra
                         pause_button := DeskIcon{visible: false draw_icon +: {svg: ui_icon("pause")} on_click: || toggle_slides()}
                     }
                     viewer_info_tool := DeskIcon{draw_icon +: {svg: ui_icon("info")} on_click: || desk_toggle_info()}
-                    viewer_info_tool_on := DeskIcon{visible: false draw_icon +: {svg: ui_icon("info") color: ui_primary} on_click: || desk_toggle_info()}
+                    viewer_info_tool_on := DeskIcon{visible: false draw_icon +: {svg: ui_icon("info") color: if ui_unified { ui_link } else { ui_primary }} on_click: || desk_toggle_info()}
                     viewer_share := GestureView{width: Fit height: Fit menu: ["Export…"] on_menu: |title, x, y, parent| desk_menu_act(title, parent, desk_targets())
                         DeskIcon{draw_icon +: {svg: ui_icon("export")} on_click: || ui.viewer_share.open_menu(desk_share_rows())}
                     }
@@ -3751,9 +3756,11 @@ let DeskFull = if ui_desk { SolidView{width: Fill height: Fill flow: Overlay dra
     }
     // A Mac's sidebar button, by the lights at the sidebar's top, in the same place with
     // the sidebar shown or hidden. A sheet over the window covers it.
-    side_tool := View{visible: ui_unified width: Fit height: Fit margin: Inset{left: 84 top: 12} new_batch: true
+    // A region, drawn by the first sync of each run: an appearance change draws it in the new
+    // colours (a batch of its own otherwise keeps the old ones).
+    side_tool := View{visible: ui_unified width: Fit height: Fit margin: Inset{left: 84 top: 12} new_batch: true on_render: || {
         UiPaneTool{draw_icon +: {svg: ui_icon("sidebar")} on_click: || desk_toggle_side()}
-    }
+    }}
     // Delete Album: a sheet that says what goes and what stays.
     confirm_box := View{visible: false width: Fill height: Fill flow: Overlay new_batch: true
         DeskDim{}

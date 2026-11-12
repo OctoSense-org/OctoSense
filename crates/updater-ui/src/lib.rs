@@ -1,7 +1,7 @@
 //! Host-owned release UI. No agent tools or contained-app service can install an update.
 use makepad_app_module::{
     makepad_ai_services::wire::{ServiceCall, ServiceManifest, ToolResult},
-    AppModule, ExecOutcome, InstanceHandles, InstanceParts, OpenSchema, ServiceExecutor,
+    AppModule, ExecOutcome, InstanceHandles, InstanceParts, ModuleWindows, OpenSchema, ServiceExecutor,
     ValidatedOpen,
 };
 pub use makepad_widgets;
@@ -269,6 +269,9 @@ script_mod! {
                             checked := DeskSmall{}
                             meter := DeskMeter{}
                             links := View{visible: false width: Fill height: Fit flow: Right spacing: 16
+                                // A development build's Check for Updates, under the words: the
+                                // way to a release is the one button beside them.
+                                check_more := DeskMore{text: "Check for Updates" visible: false}
                                 notes := DeskMore{text: "Release Notes" visible: false}
                                 manual := DeskMore{text: "Open Installer Manually" visible: false}
                             }
@@ -416,6 +419,8 @@ struct Facts<'a> {
     restart: bool,
     /// Says something of the moment in place of the state's own sentence.
     note: Option<&'a str>,
+    /// The Mac's Software Update pane (DeskBody's `desk_mac`): its words end on more than one word.
+    mac: bool,
 }
 
 /// What a desktop's pane says and offers. At most one default button (`check`,
@@ -483,11 +488,15 @@ fn pane_words(f: &Facts) -> Pane {
             },
             Phase::UpToDate => Pane {
                 headline: "OctoSense Is Up to Date".into(),
-                status: format!(
-                    "{} is the newest version on the {} channel.",
-                    f.installed.as_deref().unwrap_or("This"),
-                    f.channel
-                ),
+                status: if f.mac {
+                    format!("{} is the newest {} version.", f.installed.as_deref().unwrap_or("This"), f.channel)
+                } else {
+                    format!(
+                        "{} is the newest version on the {} channel.",
+                        f.installed.as_deref().unwrap_or("This"),
+                        f.channel
+                    )
+                },
                 checked: true,
                 mark_ok: true,
                 check: true,
@@ -797,6 +806,9 @@ pub struct UpdaterView {
     /// A desktop style's sheet: the Mac's Software Update pane (`theme.ui_pointer`).
     #[live]
     pointer: bool,
+    /// The Mac's pane (`mac_actions` is in the tree), read at each refresh.
+    #[rust]
+    mac: bool,
     #[rust]
     initialized: bool,
     #[rust]
@@ -846,9 +858,32 @@ pub struct UpdaterView {
     /// While something is under way, a spinner's frames.
     #[rust]
     spin: NextFrame,
+    /// The window the pane is in, which a Mac's pane sizes to its words.
+    #[rust]
+    windows: Option<ModuleWindows>,
+    /// The height of the words the window was last fitted to.
+    #[rust]
+    fitted: f64,
 }
 
 impl UpdaterView {
+    /// A Mac's update window is as tall as what it shows: 20 points under its last row, in
+    /// every state. Asked once for each height of the words, so a person's own size stays
+    /// until the words change.
+    fn fit_window(&mut self, cx: &mut Cx) {
+        let Some(windows) = self.windows.as_ref().filter(|windows| self.mac && windows.is_supported()) else { return };
+        let pane = self.view.area().rect(cx);
+        let body = self.view.widget(cx, ids!(body)).area().rect(cx);
+        if pane.size.y <= 0.0 || body.size.y <= 0.0 || (body.size.y - self.fitted).abs() < 0.5 {
+            return;
+        }
+        self.fitted = body.size.y;
+        let dy = body.size.y - pane.size.y;
+        if dy.abs() >= 0.5 {
+            windows.resize_by(0.0, dy);
+        }
+    }
+
     fn product() -> Product {
         if cfg!(target_os = "android") {
             Product::Home
@@ -938,10 +973,12 @@ impl UpdaterView {
             restart: self.mac_restart,
             // Android's own words for its installer steps, whichever tree it draws.
             note: if android { Some(self.message.as_str()) } else { self.note.as_deref() },
+            mac: self.mac,
         })
     }
 
     fn refresh_desk(&mut self, cx: &mut Cx) {
+        self.mac = !self.view.widget(cx, ids!(mac_actions)).is_empty();
         let pane = self.pane();
         self.view.label(cx, ids!(current)).set_text(cx, &pane.headline);
         let status = self.view.label(cx, ids!(status));
@@ -972,19 +1009,24 @@ impl UpdaterView {
         let shown = |view: &View, cx: &mut Cx, id: &[LiveId], on: bool| {
             view.widget(cx, id).set_visible(cx, on);
         };
+        // A Mac's pane (`mac_actions`, DeskBody's `desk_mac` branch) keeps one button beside its
+        // words, as Software Update does: when the way to a release leads, Check for Updates is a
+        // link under them, so the words keep their width.
+        let mac = self.mac;
+        let check_under = mac && pane.check && pane.link_leads;
         shown(&self.view, cx, ids!(check), pane.check && !pane.link_leads && !pane.check_plain);
-        shown(&self.view, cx, ids!(check_plain), pane.check && (pane.link_leads || pane.check_plain));
+        shown(&self.view, cx, ids!(check_plain), pane.check && (pane.link_leads || pane.check_plain) && !check_under);
+        shown(&self.view, cx, ids!(check_more), check_under);
         shown(&self.view, cx, ids!(download), pane.download);
         shown(&self.view, cx, ids!(retry), pane.retry);
         shown(&self.view, cx, ids!(manual), pane.manual);
-        // A Mac's pane (`mac_actions`, DeskBody's `desk_mac` branch) reads the release notes as a
-        // link under its words, or as the row's button when they are the only step.
-        let mac = !self.view.widget(cx, ids!(mac_actions)).is_empty();
+        // The release notes are a link under the words there, or the row's button when they are
+        // the only step.
         let lone = !(pane.check || pane.download || pane.retry || pane.cancel.is_some() || pane.install.is_some());
         let notes = pane.link.is_some() && !pane.link_leads;
         shown(&self.view, cx, ids!(notes), notes && !(mac && lone));
         shown(&self.view, cx, ids!(notes_plain), notes && mac && lone);
-        shown(&self.view, cx, ids!(links), mac && ((notes && !lone) || pane.manual));
+        shown(&self.view, cx, ids!(links), mac && ((notes && !lone) || pane.manual || check_under));
         self.view.button(cx, ids!(notes_plain)).set_text(cx, pane.link.unwrap_or_default());
         shown(&self.view, cx, ids!(notes_lead), pane.link.is_some() && pane.link_leads);
         self.view.button(cx, ids!(notes_lead)).set_text(cx, pane.link.unwrap_or_default());
@@ -1529,7 +1571,9 @@ impl Widget for UpdaterView {
         if self.pointer && self.pane().spinner {
             self.spin = cx.new_next_frame();
         }
-        self.view.draw_walk(cx, scope, walk)
+        let step = self.view.draw_walk(cx, scope, walk);
+        self.fit_window(cx);
+        step
     }
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         self.initialize(cx);
@@ -1554,6 +1598,7 @@ impl Widget for UpdaterView {
             ids!(channel),
             ids!(check),
             ids!(check_plain),
+            ids!(check_more),
             ids!(download),
             ids!(cancel),
             ids!(install),
@@ -1578,7 +1623,7 @@ impl Widget for UpdaterView {
             self.retire_offer();
             self.message = "Channel changed. Check for updates to continue.".into();
         }
-        if self.view.button(cx, ids!(check)).clicked(&actions) || self.view.button(cx, ids!(check_plain)).clicked(&actions) {
+        if [ids!(check), ids!(check_plain), ids!(check_more)].iter().any(|id| self.view.button(cx, *id).clicked(&actions)) {
             self.check();
         }
         if self.view.button(cx, ids!(download)).clicked(&actions) {
@@ -1628,9 +1673,12 @@ impl AppModule for UpdaterModule {
     fn capabilities(&self) -> &'static [&'static str] {
         &[]
     }
-    fn create(&self, vm: &mut ScriptVm, _: ValidatedOpen, _: InstanceHandles) -> InstanceParts {
+    fn create(&self, vm: &mut ScriptVm, _: ValidatedOpen, handles: InstanceHandles) -> InstanceParts {
         let value = script_eval!(vm, { use mod.widgets.* UpdaterView {} });
         let root = WidgetRef::script_from_value(vm, value);
+        if let Some(mut view) = root.borrow_mut::<UpdaterView>() {
+            view.windows = Some(handles.windows);
+        }
         let closing = root.clone();
         InstanceParts {
             root,
@@ -1690,7 +1738,16 @@ mod tests {
             channel: "Release Candidate",
             restart: true,
             note: None,
+            mac: false,
         }
+    }
+
+    #[test]
+    fn a_macs_up_to_date_words_end_on_more_than_one_word() {
+        let mac = pane_words(&Facts { mac: true, ..facts(Phase::UpToDate) });
+        assert_eq!(mac.status, "0.1.0 RC 5 is the newest Release Candidate version.");
+        let other = pane_words(&facts(Phase::UpToDate));
+        assert_eq!(other.status, "0.1.0 RC 5 is the newest version on the Release Candidate channel.");
     }
 
     const PHASES: [Phase; 16] = [

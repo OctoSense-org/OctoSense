@@ -1128,7 +1128,6 @@ fn desk_card_action(h, title){
     else if title == "Remove from History" { desk_forget(h) }
 }
 // The Mac's menu bar: what the toolbar and a card's menu offer, and the sidebar's rows by key.
-// A row can't open a page, so Open in Browser stays with the tool and the card's menu.
 fn desk_menu_video(){
     if desk_sheet_up { return nil }
     if playing != nil { return playing }
@@ -1151,7 +1150,9 @@ fn app_menus(){
     rows.push({menu: "Video" title: "Play" key: "return" command: "play" enabled: playing == nil && video != nil})
     rows.push({menu: "Video" title: "Back" key: "cmd+[" command: "back" enabled: free && playing != nil})
     rows.push({menu: "Video"})
-    rows.push({menu: "Video" title: "Copy Link" key: "shift+cmd+C" command: "copy" enabled: video != nil})
+    // The toolbar's two: Open in Browser, and Share with its Copy Link.
+    rows.push({menu: "Video" title: "Open in Browser" command: "browser" url: if video != nil { desk_watch(video) } else { "" } enabled: video != nil})
+    rows.push({menu: "Video" submenu: "Share" title: "Copy Link" key: "shift+cmd+C" command: "copy" enabled: video != nil})
     rows.push({menu: "History" title: "Show History" key: "cmd+Y" command: "history" checked: desk_side_is("history") enabled: free})
     rows.push({menu: "History"})
     rows.push({menu: "History" title: "Remove from History" key: "cmd+delete" command: "forget" enabled: playing == nil && video != nil && desk_side_is("history")})
@@ -1167,6 +1168,8 @@ fn on_menu_command(command){
         if playing == nil && v != nil { desk_play(v) }
     }
     else if command == "back" { if playing != nil { desk_close() } }
+    // The shell has opened the page; the video goes on there, as from the toolbar.
+    else if command == "browser" { if playing != nil { desk_left_for_browser() } }
     else if command == "copy" {
         let v = desk_menu_video()
         if playing != nil { desk_copy_playing() }
