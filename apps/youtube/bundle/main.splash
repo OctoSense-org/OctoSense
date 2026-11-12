@@ -759,12 +759,15 @@ fn desk_field_follow(){
     if desk_side_is("search") && !is_topic(q) { desk_field_set(q) } else { desk_field_set("") }
 }
 fn desk_field_changed(text){
+    let was = desk_field
     desk_field = "" + text
     ui.search_clear.set_visible(desk_field != "")
+    if was != "" && desk_field == "" && desk_field_emptied() { ui.search.focus() }
     desk_remember()
 }
 fn desk_clear_field(){
     desk_field_set("")
+    desk_field_emptied()
     desk_remember()
     ui.search.focus()
 }
@@ -775,8 +778,55 @@ fn desk_field_escape(){
         return
     }
     desk_field_set("")
+    desk_field_emptied()
     desk_remember()
     ui.desk_keys.focus()
+}
+// A Mac: where the person was before their own search (a topic's words, or "history"),
+// to go back to when its field is emptied, the window's title too, as Music and TV
+// leave a search's results when its field is cleared. "" while none is known: the
+// last topic stands in. Other desktops keep the results. It is kept beside the last
+// search (`before.json`), so a restart that shows that search again knows it too.
+let desk_before = ""
+let desk_before_kept = nil
+fn desk_before_keep(){
+    if !ui_unified || desk_before_kept == desk_before { return }
+    let kept = try {
+        fs.write(data_path("before.json"), {before: desk_before}.to_json())
+        true
+    } catch { false }
+    if kept { desk_before_kept = desk_before }
+}
+fn desk_before_load(){
+    if !ui_unified || !fs.exists(data_path("before.json")) { return }
+    let v = try { fs.read(data_path("before.json")).parse_json() } catch { nil }
+    if v == nil { return }
+    let b = try { v.before } catch { nil }
+    if b != nil {
+        desk_before = "" + b
+        desk_before_kept = desk_before
+    }
+}
+fn desk_place(){
+    let side = screen
+    if screen == "player" { side = desk_from }
+    if side == "history" { return "history" }
+    if is_topic(q) { return q }
+    ""
+}
+// True when it went back: only from the results of the person's own search, not over a video.
+fn desk_field_emptied(){
+    if !ui_unified || screen == "player" || !desk_side_is("search") || is_topic(q) { return false }
+    let to = desk_before
+    desk_before = ""
+    desk_before_keep()
+    if to == "history" {
+        desk_show("history")
+        return true
+    }
+    if to == "" { to = desk_last_topic }
+    desk_search(to)
+    true
 }
 fn desk_search(text){
     if desk_sheet_up { return }
@@ -787,9 +837,15 @@ fn desk_search(text){
         if screen == "player" { desk_close() }
         return
     }
+    let here = desk_place()
     desk_stop_video()
     desk_cursor = nil
     if is_topic(t) { desk_last_topic = t } else { desk_searches_add(t) }
+    if ui_unified {
+        if is_topic(t) { desk_before = "" }
+        else if here != "" { desk_before = here }
+        desk_before_keep()
+    }
     search_for(t)
     desk_field_follow()
     desk_chrome_sync()
@@ -824,6 +880,8 @@ fn desk_side_search(text){
 }
 fn desk_show(name){
     if desk_sheet_up { return }
+    desk_before = ""
+    desk_before_keep()
     desk_stop_video()
     if !desk_side_is(name) { desk_cursor = nil }
     show(name)
@@ -1187,7 +1245,7 @@ fn desk_history_menu(){
 // An appearance change runs this whole body again and only `mod` outlives it.
 fn desk_remember(){
     mod.youtube_desk = {screen: screen from: desk_from playing: playing up: desk_up cols: desk_cols height: desk_height width: desk_width
-        side_open: desk_side_open side_narrow: desk_side_narrow field: desk_field last_topic: desk_last_topic query: q searches_error: desk_searches_error}
+        side_open: desk_side_open side_narrow: desk_side_narrow field: desk_field last_topic: desk_last_topic query: q searches_error: desk_searches_error before: desk_before}
 }
 let desk_recalled = false
 fn desk_recall(){
@@ -1208,6 +1266,8 @@ fn desk_recall(){
     if remembered_query != nil && remembered_query != "" { q = remembered_query }
     let remembered_searches_error = try { v.searches_error } catch { nil }
     if remembered_searches_error != nil { desk_searches_error = remembered_searches_error }
+    let remembered_before = try { v.before } catch { nil }
+    if remembered_before != nil { desk_before = remembered_before }
     if v.screen == "player" {
         // The list's first render, just before this, remembered the list: the video has to say it's back.
         if v.playing != nil { start_timeout(0.1, || {
@@ -1223,6 +1283,7 @@ fn desk_recall(){
 }
 fn desk_boot(){
     desk_searches_load()
+    if !desk_recalled { desk_before_load() }
     if is_topic(q) { if !desk_recalled { desk_last_topic = q } }
     else if !desk_recalled { desk_searches_add(q) }
     desk_recent_notice_sync()

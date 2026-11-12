@@ -263,7 +263,8 @@ fn load(){
         ui.talk.set_visible(list.len() > 0)
         talk_there = list.len() > 0
         if ui_desk { ui.talk_off.set_visible(list.len() == 0) }
-        ui.saved_heading.set_visible(list.len() > 0)
+        // A Mac's pane keeps its list's heading over an empty table, as System Settings does.
+        ui.saved_heading.set_visible(list.len() > 0 || ui_unified)
         ui.export_qr.set_visible(list.len() > 0)
         scanner = r.data.scanner
         store = r.data.store
@@ -480,6 +481,7 @@ fn start(){
         mod.ai_providers_touch_reload = || load()
         mod.ai_providers_touch_render = || ui.rows.render()
     }
+    if ui_unified { desk_tools_render() }
     load()
 }
 start_timeout(0.05, || start())
@@ -722,12 +724,14 @@ fn desk_list_failed(){
     desk_failed = true
     desk_talk_off()
     ui.rows.render()
+    if ui_unified { desk_tools_render() }
 }
 fn desk_try_again(){
     desk_loaded = false
     desk_failed = false
     desk_talk_off()
     ui.rows.render()
+    if ui_unified { desk_tools_render() }
     load()
 }
 // Web Clients… stays in the toolbar, off, while no saved model is known.
@@ -977,12 +981,27 @@ fn desk_list_tools(){
         }
     }
 }
-// A Mac's table with nothing in it: the words in its middle, + under it.
+// A Mac's table with nothing in it: the words in its middle and an Add Model… push
+// button under them, as System Settings' Internet Accounts offers Add Account… in its
+// empty list; the heading stays over the table, + and − under it.
 fn desk_empty_table(){
-    View{width: Fill height: 150 flow: Down align: Align{x: 0.5 y: 0.5} spacing: 4 padding: 16
+    View{width: Fill height: 170 flow: Down align: Align{x: 0.5 y: 0.5} spacing: 4 padding: 16
         Label{clip_y: false padding: 0 text: "No Models Yet" draw_text +: {color: ui_muted text_style: theme.font_regular{font_size: 9.75}}}
-        Label{clip_y: false padding: 0 text: "Click + to add the model your assistant answers with." draw_text +: {color: ui_muted text_style: theme.font_regular{font_size: 8.25}}}
+        Label{clip_y: false padding: 0 text: "Add the model your assistant answers with." draw_text +: {color: ui_muted text_style: theme.font_regular{font_size: 8.25}}}
+        UiButton{margin: Inset{top: 10} reset_hover_on_click: true text: "Add Model…" on_click: || add_model()}
     }
+}
+// A Mac's caution triangle (icons/warning.svg, Quick Deck's and PDF Tools' artwork) heads a
+// failure; the other desktops keep the sparkle.
+let desk_icons = {}
+fn desk_failed_glyph(){
+    if !ui_unified { return ui_icon("sparkles") }
+    let handle = desk_icons["warning"]
+    if handle == nil {
+        handle = http_resource("{{assets}}/icons/warning.svg")
+        desk_icons["warning"] = handle
+    }
+    handle
 }
 // A Mac's row: picked, it stands on the list's selection, the accent with white words
 // while the list is the person's, grey under a sheet (a Mac's table out of focus). The
@@ -1126,7 +1145,7 @@ let DeskRoot = SolidView{width: Fill height: Fill flow: Overlay draw_bg.color: u
         UiSep{}
         ScrollYView{width: Fill height: Fill flow: Down align: Align{x: 0.5}
             View{width: Fill max_width: 720 height: Fit flow: Down spacing: 8 padding: Inset{left: 20 right: 20 top: 14 bottom: 20}
-                saved_heading := View{visible: false width: Fill height: 28 flow: Right spacing: 10 align: Align{y: 0.5} padding: Inset{left: 14}
+                saved_heading := View{visible: ui_unified width: Fill height: 28 flow: Right spacing: 10 align: Align{y: 0.5} padding: Inset{left: 14}
                     DeskHead{text: "Saved Models"}
                     count := DeskCount{}
                 }
@@ -1141,7 +1160,7 @@ let DeskRoot = SolidView{width: Fill height: Fill flow: Overlay draw_bg.color: u
                             }
                         }
                         if desk_loaded && desk_failed {
-                            UiEmpty{height: 220 glyph +: {draw_svg +: {svg: ui_icon("sparkles")}} title +: {text: "Your Models Can't Be Read"} note +: {text: "OctoSense couldn't open the assistant's settings."}
+                            UiEmpty{height: 220 glyph +: {draw_svg +: {svg: desk_failed_glyph()}} title +: {text: "Your Models Can't Be Read"} note +: {text: "OctoSense couldn't open the assistant's settings."}
                                 UiButton{margin: Inset{top: 8} reset_hover_on_click: true text: "Try Again" on_click: || desk_try_again()}
                             }
                         }

@@ -545,6 +545,8 @@ fn on_menu_command(command){
     for p in PANES {
         if command == "pane:" + p.id { show(p.id) }
     }
+    // General's About page, as About This Mac's More Info… opens it.
+    if command == "pane:about" { show("about") }
 }
 
 // A row's name, and a line under it that wraps.
@@ -611,6 +613,7 @@ fn set_place_row(title, note, place){
     GestureView{width: Fill height: Fit cursor: MouseCursor.Default on_tap: |x, y| open_place(place)
         SetSpot{draw_bg +: {border_color: spot(place)}
             UiFormRow{
+                set_tile(place_icon(place), place_tint(place))
                 SetWords{
                     UiRowTitle{text: title}
                     UiRowNote{text: note}
@@ -620,11 +623,34 @@ fn set_place_row(title, note, place){
         }
     }
 }
-// A grey tile with a white glyph, as each row of System Settings' General list has.
-fn set_tile(icon){
-    RoundedView{width: 20 height: 20 align: Align{x: 0.5 y: 0.5} show_bg: true draw_bg +: {color: #x8e8e93 border_radius: 4.5}
+// A filled tile with a white glyph, as each row of System Settings' panes has: the same
+// 20-point tile, 5-point corner and 13-point glyph as the sidebar's (round 12; a 9-point
+// corner drew it as a grey circle).
+fn set_tile(icon, tint){
+    RoundedView{width: 20 height: 20 align: Align{x: 0.5 y: 0.5} show_bg: true draw_bg +: {color: tint border_radius: 2.5}
         UiGlyph{width: 13 height: 13 draw_svg +: {svg: ui_icon(icon) color: #xffffff}}
     }
+}
+// Each row's glyph and tile colour, from the Mac's system colours: grey for the system's own
+// (About, Software Update), blue for App Hub as for the App Store, the assistant's purple
+// for its models, blue for its window and green for its approvals.
+fn place_icon(place){
+    if place == "ai-providers" { return "sparkles" }
+    if place == "assistant" { return "bubble" }
+    if place == "approvals" { return "check" }
+    "gear"
+}
+fn place_tint(place){
+    if place == "app-hub" || place == "assistant" {
+        if ui_light { return #x007aff }
+        return #x0a84ff
+    }
+    if place == "ai-providers" { return pane_tint("assistant") }
+    if place == "approvals" {
+        if ui_light { return #x34c759 }
+        return #x30d158
+    }
+    #x8e8e93
 }
 // General's list on a Mac: a tile, the name and the chevron. About opens its own page here;
 // Software Update and App Hub open their apps' windows.
@@ -634,7 +660,7 @@ fn set_general_row(icon, title, place){
     }
         SetSpot{draw_bg +: {border_color: spot(place)}
             UiFormRow{
-                set_tile(icon)
+                set_tile(icon, place_tint(place))
                 UiRowTitle{text: title}
                 UiGlyph{width: 12 height: 12 draw_svg +: {svg: ui_icon("chevron-right") color: ui_muted}}
             }
@@ -654,6 +680,42 @@ fn set_about(){
         Label{clip_y: false padding: 0 text: "Version " + st.version draw_text +: {color: ui_muted text_style: theme.font_regular{font_size: 8.25}}}
     }
 }
+// A Mac's About, as System Settings' is: the icon and the name, then a grouped list of what
+// the host says is true, and a button under it. `settings.state` gives the version alone:
+// no build, commit or platform, so none is shown (a host field would bring each).
+fn set_about_mac(){
+    View{width: Fill height: Fit flow: Down spacing: 8
+        View{width: Fill height: Fit flow: Down align: Align{x: 0.5} spacing: 4 padding: Inset{top: 6 bottom: 8}
+            if ui_alert_icon { UiAlertIcon{app: "os.settings" width: 64 height: 64} }
+            else {
+                RoundedView{width: 64 height: 64 align: Align{x: 0.5 y: 0.5} show_bg: true draw_bg +: {color: pane_tint("general") border_radius: 7.0}
+                    UiGlyph{width: 36 height: 36 draw_svg +: {svg: ui_icon("gear") color: #xffffff}}
+                }
+            }
+            Label{clip_y: false padding: 0 margin: Inset{top: 6} text: "OctoSense" draw_text +: {color: ui_ink text_style: theme.font_bold{font_size: 12.75}}}
+        }
+        UiGroup{
+            set_fact("Name", "OctoSense")
+            UiSep{}
+            set_fact("Version", st.version)
+        }
+        if st.has.update {
+            View{width: Fill height: Fit flow: Right align: Align{x: 1.0}
+                UiButton{text: "Software Update…" on_click: || open_place("software-update")}
+            }
+        }
+    }
+}
+// One fact: its name, its value in grey at the trailing edge. A right click copies the value.
+fn set_fact(title, value){
+    GestureView{width: Fill height: Fit cursor: MouseCursor.Default menu: ["Copy"] on_menu: |chosen| set_copy(value)
+        UiFormRow{
+            UiRowTitle{text: title}
+            SetKeys{text: value}
+        }
+    }
+}
+fn set_copy(text){ host.request("clipboard.write", {text: text}, fn(r){}) }
 let SetToolOff = UiToolIcon{enabled: false draw_bg +: {color_disabled: #x00000000} draw_icon +: {color: mix(ui_bar, ui_ink, 0.32)}}
 
 let remembered = try { mod.settings_view } catch { nil }
@@ -768,7 +830,7 @@ SolidView{width: Fill height: Fill flow: Right draw_bg.color: ui_page
                     }
                     if st != nil && pane == "about" {
                         SetSpot{draw_bg +: {border_color: spot("about")}
-                            set_about()
+                            if ui_unified { set_about_mac() } else { set_about() }
                         }
                     }
                     if st != nil && pane == "general" && !ui_unified {
@@ -951,8 +1013,11 @@ SolidView{width: Fill height: Fill flow: Right draw_bg.color: ui_page
                                         UiRowTitle{text: "Let the Assistant Run Commands"}
                                         SetNote{text: st.commands.note}
                                     }
+                                    // In a box of its own: a named child alone in a skipped `if` loses the row's words.
                                     if st.commands.can || st.commands.on {
-                                        commands_switch := SetSwitch{active: st.commands.on on_click: |active| set_commands(active)}
+                                        View{width: Fit height: Fit
+                                            commands_switch := SetSwitch{active: st.commands.on on_click: |active| set_commands(active)}
+                                        }
                                     }
                                 }
                             }

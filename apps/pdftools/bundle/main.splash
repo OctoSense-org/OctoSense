@@ -787,6 +787,7 @@ if st == nil {
         confirm: nil          // the tab whose unsaved changes the closing question is about
         note_n: 0
         said: ""              // a desktop's note, in the status bar for a while
+        said_warn: false      // a Mac: that note is a refusal or a failure (warn), and leads with the caution glyph
         resize_n: 0
         icons: {}             // icon name -> its handle, made once
         who: {author: "" initials: ""} // who comments and signs (library.json)
@@ -889,6 +890,7 @@ fn unsay(){
     st.said = ""
 }
 fn note(text){
+    st.said_warn = false
     st.note_n = st.note_n + 1
     let n = st.note_n
     // A desktop says it in the window's status bar for a while, as a Mac app
@@ -995,6 +997,16 @@ fn save_problem_text(e){
     }
     "Couldn't save this PDF. Try again."
 }
+// A refusal or a failure: what didn't happen, and why. On a Mac its banner leads with the
+// caution glyph, so it reads apart from a note of something done (note); elsewhere it is
+// a note.
+fn warn(text){
+    note(text)
+    if ui_unified && text != "" {
+        st.said_warn = true
+        render_status()
+    }
+}
 fn newer_save_note(){ "Earlier changes were saved. Your newer changes aren't saved yet." }
 fn draft_save_note(){ "Earlier changes were saved. Finish or discard the current edit." }
 
@@ -1094,14 +1106,14 @@ fn remove_doc(d){
     render_dialog()
     let t = tab_named(d.name)
     if t != nil && t.edited {
-        note("Close “" + shown_name(d.title) + "” first: it has changes that aren't saved.")
+        warn("Close “" + shown_name(d.title) + "” first: it has changes that aren't saved.")
         render_home()
         return
     }
     let finish = || {
         try { fs.remove(d.path) } catch { nil }
         if fs.exists(d.path) {
-            note("Couldn't remove “" + shown_name(d.title) + "”.")
+            warn("Couldn't remove “" + shown_name(d.title) + "”.")
             render_home()
             return
         }
@@ -1328,7 +1340,7 @@ fn import_refusal(error){
 fn open_from_device(){
     if st.importing { return }
     if !st.files_ok {
-        note("This OctoSense can't open files from the device for PDF Tools.")
+        warn("This OctoSense can't open files from the device for PDF Tools.")
         return
     }
     let name = unique_name(IMPORT_NAME) + ".pdf"
@@ -1350,7 +1362,7 @@ fn imported(name, a){
         if storage_full(a.error) { st.space_full = true }
         // Home has room to say why; a document says it in the banner.
         if st.screen != "home" {
-            note(import_refusal(a.error))
+            warn(import_refusal(a.error))
             render_modebar()
             return
         }
@@ -1416,7 +1428,7 @@ fn open_doc(d){
         return
     }
     if st.tabs.len() >= MAX_OPEN {
-        note("PDF Tools keeps up to " + MAX_OPEN + " PDFs open. Close one to open another.")
+        warn("PDF Tools keeps up to " + MAX_OPEN + " PDFs open. Close one to open another.")
         return
     }
     t = new_tab(d)
@@ -1697,7 +1709,8 @@ fn mode_pad(t){
 // The search field takes what the toolbar's other tools leave, after the document's name,
 // and never less than its words need (176) until the window is tight.
 fn search_w(){
-    if narrow() { return clamp(st.width - 564, 110, 200) }
+    // A Mac's narrow toolbar keeps the document's name (mac_folded): the field gives it 26 more.
+    if narrow() { return clamp(st.width - pick(ui_unified, 590, 564), 110, 200) }
     if tight() { return clamp(st.width - 834, 120, 180) }
     clamp(st.width - 1004, 176, 200)
 }
@@ -2353,7 +2366,7 @@ fn with_lines(t, p, done){
     }
     engine("lines", {doc: t.doc page: p}, fn(a){
         if !a.is_ok {
-            note(action_failed("read this page's text", a.error))
+            warn(action_failed("read this page's text", a.error))
             return
         }
         t.lines["p" + p] = a.data
@@ -2415,7 +2428,7 @@ fn comment_tap(t, p, x, y, paragraph){
         engine("comment", args, fn(a){
             wrote(a)
             if !a.is_ok {
-                note(action_failed("add the comment", a.error))
+                warn(action_failed("add the comment", a.error))
                 return
             }
             t.thread = optional(a.data, "id", nil)
@@ -2505,7 +2518,7 @@ fn set_status(t, status){
     if c == nil { return }
     engine("comment", {doc: t.doc op: "status" id: c.id status: status}, fn(a){
         if !a.is_ok {
-            note(action_failed("change the status", a.error))
+            warn(action_failed("change the status", a.error))
             if showing_tab(t) { render_right() }
             return
         }
@@ -2548,7 +2561,7 @@ fn retry_comment_delete(t){
     let c = comment_named(t, problem.id)
     if c == nil {
         t.comment_delete_problem = nil
-        note("That comment is no longer available.")
+        warn("That comment is no longer available.")
         render_status()
         return
     }
@@ -2785,11 +2798,11 @@ fn select_field_action(t, f, action){
     if field_guard(t) { return }
     if draft_guard(t, "opening a field") { return }
     if read_only(f) {
-        note("“" + f.name + "” can't be changed: the form keeps it read-only.")
+        warn("“" + f.name + "” can't be changed: the form keeps it read-only.")
         return
     }
     if !fillable(f) {
-        note("PDF Tools can't sign “" + f.name + "”. Add Text or Add Initials put words on the page.")
+        warn("PDF Tools can't sign “" + f.name + "”. Add Text or Add Initials put words on the page.")
         return
     }
     if field_handoff(t, f, action, nil) { return }
@@ -2912,7 +2925,7 @@ fn write_field(t, f, value){
         wrote(a)
         if !a.is_ok {
             f.value = before
-            note(action_failed("fill the field", a.error))
+            warn(action_failed("fill the field", a.error))
             render_right()
             if !canvas_held(t) { render_canvas() }
             return
@@ -3052,7 +3065,7 @@ fn place_mark(t, p, x, y){
     engine("fill_sign", args, fn(a){
         wrote(a)
         if !a.is_ok {
-            note(action_failed("place it", a.error))
+            warn(action_failed("place it", a.error))
             return
         }
         t.place = nil
@@ -3150,7 +3163,7 @@ fn page_op(t, args, what, done){
     engine("pages", args, fn(a){
         wrote(a)
         if !a.is_ok {
-            note(action_failed(what, a.error))
+            warn(action_failed(what, a.error))
             return
         }
         changed(t)
@@ -3168,7 +3181,7 @@ fn rotate_pages(t, pages, angle){
 fn delete_pages(t){ delete_these(t, chosen(t)) }
 fn delete_these(t, pages){
     if pages.len() == 0 { note("Choose pages to delete.") return }
-    if pages.len() >= t.pages { note("A PDF keeps at least one page.") return }
+    if pages.len() >= t.pages { warn("A PDF keeps at least one page.") return }
     page_op(t, {op: "delete" pages: pages}, "delete the pages", |v| {
         invalidate(t)
         t.selected = []
@@ -3299,7 +3312,7 @@ fn start_combine(t){
 fn combine_add(t, d){
     let c = t.combine
     if c.items.len() >= MAX_MERGE {
-        note("PDF Tools combines up to " + MAX_MERGE + " PDFs at a time.")
+        warn("PDF Tools combines up to " + MAX_MERGE + " PDFs at a time.")
         return
     }
     c.items.push({name: d.name title: d.title pages: d.pages range: ""})
@@ -3412,7 +3425,7 @@ fn do_combine(t){
 fn edit_tap(t, p, x, y){
     if draft_guard(t, "editing another paragraph") { return }
     if !t.can_edit {
-        note("This PDF doesn't allow editing.")
+        warn("This PDF doesn't allow editing.")
         return
     }
     with_lines(t, p, |lines| {
@@ -3505,7 +3518,7 @@ fn apply_edit(t){
         return
     }
     if e.check_error != "" {
-        note("Couldn't change the text: " + e.check_error)
+        warn("Couldn't change the text: " + e.check_error)
         return
     }
     make_edit(t)
@@ -4478,7 +4491,7 @@ fn read_select_all(t){
     let p = t.page
     with_lines(t, p, |lines| {
         if optional(lines, "lines", []).len() == 0 {
-            note("Page " + p + " has no text to select: it may be a scanned picture.")
+            warn("Page " + p + " has no text to select: it may be a scanned picture.")
             return
         }
         t.read_sel = p
@@ -4501,7 +4514,7 @@ fn read_copy(t){
         s = s + l.text
     }
     host.request("clipboard.write", {text: s}, fn(r){
-        if !r.is_ok { note(action_failed("copy the page's text", r.error)) }
+        if !r.is_ok { warn(action_failed("copy the page's text", r.error)) }
     })
 }
 // A selected line: the page's line box in the selection's tint.
@@ -4592,32 +4605,83 @@ fn modebar_view(){
 // name with "— Edited" after it while there are unsaved changes, and the page; then,
 // trailing, the zoom, the modes, Undo, Redo, Save and the search field. The name takes
 // what the tools leave, up to its whole length; the modes give way first (mode_pad).
-fn mac_title_w(t, dirty){
-    let pager = 4 + 26 + pick(t.pages >= 100, 68, 46) + 26
+// In a narrow window (narrow(), under 980 points: mac_folded), where they would leave the
+// name a few letters, the name keeps its place over a line that says the page and Edited,
+// as Preview's title and subtitle do, and the page's arrows, Undo and Redo fold into the
+// overflow chevron at the toolbar's trailing end (search_tools_view). It hangs on the
+// window's width alone, so an edit never rearranges the toolbar.
+let MAC_MORE_W = 34       // the overflow chevron (28) and its gap (6)
+fn mac_fixed_w(t, folded){
     let zoom = 26 + 40 + 26
     let save = pick(tight(), 30, pick(t.saving, 76, 62))
     let pad = mode_pad(t)
     let modes = pick(pad == 12, 425, pick(pad == 8, 377, MODE_POP_W))
-    let room = st.width - (BAR_LEAD + 30) - 16 - pick(dirty, 84, 0) - pager - 24 - zoom - 12 - modes - (12 + 56 + save + 6) - (search_w() + 6)
-    min(name_w(t.title), max(0, room))
+    if folded { return (BAR_LEAD + 30) + 16 + 24 + zoom + 12 + modes + (12 + save + 6) + (search_w() + 6) + MAC_MORE_W }
+    let pager = 4 + 26 + pick(t.pages >= 100, 68, 46) + 26
+    (BAR_LEAD + 30) + 16 + pager + 24 + zoom + 12 + modes + (12 + 56 + save + 6) + (search_w() + 6)
+}
+fn mac_folded(t){ ui_unified && t != nil && narrow() }
+// The folded name's second line: the page, and Edited while there are unsaved changes.
+fn mac_sub(t, dirty){
+    let s = "Page " + t.page + " of " + t.pages
+    if dirty { s = s + " — Edited" }
+    s
+}
+fn mac_title_w(t, dirty){
+    if mac_folded(t) { return min(max(name_w(t.title), ceil(mac_sub(t, dirty).len() * 6.1) + 4), max(0, st.width - mac_fixed_w(t, true))) }
+    min(name_w(t.title), max(0, st.width - mac_fixed_w(t, false) - pick(dirty, 84, 0)))
+}
+// The overflow chevron's menu: what folded and can be done now, in the toolbar's order.
+fn mac_more_titles(t){
+    let out = []
+    if t == nil || t.state != "ready" { return out }
+    if t.mode != "combine" {
+        if t.page > 1 { out.push("Previous Page") }
+        if t.page < t.pages { out.push("Next Page") }
+    }
+    let undo_on = t.can_undo && !t.saving && !history_busy(t) && !comment_delete_busy(t)
+    let redo_on = t.can_redo && !t.saving && !history_busy(t) && !comment_delete_busy(t)
+    if (undo_on || redo_on) && out.len() > 0 { out.push("-") }
+    if undo_on { out.push("Undo") }
+    if redo_on { out.push("Redo") }
+    out
+}
+fn mac_more_chosen(title){
+    if pt_modal { return }
+    let t = cur_tab()
+    if t == nil || t.state != "ready" { return }
+    if title == "Previous Page" { page_step(-1) }
+    if title == "Next Page" { page_step(1) }
+    if title == "Undo" { undo(t, false) }
+    if title == "Redo" { undo(t, true) }
+    ui.keys.focus()
 }
 fn mac_modebar(t, dirty, field_blocked, undo_on, redo_on){
     let paged = t.mode != "combine"
     let ink = pick(paged, ui_ink, pt_off)
     let title_w = mac_title_w(t, dirty)
+    let folded = mac_folded(t)
     View{width: Fill height: Fill flow: Right align: Align{y: 0.5} padding: Inset{right: 6}
-        if title_w >= 40 {
+        if folded && title_w >= 40 {
+            View{width: title_w + 16 height: Fit flow: Down spacing: 1 padding: Inset{left: 10 right: 6}
+                UiBarTitle{width: Fill text_overflow: TextOverflow.Ellipsis text: t.title}
+                UiBarSub{width: Fill text_overflow: TextOverflow.Ellipsis text: mac_sub(t, dirty) draw_text +: {color: pick(paged, ui_muted, pt_off)}}
+            }
+        }
+        if !folded && title_w >= 40 {
             View{width: Fit height: Fit flow: Right align: Align{y: 0.5} padding: Inset{left: 10 right: 6} spacing: 6
                 UiBarTitle{width: title_w text_overflow: TextOverflow.Ellipsis text: t.title}
                 if dirty { Label{clip_y: false padding: 0 text: "— Edited" draw_text +: {color: ui_muted text_style: theme.font_regular{font_size: 11.25}}} }
             }
         }
-        View{width: 4 height: 1}
-        UiToolIcon{enabled: paged width: 26 icon_walk: Walk{width: 12 height: 12} draw_icon +: {svg: icon("chevron-left") color: ink} on_click: || page_step(-1)}
-        View{width: pick(t.pages >= 100, 68, 46) height: Fit align: Align{x: 0.5}
-            Body{text: "" + t.page + " / " + t.pages draw_text +: {color: pick(paged, ui_ink, pt_off)}}
+        if !folded {
+            View{width: 4 height: 1}
+            UiToolIcon{enabled: paged width: 26 icon_walk: Walk{width: 12 height: 12} draw_icon +: {svg: icon("chevron-left") color: ink} on_click: || page_step(-1)}
+            View{width: pick(t.pages >= 100, 68, 46) height: Fit align: Align{x: 0.5}
+                Body{text: "" + t.page + " / " + t.pages draw_text +: {color: pick(paged, ui_ink, pt_off)}}
+            }
+            UiToolIcon{enabled: paged width: 26 icon_walk: Walk{width: 12 height: 12} draw_icon +: {svg: icon("chevron-right") color: ink} on_click: || page_step(1)}
         }
-        UiToolIcon{enabled: paged width: 26 icon_walk: Walk{width: 12 height: 12} draw_icon +: {svg: icon("chevron-right") color: ink} on_click: || page_step(1)}
         Gap{}
         UiToolIcon{enabled: paged width: 26 icon_walk: Walk{width: 12 height: 12} draw_icon +: {svg: icon("minus") color: ink} on_click: || zoom_by(-1)}
         View{width: 40 height: Fit align: Align{x: 0.5}
@@ -4632,8 +4696,10 @@ fn mac_modebar(t, dirty, field_blocked, undo_on, redo_on){
         }
         if mode_pad(t) == 0 { mode_popup(t) }
         View{width: 12 height: 1}
-        UiToolIcon{enabled: undo_on width: 28 draw_icon +: {svg: icon("undo") color: pick(undo_on, ui_ink, pt_off)} on_click: || undo(cur_tab(), false)}
-        UiToolIcon{enabled: redo_on width: 28 draw_icon +: {svg: icon("redo") color: pick(redo_on, ui_ink, pt_off)} on_click: || undo(cur_tab(), true)}
+        if !folded {
+            UiToolIcon{enabled: undo_on width: 28 draw_icon +: {svg: icon("undo") color: pick(undo_on, ui_ink, pt_off)} on_click: || undo(cur_tab(), false)}
+            UiToolIcon{enabled: redo_on width: 28 draw_icon +: {svg: icon("redo") color: pick(redo_on, ui_ink, pt_off)} on_click: || undo(cur_tab(), true)}
+        }
         UiTool{enabled: dirty && !t.saving && !field_blocked width: pick(tight(), 30, pick(t.saving, 76, 62)) padding: pick(tight(), 0, Inset{left: 8 right: 8}) text: pick(tight(), "", pick(t.saving, "Saving…", "Save")) draw_icon +: {svg: icon("save") color: pick(dirty && !field_blocked, ui_ink, pt_off)}
             draw_text +: {color: pick(dirty && !field_blocked, ui_ink, pt_off)}
             on_click: || save(cur_tab(), nil)}
@@ -4649,6 +4715,16 @@ fn search_tools_view(){
     if ui_unified {
         return View{width: Fit height: Fill flow: Right align: Align{y: 0.5} padding: Inset{right: 6}
             search_field(t)
+            // A narrow window's overflow chevron, last, as an NSToolbar's: what folded (mac_folded).
+            // In a plain view of its own, so the branch never ends in a name.
+            if mac_folded(t) {
+                View{width: Fit height: Fit margin: Inset{left: 6}
+                    mac_more := GestureView{width: 28 height: 28 on_menu: |title| mac_more_chosen(title)
+                        mac_more_tool := UiToolIcon{width: 28 icon_walk: Walk{width: 14 height: 14} draw_icon +: {svg: icon("overflow") color: ui_ink preserve_viewbox: true}
+                            on_click: || ui.mac_more.open_menu(mac_more_titles(cur_tab()))}
+                    }
+                }
+            }
         }
     }
     View{width: Fit height: Fill flow: Right align: Align{y: 0.5} padding: Inset{right: 6}
@@ -5640,9 +5716,12 @@ fn thread_panel(){
             Bold{text: "Comments"}
             Second{text: "" + count}
             Gap{}
+            // In a box of its own: a named child alone in a skipped `if` loses the header's spacer.
             if st.who.author != "" || t.thread != nil {
-                more_pick := GestureView{width: 28 height: 28 on_menu: |title| more_chosen(cur_tab(), title)
-                    UiToolIcon{enabled: !comment_delete_busy(t) width: 28 icon_walk: Walk{width: 18 height: 18} draw_icon +: {svg: icon("more") color: pick(comment_delete_busy(t), pt_off, ui_muted) preserve_viewbox: true} on_click: || ui.more_pick.open_menu(more_titles(cur_tab()))}
+                View{width: Fit height: Fit
+                    more_pick := GestureView{width: 28 height: 28 on_menu: |title| more_chosen(cur_tab(), title)
+                        UiToolIcon{enabled: !comment_delete_busy(t) width: 28 icon_walk: Walk{width: 18 height: 18} draw_icon +: {svg: icon("more") color: pick(comment_delete_busy(t), pt_off, ui_muted) preserve_viewbox: true} on_click: || ui.more_pick.open_menu(more_titles(cur_tab()))}
+                    }
                 }
             }
         }
@@ -6291,7 +6370,7 @@ fn status_view(){
         let comment_failed = other_comment_problem(nil)
         if comment_failed != nil { return other_comment_status(nil, comment_failed) }
         return View{width: Fill height: Fill flow: Right align: Align{x: 0.5 y: 0.5} padding: Inset{left: 14 right: 14}
-            if st.said != "" { Small{text: st.said} }
+            if st.said != "" { said_view() }
             else { Small{text: storage_text() draw_text +: {color: pick(st.space_full, ui_danger, ui_muted)}} }
         }
     }
@@ -6379,8 +6458,19 @@ fn status_view(){
         if state != "" && !ui_unified { RoundedView{width: 8 height: 8 show_bg: true draw_bg +: {color: pick(dirty || draft || t.saving, pt_warn, ui_success) border_radius: 2.0}} }
         Small{text: state}
         if st.space_full { View{width: Fit height: Fit padding: Inset{left: 8} Small{text: "Storage is full: remove a PDF to make room" draw_text +: {color: ui_danger}}} }
-        if st.said != "" { View{width: Fill height: Fit align: Align{x: pick(ui_unified, 0.0, 1.0)} Small{text: st.said}} }
+        if st.said != "" { View{width: Fill height: Fit align: Align{x: pick(ui_unified, 0.0, 1.0)} said_view()} }
     }
+}
+// What the app said: a note of something done in grey; on a Mac a refusal or a failure
+// (warn) leads with the caution glyph in the system's orange and reads in the text's ink.
+fn said_view(){
+    if ui_unified && optional(st, "said_warn", false) {
+        return View{width: Fit height: Fit flow: Right align: Align{y: 0.5} spacing: 6
+            said_glyph := Ico{width: 14 height: 14 draw_svg +: {svg: icon("warning") color: pt_warn}}
+            Small{text: st.said draw_text +: {color: ui_ink}}
+        }
+    }
+    Small{text: st.said}
 }
 
 // Closing a tab with unsaved changes asks first; so does removing a PDF. On a Mac
@@ -6576,7 +6666,7 @@ fn export_pdf(t){
 }
 fn exported(t, a){
     if !a.is_ok {
-        note("Couldn't export “" + shown_name(t.title) + "”: " + err_words(a.error))
+        warn("Couldn't export “" + shown_name(t.title) + "”: " + err_words(a.error))
         return
     }
     if optional(a.data, "cancelled", false) == true { return }

@@ -5194,11 +5194,14 @@ fn view_bar_view(){
                 on_click: || { let x = deck_tab() set_zoom(x, fit_now(x), true) }}
         }
         // The deck's name (name_room), and on a Mac "— Edited" after it while there are
-        // unsaved changes, as Keynote's title says.
+        // unsaved changes, as Keynote's title says. Each named view sits in a plain one, so
+        // a branch never ends in a name (that left the segments out of a narrow window).
         if name_room(t) > 0 {
-            View{width: name_room(t) + 16 height: Fit flow: Right align: Align{y: 0.5} padding: Inset{left: 12 right: 4} spacing: 6
-                UiBarTitle{width: name_room(t) - edited_w(t) text_overflow: TextOverflow.Ellipsis text: t.title}
-                if UNIFIED && t.edited { Label{clip_y: false padding: 0 text: "— Edited" draw_text +: {color: ui_muted text_style: theme.font_regular{font_size: 11.25}}} }
+            View{width: Fit height: Fit
+                deck_name_box := View{width: name_room(t) + 16 height: Fit flow: Right align: Align{y: 0.5} padding: Inset{left: 12 right: 4} spacing: 6
+                    UiBarTitle{width: name_room(t) - edited_w(t) text_overflow: TextOverflow.Ellipsis text: t.title}
+                    if UNIFIED && t.edited { View{width: Fit height: Fit edited_mark := Label{clip_y: false padding: 0 text: "— Edited" draw_text +: {color: ui_muted text_style: theme.font_regular{font_size: 11.25}}}} }
+                }
             }
         }
     }
@@ -5244,9 +5247,11 @@ fn view_bar_w(t){
 // slides the slide's number gives way first when the whole name wants its room (the
 // status bar says "Slide 3 of 12" too). Under 48 points the name isn't shown.
 fn name_w(t){ ceil(("" + t.title).len() * 8.6) + 4 }
-// The room "— Edited" takes after a Mac's deck name, with its spacing. It is kept while
-// the deck is saved too, so that a change doesn't move the tools beside the name.
-fn edited_w(t){ pick(UNIFIED, 62, 0) }
+// The room "— Edited" takes after a Mac's deck name: the 6 points between them and 72 for
+// the words, which take about 65 at the 15-point size, so they are never cut (56 cut the
+// last letter). A long name gives way with an ellipsis before them, as Keynote's does. The
+// room is kept while the deck is saved too, so that a change doesn't move the tools.
+fn edited_w(t){ pick(UNIFIED, 78, 0) }
 fn deck_edited(){
     let t = deck_tab()
     if t == nil || t.state != "ready" { return false }
@@ -8545,7 +8550,9 @@ fn home_view(){
     let can_open = !st.files_known || st.files_ok
     let limit = pick(st.max_import > 0, size_text(st.max_import), "64 MB")
     View{width: Fill height: Fit flow: Down padding: Inset{top: 14 bottom: 20 left: HOME_SIDE right: HOME_SIDE} spacing: 2
-        if gone { home_alert(engine_headline(), engine_detail(), "retry") }
+        // While the alert for a deck the engine couldn't open says it, the banner doesn't
+        // say it again: a Mac says a failure once (it comes back when the alert goes).
+        if gone && !engine_alert_up() { home_alert(engine_headline(), engine_detail(), "retry") }
         if st.alert != nil { home_alert(st.alert.head, st.alert.detail, "ok") }
         if st.space_full { home_alert("Quick Deck's Storage Is Full", full_home_detail(), "largest") }
         if !gone {
@@ -8920,6 +8927,8 @@ fn opening_words(){
     ""
 }
 
+// The alert says the engine is missing or too old: Home's banner says nothing then.
+fn engine_alert_up(){ UNIFIED && st.refusal != nil && st.refusal.state == "missing" }
 // A deck the engine wouldn't open: its tab goes, and an alert says why.
 fn mac_refused(t){
     if !UNIFIED { return false }
@@ -8928,6 +8937,7 @@ fn mac_refused(t){
     drop_tab(t)
     render_status()
     render_confirm()
+    if engine_alert_up() { render_home() }
     true
 }
 fn refusal_head(r){
@@ -8950,13 +8960,17 @@ fn refusal_note(r){
     words
 }
 fn refusal_done(){
+    let banner = engine_alert_up()
     st.refusal = nil
     render_confirm()
+    if banner { render_home() }
 }
 fn refusal_retry(){
     let r = st.refusal
+    let banner = engine_alert_up()
     st.refusal = nil
     render_confirm()
+    if banner { render_home() }
     if r == nil { return }
     if st.engine != "ok" {
         st.engine = ""

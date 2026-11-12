@@ -652,6 +652,7 @@ if st == nil {
         retry: ""             // desktop: what the notice's Try Again was trying to do
         alert_title: ""       // a Mac: the failure alert's words, while it is up
         alert_note: ""        // a Mac: why it failed, under them
+        alert_again: true     // a Mac: the alert offers Try Again (not when trying again can't help)
         resize_n: 0           // desktop: the last resize, for the redraw that follows it
         find_open: false      // desktop: the find bar shows under the format bar
         find_words: ""        // desktop: what the find bar looks for
@@ -1200,7 +1201,7 @@ fn convert_draft(what, next, d, rev, source, out, md){
         remove_file(source)
         if !r.is_ok {
             notice("editor", said_message(what, r.error))
-            desk_fail(what)
+            desk_fail_why(what, r.error)
             if st.doc != nil { refresh_editor(ui.editor_text.text()) }
             return
         }
@@ -1253,13 +1254,58 @@ fn desk_offer(what){
 // didn't happen to which document, why, then Try Again and OK, the default. Another
 // desktop keeps the notice and its Try Again. A Word file still unsaved when its document
 // opens again keeps the notice (sync_word_errors): it says how the document stands.
-fn desk_fail(what){
+fn desk_fail(what){ desk_fail_why(what, nil) }
+// `error` is the engine's answer. Trying again can't help where this OctoSense keeps
+// its word engine from apps or the device has none (word_lasting): that alert has only OK.
+fn desk_fail_why(what, error){
     if !ui_unified { desk_offer(what) return }
     st.retry = what
     st.alert_title = desk_alert_title(what)
     st.alert_note = editor_said
+    st.alert_again = !word_lasting(error)
     notice("editor", "")
     desk_alert_show()
+}
+fn word_lasting(error){
+    if error == nil { return false }
+    let e = "" + error
+    (e.search("not granted") >= 0 && e.search("word") >= 0) || e.search("no service answers") >= 0
+}
+// A Mac reports a failed export in an alert of its own, apart from the format sheet, as
+// Pages does: which document couldn't be exported as what, why under it, OK the default.
+// The sheet goes and its row keeps no red line. Try Again exports the same format again,
+// where trying again can help.
+fn desk_export_failed(f, error){
+    f.state = ""
+    f.text = ""
+    let name = if st.doc != nil { shown_title(st.doc) } else { "Untitled" }
+    st.retry = "export copies"
+    st.alert_title = "“" + name + "” couldn’t be exported as " + desk_format_words(f) + "."
+    st.alert_note = desk_export_why(error)
+    st.alert_again = !word_lasting(error)
+    pane(st.under)
+    desk_alert_show()
+}
+// A format's name inside a sentence.
+fn desk_format_words(f){
+    if f.id == "html" { return "a web page" }
+    f.name
+}
+fn desk_export_why(error){
+    let e = ""
+    if error != nil { e = "" + error }
+    if e.search("not granted") >= 0 && e.search("word") >= 0 { return "This OctoSense doesn’t let apps make copies with its word engine yet. Your document is safe in Writer." }
+    if e.search("no service answers") >= 0 { return "This device has no word engine to make the copy. Your document is safe in Writer." }
+    "The word engine couldn’t finish the copy. Your document is safe in Writer."
+}
+// Try Again after a failed export: the sheet comes back on the same format and exports it
+// at once (a draft newer than its Word file is saved first, as Export does).
+fn desk_export_again(){
+    if is_busy() || st.doc == nil { return }
+    if st.doc.docx != "" && st.doc.saved_rev == st.doc.rev && fs.exists(st.doc.docx) {
+        open_export()
+        export_as(desk_format())
+    } else { export_tool() }
 }
 fn desk_alert_title(what){
     let name = if st.doc != nil { shown_title(st.doc) } else { "Untitled" }
@@ -1270,6 +1316,7 @@ fn desk_alert_title(what){
 fn desk_alert_show(){
     ui.alert_title.set_text(st.alert_title)
     ui.alert_note.set_text(st.alert_note)
+    ui.alert_again.set_visible(field(st, "alert_again", true))
     ui.save_alert.set_visible(st.alert_title != "")
     desk_sheet_sync()
 }
@@ -1282,7 +1329,7 @@ fn desk_alert_close(again){
 }
 fn desk_retry(){
     notice("editor", "")
-    if st.retry == "show a preview" { open_preview() } else if st.retry == "export copies" { export_tool() } else { save_doc() }
+    if st.retry == "show a preview" { open_preview() } else if st.retry == "export copies" { if ui_unified { desk_export_again() } else { export_tool() } } else { save_doc() }
 }
 // A conversion may finish after the person has navigated to the library or
 // another document. Keep each failed document reachable until it is saved.
@@ -1366,7 +1413,7 @@ fn read_preview(){
             st.busy = false
             if st.doc == nil || st.doc.id != d.id { return }
             notice("editor", said_message("show a preview", info.error))
-            desk_fail("show a preview")
+            desk_fail_why("show a preview", info.error)
             refresh_editor(ui.editor_text.text())
             return
         }
@@ -1378,7 +1425,7 @@ fn show_preview(d, info, r){
     if st.doc == nil || st.doc.id != d.id { return }
     if !r.is_ok {
         notice("editor", said_message("show a preview", r.error))
-        desk_fail("show a preview")
+        desk_fail_why("show a preview", r.error)
         refresh_editor(ui.editor_text.text())
         return
     }
@@ -1514,6 +1561,10 @@ fn export_as(f){
             return
         }
         st.busy = false
+        if !r.is_ok && ui_unified {
+            desk_export_failed(f, r.error)
+            return
+        }
         if r.is_ok {
             let bytes = field(r.data, "bytes", 0)
             let kept = []
@@ -2306,6 +2357,19 @@ fn doc_grid(id){
         }
     }
 }
+// Whether a page's name fits on one line of its cell, so its label can hug its words.
+// A label as wide as its words draws one line, cut at its edge, when its words need two
+// (the framework lays a Fit label out wrapped but draws it unwrapped), so only a name
+// sure to fit hugs: 7.2 points a byte is wider than the 9.75-point face's letters, and a
+// letter of a script other than Latin is two or three bytes. Any other name takes the
+// cell's width, where it wraps to two lines and ends in an ellipsis.
+fn desk_name_hugs(d){
+    if st.width <= 0 { return false }
+    let side = 0
+    if desk_side_on() { side = 209 }
+    let cell = (st.width - side - 32) / desk_cols()
+    shown_title(d).len() * 7.2 <= cell - 20
+}
 // How many pages fit across the window, each in a cell at least 190 wide.
 fn desk_cols(){
     if st.width <= 0 { return 4 }
@@ -2353,8 +2417,10 @@ fn doc_card(d){
             if badge == "DOCX" { Label{clip_y: false padding: 0 text: "DOCX" draw_text +: {color: doc_green text_style: theme.font_bold{font_size: 5.25}}} }
             if badge == "Edited" { Label{clip_y: false padding: 0 text: "Edited" draw_text +: {color: paper_muted text_style: theme.font_bold{font_size: 5.25}}} }
         }
-        // On a Mac the name hugs its words, with the capsule's room round them.
-        if ui_unified { name := Label{width: Fit margin: Inset{left: 2 right: 2 top: 8} padding: Inset{left: 6 right: 6 top: 1 bottom: 2} max_lines: 2 text_overflow: Ellipsis clip_y: false align: Align{x: 0.5} text: shown_title(d) draw_text +: {color: ink text_style: theme.font_regular{font_size: 9.75 line_spacing: 1.2}}} }
+        // On a Mac a name that fits on one line hugs its words, with the capsule's room
+        // round them; a longer one takes the cell's width, wraps to two lines and ends in
+        // an ellipsis, as Finder's and Pages' names do (desk_name_hugs).
+        if ui_unified { name := Label{width: if desk_name_hugs(d) { Fit } else { Fill } margin: Inset{left: 2 right: 2 top: 8} padding: Inset{left: 6 right: 6 top: 1 bottom: 2} max_lines: 2 text_overflow: Ellipsis clip_y: false align: Align{x: 0.5} text: shown_title(d) draw_text +: {color: ink text_style: theme.font_regular{font_size: 9.75 line_spacing: 1.2}}} }
         if !ui_unified { Label{width: Fill padding: Inset{left: 8 right: 8 top: 9} max_lines: 2 text_overflow: Ellipsis clip_y: false align: Align{x: 0.5} text: shown_title(d) draw_text +: {color: ink text_style: theme.font_regular{font_size: 9.75 line_spacing: 1.2}}} }
         Label{clip_y: false width: Fill padding: Inset{left: 6 right: 6 top: 1} align: Align{x: 0.5} text: desk_when(d.updated) draw_text +: {color: muted text_style: theme.font_regular{font_size: 8.25}}}
     }
@@ -2843,18 +2909,22 @@ let DeskRoot = SolidView{width: Fill height: Fill flow: Overlay draw_bg.color: u
         }
     }
     // A save, preview or export that failed, on a Mac: the alert Pages and TextEdit show,
-    // the document's name and why, Try Again and OK side by side, OK the default.
+    // the document's name and why, Try Again and OK side by side, OK the default. It sits in
+    // a plain full-size view: a skipped `if` whose block ended in a name dropped DeskRoot
+    // itself on every other desktop, which then drew nothing.
     if ui_unified {
-        save_alert := View{visible: false width: Fill height: Fill flow: Overlay new_batch: true
-            DeskDim{}
-            DeskSheetPlace{
-                UiAlertPanel{
-                    if ui_alert_icon { UiAlertIcon{app: "os.writer" width: 64 height: 64} }
-                    alert_title := UiAlertTitle{}
-                    alert_note := UiAlertNote{}
-                    UiAlertRow{
-                        UiButton{width: Fill reset_hover_on_click: true text: "Try Again" on_click: || desk_alert_close(true)}
-                        UiPrimary{width: Fill key_default: true key_cancel: true reset_hover_on_click: true text: "OK" on_click: || desk_alert_close(false)}
+        View{width: Fill height: Fill flow: Overlay
+            save_alert := View{visible: false width: Fill height: Fill flow: Overlay new_batch: true
+                DeskDim{}
+                DeskSheetPlace{
+                    UiAlertPanel{
+                        if ui_alert_icon { UiAlertIcon{app: "os.writer" width: 64 height: 64} }
+                        alert_title := UiAlertTitle{}
+                        alert_note := UiAlertNote{}
+                        UiAlertRow{
+                            alert_again := UiButton{width: Fill reset_hover_on_click: true text: "Try Again" on_click: || desk_alert_close(true)}
+                            UiPrimary{width: Fill key_default: true key_cancel: true reset_hover_on_click: true text: "OK" on_click: || desk_alert_close(false)}
+                        }
                     }
                 }
             }
