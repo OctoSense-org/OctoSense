@@ -940,7 +940,7 @@ script_mod! {
         width: Fill height: Fill flow: Overlay
         card := Splash { width: Fill height: Fill }
         // Host-owned isolate, outside the app's policy and script tree.
-        sheet := Splash { width: Fill height: Fill visible: false }
+        sheet := Splash { width: Fill height: Fill }
     }
 }
 
@@ -1165,7 +1165,12 @@ impl GlanceTiles {
             // Capture direct host children before evaluating any app source.
             // A nested app widget named `sheet` can never become host authority.
             tile.card = tile.frame.splash(cx, ids!(card));
-            if tile.workspace { tile.sheet = tile.frame.splash(cx, ids!(sheet)); }
+            if tile.workspace {
+                tile.sheet = tile.frame.splash(cx, ids!(sheet));
+                // Hidden until a host service raises it. A Splash takes only its walk from
+                // the DSL, so the starting state is set on its view here.
+                if let Some(mut s) = tile.sheet.borrow_mut() { s.view.visible = false; }
+            }
             let splash = tile.card.clone();
             tile.admitted_prompts = seat(cx, &splash, app, contained);
             if tile.workspace { splash.set_host_prompts(cx, self.foreground && tile.admitted_prompts); }
