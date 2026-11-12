@@ -4926,7 +4926,7 @@ index 36f4982824af40f6a8120bef7e3535f4512ad06d..08204eb0b6e8257a4cf8433e2617bf3b
 +
  }
 diff --git a/apps/calculator/src/view.rs b/apps/calculator/src/view.rs
-index 39166316c731d524bb1afbda2b72f4d68778cf74..0eebca276e3bc7fb08a13e9b56174e437fc79093 100644
+index 39166316c731d524bb1afbda2b72f4d68778cf74..f93d499bfcee66d84440da808dc7e7617d2d5af3 100644
 --- a/apps/calculator/src/view.rs
 +++ b/apps/calculator/src/view.rs
 @@ -1,6 +1,6 @@
@@ -5057,7 +5057,54 @@ index 39166316c731d524bb1afbda2b72f4d68778cf74..0eebca276e3bc7fb08a13e9b56174e43
      let HistoryList = PortalList{
          width: Fill height: Fill
          Item := View{
-@@ -575,7 +657,8 @@ fn by(touch, pointer){ if desk { pointer } else { touch } }
+@@ -517,6 +599,31 @@ fn by(touch, pointer){ if desk { pointer } else { touch } }
+             color_focus: d_danger
+         }
+     }
++    // A Mac's small push button, for a narrow column: sized to its title.
++    let DeskSmallPush = DeskPush{
++        height: 20 padding: Inset{left: 8 right: 8}
++        draw_text +: {text_style: theme.font_regular{font_size: 8.25}}
++    }
++    // The failure's ways on. A Mac sets its push buttons in a row, each as
++    // wide as its title, small ones in the sidebar's narrow column; other
++    // desktops keep theirs stacked.
++    let FailedActions = if unified {
++        View{
++            width: Fill height: Fit
++            margin: Inset{top: 8}
++            flow: Right spacing: 6 align: Align{x: 0.5}
++            failed_again := DeskSmallPush{text: "Try Again"}
++            failed_other := DeskSmallPush{text: "Start Over…"}
++        }
++    } else {
++        View{
++            width: Fill height: Fit
++            margin: Inset{top: 8}
++            flow: Down spacing: 6 align: Align{x: 0.5}
++            failed_again := DeskPush{width: 128 height: 24 text: "Try Again"}
++            failed_other := DeskPush{width: 128 height: 24 text: "Start Over…"}
++        }
++    }
+     // The history's own failure: what couldn't be read or saved, and the ways
+     // on. Neither is the window's default: Return stays the = key. Start Over
+     // asks first, in a sheet.
+@@ -546,13 +653,7 @@ fn by(touch, pointer){ if desk { pointer } else { touch } }
+                 text_style: theme.font_regular{font_size: 8.25}
+             }
+         }
+-        failed_actions := View{
+-            width: Fill height: Fit
+-            margin: Inset{top: 8}
+-            flow: Down spacing: 6 align: Align{x: 0.5}
+-            failed_again := DeskPush{width: 128 height: 24 text: "Try Again"}
+-            failed_other := DeskPush{width: 128 height: 24 text: "Start Over…"}
+-        }
++        failed_actions := FailedActions{}
+     }
+     let DeskTape = View{
+         width: 200 height: Fill
+@@ -575,7 +676,8 @@ fn by(touch, pointer){ if desk { pointer } else { touch } }
                  spacer := View{width: Fill height: 1}
                  tape_clear := DeskTool{text: "Clear"}
              }
@@ -5067,7 +5114,52 @@ index 39166316c731d524bb1afbda2b72f4d68778cf74..0eebca276e3bc7fb08a13e9b56174e43
              tape_body := View{
                  width: Fill height: Fill flow: Down
                  // Saved calculations that can't be read: said in place of
-@@ -841,6 +924,12 @@ fn by(touch, pointer){ if desk { pointer } else { touch } }
+@@ -780,6 +882,32 @@ fn by(touch, pointer){ if desk { pointer } else { touch } }
+             }
+         }
+     }
++    // A Mac's Calculator has no pop-up button in its toolbar: a borderless
++    // toolbar item, the mode's name and a chevron, its well only under the
++    // pointer, pressed, or while its menu hangs below it (Rust lights it then).
++    let MacModeTool = DeskTool{
++        padding: Inset{left: 8 right: 21}
++        draw_bg +: {
++            // The chevron's ink.
++            border_color: d_ink
++            pixel: fn(){
++                let sdf = Sdf2d.viewport(self.pos * self.rect_size)
++                sdf.box(0.0, 0.0, self.rect_size.x, self.rect_size.y, 3.0)
++                sdf.fill(mix(mix(self.color, self.color_hover, self.hover), self.color_down, self.down))
++                let c = vec2(self.rect_size.x - 12.0, self.rect_size.y * 0.5 + 0.5)
++                sdf.move_to(c.x - 3.5, c.y - 1.75)
++                sdf.line_to(c.x, c.y + 1.75)
++                sdf.line_to(c.x + 3.5, c.y - 1.75)
++                sdf.stroke(self.border_color, 1.2)
++                return sdf.result
++            }
++        }
++    }
++    let ModeSlot = if unified {
++        View{width: Fit height: Fit mode_pick := MacModeTool{text: "Basic"}}
++    } else {
++        View{width: Fit height: Fit mode_pick := DeskPicker{labels: ["Basic", "Scientific"]}}
++    }
+     let DeskSurface = View{
+         width: Fill height: Fill
+         flow: Down
+@@ -792,10 +920,7 @@ fn by(touch, pointer){ if desk { pointer } else { touch } }
+                 width: if unified { 28 } else { 30 }
+                 draw_icon +: {svg: crate_resource("self:resources/icons/mac_history.svg")}
+             }
+-            mode_slot := View{
+-                width: Fit height: Fit
+-                mode_pick := DeskPicker{labels: ["Basic", "Scientific"]}
+-            }
++            mode_slot := ModeSlot{}
+             spacer := View{width: Fill height: 1}
+             btn_reset := DeskPush{visible: false text: "Reset"}
+             btn_copy := DeskToolIcon{
+@@ -841,6 +966,12 @@ fn by(touch, pointer){ if desk { pointer } else { touch } }
                      }
                  }
              }
@@ -5080,7 +5172,7 @@ index 39166316c731d524bb1afbda2b72f4d68778cf74..0eebca276e3bc7fb08a13e9b56174e43
          }
          calc_body := View{
          width: Fill height: Fill
-@@ -872,7 +961,8 @@ fn by(touch, pointer){ if desk { pointer } else { touch } }
+@@ -872,7 +1003,8 @@ fn by(touch, pointer){ if desk { pointer } else { touch } }
                  }
              }
              // Why a calculation stopped, under what stopped. What happened to
@@ -5090,7 +5182,7 @@ index 39166316c731d524bb1afbda2b72f4d68778cf74..0eebca276e3bc7fb08a13e9b56174e43
              status_row := View{
                  width: Fill height: 22
                  flow: Right spacing: 8 align: Align{y: 0.5}
-@@ -893,7 +983,7 @@ fn by(touch, pointer){ if desk { pointer } else { touch } }
+@@ -893,7 +1025,7 @@ fn by(touch, pointer){ if desk { pointer } else { touch } }
              pads := View{
                  width: Fill height: Fit
                  flow: Right spacing: 4
@@ -5099,7 +5191,7 @@ index 39166316c731d524bb1afbda2b72f4d68778cf74..0eebca276e3bc7fb08a13e9b56174e43
                  basic := BasicPad{}
              }
          }
-@@ -901,34 +991,36 @@ fn by(touch, pointer){ if desk { pointer } else { touch } }
+@@ -901,34 +1033,36 @@ fn by(touch, pointer){ if desk { pointer } else { touch } }
      }
      let CalculatorSurface = if desk { DeskSurface } else { TouchSurface }
      // A Mac's question or alert: a sheet from under the toolbar, as Clock's,
@@ -5150,7 +5242,7 @@ index 39166316c731d524bb1afbda2b72f4d68778cf74..0eebca276e3bc7fb08a13e9b56174e43
                  }
              }
          }
-@@ -950,6 +1042,12 @@ fn by(touch, pointer){ if desk { pointer } else { touch } }
+@@ -950,6 +1084,12 @@ fn by(touch, pointer){ if desk { pointer } else { touch } }
          error_color: by(theme.color_error, theme.color_text)
          muted_color: by(theme.color_text, d_muted)
          tool_on: by(theme.color_text, d_selected)
@@ -5163,7 +5255,7 @@ index 39166316c731d524bb1afbda2b72f4d68778cf74..0eebca276e3bc7fb08a13e9b56174e43
          background := SolidView{
              width: Fill height: Fill
              draw_bg +: {color: theme.color_bg_app}
-@@ -1081,6 +1179,23 @@ pub struct CalculatorView {
+@@ -1081,6 +1221,26 @@ pub struct CalculatorView {
      /// A desktop's toolbar tool whose sidebar is showing.
      #[live]
      tool_on: Vec4f,
@@ -5182,12 +5274,15 @@ index 39166316c731d524bb1afbda2b72f4d68778cf74..0eebca276e3bc7fb08a13e9b56174e43
 +    /// A short window's » menu: the mode and Copy, which its band has no room for.
 +    #[rust]
 +    context_menu: ContextMenu,
++    /// A Mac's mode item has its menu up: the item shows its well.
++    #[rust]
++    mode_menu_open: bool,
 +    #[live]
 +    popup_menu: ScriptValue,
      /// A desktop's own window: which keys, whether the history shows.
      #[rust]
      pointer_view: PointerView,
-@@ -1592,7 +1707,13 @@ fn sync_chrome(&mut self, cx: &mut Cx) {
+@@ -1592,7 +1752,13 @@ fn sync_chrome(&mut self, cx: &mut Cx) {
              display_expression_line(&self.doc)
          };
          let result = display_result(&self.doc, &self.ui);
@@ -5202,7 +5297,7 @@ index 39166316c731d524bb1afbda2b72f4d68778cf74..0eebca276e3bc7fb08a13e9b56174e43
          self.label(cx, ids!(expression)).set_text(cx, &expr);
          self.label(cx, ids!(result)).set_text(cx, &result);
          self.label(cx, ids!(status)).set_text(cx, &status);
-@@ -1609,6 +1730,9 @@ fn sync_chrome(&mut self, cx: &mut Cx) {
+@@ -1609,6 +1775,9 @@ fn sync_chrome(&mut self, cx: &mut Cx) {
              "Rad"
          };
          self.button(cx, ids!(k_rad)).set_text(cx, rad);
@@ -5212,7 +5307,7 @@ index 39166316c731d524bb1afbda2b72f4d68778cf74..0eebca276e3bc7fb08a13e9b56174e43
          let clear = if self.ui.clear_is_ac { "AC" } else { "C" };
          self.button(cx, ids!(k_clear)).set_text(cx, clear);
          let compact = self
-@@ -1633,6 +1757,12 @@ fn sync_chrome(&mut self, cx: &mut Cx) {
+@@ -1633,6 +1802,12 @@ fn sync_chrome(&mut self, cx: &mut Cx) {
                  ("History Not Saved", "Your latest results couldn’t be saved.")
              } else if self.load_id.is_some() {
                  ("History Unavailable", "Trying again…")
@@ -5225,7 +5320,19 @@ index 39166316c731d524bb1afbda2b72f4d68778cf74..0eebca276e3bc7fb08a13e9b56174e43
              } else {
                  (
                      "History Unavailable",
-@@ -1690,19 +1820,38 @@ fn sync_pointer_chrome(&mut self, cx: &mut Cx) {
+@@ -1683,6 +1858,11 @@ fn sync_pointer_chrome(&mut self, cx: &mut Cx) {
+             .set_visible(cx, metrics.is_some_and(|l| l.show_short_bar));
+         self.drop_down(cx, ids!(mode_pick))
+             .set_selected_item(cx, self.pointer_view.scientific as usize);
++        if self.unified {
++            let mode = if self.pointer_view.scientific { "Scientific" } else { "Basic" };
++            self.button(cx, ids!(mode_pick)).set_text(cx, mode);
++            self.light_mode_tool(cx);
++        }
+         let face = if tape { self.tool_on } else { vec4(0.0, 0.0, 0.0, 0.0) };
+         for id in [ids!(btn_history), ids!(short_history)] {
+             let mut tool = self.widget(cx, id);
+@@ -1690,19 +1870,38 @@ fn sync_pointer_chrome(&mut self, cx: &mut Cx) {
          }
          // The line under the result is the calculation's: what the saved
          // history is up to is the History sidebar's to say, and the sheet's.
@@ -5266,7 +5373,7 @@ index 39166316c731d524bb1afbda2b72f4d68778cf74..0eebca276e3bc7fb08a13e9b56174e43
              self.text_color
          } else {
              self.muted_color
-@@ -1719,10 +1868,12 @@ fn sync_ask(&mut self, cx: &mut Cx) {
+@@ -1719,10 +1918,12 @@ fn sync_ask(&mut self, cx: &mut Cx) {
              Ask::Nothing => return,
              Ask::StartOver => (
                  "Start Over?",
@@ -5283,7 +5390,7 @@ index 39166316c731d524bb1afbda2b72f4d68778cf74..0eebca276e3bc7fb08a13e9b56174e43
                  },
              ),
              Ask::NotSaved => (
-@@ -1737,7 +1888,8 @@ fn sync_ask(&mut self, cx: &mut Cx) {
+@@ -1737,7 +1938,8 @@ fn sync_ask(&mut self, cx: &mut Cx) {
          self.widget(cx, ids!(ask_cancel)).set_visible(cx, question);
          self.widget(cx, ids!(ask_later)).set_visible(cx, !question);
          self.widget(cx, ids!(ask_retry)).set_visible(cx, !question);
@@ -5293,7 +5400,7 @@ index 39166316c731d524bb1afbda2b72f4d68778cf74..0eebca276e3bc7fb08a13e9b56174e43
          if let Some(mut sheet) = self.view.widget(cx, ids!(ask_sheet)).borrow_mut::<View>() {
              sheet.walk.width = Size::Fixed(width);
          }
-@@ -1779,6 +1931,58 @@ fn metrics_for(&self, size: Vec2d) -> LayoutMetrics {
+@@ -1779,6 +1981,83 @@ fn metrics_for(&self, size: Vec2d) -> LayoutMetrics {
          }
      }
  
@@ -5336,6 +5443,31 @@ index 39166316c731d524bb1afbda2b72f4d68778cf74..0eebca276e3bc7fb08a13e9b56174e43
 +        self.context_menu.open_pull_down(cx, owner, dvec2(anchor.pos.x, anchor.pos.y + anchor.size.y + 2.0), Cx::time_now(), rows, None);
 +    }
 +
++    /// A Mac's mode item: the modes hang below it, the one showing ticked,
++    /// as Calculator's toolbar item lists them. Its rows are the » menu's
++    /// first two, so `more_chose` acts on both.
++    fn open_mode_menu(&mut self, cx: &mut Cx) {
++        let anchor = self.widget(cx, ids!(mode_pick)).area().rect(cx);
++        let can_choose = !self.ui.load_failed;
++        let scientific = self.pointer_view.scientific;
++        let rows = vec![
++            ContextRow::new("Basic", can_choose).ticked(!scientific),
++            ContextRow::new("Scientific", can_choose).ticked(scientific),
++        ];
++        let owner = ContextMenuOwner { source: &self.view.source, template: self.popup_menu, area: self.view.area() };
++        self.context_menu.open_pull_down(cx, owner, dvec2(anchor.pos.x, anchor.pos.y + anchor.size.y + 4.0), Cx::time_now(), rows, None);
++        self.mode_menu_open = self.context_menu.is_open();
++        self.light_mode_tool(cx);
++    }
++
++    /// The mode item's well: lit while its menu is up, as a Mac toolbar item's.
++    fn light_mode_tool(&mut self, cx: &mut Cx) {
++        let face = if self.mode_menu_open { self.tool_on } else { vec4(0.0, 0.0, 0.0, 0.0) };
++        let mut tool = self.widget(cx, ids!(mode_pick));
++        script_apply_eval!(cx, tool, { draw_bg +: {color: #(face)} });
++        tool.redraw(cx);
++    }
++
 +    fn more_chose(&mut self, cx: &mut Cx, index: usize) {
 +        match index {
 +            0 | 1 => self.choose_scientific(cx, index == 1),
@@ -5352,7 +5484,7 @@ index 39166316c731d524bb1afbda2b72f4d68778cf74..0eebca276e3bc7fb08a13e9b56174e43
      fn apply_layout(&mut self, cx: &mut Cx, size: Vec2d) {
          let metrics = self.metrics_for(size);
          if self.last_layout.as_ref() == Some(&metrics) && (self.last_size - size).length() < 0.5 {
-@@ -1842,9 +2046,12 @@ fn apply_layout(&mut self, cx: &mut Cx, size: Vec2d) {
+@@ -1842,9 +2121,12 @@ fn apply_layout(&mut self, cx: &mut Cx, size: Vec2d) {
          let kh = metrics.key.height;
          let hg = metrics.key.h_gap;
          let vg = metrics.key.v_gap;
@@ -5367,7 +5499,7 @@ index 39166316c731d524bb1afbda2b72f4d68778cf74..0eebca276e3bc7fb08a13e9b56174e43
          let basic_w = 4.0 * kw + 3.0 * hg;
          if self.pointer {
              // A window larger than its keys keeps them their size: they and
-@@ -1886,6 +2093,17 @@ fn apply_layout(&mut self, cx: &mut Cx, size: Vec2d) {
+@@ -1886,6 +2168,17 @@ fn apply_layout(&mut self, cx: &mut Cx, size: Vec2d) {
                  draw_bg +: {border_radius: #(r)}
              });
          }
@@ -5385,7 +5517,7 @@ index 39166316c731d524bb1afbda2b72f4d68778cf74..0eebca276e3bc7fb08a13e9b56174e43
          let result_fs = font_size_for_pt(if self.pointer { metrics.result_pt } else { metrics.result_pt.max(32.0) });
          let expr_fs = font_size_for_pt(metrics.expr_pt);
          let mut result = self.widget(cx, ids!(result));
-@@ -1927,6 +2145,16 @@ fn apply_layout(&mut self, cx: &mut Cx, size: Vec2d) {
+@@ -1927,6 +2220,16 @@ fn apply_layout(&mut self, cx: &mut Cx, size: Vec2d) {
              let mut w = self.widget(cx, key);
              script_apply_eval!(cx, w, { draw_text.text_style.font_size: #(sci_fs) });
          }
@@ -5402,7 +5534,7 @@ index 39166316c731d524bb1afbda2b72f4d68778cf74..0eebca276e3bc7fb08a13e9b56174e43
          for key in [ids!(k_clear), ids!(k_sign), ids!(k_percent), ids!(k_back)] {
              let mut w = self.widget(cx, key);
              script_apply_eval!(cx, w, { draw_text.text_style.font_size: #(util_fs) });
-@@ -2059,9 +2287,43 @@ fn handle_keys(&mut self, cx: &mut Cx, actions: &Actions) {
+@@ -2059,9 +2362,43 @@ fn handle_keys(&mut self, cx: &mut Cx, actions: &Actions) {
              (ids!(k_mr), Command::MemoryRecall),
              (ids!(k_rad), Command::AngleToggle),
          ];
@@ -5447,17 +5579,20 @@ index 39166316c731d524bb1afbda2b72f4d68778cf74..0eebca276e3bc7fb08a13e9b56174e43
              }
          }
          if self.button(cx, ids!(k_copy_sci)).clicked(actions) {
-@@ -2108,6 +2370,9 @@ fn handle_keys(&mut self, cx: &mut Cx, actions: &Actions) {
+@@ -2108,6 +2445,12 @@ fn handle_keys(&mut self, cx: &mut Cx, actions: &Actions) {
          {
              self.dispatch(cx, Command::Copy);
          }
 +        if self.pointer && self.button(cx, ids!(short_more)).clicked(actions) {
 +            self.open_more_menu(cx);
 +        }
++        if self.unified && self.button(cx, ids!(mode_pick)).clicked(actions) {
++            self.open_mode_menu(cx);
++        }
          if glass_clicked(&self.widget(cx, ids!(btn_history)), cx, actions)
              || self.button(cx, ids!(btn_history)).clicked(actions)
              || glass_clicked(&self.widget(cx, ids!(short_history)), cx, actions)
-@@ -2152,6 +2417,7 @@ fn focus_calculator(&self, cx: &mut Cx) {
+@@ -2152,6 +2495,7 @@ fn focus_calculator(&self, cx: &mut Cx) {
      fn owns_keyboard_focus(&self, cx: &mut Cx, focus: Area) -> bool {
          !focus.is_empty() && (focus == self.view.area()
              || Self::all_keys().iter().any(|id| self.widget(cx, id).area() == focus)
@@ -5465,7 +5600,7 @@ index 39166316c731d524bb1afbda2b72f4d68778cf74..0eebca276e3bc7fb08a13e9b56174e43
              // A pop-up that has closed keeps nothing: the keys are the calculator's.
              || (self.pointer && self.widget(cx, ids!(mode_pick)).area() == focus))
      }
-@@ -2288,8 +2554,9 @@ fn draw_history_list(&self, cx: &mut Cx2d, list: &mut PortalList) {
+@@ -2288,8 +2632,9 @@ fn draw_history_list(&self, cx: &mut Cx2d, list: &mut PortalList) {
              }
              let item = list.item(cx, index, live_id!(Item));
              let entry = &self.doc.history[index];
@@ -5477,13 +5612,18 @@ index 39166316c731d524bb1afbda2b72f4d68778cf74..0eebca276e3bc7fb08a13e9b56174e43
              item.label(cx, ids!(result))
                  .set_text(cx, &format_number(entry.value));
              item.draw_all(cx, &mut Scope::empty());
-@@ -2399,6 +2666,17 @@ fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+@@ -2399,6 +2744,22 @@ fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
                  return;
              }
          }
 +        if self.pointer {
 +            let owner = ContextMenuOwner { source: &self.view.source, template: self.popup_menu, area: self.view.area() };
-+            match self.context_menu.handle_event(cx, event, owner) {
++            let got = self.context_menu.handle_event(cx, event, owner);
++            if self.mode_menu_open && !self.context_menu.is_open() {
++                self.mode_menu_open = false;
++                self.light_mode_tool(cx);
++            }
++            match got {
 +                ContextMenuEvent::Chosen(index) => {
 +                    self.more_chose(cx, index);
 +                    return;
@@ -5495,7 +5635,7 @@ index 39166316c731d524bb1afbda2b72f4d68778cf74..0eebca276e3bc7fb08a13e9b56174e43
          let focus = cx.key_focus();
          if !self.mode_pick_open(cx) && self.owns_keyboard_focus(cx, focus) && matches!(event, Event::KeyDown(_) | Event::TextInput(_) | Event::TextCopy(_)) {
              self.handle_keyboard(cx, event, focus);
-@@ -2441,6 +2719,11 @@ fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawSte
+@@ -2441,6 +2802,11 @@ fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawSte
              }
          }
          if cx.key_focus().is_empty() { self.focus_calculator(cx); }
@@ -5672,7 +5812,7 @@ index e7bf633e5ffe0cf1cdbdd082acf961d7de661f90..9e8401918049272eed6df4827d0c6f79
                      let ink_h = (run.ascender_in_lpxs - run.descender_in_lpxs) as f64;
                      let x = inner.pos.x + self.edges[i] + share * 0.5;
 diff --git a/apps/clock/src/view.rs b/apps/clock/src/view.rs
-index ee5d4163a2c551e491f9e5b1567b4c3cff7f8af4..8dfbabe59f562d4b6a976ba69f7ff2c95a20ef54 100644
+index ee5d4163a2c551e491f9e5b1567b4c3cff7f8af4..f6d3a8db1d0d90477f0d49ddaf19ffc60acbf056 100644
 --- a/apps/clock/src/view.rs
 +++ b/apps/clock/src/view.rs
 @@ -218,6 +218,15 @@ pub fn hh_mm_ss(secs: f64) -> String {
@@ -5928,7 +6068,55 @@ index ee5d4163a2c551e491f9e5b1567b4c3cff7f8af4..8dfbabe59f562d4b6a976ba69f7ff2c9
          }
      }
  }
-@@ -1035,6 +1105,12 @@ pub struct ClockView {
+@@ -962,6 +1032,47 @@ fn pointer_toolbar(window: f64, lead: f64) -> (f64, bool, bool) {
+ 
+ /// The World Clock page's cells: here, then every city a person can add.
+ const WORLD_CELLS: usize = world::MAX_CITIES + 1;
++
++/// What an empty place in the last row of a Mac's World Clock costs a layout,
++/// in points of dial: enough that five places make three and two rather than
++/// four and one.
++const WORLD_EMPTY_PLACE: f64 = 15.0;
++
++/// A Mac's World Clock layout for `shown` places on a page `room` wide and
++/// `tall` high: the dial and the columns (see `ClockView::size_world_mac`).
++fn world_layout_mac(room: f64, tall: f64, shown: usize) -> (f64, usize) {
++    const SIDE: f64 = 40.0;
++    const TEXT: f64 = 66.0;
++    const GAP: f64 = 6.0;
++    const DIAL_MIN: f64 = 96.0;
++    const DIAL_MAX: f64 = 240.0;
++    let shown = shown.max(1);
++    let mut best: Option<(f64, f64, usize)> = None;
++    for columns in 1..=shown {
++        let rows = shown.div_ceil(columns);
++        let cell_w = (room / columns as f64).floor();
++        let cell_h = ((tall - GAP * (rows - 1) as f64) / rows as f64).floor();
++        let dial = (cell_w - SIDE).min(cell_h - TEXT).min(DIAL_MAX).floor();
++        if dial < DIAL_MIN {
++            continue;
++        }
++        // What the column leaves beside its dial: the band a wider column shows.
++        let slack = (cell_w - SIDE - dial).max(0.0);
++        let empty = (rows * columns - shown) as f64;
++        let score = dial - slack * 0.5 - WORLD_EMPTY_PLACE * empty;
++        if best.map_or(true, |(s, _, _)| score > s) {
++            best = Some((score, dial, columns));
++        }
++    }
++    match best {
++        Some((_, dial, columns)) => (dial, columns),
++        None => {
++            let columns = ((room / 170.0).floor().max(1.0) as usize).min(shown);
++            let cell_w = (room / columns as f64).floor();
++            ((cell_w - SIDE).clamp(DIAL_MIN, 132.0), columns)
++        }
++    }
++}
+ /// The Add City sheet's rows.
+ const CITY_ROWS: usize = 7;
+ 
+@@ -1035,6 +1146,12 @@ pub struct ClockView {
      /// The cell a right-click menu is about.
      #[rust]
      world_menu_cell: Option<usize>,
@@ -5941,7 +6129,7 @@ index ee5d4163a2c551e491f9e5b1567b4c3cff7f8af4..8dfbabe59f562d4b6a976ba69f7ff2c9
      /// The sheet is searching for a city to add.
      #[rust]
      city_open: bool,
-@@ -1078,6 +1154,9 @@ pub struct ClockView {
+@@ -1078,6 +1195,9 @@ pub struct ClockView {
      /// control is not in its middle: the lights in a unified window.
      #[live(10.0)]
      toolbar_lead: f64,
@@ -5951,7 +6139,7 @@ index ee5d4163a2c551e491f9e5b1567b4c3cff7f8af4..8dfbabe59f562d4b6a976ba69f7ff2c9
      /// How dark a pointer's sheet dims the window when it is all the way in:
      /// the shell's dim, 14% black in the light and 32% in the dark.
      #[live(0.14)]
-@@ -1089,6 +1168,9 @@ pub struct ClockView {
+@@ -1089,6 +1209,9 @@ pub struct ClockView {
      /// (the sizes, the Start and Stop tones): the next draw pushes them again.
      #[rust]
      restyled: bool,
@@ -5961,7 +6149,7 @@ index ee5d4163a2c551e491f9e5b1567b4c3cff7f8af4..8dfbabe59f562d4b6a976ba69f7ff2c9
      /// The Mac's Start and Stop tones, readable in both appearances.
      #[live]
      tone_start: Vec4f,
-@@ -1097,6 +1179,14 @@ pub struct ClockView {
+@@ -1097,6 +1220,14 @@ pub struct ClockView {
      /// A pause does not destroy anything: the Mac's orange, not the Stop red.
      #[live]
      tone_pause: Vec4f,
@@ -5976,7 +6164,7 @@ index ee5d4163a2c551e491f9e5b1567b4c3cff7f8af4..8dfbabe59f562d4b6a976ba69f7ff2c9
      /// Set once, on the first event or draw: a window seats this widget
      /// before its `Startup` event, a module host after `create` mints it.
      #[rust]
-@@ -1222,7 +1312,7 @@ fn select_mode(&mut self, cx: &mut Cx, mode: usize, animate: bool) {
+@@ -1222,7 +1353,7 @@ fn select_mode(&mut self, cx: &mut Cx, mode: usize, animate: bool) {
              0 => (live_id!(clock_page), "Clock"),
              1 => (live_id!(alarm_page), "Alarms"),
              2 => (live_id!(stopwatch_page), "Stopwatch"),
@@ -5985,7 +6173,7 @@ index ee5d4163a2c551e491f9e5b1567b4c3cff7f8af4..8dfbabe59f562d4b6a976ba69f7ff2c9
          };
          self.view.page_flip(cx, ids!(modes)).set_active_page(cx, page);
          self.view.label(cx, ids!(title)).set_text(cx, title);
-@@ -1408,8 +1498,13 @@ fn refresh_world(&mut self, cx: &mut Cx) {
+@@ -1408,8 +1539,13 @@ fn refresh_world(&mut self, cx: &mut Cx) {
              cell.label(cx, ids!(note)).set_text_color(cx, if selected { self.row_ink } else { self.row_muted });
              cell.label(cx, ids!(city)).set_text_color(cx, if selected { vec4(1.0, 1.0, 1.0, 1.0) } else { self.row_ink });
              if relit {
@@ -6001,7 +6189,63 @@ index ee5d4163a2c551e491f9e5b1567b4c3cff7f8af4..8dfbabe59f562d4b6a976ba69f7ff2c9
                  let pill = if selected { self.row_mark } else { vec4(0.0, 0.0, 0.0, 0.0) };
                  let mut name = cell.widget(cx, ids!(city_pill));
                  script_apply_eval!(cx, name, { draw_bg.color: #(pill) });
-@@ -1544,9 +1639,37 @@ fn world_press(&mut self, cx: &mut Cx, press: &MouseDownEvent) {
+@@ -1436,6 +1572,10 @@ fn size_world(&mut self, cx: &mut Cx, size: Vec2d) {
+         // Under the toolbar and its rule, inside the page's 18 at each end.
+         let tall = (size.y - bar - 1.0 - 36.0).max(0.0);
+         let shown = (self.world.len() + 1).clamp(1, WORLD_CELLS);
++        if self.mac {
++            self.size_world_mac(cx, room, tall, shown);
++            return;
++        }
+         let mut best: Option<(f64, usize, usize)> = None;
+         for columns in 1..=shown {
+             let rows = shown.div_ceil(columns);
+@@ -1480,6 +1620,44 @@ fn size_world(&mut self, cx: &mut Cx, size: Vec2d) {
+         }
+     }
+ 
++    /// A Mac's World Clock grid: its columns follow the window's width and
++    /// each dial fills its column, so no band of empty page runs down between
++    /// them (four places in a wide window make one row of four, not two by
++    /// two). Every place stays in view when it can; rows that would overrun
++    /// the page take smaller dials. Of the ways to lay the places out, the
++    /// largest dial wins, less half of what a column leaves beside its dial and
++    /// [`WORLD_EMPTY_PLACE`] for each empty place in the last row. A page too
++    /// small for every place at the smallest dial keeps that dial, as many
++    /// across as fit, and scrolls. Each cell hugs its dial and the rows are
++    /// centred, so what a row leaves goes to its two ends.
++    fn size_world_mac(&mut self, cx: &mut Cx, room: f64, tall: f64, shown: usize) {
++        const SIDE: f64 = 40.0;
++        const TEXT: f64 = 66.0;
++        const GAP: f64 = 6.0;
++        let (dial, columns) = world_layout_mac(room, tall, shown);
++        let rows = shown.div_ceil(columns);
++        let cell_width = dial + SIDE;
++        let cell_height = dial + TEXT;
++        let numerals = (dial * 8.25 / 132.0).clamp(8.25, 12.0);
++        for index in 0..WORLD_CELLS {
++            let mut cell = self.view.widget(cx, world_cell(index));
++            script_apply_eval!(cx, cell, { width: #(cell_width) height: #(cell_height) });
++            let mut face = cell.widget(cx, ids!(dial));
++            script_apply_eval!(cx, face, { width: #(dial) height: #(dial) numeral_size: #(numerals) });
++        }
++        let used = shown.min(columns) as f64 * cell_width;
++        let inset = ((room - used) * 0.5).max(0.0).floor();
++        let grid_h = rows as f64 * cell_height + GAP * (rows - 1) as f64;
++        let top = ((tall - grid_h) * 0.5).max(0.0).floor();
++        if let Some(mut grid) = self.view.view(cx, ids!(world_grid)).borrow_mut() {
++            grid.layout.padding.left = inset;
++            // The same at the other end, less a point, so a row ends after
++            // `columns` places however the widths round.
++            grid.layout.padding.right = (room - used - inset - 1.0).max(0.0);
++            grid.layout.padding.top = top;
++        }
++    }
++
+     fn select_world(&mut self, cx: &mut Cx, cell: Option<usize>) {
+         self.world_selected = cell;
+         self.refresh_world(cx);
+@@ -1544,9 +1722,37 @@ fn world_press(&mut self, cx: &mut Cx, press: &MouseDownEvent) {
          }
          rows.push(ContextRow::new("Add City…", can_add));
          let owner = ContextMenuOwner { source: &self.view.source, template: self.popup_menu, area: self.view.area() };
@@ -6039,7 +6283,7 @@ index ee5d4163a2c551e491f9e5b1567b4c3cff7f8af4..8dfbabe59f562d4b6a976ba69f7ff2c9
      fn world_menu_chose(&mut self, cx: &mut Cx, index: usize) {
          match (self.world_menu_cell, index) {
              (Some(cell), 0) => self.remove_city(cx, cell),
-@@ -1626,10 +1749,34 @@ fn set_live(&mut self, cx: &mut Cx, id: &[LiveId], live: bool) {
+@@ -1626,10 +1832,34 @@ fn set_live(&mut self, cx: &mut Cx, id: &[LiveId], live: bool) {
          }
      }
  
@@ -6074,7 +6318,7 @@ index ee5d4163a2c551e491f9e5b1567b4c3cff7f8af4..8dfbabe59f562d4b6a976ba69f7ff2c9
          let cities = self.city_open && !asking;
          self.view.widget(cx, ids!(editor_form)).set_visible(cx, !asking && !cities);
          self.view.widget(cx, ids!(city_form)).set_visible(cx, cities);
-@@ -1681,9 +1828,8 @@ fn open_editor(&mut self, cx: &mut Cx, id: Option<u64>) {
+@@ -1681,9 +1911,8 @@ fn open_editor(&mut self, cx: &mut Cx, id: Option<u64>) {
          }
          self.view.text_input(cx, ids!(alarm_label)).set_text(cx, spec.as_ref().map(|a| a.label.as_str()).unwrap_or(""));
          if self.pointer {
@@ -6086,7 +6330,7 @@ index ee5d4163a2c551e491f9e5b1567b4c3cff7f8af4..8dfbabe59f562d4b6a976ba69f7ff2c9
              self.city_open = false;
              self.show_delete_question(cx, None);
              self.set_sheet(cx, true);
-@@ -1725,7 +1871,7 @@ fn mac_key(&mut self, cx: &mut Cx, key: &KeyEvent) -> bool {
+@@ -1725,7 +1954,7 @@ fn mac_key(&mut self, cx: &mut Cx, key: &KeyEvent) -> bool {
          let mods = key.modifiers;
          let is_return = matches!(code, KeyCode::ReturnKey | KeyCode::NumpadEnter);
          // An open pop-up's keys are its own.
@@ -6095,7 +6339,7 @@ index ee5d4163a2c551e491f9e5b1567b4c3cff7f8af4..8dfbabe59f562d4b6a976ba69f7ff2c9
              return false;
          }
          if self.save_alert_up {
-@@ -2065,8 +2211,7 @@ fn save_alarm(&mut self, cx: &mut Cx) {
+@@ -2065,8 +2294,7 @@ fn save_alarm(&mut self, cx: &mut Cx) {
              .unwrap_or((7, 0));
          let label = self.view.text_input(cx, ids!(alarm_label)).text().chars().take(80).collect();
          if self.pointer {
@@ -6105,7 +6349,7 @@ index ee5d4163a2c551e491f9e5b1567b4c3cff7f8af4..8dfbabe59f562d4b6a976ba69f7ff2c9
          } else {
              self.alarm.save(self.alarm_edit_id, time.0, time.1, label);
          }
-@@ -2186,7 +2331,7 @@ fn refresh_alarm(&mut self, cx: &mut Cx) {
+@@ -2186,7 +2414,7 @@ fn refresh_alarm(&mut self, cx: &mut Cx) {
              Some(next) => {
                  let label = if next.label.trim().is_empty() { "Alarm".to_string() } else { next.label.clone() };
                  self.view.label(cx, ids!(na_time)).set_text(cx, &format!("{} · {}", next.time(), label));
@@ -6114,7 +6358,7 @@ index ee5d4163a2c551e491f9e5b1567b4c3cff7f8af4..8dfbabe59f562d4b6a976ba69f7ff2c9
              }
              None => {
                  self.view.label(cx, ids!(na_time)).set_text(cx, "Add an alarm");
-@@ -2207,6 +2352,7 @@ fn refresh_modal(&mut self, cx: &mut Cx) {
+@@ -2207,6 +2435,7 @@ fn refresh_modal(&mut self, cx: &mut Cx) {
              let now = LocalTime::now();
              let spec = self.alarm.alarms.iter().find(|a| a.ringing).map(|a| a.spec.clone());
              self.view.label(cx, ids!(modal_title)).set_text(cx, "Alarm");
@@ -6122,7 +6366,7 @@ index ee5d4163a2c551e491f9e5b1567b4c3cff7f8af4..8dfbabe59f562d4b6a976ba69f7ff2c9
              if let Some(mut t) = self.view.widget(cx, ids!(modal_time)).borrow_mut::<TabularLabel>() {
                  let pointer = self.pointer;
                  t.set_text(cx, &spec.as_ref().map(|s| if pointer { s.time_mac() } else { s.time() }).unwrap_or_else(|| if pointer { now.hm_mac() } else { now.hm() }));
-@@ -2216,11 +2362,21 @@ fn refresh_modal(&mut self, cx: &mut Cx) {
+@@ -2216,11 +2445,21 @@ fn refresh_modal(&mut self, cx: &mut Cx) {
              self.view.button(cx, ids!(modal_primary)).set_text(cx, if self.pointer { "Snooze" } else { "Snooze 5 min" });
              self.view.button(cx, ids!(modal_secondary)).set_text(cx, "Stop");
          } else if done {
@@ -6146,7 +6390,7 @@ index ee5d4163a2c551e491f9e5b1567b4c3cff7f8af4..8dfbabe59f562d4b6a976ba69f7ff2c9
              self.view.label(cx, ids!(modal_label)).set_text(cx, &label);
              self.view.button(cx, ids!(modal_primary)).set_text(cx, "Repeat");
              self.view.button(cx, ids!(modal_secondary)).set_text(cx, "Stop");
-@@ -2275,8 +2431,22 @@ fn set_action(&mut self, cx: &mut Cx, id: &[LiveId], text: &str, tone: Option<Ve
+@@ -2275,8 +2514,22 @@ fn set_action(&mut self, cx: &mut Cx, id: &[LiveId], text: &str, tone: Option<Ve
              }
          }
          let tone = tone.unwrap_or(vec4(0.0, 0.0, 0.0, 0.0));
@@ -6170,7 +6414,7 @@ index ee5d4163a2c551e491f9e5b1567b4c3cff7f8af4..8dfbabe59f562d4b6a976ba69f7ff2c9
      }
  
      /// The Start and Stop tones: the touch design's, or a pointer's pair that
-@@ -2289,6 +2459,21 @@ fn tones(&self) -> (Vec4f, Vec4f) {
+@@ -2289,6 +2542,21 @@ fn tones(&self) -> (Vec4f, Vec4f) {
          }
      }
  
@@ -6192,7 +6436,7 @@ index ee5d4163a2c551e491f9e5b1567b4c3cff7f8af4..8dfbabe59f562d4b6a976ba69f7ff2c9
      fn refresh_stopwatch(&mut self, cx: &mut Cx) {
          let (start, stop) = self.tones();
          if let Some(mut t) = self.view.widget(cx, ids!(sw_readout)).borrow_mut::<TabularLabel>() {
-@@ -2578,6 +2763,9 @@ fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
+@@ -2578,6 +2846,9 @@ fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
              if self.view.button(cx, ids!(alarm_start_over)).clicked(actions) {
                  self.ask_to_start_over(cx);
              }
@@ -6202,7 +6446,7 @@ index ee5d4163a2c551e491f9e5b1567b4c3cff7f8af4..8dfbabe59f562d4b6a976ba69f7ff2c9
              if self.view.button(cx, ids!(alarm_delete)).clicked(actions) {
                  if let Some(id) = self.alarm_edit_id {
                      self.show_delete_question(cx, Some(id));
-@@ -2716,7 +2904,11 @@ fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+@@ -2716,7 +2987,11 @@ fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
              let owner = ContextMenuOwner { source: &self.view.source, template: self.popup_menu, area: self.view.area() };
              match self.context_menu.handle_event(cx, event, owner) {
                  ContextMenuEvent::Chosen(index) => {
@@ -6215,10 +6459,42 @@ index ee5d4163a2c551e491f9e5b1567b4c3cff7f8af4..8dfbabe59f562d4b6a976ba69f7ff2c9
                      return;
                  }
                  ContextMenuEvent::Spent => return,
-@@ -2818,6 +3010,15 @@ fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawSte
+@@ -2818,6 +3093,47 @@ fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawSte
  mod tests {
      use super::*;
  
++    /// A Mac's World Clock in its default window (994 by 639: a page 946
++    /// wide, 550 tall), a narrower one (700 by 520) and a small one (440 by
++    /// 480): the columns follow the width and no column leaves a band beside
++    /// its dial.
++    #[test]
++    fn a_macs_world_clock_follows_the_width() {
++        let (room, tall) = (946.0, 550.0);
++        // Four places: one row of four, each dial filling its column.
++        assert_eq!(world_layout_mac(room, tall, 4), (196.0, 4));
++        // Five: three and two, the dials as tall as two rows let them be.
++        assert_eq!(world_layout_mac(room, tall, 5), (206.0, 3));
++        assert_eq!(world_layout_mac(room, tall, 6), (206.0, 3));
++        assert_eq!(world_layout_mac(room, tall, 8), (196.0, 4));
++        // Two and three: a row, the dials at their largest.
++        assert_eq!(world_layout_mac(room, tall, 2), (240.0, 2));
++        assert_eq!(world_layout_mac(room, tall, 3), (240.0, 3));
++        // Every place a person may add, still in view at once.
++        let (dial, columns) = world_layout_mac(room, tall, WORLD_CELLS);
++        assert!(dial >= 96.0 && WORLD_CELLS.div_ceil(columns) as f64 * (dial + 66.0) <= tall, "{dial} x {columns}");
++        // No layout leaves a column more than 70 points beside a dial that
++        // could still grow (cells hug their dials; a row of dials at their
++        // largest is centred instead).
++        for shown in 1..=WORLD_CELLS {
++            let (dial, columns) = world_layout_mac(room, tall, shown);
++            let slack = (room / columns as f64).floor() - 40.0 - dial;
++            assert!(dial >= 240.0 || slack <= 70.0, "{shown} places: {dial} x {columns} leaves {slack}");
++        }
++        assert_eq!(world_layout_mac(652.0, 431.0, 5), (146.0, 3));
++        // Too small for every place: the smallest columns' dial, and it scrolls.
++        assert_eq!(world_layout_mac(392.0, 391.0, 5), (132.0, 2));
++    }
++
 +    #[test]
 +    fn a_finished_timer_says_its_length_in_words() {
 +        assert_eq!(duration_words(60.0), "1 minute");
@@ -13321,10 +13597,56 @@ index 0000000000000000000000000000000000000000..6409cfef19f0de32416d602556f434b2
 +<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 11.2V7.5A1.5 1.5 0 0 1 5 6h4.5l2 2.2H19a1.5 1.5 0 0 1 1.5 1.5v8A1.5 1.5 0 0 1 19 19.2H5a1.5 1.5 0 0 1-1.5-1.5v-2.5"/><path d="M1.5 13.2h9.3M8 10.4l2.8 2.8L8 16"/></svg>
 \ No newline at end of file
 diff --git a/apps/notes/src/engine.rs b/apps/notes/src/engine.rs
-index 996a6daceb03c986b8e7f0d6e4cd4d89188101aa..08da4c42e2270f6a62e356b03f968a6a7fe4912d 100644
+index 996a6daceb03c986b8e7f0d6e4cd4d89188101aa..55ce23927b03124081e6abea750c0da55efee9c6 100644
 --- a/apps/notes/src/engine.rs
 +++ b/apps/notes/src/engine.rs
-@@ -923,6 +923,32 @@ fn strip_block_prefix(line: &str) -> &str {
+@@ -35,7 +35,14 @@ pub fn display_title(source: &str) -> String {
+ 
+ fn strip_markers(line: &str) -> String {
+     let mut s = line.trim();
+-    if let Some(rest) = s.strip_prefix("## ") {
++    let mac = crate::projection::mac_styles();
++    if let Some(rest) = s.strip_prefix("### ").filter(|_| mac) {
++        s = rest;
++    } else if let Some(rest) = s.strip_prefix("## ") {
++        s = rest;
++    } else if let Some(rest) = s.strip_prefix("> ").filter(|_| mac) {
++        s = rest;
++    } else if let Some(rest) = s.strip_prefix(DASH_PREFIX).filter(|_| mac) {
+         s = rest;
+     } else if let Some(rest) = s.strip_prefix("# ") {
+         s = rest;
+@@ -878,6 +885,11 @@ fn selected_line_range(source: &str, sel: ByteSelection) -> (usize, usize) {
+     (first, last.max(first))
+ }
+ 
++/// A monostyled line: four spaces, Markdown's code, hidden as a prefix.
++pub const MONO_PREFIX: &str = "    ";
++/// A dashed list's line: an en dash and a space.
++pub const DASH_PREFIX: &str = "\u{2013} ";
++
+ fn numbered_prefix(line: &str) -> Option<&str> {
+     let mut digits = 0;
+     for (i, b) in line.bytes().enumerate() {
+@@ -904,7 +916,16 @@ fn checklist_prefix(line: &str) -> Option<&str> {
+ }
+ 
+ fn recognized_prefix(line: &str) -> Option<&str> {
+-    if line.starts_with("## ") {
++    let mac = crate::projection::mac_styles();
++    if mac && line.starts_with("### ") {
++        Some("### ")
++    } else if mac && line.starts_with(MONO_PREFIX) {
++        Some(MONO_PREFIX)
++    } else if mac && line.starts_with("> ") {
++        Some("> ")
++    } else if mac && line.starts_with(DASH_PREFIX) {
++        Some(DASH_PREFIX)
++    } else if line.starts_with("## ") {
+         Some("## ")
+     } else if line.starts_with("# ") {
+         Some("# ")
+@@ -923,6 +944,41 @@ fn strip_block_prefix(line: &str) -> &str {
          .unwrap_or(line)
  }
  
@@ -13339,7 +13661,16 @@ index 996a6daceb03c986b8e7f0d6e4cd4d89188101aa..08da4c42e2270f6a62e356b03f968a6a
 +        return BlockStyle::Title;
 +    }
 +    let line = &source[*ls..*le];
-+    if line.starts_with("## ") {
++    let mac = crate::projection::mac_styles();
++    if mac && line.starts_with("### ") {
++        BlockStyle::Subheading
++    } else if mac && line.starts_with(MONO_PREFIX) {
++        BlockStyle::Mono
++    } else if mac && line.starts_with("> ") {
++        BlockStyle::Quote
++    } else if mac && line.starts_with(DASH_PREFIX) {
++        BlockStyle::Dashes
++    } else if line.starts_with("## ") {
 +        BlockStyle::Heading
 +    } else if line.starts_with("# ") {
 +        BlockStyle::Title
@@ -13357,7 +13688,20 @@ index 996a6daceb03c986b8e7f0d6e4cd4d89188101aa..08da4c42e2270f6a62e356b03f968a6a
  pub fn apply_block_style(
      source: &str,
      sel: ByteSelection,
-@@ -1202,6 +1228,22 @@ pub fn initial_ui(doc: &NotesDocument) -> NotesUi {
+@@ -955,8 +1011,12 @@ pub fn apply_block_style(
+             let replacement = match style {
+                 BlockStyle::Title => format!("# {rest}"),
+                 BlockStyle::Heading => format!("## {rest}"),
++                BlockStyle::Subheading => format!("### {rest}"),
+                 BlockStyle::Body => rest.to_string(),
++                BlockStyle::Mono => format!("{MONO_PREFIX}{rest}"),
+                 BlockStyle::Bullets => format!("- {rest}"),
++                BlockStyle::Dashes => format!("{DASH_PREFIX}{rest}"),
++                BlockStyle::Quote => format!("> {rest}"),
+                 BlockStyle::Checklist => {
+                     if checked {
+                         format!("- [x] {rest}")
+@@ -1202,6 +1262,92 @@ pub fn initial_ui(doc: &NotesDocument) -> NotesUi {
  
  #[cfg(test)]
  mod tests {
@@ -13377,9 +13721,102 @@ index 996a6daceb03c986b8e7f0d6e4cd4d89188101aa..08da4c42e2270f6a62e356b03f968a6a
 +        assert_eq!(block_style_at(src, ByteSelection { anchor: line(2) + 1, cursor: line(5) + 2 }), BlockStyle::Heading);
 +    }
 +
++    #[test]
++    fn a_macs_other_paragraph_styles_are_lines_that_survive_a_save() {
++        use crate::projection::{replace_display, set_mac_styles, ParagraphStyle as P, Projection};
++        struct Off;
++        impl Drop for Off {
++            fn drop(&mut self) {
++                set_mac_styles(false);
++            }
++        }
++        // Another style reads such lines as the text they are.
++        set_mac_styles(false);
++        let _off = Off;
++        let typed = "T\n### sub\n    code\n\u{2013} first\n> said";
++        assert_eq!(Projection::new(typed).text, typed);
++        assert!(Projection::new(typed).paragraphs.iter().skip(1).all(|p| p.style == P::Body));
++        assert_eq!(block_style_at(typed, ByteSelection::caret(typed.len())), BlockStyle::Body);
++        assert_eq!(display_preview(typed), "### sub");
++        set_mac_styles(true);
++        let src = "Title\nsub\ncode\nfirst\nsaid";
++        let line = |s: &str, n: usize| s.split('\n').take(n).map(|l| l.len() + 1).sum::<usize>();
++        let caret = |s: &str, n: usize| ByteSelection::caret(line(s, n) + 1);
++        let (out, _) = apply_block_style(src, caret(src, 1), BlockStyle::Subheading);
++        let (out, _) = apply_block_style(&out, caret(&out, 2), BlockStyle::Mono);
++        let (out, _) = apply_block_style(&out, caret(&out, 3), BlockStyle::Dashes);
++        let (out, _) = apply_block_style(&out, caret(&out, 4), BlockStyle::Quote);
++        assert_eq!(out, "Title\n### sub\n    code\n\u{2013} first\n> said");
++        let at = |n: usize| block_style_at(&out, caret(&out, n));
++        assert_eq!(
++            [at(1), at(2), at(3), at(4)],
++            [BlockStyle::Subheading, BlockStyle::Mono, BlockStyle::Dashes, BlockStyle::Quote]
++        );
++        // The marks are hidden: the note shows its words, each line in its style.
++        let p = Projection::new(&out);
++        assert_eq!(p.text, src);
++        let styles: Vec<P> = p.paragraphs.iter().map(|p| p.style).collect();
++        assert_eq!(styles, vec![P::NoteTitle, P::Subheading, P::Mono, P::Dash, P::Quote]);
++        assert_eq!(display_preview(&out), "sub");
++        // Another style rewrites the mark, never stacks two; Body takes them off.
++        let (again, _) = apply_block_style(&out, caret(&out, 4), BlockStyle::Dashes);
++        assert!(again.ends_with("\n\u{2013} said"), "{again:?}");
++        let (again, _) = apply_block_style(&again, caret(&again, 3), BlockStyle::Quote);
++        assert!(again.contains("\n> first\n"), "{again:?}");
++        let all = ByteSelection { anchor: line(&out, 1), cursor: out.len() };
++        assert_eq!(apply_block_style(&out, all, BlockStyle::Body).0, src);
++        // Return goes on in the same style; Return on an empty one ends it.
++        for (style, mark) in [(P::Dash, "\u{2013} "), (P::Quote, "> "), (P::Mono, "    ")] {
++            let source = format!("T\n{mark}one");
++            let p = Projection::new(&source);
++            assert_eq!(p.paragraphs[1].style, style);
++            let end = ByteSelection::caret(p.text.len());
++            let (next, _) = replace_display(&source, &p, end, "\n", None);
++            assert_eq!(next, format!("T\n{mark}one\n{mark}"));
++            let p = Projection::new(&next);
++            let end = ByteSelection::caret(p.text.len());
++            let (done, _) = replace_display(&next, &p, end, "\n", None);
++            assert_eq!(done, format!("T\n{mark}one\n"));
++        }
++        // Saved and opened again, the note keeps every style.
++        let mut doc = NotesDocument::empty(0);
++        let mut ui = NotesUi::default();
++        let id = create_note(&mut doc, &mut ui, 0).unwrap();
++        doc.note_mut(id).unwrap().source = out.clone();
++        let back = crate::storage::decode(&crate::storage::encode(&doc).unwrap()).unwrap();
++        assert_eq!(back, doc);
++        let reopened = &back.note(id).unwrap().source;
++        assert_eq!(reopened, &out);
++        let shown: Vec<P> = Projection::new(reopened).paragraphs.iter().map(|p| p.style).collect();
++        assert_eq!(shown, styles);
++    }
++
      use super::*;
      use crate::seed;
  
+diff --git a/apps/notes/src/model.rs b/apps/notes/src/model.rs
+index 86b8ee7cde0addc42cce0ab21138867f42a45bb5..7c60de5cd309382b8733b18bf883807cacdc5734 100644
+--- a/apps/notes/src/model.rs
++++ b/apps/notes/src/model.rs
+@@ -416,10 +416,18 @@ pub fn is_two(self) -> bool {
+ pub enum BlockStyle {
+     Title,
+     Heading,
++    /// A Mac's Notes' paragraph styles past these: a line under a heading
++    /// (`### `), monospaced text (four spaces, as Markdown's code), a list
++    /// marked with dashes (`– `) and a block quote (`> `). They are lines of
++    /// the note's text, so they are saved and read back with it.
++    Subheading,
+     Body,
++    Mono,
+     Checklist,
+     Bullets,
++    Dashes,
+     Numbers,
++    Quote,
+ }
+ 
+ #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 diff --git a/apps/notes/src/module.rs b/apps/notes/src/module.rs
 index 61bcf93e8483e34076c1d51e0850ea1683467149..8994e2f84c6d914af5399f33027f5d2a9b636bf9 100644
 --- a/apps/notes/src/module.rs
@@ -13396,11 +13833,122 @@ index 61bcf93e8483e34076c1d51e0850ea1683467149..8994e2f84c6d914af5399f33027f5d2a
  }
  
  struct NotesExecutor {
+diff --git a/apps/notes/src/projection.rs b/apps/notes/src/projection.rs
+index 113b5c51435a2324e6e8abe649b9c8dd37c235d7..59b1a9f18924da9bfa7b914566288d523093869e 100644
+--- a/apps/notes/src/projection.rs
++++ b/apps/notes/src/projection.rs
+@@ -14,11 +14,15 @@ pub enum ParagraphStyle {
+     NoteTitle,
+     Title,
+     Heading,
++    Subheading,
+     #[default]
+     Body,
++    Mono,
+     Bullet,
++    Dash,
+     Number(usize),
+     Check(bool),
++    Quote,
+ }
+ #[derive(Clone, Debug)]
+ pub struct Run {
+@@ -107,17 +111,41 @@ fn line_marks(source: &str, start: usize, end: usize) -> Vec<LineMark> {
+     pairs
+ }
+ 
++thread_local! {
++    static MAC_STYLES: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
++}
++
++/// Whether lines are read in the Mac style's paragraph styles as well:
++/// Subheading, Monostyled, Dashed List and Block Quote. The Mac style's Notes
++/// sets it; every other style keeps such lines as the text they were.
++pub fn set_mac_styles(on: bool) {
++    MAC_STYLES.with(|c| c.set(on));
++}
++
++pub fn mac_styles() -> bool {
++    MAC_STYLES.with(|c| c.get())
++}
++
+ pub fn prefix(line: &str) -> (usize, ParagraphStyle) {
++    let mac = mac_styles();
+     if line.starts_with("- [ ] ") {
+         (6, ParagraphStyle::Check(false))
+     } else if line.starts_with("- [x] ") {
+         (6, ParagraphStyle::Check(true))
++    } else if mac && line.starts_with("### ") {
++        (4, ParagraphStyle::Subheading)
+     } else if line.starts_with("## ") {
+         (3, ParagraphStyle::Heading)
+     } else if line.starts_with("# ") {
+         (2, ParagraphStyle::Title)
+     } else if line.starts_with("- ") {
+         (2, ParagraphStyle::Bullet)
++    } else if mac && line.starts_with(crate::engine::DASH_PREFIX) {
++        (crate::engine::DASH_PREFIX.len(), ParagraphStyle::Dash)
++    } else if mac && line.starts_with("> ") {
++        (2, ParagraphStyle::Quote)
++    } else if mac && line.starts_with(crate::engine::MONO_PREFIX) {
++        (crate::engine::MONO_PREFIX.len(), ParagraphStyle::Mono)
+     } else {
+         let digits = line.bytes().take_while(u8::is_ascii_digit).count();
+         if digits > 0 && line[digits..].starts_with(". ") {
+@@ -675,6 +703,9 @@ fn replace_lines(
+     let continuation = if input == "\n" && selection.is_empty() && first > 0 {
+         match p.style {
+             ParagraphStyle::Bullet => "- ".to_string(),
++            ParagraphStyle::Dash => crate::engine::DASH_PREFIX.to_string(),
++            ParagraphStyle::Quote => "> ".to_string(),
++            ParagraphStyle::Mono => crate::engine::MONO_PREFIX.to_string(),
+             ParagraphStyle::Check(_) => "- [ ] ".to_string(),
+             ParagraphStyle::Number(n) => format!("{}. ", n.saturating_add(1)),
+             _ => String::new(),
 diff --git a/apps/notes/src/text_surface.rs b/apps/notes/src/text_surface.rs
-index 18ba3704dcfaa5e98a2806a1b66a42390d1d844e..b78f37eb3d8199f16d0ff14209e9b7d8617469aa 100644
+index 18ba3704dcfaa5e98a2806a1b66a42390d1d844e..3613c86568811f6f8d496f845c3a1a2627ff350b 100644
 --- a/apps/notes/src/text_surface.rs
 +++ b/apps/notes/src/text_surface.rs
-@@ -172,6 +172,10 @@ pub struct NotesTextSurface {
+@@ -13,6 +13,10 @@
+     *,
+ };
+ 
++/// How far a block quote's words sit in from its bar's margin.
++const QUOTE_INDENT_MAC: f32 = 16.0;
++const QUOTE_INDENT: f32 = 20.0;
++
+ script_mod! {
+     use mod.prelude.widgets.*
+     use mod.widgets.*
+@@ -33,6 +37,8 @@ fn by(touch, pointer){ if desk { pointer } else { touch } }
+         draw_bold +: {color: theme.color_text text_style: theme.font_bold{font_size: 12} ink_centered: false}
+         draw_italic +: {color: theme.color_text text_style: theme.font_italic{font_size: 12} ink_centered: false}
+         draw_bold_italic +: {color: theme.color_text text_style: theme.font_bold_italic{font_size: 12} ink_centered: false}
++        // A monostyled paragraph's face: the theme's monospace (SF Mono on a Mac).
++        draw_mono +: {color: theme.color_text text_style: theme.font_code{font_size: 12} ink_centered: false}
+         draw_date +: {color: theme.color_text_meta text_style: theme.font_regular{font_size: 9}}
+         selection +: {color: mix(theme.color_focus, theme.color_bg_app, 0.75)}
+         caret +: {color: theme.color_focus}
+@@ -140,6 +146,8 @@ pub struct NotesTextSurface {
+     #[live]
+     draw_bold_italic: DrawText,
+     #[live]
++    draw_mono: DrawText,
++    #[live]
+     draw_date: DrawText,
+     #[live]
+     selection: DrawColor,
+@@ -155,6 +163,9 @@ pub struct NotesTextSurface {
+     popup_menu: ScriptValue,
+     #[rust]
+     context_menu: ContextMenu,
++    /// The open body menu starts with a Mac's Look Up and Search With Google.
++    #[rust]
++    menu_lookup: bool,
+     #[live]
+     check: DrawColor,
+     #[live]
+@@ -172,6 +183,10 @@ pub struct NotesTextSurface {
      /// A desktop style's sheet: the Mac's type sizes, no column limit.
      #[live]
      pub pointer: bool,
@@ -13411,7 +13959,89 @@ index 18ba3704dcfaa5e98a2806a1b66a42390d1d844e..b78f37eb3d8199f16d0ff14209e9b7d8
      #[live]
      pub reduced_motion: bool,
      #[rust]
-@@ -660,7 +664,8 @@ fn key(&mut self, cx: &mut Cx, event: KeyEvent) {
+@@ -182,6 +197,9 @@ pub struct NotesTextSurface {
+     source_text: String,
+     #[rust]
+     projection: Projection,
++    /// Whether `projection` read the Mac style's paragraph styles.
++    #[rust]
++    projected_mac: bool,
+     #[rust]
+     laidout: Option<LaidoutText>,
+     #[rust]
+@@ -285,6 +303,7 @@ pub fn hydrate(
+             }
+             self.source_text = note.source.clone();
+             self.projection = next;
++            self.projected_mac = mac_styles();
+             let display = self.projection.display_selection(selection);
+             self.display_selection = to_selection(display);
+             self.laidout = None;
+@@ -410,6 +429,7 @@ fn emit_edit(&mut self, cx: &mut Cx, source: String, selection: ByteSelection, k
+         );
+         self.source_text = source;
+         self.projection = Projection::new(&self.source_text);
++        self.projected_mac = mac_styles();
+         self.display_selection = to_selection(self.projection.display_selection(selection));
+         self.laidout = None;
+         self.needs_caret = true;
+@@ -599,7 +619,19 @@ fn open_body_menu(&mut self, cx: &mut Cx, abs: Vec2d, time: f64) {
+         }
+         let words = self.has_selection();
+         let editable = !self.read_only;
+-        let rows = vec![
++        // A Mac's text menu: the words to look up or search the web for, first.
++        let picked = {
++            let s = from_selection(self.display_selection);
++            menu_quote(&self.projection.text[s.start()..s.end()])
++        };
++        self.menu_lookup = self.pointer && mac_styles() && words && !picked.is_empty();
++        let mut rows = Vec::new();
++        if self.menu_lookup {
++            rows.push(ContextRow::new(&format!("Look Up \u{201c}{picked}\u{201d}"), true));
++            rows.push(ContextRow::new("Search With Google", true));
++            rows.push(ContextRow::rule());
++        }
++        rows.extend([
+             ContextRow::new("Cut", words && editable),
+             ContextRow::new("Copy", words),
+             ContextRow::new("Paste", editable),
+@@ -610,7 +642,7 @@ fn open_body_menu(&mut self, cx: &mut Cx, abs: Vec2d, time: f64) {
+             ContextRow::new("Italic", editable),
+             ContextRow::new("Underline", editable),
+             ContextRow::new("Strikethrough", editable),
+-        ];
++        ]);
+         let owner = ContextMenuOwner {
+             source: &self.source,
+             template: self.popup_menu,
+@@ -621,6 +653,25 @@ fn open_body_menu(&mut self, cx: &mut Cx, abs: Vec2d, time: f64) {
+     fn body_menu_chose(&mut self, cx: &mut Cx, index: usize) {
+         let selected = from_selection(self.display_selection);
+         let words = self.projection.text[selected.start()..selected.end()].to_string();
++        // Look Up and Search With Google go where a text field's do: the
++        // system's dictionary and the web, by the platform's own way out.
++        let index = if self.menu_lookup {
++            let query = query_escape(&words.split_whitespace().collect::<Vec<_>>().join(" "));
++            match index {
++                0 => {
++                    cx.open_url(&format!("dict://{query}"), OpenUrlInPlace::No);
++                    return;
++                }
++                1 => {
++                    cx.open_url(&format!("https://www.google.com/search?q={query}"), OpenUrlInPlace::No);
++                    return;
++                }
++                2 => return,
++                i => i - 3,
++            }
++        } else {
++            index
++        };
+         match index {
+             0 => {
+                 cx.copy_to_clipboard(&words);
+@@ -660,7 +711,8 @@ fn key(&mut self, cx: &mut Cx, event: KeyEvent) {
                      cx.widget_action(self.widget_uid(), SurfaceAction::Redo);
                      return;
                  }
@@ -13421,7 +14051,61 @@ index 18ba3704dcfaa5e98a2806a1b66a42390d1d844e..b78f37eb3d8199f16d0ff14209e9b7d8
                      self.toggle_inline(cx, InlineStyle::Bold);
                      return;
                  }
-@@ -1259,6 +1264,8 @@ fn draw_walk(&mut self, cx: &mut Cx2d, _scope: &mut Scope, walk: Walk) -> DrawSt
+@@ -900,9 +952,11 @@ fn layout_text(&mut self, cx: &mut Cx, width: f64) {
+             let is_check = matches!(paragraph.style, ParagraphStyle::Check(_));
+             let indent = if matches!(
+                 paragraph.style,
+-                ParagraphStyle::Check(_) | ParagraphStyle::Bullet | ParagraphStyle::Number(_)
++                ParagraphStyle::Check(_) | ParagraphStyle::Bullet | ParagraphStyle::Dash | ParagraphStyle::Number(_)
+             ) {
+                 if mac { 24.0 } else { 32.0 }
++            } else if paragraph.style == ParagraphStyle::Quote {
++                if mac { QUOTE_INDENT_MAC } else { QUOTE_INDENT }
+             } else {
+                 0.0
+             };
+@@ -910,6 +964,9 @@ fn layout_text(&mut self, cx: &mut Cx, width: f64) {
+                 ParagraphStyle::NoteTitle if mac => (20.0, 26.0, true, 0.0, 8.0),
+                 ParagraphStyle::Title if mac => (17.0, 23.0, true, 12.0, 4.0),
+                 ParagraphStyle::Heading if mac => (15.0, 20.0, true, 10.0, 4.0),
++                ParagraphStyle::Subheading if mac => (14.0, 19.0, true, 8.0, 4.0),
++                // SF Mono reads larger than the body's face at the same size.
++                ParagraphStyle::Mono if mac => (12.0, 18.0, false, 0.0, 6.0),
+                 _ if mac => (
+                     13.0,
+                     18.0,
+@@ -926,6 +983,7 @@ fn layout_text(&mut self, cx: &mut Cx, width: f64) {
+                 ),
+                 ParagraphStyle::Title => (23.0, 31.0, true, 20.0, 8.0),
+                 ParagraphStyle::Heading => (20.0, 28.0, true, 20.0, 8.0),
++                ParagraphStyle::Subheading => (18.0, 25.0, true, 14.0, 6.0),
+                 _ => (
+                     if self.compact { 17.0 } else { 16.0 },
+                     if self.compact { 25.0 } else { 24.0 },
+@@ -964,6 +1022,7 @@ fn layout_text(&mut self, cx: &mut Cx, width: f64) {
+             };
+             for run in runs {
+                 let draw = match (bold || run.marks.bold, run.marks.italic) {
++                    _ if paragraph.style == ParagraphStyle::Mono => &mut self.draw_mono,
+                     (true, true) => &mut self.draw_bold_italic,
+                     (true, false) => &mut self.draw_bold,
+                     (false, true) => &mut self.draw_italic,
+@@ -1252,6 +1311,14 @@ fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+         self.sync_ime(cx);
+     }
+     fn draw_walk(&mut self, cx: &mut Cx2d, _scope: &mut Scope, walk: Walk) -> DrawStep {
++        if self.projected_mac != mac_styles() {
++            // The style changed under an open note: read its lines again.
++            let selection = self.projection.source_selection(from_selection(self.display_selection));
++            self.projection = Projection::new(&self.source_text);
++            self.projected_mac = mac_styles();
++            self.display_selection = to_selection(self.projection.display_selection(selection));
++            self.laidout = None;
++        }
+         let rect = cx.peek_walk_turtle(walk);
+         if self.viewport_size != rect.size {
+             self.viewport_size = rect.size;
+@@ -1259,6 +1326,8 @@ fn draw_walk(&mut self, cx: &mut Cx2d, _scope: &mut Scope, walk: Walk) -> DrawSt
          }
          let inset = if self.compact {
              20.0
@@ -13430,8 +14114,82 @@ index 18ba3704dcfaa5e98a2806a1b66a42390d1d844e..b78f37eb3d8199f16d0ff14209e9b7d8
          } else if self.short || self.pointer {
              24.0
          } else {
+@@ -1392,7 +1461,8 @@ fn draw_walk(&mut self, cx: &mut Cx2d, _scope: &mut Scope, walk: Walk) -> DrawSt
+         for paragraph in &self.projection.paragraphs {
+             let (done, lead) = match paragraph.style {
+                 ParagraphStyle::Check(done) => (done, indent),
+-                ParagraphStyle::Bullet | ParagraphStyle::Number(_) => (false, indent),
++                ParagraphStyle::Bullet | ParagraphStyle::Dash | ParagraphStyle::Number(_) => (false, indent),
++                ParagraphStyle::Quote => (false, if mac { QUOTE_INDENT_MAC } else { QUOTE_INDENT }),
+                 _ => (false, 0.0),
+             };
+             for run in &paragraph.runs {
+@@ -1475,6 +1545,33 @@ fn draw_walk(&mut self, cx: &mut Cx2d, _scope: &mut Scope, walk: Walk) -> DrawSt
+                     self.draw_date.color = self.ink;
+                     self.draw_date.draw_abs(cx, pos, "•");
+                 }
++                ParagraphStyle::Dash => {
++                    self.draw_date.color = self.ink;
++                    self.draw_date.draw_abs(cx, pos, "\u{2013}");
++                }
++                ParagraphStyle::Quote => {
++                    // A bar down the quote's rows, at the margin.
++                    let rows: Vec<_> = l
++                        .rows
++                        .iter()
++                        .filter(|r| {
++                            let at = r.text.start_in_parent();
++                            at >= paragraph.range.start && (at < paragraph.range.end || at == paragraph.range.start)
++                        })
++                        .collect();
++                    if let (Some(first), Some(last)) = (rows.first(), rows.last()) {
++                        let top = first.origin_in_lpxs.y - first.ascender_in_lpxs;
++                        let bottom = last.origin_in_lpxs.y - last.descender_in_lpxs;
++                        self.rule.color = secondary;
++                        self.rule.draw_abs(
++                            cx,
++                            Rect {
++                                pos: self.origin + dvec2(1.0, top as f64),
++                                size: dvec2(if mac { 3.0 } else { 4.0 }, (bottom - top).max(1.0) as f64),
++                            },
++                        );
++                    }
++                }
+                 ParagraphStyle::Number(n) => {
+                     self.draw_date.color = self.ink;
+                     self.draw_date.draw_abs(cx, pos, &format!("{n}."));
+@@ -1543,6 +1640,29 @@ fn draw_walk(&mut self, cx: &mut Cx2d, _scope: &mut Scope, walk: Walk) -> DrawSt
+         DrawStep::done()
+     }
+ }
++/// The words a Mac's Look Up row quotes: on one line, and cut short.
++fn menu_quote(text: &str) -> String {
++    let words = text.split_whitespace().collect::<Vec<_>>().join(" ");
++    if words.chars().count() > 24 {
++        format!("{}\u{2026}", words.chars().take(23).collect::<String>().trim_end())
++    } else {
++        words
++    }
++}
++
++/// Words for a link's query: unreserved ASCII as it is, every other byte as %XX.
++fn query_escape(text: &str) -> String {
++    let mut out = String::with_capacity(text.len());
++    for b in text.bytes() {
++        if b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.' | b'~') {
++            out.push(b as char);
++        } else {
++            out.push_str(&format!("%{b:02X}"));
++        }
++    }
++    out
++}
++
+ fn to_selection(s: ByteSelection) -> Selection {
+     Selection {
+         anchor: Cursor {
 diff --git a/apps/notes/src/ui.rs b/apps/notes/src/ui.rs
-index da7587697ca519bdbfdb1091eb2f050fada154dc..440eb90c1c7ad1bd37da931b4764e33ca6f84278 100644
+index da7587697ca519bdbfdb1091eb2f050fada154dc..f2a7933c968ef45c8b86ec1655c936846d69896c 100644
 --- a/apps/notes/src/ui.rs
 +++ b/apps/notes/src/ui.rs
 @@ -33,7 +33,11 @@ fn by(touch, pointer){ if desk { pointer } else { touch } }
@@ -13484,7 +14242,43 @@ index da7587697ca519bdbfdb1091eb2f050fada154dc..440eb90c1c7ad1bd37da931b4764e33c
              group := Plain{height: Fit flow: Down rows := FolderRows{}}
          }
      }
-@@ -464,6 +474,69 @@ fn by(touch, pointer){ if desk { pointer } else { touch } }
+@@ -410,7 +420,34 @@ fn by(touch, pointer){ if desk { pointer } else { touch } }
+     }
+     // The Aa menu. A pointer's is a Mac's: the marks along the top, then a line
+     // for each paragraph style.
+-    let FormatPanel = if desk {
++    let FormatPanel = if unified {
++        // A Mac's Notes' Aa: every paragraph style its Format menu has, in its order.
++        ScrollYView{
++            visible: false width: Fill height: Fit flow: Down
++            marks := Plain{height: 28 flow: Right spacing: 4
++                bold := TextTap{width: Fill nav_name: "Bold" caption.text: "B" caption.draw_text.text_style: theme.font_bold{font_size: 9.75}}
++                italic := TextTap{width: Fill nav_name: "Italic" caption.text: "I" caption.draw_text.text_style: theme.font_bold_italic{font_size: 9.75}}
++                underline := Tap{width: Fill nav_name: "Underline" flow: Down padding: 0 spacing: 1 align: Align{x: 0.5 y: 0.5}
++                    Ink{text: "U"}
++                    Solid{width: 9 height: 1 draw_bg.color: d_ink}
++                }
++                strike := Tap{width: Fill nav_name: "Strikethrough" flow: Overlay padding: 0 align: Align{x: 0.5 y: 0.5}
++                    Ink{text: "S"}
++                    Solid{width: 11 height: 1 draw_bg.color: d_ink}
++                }
++            }
++            Rule{margin: Inset{top: 3 bottom: 3}}
++            style_title := StyleTap{nav_name: "Title" caption.text: "Title"}
++            style_heading := StyleTap{nav_name: "Heading" caption.text: "Heading"}
++            style_subheading := StyleTap{nav_name: "Subheading" caption.text: "Subheading"}
++            style_body := StyleTap{nav_name: "Body" caption.text: "Body"}
++            style_mono := StyleTap{nav_name: "Monostyled" caption.text: "Monostyled"}
++            bullets := StyleTap{nav_name: "Bulleted List" caption.text: "Bulleted List"}
++            dashes := StyleTap{nav_name: "Dashed List" caption.text: "Dashed List"}
++            numbers := StyleTap{nav_name: "Numbered List" caption.text: "Numbered List"}
++            quote := StyleTap{nav_name: "Block Quote" caption.text: "Block Quote"}
++        }
++    } else if desk {
+         ScrollYView{
+             visible: false width: Fill height: Fit flow: Down
+             marks := Plain{height: 28 flow: Right spacing: 4
+@@ -464,6 +501,69 @@ fn by(touch, pointer){ if desk { pointer } else { touch } }
      } else {
          Plain{visible: false height: 44 flow: Right padding: Inset{left: 0} spacing: 0 align: Align{y: 0.5} folders := IconTap{nav_name: "Folders" glyph.draw_icon.svg: crate_resource("self:resources/icons/folder.svg")} collection := Ink{width: Fill draw_text.text_style: theme.font_regular{font_size: 10.5}} compose := Compose{}}
      }
@@ -13554,7 +14348,7 @@ index da7587697ca519bdbfdb1091eb2f050fada154dc..440eb90c1c7ad1bd37da931b4764e33c
      let MenuPanel = if desk {
          GlassPanel{draw_bg +: {tint_alpha: 1.0 blur_level: 2.0 edge_blur_level: 0.0 lensing_strength: 0.0 rim_alpha: if d_light { 0.12 } else { 0.3 }}}
      } else {
-@@ -497,15 +570,21 @@ fn by(touch, pointer){ if desk { pointer } else { touch } }
+@@ -497,15 +597,21 @@ fn by(touch, pointer){ if desk { pointer } else { touch } }
                      color: d_menu border_radius: 5.0 border_size: 1.0 border_color: d_border
                      shadow_color: #x00000040 shadow_radius: 24.0 shadow_offset: vec2(0.0, 8.0)
                  }
@@ -13578,7 +14372,7 @@ index da7587697ca519bdbfdb1091eb2f050fada154dc..440eb90c1c7ad1bd37da931b4764e33c
                  }
                  sheet_form := Plain{height: Fit flow: Down spacing: 6 padding: Inset{left: 16 right: 16 top: 2}
                      View{width: Fill height: Fit flow: Right align: Align{y: 0.5} spacing: 8
-@@ -514,9 +593,9 @@ fn by(touch, pointer){ if desk { pointer } else { touch } }
+@@ -514,9 +620,9 @@ fn by(touch, pointer){ if desk { pointer } else { touch } }
                      }
                      sheet_error := Label{visible: false padding: 0 margin: Inset{left: 22} draw_text +: {color: d_danger text_style: theme.font_regular{font_size: 8.25}}}
                  }
@@ -13590,7 +14384,7 @@ index da7587697ca519bdbfdb1091eb2f050fada154dc..440eb90c1c7ad1bd37da931b4764e33c
                      sheet_cancel := DeskPush{text: "Cancel"}
                      sheet_ok := DeskPrimary{text: "OK"}
                      // A question before something goes for good: Cancel is the default.
-@@ -537,7 +616,8 @@ fn by(touch, pointer){ if desk { pointer } else { touch } }
+@@ -537,7 +643,8 @@ fn by(touch, pointer){ if desk { pointer } else { touch } }
              }
              ScrollYView{
                  width: Fill height: Fill flow: Down
@@ -13600,7 +14394,7 @@ index da7587697ca519bdbfdb1091eb2f050fada154dc..440eb90c1c7ad1bd37da931b4764e33c
                  rows := FolderRows{}
              }
              Plain{height: 36 flow: Right padding: Inset{left: 8 right: 8} align: Align{y: 0.5}
-@@ -583,14 +663,7 @@ fn by(touch, pointer){ if desk { pointer } else { touch } }
+@@ -583,14 +690,7 @@ fn by(touch, pointer){ if desk { pointer } else { touch } }
                  divider_a := Rule{width: 1 height: Fill}
                  notes_list := PaperColumn{
                      width: 320 flow: Down draw_bg.color: by(theme.color_bg_app, d_surface)
@@ -13616,7 +14410,7 @@ index da7587697ca519bdbfdb1091eb2f050fada154dc..440eb90c1c7ad1bd37da931b4764e33c
                      header_rule := Rule{visible: by(false, true)}
                      search_slot := Plain{height: by(48, 40) padding: Inset{left: by(12, 8) right: by(12, 8) top: by(2, 6) bottom: by(2, 6)} search := Search{}}
                      deleted_head := DeletedHead{}
-@@ -600,24 +673,7 @@ fn by(touch, pointer){ if desk { pointer } else { touch } }
+@@ -600,24 +700,7 @@ fn by(touch, pointer){ if desk { pointer } else { touch } }
                  divider_b := Rule{width: 1 height: Fill}
                  editor := PaperColumn{
                      flow: Down draw_bg.color: by(theme.color_bg_app, d_surface)
@@ -13642,7 +14436,7 @@ index da7587697ca519bdbfdb1091eb2f050fada154dc..440eb90c1c7ad1bd37da931b4764e33c
                      toolbar_rule := Rule{visible: by(false, true)}
                      document := NotesTextSurface{width: Fill height: Fill padding: Inset{left: by(32, 24) right: by(32, 24) top: 12 bottom: by(32, 24)}}
                      empty := Plain{visible: false flow: Down align: Align{x: 0.5 y: 0.5} spacing: by(12, 6) title := Ink{text: "No Notes" draw_text.text_style: theme.font_bold{font_size: by(15, 11.25)}} explanation := Meta{text: "Choose a note or create a new one." paper: by(theme.color_bg_app, d_surface) draw_text.text_style.font_size: by(9, 9.75)} compose := LinkOrPush{nav_name: "New Note" caption.text: "New Note" margin: Inset{top: by(0, 6)}}}
-@@ -645,7 +701,7 @@ fn by(touch, pointer){ if desk { pointer } else { touch } }
+@@ -645,7 +728,7 @@ fn by(touch, pointer){ if desk { pointer } else { touch } }
                          width: Fill height: Fit flow: Down
                          pin := MenuTap{width: Fill nav_name: "Pin" caption.text: "Pin"}
                          move := MenuTap{width: Fill nav_name: "Move" caption.text: by("Move", "Move…")}
@@ -13652,7 +14446,7 @@ index da7587697ca519bdbfdb1091eb2f050fada154dc..440eb90c1c7ad1bd37da931b4764e33c
                          undo := MenuTap{width: Fill nav_name: "Undo" caption.text: "Undo"}
                          redo := MenuTap{width: Fill nav_name: "Redo" caption.text: "Redo"}
 diff --git a/apps/notes/src/view.rs b/apps/notes/src/view.rs
-index 41e9573689abe118ce38b81be81a03cc64239854..5cd6bdf668f92acecc7b288d8396096614778aec 100644
+index 41e9573689abe118ce38b81be81a03cc64239854..bd83049c7e62b2220247ecd7782c9ad09f076a87 100644
 --- a/apps/notes/src/view.rs
 +++ b/apps/notes/src/view.rs
 @@ -104,6 +104,9 @@ pub struct NotesView {
@@ -13731,7 +14525,34 @@ index 41e9573689abe118ce38b81be81a03cc64239854..5cd6bdf668f92acecc7b288d83960966
              self.sync_surface(cx);
              let surface = self.surface(cx);
              let (selection, focused, marks) = surface
-@@ -1357,6 +1380,7 @@ fn apply_layout(&mut self, cx: &mut Cx, size: Vec2d) {
+@@ -1234,9 +1257,13 @@ fn sync_overlay(&mut self, cx: &mut Cx) {
+                 for (id, current) in [
+                     (live_id!(style_title), matches!(style, ParagraphStyle::Title | ParagraphStyle::NoteTitle)),
+                     (live_id!(style_heading), style == ParagraphStyle::Heading),
++                    (live_id!(style_subheading), style == ParagraphStyle::Subheading),
+                     (live_id!(style_body), style == ParagraphStyle::Body),
++                    (live_id!(style_mono), style == ParagraphStyle::Mono),
+                     (live_id!(bullets), style == ParagraphStyle::Bullet),
++                    (live_id!(dashes), style == ParagraphStyle::Dash),
+                     (live_id!(numbers), matches!(style, ParagraphStyle::Number(_))),
++                    (live_id!(quote), style == ParagraphStyle::Quote),
+                 ] {
+                     panel
+                         .widget(cx, &[id, live_id!(slot), live_id!(current)])
+@@ -1299,9 +1326,10 @@ fn sync_overlay(&mut self, cx: &mut Cx) {
+         let width = requested.min((content.size.x - 16.0).max(44.0));
+         let natural = if mac {
+             // 24-point rows in the panel's 6-point padding (28 for folders),
+-            // the formatting bar's 23 in its 8.
++            // the formatting bar's 23 in its 8: a Mac's nine paragraph styles,
++            // other styles' five.
+             if format {
+-                166.0
++                if self.unified { 258.0 } else { 166.0 }
+             } else if moving {
+                 108.0
+             } else if more {
+@@ -1357,6 +1385,7 @@ fn apply_layout(&mut self, cx: &mut Cx, size: Vec2d) {
          if size == self.size
              && decision == self.layout
              && self.applied_reduced_motion == self.reduced_motion
@@ -13739,7 +14560,7 @@ index 41e9573689abe118ce38b81be81a03cc64239854..5cd6bdf668f92acecc7b288d83960966
          {
              return;
          }
-@@ -1383,9 +1407,12 @@ fn apply_layout(&mut self, cx: &mut Cx, size: Vec2d) {
+@@ -1383,9 +1412,12 @@ fn apply_layout(&mut self, cx: &mut Cx, size: Vec2d) {
          self.layout = decision;
          self.size = size;
          self.applied_reduced_motion = self.reduced_motion;
@@ -13752,7 +14573,7 @@ index 41e9573689abe118ce38b81be81a03cc64239854..5cd6bdf668f92acecc7b288d83960966
          self.visible(cx, ids!(wide.notes_list.short_header), !decision.is_three());
          let mac = self.pointer;
          if mac {
-@@ -1399,7 +1426,13 @@ fn apply_layout(&mut self, cx: &mut Cx, size: Vec2d) {
+@@ -1399,7 +1431,13 @@ fn apply_layout(&mut self, cx: &mut Cx, size: Vec2d) {
          let width = if mac {
              match decision.columns {
                  Columns::Three => 256.0,
@@ -13767,7 +14588,7 @@ index 41e9573689abe118ce38b81be81a03cc64239854..5cd6bdf668f92acecc7b288d83960966
              }
          } else {
              engine::list_column_width(decision, size.x)
-@@ -1449,7 +1482,9 @@ fn apply_layout(&mut self, cx: &mut Cx, size: Vec2d) {
+@@ -1449,7 +1487,9 @@ fn apply_layout(&mut self, cx: &mut Cx, size: Vec2d) {
          let mut toolbar = self.view.widget(cx, ids!(wide.editor.toolbar));
          script_apply_eval!(cx,toolbar,{use mod.prelude.widgets.* height:#(toolbar_height)});
          let mut surface = self.view.widget(cx, ids!(wide.editor.document));
@@ -13778,7 +14599,7 @@ index 41e9573689abe118ce38b81be81a03cc64239854..5cd6bdf668f92acecc7b288d83960966
          if let Some(mut surface) = surface.borrow_mut::<NotesTextSurface>() {
              surface.invalidate_layout();
          }
-@@ -1666,6 +1701,7 @@ fn fill_list(&mut self, cx: &mut Cx2d, list: &mut PortalList, uid: WidgetUid) {
+@@ -1666,6 +1706,7 @@ fn fill_list(&mut self, cx: &mut Cx2d, list: &mut PortalList, uid: WidgetUid) {
                      item.widget(cx, ids!(tap.metadata.date)).set_text(cx, &date);
                      item.widget(cx, ids!(tap.metadata.folder))
                          .set_text(cx, &self.doc.folder_name(hit.folder));
@@ -13786,7 +14607,7 @@ index 41e9573689abe118ce38b81be81a03cc64239854..5cd6bdf668f92acecc7b288d83960966
                      let selected = self.ui.selected == Some(hit.id);
                      // A Mac's list with the keyboard has its selection on the
                      // accent, its text white on it.
-@@ -1689,6 +1725,12 @@ fn fill_list(&mut self, cx: &mut Cx2d, list: &mut PortalList, uid: WidgetUid) {
+@@ -1689,6 +1730,12 @@ fn fill_list(&mut self, cx: &mut Cx2d, list: &mut PortalList, uid: WidgetUid) {
                              if let Some(mut meta) = meta.borrow_mut::<NotesMeta>() {
                                  meta.set_colors(cx, paper, ink, secondary);
                              }
@@ -13799,7 +14620,7 @@ index 41e9573689abe118ce38b81be81a03cc64239854..5cd6bdf668f92acecc7b288d83960966
                          } else if selected {
                              script_apply_eval!(cx,meta,{use mod.prelude.widgets.* paper:theme.color_bg_highlight});
                          } else {
-@@ -1820,16 +1862,114 @@ pub fn menu_rows(&self) -> Vec<makepad_app_module::MenuRow> {
+@@ -1820,16 +1867,147 @@ pub fn menu_rows(&self) -> Vec<makepad_app_module::MenuRow> {
          use makepad_app_module::MenuRow;
          let room = self.size.x >= POINTER_THREE_MIN && self.size.y >= 420.0;
          let sidebar = if self.layout.is_three() { "Hide Sidebar" } else { "Show Sidebar" };
@@ -13841,13 +14662,35 @@ index 41e9573689abe118ce38b81be81a03cc64239854..5cd6bdf668f92acecc7b288d83960966
 -            MenuRow::keyed("Format", "Underline", "cmd+U"),
 -            MenuRow::keyed("Format", "Strikethrough", "shift+cmd+X"),
 -        ]
-+            row("Title", "shift+cmd+T", BlockStyle::Title),
-+            row("Heading", "shift+cmd+H", BlockStyle::Heading),
-+            row("Body", "shift+cmd+B", BlockStyle::Body),
-+            MenuRow::rule("Format"),
-+            row("Bulleted List", "shift+cmd+7", BlockStyle::Bullets),
-+            row("Numbered List", "shift+cmd+9", BlockStyle::Numbers),
-+            MenuRow::rule("Format"),
++        ]);
++        if self.unified {
++            // A Mac's Notes' Format menu: every paragraph style, on its keys.
++            rows.extend([
++                row("Title", "shift+cmd+T", BlockStyle::Title),
++                row("Heading", "shift+cmd+H", BlockStyle::Heading),
++                row("Subheading", "shift+cmd+J", BlockStyle::Subheading),
++                row("Body", "shift+cmd+B", BlockStyle::Body),
++                row("Monostyled", "shift+cmd+M", BlockStyle::Mono),
++                MenuRow::rule("Format"),
++                row("Bulleted List", "shift+cmd+7", BlockStyle::Bullets),
++                row("Dashed List", "shift+cmd+8", BlockStyle::Dashes),
++                row("Numbered List", "shift+cmd+9", BlockStyle::Numbers),
++                MenuRow::rule("Format"),
++                MenuRow::command("Format", "Block Quote", "block-quote").enabled(style.is_some()).checked(style == Some(BlockStyle::Quote)),
++                MenuRow::rule("Format"),
++            ]);
++        } else {
++            rows.extend([
++                row("Title", "shift+cmd+T", BlockStyle::Title),
++                row("Heading", "shift+cmd+H", BlockStyle::Heading),
++                row("Body", "shift+cmd+B", BlockStyle::Body),
++                MenuRow::rule("Format"),
++                row("Bulleted List", "shift+cmd+7", BlockStyle::Bullets),
++                row("Numbered List", "shift+cmd+9", BlockStyle::Numbers),
++                MenuRow::rule("Format"),
++            ]);
++        }
++        rows.extend([
 +            row("Checklist", "shift+cmd+L", BlockStyle::Checklist),
 +            MenuRow::rule("Format"),
 +            MenuRow::keyed("Format", "Bold", "cmd+B").within("Font"),
@@ -13867,6 +14710,17 @@ index 41e9573689abe118ce38b81be81a03cc64239854..5cd6bdf668f92acecc7b288d83960966
 +        };
 +        if !self.mutations_allowed() {
 +            return false;
++        }
++        if command == "block-quote" {
++            // Format > Block Quote: the paragraph being edited, as its keys would.
++            // It is ticked on a quote's line, and takes the quote off again.
++            let Some(style) = self.editing_style() else {
++                return false;
++            };
++            let to = if style == BlockStyle::Quote { BlockStyle::Body } else { BlockStyle::Quote };
++            self.apply_block(cx, to);
++            self.redraw(cx);
++            return true;
 +        }
 +        if command == "copy" {
 +            // The note as it reads: its lines without the marks a style hides.
@@ -13920,7 +14774,31 @@ index 41e9573689abe118ce38b81be81a03cc64239854..5cd6bdf668f92acecc7b288d83960966
      }
  
      /// The sidebar goes and comes back, in a window with room for it.
-@@ -2069,6 +2209,10 @@ fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
+@@ -1931,16 +2109,22 @@ fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
+                     for (id, style) in [
+                         (live_id!(style_title), BlockStyle::Title),
+                         (live_id!(style_heading), BlockStyle::Heading),
++                        (live_id!(style_subheading), BlockStyle::Subheading),
+                         (live_id!(style_body), BlockStyle::Body),
++                        (live_id!(style_mono), BlockStyle::Mono),
+                         (live_id!(bullets), BlockStyle::Bullets),
++                        (live_id!(dashes), BlockStyle::Dashes),
+                         (live_id!(numbers), BlockStyle::Numbers),
++                        (live_id!(quote), BlockStyle::Quote),
+                     ] {
+                         if self.activated(
+                             cx,
+                             actions,
+                             &[live_id!(overlay), live_id!(panel), live_id!(formatting), id],
+                         ) {
+-                            self.apply_block(cx, style);
++                            // Block Quote, ticked, takes the quote off again.
++                            let quoted = style == BlockStyle::Quote && self.editing_style() == Some(BlockStyle::Quote);
++                            self.apply_block(cx, if quoted { BlockStyle::Body } else { style });
+                         }
+                     }
+                     for (id, style) in [
+@@ -2069,6 +2253,10 @@ fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
                  }
                  return;
              }
@@ -13931,7 +14809,7 @@ index 41e9573689abe118ce38b81be81a03cc64239854..5cd6bdf668f92acecc7b288d83960966
              if self.pointer {
                  let head: &[LiveId] = if compact {
                      ids!(compact.list_view.screen.deleted_head.empty_deleted)
-@@ -2288,6 +2432,26 @@ fn mac_key(&mut self, cx: &mut Cx, key: &KeyEvent) -> bool {
+@@ -2288,6 +2476,29 @@ fn mac_key(&mut self, cx: &mut Cx, key: &KeyEvent) -> bool {
              self.open_sheet(cx, SheetKind::NewFolder);
              return true;
          }
@@ -13944,6 +14822,9 @@ index 41e9573689abe118ce38b81be81a03cc64239854..5cd6bdf668f92acecc7b288d83960966
 +                KeyCode::Key7 => Some(BlockStyle::Bullets),
 +                KeyCode::Key9 => Some(BlockStyle::Numbers),
 +                KeyCode::KeyL => Some(BlockStyle::Checklist),
++                KeyCode::KeyJ if self.unified => Some(BlockStyle::Subheading),
++                KeyCode::KeyM if self.unified => Some(BlockStyle::Mono),
++                KeyCode::Key8 if self.unified => Some(BlockStyle::Dashes),
 +                _ => None,
 +            };
 +            if let Some(style) = style {
@@ -13958,7 +14839,7 @@ index 41e9573689abe118ce38b81be81a03cc64239854..5cd6bdf668f92acecc7b288d83960966
          if mods.is_primary() && !mods.shift && !mods.alt {
              match key.key_code {
                  KeyCode::KeyN => {
-@@ -2369,8 +2533,10 @@ fn mac_key(&mut self, cx: &mut Cx, key: &KeyEvent) -> bool {
+@@ -2369,8 +2580,10 @@ fn mac_key(&mut self, cx: &mut Cx, key: &KeyEvent) -> bool {
  
  /// A pointer's menus: real ones, at the tool or at the pointer.
  impl NotesView {
@@ -13971,7 +14852,7 @@ index 41e9573689abe118ce38b81be81a03cc64239854..5cd6bdf668f92acecc7b288d83960966
          self.menu_actions = actions;
          self.menu_at = at;
          let owner = ContextMenuOwner { source: &self.view.source, template: self.popup_menu, area: self.view.area() };
-@@ -2382,10 +2548,10 @@ fn open_menu(&mut self, cx: &mut Cx, at: Vec2d, time: f64, rows: Vec<(ContextRow
+@@ -2382,10 +2595,10 @@ fn open_menu(&mut self, cx: &mut Cx, at: Vec2d, time: f64, rows: Vec<(ContextRow
          self.view.redraw(cx);
      }
      /// A menu that hangs from a tool in a toolbar.
@@ -13984,7 +14865,7 @@ index 41e9573689abe118ce38b81be81a03cc64239854..5cd6bdf668f92acecc7b288d83960966
          if let Some(mut tap) = invoker.borrow_mut::<NotesTap>() {
              tap.set_selected(cx, true);
          }
-@@ -2399,6 +2565,13 @@ fn tool_menu_closed(&mut self, cx: &mut Cx) {
+@@ -2399,6 +2612,13 @@ fn tool_menu_closed(&mut self, cx: &mut Cx) {
          if self.context_note.take().is_some() {
              self.redraw(cx);
          }
@@ -13998,7 +14879,7 @@ index 41e9573689abe118ce38b81be81a03cc64239854..5cd6bdf668f92acecc7b288d83960966
          if let Some(tool) = self.menu_tool.take() {
              if let Some(mut tap) = tool.borrow_mut::<NotesTap>() {
                  tap.set_selected(cx, false);
-@@ -2406,41 +2579,57 @@ fn tool_menu_closed(&mut self, cx: &mut Cx) {
+@@ -2406,41 +2626,57 @@ fn tool_menu_closed(&mut self, cx: &mut Cx) {
          }
      }
      /// What the selected note offers, with the folder it is in now ticked.
@@ -14070,7 +14951,7 @@ index 41e9573689abe118ce38b81be81a03cc64239854..5cd6bdf668f92acecc7b288d83960966
          if rows.is_empty() {
              return;
          }
-@@ -2450,7 +2639,7 @@ fn open_more_menu(&mut self, cx: &mut Cx, invoker: WidgetRef) {
+@@ -2450,7 +2686,7 @@ fn open_more_menu(&mut self, cx: &mut Cx, invoker: WidgetRef) {
          rows.push((ContextRow::rule(), None));
          rows.push((ContextRow::new("Undo", can_undo), Some(MenuAction::Undo)));
          rows.push((ContextRow::new("Redo", can_redo), Some(MenuAction::Redo)));
@@ -14079,7 +14960,7 @@ index 41e9573689abe118ce38b81be81a03cc64239854..5cd6bdf668f92acecc7b288d83960966
      }
      /// A window too narrow for the folders has them here.
      fn open_folders_menu(&mut self, cx: &mut Cx, invoker: WidgetRef) {
-@@ -2466,7 +2655,7 @@ fn open_folders_menu(&mut self, cx: &mut Cx, invoker: WidgetRef) {
+@@ -2466,7 +2702,7 @@ fn open_folders_menu(&mut self, cx: &mut Cx, invoker: WidgetRef) {
          }
          rows.push((ContextRow::rule(), None));
          rows.push((ContextRow::new("New Folder…", self.doc.folders.len() < MAX_FOLDERS), Some(MenuAction::NewFolder)));
@@ -14088,7 +14969,7 @@ index 41e9573689abe118ce38b81be81a03cc64239854..5cd6bdf668f92acecc7b288d83960966
      }
      /// The note whose row is under the pointer, among the rows drawn last.
      fn note_under(&self, cx: &mut Cx, at: Vec2d) -> Option<NoteId> {
-@@ -2514,7 +2703,7 @@ fn open_context_menu(&mut self, cx: &mut Cx, press: &MouseDownEvent) -> bool {
+@@ -2514,7 +2750,7 @@ fn open_context_menu(&mut self, cx: &mut Cx, press: &MouseDownEvent) -> bool {
          let compact = self.layout.is_compact();
          let in_list = !compact || engine::current_screen(&self.ui) == Screen::List;
          if in_list && self.list(cx).area().rect(cx).contains(at) {
@@ -14097,7 +14978,7 @@ index 41e9573689abe118ce38b81be81a03cc64239854..5cd6bdf668f92acecc7b288d83960966
                  Some(id) if self.unified => {
                      // A Mac's list rings the row it acts on in the accent and
                      // leaves the selection, and the note beside it, as they were.
-@@ -2535,16 +2724,24 @@ fn open_context_menu(&mut self, cx: &mut Cx, press: &MouseDownEvent) -> bool {
+@@ -2535,16 +2771,24 @@ fn open_context_menu(&mut self, cx: &mut Cx, press: &MouseDownEvent) -> bool {
                      self.note_rows()
                  }
                  None if self.ui.collection.allows_create() => {
@@ -14125,7 +15006,7 @@ index 41e9573689abe118ce38b81be81a03cc64239854..5cd6bdf668f92acecc7b288d83960966
                  Some(Collection::Folder(FolderId::Custom(id))) => vec![
                      (ContextRow::new("Rename…", true), Some(MenuAction::RenameFolder(id))),
                      (ContextRow::new("Delete Folder…", true), Some(MenuAction::DeleteFolder(id))),
-@@ -2557,7 +2754,7 @@ fn open_context_menu(&mut self, cx: &mut Cx, press: &MouseDownEvent) -> bool {
+@@ -2557,7 +2801,7 @@ fn open_context_menu(&mut self, cx: &mut Cx, press: &MouseDownEvent) -> bool {
                  }
                  _ => vec![(ContextRow::new("New Folder…", room), Some(MenuAction::NewFolder))],
              };
@@ -14134,7 +15015,7 @@ index 41e9573689abe118ce38b81be81a03cc64239854..5cd6bdf668f92acecc7b288d83960966
              return true;
          }
          false
-@@ -2663,6 +2860,33 @@ fn cancel_sheet(&mut self, cx: &mut Cx) {
+@@ -2663,6 +2907,33 @@ fn cancel_sheet(&mut self, cx: &mut Cx) {
              _ => self.close_sheet(cx),
          }
      }
@@ -14168,7 +15049,7 @@ index 41e9573689abe118ce38b81be81a03cc64239854..5cd6bdf668f92acecc7b288d83960966
      fn sync_sheet(&mut self, cx: &mut Cx) {
          if !self.pointer {
              return;
-@@ -2673,6 +2897,10 @@ fn sync_sheet(&mut self, cx: &mut Cx) {
+@@ -2673,6 +2944,10 @@ fn sync_sheet(&mut self, cx: &mut Cx) {
              return;
          };
          let names = matches!(kind, SheetKind::NewFolder | SheetKind::RenameFolder(_));
@@ -14179,8 +15060,20 @@ index 41e9573689abe118ce38b81be81a03cc64239854..5cd6bdf668f92acecc7b288d83960966
          let (title, note) = match kind {
              SheetKind::NewFolder => ("New Folder".to_string(), String::new()),
              SheetKind::RenameFolder(_) => ("Rename Folder".to_string(), String::new()),
-@@ -3097,6 +3325,7 @@ fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+@@ -2925,6 +3200,8 @@ fn menu_position(viewport: Rect, anchor: Rect, size: Vec2d) -> Vec2d {
+ }
+ impl Widget for NotesView {
+     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
++        // The Mac style reads its own paragraph styles from a note's lines.
++        crate::projection::set_mac_styles(self.unified);
+         // Its agent's tool calls, answered as its AI bus service answers
+         // them (the link is set aside so the answer may read the whole view).
+         if let Some(mut agent) = self.agent.take() {
+@@ -3095,8 +3372,10 @@ fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+         self.sync_list_keys(cx);
+     }
      fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
++        crate::projection::set_mac_styles(self.unified);
          self.ensure_started(cx);
          let size = cx.turtle().rect().size;
 +        self.title_room = self.short_title_room(cx);
@@ -16238,10 +17131,37 @@ index 0000000000000000000000000000000000000000..9b69ced860839d5f4fb73392be9cdf8c
 @@ -0,0 +1 @@
 +<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><g fill="#FFFFFF"><path fill-rule="evenodd" d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm0 2.4a7.6 7.6 0 1 0 0 15.2 7.6 7.6 0 0 0 0-15.2z"/><circle cx="12" cy="12" r="5.4"/></g></svg>
 diff --git a/apps/reminders/src/engine.rs b/apps/reminders/src/engine.rs
-index 0914c4eaea16634050bf272c7f36289d48ce6584..d725a324e29d4a43d1e444ce105ea1770c9e9d59 100644
+index 0914c4eaea16634050bf272c7f36289d48ce6584..ebc18b167170a4ab7e2a423fba1b966eb3df2059 100644
 --- a/apps/reminders/src/engine.rs
 +++ b/apps/reminders/src/engine.rs
-@@ -203,7 +203,8 @@ fn matches_active(item: &Reminder, filter: Filter, now: Now) -> bool {
+@@ -164,6 +164,26 @@ pub fn is_overdue(item: &Reminder, now: Now) -> bool {
+     }
+ }
+ 
++/// A list's open reminders in its Sort By's order; ties keep the order they
++/// were added in.
++pub fn list_sort_cmp(sort: ListSort, a: &Reminder, b: &Reminder) -> std::cmp::Ordering {
++    let manual = || a.order.cmp(&b.order).then_with(|| a.id.cmp(&b.id));
++    match sort {
++        ListSort::Manual => manual(),
++        ListSort::DueDate => match (a.due, b.due) {
++            (None, None) => manual(),
++            _ => due_cmp(a, b),
++        },
++        ListSort::Created => a.id.cmp(&b.id),
++        ListSort::Priority => b.priority.index().cmp(&a.priority.index()).then_with(manual),
++        ListSort::Title => a
++            .title
++            .to_lowercase()
++            .cmp(&b.title.to_lowercase())
++            .then_with(manual),
++    }
++}
++
+ pub fn due_cmp(a: &Reminder, b: &Reminder) -> std::cmp::Ordering {
+     match (a.due, b.due) {
+         (None, None) => a.id.cmp(&b.id),
+@@ -203,7 +223,8 @@ fn matches_active(item: &Reminder, filter: Filter, now: Now) -> bool {
      }
  }
  
@@ -16251,6 +17171,159 @@ index 0914c4eaea16634050bf272c7f36289d48ce6584..d725a324e29d4a43d1e444ce105ea177
      if !item.is_completed() {
          return false;
      }
+@@ -451,8 +472,9 @@ pub fn project(doc: &Document, filter: Filter, now: Now) -> Projection {
+                 .collect();
+             push_group(&mut groups, None, items);
+         }
+-        Filter::List(_) => {
+-            active.sort_by(|a, b| a.order.cmp(&b.order).then_with(|| a.id.cmp(&b.id)));
++        Filter::List(id) => {
++            let sort = doc.list(id).map(|list| list.sort).unwrap_or_default();
++            active.sort_by(|a, b| list_sort_cmp(sort, a, b));
+             let items: Vec<_> = active
+                 .into_iter()
+                 .map(|item| to_item(doc, item, now, false, filter))
+@@ -652,6 +674,11 @@ pub enum Command {
+     DeleteList {
+         id: ListId,
+     },
++    /// A Mac's Sort By: how the list orders its open reminders.
++    SetListSort {
++        id: ListId,
++        sort: ListSort,
++    },
+ }
+ 
+ #[derive(Clone, Debug, PartialEq, Eq)]
+@@ -814,7 +841,7 @@ fn apply_candidate(doc: &mut Document, command: Command, now: Now) -> Result<(),
+                 .checked_add(1)
+                 .ok_or(CommandError::Rejected("List limit reached"))?;
+             let order = doc.lists.iter().map(|list| list.order).max().map_or(0, |order| order.saturating_add(1));
+-            doc.lists.push(ReminderList { id, name, colour, order });
++            doc.lists.push(ReminderList { id, name, colour, order, sort: ListSort::Manual });
+             Ok(())
+         }
+         Command::UpdateList { id, name, colour } => {
+@@ -829,6 +856,16 @@ fn apply_candidate(doc: &mut Document, command: Command, now: Now) -> Result<(),
+             list.colour = colour;
+             Ok(())
+         }
++        Command::SetListSort { id, sort } => {
++            let Some(list) = doc.lists.iter_mut().find(|list| list.id == id) else {
++                return Err(CommandError::Missing);
++            };
++            if list.sort == sort {
++                return Err(CommandError::NoOp);
++            }
++            list.sort = sort;
++            Ok(())
++        }
+         Command::DeleteList { id } => {
+             if doc.list(id).is_none() {
+                 return Err(CommandError::Missing);
+@@ -2149,6 +2186,49 @@ fn mutations_update_all_affected_projections_and_counts() {
+         }
+     }
+ 
++    #[test]
++    fn a_lists_sort_by_orders_its_open_reminders_and_is_saved() {
++        let now = Now { day: makepad_civil_time::from_ymd(2026, 11, 4), minute: 600 };
++        let mut doc = crate::seed::empty(now.day);
++        let list = HOME_LIST_ID;
++        let day = |d| Some(Due { day: makepad_civil_time::from_ymd(2026, 11, d), minute: None });
++        for (title, due) in [("banana", day(9)), ("Apple", None), ("cherry", day(5))] {
++            apply(&mut doc, Command::Create { title: title.into(), list_id: list, due, flagged: false }, now).unwrap();
++        }
++        doc.reminders.iter_mut().find(|item| item.title == "Apple").unwrap().priority = Priority::High;
++        let titles = |doc: &Document| {
++            project(doc, Filter::List(list), now)
++                .groups
++                .iter()
++                // A row says its priority before its title, as "!!! ".
++                .flat_map(|group| group.items.iter().map(|item| item.title.trim_start_matches('!').trim_start().to_string()))
++                .collect::<Vec<_>>()
++        };
++        assert_eq!(titles(&doc), ["banana", "Apple", "cherry"], "Manual: as they were added");
++        for (sort, want) in [
++            (ListSort::DueDate, ["cherry", "banana", "Apple"]),
++            (ListSort::Title, ["Apple", "banana", "cherry"]),
++            (ListSort::Created, ["banana", "Apple", "cherry"]),
++            (ListSort::Priority, ["Apple", "banana", "cherry"]),
++        ] {
++            apply(&mut doc, Command::SetListSort { id: list, sort }, now).unwrap();
++            assert_eq!(titles(&doc), want, "{sort:?}");
++        }
++        assert_eq!(apply(&mut doc, Command::SetListSort { id: list, sort: ListSort::Priority }, now), Err(CommandError::NoOp));
++        assert_eq!(apply(&mut doc, Command::SetListSort { id: 999, sort: ListSort::Title }, now), Err(CommandError::Missing));
++        // Saved and read again, the list keeps its Sort By; the others, never
++        // sorted, are saved as they always were.
++        let bytes = crate::storage::encode(&doc).unwrap();
++        assert_eq!(String::from_utf8(bytes.clone()).unwrap().matches("\"sort\"").count(), 1);
++        let back = crate::storage::decode(&bytes).unwrap();
++        assert_eq!(back, doc);
++        assert_eq!(back.list(list).unwrap().sort, ListSort::Priority);
++        apply(&mut doc, Command::SetListSort { id: list, sort: ListSort::Manual }, now).unwrap();
++        assert!(!String::from_utf8(crate::storage::encode(&doc).unwrap()).unwrap().contains("\"sort\""));
++        assert_eq!(titles(&doc), ["banana", "Apple", "cherry"]);
++        assert!(crate::storage::decode(br#"{"schema_version":1,"seed_version":1,"seed_day":"2026-09-09","revision":1,"next_reminder_id":1,"show_completed":false,"lists":[{"id":1,"name":"A","colour":"blue","order":0,"sort":"sideways"}],"reminders":[]}"#).is_err());
++    }
++
+     #[test]
+     fn a_list_a_person_adds_is_kept_edited_and_deleted_with_its_reminders() {
+         let now = Now { day: makepad_civil_time::from_ymd(2026, 11, 4), minute: 600 };
+diff --git a/apps/reminders/src/model.rs b/apps/reminders/src/model.rs
+index 94bb4eb5bd4a88c9e9911795d3111cfe8d724113..c5223cf081d1b20b931a2dca2fdc546e60b59f08 100644
+--- a/apps/reminders/src/model.rs
++++ b/apps/reminders/src/model.rs
+@@ -142,6 +142,48 @@ pub struct ReminderList {
+     pub name: String,
+     pub colour: ListColour,
+     pub order: u32,
++    /// How the list orders its open reminders (a Mac's Sort By).
++    pub sort: ListSort,
++}
++
++/// A Mac's Sort By for a list: as they were added (Manual), by due date,
++/// creation, priority or title.
++#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
++pub enum ListSort {
++    #[default]
++    Manual,
++    DueDate,
++    Created,
++    Priority,
++    Title,
++}
++
++impl ListSort {
++    pub const ALL: [ListSort; 5] = [Self::Manual, Self::DueDate, Self::Created, Self::Priority, Self::Title];
++
++    pub fn as_str(self) -> &'static str {
++        match self {
++            Self::Manual => "manual",
++            Self::DueDate => "due",
++            Self::Created => "created",
++            Self::Priority => "priority",
++            Self::Title => "title",
++        }
++    }
++
++    pub fn parse(text: &str) -> Option<Self> {
++        Self::ALL.into_iter().find(|sort| sort.as_str() == text)
++    }
++
++    pub fn label(self) -> &'static str {
++        match self {
++            Self::Manual => "Manual",
++            Self::DueDate => "Due Date",
++            Self::Created => "Creation Date",
++            Self::Priority => "Priority",
++            Self::Title => "Title",
++        }
++    }
+ }
+ 
+ #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 diff --git a/apps/reminders/src/module.rs b/apps/reminders/src/module.rs
 index a75befac602b1eac7dc14305b5fc1d16fbdfec27..1df85e56139bbb77c6632545c2a26b8752a81537 100644
 --- a/apps/reminders/src/module.rs
@@ -16266,12 +17339,90 @@ index a75befac602b1eac7dc14305b5fc1d16fbdfec27..1df85e56139bbb77c6632545c2a26b87
  }
  
  struct RemindersExecutor {
+diff --git a/apps/reminders/src/seed.rs b/apps/reminders/src/seed.rs
+index 1cb467c2ce0a715ba6651a32e645e2f14976e2e3..8260ef2829b0e410d4693dd3a7c936697bdf0a71 100644
+--- a/apps/reminders/src/seed.rs
++++ b/apps/reminders/src/seed.rs
+@@ -56,10 +56,10 @@ struct SeedRow {
+ /// The four lists every first run starts with (a pointer's window can add more).
+ fn starter_lists() -> Vec<ReminderList> {
+     vec![
+-        ReminderList { id: GROCERIES_LIST_ID, name: "Groceries".into(), colour: ListColour::Green, order: 0 },
+-        ReminderList { id: WORK_LIST_ID, name: "Work".into(), colour: ListColour::Blue, order: 1 },
+-        ReminderList { id: HOME_LIST_ID, name: "Home".into(), colour: ListColour::Orange, order: 2 },
+-        ReminderList { id: TRAVEL_LIST_ID, name: "Travel".into(), colour: ListColour::Purple, order: 3 },
++        ReminderList { id: GROCERIES_LIST_ID, name: "Groceries".into(), colour: ListColour::Green, order: 0, sort: ListSort::Manual },
++        ReminderList { id: WORK_LIST_ID, name: "Work".into(), colour: ListColour::Blue, order: 1, sort: ListSort::Manual },
++        ReminderList { id: HOME_LIST_ID, name: "Home".into(), colour: ListColour::Orange, order: 2, sort: ListSort::Manual },
++        ReminderList { id: TRAVEL_LIST_ID, name: "Travel".into(), colour: ListColour::Purple, order: 3, sort: ListSort::Manual },
+     ]
+ }
+ 
+diff --git a/apps/reminders/src/storage.rs b/apps/reminders/src/storage.rs
+index 43525cf402762641c29d94c9cd8c71f48575de9b..8167575d6b6be037fcfc3092d2e287346b8fb241 100644
+--- a/apps/reminders/src/storage.rs
++++ b/apps/reminders/src/storage.rs
+@@ -115,7 +115,7 @@ fn decode_completed(value: &Value) -> Result<Option<CompletedAt>, DecodeError> {
+ 
+ fn decode_list(value: &Value) -> Result<ReminderList, DecodeError> {
+     let obj = require_obj(value)?;
+-    known_keys(obj, &["id", "name", "colour", "order"])?;
++    known_keys(obj, &["id", "name", "colour", "order", "sort"])?;
+     let id = require_u32(obj_get(obj, "id").ok_or(DecodeError::Invalid("missing id"))?)?;
+     if id == 0 {
+         return Err(DecodeError::Invalid("ids must be positive"));
+@@ -130,11 +130,17 @@ fn decode_list(value: &Value) -> Result<ReminderList, DecodeError> {
+     )?)
+     .ok_or(DecodeError::Invalid("invalid colour"))?;
+     let order = require_u32(obj_get(obj, "order").ok_or(DecodeError::Invalid("missing order"))?)?;
++    // A list that was never sorted has no `sort`: Manual.
++    let sort = match obj_get(obj, "sort") {
++        None => ListSort::Manual,
++        Some(v) => ListSort::parse(require_str(v)?).ok_or(DecodeError::Invalid("invalid sort"))?,
++    };
+     Ok(ReminderList {
+         id,
+         name,
+         colour,
+         order,
++        sort,
+     })
+ }
+ 
+@@ -326,12 +332,17 @@ pub fn encode(doc: &Document) -> Result<Vec<u8>, DecodeError> {
+         doc.lists
+             .iter()
+             .map(|list| {
+-                json::obj(vec![
++                let mut fields = vec![
+                     ("id", Value::Int(list.id as i64)),
+                     ("name", json::s(list.name.clone())),
+                     ("colour", json::s(list.colour.as_str())),
+                     ("order", Value::Int(list.order as i64)),
+-                ])
++                ];
++                // Only a sorted list says so: an unsorted one is saved as before.
++                if list.sort != ListSort::Manual {
++                    fields.push(("sort", json::s(list.sort.as_str())));
++                }
++                json::obj(fields)
+             })
+             .collect(),
+     );
 diff --git a/apps/reminders/src/view.rs b/apps/reminders/src/view.rs
-index 7a9a6a9da3ba9c66a81b9783af20fcbfb02cb6a2..ac92acb263cbfcb044940402b29203380ffccfd3 100644
+index 7a9a6a9da3ba9c66a81b9783af20fcbfb02cb6a2..741bc991e95ec0935a9fd6a5681ae0a417c017f5 100644
 --- a/apps/reminders/src/view.rs
 +++ b/apps/reminders/src/view.rs
-@@ -64,6 +64,17 @@ enum MenuAction {
+@@ -62,8 +62,25 @@ enum MenuAction {
+     Complete(ReminderId, bool),
+     Delete(ReminderId),
      ListInfo(ListId),
++    /// A Mac's Rename…: the list's sheet, its name selected for what is typed.
++    RenameList(ListId),
++    /// Show or Hide Completed: the document's one setting, as View's.
++    ShowCompleted(bool),
++    /// A Mac's Sort By: how the list orders its open reminders.
++    SortList(ListId, ListSort),
      DeleteList(ListId),
      AddList,
 +    /// A Mac's Clear: the completed reminders more than this many days old go (0: every one).
@@ -16288,7 +17439,7 @@ index 7a9a6a9da3ba9c66a81b9783af20fcbfb02cb6a2..ac92acb263cbfcb044940402b2920338
  }
  
  type ListError = Option<&'static str>;
-@@ -80,6 +91,8 @@ enum ListSheet {
+@@ -80,6 +97,8 @@ enum ListSheet {
      StartOver,
      /// A save failed: Not Now or Try Again.
      NotSaved,
@@ -16297,7 +17448,7 @@ index 7a9a6a9da3ba9c66a81b9783af20fcbfb02cb6a2..ac92acb263cbfcb044940402b2920338
  }
  impl ListSheet {
      fn is_alert(self) -> bool {
-@@ -678,15 +691,16 @@ fn by(touch, pointer){ if desk { pointer } else { touch } }
+@@ -678,15 +697,16 @@ fn by(touch, pointer){ if desk { pointer } else { touch } }
          body := View{
              width: Fill height: Fill flow: Down padding: Inset{left: 8 right: 8 top: 7 bottom: 6} spacing: 3
              top := View{
@@ -16316,7 +17467,7 @@ index 7a9a6a9da3ba9c66a81b9783af20fcbfb02cb6a2..ac92acb263cbfcb044940402b2920338
                  }
              }
              name := Label{padding: 0
-@@ -861,7 +875,12 @@ fn by(touch, pointer){ if desk { pointer } else { touch } }
+@@ -861,7 +881,12 @@ fn by(touch, pointer){ if desk { pointer } else { touch } }
                      }
                      checked := View{
                          visible: false width: 16 height: 16
@@ -16330,7 +17481,7 @@ index 7a9a6a9da3ba9c66a81b9783af20fcbfb02cb6a2..ac92acb263cbfcb044940402b2920338
                      }
                  }
                  text := View{
-@@ -957,24 +976,35 @@ fn by(touch, pointer){ if desk { pointer } else { touch } }
+@@ -957,24 +982,35 @@ fn by(touch, pointer){ if desk { pointer } else { touch } }
              width: Fill height: Fit flow: Right align: Align{y: 0.5}
              padding: Inset{left: 20 right: 20 top: 14 bottom: 6}
              title := Label{width: Fill padding: 0 max_lines: 1 text_overflow: Ellipsis draw_text +: {color: d_ink text_style: theme.font_bold{font_size: 16.5}}}
@@ -16373,7 +17524,7 @@ index 7a9a6a9da3ba9c66a81b9783af20fcbfb02cb6a2..ac92acb263cbfcb044940402b2920338
              }
              Item := DeskReminderRow{}
              NewItem := DeskNewRow{}
-@@ -1026,11 +1056,32 @@ fn by(touch, pointer){ if desk { pointer } else { touch } }
+@@ -1026,11 +1062,32 @@ fn by(touch, pointer){ if desk { pointer } else { touch } }
              max_lines: 1 text_overflow: Ellipsis
              draw_text +: {color: d_ink text_style: theme.font_bold{font_size: 9.75}}
          }
@@ -16411,7 +17562,7 @@ index 7a9a6a9da3ba9c66a81b9783af20fcbfb02cb6a2..ac92acb263cbfcb044940402b2920338
          }
          fields := ScrollYView{
              width: Fill height: Fill flow: Down
-@@ -1090,12 +1141,6 @@ fn by(touch, pointer){ if desk { pointer } else { touch } }
+@@ -1090,12 +1147,6 @@ fn by(touch, pointer){ if desk { pointer } else { touch } }
              width: Fill height: 52 flow: Right padding: Inset{left: 20 right: 20} align: Align{y: 0.5} spacing: 8
              delete := DeskDestructive{text: "Delete…"}
              action_space := View{width: Fill height: 1}
@@ -16424,7 +17575,7 @@ index 7a9a6a9da3ba9c66a81b9783af20fcbfb02cb6a2..ac92acb263cbfcb044940402b2920338
              cancel := DeskPush{text: "Cancel"}
              done := DeskPrimary{text: "Done"}
          }
-@@ -1209,14 +1254,20 @@ fn by(touch, pointer){ if desk { pointer } else { touch } }
+@@ -1209,14 +1260,20 @@ fn by(touch, pointer){ if desk { pointer } else { touch } }
                      color: d_menu border_radius: 5.0 border_size: 1.0 border_color: d_border
                      shadow_color: #x00000040 shadow_radius: 24.0 shadow_offset: vec2(0.0, 8.0)
                  }
@@ -16447,7 +17598,7 @@ index 7a9a6a9da3ba9c66a81b9783af20fcbfb02cb6a2..ac92acb263cbfcb044940402b2920338
                  }
                  list_form := View{
                      width: Fill height: Fit flow: Down spacing: 8 padding: Inset{left: 20 right: 20 top: 2}
-@@ -1241,9 +1292,9 @@ fn by(touch, pointer){ if desk { pointer } else { touch } }
+@@ -1241,9 +1298,9 @@ fn by(touch, pointer){ if desk { pointer } else { touch } }
                      }
                      list_error := Label{visible: false padding: 0 margin: Inset{left: 32} draw_text +: {color: d_danger text_style: theme.font_regular{font_size: 8.25}}}
                  }
@@ -16459,7 +17610,7 @@ index 7a9a6a9da3ba9c66a81b9783af20fcbfb02cb6a2..ac92acb263cbfcb044940402b2920338
                      list_cancel := DeskPush{text: "Cancel"}
                      list_save := DeskPrimary{text: "OK"}
                      // A question before something goes for good: Cancel is the default.
-@@ -1317,6 +1368,8 @@ fn by(touch, pointer){ if desk { pointer } else { touch } }
+@@ -1317,6 +1374,8 @@ fn by(touch, pointer){ if desk { pointer } else { touch } }
          desk_surface: d_surface
          desk_selected: d_selected
          desk_muted: d_muted
@@ -16468,7 +17619,7 @@ index 7a9a6a9da3ba9c66a81b9783af20fcbfb02cb6a2..ac92acb263cbfcb044940402b2920338
          desk_neutral: d_neutral_glyph
          bar_height: bar_height
          unified: unified
-@@ -1426,6 +1479,11 @@ pub struct RemindersView {
+@@ -1426,6 +1485,11 @@ pub struct RemindersView {
      desk_selected: Vec4,
      #[live]
      desk_muted: Vec4,
@@ -16480,7 +17631,7 @@ index 7a9a6a9da3ba9c66a81b9783af20fcbfb02cb6a2..ac92acb263cbfcb044940402b2920338
      /// The toolbar's height, which the sheet hangs under.
      #[live]
      bar_height: f64,
-@@ -1552,6 +1610,14 @@ pub struct RemindersView {
+@@ -1552,6 +1616,14 @@ pub struct RemindersView {
      /// Where that row's info button was drawn: its details hang from it.
      #[rust]
      adding_box: Option<Rect>,
@@ -16495,7 +17646,7 @@ index 7a9a6a9da3ba9c66a81b9783af20fcbfb02cb6a2..ac92acb263cbfcb044940402b2920338
      /// A Mac has reported the save that is failing: it asks once a failure,
      /// and again after Try Again.
      #[rust]
-@@ -1561,6 +1627,9 @@ pub struct RemindersView {
+@@ -1561,6 +1633,9 @@ pub struct RemindersView {
      alert_focus: Area,
      #[rust]
      alert_keys: KeysBack,
@@ -16505,7 +17656,7 @@ index 7a9a6a9da3ba9c66a81b9783af20fcbfb02cb6a2..ac92acb263cbfcb044940402b2920338
      /// The details' fields as last applied: a Mac's details apply each change
      /// as it is made.
      #[rust]
-@@ -1571,6 +1640,9 @@ pub struct RemindersView {
+@@ -1571,6 +1646,9 @@ pub struct RemindersView {
      context_row: Option<ReminderId>,
      #[rust]
      context_list: Option<ListId>,
@@ -16515,7 +17666,7 @@ index 7a9a6a9da3ba9c66a81b9783af20fcbfb02cb6a2..ac92acb263cbfcb044940402b2920338
  }
  
  impl ScriptHook for RemindersView {
-@@ -1582,6 +1654,7 @@ fn on_after_apply(&mut self, _vm: &mut ScriptVm, apply: &Apply, _scope: &mut Sco
+@@ -1582,6 +1660,7 @@ fn on_after_apply(&mut self, _vm: &mut ScriptVm, apply: &Apply, _scope: &mut Sco
              self.adding_focus = self.adding.as_ref().is_some_and(|row| !row.details);
              // The sheet put the search field back at its own width.
              self.search_width = 0.0;
@@ -16523,7 +17674,7 @@ index 7a9a6a9da3ba9c66a81b9783af20fcbfb02cb6a2..ac92acb263cbfcb044940402b2920338
          }
      }
  }
-@@ -1700,6 +1773,10 @@ fn ready(&self) -> bool {
+@@ -1700,6 +1779,10 @@ fn ready(&self) -> bool {
      }
  
      fn persist(&mut self, cx: &mut Cx) {
@@ -16534,7 +17685,7 @@ index 7a9a6a9da3ba9c66a81b9783af20fcbfb02cb6a2..ac92acb263cbfcb044940402b2920338
          let Some(doc) = &self.document else { return };
          self.machine.mark_dirty(doc.revision);
          // After a Mac's Not Now, the next change tries again.
-@@ -2115,9 +2192,12 @@ fn list_geometry(&self, cx: &mut Cx, list: &WidgetRef, compact: bool) {
+@@ -2115,9 +2198,12 @@ fn list_geometry(&self, cx: &mut Cx, list: &WidgetRef, compact: bool) {
              list.label(cx, ids!(toolbar.short_title)).set_visible(cx, short);
              list.view(cx, ids!(toolbar.spacer)).set_visible(cx, !short);
              list.widget(cx, ids!(toolbar.search_box.search_clear)).set_visible(cx, !self.search.is_empty());
@@ -16549,7 +17700,7 @@ index 7a9a6a9da3ba9c66a81b9783af20fcbfb02cb6a2..ac92acb263cbfcb044940402b2920338
              return;
          }
          let inset = if compact {
-@@ -2446,6 +2526,11 @@ fn bind_list(&mut self, cx: &mut Cx, compact: bool, doc: &Document, projection:
+@@ -2446,6 +2532,11 @@ fn bind_list(&mut self, cx: &mut Cx, compact: bool, doc: &Document, projection:
              .set_text_color(cx, colour);
          list.label(cx, ids!(toolbar.short_title))
              .set_text_color(cx, colour);
@@ -16561,7 +17712,7 @@ index 7a9a6a9da3ba9c66a81b9783af20fcbfb02cb6a2..ac92acb263cbfcb044940402b2920338
          let found = self.list_rows.iter().filter(|row| matches!(row, ListRow::Item(_))).count();
          list.label(cx, ids!(heading.count)).set_text(
              cx,
-@@ -2455,8 +2540,16 @@ fn bind_list(&mut self, cx: &mut Cx, compact: bool, doc: &Document, projection:
+@@ -2455,8 +2546,16 @@ fn bind_list(&mut self, cx: &mut Cx, compact: bool, doc: &Document, projection:
              String::new()
          } else if self.pointer {
              // The count, then what the button beside it does.
@@ -16580,7 +17731,7 @@ index 7a9a6a9da3ba9c66a81b9783af20fcbfb02cb6a2..ac92acb263cbfcb044940402b2920338
              if doc.show_completed { "Hide" } else { "Show" }.to_string()
          } else if doc.show_completed {
              format!("{} completed · Hide", projection.completed_count)
-@@ -2481,8 +2574,16 @@ fn bind_list(&mut self, cx: &mut Cx, compact: bool, doc: &Document, projection:
+@@ -2481,8 +2580,16 @@ fn bind_list(&mut self, cx: &mut Cx, compact: bool, doc: &Document, projection:
          // A touch window's glass button draws over the strip of a failed save
          // and would cover its Retry.
          let save_failed = !self.pointer && self.machine.error.is_some();
@@ -16598,7 +17749,7 @@ index 7a9a6a9da3ba9c66a81b9783af20fcbfb02cb6a2..ac92acb263cbfcb044940402b2920338
          list.button(cx, ids!(toolbar.back)).set_visible(cx, compact);
          list.view(cx, ids!(toolbar)).set_visible(cx, true);
      }
-@@ -2566,23 +2667,29 @@ fn bind_detail(&mut self, cx: &mut Cx, compact: bool) {
+@@ -2566,23 +2673,29 @@ fn bind_detail(&mut self, cx: &mut Cx, compact: bool) {
              // Three buttons at most: the question has its own two, and the
              // sheet is only the question. A Mac's details apply each change as
              // it is made: hung from a row they have no buttons, and as a sheet
@@ -16639,7 +17790,7 @@ index 7a9a6a9da3ba9c66a81b9783af20fcbfb02cb6a2..ac92acb263cbfcb044940402b2920338
              self.sync_done(cx, &form);
              if std::mem::take(&mut self.draft_focus) {
                  form.text_input(cx, ids!(fields.text_group.title)).take_key_focus(cx);
-@@ -2671,20 +2778,22 @@ fn size_popover(&mut self, cx: &mut Cx) {
+@@ -2671,20 +2784,22 @@ fn size_popover(&mut self, cx: &mut Cx) {
              .filter(|_| !self.confirm_delete)
              .map(|at| (at.pos.x - origin.x - POP_WIDTH - 8.0, at.pos.y + at.size.y * 0.5 - origin.y))
              .filter(|(left, _)| *left >= 8.0);
@@ -16667,7 +17818,7 @@ index 7a9a6a9da3ba9c66a81b9783af20fcbfb02cb6a2..ac92acb263cbfcb044940402b2920338
                  (width, (size.x - width) * 0.5, self.bar_height)
              }
          };
-@@ -2698,29 +2807,88 @@ fn size_popover(&mut self, cx: &mut Cx) {
+@@ -2698,29 +2813,88 @@ fn size_popover(&mut self, cx: &mut Cx) {
          }
          let margin = Inset { left, top, right: 0.0, bottom: 0.0 };
          let mut pop = self.view.widget(cx, ids!(wide.overlay.popover));
@@ -16762,7 +17913,7 @@ index 7a9a6a9da3ba9c66a81b9783af20fcbfb02cb6a2..ac92acb263cbfcb044940402b2920338
      }
  
      /// The sidebar goes and comes back. In a window too narrow for it the
-@@ -2811,6 +2979,7 @@ fn open_list_sheet(&mut self, cx: &mut Cx, mode: ListSheet) {
+@@ -2811,6 +2985,7 @@ fn open_list_sheet(&mut self, cx: &mut Cx, mode: ListSheet) {
                  Some(list) => (list.name.clone(), list.colour),
                  None => return,
              },
@@ -16770,7 +17921,7 @@ index 7a9a6a9da3ba9c66a81b9783af20fcbfb02cb6a2..ac92acb263cbfcb044940402b2920338
              ListSheet::Unreadable | ListSheet::StartOver | ListSheet::NotSaved => return,
          };
          self.list_sheet = Some(mode);
-@@ -2818,7 +2987,7 @@ fn open_list_sheet(&mut self, cx: &mut Cx, mode: ListSheet) {
+@@ -2818,7 +2993,7 @@ fn open_list_sheet(&mut self, cx: &mut Cx, mode: ListSheet) {
          self.list_sheet_colour = ListColour::ALL.iter().position(|c| *c == colour).unwrap_or(0);
          self.list_sheet_error = None;
          self.sync_list_sheet(cx);
@@ -16779,7 +17930,7 @@ index 7a9a6a9da3ba9c66a81b9783af20fcbfb02cb6a2..ac92acb263cbfcb044940402b2920338
              self.list_sheet_parent(cx, self.nav.layout.is_compact())
                  .text_input(cx, ids!(list_name))
                  .take_key_focus(cx);
-@@ -2906,6 +3075,38 @@ fn ask_if_not_saved(&mut self, cx: &mut Cx) {
+@@ -2906,6 +3081,38 @@ fn ask_if_not_saved(&mut self, cx: &mut Cx) {
          }
      }
  
@@ -16818,7 +17969,7 @@ index 7a9a6a9da3ba9c66a81b9783af20fcbfb02cb6a2..ac92acb263cbfcb044940402b2920338
      fn sync_list_sheet(&mut self, cx: &mut Cx) {
          if !self.pointer {
              return;
-@@ -2921,9 +3122,13 @@ fn sync_list_sheet(&mut self, cx: &mut Cx) {
+@@ -2921,9 +3128,13 @@ fn sync_list_sheet(&mut self, cx: &mut Cx) {
          let sheet = self.list_sheet_parent(cx, compact);
          // A question before something goes: the red word and Cancel, the
          // default. An alert: its other way and its default (`list_save`).
@@ -16833,7 +17984,7 @@ index 7a9a6a9da3ba9c66a81b9783af20fcbfb02cb6a2..ac92acb263cbfcb044940402b2920338
          sheet.widget(cx, ids!(list_form)).set_visible(cx, names);
          sheet.widget(cx, ids!(list_note)).set_visible(cx, !names);
          sheet.button(cx, ids!(list_cancel)).set_visible(cx, !question);
-@@ -2949,19 +3154,25 @@ fn sync_list_sheet(&mut self, cx: &mut Cx) {
+@@ -2949,19 +3160,25 @@ fn sync_list_sheet(&mut self, cx: &mut Cx) {
              ListSheet::Unreadable => "Your Reminders Can’t Be Opened".to_string(),
              ListSheet::StartOver => "Start Over With No Reminders?".to_string(),
              ListSheet::NotSaved => "Changes Not Saved".to_string(),
@@ -16862,7 +18013,7 @@ index 7a9a6a9da3ba9c66a81b9783af20fcbfb02cb6a2..ac92acb263cbfcb044940402b2920338
              ListSheet::NotSaved => {
                  "Your latest changes couldn’t be saved. They stay in this window, and Reminders tries again with your next change.".to_string()
              }
-@@ -3010,6 +3221,11 @@ fn commit_list_sheet(&mut self, cx: &mut Cx) {
+@@ -3010,6 +3227,11 @@ fn commit_list_sheet(&mut self, cx: &mut Cx) {
                  self.start_over(cx);
                  return;
              }
@@ -16874,7 +18025,7 @@ index 7a9a6a9da3ba9c66a81b9783af20fcbfb02cb6a2..ac92acb263cbfcb044940402b2920338
              ListSheet::NotSaved => {
                  self.close_list_sheet(cx);
                  // A Try Again that fails too asks again.
-@@ -3061,7 +3277,7 @@ fn list_sheet_key(&mut self, cx: &mut Cx, key: &KeyEvent) -> bool {
+@@ -3061,7 +3283,7 @@ fn list_sheet_key(&mut self, cx: &mut Cx, key: &KeyEvent) -> bool {
              KeyCode::ReturnKey | KeyCode::NumpadEnter => {
                  // A question before something goes: Cancel is its default; an
                  // alert's is Try Again.
@@ -16883,7 +18034,7 @@ index 7a9a6a9da3ba9c66a81b9783af20fcbfb02cb6a2..ac92acb263cbfcb044940402b2920338
                      self.cancel_list_sheet(cx);
                  } else if mode.is_alert()
                      || (!self.list_sheet_name.trim().is_empty() && self.list_sheet_error.is_none())
-@@ -3131,6 +3347,8 @@ fn open_context_menu(&mut self, cx: &mut Cx, press: &MouseDownEvent) -> bool {
+@@ -3131,12 +3353,28 @@ fn open_context_menu(&mut self, cx: &mut Cx, press: &MouseDownEvent) -> bool {
          let on_home = compact && matches!(self.nav.current(), Route::Home);
          let at = press.abs;
          let mut rows: Vec<(ContextRow, Option<MenuAction>)> = Vec::new();
@@ -16892,7 +18043,27 @@ index 7a9a6a9da3ba9c66a81b9783af20fcbfb02cb6a2..ac92acb263cbfcb044940402b2920338
          let can_add = self.document.as_ref().is_some_and(|doc| doc.lists.len() < MAX_LISTS);
          let in_sidebar = (!compact || on_home) && self.home_parent(cx, compact).area().rect(cx).contains(at);
          if in_sidebar {
-@@ -3156,15 +3374,55 @@ fn open_context_menu(&mut self, cx: &mut Cx, press: &MouseDownEvent) -> bool {
+             if let Some(id) = self.list_under(cx, at) {
+                 self.context_list = Some(id);
+                 rows.push((ContextRow::new("Show List Info…", true), Some(MenuAction::ListInfo(id))));
++                if self.unified {
++                    rows.push((ContextRow::new("Rename…", true), Some(MenuAction::RenameList(id))));
++                    let current = self.document.as_ref().and_then(|doc| doc.list(id)).map(|list| list.sort).unwrap_or_default();
++                    let (sorts, sort_actions): (Vec<_>, Vec<_>) = ListSort::ALL
++                        .into_iter()
++                        .map(|sort| (ContextRow::new(sort.label(), true).ticked(sort == current), Some(MenuAction::SortList(id, sort))))
++                        .unzip();
++                    rows.push((ContextRow::new("Sort By", true).with_sub(sorts), None));
++                    subs.extend(sort_actions);
++                    let shown = self.document.as_ref().is_some_and(|doc| doc.show_completed);
++                    let completed = if shown { "Hide Completed" } else { "Show Completed" };
++                    rows.push((ContextRow::new(completed, true), Some(MenuAction::ShowCompleted(!shown))));
++                    rows.push((ContextRow::rule(), None));
++                }
+                 // Any list can go, as on a Mac, while another stays for new reminders.
+                 let others = self.document.as_ref().is_some_and(|doc| doc.lists.len() > 1);
+                 rows.push((ContextRow::new("Delete List…", others), Some(MenuAction::DeleteList(id))));
+@@ -3156,15 +3394,55 @@ fn open_context_menu(&mut self, cx: &mut Cx, press: &MouseDownEvent) -> bool {
              rows.push((ContextRow::new("Show Details", true), Some(MenuAction::Details(id))));
              rows.push((ContextRow::rule(), None));
              let flag = if reminder.flagged { "Remove Flag" } else { "Flag" };
@@ -16951,7 +18122,7 @@ index 7a9a6a9da3ba9c66a81b9783af20fcbfb02cb6a2..ac92acb263cbfcb044940402b2920338
          self.menu_actions = actions;
          let owner = ContextMenuOwner { source: &self.source, template: self.popup_menu, area: self.view.area() };
          self.context_menu.open(cx, owner, at, press.time, rows);
-@@ -3195,14 +3453,104 @@ fn menu_chose(&mut self, cx: &mut Cx, index: usize) {
+@@ -3195,14 +3473,118 @@ fn menu_chose(&mut self, cx: &mut Cx, index: usize) {
              Some(MenuAction::Complete(id, completed)) => {
                  self.mutate(cx, Command::SetCompleted { id, completed });
              }
@@ -16964,6 +18135,20 @@ index 7a9a6a9da3ba9c66a81b9783af20fcbfb02cb6a2..ac92acb263cbfcb044940402b2920338
 +                }
 +            }
              Some(MenuAction::ListInfo(id)) => self.open_list_sheet(cx, ListSheet::Edit(id)),
++            Some(MenuAction::RenameList(id)) => {
++                self.open_list_sheet(cx, ListSheet::Edit(id));
++                let compact = self.nav.layout.is_compact();
++                let name = self.list_sheet_parent(cx, compact).text_input(cx, ids!(list_name));
++                if let Some(mut field) = name.borrow_mut() {
++                    field.select_all(cx);
++                };
++            }
++            Some(MenuAction::ShowCompleted(show)) => {
++                self.mutate(cx, Command::SetShowCompleted { show });
++            }
++            Some(MenuAction::SortList(id, sort)) => {
++                self.mutate(cx, Command::SetListSort { id, sort });
++            }
              Some(MenuAction::DeleteList(id)) => self.open_list_sheet(cx, ListSheet::Delete(id)),
              Some(MenuAction::AddList) => self.open_list_sheet(cx, ListSheet::New),
 +            Some(MenuAction::Clear(days)) => self.open_list_sheet(cx, ListSheet::Clear(days)),
@@ -17057,7 +18242,7 @@ index 7a9a6a9da3ba9c66a81b9783af20fcbfb02cb6a2..ac92acb263cbfcb044940402b2920338
      fn clear_search(&mut self, cx: &mut Cx) {
          self.search.clear();
          for compact in [false, true] {
-@@ -3282,6 +3630,104 @@ fn open_details(&mut self, cx: &mut Cx, id: ReminderId, confirm: bool) {
+@@ -3282,6 +3664,104 @@ fn open_details(&mut self, cx: &mut Cx, id: ReminderId, confirm: bool) {
          }
      }
  
@@ -17162,7 +18347,7 @@ index 7a9a6a9da3ba9c66a81b9783af20fcbfb02cb6a2..ac92acb263cbfcb044940402b2920338
      /// What a Mac's Reminders does with a key while its sheet is down: Escape
      /// closes a menu, then the question, then the sheet; Return is the default
      /// button; Tab walks the fields. True when the key was taken.
-@@ -3424,6 +3870,36 @@ fn mac_key(&mut self, cx: &mut Cx, key: &KeyEvent) -> bool {
+@@ -3424,6 +3904,36 @@ fn mac_key(&mut self, cx: &mut Cx, key: &KeyEvent) -> bool {
              self.open_list_sheet(cx, ListSheet::New);
              return true;
          }
@@ -17199,7 +18384,7 @@ index 7a9a6a9da3ba9c66a81b9783af20fcbfb02cb6a2..ac92acb263cbfcb044940402b2920338
          if mods.is_primary() && !mods.shift && !mods.alt {
              match key.key_code {
                  KeyCode::KeyN => {
-@@ -3453,6 +3929,14 @@ fn mac_key(&mut self, cx: &mut Cx, key: &KeyEvent) -> bool {
+@@ -3453,6 +3963,14 @@ fn mac_key(&mut self, cx: &mut Cx, key: &KeyEvent) -> bool {
                      self.view.redraw(cx);
                      return true;
                  }
@@ -17214,7 +18399,7 @@ index 7a9a6a9da3ba9c66a81b9783af20fcbfb02cb6a2..ac92acb263cbfcb044940402b2920338
                  _ => return false,
              }
          }
-@@ -3504,7 +3988,11 @@ fn mac_key(&mut self, cx: &mut Cx, key: &KeyEvent) -> bool {
+@@ -3504,7 +4022,11 @@ fn mac_key(&mut self, cx: &mut Cx, key: &KeyEvent) -> bool {
              }
              KeyCode::Backspace | KeyCode::Delete => {
                  let Some(id) = self.selected_row else { return false };
@@ -17227,7 +18412,7 @@ index 7a9a6a9da3ba9c66a81b9783af20fcbfb02cb6a2..ac92acb263cbfcb044940402b2920338
              }
              KeyCode::Escape => {
                  if !self.search.is_empty() {
-@@ -3867,6 +4355,9 @@ fn handle_list_clicks(&mut self, cx: &mut Cx, actions: &Actions) {
+@@ -3867,6 +4389,9 @@ fn handle_list_clicks(&mut self, cx: &mut Cx, actions: &Actions) {
                      self.mutate(cx, Command::SetShowCompleted { show });
                  }
              }
@@ -17237,7 +18422,7 @@ index 7a9a6a9da3ba9c66a81b9783af20fcbfb02cb6a2..ac92acb263cbfcb044940402b2920338
              if let Some((text, _)) = list.text_input(cx, ids!(composer.title)).returned(actions) {
                  self.create_from_composer(cx, &text);
              }
-@@ -4265,6 +4756,8 @@ fn on_storage(&mut self, cx: &mut Cx, responses: &[StorageResponse]) {
+@@ -4265,6 +4790,8 @@ fn on_storage(&mut self, cx: &mut Cx, responses: &[StorageResponse]) {
      }
  
      fn apply_load(&mut self, cx: &mut Cx, outcome: LoadOutcome) {
@@ -17246,7 +18431,7 @@ index 7a9a6a9da3ba9c66a81b9783af20fcbfb02cb6a2..ac92acb263cbfcb044940402b2920338
          match outcome {
              LoadOutcome::Seed => {
                  let doc = if self.starts_empty { crate::seed::empty(self.now.day) } else { seed(self.now.day) };
-@@ -4507,8 +5000,24 @@ fn draw_rows(&mut self, cx: &mut Cx2d, list: &mut PortalList) {
+@@ -4507,8 +5034,24 @@ fn draw_rows(&mut self, cx: &mut Cx2d, list: &mut PortalList) {
              }
              match &self.list_rows[index] {
                  ListRow::Section(text) => {
@@ -17271,7 +18456,7 @@ index 7a9a6a9da3ba9c66a81b9783af20fcbfb02cb6a2..ac92acb263cbfcb044940402b2920338
                      item.draw_all(cx, &mut Scope::empty());
                  }
                  ListRow::Empty(text) => {
-@@ -4600,6 +5109,13 @@ fn draw_rows(&mut self, cx: &mut Cx2d, list: &mut PortalList) {
+@@ -4600,6 +5143,13 @@ fn draw_rows(&mut self, cx: &mut Cx2d, list: &mut PortalList) {
                      widget
                          .view(cx, ids!(complete.checked))
                          .set_visible(cx, item.completed);
@@ -17285,7 +18470,7 @@ index 7a9a6a9da3ba9c66a81b9783af20fcbfb02cb6a2..ac92acb263cbfcb044940402b2920338
                      if self.pointer {
                          let selected = self.selected_row == Some(item.id);
                          widget.view(cx, ids!(face)).set_visible(cx, selected);
-@@ -4785,6 +5301,19 @@ fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawSte
+@@ -4785,6 +5335,19 @@ fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawSte
                  self.draw_rows(cx, &mut list);
              }
          }
@@ -26884,7 +28069,7 @@ index 3f58c8a5c5c42fe0c3f66b5435409971dfff1c91..8e5917bc019f9758befa843e39e71cd4
  
  impl Widget for SolarArc {
 diff --git a/apps/weather/src/view.rs b/apps/weather/src/view.rs
-index 49057ea3bf6db19a0d56d4fa3874945aab35d8ae..0d69d51d2e052cbf64773774e8dad5cb91e69d72 100644
+index 49057ea3bf6db19a0d56d4fa3874945aab35d8ae..21b6560808866f5568b58cd0f46d31e91076e34e 100644
 --- a/apps/weather/src/view.rs
 +++ b/apps/weather/src/view.rs
 @@ -17,8 +17,8 @@
@@ -27117,14 +28302,20 @@ index 49057ea3bf6db19a0d56d4fa3874945aab35d8ae..0d69d51d2e052cbf64773774e8dad5cb
      }
      // A location in the sidebar, as a Mac's Weather lists it: a card of its
      // own sky with its name and local time, the temperature, the condition
-@@ -397,10 +539,35 @@
-                 side_add := DeskToolIcon{draw_icon +: {svg: crate_resource("self:resources/icons/mac_plus.svg") color: d_ink}}
+@@ -394,13 +536,40 @@
+                 // Reminders have it; View > Sidebar and Control-Command-S too.
+                 hide_side := DeskToolIcon{visible: unified margin: Inset{left: 66} icon_walk: Walk{width: 16 height: 16} draw_icon +: {svg: crate_resource("self:resources/icons/mac_sidebar.svg") color: d_ink}}
+                 View{visible: unified width: Fill height: 1}
+-                side_add := DeskToolIcon{draw_icon +: {svg: crate_resource("self:resources/icons/mac_plus.svg") color: d_ink}}
++                // A Mac's Weather has no +: a place is added from the search
++                // under the band, through its preview's Add.
++                side_add := DeskToolIcon{visible: !unified draw_icon +: {svg: crate_resource("self:resources/icons/mac_plus.svg") color: d_ink}}
                  side_refresh := DeskToolIcon{draw_icon +: {svg: crate_resource("self:resources/icons/mac_refresh.svg") color: d_ink}}
              }
 -            View{
 +            // A Mac's Weather finds a place from the field at the top of its
 +            // sidebar: what it finds takes the list's place; a press on a row,
-+            // or Return on the marked one, adds it.
++            // or Return on the marked one, shows it, with Cancel and Add.
 +            side_search_box := View{
 +                visible: unified width: Fill height: 28 flow: Overlay margin: Inset{left: 10 right: 10 bottom: 10} align: Align{y: 0.5}
 +                side_search := DeskField{padding: Inset{left: 26 right: 24 top: 6 bottom: 6} empty_text: "Search for a city"}
@@ -27154,7 +28345,7 @@ index 49057ea3bf6db19a0d56d4fa3874945aab35d8ae..0d69d51d2e052cbf64773774e8dad5cb
              View{visible: !unified width: Fill height: Fit DeskSep{}}
              side_list := ScrollYView{width: Fill height: Fill flow: Down padding: Inset{left: 6 right: 6 top: 0 bottom: 8}
                  side_0 := DeskCityRow{}
-@@ -445,7 +612,7 @@
+@@ -445,7 +614,7 @@
                      padding: Inset{left: 16 right: 16 bottom: 20}
                      hourly := DeskPanel{
                          // Three lines: the gusts have one of their own.
@@ -27163,7 +28354,7 @@ index 49057ea3bf6db19a0d56d4fa3874945aab35d8ae..0d69d51d2e052cbf64773774e8dad5cb
                          hours_rule := View{width: Fill height: 1 margin: Inset{top: 8} show_bg: true draw_bg.color: #ffffff1f}
                          hours := HourlyStrip{pointer: true height: 68 margin: Inset{top: 8}
                              time_text +: {text_style: theme.font_bold{font_size: 8.25}}
-@@ -456,8 +623,8 @@
+@@ -456,8 +625,8 @@
                      // narrow one (`apply_sizing`).
                      lower := View{width: Fill height: Fit flow: Right spacing: 10
                      daily := DeskPanel{
@@ -27174,7 +28365,7 @@ index 49057ea3bf6db19a0d56d4fa3874945aab35d8ae..0d69d51d2e052cbf64773774e8dad5cb
                              day_text +: {text_style: theme.font_bold{font_size: 9.75}}
                              low_text +: {text_style: theme.font_regular{font_size: 9.75} color: #xffffffd9}
                              high_text +: {text_style: theme.font_regular{font_size: 9.75}}
-@@ -467,24 +634,8 @@
+@@ -467,24 +636,8 @@
                      }
                      details := View{width: 300 height: Fit flow: Down spacing: 10
                          View{width: Fill height: Fit flow: Right spacing: 10
@@ -27201,7 +28392,7 @@ index 49057ea3bf6db19a0d56d4fa3874945aab35d8ae..0d69d51d2e052cbf64773774e8dad5cb
                          }
                          View{width: Fill height: Fit flow: Right spacing: 10
                              wind_card := DeskWindCard{head.title.text: "Wind" head.icon.draw_icon.svg: crate_resource("self:resources/icons/wind.svg")}
-@@ -496,6 +647,15 @@
+@@ -496,6 +649,15 @@
                          }
                      }
                      }
@@ -27217,14 +28408,20 @@ index 49057ea3bf6db19a0d56d4fa3874945aab35d8ae..0d69d51d2e052cbf64773774e8dad5cb
                      footer := SkyText{width: Fill draw_text +: {color: #xffffff text_style: theme.font_regular{font_size: 8.25}}}
                  }
              }
-@@ -561,6 +721,28 @@
+@@ -561,6 +723,34 @@
                      }
                      draw_icon +: {svg: crate_resource("self:resources/icons/mac_list.svg") color: #xffffff}
                  }
-+                // A Mac's toolbar keeps Add Location and Refresh while the sidebar
-+                // that holds them is hidden (`sync_sidebar`).
++                // A place found in the sidebar's search, shown before it is
++                // added: Cancel, and Add, the default (`sync_preview`).
++                preview_tools := View{visible: false width: Fit height: Fit flow: Right spacing: 8 margin: Inset{left: 6}
++                    preview_cancel := DeskPush{text: "Cancel"}
++                    preview_add := DeskPrimary{text: "Add"}
++                }
++                // A Mac's toolbar keeps Refresh while the sidebar that holds it
++                // is hidden (`sync_sidebar`); a place is added from the search.
 +                pane_tools := View{visible: false width: Fit height: Fit flow: Right spacing: 6 margin: Inset{left: 6}
-+                    pane_add := ButtonFlat{
++                    pane_add := ButtonFlat{visible: false
 +                        width: 30 height: 28 margin: 0 padding: 0 spacing: 0 text: ""
 +                        icon_walk: Walk{width: 16 height: 16}
 +                        draw_bg +: {
@@ -27246,7 +28443,7 @@ index 49057ea3bf6db19a0d56d4fa3874945aab35d8ae..0d69d51d2e052cbf64773774e8dad5cb
              }
          }
      }
-@@ -577,8 +759,11 @@
+@@ -577,8 +767,11 @@
                      color: d_menu border_radius: 5.0 border_size: 1.0 border_color: d_border
                      shadow_color: #x00000040 shadow_radius: 24.0 shadow_offset: vec2(0.0, 8.0)
                  }
@@ -27259,7 +28456,7 @@ index 49057ea3bf6db19a0d56d4fa3874945aab35d8ae..0d69d51d2e052cbf64773774e8dad5cb
                      // A field can't hide itself: its box hides it when the list is full.
                      add_search_box := View{width: Fill height: Fit
                          add_search := DeskField{empty_text: "Search for a city"}
-@@ -595,8 +780,8 @@
+@@ -595,8 +788,8 @@
                          match_none := DMuted{visible: false width: Fill clip_y: false margin: Inset{left: 8 right: 8 top: 6} draw_text +: {wrap: Words text_style: theme.font_regular{font_size: 9.75}} text: "No city by that name. Weather offers about a hundred large cities."}
                      }
                  }
@@ -27270,7 +28467,7 @@ index 49057ea3bf6db19a0d56d4fa3874945aab35d8ae..0d69d51d2e052cbf64773774e8dad5cb
                      add_cancel := DeskPush{text: "Cancel"}
                      add_ok := DeskPrimary{text: "Add"}
                  }
-@@ -612,21 +797,25 @@
+@@ -612,21 +805,25 @@
      save_alert := View{visible: false width: Fill height: Fill flow: Overlay
          SolidView{width: Fill height: Fill new_batch: true draw_bg.color: d_dim}
          View{width: Fill height: Fill align: Align{x: 0.5 y: 0.0} padding: Inset{top: bar_height}
@@ -27304,7 +28501,7 @@ index 49057ea3bf6db19a0d56d4fa3874945aab35d8ae..0d69d51d2e052cbf64773774e8dad5cb
                  }
              }
          }
-@@ -637,6 +826,7 @@
+@@ -637,6 +834,7 @@
      mod.widgets.WeatherView = set_type_default() do mod.widgets.WeatherViewBase{
          width: Fill height: Fill
          pointer: desk
@@ -27312,7 +28509,7 @@ index 49057ea3bf6db19a0d56d4fa3874945aab35d8ae..0d69d51d2e052cbf64773774e8dad5cb
          desk_ink: d_ink
          desk_muted: d_muted
          desk_mark: d_primary
-@@ -683,6 +873,10 @@ fn match_row(index: usize) -> LiveId {
+@@ -683,6 +881,10 @@ fn match_row(index: usize) -> LiveId {
      LiveId::from_str(&format!("match_{index}"))
  }
  
@@ -27323,7 +28520,7 @@ index 49057ea3bf6db19a0d56d4fa3874945aab35d8ae..0d69d51d2e052cbf64773774e8dad5cb
  /// Seconds since the epoch, for a forecast kept across runs.
  fn now_epoch() -> u64 {
      std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|elapsed| elapsed.as_secs()).unwrap_or(0)
-@@ -699,6 +893,9 @@ pub struct WeatherView {
+@@ -699,6 +901,9 @@ pub struct WeatherView {
      /// A desktop style's sheet: the Mac's Weather (`theme.ui_pointer`).
      #[live]
      pointer: bool,
@@ -27333,7 +28530,7 @@ index 49057ea3bf6db19a0d56d4fa3874945aab35d8ae..0d69d51d2e052cbf64773774e8dad5cb
      /// The Add Location list's ink, and its marked row.
      #[live]
      desk_ink: Vec4f,
-@@ -719,6 +916,10 @@ pub struct WeatherView {
+@@ -719,6 +924,10 @@ pub struct WeatherView {
      /// (the sky's conditions, the selected city): the next draw pushes it again.
      #[rust]
      restyled: bool,
@@ -27344,7 +28541,23 @@ index 49057ea3bf6db19a0d56d4fa3874945aab35d8ae..0d69d51d2e052cbf64773774e8dad5cb
      /// Set once, on the first event or draw: a window seats this widget
      /// before its `Startup` event, a module host after `create` mints it.
      #[rust]
-@@ -815,6 +1016,10 @@ pub struct WeatherView {
+@@ -805,6 +1014,15 @@ pub struct WeatherView {
+     /// Add Location with no room for another: the panel says why, with only OK.
+     #[rust]
+     add_full: bool,
++    /// A Mac's Weather is showing a place found in the sidebar's search before
++    /// it is added: the selection it came from. The place is the last of
++    /// `state.cities` meanwhile, kept off the sidebar and off the disk.
++    #[rust]
++    preview_from: Option<usize>,
++    /// Add Location brought the sidebar back: its search takes the keys once
++    /// it is drawn.
++    #[rust]
++    focus_search_after_draw: bool,
+     /// The + that opened Add Location, in this view's own points. Read only
+     /// when both it and this view have been drawn: mid-redraw this view's
+     /// own area has no position yet, and the arrow landed a sidebar's width
+@@ -815,6 +1033,10 @@ pub struct WeatherView {
      matches: Places,
      #[rust]
      match_cursor: usize,
@@ -27355,7 +28568,7 @@ index 49057ea3bf6db19a0d56d4fa3874945aab35d8ae..0d69d51d2e052cbf64773774e8dad5cb
      /// The person hid the sidebar: its button, View > Sidebar or
      /// Control-Command-S. A window too narrow for it hides it anyway.
      #[rust]
-@@ -832,6 +1037,7 @@ fn on_after_apply(&mut self, _vm: &mut ScriptVm, apply: &Apply, _scope: &mut Sco
+@@ -832,6 +1054,7 @@ fn on_after_apply(&mut self, _vm: &mut ScriptVm, apply: &Apply, _scope: &mut Sco
          if apply.is_reload() {
              self.restyled = true;
              self.last_size = Vec2d::default();
@@ -27363,7 +28576,33 @@ index 49057ea3bf6db19a0d56d4fa3874945aab35d8ae..0d69d51d2e052cbf64773774e8dad5cb
          }
      }
  }
-@@ -1133,6 +1339,8 @@ fn remove_location(&mut self, cx: &mut Cx, index: usize) {
+@@ -1055,7 +1278,9 @@ fn select_city(&mut self, cx: &mut Cx, index: usize) {
+             return;
+         }
+         self.city_changed = true;
+-        self.persist_city(cx);
++        if self.preview_from.is_none() {
++            self.persist_city(cx);
++        }
+         if self.pointer && !self.state.due_for_refresh() && self.state.last_error.is_none() {
+             self.render(cx);
+             self.wake_sky(cx);
+@@ -1065,8 +1290,13 @@ fn select_city(&mut self, cx: &mut Cx, index: usize) {
+     }
+ 
+     fn persist_locations(&mut self, cx: &mut Cx) {
++        let mut saved = self.state.cities.clone();
++        if self.preview_from.is_some() {
++            // A place being previewed isn't a location yet.
++            saved.pop();
++        }
+         if let Some(storage) = self.storage.as_ref() {
+-            self.locations_write = Some(storage.set(cx, "locations", encode_locations(&self.state.cities)));
++            self.locations_write = Some(storage.set(cx, "locations", encode_locations(&saved)));
+         }
+     }
+ 
+@@ -1133,6 +1363,8 @@ fn remove_location(&mut self, cx: &mut Cx, index: usize) {
      fn add_anchor(&mut self, cx: &mut Cx) -> Option<&'static [LiveId]> {
          if self.side_shown() {
              Some(ids!(side_add))
@@ -27372,7 +28611,7 @@ index 49057ea3bf6db19a0d56d4fa3874945aab35d8ae..0d69d51d2e052cbf64773774e8dad5cb
          } else if self.view.widget(cx, ids!(locations)).visible() {
              Some(ids!(locations))
          } else {
-@@ -1159,17 +1367,55 @@ fn measure_add_tool(&mut self, cx: &mut Cx) -> bool {
+@@ -1159,17 +1391,55 @@ fn measure_add_tool(&mut self, cx: &mut Cx) -> bool {
  
      /// Where Add Location goes in this window: hung from the + that opened
      /// it, its arrow's tip at the +'s middle, just under it.
@@ -27430,7 +28669,7 @@ index 49057ea3bf6db19a0d56d4fa3874945aab35d8ae..0d69d51d2e052cbf64773774e8dad5cb
          };
          self.add_hung = hung;
          self.view.widget(cx, ids!(add_dim)).set_visible(cx, !hung);
-@@ -1185,6 +1431,9 @@ fn place_add(&mut self, cx: &mut Cx) {
+@@ -1185,6 +1455,9 @@ fn place_add(&mut self, cx: &mut Cx) {
      }
  
      fn set_add(&mut self, cx: &mut Cx, open: bool) {
@@ -27440,7 +28679,7 @@ index 49057ea3bf6db19a0d56d4fa3874945aab35d8ae..0d69d51d2e052cbf64773774e8dad5cb
          self.add_open = open;
          self.view.widget(cx, ids!(add_layer)).set_visible(cx, open);
          if open {
-@@ -1212,36 +1461,103 @@ fn set_add(&mut self, cx: &mut Cx, open: bool) {
+@@ -1212,36 +1485,189 @@ fn set_add(&mut self, cx: &mut Cx, open: bool) {
          self.view.redraw(cx);
      }
  
@@ -27519,13 +28758,18 @@ index 49057ea3bf6db19a0d56d4fa3874945aab35d8ae..0d69d51d2e052cbf64773774e8dad5cb
 +        self.refresh_side_search(cx);
 +    }
 +
-+    /// The sidebar's marked place: added, its words cleared, and shown.
++    /// The sidebar's marked place, its words cleared: on a Mac shown with
++    /// Cancel and Add (`preview_city`), elsewhere added and shown.
 +    fn add_found(&mut self, cx: &mut Cx) {
 +        let Some(city) = self.matches.get(self.match_cursor).copied() else {
 +            return;
 +        };
 +        self.clear_side_search(cx);
 +        cx.set_key_focus(Area::Empty);
++        if self.unified {
++            self.preview_city(cx, city);
++            return;
++        }
 +        let Some(index) = self.state.add_location(city) else {
 +            return;
 +        };
@@ -27533,6 +28777,87 @@ index 49057ea3bf6db19a0d56d4fa3874945aab35d8ae..0d69d51d2e052cbf64773774e8dad5cb
 +        self.persist_locations(cx);
 +        self.select_city(cx, index);
 +        self.sync_side(cx);
++    }
++
++    /// A Mac's Weather shows a place found in its sidebar's search before it
++    /// is added, as Weather's preview does: its forecast in the window, Cancel
++    /// and Add over it. Only Add puts it on the list and on disk; Cancel,
++    /// Escape, ⌫, the arrows or another location take it away.
++    fn preview_city(&mut self, cx: &mut Cx, city: &'static City) {
++        self.cancel_preview(cx);
++        let previous = self.state.city;
++        let Some(index) = self.state.add_location(city) else {
++            return;
++        };
++        if index + 1 != self.state.cities.len() {
++            // Already a location: just shown.
++            self.select_city(cx, index);
++            return;
++        }
++        self.preview_from = Some(previous);
++        self.select_city(cx, index);
++        self.sync_side(cx);
++        self.sync_preview(cx);
++    }
++
++    /// The previewed place goes, with what was kept for it, and the location
++    /// it came from shows again.
++    fn cancel_preview(&mut self, cx: &mut Cx) {
++        let Some(previous) = self.preview_from.take() else {
++            return;
++        };
++        let last = self.state.cities.len() - 1;
++        if let Some(gone) = self.state.remove_location(last) {
++            if let Some(storage) = self.storage.as_ref() {
++                storage.delete(cx, &forecast_key(gone));
++            }
++        }
++        self.state.select_city(previous);
++        self.city_changed = true;
++        if self.state.current().is_none() {
++            self.fetch(cx);
++        } else {
++            self.render(cx);
++            self.wake_sky(cx);
++        }
++        self.sync_side(cx);
++        self.sync_preview(cx);
++    }
++
++    /// Add: the previewed place joins the list, saved, and stays shown.
++    fn add_preview(&mut self, cx: &mut Cx) {
++        if self.preview_from.take().is_none() {
++            return;
++        }
++        self.city_changed = true;
++        self.persist_locations(cx);
++        self.persist_city(cx);
++        self.sync_side(cx);
++        self.sync_preview(cx);
++    }
++
++    fn sync_preview(&mut self, cx: &mut Cx) {
++        let on = self.preview_from.is_some();
++        self.view.widget(cx, ids!(preview_tools)).set_visible(cx, on);
++        self.view.redraw(cx);
++    }
++
++    /// A Mac's Add Location (Command-N, the File menu, a menu's row): the
++    /// sidebar shows and its search has the keys. With no room for another
++    /// the alert says so instead.
++    fn find_location(&mut self, cx: &mut Cx) {
++        if self.state.cities.len() >= MAX_LOCATIONS {
++            self.set_add(cx, true);
++            return;
++        }
++        self.cancel_preview(cx);
++        if self.side_shown() {
++            self.view.text_input(cx, ids!(side_search)).take_key_focus(cx);
++        } else {
++            self.toggle_sidebar(cx);
++            self.focus_search_after_draw = true;
++        }
++        self.view.redraw(cx);
 +    }
 +
      fn sync_match_rows(&mut self, cx: &mut Cx) {
@@ -27563,7 +28888,24 @@ index 49057ea3bf6db19a0d56d4fa3874945aab35d8ae..0d69d51d2e052cbf64773774e8dad5cb
          let note = if self.add_full {
              format!("Weather keeps up to {MAX_LOCATIONS} locations. Remove one to add another.")
          } else {
-@@ -1481,12 +1797,43 @@ fn summary_text(forecast: &Forecast, mac: bool) -> String {
+@@ -1310,6 +1736,8 @@ fn open_side_menu(&mut self, cx: &mut Cx, press: &MouseDownEvent) -> bool {
+         if !side.visible() || !side.area().rect(cx).contains(press.abs) {
+             return false;
+         }
++        // A place being previewed has no row: the press ends its preview.
++        self.cancel_preview(cx);
+         let count = self.state.cities.len();
+         let under = (0..count).find(|index| self.view.widget(cx, &[side_row(*index)]).area().rect(cx).contains(press.abs));
+         let mut rows = Vec::new();
+@@ -1327,6 +1755,7 @@ fn open_side_menu(&mut self, cx: &mut Cx, press: &MouseDownEvent) -> bool {
+     fn menu_chose(&mut self, cx: &mut Cx, index: usize) {
+         match self.menu_actions.get(index).copied().flatten() {
+             Some(MenuAction::Select(city)) => self.select_city(cx, city),
++            Some(MenuAction::Add) if self.unified => self.find_location(cx),
+             Some(MenuAction::Add) => self.set_add(cx, true),
+             Some(MenuAction::Refresh) => self.refresh_all(cx),
+             Some(MenuAction::Remove(city)) => self.remove_location(cx, city),
+@@ -1481,12 +1910,43 @@ fn summary_text(forecast: &Forecast, mac: bool) -> String {
          text
      }
  
@@ -27607,10 +28949,29 @@ index 49057ea3bf6db19a0d56d4fa3874945aab35d8ae..0d69d51d2e052cbf64773774e8dad5cb
      /// A pointer's sidebar: every city, the selected one with its temperature.
      fn sync_side(&mut self, cx: &mut Cx) {
          if !self.pointer {
-@@ -1567,6 +1914,22 @@ fn mac_key(&mut self, cx: &mut Cx, key: &KeyEvent) -> bool {
+@@ -1499,6 +1959,10 @@ fn sync_side(&mut self, cx: &mut Cx) {
+                 row.set_visible(cx, false);
+                 continue;
+             };
++            if self.preview_from.is_some() && index + 1 == self.state.cities.len() {
++                row.set_visible(cx, false);
++                continue;
++            }
+             row.set_visible(cx, true);
+             row.label(cx, ids!(city)).set_text(cx, city.name);
+             // What it's like there, once that's known: its sky, its own time,
+@@ -1567,6 +2031,30 @@ fn mac_key(&mut self, cx: &mut Cx, key: &KeyEvent) -> bool {
              }
              return true;
          }
++        if self.preview_from.is_some() && !self.side_query && !self.add_open && !mods.any() {
++            match key.key_code {
++                KeyCode::ReturnKey | KeyCode::NumpadEnter => self.add_preview(cx),
++                KeyCode::Escape | KeyCode::Backspace | KeyCode::Delete | KeyCode::ArrowUp | KeyCode::ArrowDown => self.cancel_preview(cx),
++                _ => return false,
++            }
++            return true;
++        }
 +        if self.side_query && !self.add_open {
 +            if mods.any() {
 +                return false;
@@ -27630,7 +28991,15 @@ index 49057ea3bf6db19a0d56d4fa3874945aab35d8ae..0d69d51d2e052cbf64773774e8dad5cb
          if self.add_open {
              if mods.any() {
                  return false;
-@@ -1601,6 +1964,14 @@ fn mac_key(&mut self, cx: &mut Cx, key: &KeyEvent) -> bool {
+@@ -1593,6 +2081,7 @@ fn mac_key(&mut self, cx: &mut Cx, key: &KeyEvent) -> bool {
+         if mods.is_primary() && !mods.shift && !mods.alt {
+             match key.key_code {
+                 KeyCode::KeyR => self.refresh_all(cx),
++                KeyCode::KeyN if self.unified => self.find_location(cx),
+                 KeyCode::KeyN => self.set_add(cx, true),
+                 _ => return false,
+             }
+@@ -1601,6 +2090,14 @@ fn mac_key(&mut self, cx: &mut Cx, key: &KeyEvent) -> bool {
          if mods.any() {
              return false;
          }
@@ -27645,7 +29014,7 @@ index 49057ea3bf6db19a0d56d4fa3874945aab35d8ae..0d69d51d2e052cbf64773774e8dad5cb
          match key.key_code {
              KeyCode::ArrowUp | KeyCode::ArrowDown => {
                  let last = self.state.cities.len().saturating_sub(1);
-@@ -1635,7 +2006,7 @@ fn render(&mut self, cx: &mut Cx) {
+@@ -1635,7 +2132,7 @@ fn render(&mut self, cx: &mut Cx) {
  
          let Some((forecast, _)) = self.state.current().map(|(f, t)| (f.clone(), t)) else {
              for id in [ids!(hero_temp), ids!(tile_temp)] {
@@ -27654,7 +29023,7 @@ index 49057ea3bf6db19a0d56d4fa3874945aab35d8ae..0d69d51d2e052cbf64773774e8dad5cb
              }
              let placeholder = if self.state.loading() { "Loading" } else { "Unavailable" };
              for id in [ids!(hero_cond), ids!(tile_cond), ids!(header_line)] {
-@@ -1648,9 +2019,20 @@ fn render(&mut self, cx: &mut Cx) {
+@@ -1648,9 +2145,20 @@ fn render(&mut self, cx: &mut Cx) {
                  self.show_state_pane(cx, true);
              }
              self.view.widget(cx, ids!(condition_icon)).set_visible(cx, false);
@@ -27676,7 +29045,7 @@ index 49057ea3bf6db19a0d56d4fa3874945aab35d8ae..0d69d51d2e052cbf64773774e8dad5cb
              self.view.label(cx, ids!(footer)).set_text(cx, &format!("{status} · {ATTRIBUTION}"));
              if let Some(mut hours) = self.view.widget(cx, ids!(hours)).borrow_mut::<HourlyStrip>() {
                  hours.set_cells(cx, Vec::new());
-@@ -1715,13 +2097,23 @@ fn render(&mut self, cx: &mut Cx) {
+@@ -1715,13 +2223,23 @@ fn render(&mut self, cx: &mut Cx) {
          let uv = forecast.current_uv();
          let (uv_value, uv_word) = uv_text(uv);
          let uv_note = match (uv, days.first().and_then(|d| d.uv_max)) {
@@ -27701,7 +29070,7 @@ index 49057ea3bf6db19a0d56d4fa3874945aab35d8ae..0d69d51d2e052cbf64773774e8dad5cb
          script_apply_eval!(cx, uv_bar, { draw_bg.level: #(level) });
  
          let today = days.first();
-@@ -1736,18 +2128,45 @@ fn render(&mut self, cx: &mut Cx) {
+@@ -1736,18 +2254,45 @@ fn render(&mut self, cx: &mut Cx) {
                  let phase = cur.time.as_deref().map(|now| crate::model::solar_phase(now, Some(r), Some(s), forecast.is_day())).unwrap_or(1.0);
                  let t = day_fraction(cur.time.as_deref(), r, s).unwrap_or(if phase > 0.5 { 0.5 } else { -1.0 });
                  if let Some(mut arc) = self.view.widget(cx, ids!(arc)).borrow_mut::<SolarArc>() {
@@ -27751,7 +29120,7 @@ index 49057ea3bf6db19a0d56d4fa3874945aab35d8ae..0d69d51d2e052cbf64773774e8dad5cb
                      (Some(d), Some(g)) => format!("From the {}. Gusts {} km/h.", compass(d), g.round() as i64),
                      (Some(d), None) => format!("From the {}.", compass(d)),
                      _ => "".into(),
-@@ -1762,11 +2181,22 @@ fn render(&mut self, cx: &mut Cx) {
+@@ -1762,11 +2307,22 @@ fn render(&mut self, cx: &mut Cx) {
              }
              None => {
                  self.set_card(cx, ids!(wind_card), "—", "Unavailable");
@@ -27776,7 +29145,7 @@ index 49057ea3bf6db19a0d56d4fa3874945aab35d8ae..0d69d51d2e052cbf64773774e8dad5cb
              None => self.set_card(cx, ids!(humidity_card), "—", "Unavailable"),
          }
          match today.and_then(|d| d.precip_sum) {
-@@ -1787,6 +2217,20 @@ fn render(&mut self, cx: &mut Cx) {
+@@ -1787,6 +2343,20 @@ fn render(&mut self, cx: &mut Cx) {
              }
              None => self.set_card(cx, ids!(feels_card), "—", "Unavailable"),
          }
@@ -27797,10 +29166,15 @@ index 49057ea3bf6db19a0d56d4fa3874945aab35d8ae..0d69d51d2e052cbf64773774e8dad5cb
          // A pointer's footer says what its sidebar says; a phone's when the data is from.
          let footer = if self.pointer {
              format!("{} · {ATTRIBUTION}", self.state.status_text_mac().trim_end_matches('.'))
-@@ -1883,14 +2327,25 @@ fn sync_sidebar(&mut self, cx: &mut Cx) {
+@@ -1881,16 +2451,28 @@ fn sync_sidebar(&mut self, cx: &mut Cx) {
+         self.view.widget(cx, ids!(side)).set_visible(cx, shown);
+         self.view.widget(cx, ids!(side_rule)).set_visible(cx, shown);
          self.view.widget(cx, ids!(show_side)).set_visible(cx, !shown);
-         // The cities as a Mac's menu, in a window with no room for the list.
-         self.view.widget(cx, ids!(locations)).set_visible(cx, self.narrow && !shown);
+-        // The cities as a Mac's menu, in a window with no room for the list.
+-        self.view.widget(cx, ids!(locations)).set_visible(cx, self.narrow && !shown);
++        // The cities as a menu, in a window with no room for the list. A Mac's
++        // shows its sidebar from the sidebar's button instead: no second way in.
++        self.view.widget(cx, ids!(locations)).set_visible(cx, !self.unified && self.narrow && !shown);
 +        self.view.widget(cx, ids!(pane_tools)).set_visible(cx, self.unified && !shown);
          // The panels' width: the pane less its two 16-point margins.
          let inner = self.last_size.x - if shown { 209.0 } else { 0.0 } - 32.0;
@@ -27824,7 +29198,7 @@ index 49057ea3bf6db19a0d56d4fa3874945aab35d8ae..0d69d51d2e052cbf64773774e8dad5cb
          }
      }
  
-@@ -2096,6 +2551,13 @@ fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+@@ -2096,6 +2678,13 @@ fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
                          self.sync_match_rows(cx);
                      }
                  }
@@ -27838,9 +29212,21 @@ index 49057ea3bf6db19a0d56d4fa3874945aab35d8ae..0d69d51d2e052cbf64773774e8dad5cb
                  _ => {}
              }
          }
-@@ -2123,13 +2585,30 @@ fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+@@ -2118,18 +2707,42 @@ fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+             if self.pointer {
+                 for index in 0..self.state.cities.len() {
+                     if self.view.view(cx, &[side_row(index)]).finger_up(actions).is_some() {
++                        self.cancel_preview(cx);
+                         self.select_city(cx, index);
+                         break;
                      }
                  }
++                if self.view.button(cx, ids!(preview_cancel)).clicked(actions) {
++                    self.cancel_preview(cx);
++                }
++                if self.view.button(cx, ids!(preview_add)).clicked(actions) {
++                    self.add_preview(cx);
++                }
                  if self.view.button(cx, ids!(side_refresh)).clicked(actions)
 +                    || self.view.button(cx, ids!(pane_refresh)).clicked(actions)
                      || self.view.button(cx, ids!(try_again)).clicked(actions)
@@ -27870,7 +29256,7 @@ index 49057ea3bf6db19a0d56d4fa3874945aab35d8ae..0d69d51d2e052cbf64773774e8dad5cb
                  if self.view.button(cx, ids!(hide_side)).clicked(actions) || self.view.button(cx, ids!(show_side)).clicked(actions) {
                      self.toggle_sidebar(cx);
                  }
-@@ -2215,6 +2694,19 @@ fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawSte
+@@ -2215,6 +2828,19 @@ fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawSte
                  if self.add_open {
                      self.sync_match_rows(cx);
                  }
@@ -27890,6 +29276,16 @@ index 49057ea3bf6db19a0d56d4fa3874945aab35d8ae..0d69d51d2e052cbf64773774e8dad5cb
              }
          }
          if self.pointer && self.add_open {
+@@ -2222,6 +2848,9 @@ fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawSte
+         }
+         let step = self.view.draw_walk(cx, scope, walk);
+         if step.is_done() {
++            if std::mem::take(&mut self.focus_search_after_draw) {
++                self.view.text_input(cx, ids!(side_search)).take_key_focus(cx);
++            }
+             // Drawn: the + is where it is now. A window that moved it (a
+             // resize with the popover up) hangs the popover there next frame.
+             if self.pointer && self.add_open && self.measure_add_tool(cx) {
 diff --git a/apps/wm/src/lib.rs b/apps/wm/src/lib.rs
 index a06153524907b0d84a9132931bfce96fcbce6288..a75afc63cce451548be9bb80e8f940488630a979 100644
 --- a/apps/wm/src/lib.rs
