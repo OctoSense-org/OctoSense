@@ -1843,8 +1843,10 @@ fn desk_keys_home(){
     if desk_viewing { ui.viewer_keys.focus() } else { ui.zoom.focus() }
 }
 fn desk_viewer_sync(){
-    // The photo has the keys: as it opens, and after a press on its toolbar.
-    if desk_naming == 0 { ui.viewer_keys.focus() }
+    // The photo has the keys: as it opens, and after a press on its toolbar. Not while a Mac's
+    // slideshow is over it or opening (below), which asks for them itself: of two asks in one
+    // turn the photo's lands last, as its view hears an event after the show's layer does.
+    if desk_naming == 0 && !(ui_unified && (desk_show || playing)) { ui.viewer_keys.focus() }
     desk_viewing = true
     desk_remember()
     let favorite = false
@@ -2227,6 +2229,9 @@ fn desk_viewer_key(key, cmd){
         if key == "Escape" { desk_close_sheets() }
         return
     }
+    // A key that still reaches the photo under a slideshow is the show's: its Esc ends the show
+    // and leaves the photo open.
+    if desk_show { desk_show_key(key, cmd); return }
     if cmd {
         if key == "KeyI" { desk_toggle_info() }
         return

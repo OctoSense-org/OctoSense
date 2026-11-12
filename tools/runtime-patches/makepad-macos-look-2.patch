@@ -23668,7 +23668,7 @@ index cf4a5cf6fe055baba92c36f45004d270de698b23..976d381170a6ab8867c9db6ba26629ea
          if let Some(item) = actions.find_widget_action(self.widget_uid()) {
              if let DropDownAction::Select(id) = item.cast() {
 diff --git a/widgets/src/gesture_view.rs b/widgets/src/gesture_view.rs
-index 7d52595af7cb1a5bb1529f68dfd0ac6c5a2f6545..ea2c2b299da661beb70ed65f57e7afbc5607b41c 100644
+index 7d52595af7cb1a5bb1529f68dfd0ac6c5a2f6545..5583b88912ac2969bb8e95826be901c1c2a2a5d4 100644
 --- a/widgets/src/gesture_view.rs
 +++ b/widgets/src/gesture_view.rs
 @@ -21,6 +21,8 @@
@@ -24201,7 +24201,7 @@ index 7d52595af7cb1a5bb1529f68dfd0ac6c5a2f6545..ea2c2b299da661beb70ed65f57e7afbc
      use std::cell::Cell;
  
      fn touches(points: &[(u64, TouchState, f64, f64)]) -> TouchUpdateEvent {
-@@ -1089,6 +1391,57 @@ fn a_finger_that_starts_outside_the_view_is_not_part_of_its_pinch() {
+@@ -1089,6 +1391,59 @@ fn a_finger_that_starts_outside_the_view_is_not_part_of_its_pinch() {
          assert_eq!(pinch.update(&touches(&[(2, TouchState::Start, 500.0, 50.0)]), bounds), PinchStep::Nothing);
      }
  
@@ -24218,7 +24218,9 @@ index 7d52595af7cb1a5bb1529f68dfd0ac6c5a2f6545..ea2c2b299da661beb70ed65f57e7afbc
 +    }
 +
 +    /// The DSL only fails at eval time: build the view from `mod.widgets.GestureView`
-+    /// with a menu whose row opens a submenu, as Photos' Add to does.
++    /// with a menu whose row opens a submenu, as Photos' Add to does. A `{…}` row
++    /// right after another takes a comma: Splash reads `"-" {…}` as one value, the
++    /// string instantiated with the map.
 +    #[test]
 +    fn a_menu_row_may_open_a_submenu() {
 +        let mut cx = Cx::new(Box::new(|_, _| {}));
@@ -24226,7 +24228,7 @@ index 7d52595af7cb1a5bb1529f68dfd0ac6c5a2f6545..ea2c2b299da661beb70ed65f57e7afbc
 +        let view = cx.with_vm(|vm| {
 +            let value = vm.eval(script! {
 +                use mod.prelude.widgets.*
-+                GestureView{menu: ["Open" "-" {title: "Add to" menu: ["Family" "-" "Trips"] off: ["Trips"]} "Delete"]}
++                GestureView{menu: ["Open" "-", {title: "Add to" menu: ["Family" "-" "Trips"] off: ["Trips"]} "Delete"]}
 +            });
 +            GestureView::script_from_value(vm, value)
 +        });
@@ -24249,7 +24251,7 @@ index 7d52595af7cb1a5bb1529f68dfd0ac6c5a2f6545..ea2c2b299da661beb70ed65f57e7afbc
 +            let mut rows = Vec::<GestureMenuRow>::script_from_value(vm, first);
 +            assert_eq!(rows[0].off, ["Trips"]);
 +            assert_eq!(rows[1].title, "Delete");
-+            let second = vm.eval(script! { ["Open" {title: "Add to" menu: ["Family"]}] });
++            let second = vm.eval(script! { ["Open", {title: "Add to" menu: ["Family"]}] });
 +            rows.script_apply(vm, &Apply::New, &mut Scope::empty(), second);
 +            let add = GestureMenuRow { title: "Add to".into(), menu: vec!["Family".into()], off: Vec::new() };
 +            assert_eq!(rows, [GestureMenuRow { title: "Open".into(), ..Default::default() }, add]);
