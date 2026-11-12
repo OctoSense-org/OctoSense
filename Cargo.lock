@@ -7908,10 +7908,12 @@ version = "0.1.0"
 dependencies = [
  "makepad-ai-hub",
  "makepad-base64",
+ "makepad-core-util",
  "makepad-micro-serde",
  "makepad-platform",
  "makepad-remote",
  "makepad-strict-json",
+ "makepad-zune-png",
 ]
 
 [[package]]
@@ -7923,6 +7925,10 @@ dependencies = [
 
 [[package]]
 name = "makepad-alloc-epoch"
+version = "1.0.0"
+
+[[package]]
+name = "makepad-alloc-phase"
 version = "1.0.0"
 
 [[package]]
@@ -7947,6 +7953,7 @@ version = "0.1.0"
 dependencies = [
  "makepad-ai-hub",
  "makepad-ai-services",
+ "makepad-image-decode",
  "makepad-strict-json",
  "makepad-widgets",
  "makepad-widgets-tweaker",
@@ -8000,6 +8007,7 @@ dependencies = [
  "makepad-strict-json",
  "makepad-widgets",
  "makepad-widgets-tweaker",
+ "makepad-wm-api",
 ]
 
 [[package]]
@@ -8193,16 +8201,13 @@ version = "2.0.0"
 dependencies = [
  "fxhash 0.2.1",
  "makepad-font-core",
- "makepad-gif",
+ "makepad-image-decode",
  "makepad-live-id",
  "makepad-math",
  "makepad-platform",
  "makepad-svg",
- "makepad-webp",
- "makepad-zune-bmp",
  "makepad-zune-jpeg",
  "makepad-zune-png",
- "makepad-zune-qoi",
  "rustybuzz 0.18.0",
  "ttf-parser 0.24.1",
  "unicode-bidi 0.3.18",
@@ -8286,6 +8291,7 @@ dependencies = [
  "makepad-gpu-trace",
  "makepad-jni-sys 0.4.0",
  "makepad-key-code",
+ "makepad-lock-free",
  "makepad-math",
  "makepad-micro-serde",
  "makepad-objc-sys",
@@ -8304,6 +8310,18 @@ name = "makepad-html"
 version = "1.0.0"
 dependencies = [
  "makepad-live-id",
+]
+
+[[package]]
+name = "makepad-image-decode"
+version = "0.1.0"
+dependencies = [
+ "makepad-gif",
+ "makepad-webp",
+ "makepad-zune-bmp",
+ "makepad-zune-jpeg",
+ "makepad-zune-png",
+ "makepad-zune-qoi",
 ]
 
 [[package]]
@@ -8362,6 +8380,10 @@ version = "0.1.0"
 dependencies = [
  "makepad-filesystem-watcher",
 ]
+
+[[package]]
+name = "makepad-lock-free"
+version = "0.1.0"
 
 [[package]]
 name = "makepad-math"
@@ -8453,6 +8475,8 @@ dependencies = [
  "makepad-jni-sys 0.4.0",
  "makepad-key-code",
  "makepad-live-reload-core",
+ "makepad-lock-free",
+ "makepad-micro-serde",
  "makepad-network",
  "makepad-objc-sys",
  "makepad-platform-video",
@@ -8466,6 +8490,7 @@ dependencies = [
  "makepad-stack",
  "makepad-studio-protocol",
  "makepad-tsdf",
+ "makepad-tween",
  "makepad-vulkan",
  "makepad-wasm-bridge",
  "makepad-web-manifest",
@@ -8505,6 +8530,7 @@ version = "1.0.0"
 name = "makepad-relax-api"
 version = "1.0.0"
 dependencies = [
+ "makepad-alloc-phase",
  "makepad-relax-api-macro",
 ]
 
@@ -13158,6 +13184,9 @@ dependencies = [
 [[package]]
 name = "relax-session"
 version = "0.1.0"
+dependencies = [
+ "makepad-alloc-phase",
+]
 
 [[package]]
 name = "renderdoc-sys"
