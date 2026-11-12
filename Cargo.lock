@@ -11249,7 +11249,7 @@ dependencies = [
 [[package]]
 name = "octoscode-client"
 version = "0.1.0"
-source = "git+https://github.com/octos-org/octoscode-app.git?rev=5d0c2a0962218aa94497201ce1a39b7429f09e36#5d0c2a0962218aa94497201ce1a39b7429f09e36"
+source = "git+https://github.com/octos-org/octoscode-app.git?rev=094fe850e531c60b78b659852c5084b9933b7750#094fe850e531c60b78b659852c5084b9933b7750"
 dependencies = [
  "log",
  "octos-core",
@@ -11265,12 +11265,13 @@ dependencies = [
 [[package]]
 name = "octoscode-module"
 version = "0.1.0"
-source = "git+https://github.com/octos-org/octoscode-app.git?rev=5d0c2a0962218aa94497201ce1a39b7429f09e36#5d0c2a0962218aa94497201ce1a39b7429f09e36"
+source = "git+https://github.com/octos-org/octoscode-app.git?rev=094fe850e531c60b78b659852c5084b9933b7750#094fe850e531c60b78b659852c5084b9933b7750"
 dependencies = [
  "chrono",
  "log",
  "makepad-app-module",
  "makepad-widgets",
+ "makepad-wm-api",
  "octos-core",
  "octoscode-client",
  "octoscode-store",
@@ -11291,7 +11292,7 @@ dependencies = [
 [[package]]
 name = "octoscode-store"
 version = "0.1.0"
-source = "git+https://github.com/octos-org/octoscode-app.git?rev=5d0c2a0962218aa94497201ce1a39b7429f09e36#5d0c2a0962218aa94497201ce1a39b7429f09e36"
+source = "git+https://github.com/octos-org/octoscode-app.git?rev=094fe850e531c60b78b659852c5084b9933b7750#094fe850e531c60b78b659852c5084b9933b7750"
 dependencies = [
  "log",
  "octoscode-transport",
@@ -11302,7 +11303,7 @@ dependencies = [
 [[package]]
 name = "octoscode-transport"
 version = "0.1.0"
-source = "git+https://github.com/octos-org/octoscode-app.git?rev=5d0c2a0962218aa94497201ce1a39b7429f09e36#5d0c2a0962218aa94497201ce1a39b7429f09e36"
+source = "git+https://github.com/octos-org/octoscode-app.git?rev=094fe850e531c60b78b659852c5084b9933b7750#094fe850e531c60b78b659852c5084b9933b7750"
 dependencies = [
  "android_logger",
  "chrono",
@@ -11427,7 +11428,7 @@ dependencies = [
 [[package]]
 name = "octosense-app-contract"
 version = "1.12.0"
-source = "git+https://github.com/OctoSense-org/OctoSense-App-Hub?rev=386359153ed6377b5f047bd9ed2767a6a2ac2bc7#386359153ed6377b5f047bd9ed2767a6a2ac2bc7"
+source = "git+https://github.com/OctoSense-org/OctoSense-App-Hub?rev=4abef6b5bb52f50d2a0f997cba6f23e89787966f#4abef6b5bb52f50d2a0f997cba6f23e89787966f"
 dependencies = [
  "blake3",
  "serde",
@@ -11438,7 +11439,7 @@ dependencies = [
 [[package]]
 name = "octosense-app-hub"
 version = "0.1.0"
-source = "git+https://github.com/OctoSense-org/OctoSense-App-Hub?rev=386359153ed6377b5f047bd9ed2767a6a2ac2bc7#386359153ed6377b5f047bd9ed2767a6a2ac2bc7"
+source = "git+https://github.com/OctoSense-org/OctoSense-App-Hub?rev=4abef6b5bb52f50d2a0f997cba6f23e89787966f#4abef6b5bb52f50d2a0f997cba6f23e89787966f"
 dependencies = [
  "base64 0.22.1",
  "blake3",
@@ -11465,7 +11466,7 @@ dependencies = [
 [[package]]
 name = "octosense-app-hub-app"
 version = "0.1.0"
-source = "git+https://github.com/OctoSense-org/OctoSense-App-Hub?rev=386359153ed6377b5f047bd9ed2767a6a2ac2bc7#386359153ed6377b5f047bd9ed2767a6a2ac2bc7"
+source = "git+https://github.com/OctoSense-org/OctoSense-App-Hub?rev=4abef6b5bb52f50d2a0f997cba6f23e89787966f#4abef6b5bb52f50d2a0f997cba6f23e89787966f"
 dependencies = [
  "makepad-app-module",
  "makepad-widgets",
@@ -11493,7 +11494,7 @@ dependencies = [
 [[package]]
 name = "octosense-app-policy"
 version = "0.1.0"
-source = "git+https://github.com/OctoSense-org/OctoSense-App-Hub?rev=386359153ed6377b5f047bd9ed2767a6a2ac2bc7#386359153ed6377b5f047bd9ed2767a6a2ac2bc7"
+source = "git+https://github.com/OctoSense-org/OctoSense-App-Hub?rev=4abef6b5bb52f50d2a0f997cba6f23e89787966f#4abef6b5bb52f50d2a0f997cba6f23e89787966f"
 dependencies = [
  "makepad-widgets",
  "octosense-app-contract",
@@ -11515,7 +11516,7 @@ dependencies = [
 [[package]]
 name = "octosense-appstore"
 version = "0.1.0"
-source = "git+https://github.com/OctoSense-org/OctoSense-App-Hub?rev=386359153ed6377b5f047bd9ed2767a6a2ac2bc7#386359153ed6377b5f047bd9ed2767a6a2ac2bc7"
+source = "git+https://github.com/OctoSense-org/OctoSense-App-Hub?rev=4abef6b5bb52f50d2a0f997cba6f23e89787966f#4abef6b5bb52f50d2a0f997cba6f23e89787966f"
 dependencies = [
  "makepad-app-module",
  "makepad-widgets",
