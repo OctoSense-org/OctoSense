@@ -2365,6 +2365,33 @@ fn desk_add_rows(){
     for a in first_n(store.albums, 8) { out.push("Add to “" + desk_short(a.title) + "”") }
     out
 }
+// A Mac's Photos gathers the albums under one Add to submenu, as its menu bar does: a row an
+// album, by the name the bar shows, the album on show greyed.
+fn desk_add_sub(){
+    let names = []
+    let off = []
+    for a in first_n(store.albums, 8) {
+        let name = desk_menu_name(a.title)
+        names.push(name)
+        if route == "album" && route_arg == a.id { off.push(name) }
+    }
+    if names.len() == 0 { return [] }
+    [{title: "Add to" menu: names off: off}]
+}
+// Add to ▸ an album: the album its row names.
+fn desk_add_named(name, ids){
+    if desk_sheet_up || ids.len() == 0 { return }
+    for a in first_n(store.albums, 8) {
+        if desk_menu_name(a.title) == name {
+            desk_add_to(a.id, ids)
+            break
+        }
+    }
+}
+// A menu's chosen row; a row of its Add to submenu names an album.
+fn desk_menu_act(title, parent, ids){
+    if parent == "Add to" { desk_add_named(title, ids) } else { desk_act(title, ids) }
+}
 fn desk_cell_rows(favorite, export, remove, adds){
     let out = ["Open" "-"]
     out.push(favorite)
@@ -2381,7 +2408,7 @@ fn desk_cell_rows(favorite, export, remove, adds){
 }
 // Three menus a render, however many cells share them.
 fn desk_cell_menus(){
-    let adds = desk_add_rows()
+    let adds = if ui_unified { desk_add_sub() } else { desk_add_rows() }
     let n = desk_selection.len()
     if route == "deleted" {
         let one = ["Recover" "-" "Delete Photo…"]
@@ -2403,14 +2430,19 @@ fn desk_share_rows(){
     let out = []
     if n == 1 { out.push("Export…") } else { out.push("Export " + n + " Photos…") }
     out.push("-")
-    for row in desk_add_rows() { out.push(row) }
+    let adds = if ui_unified { desk_add_sub() } else { desk_add_rows() }
+    for row in adds { out.push(row) }
     out.push("New Album with Selection")
     out
 }
 // A row acts on the selection when the click was on it, else on that photo.
-fn desk_cell_menu(title, id){
+fn desk_cell_menu(title, id, parent){
     if desk_sheet_up { return }
     if !has_item(desk_selection, id) { desk_pick([id], id) }
+    if parent == "Add to" {
+        desk_add_named(title, desk_selection)
+        return
+    }
     if title == "Open" {
         let ids = route_ids()
         open_photo(ids, index_of(ids, id))
@@ -3468,7 +3500,7 @@ fn desk_content(){
                             } else {
                                 DeskCell{width: desk_cell height: desk_cell flow: Overlay pic.src: desk_thumb(id) pic.quarter_turns: desk_turns(id)
                                     on_tap: |x, y, cmd, shift| desk_click(ids, id, cmd, shift)
-                                    menu: desk_menu_for(menus, id) on_menu: |title| desk_cell_menu(title, id)
+                                    menu: desk_menu_for(menus, id) on_menu: |title, x, y, parent| desk_cell_menu(title, id, parent)
                                     if route != "favorites" && is_favorite(id) { DeskHeart{} }
                                     if route == "deleted" { DeskDaysLeft{pill.days.text: desk_days_left(id)} }
                                     if has_item(desk_selection, id) { DeskRing{} }
@@ -3588,7 +3620,7 @@ let DeskFull = if ui_desk { SolidView{width: Fill height: Fill flow: Overlay dra
                     info_tool := DeskIcon{draw_icon +: {svg: ui_icon("info")} on_click: || desk_toggle_info()}
                     info_off := DeskIconOff{visible: false draw_icon +: {svg: ui_icon("info")}}
                     info_tool_on := DeskIcon{visible: false draw_icon +: {svg: ui_icon("info") color: ui_primary} on_click: || desk_toggle_info()}
-                    share_tool := GestureView{visible: false width: Fit height: Fit menu: ["Export…"] on_menu: |title| desk_act(title, desk_targets())
+                    share_tool := GestureView{visible: false width: Fit height: Fit menu: ["Export…"] on_menu: |title, x, y, parent| desk_menu_act(title, parent, desk_targets())
                         DeskIcon{draw_icon +: {svg: ui_icon("export")} on_click: || ui.share_tool.open_menu(desk_share_rows())}
                     }
                     share_off := DeskIconOff{draw_icon +: {svg: ui_icon("export")}}
@@ -3674,7 +3706,7 @@ let DeskFull = if ui_desk { SolidView{width: Fill height: Fill flow: Overlay dra
                     }
                     viewer_info_tool := DeskIcon{draw_icon +: {svg: ui_icon("info")} on_click: || desk_toggle_info()}
                     viewer_info_tool_on := DeskIcon{visible: false draw_icon +: {svg: ui_icon("info") color: ui_primary} on_click: || desk_toggle_info()}
-                    viewer_share := GestureView{width: Fit height: Fit menu: ["Export…"] on_menu: |title| desk_act(title, desk_targets())
+                    viewer_share := GestureView{width: Fit height: Fit menu: ["Export…"] on_menu: |title, x, y, parent| desk_menu_act(title, parent, desk_targets())
                         DeskIcon{draw_icon +: {svg: ui_icon("export")} on_click: || ui.viewer_share.open_menu(desk_share_rows())}
                     }
                     // Another desktop's pager (see desk_viewer_sync).

@@ -1550,7 +1550,14 @@ impl App {
             }
             WmRequest::Open { .. } => {
                 if let Some(open) = preview::OpenRequest::from_request(&req) {
+                    // Open with… from a Mac's Quick Look panel: the panel goes
+                    // as the window opens (one that fails leaves it up).
+                    let from_panel = self.mac_preview() && self.preview_cache.is_showing(client);
+                    let id = self.next_id;
                     self.open_request(cx, Some(client), open);
+                    if from_panel && self.state_mut().clients.contains_key(&id) {
+                        self.hide_active_preview(cx);
+                    }
                 }
             }
             // The REQUESTER hiding its own panel. A stray close from
@@ -2093,6 +2100,13 @@ impl App {
         let gap = state.gap;
         let ws = state.layout.active;
         let rect = state.layout.popup_rect(area, gap, 900.0, 700.0);
+        // A panel left full screen when its requester went is a panel again.
+        if state.layout.desktop.get(client).is_some() {
+            state.layout.remove(client);
+            if let Some(slot) = state.clients.get_mut(&client) {
+                slot.takes_focus = false;
+            }
+        }
         state.layout.add_preview_float(client, rect, ws);
         self.desk(cx).borrow_mut::<WmDesk>().map(|mut d| {
             d.with_run_view(cx, client, |_cx, v| v.set_takes_key_focus(false))
@@ -2119,6 +2133,10 @@ impl App {
         // would drop the tile widget (and with it the child's swapchain and
         // this viewer's warmth) once its close animation finished.
         self.state_mut().layout.remove(active.client);
+        // One a Mac's ⤢ took full screen gives the keyboard back as it goes.
+        if self.preview_cache.take_full_screen() == Some(active.client) {
+            self.preview_takes_keys(cx, active.client, false);
+        }
         log!(
             "wm: preview hide client {} ({}), viewer stays warm",
             active.client,
@@ -2144,16 +2162,74 @@ impl App {
         if self.preview_cache.active.is_none() {
             return false;
         }
-        // Only the app that is dialing loses its Space/Escape to the panel.
+        // Only the app that is dialing loses its Space/Escape to the panel
+        // (or the panel itself, full screen on a Mac and holding the keys).
         // Focus somewhere else (a terminal the user tabbed to while the
         // panel stayed up) means Space is a space again.
         let focus = self.state_mut().layout.focused_client();
         match focus {
-            Some(client) if !self.preview_cache.is_requester(client) => return false,
+            Some(client) if !self.preview_cache.is_requester(client) && !self.preview_cache.is_full_screen(client) => return false,
             _ => {}
         }
         self.hide_active_preview(cx);
         true
+    }
+
+    /// The Mac style's Quick Look: its panel's ✕ and Open with… put it away,
+    /// its ⤢ takes it full screen.
+    fn mac_preview(&self) -> bool {
+        self.state.as_ref().is_some_and(|s| s.style.target == desktop::DesktopStyle::Macos)
+    }
+
+    /// A Mac Quick Look panel's ⤢ (`WmDeskAction::PreviewFullScreen`): the
+    /// panel becomes a full-screen window, the bar and the Dock out of the
+    /// way, and holds the keyboard while it is (Escape or Space put the
+    /// whole preview away, as a Mac's do). Its ⤡ brings the panel back,
+    /// centred where it was, and the keyboard back to the app that asked.
+    fn toggle_preview_full_screen(&mut self, cx: &mut Cx, client: ClientId) {
+        let full = !self.preview_cache.is_full_screen(client);
+        if !self.mac_preview() || !self.preview_cache.set_full_screen(client, full) {
+            return;
+        }
+        let area = self.desk_area(cx);
+        // Back where it floated before its ⤢, not centred on a desk that
+        // has no bar while the panel is full screen.
+        let back = if full {
+            self.preview_cache.panel_rect = self.state_mut().layout.float_rect(client);
+            None
+        } else {
+            self.preview_cache.panel_rect.take()
+        };
+        let state = self.state_mut();
+        let gap = state.gap;
+        state.layout.remove(client);
+        if full {
+            state.layout.insert(client, area, gap);
+            state.layout.set_fullscreen(client, true);
+        } else {
+            let ws = state.layout.active;
+            let rect = back.unwrap_or_else(|| state.layout.popup_rect(area, gap, 900.0, 700.0));
+            state.layout.add_preview_float(client, rect, ws);
+        }
+        self.preview_takes_keys(cx, client, full);
+        log!("wm: preview client {} {}", client, if full { "full screen" } else { "back in its panel" });
+        if full {
+            self.focus_client(cx, client);
+        } else if let Some(requester) = self.preview_cache.active.as_ref().map(|a| a.requester) {
+            self.focus_client(cx, requester);
+        }
+        self.redraw_all(cx);
+    }
+
+    /// A Quick Look viewer takes the keyboard (full screen) or never does
+    /// (a panel: the FOCUS RULE).
+    fn preview_takes_keys(&mut self, cx: &mut Cx, client: ClientId, on: bool) {
+        if let Some(slot) = self.state_mut().clients.get_mut(&client) {
+            slot.takes_focus = on;
+        }
+        self.desk(cx).borrow_mut::<WmDesk>().map(|mut d| {
+            d.with_run_view(cx, client, |_cx, v| v.set_takes_key_focus(on))
+        });
     }
 
     /// SUPER+W / SUPER+Q — `hl.dsp.window.close()`: a POLITE close the app
@@ -2197,6 +2273,12 @@ impl App {
     }
 
     fn request_close(&mut self, cx: &mut Cx, client: ClientId) {
+        // A Mac's Quick Look panel closes as it hides (its ✕; ⌘W while it is
+        // full screen): the viewer stays warm for the next preview.
+        if self.mac_preview() && self.preview_cache.is_showing(client) {
+            self.hide_active_preview(cx);
+            return;
+        }
         self.close_client(cx, client, true);
     }
 
@@ -2623,7 +2705,15 @@ impl App {
         // A dying warm viewer (or its requester) clears the cache's
         // reference to it — "if a viewer process dies clear its slot, so
         // the next Space respawns" instead of talking to a dead socket.
+        let full = self.preview_cache.full_screen.filter(|panel| *panel != client);
         self.preview_cache.forget_client(client);
+        // A Mac panel full screen when its requester went leaves the screen
+        // with it, and gives the keyboard back; the viewer stays warm.
+        if let Some(panel) = full.filter(|_| self.preview_cache.full_screen.is_none()) {
+            self.state_mut().layout.remove(panel);
+            self.preview_takes_keys(cx, panel, false);
+            self.send_wm_event(panel, WmEvent::PreviewUnload);
+        }
         if let Some(mut desk) = self.desk(cx).borrow_mut::<WmDesk>() {
             desk.remove_client(client);
         }
@@ -7595,6 +7685,7 @@ impl MatchEvent for App {
             }
             match wa.cast::<WmDeskAction>() {
                 WmDeskAction::TearOutTab { client, abs } => self.tear_out_tab(cx, client, abs),
+                WmDeskAction::PreviewFullScreen { client } => self.toggle_preview_full_screen(cx, client),
                 WmDeskAction::None => {}
             }
         }

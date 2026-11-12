@@ -14,6 +14,7 @@ use makepad_wm_api::{viewer_for, WmRequest};
 
 use crate::clients::{spawn_client, AppDef, ClientLine};
 use crate::hub::ClientId;
+use crate::layout::LRect;
 
 /// The Quick Look warm-viewer cache, one live client per viewer TYPE
 /// (`makepad_wm_api::viewer_for`'s app id — "image", "pdf", …), kept alive
@@ -38,6 +39,14 @@ pub struct PreviewCache {
     /// showing the file from the command line while the requester believes
     /// it moved on. Flushed by `App::drain_hub` on `HubEvent::Connected`.
     pub pending: HashMap<ClientId, String>,
+    /// The panel a Mac's ⤢ took full screen (`App::toggle_preview_full_screen`):
+    /// a desktop window then, full screen and holding the keyboard, until its
+    /// ⤡, Escape, Space or a hide puts it back. Only ever the `active` client.
+    pub full_screen: Option<ClientId>,
+    /// Where that panel floated before its ⤢, for its ⤡ to put it back: the
+    /// desk under a full screen has no bar, and a panel centred on it then
+    /// would come back lower than it was.
+    pub panel_rect: Option<LRect>,
 }
 
 /// The pure slot-state half of Quick Look, kept free of `Cx` so the type
@@ -82,6 +91,10 @@ impl PreviewCache {
         if was_active {
             self.active = None;
         }
+        if was_active || self.full_screen == Some(id) {
+            self.full_screen = None;
+            self.panel_rect = None;
+        }
         was_active
     }
 
@@ -97,6 +110,28 @@ impl PreviewCache {
     /// Is this client the panel that is up right now?
     pub fn is_showing(&self, id: ClientId) -> bool {
         self.active.as_ref().map(|a| a.client == id).unwrap_or(false)
+    }
+
+    /// Is this client the panel, full screen right now?
+    pub fn is_full_screen(&self, id: ClientId) -> bool {
+        self.full_screen == Some(id) && self.is_showing(id)
+    }
+
+    /// The showing panel goes full screen (`on`) or back to a panel. False
+    /// when nothing changes: `id` is not the panel up now, or is already so.
+    pub fn set_full_screen(&mut self, id: ClientId, on: bool) -> bool {
+        if !self.is_showing(id) || self.is_full_screen(id) == on {
+            return false;
+        }
+        self.full_screen = on.then_some(id);
+        true
+    }
+
+    /// The panel is going away: whether it was full screen, which the WM
+    /// undoes with it (the window back out of the desk, the keyboard back).
+    pub fn take_full_screen(&mut self) -> Option<ClientId> {
+        self.panel_rect = None;
+        self.full_screen.take()
     }
 
     /// Is `client` the app that asked for the panel now showing?
@@ -131,6 +166,8 @@ impl PreviewCache {
         self.warm.clear();
         self.pending.clear();
         self.active = None;
+        self.full_screen = None;
+        self.panel_rect = None;
     }
 }
 
@@ -338,6 +375,41 @@ mod tests {
         assert!(!cache.is_requester(3), "the viewer is not the requester");
         cache.active = None;
         assert!(!cache.is_requester(1));
+    }
+
+    #[test]
+    fn only_the_showing_panel_goes_full_screen_and_its_end_undoes_it() {
+        let mut cache = PreviewCache::default();
+        assert!(!cache.set_full_screen(3, true), "nothing is up");
+        shown(&mut cache, 1, "image", 3, "/b.png");
+        assert!(!cache.set_full_screen(1, true), "the requester is not the panel");
+        assert!(cache.set_full_screen(3, true));
+        assert!(cache.is_full_screen(3));
+        assert!(!cache.set_full_screen(3, true), "already full screen");
+        assert!(cache.set_full_screen(3, false), "⤡ puts it back");
+        assert!(!cache.is_full_screen(3));
+        assert!(!cache.set_full_screen(3, false), "already a panel");
+        // A hide takes the full screen with it, once, and where it floated.
+        assert!(cache.set_full_screen(3, true));
+        cache.panel_rect = Some(LRect::new(250.0, 100.0, 900.0, 700.0));
+        assert_eq!(cache.take_full_screen(), Some(3));
+        assert_eq!(cache.panel_rect, None);
+        assert_eq!(cache.take_full_screen(), None);
+        // Either side going does too.
+        assert!(cache.set_full_screen(3, true));
+        cache.panel_rect = Some(LRect::new(250.0, 100.0, 900.0, 700.0));
+        assert!(cache.forget_client(1));
+        assert_eq!(cache.full_screen, None);
+        assert_eq!(cache.panel_rect, None);
+        shown(&mut cache, 1, "image", 3, "/b.png");
+        assert!(cache.set_full_screen(3, true));
+        assert!(cache.forget_client(3));
+        assert_eq!(cache.full_screen, None);
+        // And so does closing everything.
+        shown(&mut cache, 1, "image", 3, "/b.png");
+        assert!(cache.set_full_screen(3, true));
+        cache.clear();
+        assert_eq!(cache.full_screen, None);
     }
 
     #[test]

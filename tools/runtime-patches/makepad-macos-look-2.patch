@@ -5825,7 +5825,7 @@ index 73e5d4d025a637bebb4c9d2cf6edf74989191dd4..e10456723a905f46242515b118693e1e
                  }
              };
 diff --git a/apps/files/src/main.rs b/apps/files/src/main.rs
-index 18ddec8b62e9278a7daf3716ebad8c8db83130f0..bdd7dc78c2de86358fcc4a8051c53c49b392825d 100644
+index 18ddec8b62e9278a7daf3716ebad8c8db83130f0..e30828af4a33720ce470abe6855f4d7bd06166f0 100644
 --- a/apps/files/src/main.rs
 +++ b/apps/files/src/main.rs
 @@ -1271,7 +1271,20 @@ fn ui_by(touch, desk){ if ui_desk { desk } else { touch } }
@@ -6722,7 +6722,16 @@ index 18ddec8b62e9278a7daf3716ebad8c8db83130f0..bdd7dc78c2de86358fcc4a8051c53c49
              BatchMode::from_fields(&find, &replace, "")
          } else if self.desk {
              BatchMode::from_fields("", "", &pattern)
-@@ -6050,6 +6515,21 @@ fn handle_contents_action(&mut self, cx: &mut Cx, action: FileContentsAction) {
+@@ -5661,6 +6126,8 @@ fn describe(&mut self, cx: &mut Cx, entry: &FileEntry) {
+             // An open Quick Look follows the selection.
+             if self.quick_look_open {
+                 self.show_quick_look(cx, entry);
++            } else if vfs().is_demo() && self.unified {
++                self.preview.retarget_sample(cx, &entry.path);
+             } else {
+                 self.preview.retarget(cx, &entry.path);
+             }
+@@ -6050,6 +6517,21 @@ fn handle_contents_action(&mut self, cx: &mut Cx, action: FileContentsAction) {
              FileContentsAction::RenameCancelled => self.report(cx),
              FileContentsAction::Dropped(paths, at) => self.handle_drop(cx, paths, at),
              FileContentsAction::NeedChildren(folder) => self.request_children(cx, folder),
@@ -6744,7 +6753,7 @@ index 18ddec8b62e9278a7daf3716ebad8c8db83130f0..bdd7dc78c2de86358fcc4a8051c53c49
              FileContentsAction::Context { at, entry } => self.open_menu(cx, at, entry),
          }
      }
-@@ -7010,10 +7490,9 @@ fn sheet_is_up(&self) -> bool {
+@@ -7010,10 +7492,9 @@ fn sheet_is_up(&self) -> bool {
      }
  
      /// A desktop's sheets hang from the toolbar's foot, or from the tab bar's
@@ -6758,7 +6767,7 @@ index 18ddec8b62e9278a7daf3716ebad8c8db83130f0..bdd7dc78c2de86358fcc4a8051c53c49
      fn hang_sheets(&mut self, cx: &mut Cx) -> bool {
          if !self.desk {
              return false;
-@@ -7022,7 +7501,7 @@ fn hang_sheets(&mut self, cx: &mut Cx) -> bool {
+@@ -7022,7 +7503,7 @@ fn hang_sheets(&mut self, cx: &mut Cx) -> bool {
          let mut pad = Inset { top: toolbar, ..Inset::default() };
          if self.tabs.len() > 1 {
              let window = self.ui.view(cx, ids!(app_bg)).area().rect(cx);
@@ -6767,7 +6776,7 @@ index 18ddec8b62e9278a7daf3716ebad8c8db83130f0..bdd7dc78c2de86358fcc4a8051c53c49
              if strip.size.y > 0.0 && window.size.x > 0.0 {
                  // From the tab bar's foot, centred under the tabs when they
                  // are wide enough to hold the card, else under the window.
-@@ -7069,6 +7548,9 @@ fn apply_sidebar(&mut self, cx: &mut Cx) {
+@@ -7069,6 +7550,9 @@ fn apply_sidebar(&mut self, cx: &mut Cx) {
          for id in [ids!(side_cap), ids!(rule_cap), ids!(sidebar)] {
              self.ui.widget(cx, id).set_visible(cx, shown);
          }
@@ -6777,7 +6786,7 @@ index 18ddec8b62e9278a7daf3716ebad8c8db83130f0..bdd7dc78c2de86358fcc4a8051c53c49
          self.ui.widget(cx, ids!(sidebar_button2)).set_visible(cx, !shown);
          let left = if self.unified && !shown { 84.0 } else { 10.0 };
          let mut row = self.ui.view(cx, ids!(bar_row));
-@@ -7164,6 +7646,7 @@ fn desk_menu_rows(&mut self, cx: &mut Cx, entry: Option<&FileEntry>) -> Vec<Menu
+@@ -7164,6 +7648,7 @@ fn desk_menu_rows(&mut self, cx: &mut Cx, entry: Option<&FileEntry>) -> Vec<Menu
                  self.show_hidden,
                  self.in_trash(),
                  self.trash_full(),
@@ -6785,7 +6794,7 @@ index 18ddec8b62e9278a7daf3716ebad8c8db83130f0..bdd7dc78c2de86358fcc4a8051c53c49
              );
          };
          let picked = self
-@@ -7331,10 +7814,8 @@ fn style_default_button(&mut self, cx: &mut Cx, id: &[LiveId], enabled: bool) {
+@@ -7331,10 +7816,8 @@ fn style_default_button(&mut self, cx: &mut Cx, id: &[LiveId], enabled: bool) {
  
      fn set_batch_format(&mut self, cx: &mut Cx, format: bool) {
          self.batch_format = format;
@@ -6798,7 +6807,7 @@ index 18ddec8b62e9278a7daf3716ebad8c8db83130f0..bdd7dc78c2de86358fcc4a8051c53c49
          self.ui
              .view(cx, ids!(batch_mode))
              .label(cx, ids!(popup_label))
-@@ -7344,9 +7825,32 @@ fn set_batch_format(&mut self, cx: &mut Cx, format: bool) {
+@@ -7344,9 +7827,32 @@ fn set_batch_format(&mut self, cx: &mut Cx, format: bool) {
          self.ui.redraw(cx);
      }
  
@@ -6832,7 +6841,20 @@ index 18ddec8b62e9278a7daf3716ebad8c8db83130f0..bdd7dc78c2de86358fcc4a8051c53c49
              return;
          }
          let find = self.ui.view(cx, ids!(batch_find)).text_input(cx, ids!(field_input));
-@@ -7413,43 +7917,97 @@ fn size_quick_look(&mut self, cx: &mut Cx, room: DVec2) {
+@@ -7399,6 +7905,12 @@ fn desk_quick_look(&mut self, cx: &mut Cx) {
+                 return;
+             }
+         }
++        // On a Mac a sample picture does too, from a copy the viewer can read.
++        if vfs().is_demo() && self.unified && !entry.is_dir {
++            if let Preview::Shown(_) = self.preview.open_sample(cx, &entry.path) {
++                return;
++            }
++        }
+         self.show_quick_look(cx, &entry);
+     }
+ 
+@@ -7413,43 +7925,97 @@ fn size_quick_look(&mut self, cx: &mut Cx, room: DVec2) {
          });
      }
  
@@ -6951,7 +6973,7 @@ index 18ddec8b62e9278a7daf3716ebad8c8db83130f0..bdd7dc78c2de86358fcc4a8051c53c49
          if self.desk {
              self.place_quick_look(cx);
          } else {
-@@ -7469,16 +8027,6 @@ fn show_quick_look(&mut self, cx: &mut Cx, entry: &FileEntry) {
+@@ -7469,16 +8035,6 @@ fn show_quick_look(&mut self, cx: &mut Cx, entry: &FileEntry) {
              };
              self.ui.view(cx, ids!(ql_open)).label(cx, ids!(dlg_label)).set_text(cx, &words);
          }
@@ -6968,7 +6990,7 @@ index 18ddec8b62e9278a7daf3716ebad8c8db83130f0..bdd7dc78c2de86358fcc4a8051c53c49
          self.ui.widget(cx, ids!(ql_scroll)).set_visible(cx, text.is_some());
          self.ui.widget(cx, ids!(ql_picture)).set_visible(cx, picture.is_some());
          self.ui.widget(cx, ids!(ql_card)).set_visible(cx, text.is_none() && picture.is_none());
-@@ -7678,17 +8226,14 @@ fn restore_desk(&mut self, cx: &mut Cx) {
+@@ -7678,17 +8234,14 @@ fn restore_desk(&mut self, cx: &mut Cx) {
          self.ui.widget(cx, ids!(search_button)).widget(cx, ids!(btn_sel)).set_visible(cx, false);
          let text = self.ui.text_input(cx, ids!(search_input)).text();
          self.ui.widget(cx, ids!(search_clear)).set_visible(cx, searching && !text.is_empty());
@@ -6988,7 +7010,7 @@ index 18ddec8b62e9278a7daf3716ebad8c8db83130f0..bdd7dc78c2de86358fcc4a8051c53c49
              self.refresh_batch_preview(cx);
          }
          if self.path_edit_open {
-@@ -7747,10 +8292,19 @@ fn handle_desk_actions(&mut self, cx: &mut Cx, actions: &Actions) -> bool {
+@@ -7747,10 +8300,19 @@ fn handle_desk_actions(&mut self, cx: &mut Cx, actions: &Actions) -> bool {
              return true;
          }
          if self.batch_open && self.ui.view(cx, ids!(batch_mode)).finger_down(actions).is_some() {
@@ -7009,7 +7031,7 @@ index 18ddec8b62e9278a7daf3716ebad8c8db83130f0..bdd7dc78c2de86358fcc4a8051c53c49
          for id in [ids!(sidebar_button), ids!(sidebar_button2)] {
              if self.ui.view(cx, id).finger_down(actions).is_some() {
                  self.toggle_sidebar(cx);
-@@ -7785,6 +8339,9 @@ fn handle_desk_actions(&mut self, cx: &mut Cx, actions: &Actions) -> bool {
+@@ -7785,6 +8347,9 @@ fn handle_desk_actions(&mut self, cx: &mut Cx, actions: &Actions) -> bool {
          if self.quick_look_open {
              if self.ui.view(cx, ids!(ql_close)).finger_down(actions).is_some() {
                  self.close_preview(cx);
@@ -7019,7 +7041,7 @@ index 18ddec8b62e9278a7daf3716ebad8c8db83130f0..bdd7dc78c2de86358fcc4a8051c53c49
              } else if self.ui.view(cx, ids!(ql_open)).finger_down(actions).is_some() {
                  if let Some(entry) = self.ql_entry.clone() {
                      self.close_preview(cx);
-@@ -8006,27 +8563,28 @@ fn desk_chord(&mut self, cx: &mut Cx, event: &KeyEvent, editing: bool) -> bool {
+@@ -8006,27 +8571,28 @@ fn desk_chord(&mut self, cx: &mut Cx, event: &KeyEvent, editing: bool) -> bool {
              KeyCode::ArrowUp => self.go_up(cx),
              KeyCode::Key1 => self.set_mode(cx, ViewMode::Icons),
              KeyCode::Key2 => self.set_mode(cx, ViewMode::List),
@@ -7053,7 +7075,7 @@ index 18ddec8b62e9278a7daf3716ebad8c8db83130f0..bdd7dc78c2de86358fcc4a8051c53c49
              }
              KeyCode::KeyS if alt => self.toggle_sidebar(cx),
              KeyCode::Period if shift => self.toggle_hidden(cx),
-@@ -8076,6 +8634,33 @@ fn step_selection(&mut self, cx: &mut Cx, amount: isize, extend: bool) {
+@@ -8076,6 +8642,33 @@ fn step_selection(&mut self, cx: &mut Cx, amount: isize, extend: bool) {
          }
      }
  
@@ -7087,7 +7109,7 @@ index 18ddec8b62e9278a7daf3716ebad8c8db83130f0..bdd7dc78c2de86358fcc4a8051c53c49
      fn select_at(&mut self, cx: &mut Cx, position: usize) {
          let selected = self
              .with_contents(cx, |contents, cx| contents.select_position(cx, position))
-@@ -8124,6 +8709,9 @@ fn desk_plain_key(&mut self, cx: &mut Cx, event: &KeyEvent) {
+@@ -8124,6 +8717,9 @@ fn desk_plain_key(&mut self, cx: &mut Cx, event: &KeyEvent) {
              KeyCode::Space => self.toggle_preview(cx),
              KeyCode::ArrowUp => self.step_selection(cx, -stride, shift),
              KeyCode::ArrowDown => self.step_selection(cx, stride, shift),
@@ -7097,7 +7119,15 @@ index 18ddec8b62e9278a7daf3716ebad8c8db83130f0..bdd7dc78c2de86358fcc4a8051c53c49
              KeyCode::ArrowLeft | KeyCode::ArrowRight if mode == ViewMode::List => {
                  let open = key == KeyCode::ArrowRight;
                  let action = self
-@@ -8277,7 +8865,7 @@ fn handle_startup(&mut self, cx: &mut Cx) {
+@@ -8205,6 +8801,7 @@ fn handle_startup(&mut self, cx: &mut Cx) {
+         // filesystem before preferences or paths can consult a backend.
+         if vfs::demo_requested() {
+             vfs::install(Arc::new(demo::DemoVfs::new()));
++            preview::clear_sample_copies();
+         }
+         self.ui.widget(cx, ids!(sample_notice)).set_visible(cx, self.desk && vfs().is_demo());
+         let _ = model::scan_all();
+@@ -8277,7 +8874,7 @@ fn handle_startup(&mut self, cx: &mut Cx) {
      }
  
      fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
@@ -7106,7 +7136,7 @@ index 18ddec8b62e9278a7daf3716ebad8c8db83130f0..bdd7dc78c2de86358fcc4a8051c53c49
              // A tool with nowhere to go does not light up.
              let dead = self.desk && self.tool_is_dead(id);
              let mut button=self.ui.view(cx,id);
-@@ -8328,6 +8916,16 @@ fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
+@@ -8328,6 +8925,16 @@ fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
          if self.ui.view(cx, ids!(search_button)).finger_down(actions).is_some() {
              self.set_search(cx, !self.search_visible);
          }
@@ -7123,7 +7153,7 @@ index 18ddec8b62e9278a7daf3716ebad8c8db83130f0..bdd7dc78c2de86358fcc4a8051c53c49
          if self.ui.view(cx, ids!(props_close)).finger_down(actions).is_some() {
              self.set_props(cx, false);
          }
-@@ -8369,6 +8967,12 @@ fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
+@@ -8369,6 +8976,12 @@ fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
                  self.set_mode(cx, mode);
              }
          }
@@ -7136,7 +7166,7 @@ index 18ddec8b62e9278a7daf3716ebad8c8db83130f0..bdd7dc78c2de86358fcc4a8051c53c49
          for (id, storage) in [(ids!(menu_button), false), (ids!(storage_button), true)] {
              if self.ui.view(cx, id).finger_down(actions).is_some() {
                  let at = self.ui.view(cx, id).area().rect(cx);
-@@ -8439,7 +9043,7 @@ fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
+@@ -8439,7 +9052,7 @@ fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
                  return self.apply_batch(cx);
              }
              let mut changed = false;
@@ -7145,7 +7175,7 @@ index 18ddec8b62e9278a7daf3716ebad8c8db83130f0..bdd7dc78c2de86358fcc4a8051c53c49
                  let field = self.ui.view(cx, id).text_input(cx, ids!(field_input));
                  if field.changed(actions).is_some() {
                      changed = true;
-@@ -8457,7 +9061,7 @@ fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
+@@ -8457,7 +9070,7 @@ fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
          for (id, name) in PLACES {
              if self.ui.view(cx, id).finger_down(actions).is_some() {
                  let path = self.place_path(name);
@@ -7154,7 +7184,7 @@ index 18ddec8b62e9278a7daf3716ebad8c8db83130f0..bdd7dc78c2de86358fcc4a8051c53c49
                  break;
              }
          }
-@@ -8505,7 +9109,7 @@ fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
+@@ -8505,7 +9118,7 @@ fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
                  self.refresh_bookmarks(cx);
                  self.status(cx, &format!("Removed the {name} bookmark"));
              } else {
@@ -7163,7 +7193,7 @@ index 18ddec8b62e9278a7daf3716ebad8c8db83130f0..bdd7dc78c2de86358fcc4a8051c53c49
              }
              return;
          }
-@@ -8536,6 +9140,7 @@ fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
+@@ -8536,6 +9149,7 @@ fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
              self.with_contents(cx, |contents, cx| contents.set_filter(cx, filter));
              self.report(cx);
              if self.tabs[self.tab].mode.is_treemap() {self.rebuild_filter(cx);}
@@ -7342,6 +7372,134 @@ index 69905ac6d80a179dd795e2d8ff6adf1b50003f73..36695f3632b948100ca5209d594622f5
      #[test]
      fn a_desktops_row_menu_keeps_finders_rule() {
          // Move to Trash on the row; immediately only where the Trash needs it,
+diff --git a/apps/files/src/preview.rs b/apps/files/src/preview.rs
+index 2c5004b41f2bb261e24dc344109cb06957ea634b..d0c4f2d71ec84ba4051bc2cde83f3c0b54b87a60 100644
+--- a/apps/files/src/preview.rs
++++ b/apps/files/src/preview.rs
+@@ -57,6 +57,55 @@ pub(crate) fn demo_preview(fs: &dyn crate::vfs::Vfs) -> Option<Preview> {
+     fs.is_demo().then(|| Preview::NoViewer("External previews are not in this demo".to_string()))
+ }
+ 
++/// A sample picture of the demo as a file the image viewer can read, so a
++/// Mac's Quick Look shows it in the same floating panel as a real file: the
++/// picture its thumbnail is made from, under the sample's own name in Files'
++/// own storage, in a folder of its own so the viewer finds no other picture
++/// beside it. `None` for anything but a picture (a sample PDF or video has no
++/// content to hand over, a sample text is Files' own panel's) or when it
++/// can't be written.
++#[cfg(not(target_arch = "wasm32"))]
++pub(crate) fn sample_copy(path: &Path) -> Option<PathBuf> {
++    sample_copy_in(&samples_root(), path)
++}
++
++#[cfg(not(target_arch = "wasm32"))]
++fn sample_copy_in(root: &Path, path: &Path) -> Option<PathBuf> {
++    if !makepad_diskmap::kind::is_image_file(path) {
++        return None;
++    }
++    let bytes = crate::thumbs::sample_picture(path);
++    let key = path
++        .to_string_lossy()
++        .bytes()
++        .fold(0xcbf2_9ce4_8422_2325u64, |hash, byte| (hash ^ byte as u64).wrapping_mul(0x1000_0000_01b3));
++    let file = root.join(format!("{key:016x}")).join(path.file_name()?);
++    if std::fs::read(&file).ok().as_deref() != Some(bytes) {
++        std::fs::create_dir_all(file.parent()?).ok()?;
++        std::fs::write(&file, bytes).ok()?;
++    }
++    Some(file)
++}
++
++#[cfg(target_arch = "wasm32")]
++pub(crate) fn sample_copy(_path: &Path) -> Option<PathBuf> {
++    None
++}
++
++/// Where those copies are kept: Files' own storage.
++#[cfg(not(target_arch = "wasm32"))]
++fn samples_root() -> PathBuf {
++    crate::model::makepad_home().join("files/Quick Look")
++}
++
++/// The copies an earlier run left, gone as the demo starts again.
++pub(crate) fn clear_sample_copies() {
++    #[cfg(not(target_arch = "wasm32"))]
++    {
++        let _ = std::fs::remove_dir_all(samples_root());
++    }
++}
++
+ /// The one preview this window has open, if any.
+ #[derive(Default)]
+ pub struct PreviewHost {
+@@ -116,6 +165,38 @@ pub fn retarget(&mut self, cx: &Cx, path: &Path) -> bool {
+         makepad_wm_api::preview(cx, &native)
+     }
+ 
++    /// Quick Look a sample of the demo as a real file is, on a Mac's desk: a
++    /// picture goes to the image viewer's floating panel from its copy in
++    /// Files' own storage (`sample_copy`). Anything else has nothing a viewer
++    /// could read, and keeps Files' own panel.
++    pub fn open_sample(&mut self, cx: &Cx, path: &Path) -> Preview {
++        let name = crate::model::display_name(path);
++        if !makepad_wm_api::hosted(cx) {
++            return Preview::NoViewer("External previews are not in this demo".to_string());
++        }
++        let Some(copy) = sample_copy(path) else {
++            return Preview::NoViewer(format!("The sample {name} has nothing a viewer could show"));
++        };
++        if makepad_wm_api::preview(cx, &copy) {
++            return Preview::Shown(format!(
++                "Previewing {} in {} — arrow keys dial through, Space or Esc closes",
++                name,
++                crate::menu::viewer_name(viewer_for(path))
++            ));
++        }
++        Preview::NoViewer(format!("The window manager could not preview {}", name))
++    }
++
++    /// [`Self::retarget`] for a sample: an open panel follows the selection to
++    /// another sample picture. On anything else it stays where it is, as it
++    /// stays on a folder.
++    pub fn retarget_sample(&mut self, cx: &Cx, path: &Path) -> bool {
++        if self.hosted.is_none() {
++            return false;
++        }
++        sample_copy(path).is_some_and(|copy| makepad_wm_api::preview(cx, &copy))
++    }
++
+     /// Quick Look `path` in its associated viewer. External viewers are a
+     /// RealVfs-only integration; demo files fall back to the in-app preview.
+     pub fn open(&mut self, cx: &Cx, path: &Path) -> Preview {
+@@ -338,6 +419,28 @@ fn the_panels_state_comes_from_the_window_manager() {
+         assert!(host.showing().is_none());
+     }
+ 
++    #[test]
++    fn a_sample_picture_is_a_file_of_its_own_and_nothing_else_is() {
++        let root = std::env::temp_dir().join(format!("files-sample-copies-{}", std::process::id()));
++        let sample = Path::new("/Demo/Pictures/archive-0001/IMG_00002.jpg");
++        let copy = sample_copy_in(&root, sample).expect("a picture gets a copy");
++        assert_eq!(copy.file_name(), sample.file_name(), "under its own name");
++        assert_eq!(std::fs::read(&copy).unwrap(), crate::thumbs::sample_picture(sample), "the picture its thumbnail shows");
++        assert_eq!(std::fs::read_dir(copy.parent().unwrap()).unwrap().count(), 1, "alone in its folder");
++        assert!(copy.starts_with(&root));
++        // The same sample asks again: the same file.
++        assert_eq!(sample_copy_in(&root, sample), Some(copy.clone()));
++        // Another sample is another folder.
++        let other = sample_copy_in(&root, Path::new("/Demo/Pictures/archive-0001/IMG_00003.jpg")).unwrap();
++        assert_ne!(other.parent(), copy.parent());
++        // No content to hand over: a PDF, a video, a text, a raw file.
++        for none in ["/Demo/Documents/report-00000.pdf", "/Demo/Videos/clip-0000.mp4", "/Demo/Documents/notes-00006.md", "/Demo/Pictures/archive-0001/DSC_00017.ARW"] {
++            assert_eq!(sample_copy_in(&root, Path::new(none)), None, "{none}");
++        }
++        assert!(samples_root().ends_with("files/Quick Look"), "Files' own storage");
++        let _ = std::fs::remove_dir_all(&root);
++    }
++
+     #[test]
+     fn requests_carry_the_path_the_wm_reads_back() {
+         // A quote or a backslash in a filename must survive the envelope.
 diff --git a/apps/files/src/rename.rs b/apps/files/src/rename.rs
 index 6d6b7d009b7a2eefab2c3c8f9aee5305704da79f..8f680429318c76e27c83422d675d93dc4fec383b 100644
 --- a/apps/files/src/rename.rs
@@ -7392,6 +7550,24 @@ index 6d6b7d009b7a2eefab2c3c8f9aee5305704da79f..8f680429318c76e27c83422d675d93dc
  #[cfg(test)]
  mod tests {
      use super::*;
+diff --git a/apps/files/src/thumbs.rs b/apps/files/src/thumbs.rs
+index d9fc2103a3d0c3154fbcb9658b0680c9cab04d85..07ffe18de8ca3fe56df2fce18d205aa6aa94b901 100644
+--- a/apps/files/src/thumbs.rs
++++ b/apps/files/src/thumbs.rs
+@@ -288,6 +288,13 @@ fn decode(&self, path: &Path) -> Option<ThumbPixels> {
+     }
+ }
+ 
++/// The picture a sample of the demo shows, the one its thumbnail is made
++/// from: what a Mac's Quick Look hands the viewer for it
++/// (`preview::sample_copy`).
++pub(crate) fn sample_picture(path: &Path) -> &'static [u8] {
++    DemoThumbSource::bytes(path)
++}
++
+ fn decode_image_bytes(data: &[u8]) -> Option<ThumbPixels> {
+     let image = decode_image_from_data(data).ok()?;
+     Some(downscale(image.width, image.height, &image.data))
 diff --git a/apps/finance/resources/icons/plus-circle.svg b/apps/finance/resources/icons/plus-circle.svg
 new file mode 100644
 index 0000000000000000000000000000000000000000..ecd2c78d8435d9225d6715915ceb371bb9d5403d
@@ -8241,7 +8417,7 @@ index 3a100a99289ce4e462a2b34ad58729bb1125c56d..6c01f8e8a3d1e7c49964e38b04f6e760
  pub mod thumbs;
  pub mod widget;
 diff --git a/apps/image/src/main.rs b/apps/image/src/main.rs
-index bd92f2ea782c3c52201f59d60bc5865266a1d6c6..9d6e3360a7990abf87b6f3f617461a8937c6ca3e 100644
+index bd92f2ea782c3c52201f59d60bc5865266a1d6c6..38114d2dd9912ed27061b715a63aaec7dd89c356 100644
 --- a/apps/image/src/main.rs
 +++ b/apps/image/src/main.rs
 @@ -5,6 +5,7 @@
@@ -8293,32 +8469,178 @@ index bd92f2ea782c3c52201f59d60bc5865266a1d6c6..9d6e3360a7990abf87b6f3f617461a89
  
      startup() do #(App::script_component(vm)){
          desk: desk
-@@ -177,9 +198,24 @@ fn by(touch, mac){ if desk { mac } else { touch } }
-                                         actual_button := Seg{text: "Actual Size"}
-                                         actual_on := SegOn{text: "Actual Size"}
-                                     }
-+                                    rotate_gap := View{width: 8 height: Fit}
-+                                    rotate_button := Tool{draw_icon +: {svg: crate_resource("self://resources/icons/rotate-left.svg")}}
-+                                    // Preview's Inspector, and its pressed look while it is out.
-+                                    info_button := Tool{draw_icon +: {svg: crate_resource("self://resources/icons/info.svg")}}
-+                                    info_on := ToolOn{draw_icon +: {svg: crate_resource("self://resources/icons/info.svg")}}
-                                     View{width: 8 height: Fit}
-                                     open_button := Tool{draw_icon +: {svg: crate_resource("self://resources/icons/folder.svg")}}
-+                                    // What a narrow window has no room for, in a menu.
-+                                    more_button := Tool{
-+                                        visible: false
-+                                        margin: Inset{left: 4}
-+                                        icon_walk: Walk{width: 14 height: 14}
-+                                        draw_icon +: {svg: crate_resource("self://resources/icons/chevrons-right.svg")}
+@@ -113,73 +134,125 @@ fn by(touch, mac){ if desk { mac } else { touch } }
+                                 visible: false
+                                 width: Fill
+                                 height: if unified { 52 } else { 40 }
+-                                flow: Right
+-                                align: Align{y: 0.5}
+-                                spacing: 4
+-                                padding: Inset{left: if unified { 84 } else { 12 } right: 10}
++                                flow: Overlay
+                                 draw_bg.color: bar
+ 
+-                                thumbs_button := Tool{visible: false draw_icon +: {svg: crate_resource("self://resources/icons/sidebar.svg")}}
+-                                thumbs_on := ToolOn{draw_icon +: {svg: crate_resource("self://resources/icons/sidebar.svg")}}
++                                toolbar_row := View{
++                                    width: Fill
++                                    height: Fill
++                                    flow: Right
++                                    align: Align{y: 0.5}
++                                    spacing: 4
++                                    padding: Inset{left: if unified { 84 } else { 12 } right: 10}
++
++                                    thumbs_button := Tool{visible: false draw_icon +: {svg: crate_resource("self://resources/icons/sidebar.svg")}}
++                                    thumbs_on := ToolOn{draw_icon +: {svg: crate_resource("self://resources/icons/sidebar.svg")}}
+ 
+-                                View{
++                                    View{
++                                        width: Fill
++                                        height: Fit
++                                        flow: Down
++                                        margin: Inset{left: if unified { 4 } else { 0 }}
++                                        doc_title := Label{
++                                            width: Fill
++                                            padding: 0
++                                            clip_y: false
++                                            max_lines: 1
++                                            text_overflow: TextOverflow.Ellipsis
++                                            text: ""
++                                            draw_text +: {color: ink text_style: theme.font_bold{font_size: 11.25}}
++                                        }
++                                        place := Label{
++                                            width: Fill
++                                            padding: 0
++                                            clip_y: false
++                                            max_lines: 1
++                                            text_overflow: TextOverflow.Ellipsis
++                                            text: ""
++                                            draw_text +: {color: muted text_style: theme.font_regular{font_size: 8.25}}
++                                        }
 +                                    }
-+                                    more_menu := MpToolbarMore{}
++                                    tools := View{
++                                        width: Fit
++                                        height: Fit
++                                        flow: Right
++                                        align: Align{y: 0.5}
++                                        spacing: 2
++
++                                        previous_button := Tool{draw_icon +: {svg: crate_resource("self://resources/icons/chevron-left.svg")}}
++                                        next_button := Tool{draw_icon +: {svg: crate_resource("self://resources/icons/chevron-right.svg")}}
++                                        previous_gap := View{width: 8 height: Fit}
++                                        zoom_out_button := Tool{draw_icon +: {svg: crate_resource("self://resources/icons/zoom-out.svg")}}
++                                        zoom_label := BarLabel{
++                                            width: 44
++                                            align: Align{x: 0.5 y: 0.5}
++                                            text: ""
++                                        }
++                                        zoom_dim := BarLabel{
++                                            visible: false
++                                            width: 44
++                                            align: Align{x: 0.5 y: 0.5}
++                                            text: ""
++                                            draw_text +: {color: dimmed}
++                                        }
++                                        zoom_in_button := Tool{draw_icon +: {svg: crate_resource("self://resources/icons/zoom-in.svg")}}
++                                        fit_gap := View{width: 8 height: Fit}
++                                        fit_segments := Segments{
++                                            fit_button := Seg{text: "Fit"}
++                                            fit_on := SegOn{text: "Fit"}
++                                            actual_button := Seg{text: "Actual Size"}
++                                            actual_on := SegOn{text: "Actual Size"}
++                                        }
++                                        rotate_gap := View{width: 8 height: Fit}
++                                        rotate_button := Tool{draw_icon +: {svg: crate_resource("self://resources/icons/rotate-left.svg")}}
++                                        // Preview's Inspector, and its pressed look while it is out.
++                                        info_button := Tool{draw_icon +: {svg: crate_resource("self://resources/icons/info.svg")}}
++                                        info_on := ToolOn{draw_icon +: {svg: crate_resource("self://resources/icons/info.svg")}}
++                                        View{width: 8 height: Fit}
++                                        open_button := Tool{draw_icon +: {svg: crate_resource("self://resources/icons/folder.svg")}}
++                                        // What a narrow window has no room for, in a menu.
++                                        more_button := Tool{
++                                            visible: false
++                                            margin: Inset{left: 4}
++                                            icon_walk: Walk{width: 14 height: 14}
++                                            draw_icon +: {svg: crate_resource("self://resources/icons/chevrons-right.svg")}
++                                        }
++                                        more_menu := MpToolbarMore{}
++                                    }
++                                    // A Quick Look panel's one tool, at its title bar's end.
++                                    open_with := PushButton{visible: false text: "Open with Image Viewer"}
++                                }
++                                // A Mac Quick Look panel's title, over the row: the name centred on
++                                // the panel with what it is under it, clear of the shell's close and
++                                // full-screen controls at the start and of Open with at the end.
++                                panel_head := View{
++                                    visible: false
+                                     width: Fill
+-                                    height: Fit
++                                    height: Fill
+                                     flow: Down
+-                                    margin: Inset{left: if unified { 4 } else { 0 }}
+-                                    doc_title := Label{
++                                    align: Align{y: 0.5}
++                                    padding: Inset{left: 176 right: 176}
++                                    panel_title := Label{
+                                         width: Fill
+                                         padding: 0
+                                         clip_y: false
++                                        align: Align{x: 0.5}
+                                         max_lines: 1
+                                         text_overflow: TextOverflow.Ellipsis
+                                         text: ""
+                                         draw_text +: {color: ink text_style: theme.font_bold{font_size: 11.25}}
+                                     }
+-                                    place := Label{
++                                    panel_place := Label{
+                                         width: Fill
+                                         padding: 0
+                                         clip_y: false
++                                        align: Align{x: 0.5}
+                                         max_lines: 1
+                                         text_overflow: TextOverflow.Ellipsis
+                                         text: ""
+                                         draw_text +: {color: muted text_style: theme.font_regular{font_size: 8.25}}
+                                     }
                                  }
-+                                // A Quick Look panel's one tool, at its title bar's end.
-+                                open_with := PushButton{visible: false text: "Open with Image Viewer"}
+-                                tools := View{
+-                                    width: Fit
+-                                    height: Fit
+-                                    flow: Right
+-                                    align: Align{y: 0.5}
+-                                    spacing: 2
+-
+-                                    previous_button := Tool{draw_icon +: {svg: crate_resource("self://resources/icons/chevron-left.svg")}}
+-                                    next_button := Tool{draw_icon +: {svg: crate_resource("self://resources/icons/chevron-right.svg")}}
+-                                    previous_gap := View{width: 8 height: Fit}
+-                                    zoom_out_button := Tool{draw_icon +: {svg: crate_resource("self://resources/icons/zoom-out.svg")}}
+-                                    zoom_label := BarLabel{
+-                                        width: 44
+-                                        align: Align{x: 0.5 y: 0.5}
+-                                        text: ""
+-                                    }
+-                                    zoom_dim := BarLabel{
+-                                        visible: false
+-                                        width: 44
+-                                        align: Align{x: 0.5 y: 0.5}
+-                                        text: ""
+-                                        draw_text +: {color: dimmed}
+-                                    }
+-                                    zoom_in_button := Tool{draw_icon +: {svg: crate_resource("self://resources/icons/zoom-in.svg")}}
+-                                    fit_gap := View{width: 8 height: Fit}
+-                                    fit_segments := Segments{
+-                                        fit_button := Seg{text: "Fit"}
+-                                        fit_on := SegOn{text: "Fit"}
+-                                        actual_button := Seg{text: "Actual Size"}
+-                                        actual_on := SegOn{text: "Actual Size"}
+-                                    }
+-                                    View{width: 8 height: Fit}
+-                                    open_button := Tool{draw_icon +: {svg: crate_resource("self://resources/icons/folder.svg")}}
+-                                }
                              }
                              toolbar_line := SolidView{
                                  visible: false
-@@ -269,6 +305,40 @@ fn by(touch, mac){ if desk { mac } else { touch } }
+@@ -269,6 +342,40 @@ fn by(touch, mac){ if desk { mac } else { touch } }
                                          }
  
                                      }
@@ -8359,7 +8681,7 @@ index bd92f2ea782c3c52201f59d60bc5865266a1d6c6..9d6e3360a7990abf87b6f3f617461a89
                                  }
                              }
  
-@@ -368,6 +438,19 @@ pub struct App {
+@@ -368,6 +475,19 @@ pub struct App {
      /// What the strip last knew it was doing: it has to find its place on opening.
      #[rust]
      thumbs_showing: bool,
@@ -8379,7 +8701,7 @@ index bd92f2ea782c3c52201f59d60bc5865266a1d6c6..9d6e3360a7990abf87b6f3f617461a89
  }
  
  impl MatchEvent for App {
-@@ -436,6 +519,10 @@ fn handle_key_down(&mut self, cx: &mut Cx, e: &KeyEvent) {
+@@ -436,6 +556,10 @@ fn handle_key_down(&mut self, cx: &mut Cx, e: &KeyEvent) {
          if e.key_code == KeyCode::KeyT && e.modifiers.is_primary() && e.modifiers.shift && self.can_show_thumbs() && !sheet {
              self.toggle_thumbs(cx);
          }
@@ -8390,7 +8712,7 @@ index bd92f2ea782c3c52201f59d60bc5865266a1d6c6..9d6e3360a7990abf87b6f3f617461a89
          // The sidebar is a list: its arrows go along it.
          if self.thumbs_showing && !sheet && !e.modifiers.is_primary() {
              let delta = match e.key_code {
-@@ -479,7 +566,7 @@ fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
+@@ -479,7 +603,7 @@ fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
              if let MpImageThumbsAction::Goto(index) = widget_action.cast() {
                  self.with_viewer(cx, |viewer, cx| viewer.show_at(cx, index));
              }
@@ -8399,7 +8721,7 @@ index bd92f2ea782c3c52201f59d60bc5865266a1d6c6..9d6e3360a7990abf87b6f3f617461a89
                  let text = if name.is_empty() {
                      // An unloaded warm viewer has nothing to say.
                      String::new()
-@@ -499,7 +586,9 @@ fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
+@@ -499,7 +623,9 @@ fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
                  self.fit = fit;
                  self.actual = !fit && zoom_pct == 100;
                  self.place = (index, count);
@@ -8410,7 +8732,7 @@ index bd92f2ea782c3c52201f59d60bc5865266a1d6c6..9d6e3360a7990abf87b6f3f617461a89
                  if renamed {
                      self.set_title(cx);
                  }
-@@ -516,7 +605,18 @@ fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
+@@ -516,7 +642,18 @@ fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
          if self.ui.button(cx, ids!(thumbs_button)).clicked(actions) || self.ui.button(cx, ids!(thumbs_on)).clicked(actions) {
              self.toggle_thumbs(cx);
          }
@@ -8429,7 +8751,7 @@ index bd92f2ea782c3c52201f59d60bc5865266a1d6c6..9d6e3360a7990abf87b6f3f617461a89
              self.failed = false;
              self.size = (0, 0);
              self.with_viewer(cx, |viewer, cx| viewer.retry(cx));
-@@ -531,23 +631,17 @@ fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
+@@ -531,23 +668,17 @@ fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
              (ids!(fit_on), Command::Fit),
              (ids!(actual_button), Command::Actual),
              (ids!(actual_on), Command::Actual),
@@ -8456,7 +8778,7 @@ index bd92f2ea782c3c52201f59d60bc5865266a1d6c6..9d6e3360a7990abf87b6f3f617461a89
  enum Command {
      Previous,
      Next,
-@@ -555,9 +649,64 @@ enum Command {
+@@ -555,9 +686,64 @@ enum Command {
      ZoomIn,
      Fit,
      Actual,
@@ -8521,7 +8843,7 @@ index bd92f2ea782c3c52201f59d60bc5865266a1d6c6..9d6e3360a7990abf87b6f3f617461a89
      fn with_viewer(&self, cx: &mut Cx, f: impl FnOnce(&mut MpImageView, &mut Cx)) {
          let widget = self.ui.widget(cx, ids!(viewer));
          let Some(mut viewer) = widget.borrow_mut::<MpImageView>() else {
-@@ -661,6 +810,51 @@ fn sync_thumbs(&mut self, cx: &mut Cx) {
+@@ -661,6 +847,51 @@ fn sync_thumbs(&mut self, cx: &mut Cx) {
          self.thumbs_showing = show;
      }
  
@@ -8573,7 +8895,7 @@ index bd92f2ea782c3c52201f59d60bc5865266a1d6c6..9d6e3360a7990abf87b6f3f617461a89
      /// What the toolbar says under the name: its place in the folder and its size.
      fn subtitle(&self) -> String {
          let (index, count) = self.place;
-@@ -694,6 +888,8 @@ fn update_chrome(&mut self, cx: &mut Cx) {
+@@ -694,6 +925,8 @@ fn update_chrome(&mut self, cx: &mut Cx) {
          }
          self.ui.widget(cx, ids!(sheet_dim)).set_visible(cx, sheet);
          self.ui.widget(cx, ids!(tools)).set_visible(cx, !panel);
@@ -8582,7 +8904,30 @@ index bd92f2ea782c3c52201f59d60bc5865266a1d6c6..9d6e3360a7990abf87b6f3f617461a89
          self.ui.widget(cx, ids!(status_row)).set_visible(cx, !self.desk);
          self.sync_thumbs(cx);
          // A Quick Look panel says nothing while it is empty.
-@@ -747,9 +943,10 @@ fn update_chrome(&mut self, cx: &mut Cx) {
+@@ -724,13 +957,19 @@ fn update_chrome(&mut self, cx: &mut Cx) {
+         open.set_visible(cx, !loading && !retrying);
+         open.set_text(cx, if hosted && !self.desk { "Open Files" } else { "Open\u{2026}" });
+ 
+-        // The toolbar names the document; a title bar, in another style, already has.
++        // The toolbar names the document; a title bar, in another style, already
++        // has. A Mac's Quick Look panel centres the name, what it is under it.
++        let head = panel && self.unified;
+         let name = if named { self.name.as_str() } else { "Image Viewer" };
+         self.ui.label(cx, ids!(doc_title)).set_text(cx, name);
+-        self.ui.widget(cx, ids!(doc_title)).set_visible(cx, self.unified);
++        self.ui.widget(cx, ids!(doc_title)).set_visible(cx, self.unified && !head);
+         let subtitle = self.subtitle();
+-        self.ui.widget(cx, ids!(place)).set_visible(cx, !subtitle.is_empty());
++        self.ui.widget(cx, ids!(place)).set_visible(cx, !subtitle.is_empty() && !head);
+         self.ui.label(cx, ids!(place)).set_text(cx, &subtitle);
++        self.ui.widget(cx, ids!(panel_head)).set_visible(cx, head);
++        self.ui.label(cx, ids!(panel_title)).set_text(cx, if named { name } else { "" });
++        self.ui.label(cx, ids!(panel_place)).set_text(cx, &subtitle);
++        self.ui.widget(cx, ids!(panel_place)).set_visible(cx, !subtitle.is_empty());
+ 
+         // A Mac's toolbar has the sidebar's tool, as Preview's does, and its
+         // pressed form while the sidebar is out.
+@@ -747,9 +986,10 @@ fn update_chrome(&mut self, cx: &mut Cx) {
              open_panel::set_enabled(&self.ui.widget(cx, id), cx, many && !sheet);
          }
          open_panel::set_enabled(&self.ui.widget(cx, ids!(open_button)), cx, !sheet);
@@ -8594,7 +8939,7 @@ index bd92f2ea782c3c52201f59d60bc5865266a1d6c6..9d6e3360a7990abf87b6f3f617461a89
          self.ui.widget(cx, ids!(zoom_label)).set_visible(cx, showing && !sheet);
          self.ui.widget(cx, ids!(zoom_dim)).set_visible(cx, showing && sheet);
          for (off, on, active) in [
-@@ -759,16 +956,40 @@ fn update_chrome(&mut self, cx: &mut Cx) {
+@@ -759,16 +999,40 @@ fn update_chrome(&mut self, cx: &mut Cx) {
              open_panel::show_form(&self.ui.widget(cx, off), cx, !active);
              open_panel::show_form(&self.ui.widget(cx, on), cx, active);
          }
@@ -8638,7 +8983,16 @@ index bd92f2ea782c3c52201f59d60bc5865266a1d6c6..9d6e3360a7990abf87b6f3f617461a89
      /// Quick Look v2: `StudioToApp::Custom` from wm reaches a hosted app
      /// as `Event::Custom(json)`; this is what the viewer half of the
      /// protocol does with it. `PreviewUnload` never ends the process.
-@@ -825,10 +1046,22 @@ fn script_mod(vm: &mut ScriptVm) -> ScriptValue {
+@@ -810,6 +1074,8 @@ fn set_title(&mut self, cx: &mut Cx) {
+         // is; a Quick Look panel keeps its own form.
+         let title = match (self.desk, self.preview.is_preview(), self.name.is_empty()) {
+             (true, false, false) => self.name.clone(),
++            // A Mac's Quick Look panel too: its title shows when it is full screen.
++            (true, true, false) if self.unified => self.name.clone(),
+             (true, _, _) => self.preview.title("Image Viewer"),
+             (false, _, _) => self.preview.title("image"),
+         };
+@@ -825,10 +1091,22 @@ fn script_mod(vm: &mut ScriptVm) -> ScriptValue {
          makepad_image::widget::script_mod(vm);
          makepad_image::thumbs::script_mod(vm);
          makepad_image::open_panel::script_mod(vm);
@@ -8661,7 +9015,7 @@ index bd92f2ea782c3c52201f59d60bc5865266a1d6c6..9d6e3360a7990abf87b6f3f617461a89
          if let Event::Custom(json) = event {
              if let Some(wm) = makepad_wm_api::WmEvent::parse(json) {
                  self.handle_wm_event(cx, &wm);
-@@ -859,6 +1092,86 @@ fn file_name(path: Option<&Path>) -> String {
+@@ -859,6 +1137,86 @@ fn file_name(path: Option<&Path>) -> String {
      path.and_then(Path::file_name).map(|name| name.to_string_lossy().to_string()).unwrap_or_default()
  }
  
@@ -8748,7 +9102,7 @@ index bd92f2ea782c3c52201f59d60bc5865266a1d6c6..9d6e3360a7990abf87b6f3f617461a89
  /// Parses a `#rrggbb` (or `#rgb`) hex string into a `Vec4f`, alpha 1.0.
  fn parse_hex_color(value: &str) -> Option<Vec4f> {
      let digits = value.strip_prefix('#').unwrap_or(value);
-@@ -879,6 +1192,50 @@ fn parse_hex_color(value: &str) -> Option<Vec4f> {
+@@ -879,6 +1237,50 @@ fn parse_hex_color(value: &str) -> Option<Vec4f> {
      Some(Vec4f::from_u32(rgba))
  }
  
@@ -10845,7 +11199,7 @@ index d37729649d198b78414cfa768db183d0cdc2845b..76ac5df1c17c70b43776b410bd829b3d
  
  use std::path::PathBuf;
 diff --git a/apps/pdf/src/main.rs b/apps/pdf/src/main.rs
-index 8812a372d68c4cdf2fb21a6df5abb979321f8a4e..c84f4c82216d78a804c108f7716affc8ed980ecf 100644
+index 8812a372d68c4cdf2fb21a6df5abb979321f8a4e..69c17b222dec23c9c335efd51c54c848b62cb5a5 100644
 --- a/apps/pdf/src/main.rs
 +++ b/apps/pdf/src/main.rs
 @@ -4,9 +4,12 @@
@@ -10861,63 +11215,410 @@ index 8812a372d68c4cdf2fb21a6df5abb979321f8a4e..c84f4c82216d78a804c108f7716affc8
  use makepad_pdf::widget::{FitMode, MpPdfAction, MpPdfView, PdfStatus};
  use makepad_pdf::Args;
  use makepad_widgets::makepad_platform::file_dialogs::{FileDialog, FileDialogAction};
-@@ -410,7 +413,8 @@ fn by(touch, mac){ if desk { mac } else { touch } }
+@@ -270,193 +273,250 @@ fn by(touch, mac){ if desk { mac } else { touch } }
+     let DeskToolbar = SolidView{
+         width: Fill
+         height: if unified { 52 } else { 40 }
+-        flow: Right
+-        spacing: 4
+-        align: Align{y: 0.5}
+-        padding: Inset{left: if unified { 84 } else { 12 } right: 10}
++        flow: Overlay
++        // The row below holds the toolbar's padding. Left unset here, the
++        // toolbar showed the touch toolbar's 6 a side and squeezed the row.
++        padding: 0
+         draw_bg +: {color: bar}
+ 
+-        thumbs_button := Tool{draw_icon +: {svg: crate_resource("self://resources/icons/sidebar.svg")}}
+-        thumbs_on := ToolOn{draw_icon +: {svg: crate_resource("self://resources/icons/sidebar.svg")}}
+-
+-        View{
++        toolbar_row := View{
+             width: Fill
+-            height: Fit
+-            flow: Down
+-            margin: Inset{left: 4}
+-            doc_title := Label{
+-                width: Fill
+-                padding: 0
+-                clip_y: false
+-                max_lines: 1
+-                text_overflow: TextOverflow.Ellipsis
+-                text: ""
+-                draw_text +: {color: ink text_style: theme.font_bold{font_size: 11.25}}
+-            }
+-            place := Label{
+-                width: Fill
+-                padding: 0
+-                clip_y: false
+-                max_lines: 1
+-                text_overflow: TextOverflow.Ellipsis
+-                text: ""
+-                draw_text +: {color: muted text_style: theme.font_regular{font_size: 8.25}}
+-            }
+-        }
+-
+-        tools := View{
+-            width: Fit
+-            height: Fit
++            height: Fill
+             flow: Right
++            spacing: 4
+             align: Align{y: 0.5}
+-            spacing: 2
++            padding: Inset{left: if unified { 84 } else { 12 } right: 10}
++
++            thumbs_button := Tool{draw_icon +: {svg: crate_resource("self://resources/icons/sidebar.svg")}}
++            thumbs_on := ToolOn{draw_icon +: {svg: crate_resource("self://resources/icons/sidebar.svg")}}
+ 
+-            page_tools := View{
++            View{
++                width: Fill
++                height: Fit
++                flow: Down
++                margin: Inset{left: 4}
++                doc_title := Label{
++                    width: Fill
++                    padding: 0
++                    clip_y: false
++                    max_lines: 1
++                    text_overflow: TextOverflow.Ellipsis
++                    text: ""
++                    draw_text +: {color: ink text_style: theme.font_bold{font_size: 11.25}}
++                }
++                place := Label{
++                    width: Fill
++                    padding: 0
++                    clip_y: false
++                    max_lines: 1
++                    text_overflow: TextOverflow.Ellipsis
++                    text: ""
++                    draw_text +: {color: muted text_style: theme.font_regular{font_size: 8.25}}
++                }
++            }
++
++            tools := View{
+                 width: Fit
+                 height: Fit
+                 flow: Right
+                 align: Align{y: 0.5}
+                 spacing: 2
+ 
+-                prev_button := Tool{draw_icon +: {svg: crate_resource("self://resources/icons/chevron-up.svg")}}
+-                next_button := Tool{draw_icon +: {svg: crate_resource("self://resources/icons/chevron-down.svg")}}
+-
+-                // A TextInput draws whatever its `visible` says: the View is what hides.
+-                page_box := View{
++                page_tools := View{
+                     width: Fit
+                     height: Fit
+-                    page_field := TextInput{
+-                        width: 44
+-                        height: 28
+-                        margin: Inset{left: 4 right: 8}
+-                        padding: Inset{left: 6 right: 6 top: 6 bottom: 6}
+-                        empty_text: "1"
+-                        draw_selection +: {color_hover: #x0071e355, color_focus: #x0071e355, color_down: #x0071e355}
+-                        draw_bg +: {
+-                            color: field color_hover: field color_focus: field color_down: field color_empty: field
+-                            border_size: 1.0
+-                            border_radius: 3.0
+-                            border_color: hairline border_color_hover: hairline border_color_down: hairline border_color_empty: hairline
+-                            border_color_focus: theme.color_focus
+-                        }
+-                        draw_text +: {
+-                            color: ink color_hover: ink color_focus: ink color_down: ink
+-                            color_empty: muted color_empty_hover: muted color_empty_focus: muted
+-                            text_style: theme.font_regular{font_size: 9.75}
++                    flow: Right
++                    align: Align{y: 0.5}
++                    spacing: 2
++
++                    prev_button := Tool{draw_icon +: {svg: crate_resource("self://resources/icons/chevron-up.svg")}}
++                    next_button := Tool{draw_icon +: {svg: crate_resource("self://resources/icons/chevron-down.svg")}}
++
++                    // A TextInput draws whatever its `visible` says: the View is what hides.
++                    page_box := View{
++                        width: Fit
++                        height: Fit
++                        page_field := TextInput{
++                            width: 44
++                            height: 28
++                            margin: Inset{left: 4 right: 8}
++                            padding: Inset{left: 6 right: 6 top: 6 bottom: 6}
++                            empty_text: "1"
++                            draw_selection +: {color_hover: #x0071e355, color_focus: #x0071e355, color_down: #x0071e355}
++                            draw_bg +: {
++                                color: field color_hover: field color_focus: field color_down: field color_empty: field
++                                border_size: 1.0
++                                border_radius: 3.0
++                                border_color: hairline border_color_hover: hairline border_color_down: hairline border_color_empty: hairline
++                                border_color_focus: theme.color_focus
++                            }
++                            draw_text +: {
++                                color: ink color_hover: ink color_focus: ink color_down: ink
++                                color_empty: muted color_empty_hover: muted color_empty_focus: muted
++                                text_style: theme.font_regular{font_size: 9.75}
++                            }
+                         }
+                     }
                  }
-                 find_prev := Tool{draw_icon +: {svg: crate_resource("self://resources/icons/chevron-left.svg")}}
-                 find_next := Tool{draw_icon +: {svg: crate_resource("self://resources/icons/chevron-right.svg")}}
+-            }
+ 
+-            page_gap := View{visible: false width: 8 height: Fit}
+-
+-            zoom_out_button := Tool{draw_icon +: {svg: crate_resource("self://resources/icons/magnify-minus.svg")}}
+-            zoom_label := BarLabel{
+-                width: 44
+-                align: Align{x: 0.5 y: 0.5}
+-                text: ""
+-            }
+-            zoom_dim := BarLabel{
+-                visible: false
+-                width: 44
+-                align: Align{x: 0.5 y: 0.5}
+-                text: ""
+-                draw_text +: {color: dimmed}
+-            }
+-            zoom_in_button := Tool{draw_icon +: {svg: crate_resource("self://resources/icons/magnify-plus.svg")}}
++                page_gap := View{visible: false width: 8 height: Fit}
+ 
+-            fit_gap := View{width: 8 height: Fit}
++                zoom_out_button := Tool{draw_icon +: {svg: crate_resource("self://resources/icons/magnify-minus.svg")}}
++                zoom_label := BarLabel{
++                    width: 44
++                    align: Align{x: 0.5 y: 0.5}
++                    text: ""
++                }
++                zoom_dim := BarLabel{
++                    visible: false
++                    width: 44
++                    align: Align{x: 0.5 y: 0.5}
++                    text: ""
++                    draw_text +: {color: dimmed}
++                }
++                zoom_in_button := Tool{draw_icon +: {svg: crate_resource("self://resources/icons/magnify-plus.svg")}}
+ 
+-            fit_segments := Segments{
+-                fit_width_button := Seg{text: "Fit Width"}
+-                fit_width_on := SegOn{text: "Fit Width"}
+-                fit_page_button := Seg{text: "Fit Page"}
+-                fit_page_on := SegOn{text: "Fit Page"}
+-            }
++                fit_gap := View{width: 8 height: Fit}
+ 
+-            View{width: 8 height: Fit}
++                fit_segments := Segments{
++                    fit_width_button := Seg{text: "Fit Width"}
++                    fit_width_on := SegOn{text: "Fit Width"}
++                    fit_page_button := Seg{text: "Fit Page"}
++                    fit_page_on := SegOn{text: "Fit Page"}
++                }
+ 
+-            open_button := Tool{draw_icon +: {svg: crate_resource("self://resources/icons/folder.svg")}}
++                View{width: 8 height: Fit}
+ 
+-            find_button := Tool{visible: false draw_icon +: {svg: crate_resource("self://resources/icons/search.svg")}}
++                open_button := Tool{draw_icon +: {svg: crate_resource("self://resources/icons/folder.svg")}}
+ 
+-            // Where Preview's search field is: the toolbar's trailing edge.
+-            find_tools := View{
+-                visible: false
+-                width: Fit
+-                height: Fit
+-                flow: Right
+-                align: Align{y: 0.5}
+-                spacing: 2
+-                margin: Inset{left: 8}
++                find_button := Tool{visible: false draw_icon +: {svg: crate_resource("self://resources/icons/search.svg")}}
+ 
+-                // A count keeps one width, so the toolbar's tools hold still as it
+-                // changes; what won't fit has room of its own.
+-                find_status_box := View{
+-                    width: 64
++                // Where Preview's search field is: the toolbar's trailing edge.
++                find_tools := View{
++                    visible: false
++                    width: Fit
+                     height: Fit
+-                    align: Align{x: 1.0}
+-                    margin: Inset{right: 4}
+-                    find_status := BarLabel{
++                    flow: Right
++                    align: Align{y: 0.5}
++                    spacing: 2
++                    margin: Inset{left: 8}
++
++                    // A count keeps one width, so the toolbar's tools hold still as it
++                    // changes; what won't fit has room of its own.
++                    find_status_box := View{
++                        width: 64
++                        height: Fit
++                        align: Align{x: 1.0}
++                        margin: Inset{right: 4}
++                        find_status := BarLabel{
++                            text: ""
++                            draw_text +: {color: muted text_style: theme.font_regular{font_size: 9}}
++                        }
++                    }
++                    find_note := BarLabel{
++                        visible: false
++                        margin: Inset{right: 4}
+                         text: ""
+                         draw_text +: {color: muted text_style: theme.font_regular{font_size: 9}}
+                     }
+-                }
+-                find_note := BarLabel{
+-                    visible: false
+-                    margin: Inset{right: 4}
+-                    text: ""
+-                    draw_text +: {color: muted text_style: theme.font_regular{font_size: 9}}
+-                }
+-                find_prev := Tool{draw_icon +: {svg: crate_resource("self://resources/icons/chevron-left.svg")}}
+-                find_next := Tool{draw_icon +: {svg: crate_resource("self://resources/icons/chevron-right.svg")}}
 -                View{
-+                // As wide as the toolbar can spare, down to a least width.
-+                find_box := View{
-                     width: 168
-                     height: 28
-                     flow: Overlay
-@@ -420,7 +424,8 @@ fn by(touch, mac){ if desk { mac } else { touch } }
+-                    width: 168
+-                    height: 28
+-                    flow: Overlay
+-                    margin: Inset{left: 4}
+-                    find_field := TextInput{
+-                        width: Fill
++                    find_prev := Tool{draw_icon +: {svg: crate_resource("self://resources/icons/chevron-left.svg")}}
++                    find_next := Tool{draw_icon +: {svg: crate_resource("self://resources/icons/chevron-right.svg")}}
++                    // As wide as the toolbar can spare, down to a least width.
++                    find_box := View{
++                        width: 168
                          height: 28
-                         margin: 0
-                         padding: Inset{left: 25 right: 24 top: 6 bottom: 6}
+-                        margin: 0
+-                        padding: Inset{left: 25 right: 24 top: 6 bottom: 6}
 -                        empty_text: "Find in Document"
-+                        // Preview's word, and one that fits the field at its least width.
-+                        empty_text: "Search"
-                         draw_selection +: {color_hover: #x0071e355, color_focus: #x0071e355, color_down: #x0071e355}
-                         draw_bg +: {
-                             color: field color_hover: field color_focus: field color_down: field color_empty: field
-@@ -449,16 +454,31 @@ fn by(touch, mac){ if desk { mac } else { touch } }
-                         height: 28
-                         align: Align{x: 1.0 y: 0.5}
-                         padding: Inset{right: 4}
-+                        // NSSearchField's circled cancel, once there is text.
-                         find_close := Tool{
+-                        draw_selection +: {color_hover: #x0071e355, color_focus: #x0071e355, color_down: #x0071e355}
+-                        draw_bg +: {
+-                            color: field color_hover: field color_focus: field color_down: field color_empty: field
+-                            border_size: 1.0
+-                            border_radius: 3.0
+-                            border_color: hairline border_color_hover: hairline border_color_down: hairline border_color_empty: hairline
+-                            border_color_focus: theme.color_focus
+-                        }
+-                        draw_text +: {
+-                            color: ink color_hover: ink color_focus: ink color_down: ink
+-                            color_empty: muted color_empty_hover: muted color_empty_focus: muted
+-                            text_style: theme.font_regular{font_size: 9.75}
++                        flow: Overlay
++                        margin: Inset{left: 4}
++                        find_field := TextInput{
++                            width: Fill
++                            height: 28
++                            margin: 0
++                            padding: Inset{left: 25 right: 24 top: 6 bottom: 6}
++                            // Preview's word, and one that fits the field at its least width.
++                            empty_text: "Search"
++                            draw_selection +: {color_hover: #x0071e355, color_focus: #x0071e355, color_down: #x0071e355}
++                            draw_bg +: {
++                                color: field color_hover: field color_focus: field color_down: field color_empty: field
++                                border_size: 1.0
++                                border_radius: 3.0
++                                border_color: hairline border_color_hover: hairline border_color_down: hairline border_color_empty: hairline
++                                border_color_focus: theme.color_focus
++                            }
++                            draw_text +: {
++                                color: ink color_hover: ink color_focus: ink color_down: ink
++                                color_empty: muted color_empty_hover: muted color_empty_focus: muted
++                                text_style: theme.font_regular{font_size: 9.75}
++                            }
+                         }
+-                    }
+-                    View{
+-                        width: Fit
+-                        height: 28
+-                        padding: Inset{left: 7 top: 7}
+-                        Icon{
+-                            icon_walk: Walk{width: 14 height: 14}
+-                            draw_icon +: {svg: crate_resource("self://resources/icons/search.svg") color: muted}
++                        View{
++                            width: Fit
++                            height: 28
++                            padding: Inset{left: 7 top: 7}
++                            Icon{
++                                icon_walk: Walk{width: 14 height: 14}
++                                draw_icon +: {svg: crate_resource("self://resources/icons/search.svg") color: muted}
++                            }
+                         }
+-                    }
+-                    View{
+-                        width: Fill
+-                        height: 28
+-                        align: Align{x: 1.0 y: 0.5}
+-                        padding: Inset{right: 4}
+-                        find_close := Tool{
 -                            width: 20
 -                            height: 20
 -                            icon_walk: Walk{width: 9 height: 9}
 -                            draw_icon +: {svg: crate_resource("self://resources/icons/xmark.svg") color: muted}
-+                            visible: false
-+                            width: 18
-+                            height: 18
-+                            icon_walk: Walk{width: 14 height: 14}
-+                            draw_bg +: {color_hover: #x00000000 color_down: #x00000000}
-+                            draw_icon +: {svg: crate_resource("self://resources/icons/xmark-circle.svg") color: muted}
++                        View{
++                            width: Fill
++                            height: 28
++                            align: Align{x: 1.0 y: 0.5}
++                            padding: Inset{right: 4}
++                            // NSSearchField's circled cancel, once there is text.
++                            find_close := Tool{
++                                visible: false
++                                width: 18
++                                height: 18
++                                icon_walk: Walk{width: 14 height: 14}
++                                draw_bg +: {color_hover: #x00000000 color_down: #x00000000}
++                                draw_icon +: {svg: crate_resource("self://resources/icons/xmark-circle.svg") color: muted}
++                            }
                          }
                      }
                  }
-             }
 +
-+            // What a narrow window has no room for, in a menu.
-+            more_button := Tool{
-+                visible: false
-+                margin: Inset{left: 4}
-+                icon_walk: Walk{width: 14 height: 14}
-+                draw_icon +: {svg: crate_resource("self://resources/icons/chevrons-right.svg")}
++                // What a narrow window has no room for, in a menu.
++                more_button := Tool{
++                    visible: false
++                    margin: Inset{left: 4}
++                    icon_walk: Walk{width: 14 height: 14}
++                    draw_icon +: {svg: crate_resource("self://resources/icons/chevrons-right.svg")}
++                }
++                more_menu := MpToolbarMore{}
 +            }
-+            more_menu := MpToolbarMore{}
-         }
 +
-+        // A Quick Look panel's one tool, at its title bar's end.
-+        open_with := PushButton{visible: false text: "Open with PDF Viewer"}
++            // A Quick Look panel's one tool, at its title bar's end.
++            open_with := PushButton{visible: false text: "Open with PDF Viewer"}
++        }
++        // A Mac Quick Look panel's title, over the row: the name centred on
++        // the panel with the page under it, clear of the shell's close and
++        // full-screen controls at the start and of Open with at the end.
++        panel_head := View{
++            visible: false
++            width: Fill
++            height: Fill
++            flow: Down
++            align: Align{y: 0.5}
++            padding: Inset{left: 176 right: 176}
++            panel_title := Label{
++                width: Fill
++                padding: 0
++                clip_y: false
++                align: Align{x: 0.5}
++                max_lines: 1
++                text_overflow: TextOverflow.Ellipsis
++                text: ""
++                draw_text +: {color: ink text_style: theme.font_bold{font_size: 11.25}}
++            }
++            panel_place := Label{
++                width: Fill
++                padding: 0
++                clip_y: false
++                align: Align{x: 0.5}
++                max_lines: 1
++                text_overflow: TextOverflow.Ellipsis
++                text: ""
++                draw_text +: {color: muted text_style: theme.font_regular{font_size: 8.25}}
+             }
+         }
      }
- 
-     startup() do #(App::script_component(vm)){
-@@ -605,6 +625,17 @@ fn by(touch, mac){ if desk { mac } else { touch } }
+@@ -605,6 +665,17 @@ fn by(touch, mac){ if desk { mac } else { touch } }
  /// The most letters Find's fixed count box holds ("999 of 999", "No Results").
  const FIND_COUNT_CHARS: usize = 10;
  
@@ -10935,7 +11636,7 @@ index 8812a372d68c4cdf2fb21a6df5abb979321f8a4e..c84f4c82216d78a804c108f7716affc8
  #[derive(Script, ScriptHook)]
  pub struct App {
      #[live]
-@@ -645,6 +676,12 @@ pub struct App {
+@@ -645,6 +716,12 @@ pub struct App {
      /// of the person's home folder.
      #[rust]
      open_home: Option<PathBuf>,
@@ -10948,7 +11649,16 @@ index 8812a372d68c4cdf2fb21a6df5abb979321f8a4e..c84f4c82216d78a804c108f7716affc8
  }
  
  impl MatchEvent for App {
-@@ -831,29 +868,90 @@ fn set_title(&mut self, cx: &mut Cx) {
+@@ -823,6 +900,8 @@ fn set_title(&mut self, cx: &mut Cx) {
+         let name = self.preview.showing().and_then(|path| path.file_name());
+         let title = match (self.desk, self.preview.is_preview(), name) {
+             (true, false, Some(name)) => name.to_string_lossy().to_string(),
++            // A Mac's Quick Look panel too: its title shows when it is full screen.
++            (true, true, Some(name)) if self.unified => name.to_string_lossy().to_string(),
+             (true, _, _) => self.preview.title("PDF Viewer"),
+             (false, _, _) => self.preview.title("pdf"),
+         };
+@@ -831,29 +910,90 @@ fn set_title(&mut self, cx: &mut Cx) {
      }
  
      fn handle_toolbar(&mut self, cx: &mut Cx, actions: &Actions) {
@@ -11055,7 +11765,7 @@ index 8812a372d68c4cdf2fb21a6df5abb979321f8a4e..c84f4c82216d78a804c108f7716affc8
          }
      }
  
-@@ -1024,6 +1122,16 @@ fn handle_find(&mut self, cx: &mut Cx, actions: &Actions) {
+@@ -1024,6 +1164,16 @@ fn handle_find(&mut self, cx: &mut Cx, actions: &Actions) {
                  field.take_key_focus(cx);
              }
          }
@@ -11072,8 +11782,32 @@ index 8812a372d68c4cdf2fb21a6df5abb979321f8a4e..c84f4c82216d78a804c108f7716affc8
          self.sync_find_focus(cx);
      }
  
-@@ -1154,6 +1262,8 @@ fn paint_chrome(&mut self, cx: &mut Cx) {
+@@ -1139,10 +1289,12 @@ fn paint_chrome(&mut self, cx: &mut Cx) {
+                 self.next_frame = cx.new_next_frame();
+             }
+ 
+-            // The toolbar names the document; a title bar, in another style, already has.
++            // The toolbar names the document; a title bar, in another style, already
++            // has. A Mac's Quick Look panel centres the name, the page under it.
++            let head = panel && self.unified;
+             let name = if idle { "PDF Viewer" } else { status.name.as_str() };
+             self.ui.label(cx, ids!(doc_title)).set_text(cx, name);
+-            self.ui.widget(cx, ids!(doc_title)).set_visible(cx, self.unified);
++            self.ui.widget(cx, ids!(doc_title)).set_visible(cx, self.unified && !head);
+             let place = if !open {
+                 String::new()
+             } else if status.loaded < status.page_count {
+@@ -1150,10 +1302,16 @@ fn paint_chrome(&mut self, cx: &mut Cx) {
+             } else {
+                 format!("Page {} of {}", status.page, status.page_count)
+             };
+-            self.ui.widget(cx, ids!(place)).set_visible(cx, !place.is_empty());
++            self.ui.widget(cx, ids!(place)).set_visible(cx, !place.is_empty() && !head);
              self.ui.label(cx, ids!(place)).set_text(cx, &place);
++            self.ui.widget(cx, ids!(panel_head)).set_visible(cx, head);
++            self.ui.label(cx, ids!(panel_title)).set_text(cx, if idle { "" } else { name });
++            self.ui.label(cx, ids!(panel_place)).set_text(cx, &place);
++            self.ui.widget(cx, ids!(panel_place)).set_visible(cx, !place.is_empty());
  
              self.ui.widget(cx, ids!(tools)).set_visible(cx, !panel);
 +            // Quick Look opens what it shows in the app that opens it, as a Mac's does.
@@ -11081,7 +11815,7 @@ index 8812a372d68c4cdf2fb21a6df5abb979321f8a4e..c84f4c82216d78a804c108f7716affc8
              self.ui.widget(cx, ids!(page_box)).set_visible(cx, open);
              self.ui.widget(cx, ids!(page_gap)).set_visible(cx, !open);
              for id in [ids!(thumbs_button), ids!(thumbs_on)] {
-@@ -1191,6 +1301,7 @@ fn paint_chrome(&mut self, cx: &mut Cx) {
+@@ -1191,6 +1349,7 @@ fn paint_chrome(&mut self, cx: &mut Cx) {
                  if field.text() != self.find_query {
                      field.set_text(cx, &self.find_query);
                  }
@@ -11089,7 +11823,7 @@ index 8812a372d68c4cdf2fb21a6df5abb979321f8a4e..c84f4c82216d78a804c108f7716affc8
                  let words = self.find_words();
                  let short = words.chars().count() <= FIND_COUNT_CHARS;
                  self.ui.widget(cx, ids!(find_status_box)).set_visible(cx, short);
-@@ -1205,24 +1316,33 @@ fn paint_chrome(&mut self, cx: &mut Cx) {
+@@ -1205,24 +1364,33 @@ fn paint_chrome(&mut self, cx: &mut Cx) {
                      open_panel::set_enabled(&self.ui.widget(cx, id), cx, walks);
                  }
              }
@@ -11134,7 +11868,7 @@ index 8812a372d68c4cdf2fb21a6df5abb979321f8a4e..c84f4c82216d78a804c108f7716affc8
          } else {
              open_files.set_visible(cx, idle || failed);
          }
-@@ -1268,12 +1388,25 @@ fn script_mod(vm: &mut ScriptVm) -> ScriptValue {
+@@ -1268,12 +1436,25 @@ fn script_mod(vm: &mut ScriptVm) -> ScriptValue {
          makepad_wm_theme::apply(vm);
          Palette::for_vm(vm).publish(vm);
          makepad_pdf::thumbs::script_mod(vm);
@@ -22934,17 +23668,597 @@ index cf4a5cf6fe055baba92c36f45004d270de698b23..976d381170a6ab8867c9db6ba26629ea
          if let Some(item) = actions.find_widget_action(self.widget_uid()) {
              if let DropDownAction::Select(id) = item.cast() {
 diff --git a/widgets/src/gesture_view.rs b/widgets/src/gesture_view.rs
-index 7d52595af7cb1a5bb1529f68dfd0ac6c5a2f6545..54234cbdbae2ab5bd216670fab3c96b3901cf3f3 100644
+index 7d52595af7cb1a5bb1529f68dfd0ac6c5a2f6545..ea2c2b299da661beb70ed65f57e7afbc5607b41c 100644
 --- a/widgets/src/gesture_view.rs
 +++ b/widgets/src/gesture_view.rs
-@@ -549,6 +549,7 @@ fn draw_menu(&mut self, cx: &mut Cx2d) {
-         menu.min_width = longest as f64 * 7.0 + 44.0;
-         let current = self.menu.iter().position(|title| *title == self.menu_current);
+@@ -21,6 +21,8 @@
+ //!     on_swipe: |dx, dy| if dx < 0 { next() } else { previous() }
+ //!     on_pan: |dx, dy, phase| drag(dx, dy, phase)      // phase 0 begin, 1 move, 2 end
+ //!     menu: ["Open", "-", "Delete"]                    // what a right click offers
++//!     // a row may open a submenu beside it: {title: "Add to" menu: albums off: [here]};
++//!     // a row of it is chosen as `on_menu(row, x, y, "Add to")`
+ //!     on_menu: |title| if title == "Delete" { remove() } else { open() }
+ //!     menu_urls: ["", "", page]                        // items that open a page
+ //!     menu_off: ["Delete"]                             // items shown greyed: not for now
+@@ -37,7 +39,7 @@
+ //! ```
+ //! Coordinates are relative to the view's top left.
+ use crate::{
+-    drop_down::{PopupMenuGlobal, PopupMenuKey},
++    drop_down::{PopupMenuGlobal, PopupMenuKey, SUB_MENU_HEAP},
+     makepad_derive_widget::*,
+     makepad_draw::*,
+     makepad_script::ScriptFnRef,
+@@ -203,6 +205,73 @@ struct OpenMenu {
+     /// Opened by a right click: the menu is about this view, and shows it.
+     ring: bool,
+     keyboard: Option<usize>,
++    /// The submenu open beside a row.
++    sub: Option<OpenSub>,
++}
++
++/// An open submenu: the row it hangs from, and the keyboard's row in it once
++/// the keys went into it.
++#[derive(Clone, Copy, Debug)]
++struct OpenSub {
++    parent: usize,
++    keyboard: Option<usize>,
++}
++
++/// A row of a context menu: its title (`"-"` for a rule), and the rows of the
++/// submenu it opens beside it, if any. A script writes a row as its title, or
++/// as `{title: "Add to" menu: ["Family" "-" "Trips"] off: ["Trips"]}`.
++#[derive(Clone, Debug, Default, PartialEq, Script)]
++pub struct GestureMenuRow {
++    #[live]
++    pub title: String,
++    /// The submenu's rows, `"-"` for a rule. A row with them opens them and is
++    /// never chosen itself.
++    #[live]
++    pub menu: Vec<String>,
++    /// The submenu's rows that can't be chosen now, by title: shown greyed.
++    #[live]
++    pub off: Vec<String>,
++}
++
++impl ScriptHook for GestureMenuRow {
++    fn on_type_check(_heap: &ScriptHeap, value: ScriptValue) -> bool {
++        value.is_string_like() || value.is_object()
++    }
++
++    fn on_custom_apply(&mut self, vm: &mut ScriptVm, apply: &Apply, _scope: &mut Scope, value: ScriptValue) -> bool {
++        // A re-walk that carries no change keeps the row, as a String field does.
++        if apply.preserves_runtime_state() {
++            return value.is_string_like();
++        }
++        // Each apply is the whole row: nothing of what the row was before stays.
++        *self = Self::default();
++        if value.is_string_like() {
++            vm.bx.heap.cast_to_string(value, &mut self.title);
++            return true;
++        }
++        false
++    }
++}
++
++impl GestureMenuRow {
++    /// Whether row `index` of its submenu can be chosen: not a rule, not greyed.
++    fn sub_live(&self, index: usize) -> bool {
++        self.menu.get(index).is_some_and(|title| title != "-" && !self.off.contains(title))
++    }
++}
++
++/// The next of `count` rows after `from` (none: from the first or the last) that
++/// `live` says can be chosen, going down or up, round the ends.
++fn next_live(count: usize, from: Option<usize>, down: bool, live: impl Fn(usize) -> bool) -> Option<usize> {
++    let count = count as isize;
++    let mut at = from.map_or(if down { -1 } else { count }, |i| i as isize);
++    for _ in 0..count {
++        at = (at + if down { 1 } else { -1 } + count) % count;
++        if live(at as usize) {
++            return Some(at as usize);
++        }
++    }
++    None
+ }
+ 
+ /// A right click rings a row or a card. A view taller than this is a page, and its menu
+@@ -260,10 +329,11 @@ pub struct GestureView {
+     #[rust]
+     closing_press: bool,
+     /// A context menu: what a right click or Control-click on this view
+-    /// offers, in order, `"-"` for a rule between groups. Without one, a right
+-    /// click is a long press.
++    /// offers, in order, `"-"` for a rule between groups. A row may open a
++    /// submenu beside it (`GestureMenuRow`). Without one, a right click is a
++    /// long press.
+     #[live]
+-    menu: Vec<String>,
++    menu: Vec<GestureMenuRow>,
+     /// Items that go straight to a page, by position in `menu`, `""` for the
+     /// rest. A menu's choice is a click, so this is a link's own path out; a
+     /// script has no way to open a page by itself.
+@@ -297,7 +367,8 @@ pub struct GestureView {
+     #[rust]
+     menu_at: DVec2,
+     /// Called with the title of the context menu's chosen item, and where the
+-    /// view was right-clicked: `|title|` or `|title, x, y|`.
++    /// view was right-clicked: `|title|` or `|title, x, y|`. A submenu's row
++    /// also gives the title of the row it hangs from: `|title, x, y, parent|`.
+     #[live]
+     on_menu: ScriptFnRef,
+     /// The context menu's look.
+@@ -349,6 +420,24 @@ fn popup_menu_key(&self) -> PopupMenuKey {
+         }
+     }
+ 
++    /// The second instance of the template, an open submenu's.
++    fn sub_menu_key(&self) -> PopupMenuKey {
++        PopupMenuKey {
++            heap: self.view.source.heap_key() | SUB_MENU_HEAP,
++            template: self.popup_menu,
++        }
++    }
++
++    /// Whether row `index` opens a submenu: it has rows of its own and isn't greyed.
++    fn has_sub(&self, index: usize) -> bool {
++        self.menu.get(index).is_some_and(|row| !row.menu.is_empty() && !self.menu_off.contains(&row.title))
++    }
++
++    /// Whether row `index` can be chosen: not a rule, not greyed.
++    fn row_live(&self, index: usize) -> bool {
++        self.menu.get(index).is_some_and(|row| row.title != "-" && !self.menu_off.contains(&row.title))
++    }
++
+     /// A right click or Control-click, at `abs`: the view's context menu, or
+     /// else its long press. A view inside this one that answered keeps it.
+     fn only_menu(&self) -> bool {
+@@ -394,7 +483,7 @@ fn open_menu_at(&mut self, cx: &mut Cx, abs: DVec2) {
+         let origin = self.view.area().rect(cx).pos;
+         self.menu_at = abs - origin;
+         cx.global::<ViewMenuUp>().0 = true;
+-        self.menu_open = Some(OpenMenu { origin, at: abs - origin, over_view: self.menu_wanted_over, ring: false, keyboard: None });
++        self.menu_open = Some(OpenMenu { origin, at: abs - origin, over_view: self.menu_wanted_over, ring: false, keyboard: None, sub: None });
+         cx.set_key_focus(self.view.area());
+         cx.sweep_take(self.view.area());
+         self.view.redraw(cx);
+@@ -415,6 +504,14 @@ fn close_menu(&mut self, cx: &mut Cx) {
+     /// While the context menu is open, everything is for it. True when the
+     /// event is spent.
+     fn handle_menu_event(&mut self, cx: &mut Cx, event: &Event) -> bool {
++        // An open submenu hears first: its rows lie past the menu's edge.
++        if let Some(heard) = self.sub_menu_event(cx, event) {
++            if let Some((parent, child)) = heard {
++                self.close_menu(cx);
++                self.choose_sub_row(cx, parent, child);
++            }
++            return true;
++        }
+         let Some(mut open) = self.menu_open else {
+             return false;
+         };
+@@ -442,7 +539,22 @@ fn handle_menu_event(&mut self, cx: &mut Cx, event: &Event) -> bool {
+                 chosen = Some(id.0.0 as usize);
+             }
+         });
++        // A row with a submenu opens it, and is never chosen itself.
++        let mut open_sub = None;
++        if let Some(index) = chosen.filter(|index| self.has_sub(*index)) {
++            chosen = None;
++            open_sub = Some((index, false));
++        }
++        let mut leave_sub = false;
+         match event {
++            // The pointer on a row opens its submenu; on another row, the submenu goes.
++            Event::MouseMove(e) if self.menu.iter().any(|row| !row.menu.is_empty()) => {
++                match menu.item_under(cx, e.abs).map(|id| id.0.0 as usize) {
++                    Some(index) if self.has_sub(index) => open_sub = open_sub.or(Some((index, false))),
++                    Some(_) => leave_sub = open.sub.is_some(),
++                    None => {}
++                }
++            }
+             Event::MouseDown(e) if !menu.menu_contains_pos(cx, e.abs) => {
+                 close = true;
+                 // A left press only closes the menu, as on a Mac. A view can read
+@@ -452,57 +564,50 @@ fn handle_menu_event(&mut self, cx: &mut Cx, event: &Event) -> bool {
+                     self.closing_press = true;
+                 }
+             }
+-            Event::KeyDown(key) => {
+-                let step = |from: Option<usize>, down: bool, titles: &[String], off: &[String]| {
+-                    let count = titles.len() as isize;
+-                    let mut at = from.map_or(if down { -1 } else { count }, |i| i as isize);
+-                    for _ in 0..count {
+-                        at = (at + if down { 1 } else { -1 } + count) % count;
+-                        let title = &titles[at as usize];
+-                        if title != "-" && !off.contains(title) {
+-                            return Some(at as usize);
+-                        }
+-                    }
+-                    None
+-                };
+-                match key.key_code {
+-                    KeyCode::Escape => close = true,
+-                    KeyCode::ReturnKey => {
+-                        chosen = open.keyboard;
++            Event::KeyDown(key) => match key.key_code {
++                KeyCode::Escape => close = true,
++                KeyCode::ReturnKey => match open.keyboard {
++                    Some(index) if self.has_sub(index) => open_sub = Some((index, true)),
++                    keyboard => {
++                        chosen = keyboard;
+                         close = chosen.is_none();
+                     }
+-                    KeyCode::ArrowDown | KeyCode::ArrowUp => {
+-                        open.keyboard = step(open.keyboard, key.key_code == KeyCode::ArrowDown, &self.menu, &self.menu_off);
+-                        if let Some(at) = open.keyboard {
+-                            menu.highlight_item(cx, LiveId(at as u64).into());
+-                            menu.redraw(cx);
+-                        }
+-                        self.menu_open = Some(open);
++                },
++                KeyCode::ArrowRight => {
++                    if let Some(index) = open.keyboard.filter(|index| self.has_sub(*index)) {
++                        open_sub = Some((index, true));
+                     }
+-                    _ => {}
+                 }
+-            }
++                KeyCode::ArrowDown | KeyCode::ArrowUp => {
++                    open.keyboard = next_live(self.menu.len(), open.keyboard, key.key_code == KeyCode::ArrowDown, |index| self.row_live(index));
++                    if let Some(at) = open.keyboard {
++                        menu.highlight_item(cx, LiveId(at as u64).into());
++                        menu.redraw(cx);
++                    }
++                    leave_sub = open.sub.is_some();
++                    self.menu_open = Some(open);
++                }
++                _ => {}
++            },
+             _ => {}
+         }
+         drop(map);
++        if leave_sub {
++            open.sub = None;
++            self.menu_open = Some(open);
++            self.view.redraw(cx);
++        }
++        if let Some((index, keys)) = open_sub {
++            self.open_sub(cx, index, keys);
++        }
+         if let Some(index) = chosen {
+             self.close_menu(cx);
+             if let Some(url) = self.menu_urls.get(index).filter(|url| !url.is_empty()) {
+                 crate::link_label::open_external(cx, self.view.source.heap_key(), url, OpenUrlInPlace::No);
+                 return true;
+             }
+-            let Some(title) = self.menu.get(index).cloned() else {
+-                return true;
+-            };
+-            let handler = self.on_menu.clone();
+-            if handler.as_object() != ScriptObject::ZERO {
+-                if let Some(vm_id) = cx.script_ref_vm_id(&self.view.source) {
+-                    let title = cx.with_script_vm_id(vm_id, |vm| {
+-                        ScriptValue::from(vm.bx.heap.new_string_from_str(&title))
+-                    });
+-                    let at = self.menu_at;
+-                    self.call(cx, &handler, &[title, at.x.into(), at.y.into()]);
+-                }
++            if let Some(title) = self.menu.get(index).map(|row| row.title.clone()) {
++                self.call_on_menu(cx, &title, None);
+             }
+             return true;
+         }
+@@ -518,6 +623,155 @@ fn handle_menu_event(&mut self, cx: &mut Cx, event: &Event) -> bool {
+         matches!(event, Event::MouseDown(_) | Event::MouseUp(_) | Event::KeyDown(_))
+     }
+ 
++    /// An open submenu hears first: its rows lie past the menu's edge. `Some`
++    /// when it took the event, with the row chosen in it if one was: its
++    /// parent's index and its own.
++    fn sub_menu_event(&mut self, cx: &mut Cx, event: &Event) -> Option<Option<(usize, usize)>> {
++        let mut open = self.menu_open?;
++        let mut sub = open.sub?;
++        if !self.has_sub(sub.parent) {
++            // Its row changed under it.
++            open.sub = None;
++            self.menu_open = Some(open);
++            return None;
++        }
++        let area = self.view.area();
++        let sub_key = self.sub_menu_key();
++        let global = cx.global::<PopupMenuGlobal>().clone();
++        let mut map = global.map.borrow_mut();
++        let sub_menu = map.get_mut(&sub_key)?;
++        let mut chosen = None;
++        sub_menu.handle_event_with(cx, event, area, &mut |_, action| {
++            if let PopupMenuAction::WasSelected(id) = action {
++                chosen = Some(id.0.0 as usize);
++            }
++        });
++        let pointer = match event {
++            Event::MouseDown(e) => Some(e.abs),
++            Event::MouseUp(e) => Some(e.abs),
++            Event::MouseMove(e) => Some(e.abs),
++            _ => None,
++        };
++        let inside = pointer.is_some_and(|at| sub_menu.menu_contains_pos(cx, at));
++        let row = &self.menu[sub.parent];
++        let mut spent = false;
++        match event {
++            // The pointer takes over from the keys.
++            Event::MouseMove(_) if inside => sub.keyboard = None,
++            Event::KeyDown(key) if sub.keyboard.is_some() => match key.key_code {
++                KeyCode::ArrowDown | KeyCode::ArrowUp => {
++                    let down = key.key_code == KeyCode::ArrowDown;
++                    if let Some(at) = next_live(row.menu.len(), sub.keyboard, down, |index| row.sub_live(index)) {
++                        sub.keyboard = Some(at);
++                        sub_menu.highlight_item(cx, LiveId(at as u64).into());
++                        sub_menu.redraw(cx);
++                    }
++                    spent = true;
++                }
++                KeyCode::ReturnKey | KeyCode::NumpadEnter => chosen = sub.keyboard,
++                KeyCode::ArrowRight => spent = true,
++                // Back to the menu, on the row the submenu hung from.
++                KeyCode::ArrowLeft => {
++                    open.sub = None;
++                    self.menu_open = Some(open);
++                    self.view.redraw(cx);
++                    return Some(None);
++                }
++                _ => {}
++            },
++            _ => {}
++        }
++        let chosen = chosen.filter(|child| row.sub_live(*child));
++        drop(map);
++        open.sub = Some(sub);
++        self.menu_open = Some(open);
++        if let Some(child) = chosen {
++            return Some(Some((sub.parent, child)));
++        }
++        if spent {
++            return Some(None);
++        }
++        if inside {
++            if let Event::MouseDown(e) = event {
++                if e.handled.get().is_empty() {
++                    e.handled.set(area);
++                }
++            }
++            return Some(None);
++        }
++        None
++    }
++
++    /// Row `parent`'s submenu opens beside it, with the keyboard on its first
++    /// row when `keys`.
++    fn open_sub(&mut self, cx: &mut Cx, parent: usize, keys: bool) {
++        let Some(mut open) = self.menu_open else {
++            return;
++        };
++        if !self.has_sub(parent) {
++            return;
++        }
++        let row = &self.menu[parent];
++        let keyboard = if keys { next_live(row.menu.len(), None, true, |index| row.sub_live(index)) } else { None };
++        let same = open.sub.is_some_and(|sub| sub.parent == parent);
++        if same && !keys {
++            return;
++        }
++        if !same {
++            let Some(vm_id) = cx.script_ref_vm_id(&self.view.source) else {
++                return;
++            };
++            let global = cx.global::<PopupMenuGlobal>().clone();
++            let Ok(mut map) = global.map.try_borrow_mut() else {
++                return;
++            };
++            let template = self.popup_menu;
++            map.get_or_insert(cx, self.sub_menu_key(), |cx| {
++                cx.with_script_vm_id(vm_id, |vm| PopupMenu::script_from_value(vm, template))
++            })
++            .clear_item_states(cx);
++        }
++        open.sub = Some(OpenSub { parent, keyboard });
++        if keys {
++            open.keyboard = Some(parent);
++        }
++        self.menu_open = Some(open);
++        self.view.redraw(cx);
++    }
++
++    /// Row `child` of row `parent`'s submenu was chosen.
++    fn choose_sub_row(&self, cx: &mut Cx, parent: usize, child: usize) {
++        let Some(row) = self.menu.get(parent) else {
++            return;
++        };
++        let Some(title) = row.menu.get(child).cloned() else {
++            return;
++        };
++        let parent = row.title.clone();
++        self.call_on_menu(cx, &title, Some(&parent));
++    }
++
++    /// `on_menu` with the chosen row's title and where the view was
++    /// right-clicked, and for a submenu's row the title of the row it hangs from.
++    fn call_on_menu(&self, cx: &mut Cx, title: &str, parent: Option<&str>) {
++        let handler = self.on_menu.clone();
++        if handler.as_object() == ScriptObject::ZERO {
++            return;
++        }
++        let Some(vm_id) = cx.script_ref_vm_id(&self.view.source) else {
++            return;
++        };
++        let (title, parent) = cx.with_script_vm_id(vm_id, |vm| {
++            let title = ScriptValue::from(vm.bx.heap.new_string_from_str(title));
++            let parent = parent.map(|parent| ScriptValue::from(vm.bx.heap.new_string_from_str(parent)));
++            (title, parent)
++        });
++        let at = self.menu_at;
++        let mut args = vec![title, at.x.into(), at.y.into()];
++        args.extend(parent);
++        self.call(cx, &handler, &args);
++    }
++
+     /// What a right click's ring goes round: the part `menu_ring` names, once it has
+     /// drawn, else the whole view.
+     fn ring_rect(&self, cx: &Cx, view: Rect) -> Rect {
+@@ -544,11 +798,19 @@ fn draw_menu(&mut self, cx: &mut Cx2d) {
+         // One menu instance serves everything with the same template, so claim
+         // its items for this view while they draw.
+         menu.tree_parent = self.widget_uid();
+-        // As wide as its longest title, at the menu's 13 points.
+-        let longest = self.menu.iter().map(|title| title.chars().count()).max().unwrap_or(0);
+-        menu.min_width = longest as f64 * 7.0 + 44.0;
+-        let current = self.menu.iter().position(|title| *title == self.menu_current);
++        // As wide as its longest title, at the menu's 13 points, with room for a
++        // submenu's chevron.
++        let longest = self.menu.iter().map(|row| row.title.chars().count()).max().unwrap_or(0);
++        let chevrons = if self.menu.iter().any(|row| !row.menu.is_empty()) { 16.0 } else { 0.0 };
++        menu.min_width = longest as f64 * 7.0 + 44.0 + chevrons;
++        let current = self.menu.iter().position(|row| row.title == self.menu_current);
          menu.ticked_item = current.map(|index| LiveId(index as u64).into());
 +        menu.ticked_also.clear();
++        menu.subs = self.menu.iter().enumerate().filter(|(_, row)| !row.menu.is_empty()).map(|(index, _)| LiveId(index as u64).into()).collect();
++        // The row an open submenu hangs from stays lit, as a Mac's does.
++        if let Some(sub) = open.sub {
++            menu.highlight_item(cx, LiveId(sub.parent as u64).into());
++        }
          let view = self.view.area().rect(cx);
          if open.ring && view.size.y <= MENU_RING_TALLEST {
              menu.draw_context_ring(cx, self.ring_rect(cx, view));
+@@ -561,7 +823,8 @@ fn draw_menu(&mut self, cx: &mut Cx2d) {
+         }
+         menu.begin(cx);
+         let mut current_y = None;
+-        for (index, title) in self.menu.iter().enumerate() {
++        for (index, row) in self.menu.iter().enumerate() {
++            let title = &row.title;
+             if title == "-" {
+                 menu.draw_separator(cx);
+             } else {
+@@ -586,6 +849,44 @@ fn draw_menu(&mut self, cx: &mut Cx2d) {
+         } else {
+             menu.end_inside_window(cx, self.view.area(), open.origin, at);
+         }
++        // The submenu, its first row level with the row it hangs from, at the
++        // menu's right edge, or at its left where the window has no room. The
++        // menu moves to its place once the frame is laid out: here its rects are
++        // still from its own top left, so the submenu goes by where it was put.
++        let Some(sub) = open.sub else {
++            return;
++        };
++        let Some(row) = self.menu.get(sub.parent).filter(|row| !row.menu.is_empty()) else {
++            return;
++        };
++        let (Some(item), frame) = (menu.item_rect(cx, LiveId(sub.parent as u64).into()), menu.menu_rect(cx)) else {
++            return;
++        };
++        let menu_at = menu.placed_at();
++        let Some(sub_menu) = map.get_mut(&self.sub_menu_key()) else {
++            return;
++        };
++        sub_menu.tree_parent = self.widget_uid();
++        let width = sub_menu.width_for_rows(cx, row.menu.iter().filter(|title| *title != "-").map(|title| title.as_str()));
++        sub_menu.min_width = width.ceil().max(120.0);
++        sub_menu.ticked_item = None;
++        sub_menu.ticked_also.clear();
++        sub_menu.subs.clear();
++        if let Some(at) = sub.keyboard {
++            sub_menu.highlight_item(cx, LiveId(at as u64).into());
++        }
++        sub_menu.begin(cx);
++        for (index, title) in row.menu.iter().enumerate() {
++            if title == "-" {
++                sub_menu.draw_separator(cx);
++            } else if row.off.contains(title) {
++                sub_menu.draw_item_off(cx, LiveId(index as u64).into(), title);
++            } else {
++                sub_menu.draw_item(cx, LiveId(index as u64).into(), title);
++            }
++        }
++        let at = menu_at + dvec2(frame.size.x - 3.0, item.pos.y - frame.pos.y - sub_menu.top_padding());
++        sub_menu.end_beside(cx, self.view.area(), open.origin, at, open.origin.x + menu_at.x + 3.0);
+     }
+ 
+     fn handle_touches(&mut self, cx: &mut Cx, event: &TouchUpdateEvent) {
+@@ -682,7 +983,7 @@ fn script_call(&mut self, vm: &mut ScriptVm, method: LiveId, args: ScriptValue)
+             self.menu_wanted_at = None;
+             if let Some(args) = args.as_object() {
+                 if let Some(titles) = vm.bx.heap.vec_value_if_exist(args, 0) {
+-                    self.menu = Vec::<String>::script_from_value(vm, titles);
++                    self.menu = Vec::<GestureMenuRow>::script_from_value(vm, titles);
+                 }
+                 if let Some(current) = vm.bx.heap.vec_value_if_exist(args, 1) {
+                     if let Some(current) = vm.bx.heap.cast_to_owned_string(current, "a menu's current row") {
+@@ -1029,6 +1330,7 @@ fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+ mod tests {
+     use super::*;
+     use crate::makepad_draw::makepad_platform::event::TouchPoint;
++    use crate::makepad_script::script;
+     use std::cell::Cell;
+ 
+     fn touches(points: &[(u64, TouchState, f64, f64)]) -> TouchUpdateEvent {
+@@ -1089,6 +1391,57 @@ fn a_finger_that_starts_outside_the_view_is_not_part_of_its_pinch() {
+         assert_eq!(pinch.update(&touches(&[(2, TouchState::Start, 500.0, 50.0)]), bounds), PinchStep::Nothing);
+     }
+ 
++    #[test]
++    fn the_keys_pass_rules_and_greyed_rows_round_the_ends() {
++        let live = |index: usize| index != 1 && index != 3;
++        assert_eq!(next_live(4, None, true, live), Some(0));
++        assert_eq!(next_live(4, Some(0), true, live), Some(2));
++        assert_eq!(next_live(4, Some(2), true, live), Some(0), "round the end");
++        assert_eq!(next_live(4, None, false, live), Some(2));
++        assert_eq!(next_live(4, Some(0), false, live), Some(2));
++        assert_eq!(next_live(3, None, true, |_| false), None);
++        assert_eq!(next_live(0, None, true, |_| true), None);
++    }
++
++    /// The DSL only fails at eval time: build the view from `mod.widgets.GestureView`
++    /// with a menu whose row opens a submenu, as Photos' Add to does.
++    #[test]
++    fn a_menu_row_may_open_a_submenu() {
++        let mut cx = Cx::new(Box::new(|_, _| {}));
++        cx.with_vm(crate::script_mod);
++        let view = cx.with_vm(|vm| {
++            let value = vm.eval(script! {
++                use mod.prelude.widgets.*
++                GestureView{menu: ["Open" "-" {title: "Add to" menu: ["Family" "-" "Trips"] off: ["Trips"]} "Delete"]}
++            });
++            GestureView::script_from_value(vm, value)
++        });
++        let titles: Vec<&str> = view.menu.iter().map(|row| row.title.as_str()).collect();
++        assert_eq!(titles, ["Open", "-", "Add to", "Delete"]);
++        assert_eq!(view.menu[2].menu, ["Family", "-", "Trips"]);
++        assert_eq!(view.menu[2].off, ["Trips"]);
++        assert!(view.has_sub(2) && !view.has_sub(0) && !view.has_sub(3));
++        assert!(view.row_live(0) && !view.row_live(1));
++        assert!(view.menu[2].sub_live(0) && !view.menu[2].sub_live(1) && !view.menu[2].sub_live(2));
++    }
++
++    /// A menu is applied again on every render: a row keeps nothing of what it was.
++    #[test]
++    fn a_row_applied_again_keeps_nothing_of_what_it_was() {
++        let mut cx = Cx::new(Box::new(|_, _| {}));
++        cx.with_vm(crate::script_mod);
++        cx.with_vm(|vm| {
++            let first = vm.eval(script! { [{title: "Add to" menu: ["Family" "Trips"] off: ["Trips"]} "Delete"] });
++            let mut rows = Vec::<GestureMenuRow>::script_from_value(vm, first);
++            assert_eq!(rows[0].off, ["Trips"]);
++            assert_eq!(rows[1].title, "Delete");
++            let second = vm.eval(script! { ["Open" {title: "Add to" menu: ["Family"]}] });
++            rows.script_apply(vm, &Apply::New, &mut Scope::empty(), second);
++            let add = GestureMenuRow { title: "Add to".into(), menu: vec!["Family".into()], off: Vec::new() };
++            assert_eq!(rows, [GestureMenuRow { title: "Open".into(), ..Default::default() }, add]);
++        });
++    }
++
+     #[test]
+     fn the_sheet_rests_at_the_nearest_detent_or_flicks_to_the_next() {
+         assert_eq!(sheet_heights(800.0), [132.0, 360.0, 704.0]);
 diff --git a/widgets/src/image.rs b/widgets/src/image.rs
 index f359fcedd00ccfc34189eb014f211c8859e19859..e05c211e54515272fee6e90000a49734fcc8353e 100644
 --- a/widgets/src/image.rs

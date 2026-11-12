@@ -644,6 +644,54 @@ script_mod! {
         }
     }
 
+    // A Mac Quick Look panel's marks where a window's lights are
+    // (`WmDesk::draw_quick_look_controls`): its close ✕ (kind 0), its
+    // enter-full-screen ⤢ (kind 1) and, full screen, the ⤡ that leaves it
+    // (kind 2). Files' own Quick Look glyphs (xmark, enlarge, shrink) on
+    // their 24-point grid, fitted to the quad.
+    set_type_default() do #(DrawQuickLookGlyph::script_shader(vm)) {
+        ..mod.draw.DrawQuad
+        color: #3c3c43
+        kind: 0.0
+        pixel: fn() {
+            let s = min(self.rect_size.x, self.rect_size.y) / 24.0
+            let o = (self.rect_size - vec2(24.0 * s, 24.0 * s)) * 0.5
+            let sdf = Sdf2d.viewport((self.pos * self.rect_size - o) / s)
+            if self.kind < 0.5 {
+                sdf.move_to(6.0, 6.0)
+                sdf.line_to(18.0, 18.0)
+                sdf.move_to(18.0, 6.0)
+                sdf.line_to(6.0, 18.0)
+            } else {
+                if self.kind < 1.5 {
+                    sdf.move_to(14.0, 4.0)
+                    sdf.line_to(20.0, 4.0)
+                    sdf.line_to(20.0, 10.0)
+                    sdf.move_to(20.0, 4.0)
+                    sdf.line_to(13.0, 11.0)
+                    sdf.move_to(10.0, 20.0)
+                    sdf.line_to(4.0, 20.0)
+                    sdf.line_to(4.0, 14.0)
+                    sdf.move_to(4.0, 20.0)
+                    sdf.line_to(11.0, 13.0)
+                } else {
+                    sdf.move_to(20.0, 10.0)
+                    sdf.line_to(14.0, 10.0)
+                    sdf.line_to(14.0, 4.0)
+                    sdf.move_to(14.0, 10.0)
+                    sdf.line_to(21.0, 3.0)
+                    sdf.move_to(4.0, 14.0)
+                    sdf.line_to(10.0, 14.0)
+                    sdf.line_to(10.0, 20.0)
+                    sdf.move_to(10.0, 14.0)
+                    sdf.line_to(3.0, 21.0)
+                }
+            }
+            sdf.stroke(self.color, 2.1)
+            return sdf.result
+        }
+    }
+
     mod.widgets.WmDeskBase = #(WmDesk::register_widget(vm))
     mod.widgets.WmDesk = set_type_default() do mod.widgets.WmDeskBase {
         width: Fill
@@ -703,6 +751,7 @@ script_mod! {
         draw_menu_bg +: {}
         draw_menu_row +: {}
         draw_menu_line +: {}
+        draw_quick_look +: {}
         draw_menu_text +: {
             text_style: theme.font_code
             text_style.font_size: 9.5
@@ -773,6 +822,18 @@ struct DrawMenuLine {
     draw_super: DrawQuad,
     #[live]
     color: Vec4f,
+}
+
+/// A Mac Quick Look panel's control mark (its shader is above).
+#[derive(Script, ScriptHook)]
+#[repr(C)]
+struct DrawQuickLookGlyph {
+    #[deref]
+    draw_super: DrawQuad,
+    #[live]
+    color: Vec4f,
+    #[live]
+    kind: f32,
 }
 
 /// Per-tile animation state. The quad tweens toward the layout target on
@@ -912,6 +973,9 @@ pub enum WmDeskAction {
     /// A press on a tab dragged off the strip: tear that member out of its
     /// group and carry on as an ordinary tiled drag from `abs`.
     TearOutTab { client: ClientId, abs: Vec2d },
+    /// A Mac Quick Look panel's ⤢ (or, full screen, its ⤡) was clicked: the
+    /// panel goes full screen, or back (`release_chrome`).
+    PreviewFullScreen { client: ClientId },
     #[default]
     None,
 }
@@ -987,6 +1051,16 @@ pub struct WmDesk {
     /// `draw_window_chrome` draws only the lights and the edges over an app
     /// that lays out its own unified toolbar (`crate::clients::unified_chrome`).
     #[rust] chrome_unified: bool,
+    /// The Quick Look panels (`ClientSlot::is_preview`) on the desk last
+    /// frame: on a Mac their chrome is a close ✕ and a full-screen ⤢
+    /// (`draw_quick_look_controls`).
+    #[rust] preview_tiles: HashSet<ClientId>,
+    /// A Mac's Quick Look viewers drawn as panels: their frames stay while
+    /// they are hidden and warm, until their tiles go (see where `draw_walk`
+    /// drops frames).
+    #[rust] quick_look_frames: HashSet<ClientId>,
+    /// Those kept frames emptied since their panel was last drawn.
+    #[rust] quick_look_emptied: HashSet<ClientId>,
     #[live] draw_warp: DrawDockWarp,
     #[uid]
     uid: WidgetUid,
@@ -1010,6 +1084,8 @@ pub struct WmDesk {
     draw_menu_row: DrawMenuRow,
     #[live]
     draw_menu_line: DrawMenuLine,
+    #[live]
+    draw_quick_look: DrawQuickLookGlyph,
     #[live]
     draw_menu_text: DrawText,
     #[live]
@@ -1162,6 +1238,17 @@ impl WmDesk {
     pub fn release_chrome(&mut self, cx: &mut Cx) -> Option<(ClientId, ChromeHit)> {
         let pressed = self.chrome_pressed.take();
         if pressed.is_some() { cx.redraw_area(self.area); }
+        // A Mac Quick Look panel's ⤢ (full screen, its ⤡) is never a window's
+        // zoom: released on it, it asks the WM to take the panel full screen
+        // or back.
+        if let Some((client, ChromeHit::Maximize)) = pressed {
+            if self.style.target == crate::desktop::DesktopStyle::Macos && self.preview_tiles.contains(&client) {
+                if self.chrome_hover == pressed {
+                    cx.widget_action(self.uid, WmDeskAction::PreviewFullScreen { client });
+                }
+                return None;
+            }
+        }
         pressed
     }
     fn item(&mut self, cx: &mut Cx, client: ClientId) -> Option<WidgetRef> {
@@ -1300,6 +1387,10 @@ impl WmDesk {
         else {
             return;
         };
+        // A Mac's Quick Look panel never takes the keyboard, yet it wears a
+        // window in front's look: no pale wash over its toolbar, the front
+        // shadow.
+        let focus = if self.style.target == crate::desktop::DesktopStyle::Macos && self.preview_tiles.contains(&client) { 1.0 } else { focus };
         if let Some(warp) = self.dock_warps.get_mut(&client) {
             if warp.minimized && !warp.active() { return; }
             let bounds = warp.bounds();
@@ -1989,8 +2080,12 @@ impl WmDesk {
         self.chrome.top_only=0.0;self.chrome.title_gradient=0.0;
         let mac=t.share(|s| s.caption_mac);
         let width=t.mix(|s| s.caption_width);
+        // A Mac's Quick Look panel has a close ✕ and a full-screen ⤢ in place
+        // of the lights (`draw_quick_look_controls`).
+        let quick_look=t.target==DesktopStyle::Macos && self.preview_tiles.contains(&client);
         for (i,hit,ico,color) in [(0,ChromeHit::Close,Ico::Close,rgb(255,95,86)),(1,ChromeHit::Minimize,Ico::WindowMin,rgb(255,189,46)),(2,ChromeHit::Maximize,Ico::WindowMax,rgb(39,201,63))] {
             if t.target == DesktopStyle::NextStep && hit == ChromeHit::Maximize { continue; }
+            if quick_look { continue; }
             let slot=if i==0 {0}else if i==1 {2}else{1};
             let right=title.pos.x+title.size.x-width-2.0-(slot as f64)*(width+2.0);
             // A Mac's lights: 12-point discs, 20 apart, centred 14 from the corner.
@@ -2074,6 +2169,9 @@ impl WmDesk {
             }else if mac<0.99 { self.shell_draw.icon_centered(cx,ico,button,11.0,alpha(if (modern && hovered && hit == ChromeHit::Close) || chrome_dark {rgb(255,255,255)}else{rgb(20,20,20)},opacity*(1.0-mac) as f32)); }
             self.title_hits.push((client,button,hit));
         }
+        if quick_look {
+            self.draw_quick_look_controls(cx, client, title, h, opacity, chrome_dark, self.chrome_overlay);
+        }
         self.chrome.pressed=0.0;
         // A full-screen window's title bar does not resize it.
         if self.chrome_overlay { return; }
@@ -2087,6 +2185,30 @@ impl WmDesk {
             (rect(r.pos.x,r.pos.y+r.size.y-12.0,12.0,12.0),-1,1),
             (rect(r.pos.x+r.size.x-12.0,r.pos.y+r.size.y-12.0,12.0,12.0),1,1),
         ] {self.title_hits.push((client,edge,ChromeHit::Resize(x,y)));}
+    }
+    /// A Mac Quick Look panel's two controls where a window's lights are: its
+    /// close ✕ and its enter-full-screen ⤢, or full screen (`full`) the ⤡
+    /// that leaves it. Plain marks in the secondary ink, 30 apart from 10 in,
+    /// on a rounded plate that shows under the pointer and darkens on a press.
+    #[allow(clippy::too_many_arguments)]
+    fn draw_quick_look_controls(&mut self, cx: &mut Cx2d, client: ClientId, title: Rect, h: f64, opacity: f32, dark: bool, full: bool) {
+        use crate::shell::{rgb, alpha, ui::rect};
+        for (i, hit) in [(0.0, ChromeHit::Close), (1.0, ChromeHit::Maximize)] {
+            let button = rect(title.pos.x + 10.0 + i * 30.0, title.pos.y + ((h - 24.0) * 0.5).max(0.0), 28.0, 24.0);
+            let hovered = self.chrome_hover == Some((client, hit));
+            let pressed = hovered && self.chrome_pressed == Some((client, hit));
+            if hovered {
+                let plate = if dark { rgb(255, 255, 255) } else { rgb(0, 0, 0) };
+                let strength = (if pressed { 0.16 } else { 0.08 }) * (if dark { 1.4 } else { 1.0 });
+                self.shell_draw.rounded(cx, button, 3.0, alpha(plate, opacity * strength));
+            }
+            self.draw_quick_look.kind = if hit == ChromeHit::Close { 0.0 } else if full { 2.0 } else { 1.0 };
+            self.draw_quick_look.color = alpha(if dark { rgb(235, 235, 245) } else { rgb(60, 60, 67) }, opacity * if dark { 0.75 } else { 0.8 });
+            let glyph = 15.0;
+            let at = rect((button.pos.x + (button.size.x - glyph) * 0.5).round(), (button.pos.y + (button.size.y - glyph) * 0.5).round(), glyph, glyph);
+            self.draw_quick_look.draw_abs(cx, at);
+            self.title_hits.push((client, button, hit));
+        }
     }
 }
 
@@ -2215,6 +2337,18 @@ impl Widget for WmDesk {
                     .unwrap_or(false)
             })
             .collect();
+        // On a Mac their chrome is a Quick Look panel's (`draw_window_chrome`).
+        self.preview_tiles = previews.iter().copied().collect();
+        if self.style.target == crate::desktop::DesktopStyle::Macos {
+            self.quick_look_frames.extend(previews.iter().copied());
+        }
+        // One its ⤢ took full screen is a full-screen window in the stack,
+        // under whatever comes in front of it, as any is.
+        let previews: Vec<ClientId> = if self.style.target == crate::desktop::DesktopStyle::Macos && state.layout.desktop.enabled {
+            previews.into_iter().filter(|c| !state.layout.is_fullscreen(*c)).collect()
+        } else {
+            previews
+        };
 
         // Which tiles wear a tab strip this frame, and what the tabs say.
         // Read straight out of the layout every frame — the desk keeps no
@@ -2294,8 +2428,29 @@ impl Widget for WmDesk {
         // when the workspace returns.
         self.anims
             .retain(|client, anim| live.contains(client) || anim.close_t.is_some());
+        // A Mac's Quick Look viewer, hidden and warm, keeps its frame until its
+        // tile goes. Dropped as the panel hid, its draw lists went to the frame
+        // made in the same draw for the window its Open with… opened, and a
+        // recycled list keeps its old draw calls: that frame's overlay list,
+        // never cleared, painted the hidden panel over the window.
+        let items = &self.items;
+        self.quick_look_frames.retain(|client| items.contains_key(client));
+        // Kept, but empty while the panel is away: nothing of it stays recorded
+        // (the viewer's old place included, which would still answer for it),
+        // and its texture shrinks to a point until the panel is drawn again.
+        let hidden: Vec<ClientId> = self.quick_look_frames.iter()
+            .filter(|client| !self.anims.contains_key(client) && !self.quick_look_emptied.contains(client)).copied().collect();
+        for client in hidden {
+            if let Some(frame) = self.desktop_frames.get_mut(&client) {
+                frame.begin(cx, Rect { pos: dvec2(0.0, 0.0), size: dvec2(1.0, 1.0) });
+                frame.end(cx);
+            }
+            self.quick_look_emptied.insert(client);
+        }
+        let (anims, kept) = (&self.anims, &self.quick_look_frames);
+        self.quick_look_emptied.retain(|client| !anims.contains_key(client) && kept.contains(client));
         let gone: Vec<ClientId> = self.desktop_frames.keys()
-            .filter(|client| !self.anims.contains_key(client)).copied().collect();
+            .filter(|client| !self.anims.contains_key(client) && !self.quick_look_frames.contains(client)).copied().collect();
         for client in gone {
             if let Some(frame) = self.desktop_frames.remove(&client) {
                 frame.forget(cx);
