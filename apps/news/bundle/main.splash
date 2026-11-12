@@ -779,12 +779,16 @@ fn desk_columns(){
     1
 }
 // The sidebar beside the list. A wide window keeps it until it is hidden; a narrower one
-// shows it when asked, pushing the list over while the reader steps aside.
+// shows it when asked, pushing the list over while the reader steps aside. A Mac's two
+// columns lay it over the list instead (desk_overlaid): the open story and its tools stay.
 fn desk_docked(){
     if desk_columns() == 3 { return desk_side }
-    desk_over
+    desk_over && !desk_overlaid()
 }
-fn desk_pushed(){ desk_columns() < 3 && desk_over }
+fn desk_overlaid(){ ui_unified && desk_columns() == 2 && desk_over }
+// The sidebar on screen, beside the list or over it: it holds the search field then.
+fn desk_side_shown(){ desk_docked() || desk_overlaid() }
+fn desk_pushed(){ desk_columns() < 3 && desk_over && !desk_overlaid() }
 // Asked for in a narrower window, the sidebar pushes the list over and the reader steps
 // aside: beside a sidebar and a list there is no room for a reader, and a story clicked
 // folds the sidebar away again.
@@ -810,6 +814,7 @@ fn on_app_resize(width, height){
     if !ui_desk || width <= 0 { return }
     let columns = desk_columns()
     let docked = desk_docked()
+    let side_was = desk_side_shown()
     desk_width = width
     desk_height = height
     if !desk_ready { return }
@@ -820,10 +825,10 @@ fn on_app_resize(width, height){
         desk_over = false
     }
     desk_remember()
-    if columns != desk_columns() || docked != desk_docked() { desk_layout() }
+    if columns != desk_columns() || docked != desk_docked() || side_was != desk_side_shown() { desk_layout() }
     else if desk_reader_tight() != desk_tools_tight { ui.reader_bar.render() }
     // The search field moves between the sidebar and the list's bar.
-    if docked != desk_docked() {
+    if docked != desk_docked() || side_was != desk_side_shown() {
         ui.sidebar.render()
         ui.list_bar.render()
     }
@@ -837,9 +842,11 @@ fn desk_layout(){
     // In one column an open story has the window to itself, unless the sidebar was asked for.
     let alone = one && reading != nil && !pushed
     let reader = !pushed && (!one || alone)
+    let over = desk_overlaid()
     ui.side_gap.set_visible(docked)
-    ui.side_layer.set_visible(docked)
-    ui.side_tool.set_visible(ui_unified && docked)
+    ui.side_layer.set_visible(docked || over)
+    ui.side_shade.set_visible(over)
+    ui.side_tool.set_visible(ui_unified && (docked || over))
     ui.list_col.set_visible(!alone)
     ui.list_edge.set_visible(reader && !one)
     ui.reader_col.set_visible(reader)
@@ -865,6 +872,11 @@ fn desk_row_tap(r){
     ui.list_keys.focus()
     open_story(r)
 }
+// Under the sidebar laid over the list, a row gets the presses on the sidebar too (a GestureView
+// takes every press inside it): those stay the sidebar's. The rows sit 8 points in from the list's edge.
+fn desk_under_side(x){ desk_overlaid() && x + 8 < 209 }
+fn desk_row_press(r, x){ if !desk_under_side(x) { desk_row_tap(r) } }
+fn desk_row_press_hold(r, x){ if !desk_under_side(x) { desk_row_hold(r) } }
 // The keyboard moves through the list, with the story opening beside it.
 fn desk_list_key(key, cmd){
     if cmd {
@@ -882,7 +894,7 @@ fn desk_list_key(key, cmd){
     if to < 0 || to >= rows.len() { return }
     // A row is 68 points and its rule 1, under the list's 6.
     let top = 6 + to * 69
-    let seen = desk_height - (if ui_unified { 53 } else { 41 }) - (if desk_docked() { 0 } else { 36 })
+    let seen = desk_height - (if ui_unified { 53 } else { 41 }) - (if desk_side_shown() { 0 } else { 36 })
     let y = ui.list.scroll_y()
     if top - 6 < y {
         ui.list.set_scroll_y(top - 6)
@@ -901,7 +913,7 @@ fn app_menus(){
         {menu: "File"}
         {menu: "File" title: "Copy Link" key: "shift+cmd+C" command: "copy" enabled: open}
         {menu: "Edit" title: "Find…" key: "cmd+F" command: "find"}
-        {menu: "View" title: if desk_docked() { "Hide Sidebar" } else { "Show Sidebar" } key: "ctrl+cmd+S" command: "sidebar"}
+        {menu: "View" title: if desk_side_shown() { "Hide Sidebar" } else { "Show Sidebar" } key: "ctrl+cmd+S" command: "sidebar"}
         {menu: "View"}
         {menu: "View" title: "Today" key: "cmd+1" command: "today" checked: tab == "today"}
         {menu: "View" title: "Saved" key: "cmd+2" command: "saved" checked: tab == "saved"}
@@ -1151,9 +1163,9 @@ fn desk_open(r){
     reading = r
     desk_comments = false
     desk_mark_read(r.link)
-    // A narrower window has no room for the reader beside the sidebar: the sidebar folds away.
-    // A Mac's keeps both, and the sidebar stays until it's put away.
-    if desk_steps_aside() {
+    // A narrower window has no room for the reader beside the sidebar: the sidebar folds away,
+    // as a Mac's laid over the list does once a story is chosen. Three columns keep it.
+    if desk_steps_aside() || desk_overlaid() {
         desk_over = false
         ui.list_bar.render()
         ui.sidebar.render()
@@ -1519,7 +1531,7 @@ fn desk_row(r, on){
     if unread { face = desk_bold }
     // Wide enough for its title on a line, a row in one column is as tall as its text.
     let one = desk_columns() == 1
-    GestureView{width: Fill height: if one { Fit } else { 68 } on_tap: |x, y| desk_row_tap(r) on_long_press: |x, y| desk_row_hold(r)
+    GestureView{width: Fill height: if one { Fit } else { 68 } on_tap: |x, y| desk_row_press(r, x) on_long_press: |x, y| desk_row_press_hold(r, x)
         menu: ["Open", "Open in Browser", "-", if unread { "Mark as Read" } else { "Mark as Unread" }, if is_saved(r.link) { "Remove from Saved" } else { "Save Story" }, "-", "Copy Link"]
         menu_urls: ["", r.link, "", "", "", "", ""]
         on_menu: |title| desk_row_menu(r, title)
@@ -1550,7 +1562,7 @@ fn desk_row(r, on){
 // What the list says when it has no stories to show, centred in its pane.
 fn desk_list_empty(){
     let room = desk_height - 14 - if ui_unified { 53 } else { 41 }
-    if !desk_docked() { room = room - 36 }
+    if !desk_side_shown() { room = room - 36 }
     let h = max(220, room)
     View{width: Fill height: Fit flow: Down
         if query != "" {
@@ -1617,7 +1629,7 @@ fn desk_refresh_tool(){
 fn desk_list_bar_view(){
     let line = desk_status_text()
     desk_search_dim = desk_search_off()
-    if desk_docked() {
+    if desk_side_shown() {
         // The search field waits at the sidebar's top, as in Apple News: the title keeps its width.
         // A Mac's sidebar button sits over the sidebar by the lights; under a title bar it stays here.
         return UiToolbar{
@@ -1764,9 +1776,12 @@ let DeskFull = SolidView{width: Fill height: Fill flow: Overlay draw_bg.color: u
             }
         }
     }
-    side_layer := View{width: Fit height: Fill flow: Right new_batch: true
+    // Laid over the list (a Mac's two columns), it takes the presses on it, and a shadow falls on the list.
+    // A right click here is its own (no row's menu under it opens); a row under it lets the left
+    // presses be (desk_under_side).
+    side_layer := GestureView{width: Fit height: Fill flow: Right new_batch: true cursor: MouseCursor.Default on_tap: |x, y| {} on_long_press: |x, y| {}
         sidebar := UiSidebar{on_render: || {
-            if desk_docked() { View{width: Fill height: Fit padding: Inset{bottom: 10} desk_search_view(Fill)} }
+            if desk_side_shown() { View{width: Fill height: Fit padding: Inset{bottom: 10} desk_search_view(Fill)} }
             for t in side_rows {
                 if t.id == tab { UiSideRowOn{text: t.label draw_icon +: {svg: ui_icon(t.icon)} on_click: || pick(t.id)} }
                 else { UiSideRow{text: t.label draw_icon +: {svg: ui_icon(t.icon)} on_click: || pick(t.id)} }
@@ -1778,6 +1793,12 @@ let DeskFull = SolidView{width: Fill height: Fill flow: Overlay draw_bg.color: u
             }
         }}
         UiVSep{}
+        side_shade := SolidView{visible: false width: 10 height: Fill
+            draw_bg +: {pixel: fn(){
+                let a = 1.0 - self.pos.x
+                return vec4(0.0, 0.0, 0.0, 0.13 * a * a)
+            }}
+        }
     }
     side_tool := View{visible: false width: Fit height: Fit margin: Inset{left: if ui_unified { 84 } else { 12 } top: if ui_unified { 12 } else { 6 }} new_batch: true
         side_glyph := View{width: Fit height: Fit on_render: || { UiPaneTool{draw_icon +: {svg: ui_icon("sidebar")} on_click: || desk_toggle_side()} }}

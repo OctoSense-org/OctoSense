@@ -214,6 +214,7 @@ let centered = false    // the fix moves the map no more: it went there, the per
 let app_target = nil    // where Maps last sent the map and hasn't seen it land: that landing is not the person's move
 let locating = false    // ◎ asked for a fix that hasn't come yet
 let seen_zoom = 13      // the browse map's zoom (on_viewport), for the desktop's zoom tools
+let desk_cut_flight = false   // a press stopped one of Maps' flights and no view has been reported since: `seen` is stale
 // The desktop keeps these sheets in a column beside the map. Set from `ui_desk`
 // under the script's timers: the script runs on its own in
 // crates/shell/src/maps_model_tests.rs, without the shared interface.
@@ -1403,6 +1404,8 @@ fn use_my_location(){
 // The browse map's callbacks. A tap or a drag on the map closes the search
 // list; a place card stays until Close.
 fn map_tapped(lat, lon){
+    // A double click's second press finds no flight: only a landing's report clears this.
+    if app_target != nil { desk_cut_flight = true }
     app_target = nil   // a press on the map ends Maps' flight
     if on_desk { ui.map_keys.focus() }
     if screen == "search" { show_results(false) }
@@ -1414,6 +1417,7 @@ fn map_tapped(lat, lon){
 fn viewport_moved(lat, lon, zoom){
     seen = {lat: lat lon: lon}
     seen_zoom = zoom
+    desk_cut_flight = false
     if on_desk {
         desk_view_moved(lat, lon)
         desk_scale()
@@ -1458,6 +1462,34 @@ fn map_long_pressed(lat, lon){
     show_pins()
     load_details(place, mine)
 }
+// A Mac's Maps zooms in on a double-click, the point under the pointer staying put; a pin is
+// dropped from the map's menu (Drop Pin). MapView reports a mouse's double-click as its long
+// press. Every other desktop style drops a pin there, as before.
+fn desk_map_double(lat, lon){
+    if !ui_unified {
+        map_long_pressed(lat, lon)
+        return
+    }
+    app_target = nil
+    if !is_a_place({lat: lat lon: lon}) { return }
+    let z = clamp(seen_zoom + 1, 3, 18)
+    if z == seen_zoom { return }
+    // Mercator: zooming about a point halves its distance to the centre, whatever the bearing.
+    let k = pow(2, seen_zoom - z)
+    let at = {lat: lat lon: lon}
+    // A first press that stopped a flight left the centre unheard: then the point is the centre.
+    if !desk_cut_flight {
+        let y = desk_merc_y(lat) + (desk_merc_y(seen.lat) - desk_merc_y(lat)) * k
+        at = {lat: desk_merc_lat(y) lon: lon + (seen.lon - lon) * k}
+    }
+    seen_zoom = z
+    centered = true
+    fly(at.lat, at.lon, z)
+    desk_remember()
+}
+// Mercator's y in base 2: a script's `log` is std's logger, not the logarithm.
+fn desk_merc_y(lat){ log2(tan(0.7853981633974483 + lat * 0.008726646259971648)) }
+fn desk_merc_lat(y){ (2 * atan(exp2(y)) - 1.5707963267948966) * 57.29577951308232 }
 // A pin's tap, by its position among the drawn pins (`shown_pins`). Its card
 // gets a copy with every field of a place, as a row's does (`pick`). The
 // open place's own pin does nothing.
@@ -1812,6 +1844,9 @@ fn desk_lay_out(){
     ui.column.set_visible(open)
     // With no column the toolbar starts at the window's edge, past the lights.
     ui.bar_gap.set_visible(!open && ui_unified)
+    // A Mac's sidebar button: beside the lights over an open sidebar, else at the toolbar's start.
+    ui.side_band_tool.set_visible(open && ui_unified)
+    ui.bar_side_tool.set_visible(!open || !ui_unified)
     ui.map_title.set_visible(!compact)
     ui.style_box.set_visible(!compact)
     ui.share_tool.set_visible(!compact)
@@ -2034,13 +2069,29 @@ fn desk_style_named(title){
     if title == "Explore" { return "Standard" }
     return title
 }
-fn desk_style_titles(){ return [desk_style_title("Standard") "Light" "Dark"] }
+// A Mac's map pop-up holds the map's modes only, and this Maps has one: Explore. Whether a
+// dark window has a dark map is a setting of its own, View > Use Dark Map, as in Apple's Maps.
+fn desk_style_titles(){
+    if ui_unified { return ["Explore"] }
+    return [desk_style_title("Standard") "Light" "Dark"]
+}
+fn desk_pop_title(){ if ui_unified { "Explore" } else { desk_style_title(desk_map_style) } }
+fn desk_pop_chosen(title){ if !ui_unified { desk_set_style(desk_style_named(title)) } }
+// The map is dark: chosen so, or following a dark window.
+fn desk_dark_map(){ desk_map_style == "Dark" || (desk_map_style == "Standard" && !ui_light) }
+// Use Dark Map is for a dark window; in a light one it only turns off a dark map chosen before.
+fn desk_dark_map_on(){ !ui_light || desk_map_style == "Dark" }
+fn desk_toggle_dark_map(){
+    if !desk_dark_map_on() { return }
+    if desk_dark_map() { desk_set_style(if ui_light { "Standard" } else { "Light" }) }
+    else { desk_set_style("Standard") }
+}
 fn desk_apply_style(){
     let theme = if desk_map_style == "Light" { 0 } else if desk_map_style == "Dark" { 1 } else if ui_light { 0 } else { 1 }
     ui.browse_map.set_map_theme(theme)
     ui.drive_map.set_map_theme(theme)
     ui.drive_map_2d.set_map_theme(theme)
-    ui.style_pop.set_text(desk_style_title(desk_map_style))
+    ui.style_pop.set_text(desk_pop_title())
 }
 fn desk_set_style(title){
     desk_map_style = title
@@ -2208,6 +2259,18 @@ fn desk_open_share(){
 fn desk_open_more(){
     let rows = [desk_style_title("Standard") "Light" "Dark" "-" "Copy Link" "Open in Browser"]
     let links = ["" "" "" "" "" desk_share_url()]
+    let current = desk_style_title(desk_map_style)
+    // A Mac's: the dark map's setting where it applies, then the link.
+    if ui_unified {
+        rows = ["Copy Link" "Open in Browser"]
+        links = ["" desk_share_url()]
+        current = ""
+        if desk_dark_map_on() {
+            rows = ["Use Dark Map" "-" "Copy Link" "Open in Browser"]
+            links = ["" "" "" desk_share_url()]
+            if desk_dark_map() { current = "Use Dark Map" }
+        }
+    }
     if desk_can_locate {
         rows.push("-")
         rows.push("Show Your Location")
@@ -2216,12 +2279,13 @@ fn desk_open_more(){
     }
     // This is a toolbar pull-down, so open it below the button while keeping
     // the current style checked, even when that style is lower in the menu.
-    if ui_light { ui.more_light.open_menu(rows, desk_style_title(desk_map_style), 0, 32, links) }
-    else { ui.more_dark.open_menu(rows, desk_style_title(desk_map_style), 0, 32, links) }
+    if ui_light { ui.more_light.open_menu(rows, current, 0, 32, links) }
+    else { ui.more_dark.open_menu(rows, current, 0, 32, links) }
 }
 fn desk_more_chosen(title){
     let style = desk_style_named(title)
-    if style == "Standard" || style == "Light" || style == "Dark" { desk_set_style(style) }
+    if title == "Use Dark Map" { desk_toggle_dark_map() }
+    else if style == "Standard" || style == "Light" || style == "Dark" { if !ui_unified { desk_set_style(style) } }
     else if title == "Copy Link" { desk_copy(desk_share_url()) }
     else if title == "Show Your Location" && desk_can_locate { locate() }
 }
@@ -2868,9 +2932,11 @@ fn app_menus(){
         {menu: "Edit" title: "Find…" key: "cmd+F" command: "find"}
         {menu: "View" title: if desk_column_open() { "Hide Sidebar" } else { "Show Sidebar" } key: "ctrl+cmd+S" command: "sidebar" enabled: !driving}
         {menu: "View"}
-        {menu: "View" title: desk_style_title("Standard") command: "style_standard" checked: desk_map_style == "Standard"}
-        {menu: "View" title: "Light" command: "style_light" checked: desk_map_style == "Light"}
-        {menu: "View" title: "Dark" command: "style_dark" checked: desk_map_style == "Dark"}
+        // A row with no menu is left out: a Mac has the one setting, the other styles the three looks.
+        {menu: if ui_unified { "" } else { "View" } title: desk_style_title("Standard") command: "style_standard" checked: desk_map_style == "Standard"}
+        {menu: if ui_unified { "" } else { "View" } title: "Light" command: "style_light" checked: desk_map_style == "Light"}
+        {menu: if ui_unified { "" } else { "View" } title: "Dark" command: "style_dark" checked: desk_map_style == "Dark"}
+        {menu: if ui_unified { "View" } else { "" } title: "Use Dark Map" command: "dark_map" checked: desk_dark_map() enabled: desk_dark_map_on()}
         {menu: "View"}
         {menu: "View" title: "3D Map" command: "map_3d" checked: desk_tilted enabled: !driving}
         {menu: "View" title: "Zoom In" key: "cmd+=" command: "zoom_in" enabled: !driving}
@@ -2905,6 +2971,7 @@ fn on_menu_command(command){
     else if command == "style_standard" { desk_set_style("Standard") }
     else if command == "style_light" { desk_set_style("Light") }
     else if command == "style_dark" { desk_set_style("Dark") }
+    else if command == "dark_map" { desk_toggle_dark_map() }
     else if command == "map_3d" { if screen != "drive" { desk_set_3d(!desk_tilted) } }
     else if command == "zoom_in" { if screen != "drive" { zoom_map(1) } }
     else if command == "zoom_out" { if screen != "drive" { zoom_map(-1) } }
@@ -3538,7 +3605,10 @@ let DeskRoot = SolidView{width: Fill height: Fill flow: Right draw_bg.color: ui_
     column := View{width: 301 height: Fill flow: Right
         SolidView{width: Fill height: Fill flow: Down draw_bg.color: ui_sidebar
             // The window's lights sit on this band; it stays unclaimed, so the window drags by it.
-            View{width: Fill height: if ui_unified { 52 } else { 0 }}
+            // A Mac's sidebar button sits on it beside the lights while the sidebar shows.
+            View{width: Fill height: if ui_unified { 52 } else { 0 } padding: Inset{left: 84 top: 12}
+                side_band_tool := UiPaneTool{visible: false icon_walk: Walk{width: 20 height: 20} draw_icon +: {svg: ui_icon("sidebar") preserve_viewbox: true} on_click: || desk_toggle_side()}
+            }
             search_band := View{width: Fill height: Fit padding: Inset{left: 14 right: 14 top: if ui_unified { 0 } else { 10 } bottom: 4}
                 View{width: Fill height: 28 flow: Overlay align: Align{y: 0.5}
                     search := UiSearch{padding: Inset{left: 26 right: 24 top: 6 bottom: 6} empty_text: "Search Maps"
@@ -3618,7 +3688,7 @@ let DeskRoot = SolidView{width: Fill height: Fill flow: Right draw_bg.color: ui_
                             if saved_rows.len() == 0 && recent_rows.len() == 0 {
                                 DeskEmpty{height: desk_list_height() glyph +: {draw_svg +: {svg: ui_icon("pin")}}
                                     title +: {text: if !places_checked || saved_loading { "Loading Places…" } else if !saved_loaded || !recents_loaded { "Places Unavailable" } else { "No Places Yet" }}
-                                    note +: {text: if !places_checked || saved_loading { "" } else if !saved_loaded || !recents_loaded { "Try Again to load saved and recent places." } else { "Search for a place, or double-click the map to drop a pin." }}
+                                    note +: {text: if !places_checked || saved_loading { "" } else if !saved_loaded || !recents_loaded { "Try Again to load saved and recent places." } else if ui_unified { "Search for a place, or Control-click the map and choose Drop Pin." } else { "Search for a place, or double-click the map to drop a pin." }}
                                     if places_checked && !saved_loading { UiButton{margin: Inset{top: 8} text: "Search for a Place" on_click: || desk_find()} }
                                 }
                             }
@@ -3737,13 +3807,14 @@ let DeskRoot = SolidView{width: Fill height: Fill flow: Right draw_bg.color: ui_
                                 }
                                 DeskHead{padding: Inset{left: 0 top: 4 bottom: 1} text: "Steps"}
                                 UiGroup{
+                                    // A Mac's list holds every step in one scroll.
                                     for i s in desk_steps {
-                                        if i < desk_steps_shown {
+                                        if ui_unified || i < desk_steps_shown {
                                             if i > 0 { UiSep{margin: Inset{left: 35}} }
                                             desk_step_row(s, i)
                                         }
                                     }
-                                    if desk_steps.len() > desk_steps_shown {
+                                    if !ui_unified && desk_steps.len() > desk_steps_shown {
                                         UiSep{margin: Inset{left: 35}}
                                         DeskStep{padding: Inset{left: 6 right: 6}
                                             DeskLink{text: "Show " + (desk_steps.len() - desk_steps_shown) + " More Steps" on_click: || {
@@ -3770,15 +3841,15 @@ let DeskRoot = SolidView{width: Fill height: Fill flow: Right draw_bg.color: ui_
     View{width: Fill height: Fill flow: Down
         map_bar := UiToolbar{
             bar_gap := View{visible: false width: 72 height: 1}
-            UiPaneTool{icon_walk: Walk{width: 20 height: 20} draw_icon +: {svg: ui_icon("sidebar") preserve_viewbox: true} on_click: || desk_toggle_side()}
+            bar_side_tool := UiPaneTool{icon_walk: Walk{width: 20 height: 20} draw_icon +: {svg: ui_icon("sidebar") preserve_viewbox: true} on_click: || desk_toggle_side()}
             map_title := UiBarTitle{width: Fill text: "Maps"}
             map_modes := UiSegments{on_render: || {
                 if desk_tilted { UiSeg{text: "2D" on_click: || desk_set_3d(false)} DeskSegOn{text: "3D"} }
                 else { DeskSegOn{text: "2D"} UiSeg{text: "3D" on_click: || desk_set_3d(true)} }
             }}
             style_box := View{width: 104 height: 28 flow: Overlay align: Align{x: 1.0 y: 0.5}
-                style_menu := GestureView{width: Fill height: 28 menu_words_at: 10 on_menu: |title| desk_set_style(desk_style_named(title))
-                    style_pop := UiPopup{width: Fill text: if ui_unified { "Explore" } else { "Standard" } on_click: || ui.style_menu.open_menu(desk_style_titles(), desk_style_title(desk_map_style))}
+                style_menu := GestureView{width: Fill height: 28 menu_words_at: 10 on_menu: |title| desk_pop_chosen(title)
+                    style_pop := UiPopup{width: Fill text: if ui_unified { "Explore" } else { "Standard" } on_click: || ui.style_menu.open_menu(desk_style_titles(), desk_pop_title())}
                 }
                 UiPopupMark{}
             }
@@ -3820,7 +3891,8 @@ let DeskRoot = SolidView{width: Fill height: Fill flow: Right draw_bg.color: ui_
                 // As the drive's maps: a tilted map needs a depth buffer of its own, and only over
                 // one does the map's land draw, not the window's background through it.
                 CachedView{width: Fill height: Fill texture_depth: true
-                    browse_box := TouchRoot.browse_box{browse_map +: {on_context: |lat, lon, pin, x, y| desk_map_context(lat, lon, pin, x, y)}}
+                    browse_box := TouchRoot.browse_box{browse_map +: {on_context: |lat, lon, pin, x, y| desk_map_context(lat, lon, pin, x, y)
+                        on_long_press: |lat, lon| desk_map_double(lat, lon)}}
                 }
                 // Nearer than a phone's: with nothing over it, a window has room for the road ahead.
                 drive_box := TouchRoot.drive_box{drive_3d +: {drive_map +: {zoom: 17.0}}}

@@ -210,6 +210,8 @@ let refused_words = "The mail server didn't accept your password."
 let open_again = nil
 let narrow = false
 let tight = false
+let crowded = false          // a Mac's message toolbar has room for Archive, Delete and Reply only
+let desk_search_open = false // a Mac's folded Search was opened from its magnifier or Find
 let reader_short = false
 let window_w = 0
 let side_wanted = true
@@ -221,6 +223,9 @@ let desk_reading_all = false
 let sheet = ""
 let rows_drawn = ""
 let list_seen = 600
+// A Mac's View > Sort By: by what, and which way. An appearance switch keeps it.
+let desk_sort = try { "" + mod.mail_desk_sort.by } catch { "date" }
+let desk_sort_up = try { mod.mail_desk_sort.up == true } catch { false }
 let list_keys_given = false
 let folders_drawn = ""
 let compose_head = ""
@@ -1508,6 +1513,96 @@ fn desk_words(m){
     let written_to = if m.to == nil { "" } else { "" + m.to }
     "" + m.sender + "\n" + m.address + "\n" + written_to + "\n" + m.subject + "\n" + m.preview
 }
+// View > Sort By on a Mac: the date the server listed them by (newest first), or the flags, the
+// sender, the subject or what's unread, either way. Ties keep the server's order.
+let desk_sorts = [["Date", "date"], ["Flags", "flags"], ["From", "from"], ["Subject", "subject"], ["Unread", "unread"]]
+fn desk_sort_by(by, up){
+    desk_sort = by
+    desk_sort_up = up
+    mod.mail_desk_sort = {by: by up: up}
+    desk_list()
+}
+// Six bytes of a name or subject as one number, capitals as small letters: two say which comes first.
+fn desk_sort_word(bytes, from){
+    let k = 0
+    for i in 6 {
+        let b = if from + i < bytes.len() { bytes[from + i] } else { 0 }
+        if b >= 65 && b <= 90 { b = b + 32 }
+        k = k * 256 + b
+    }
+    k
+}
+// Seconds since 1970 in UTC, from the date a message carries; 0 when it carries none that reads.
+fn desk_sort_time(m){
+    let iso = "" + (try { m.date } catch { "" })
+    let at = regex("^([0-9]+)-([0-9]+)-([0-9]+)[T ]([0-9]+):([0-9]+)").exec(iso)
+    if at == nil { return 0 }
+    let y = at.captures[1].to_f64()
+    let mo = at.captures[2].to_f64()
+    let yy = if mo <= 2 { y - 1 } else { y }
+    let era = floor(yy / 400)
+    let yoe = yy - era * 400
+    let mp = if mo > 2 { mo - 3 } else { mo + 9 }
+    let doy = floor((153 * mp + 2) / 5) + at.captures[3].to_f64() - 1
+    let doe = yoe * 365 + floor(yoe / 4) - floor(yoe / 100) + doy
+    let t = (era * 146097 + doe - 719468) * 86400 + at.captures[4].to_f64() * 3600 + at.captures[5].to_f64() * 60
+    let zone = regex("([+-])([0-9][0-9]):?([0-9][0-9])$").exec(iso)
+    if zone != nil {
+        let off = zone.captures[2].to_f64() * 3600 + zone.captures[3].to_f64() * 60
+        if zone.captures[1] == "+" { t = t - off } else { t = t + off }
+    }
+    t
+}
+fn desk_sort_entry(m, i){
+    let k = 0
+    let k2 = 0
+    if desk_sort == "date" { k = desk_sort_time(m) }
+    else if desk_sort == "flags" { k = if m.flagged == true { 1 } else { 0 } }
+    else if desk_sort == "unread" { k = if m.unread { 1 } else { 0 } }
+    else {
+        let bytes = ("" + (if desk_sort == "from" { m.sender } else { m.subject })).trim().to_bytes()
+        k = desk_sort_word(bytes, 0)
+        k2 = desk_sort_word(bytes, 6)
+    }
+    let entry = {k: k k2: k2 i: i m: m}
+    entry
+}
+fn desk_sort_before(a, b){
+    if a.k != b.k { return if desk_sort_up { a.k < b.k } else { a.k > b.k } }
+    if a.k2 != b.k2 { return if desk_sort_up { a.k2 < b.k2 } else { a.k2 > b.k2 } }
+    a.i < b.i
+}
+fn desk_sort_merge(list){
+    if list.len() < 2 { return list }
+    let half = floor(list.len() / 2)
+    let left = []
+    let right = []
+    for i e in list { if i < half { left.push(e) } else { right.push(e) } }
+    left = desk_sort_merge(left)
+    right = desk_sort_merge(right)
+    let out = []
+    let i = 0
+    let j = 0
+    while i < left.len() || j < right.len() {
+        if j >= right.len() || (i < left.len() && !desk_sort_before(right[j], left[i])) {
+            out.push(left[i])
+            i = i + 1
+        } else {
+            out.push(right[j])
+            j = j + 1
+        }
+    }
+    out
+}
+// The server lists by date, newest first: that order needs no sorting.
+fn desk_sorted(list){
+    if !ui_unified || (desk_sort == "date" && !desk_sort_up) { return list }
+    let entries = []
+    for i m in list { entries.push(desk_sort_entry(m, i)) }
+    let out = []
+    for e in desk_sort_merge(entries) { out.push(e.m) }
+    out
+}
 fn find_messages(){
     if query == "" { return messages }
     let wanted = regex(escape(query), "i")
@@ -1711,7 +1806,7 @@ fn desk_list(){
         list_keys_given = true
         ui.list_keys.focus()
     }
-    shown = find_messages()
+    shown = desk_sorted(find_messages())
     // A search that leaves the open message out of the list leaves the viewer empty, as Mail's does,
     // and so does leaving a search of every mailbox with another mailbox's message open.
     if ui_desk && open_id != "" && !composing && (query != "" || open_box != folder.id) {
@@ -1794,12 +1889,21 @@ fn desk_tools(){
     ui.reply_on.set_visible(answers)
     ui.reply_off.set_visible(!answers)
     let others = answers && reading.reply_all_cc != nil && reading.reply_all_cc != ""
-    // A tight window keeps the search field whole: these two stay in the Message menu.
-    ui.reply_all_on.set_visible(others && !tight)
-    ui.reply_all_off.set_visible(!others && !tight)
-    ui.forward_on.set_visible(answers && !tight)
-    ui.forward_off.set_visible(!answers && !tight)
-    ui.more_tool.set_visible(answers && tight)
+    // A tight window keeps the search field whole: these two stay in the Message menu. A Mac's
+    // folds its Search to a magnifier first, and moves these only when crowded.
+    let packed = if ui_unified { crowded } else { tight }
+    ui.reply_all_on.set_visible(others && !packed)
+    ui.reply_all_off.set_visible(!others && !packed)
+    ui.forward_on.set_visible(answers && !packed)
+    ui.forward_off.set_visible(!answers && !packed)
+    ui.more_tool.set_visible(answers && packed)
+    if ui_unified {
+        ui.flag_on.set_visible(reads && !packed)
+        ui.flag_off.set_visible(!reads && !packed)
+        let field = !tight || desk_search_open || query != ""
+        ui.search_box.set_visible(field)
+        ui.search_glass.set_visible(!field)
+    }
     let keeps = reads && desk_can_archive()
     ui.archive_on.set_visible(keeps)
     ui.archive_off.set_visible(!keeps)
@@ -1905,9 +2009,10 @@ fn desk_delete_for_good(){
     desk_sheet("")
     if m != nil { desk_move(m, "trash") }
 }
-// A row's right-click menu, as a Mac's Mail has it: answer, mark, move. A Mac's
-// Move to is a submenu; a script app's menu is one level, so each mailbox is a row.
+// A row's right-click menu: answer, mark, move. On a Mac, Mark and Move To are submenus
+// (desk_row_titles_mac); in the other desk styles each mark and each mailbox is a row.
 fn desk_row_titles(m){
+    if ui_unified { return desk_row_titles_mac(m) }
     let titles = []
     if !composing { titles = ["Reply", "Reply All", "Forward", "-"] }
     titles.push(if m.unread { "Mark as Read" } else { "Mark as Unread" })
@@ -1930,8 +2035,51 @@ fn desk_row_titles(m){
     titles.push("Delete")
     titles
 }
-fn desk_row_menu(m, title){
+
+// A Mac's row menu: answer, then Mark ▸ and Move to ▸ as submenus, then Archive and Delete.
+fn desk_row_titles_mac(m){
+    let titles = []
+    if !composing { titles = ["Reply", "Reply All", "Forward", "-"] }
+    let flag_row = if m.flagged == true { "As Unflagged" } else { "As Flagged" }
+    let read_now = if m.unread { "As Unread" } else { "As Read" }
+    titles.push({title: "Mark" menu: ["As Read" "As Unread" flag_row] off: [read_now]})
+    let names = []
+    let here = []
+    for f in desk_move_boxes() {
+        names.push(f.name)
+        if f.id == desk_box(m) { here.push(f.name) }
+    }
+    if names.len() > here.len() { titles.push({title: "Move to" menu: names off: here}) }
+    titles.push("-")
+    if desk_can_archive_for(m) { titles.push("Archive") }
+    titles.push("Delete")
+    titles
+}
+// A Mac's Move to lists the mailboxes mail goes into, in the sidebar's order, the one the
+// message is in greyed. Nothing is moved into Sent or Drafts.
+fn desk_move_boxes(){
+    let boxes = []
+    for f in folders { if f.role != "sent" && f.role != "drafts" { boxes.push(f) } }
+    boxes
+}
+// The Trash and the Archive take a message as Delete and Archive do; another mailbox by its id.
+fn desk_move_box(m, f){
+    if f.role == "trash" { return desk_delete(m) }
+    let archive = desk_role_target("archive")
+    if archive != nil && f.id == archive.id && desk_can_archive_for(m) { return desk_move(m, "archive") }
+    desk_move_to(m, f)
+}
+fn desk_row_menu(m, title, parent){
     if sheet != "" || signing_in || account == nil { return }
+    if parent == "Mark" {
+        if title == "As Read" || title == "As Unread" { return desk_mark(m, "unread", title == "As Unread") }
+        if title == "As Flagged" || title == "As Unflagged" { return desk_mark(m, "flagged", title == "As Flagged") }
+        return
+    }
+    if parent == "Move to" {
+        for f in desk_move_boxes() { if title == f.name && f.id != desk_box(m) { return desk_move_box(m, f) } }
+        return
+    }
     if title == "Archive" { return desk_move(m, "archive") }
     if title == "Delete" { return desk_delete(m) }
     if title == "Mark as Unread" || title == "Mark as Read" { return desk_mark(m, "unread", title == "Mark as Unread") }
@@ -1987,9 +2135,16 @@ fn desk_move_to(m, f){
         if folder.id == from { desk_moved(m, f) }
     })
 }
+fn desk_from_menu(){ if account != nil { ui.from_pick.open_menu([account.address], account.address) } }
 // A file goes to the service's staging, into Mail's storage between script turns,
 // and out through the Mac's own save panel. Nothing here opens what a stranger sent.
 fn desk_save_note(text){
+    // A Mac's note sits under the header's Save menu.
+    if ui_unified {
+        ui.r_head_note.set_text(text)
+        ui.r_head_note.set_visible(text != "")
+        return
+    }
     ui.r_save_note.set_text(text)
     ui.r_save_note.set_visible(text != "")
 }
@@ -2089,8 +2244,12 @@ fn desk_room(){
     if ui_unified { ui.compose_gap.render() }
     let beside = if narrow { side_open } else { side_wanted }
     let room = window_w - if ui_unified && beside { 210 } else { 0 }
-    if (room < 720) != tight {
+    // A Mac's folds Search first (tight), then Reply All, Forward and Flag (crowded: the
+    // message pane under about 270 points, its tools and the magnifier no longer fitting).
+    let squeezed = ui_unified && room < 560
+    if (room < 720) != tight || squeezed != crowded {
         tight = room < 720
+        crowded = squeezed
         desk_tools()
     }
     // A Mac's message pane under about 300 points (the sidebar pushing at 700): see reader_when.
@@ -2225,6 +2384,16 @@ fn app_menus(){
         rows.push({menu: "File" title: "Save As…" key: "shift+cmd+S" command: "save_as" enabled: answers})
     }
     rows.push({menu: "Edit" title: "Find…" key: "cmd+F" command: "find" enabled: free})
+    // A Mac's View > Sort By, with what this list can sort by.
+    if ui_unified {
+        for s in desk_sorts {
+            rows.push({menu: "View" submenu: "Sort By" title: s[0] command: "sort:" + s[1] checked: desk_sort == s[1] enabled: free})
+        }
+        rows.push({menu: "View" submenu: "Sort By"})
+        rows.push({menu: "View" submenu: "Sort By" title: "Ascending" command: "sort_up" checked: desk_sort_up enabled: free})
+        rows.push({menu: "View" submenu: "Sort By" title: "Descending" command: "sort_down" checked: !desk_sort_up enabled: free})
+        rows.push({menu: "View"})
+    }
     rows.push({menu: "View" title: if side { "Hide Sidebar" } else { "Show Sidebar" } key: "ctrl+cmd+S" command: "sidebar" enabled: sheet == ""})
     // A Mac's Mail gets every account's new mail at once; this one has the one account.
     rows.push({menu: "Mailbox" title: if ui_unified { "Get All New Mail" } else { "Get Mail" } key: "shift+cmd+N" command: "get" enabled: free})
@@ -2280,10 +2449,15 @@ fn on_menu_command(command){
     for f in folders {
         if command == "go:" + f.id { open_folder(f); return }
     }
+    // Sort By: a sender or a subject reads from A, a date, a flag or what's unread from the newest or set.
+    for s in desk_sorts {
+        if command == "sort:" + s[1] { desk_sort_by(s[1], s[1] == "from" || s[1] == "subject"); return }
+    }
+    if command == "sort_up" || command == "sort_down" { desk_sort_by(desk_sort, command == "sort_up"); return }
     let m = desk_open_row()
     if command == "new" { desk_compose("new") }
     else if command == "settings" { open_account() }
-    else if command == "find" { ui.search.focus() }
+    else if command == "find" { if ui_unified { desk_open_search() } else { ui.search.focus() } }
     else if command == "get" { get_mail() }
     else if command == "read_all" { desk_read_all() }
     else if command == "quote_more" { desk_quote_level(1) }
@@ -2461,8 +2635,30 @@ fn compose_note(text, bad){
 }
 fn desk_more_rows(){
     let others = reading != nil && reading.reply_all_cc != nil && reading.reply_all_cc != ""
-    if others { return ["Reply All", "Forward"] }
-    ["Forward"]
+    let rows = if others { ["Reply All", "Forward"] } else { ["Forward"] }
+    // A Mac's » holds the tools it took from the toolbar, Flag among them.
+    // The open message's row carries its flag; the message read from the server doesn't.
+    if ui_unified {
+        let m = desk_open_row()
+        rows.push(if m != nil && m.flagged == true { "Unflag" } else { "Flag" })
+    }
+    rows
+}
+fn desk_more_chosen(title){
+    if title == "Flag" || title == "Unflag" { on_menu_command("flag") }
+    else { desk_compose(if title == "Reply All" { "reply_all" } else { "forward" }) }
+}
+// A Mac's folded Search: its magnifier (or Find) opens the field; Escape folds it again.
+fn desk_open_search(){
+    desk_search_open = true
+    desk_tools()
+    ui.search.focus()
+}
+fn desk_search_escape(){
+    clear_query()
+    desk_search_open = false
+    desk_tools()
+    ui.list_keys.focus()
 }
 // A New Message window over the message pane: the mailboxes, the list and the message
 // stay where they were, as a Mac's Mail leaves its viewer when it opens one.
@@ -3149,11 +3345,18 @@ fn desk_show(){
     ui.r_body.set_visible(!formatted)
     if formatted { ui.r_html.set_text(m.html) } else { ui.r_html.set_text("") ui.r_body.set_text(m.body) }
     files = m.attachments
-    ui.r_attach.set_visible(files.len() > 0)
-    // A Mac's one Save menu heads the attachments; elsewhere it sits by the time.
+    ui.r_attach.set_visible(files.len() > 0 && !ui_unified)
+    // A Mac's header counts them and saves them, and the files follow the text; elsewhere
+    // the Save menu sits by the time and the files come first.
     ui.r_attach_menu.set_visible(files.len() > 0 && !ui_unified)
-    if ui_unified { ui.r_attach_count.set_text(attachment_words()) }
-    ui.r_files.render()
+    if ui_unified {
+        ui.r_attach_count.set_text(attachment_words())
+        ui.r_attach_head.set_visible(files.len() > 0)
+        ui.r_tail.set_visible(files.len() > 0)
+        ui.r_tail_files.render()
+    } else {
+        ui.r_files.render()
+    }
     desk_save_note("")
     pane("reader")
 }
@@ -3600,6 +3803,23 @@ let row_bold = theme.font_bold{font_size: 9.75}
 let file_page = if ui_light { #xffffff } else { #xf2f2f4 }
 let file_edge = if ui_light { #xb4b4ba } else { #x8e8e93 }
 let file_kind_ink = #x8e8e93
+// One of a Mac's attachment tiles after the message's text: a press or its menu saves it.
+fn desk_file_tile(i, a){
+    GestureView{width: 112 height: Fit cursor: MouseCursor.Default on_tap: |x, y| desk_save(i) menu: ["Save Attachment…"] on_menu: |title| desk_save(i)
+        View{width: Fill height: Fit flow: Down align: Align{x: 0.5} spacing: 2 padding: Inset{top: 2 bottom: 4 left: 4 right: 4}
+            View{width: 32 height: 40 flow: Overlay margin: Inset{bottom: 3}
+                Svg{width: 32 height: 40 animating: false draw_svg +: {svg: mail_icon("file-page") color: file_page preserve_viewbox: true}}
+                Svg{width: 32 height: 40 animating: false draw_svg +: {svg: mail_icon("file-edge") color: file_edge preserve_viewbox: true}}
+                View{width: Fill height: Fill flow: Down align: Align{x: 0.5 y: 1.0} padding: Inset{bottom: 6}
+                    Label{clip_y: false padding: 0 text: file_kind(a.filename) max_lines: 1 draw_text +: {color: file_kind_ink text_style: theme.font_bold{font_size: 5.25}}}
+                }
+            }
+            Label{clip_y: false padding: 0 width: Fill text: a.filename align: Align{x: 0.5} flow: Flow.Right{wrap: true} max_lines: 2 text_overflow: Ellipsis
+                draw_text +: {color: ui_ink text_style: theme.font_regular{font_size: 8.25 line_spacing: 1.2}}}
+            Label{clip_y: false padding: 0 text: kb(a.size) max_lines: 1 draw_text +: {color: ui_muted text_style: theme.font_regular{font_size: 8.25}}}
+        }
+    }
+}
 let row_plain = theme.font_regular{font_size: 9.75}
 // A selected row's second ink on the accent.
 let on_accent = #xe8f0fb
@@ -3762,7 +3982,17 @@ let MailCompose = View{visible: false width: Fill height: Fill flow: Overlay ali
             ComposeRule{}
             ComposeLine{
                 ComposeKey{text: "From:"}
-                c_from := ComposeText{}
+                // A Mac's From is a pop-up of the account's addresses; this account has the one.
+                if ui_unified {
+                    from_box := View{width: Fit height: 28 flow: Overlay align: Align{x: 1.0 y: 0.5}
+                        from_pick := GestureView{width: Fit height: 28 menu_words_at: 10
+                            c_from := UiPopup{width: Fit text: "" on_click: || desk_from_menu()}
+                        }
+                        UiPopupMark{}
+                    }
+                } else {
+                    c_from := ComposeText{}
+                }
             }
             UiSep{}
             // This is part of the message being composed, not
@@ -3925,7 +4155,7 @@ let DeskRoot = SolidView{width: Fill height: Fill flow: Overlay draw_bg.color: u
                     for i in shown.len() {
                         let m = shown[i]
                         let on = i == chosen
-                        GestureView{width: Fill height: 80 cursor: MouseCursor.Default on_tap: |x, y| row_clicked(m) menu: desk_row_titles(m) on_menu: |title| desk_row_menu(m, title)
+                        GestureView{width: Fill height: 80 cursor: MouseCursor.Default on_tap: |x, y| row_clicked(m) menu: desk_row_titles(m) on_menu: |title, x, y, parent| desk_row_menu(m, title, parent)
                             RoundedView{width: Fill height: Fill flow: Right new_batch: true show_bg: true draw_bg +: {color: if on { ui_accent_row } else { #x00000000 } border_radius: 4.0}
                                 View{width: 18 height: Fill flow: Down align: Align{x: 0.5} padding: Inset{top: 13}
                                     if m.unread { RoundedView{width: 8 height: 8 new_batch: true show_bg: true draw_bg +: {color: if on { #xffffff } else { ui_link } border_radius: 2.0}} }
@@ -3993,6 +4223,40 @@ let DeskRoot = SolidView{width: Fill height: Fill flow: Overlay draw_bg.color: u
         // The message: the rest of the window, and with a narrow window's sidebar out, at least
         // as wide as the list gives way for (280 points, down to 200 in the narrowest).
         reader_column := View{width: Fill{weight: 1.0 basis: 280 shrink: 0.25} min_width: 200 height: Fill flow: Down
+            // A Mac's Mail, in its default order: Archive and Delete, then Reply, Reply All, Forward
+            // and Flag, Search at the trailing edge. With less room Search folds to its magnifier
+            // first; with less still, Reply All, Forward and Flag go behind the » at the very end.
+            if ui_unified {
+                UiToolbar{
+                    archive_on := MailTool{visible: false draw_icon +: {svg: mail_icon("archive")} on_click: || { if sheet == "" { desk_move(reading, "archive") } }}
+                    archive_off := MailToolOff{draw_icon +: {svg: mail_icon("archive")}}
+                    delete_on := MailTool{visible: false draw_icon +: {svg: mail_icon("trash")} on_click: || { if sheet == "" { desk_delete(reading) } }}
+                    delete_off := MailToolOff{draw_icon +: {svg: mail_icon("trash")}}
+                    View{width: 8 height: 1}
+                    reply_on := MailTool{visible: false draw_icon +: {svg: mail_icon("reply")} on_click: || desk_compose("reply")}
+                    reply_off := MailToolOff{draw_icon +: {svg: mail_icon("reply")}}
+                    reply_all_on := MailTool{visible: false draw_icon +: {svg: mail_icon("reply-all")} on_click: || desk_compose("reply_all")}
+                    reply_all_off := MailToolOff{draw_icon +: {svg: mail_icon("reply-all")}}
+                    forward_on := MailTool{visible: false draw_icon +: {svg: mail_icon("forward")} on_click: || desk_compose("forward")}
+                    forward_off := MailToolOff{draw_icon +: {svg: mail_icon("forward")}}
+                    flag_on := MailTool{visible: false draw_icon +: {svg: mail_icon("flag")} on_click: || on_menu_command("flag")}
+                    flag_off := MailToolOff{draw_icon +: {svg: mail_icon("flag")}}
+                    View{width: Fill height: 28 flow: Right align: Align{x: 1.0 y: 0.5}
+                        search_box := View{width: Fill max_width: 180 height: 28 flow: Overlay align: Align{y: 0.5}
+                            search := UiSearch{empty_text: "Search" on_change: |text| set_query(text) on_escape: |text| desk_search_escape()}
+                            UiGlyph{width: 14 height: 14 margin: Inset{left: 8} draw_svg +: {svg: ui_icon("search")}}
+                            search_clear := View{visible: false width: Fill height: Fill flow: Right align: Align{x: 1.0 y: 0.5}
+                                search_clear_tool := UiPaneTool{width: 24 height: 24 icon_walk: Walk{width: 14 height: 14} draw_icon +: {svg: ui_icon("search-clear") color: ui_muted} on_click: || clear_query()}
+                            }
+                            search_block := GestureView{visible: false width: Fill height: Fill cursor: MouseCursor.Default on_tap: |x, y| {}}
+                        }
+                        search_glass := MailTool{visible: false draw_icon +: {svg: mail_icon("search")} on_click: || desk_open_search()}
+                    }
+                    more_tool := GestureView{visible: false width: Fit height: Fit on_menu: |title| desk_more_chosen(title)
+                        UiTool{reset_hover_on_click: true text: "»" on_click: || ui.more_tool.open_menu(desk_more_rows())}
+                    }
+                }
+            } else {
             UiToolbar{
                 reply_on := MailTool{visible: false draw_icon +: {svg: mail_icon("reply")} on_click: || desk_compose("reply")}
                 reply_off := MailToolOff{draw_icon +: {svg: mail_icon("reply")}}
@@ -4020,6 +4284,7 @@ let DeskRoot = SolidView{width: Fill height: Fill flow: Overlay draw_bg.color: u
                         search_block := GestureView{visible: false width: Fill height: Fill cursor: MouseCursor.Default on_tap: |x, y| {}}
                     }
                 }
+            }
             }
             UiSep{}
             SolidView{width: Fill height: Fill flow: Overlay draw_bg.color: ui_content
@@ -4065,23 +4330,25 @@ let DeskRoot = SolidView{width: Fill height: Fill flow: Overlay draw_bg.color: u
                             r_where := Label{clip_y: false padding: 0 width: Fill text: "" max_lines: 1 text_overflow: Ellipsis draw_text +: {color: ui_muted text_style: theme.font_regular{font_size: 8.25}}}
                             r_to := Label{visible: false clip_y: false padding: 0 width: Fill text: "" max_lines: 1 text_overflow: Ellipsis draw_text +: {color: ui_muted text_style: theme.font_regular{font_size: 8.25}}}
                             r_cc := Label{visible: false clip_y: false padding: 0 width: Fill text: "" max_lines: 1 text_overflow: Ellipsis draw_text +: {color: ui_muted text_style: theme.font_regular{font_size: 8.25}}}
+                            // A Mac's header counts the attachments and has one Save menu for them;
+                            // the files themselves follow the message's text.
+                            if ui_unified {
+                                View{width: Fill height: Fit flow: Down
+                                    r_attach_head := View{visible: false width: Fill height: Fit flow: Right spacing: 6 align: Align{y: 0.5} margin: Inset{top: 4}
+                                        UiGlyph{width: 14 height: 14 draw_svg +: {svg: mail_icon("attach") preserve_viewbox: true}}
+                                        r_attach_count := Label{clip_y: false padding: 0 width: Fill text: "" max_lines: 1 text_overflow: Ellipsis draw_text +: {color: ui_muted text_style: theme.font_regular{font_size: 8.25}}}
+                                        r_attach_save := GestureView{width: Fit height: Fit on_menu: |title| desk_attachment_menu(title)
+                                            UiButton{text: "Save…" on_click: || ui.r_attach_save.open_menu(desk_attachment_titles())}
+                                        }
+                                    }
+                                    r_head_note := Label{visible: false clip_y: false padding: 0 margin: Inset{top: 2} width: Fill text: "" flow: Flow.Right{wrap: true} draw_text +: {color: ui_danger text_style: theme.font_regular{font_size: 8.25}}}
+                                }
+                            }
                         }
                     }
                     UiSep{margin: Inset{top: 12 bottom: 14}}
                     r_attach := View{visible: false width: Fill height: Fit flow: Down spacing: 4 margin: Inset{bottom: 12}
-                        // A Mac's attachments, as Mail shows them: "N Attachments" and one Save menu
-                        // over the files, each a document with its kind on the page, its name and
-                        // size under it. A click saves it through the Mac's save panel, as its button
-                        // did; nothing here opens what a stranger sent.
-                        if ui_unified {
-                            View{width: Fill height: Fit flow: Right spacing: 6 align: Align{y: 0.5} margin: Inset{bottom: 6}
-                                UiGlyph{width: 14 height: 14 draw_svg +: {svg: mail_icon("attach") preserve_viewbox: true}}
-                                r_attach_count := Label{clip_y: false padding: 0 width: Fill text: "" max_lines: 1 text_overflow: Ellipsis draw_text +: {color: ui_muted text_style: theme.font_regular{font_size: 8.25}}}
-                                r_attach_save := GestureView{width: Fit height: Fit on_menu: |title| desk_attachment_menu(title)
-                                    UiButton{text: "Save…" on_click: || ui.r_attach_save.open_menu(desk_attachment_titles())}
-                                }
-                            }
-                        }
+                        // Above the text everywhere but a Mac (there: r_tail, after it).
                         r_files := View{width: Fill height: Fit flow: if ui_unified { Flow.Right{wrap: true} } else { Down } spacing: if ui_unified { 8 } else { 4 } on_render: || {
                             for i in files.len() {
                                 let a = files[i]
@@ -4117,6 +4384,18 @@ let DeskRoot = SolidView{width: Fill height: Fill flow: Overlay draw_bg.color: u
                         a +: {color: ui_link pressed_color: ui_ink}
                         text_style_normal +: {font_size: 9.75} text_style_bold +: {font_size: 9.75}
                         text_style_italic +: {font_size: 9.75} text_style_bold_italic +: {font_size: 9.75} text_style_fixed +: {font_size: 9}}
+                    // A Mac's attachments, as Mail shows them: in the message after its text, each a
+                    // document with its kind on the page, its name and size under it. A click saves
+                    // it through the Mac's save panel; nothing here opens what a stranger sent.
+                    if ui_unified {
+                        View{width: Fill height: Fit flow: Down
+                            r_tail := View{visible: false width: Fill height: Fit flow: Down margin: Inset{top: 18}
+                                r_tail_files := View{width: Fill height: Fit flow: Flow.Right{wrap: true} spacing: 8 on_render: || {
+                                    for i in files.len() { desk_file_tile(i, files[i]) }
+                                }}
+                            }
+                        }
+                    }
                 }
                 // A New Message window, over the message pane: its own title bar, the lights at its
                 // corner (the red one closes it), Send beside them. The mailboxes and the list stay
@@ -4193,7 +4472,8 @@ let DeskRoot = SolidView{width: Fill height: Fill flow: Overlay draw_bg.color: u
                     GestureView{width: Fill height: Fill cursor: MouseCursor.Default on_tap: |x, y| desk_settings_away()}
                 }
                 View{width: Fill height: Fill flow: Down align: Align{x: 0.5} padding: Inset{left: 16 right: 16 top: 69 bottom: 24}
-                    GestureView{width: Fit height: Fit cursor: MouseCursor.Default on_tap: |x, y| {}
+                    // Unclipped, so the window's shadow falls on Mail's window, not just inside its own corners.
+                    GestureView{width: Fit height: Fit clip_x: false clip_y: false cursor: MouseCursor.Default on_tap: |x, y| {}
                         settings_window := MailWindow{width: 520 height: Fit nav_group: true
                             View{width: Fill height: Fit flow: Down
                                 // Its lights and title, and under them its tabs, on the bar's face. This
