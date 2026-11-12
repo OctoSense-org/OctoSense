@@ -128,6 +128,49 @@ pub fn decide(facts: crate::app_clipboard::Facts) -> Result<Value, String> {
     Ok(json!({"opened": true}))
 }
 
+/// What this host runs on, as a Mac's About names it: the macOS version, and the chip
+/// (an Intel Mac's processor), read from the system. Empty where it can't be read.
+fn runs_on() -> Value {
+    #[cfg(target_os = "macos")]
+    {
+        let cpu = sysctl_text("machdep.cpu.brand_string").unwrap_or_default();
+        let apple = cpu.starts_with("Apple");
+        json!({
+            "macos": sysctl_text("kern.osproductversion").unwrap_or_default(),
+            "chip": if apple { cpu.as_str() } else { "" },
+            "processor": if apple { "" } else { cpu.as_str() },
+        })
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        json!({"macos": "", "chip": "", "processor": ""})
+    }
+}
+
+/// A sysctl's text, without its trailing NUL; `None` when the system has none.
+#[cfg(target_os = "macos")]
+fn sysctl_text(name: &str) -> Option<String> {
+    let name = std::ffi::CString::new(name).ok()?;
+    let mut len = 0usize;
+    // SAFETY: the first call only asks for the size; the second writes at most `len`
+    // bytes into a buffer of that size and sets `len` to what it wrote.
+    let mut buf = unsafe {
+        if libc::sysctlbyname(name.as_ptr(), std::ptr::null_mut(), &mut len, std::ptr::null_mut(), 0) != 0 || len == 0 {
+            return None;
+        }
+        let mut buf = vec![0u8; len];
+        if libc::sysctlbyname(name.as_ptr(), buf.as_mut_ptr().cast(), &mut len, std::ptr::null_mut(), 0) != 0 {
+            return None;
+        }
+        buf.truncate(len);
+        buf
+    };
+    while buf.last() == Some(&0) {
+        buf.pop();
+    }
+    String::from_utf8(buf).ok().map(|text| text.trim().to_string()).filter(|text| !text.is_empty())
+}
+
 /// The sheet that turns command execution on. Its words are the host's and what
 /// is typed in it reaches only `settings.sheet.allow`.
 fn commands_sheet() -> String {
@@ -148,7 +191,10 @@ let Push = ButtonFlat{height: if desk { 28 } else { 44 } margin: 0 padding: Inse
     draw_text +: {color: ink color_hover: ink color_down: ink color_focus: ink text_style: theme.font_regular{font_size: if desk { 9.75 } else { 14 }}}}
 let Go = Push{draw_bg +: {border_size: 0.0 color: #x0071e3 color_hover: #x006edb color_down: #x0060c0 color_focus: #x0071e3}
     draw_text +: {color: #xffffff color_hover: #xffffff color_down: #xffffff color_focus: #xffffff}}
-let Off = Push{enabled: false draw_text +: {color: soft color_hover: soft color_down: soft color_focus: soft}}
+// A Mac greys a disabled push button's title as the apps' own disabled buttons do (AI Providers' `DeskOff`):
+// the ink faded into the page. Elsewhere it keeps the sheet's soft ink.
+let off_ink = if mac { mix(theme.color_text, theme.color_bg_app, 0.26) } else { soft }
+let Off = Push{enabled: false draw_text +: {color: off_ink color_hover: off_ink color_down: off_ink color_focus: off_ink}}
 fn cancel(){ host.request("settings.sheet.cancel", {}, nil) }
 // The words as the host reads them: case and spacing aside.
 let words = regex(@WORDS@, "i")
@@ -455,6 +501,7 @@ impl App {
         let mut state = json!({
             "pane": pane.unwrap_or_default(),
             "version": env!("CARGO_PKG_VERSION"),
+            "runs_on": runs_on(),
             "has": {"update": available("updater"), "hub": available("apphub"), "ai": available(AI_PROVIDERS)},
             "commands": {"on": on, "can": terminal, "note": note, "risk": grants::RISK, "applied": applied},
             "keys": keys,
@@ -526,6 +573,18 @@ impl crate::App {
 mod tests {
     use super::*;
     use crate::app_clipboard::Facts;
+
+    #[test]
+    fn about_names_what_it_runs_on_from_the_system_only() {
+        let facts = runs_on();
+        let macos = facts["macos"].as_str().unwrap_or("x");
+        if cfg!(target_os = "macos") {
+            assert!(macos.chars().next().is_some_and(|c| c.is_ascii_digit()), "{facts}");
+            assert!(facts["chip"].as_str().is_some_and(|chip| chip.is_empty() || chip.starts_with("Apple")), "{facts}");
+        } else {
+            assert_eq!(facts, json!({"macos": "", "chip": "", "processor": ""}));
+        }
+    }
 
     #[test]
     fn only_the_ai_providers_pane_from_the_apps_own_surface_is_admitted() {

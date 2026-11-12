@@ -545,6 +545,11 @@ let TagText = Label{padding: 0 text: "" draw_text.color: tone(#x1f7a3a, #x1f7a3a
 let OptTitle = Label{padding: 0 width: Fit text: "" draw_text.color: sh_ink draw_text.text_style.font_size: sh_fs(14)}
 let OptTitleOn = Label{padding: 0 width: Fit text: "" draw_text.color: sh_ink draw_text.text_style: if desk { theme.font_regular{font_size: 9.75} } else { theme.font_bold{font_size: sh_fs(14)} }}
 let OptNote = Label{padding: 0 width: Fill text: "" draw_text.color: sh_muted draw_text.text_style.font_size: sh_fs(11)}
+// A Mac selects the chosen row whole, as the app's own list does: white words on the
+// accent's row colour, no checkmark.
+let OptSel = Opt{draw_bg.color: tone(#x0064d2, #x0064d2, #x0a60c8)}
+let OptTitleSel = OptTitleOn{draw_text.color: #xffffff}
+let OptNoteSel = OptNote{draw_text.color: #xffffff}
 "##;
 
 const ADD_SHEET: &str = r##"let editing = @EDITING@
@@ -913,6 +918,23 @@ fn select_route(r){
     remember_touch()
 }
 fn custom_route(){ select_route({id: "custom" label: "Custom endpoint" detail: "Your own base URL"}) }
+// The row a Mac's list draws selected, or -1; the lines beside it are hidden, as a
+// table's selection covers them.
+fn family_on_index(){
+    let k = -1
+    for i f in families { if fam != nil && f.id == fam.id { k = i } }
+    return k
+}
+fn model_on_index(){
+    let k = -1
+    for i m in models { if !custom && model != nil && m.id == model.id { k = i } }
+    return k
+}
+fn route_on_index(){
+    let k = -1
+    for i r in route_list() { if route != nil && r.id == route.id { k = i } }
+    return k
+}
 fn toggle(which){
     if open == which { open = "" } else { open = which }
     ui.model_list.render()
@@ -1192,12 +1214,14 @@ let Icon = Label{text: "" draw_text.text_style: theme.font_icons{font_size: sh_f
 // the chosen row inset and rounded.
 let DeskGroup = RoundedView{width: Fill height: Fit flow: Down padding: 4 show_bg: true draw_bg +: {color: tone(#xffffff, #xffffff, #x3a3a3c) border_size: 1.0 border_color: sh_field_line border_radius: 4.0}}
 let DeskLine = View{width: Fill height: 1 padding: Inset{left: 10 right: 10} SolidView{width: Fill height: 1 draw_bg.color: sh_line}}
+let DeskGap = View{width: Fill height: 1}
 let ListBox = if desk { DeskGroup{height: 344 padding: 1} } else { View{width: Fill height: Fit flow: Down} }
 let ListScroll = if desk { ScrollYView{width: Fill height: Fill flow: Down padding: 3} } else { View{width: Fill height: Fit flow: Down} }
 let OptBox = if desk { View{width: Fill height: Fit flow: Down} } else { View{width: Fill height: Fit flow: Down spacing: 4} }
 // A provider can list dozens of models: give the list room before it scrolls.
 let ListFrame = if desk { DeskGroup{padding: 1} } else { View{width: Fill height: Fit flow: Down} }
-let ListFit = if desk { ScrollYView{width: Fill height: Fit max_height: 380 flow: Down} } else { View{width: Fill height: Fit flow: Down} }
+// A Mac's list insets its rows, so a selected row stands clear of the frame, as the provider list does.
+let ListFit = if desk_mac { ScrollYView{width: Fill height: Fit max_height: 380 flow: Down padding: 3} } else if desk { ScrollYView{width: Fill height: Fit max_height: 380 flow: Down} } else { View{width: Fill height: Fit flow: Down} }
 // A pop-up button, with a sheet's own up-down mark at its trailing edge.
 let DeskPopup = DeskPush{padding: Inset{left: 10 right: 26} align: Align{x: 0.0 y: 0.5}}
 let DeskPopMark = View{width: 16 height: 16 margin: Inset{right: 6} new_batch: true show_bg: true draw_bg +: {color: sh_muted
@@ -1215,6 +1239,7 @@ let DeskPopMark = View{width: 16 height: 16 margin: Inset{right: 6} new_batch: t
 }}
 // A recommended model, said as a Mac says it: in the secondary words, not a badge.
 let DeskRec = Label{clip_y: false padding: 0 width: Fit text: "Recommended" draw_text.color: sh_muted draw_text.text_style: theme.font_regular{font_size: 9}}
+let DeskRecSel = DeskRec{draw_text.color: #xffffff}
 let DeskSeg = ButtonFlat{height: 24 margin: 0 padding: Inset{left: 12 right: 12}
     draw_bg +: {border_radius: 2.5 border_size: 0.0 color: #x00000000 color_focus: #x00000000 color_hover: sh_wash color_down: sh_wash2}
     draw_text +: {color: sh_ink color_focus: sh_ink color_hover: sh_ink color_down: sh_ink text_style: theme.font_regular{font_size: 9.75}}}
@@ -1313,12 +1338,20 @@ let WizardCard = RoundedView{width: Fill max_width: by(9999, 560) height: by(Fil
                 }
                 ListBox{ListScroll{
                 fam_list := View{width: Fill height: Fit flow: Down spacing: by(6, 0) on_render: || {
+                    let fo = family_on_index()
                     View{width: Fill height: by(1, 0)}
                     if families.len() == 0 { Note{text: by("No family or model matches.", "No provider or model matches.")} }
                     for i f in families {
-                        if desk && i > 0 { DeskLine{} }
+                        if desk && i > 0 { if desk_mac && (i == fo || i - 1 == fo) { DeskGap{} } else { DeskLine{} } }
                         GestureView{width: Fill height: Fit on_tap: |x, y| choose_family(f)
-                            if fam != nil && fam.id == f.id {
+                            if desk_mac && i == fo {
+                                OptSel{padding: Inset{left: 14 right: 16 top: 10 bottom: 10}
+                                    View{width: Fill height: Fit flow: Down spacing: 2
+                                        OptTitleSel{text: f.label}
+                                        OptNoteSel{text: f.models_text + " · " + f.key_text}
+                                    }
+                                }
+                            } else if fam != nil && fam.id == f.id {
                                 OptOn{padding: Inset{left: 14 right: 16 top: 10 bottom: 10}
                                     View{width: Fill height: Fit flow: Down spacing: 2
                                         OptTitleOn{text: f.label}
@@ -1356,6 +1389,8 @@ let WizardCard = RoundedView{width: Fill max_width: by(9999, 560) height: by(Fil
                 }
                 model_frame := ListFrame{model_scroll := ListFit{
                 model_list := View{width: Fill height: Fit flow: Down spacing: 4 on_render: || {
+                    let mo = model_on_index()
+                    let mo_last = mo >= 0 && mo == models.len() - 1
                     if !desk {
                     GestureView{width: Fill height: Fit on_tap: |x, y| toggle("model")
                         Drop{
@@ -1370,22 +1405,34 @@ let WizardCard = RoundedView{width: Fill max_width: by(9999, 560) height: by(Fil
                     if open == "model" || desk {
                         OptBox{
                         for i m in models {
-                            if desk && i > 0 { DeskLine{} }
+                            if desk && i > 0 { if desk_mac && (i == mo || i - 1 == mo) { DeskGap{} } else { DeskLine{} } }
                             GestureView{width: Fill height: Fit on_tap: |x, y| select_model(m)
-                                Opt{
-                                    View{width: Fill height: Fit flow: Down spacing: 2
-                                        View{width: Fill height: Fit flow: Right spacing: 6 align: Align{y: 0.5}
-                                            if !custom && model != nil && model.id == m.id { OptTitleOn{text: m.label} } else { OptTitle{text: m.label} }
-                                            if m.default == true { if desk { DeskRec{} } else { Tag{TagText{text: "Recommended"}} } }
+                                if desk_mac && i == mo {
+                                    OptSel{
+                                        View{width: Fill height: Fit flow: Down spacing: 2
+                                            View{width: Fill height: Fit flow: Right spacing: 6 align: Align{y: 0.5}
+                                                OptTitleSel{text: m.label}
+                                                if m.default == true { DeskRecSel{} }
+                                            }
+                                            OptNoteSel{text: m.detail}
                                         }
-                                        OptNote{text: m.detail}
                                     }
-                                    if !custom && model != nil && model.id == m.id { Tick{text: "@CHECK@"} }
+                                } else {
+                                    Opt{
+                                        View{width: Fill height: Fit flow: Down spacing: 2
+                                            View{width: Fill height: Fit flow: Right spacing: 6 align: Align{y: 0.5}
+                                                if !custom && model != nil && model.id == m.id { OptTitleOn{text: m.label} } else { OptTitle{text: m.label} }
+                                                if m.default == true { if desk { DeskRec{} } else { Tag{TagText{text: "Recommended"}} } }
+                                            }
+                                            OptNote{text: m.detail}
+                                        }
+                                        if !custom && model != nil && model.id == m.id { Tick{text: "@CHECK@"} }
+                                    }
                                 }
                             }
                         }
-                        for f in fetched {
-                            if desk { DeskLine{} }
+                        for j f in fetched {
+                            if desk { if desk_mac && j == 0 && mo_last { DeskGap{} } else { DeskLine{} } }
                             GestureView{width: Fill height: Fit on_tap: |x, y| use_custom(f.id)
                                 Opt{
                                     View{width: Fill height: Fit flow: Down spacing: 2
@@ -1395,18 +1442,27 @@ let WizardCard = RoundedView{width: Fill max_width: by(9999, 560) height: by(Fil
                                 }
                             }
                         }
-                        if desk { DeskLine{} }
+                        if desk { if desk_mac && (custom || (fetched.len() == 0 && mo_last)) { DeskGap{} } else { DeskLine{} } }
                         GestureView{width: Fill height: Fit on_tap: |x, y| use_custom("")
-                            Opt{
-                                View{width: Fill height: Fit flow: Down spacing: 2
-                                    OptTitle{text: by("Custom model ID…", "Custom Model ID…")}
-                                    OptNote{text: "Any model the route serves"}
+                            if desk_mac && custom {
+                                OptSel{
+                                    View{width: Fill height: Fit flow: Down spacing: 2
+                                        OptTitleSel{text: "Custom Model ID…"}
+                                        OptNoteSel{text: "Any model the route serves"}
+                                    }
                                 }
-                                if custom { Tick{text: "@CHECK@"} }
+                            } else {
+                                Opt{
+                                    View{width: Fill height: Fit flow: Down spacing: 2
+                                        OptTitle{text: by("Custom model ID…", "Custom Model ID…")}
+                                        OptNote{text: "Any model the route serves"}
+                                    }
+                                    if custom { Tick{text: "@CHECK@"} }
+                                }
                             }
                         }
                         if desk {
-                            DeskLine{}
+                            if desk_mac && custom { DeskGap{} } else { DeskLine{} }
                             GestureView{width: Fill height: Fit on_tap: |x, y| fetch_models()
                                 Opt{
                                     View{width: Fill height: Fit flow: Down spacing: 2
@@ -1446,6 +1502,9 @@ let WizardCard = RoundedView{width: Fill max_width: by(9999, 560) height: by(Fil
                 }
                 route_frame := ListFrame{route_scroll := ListFit{
                 route_list := View{width: Fill height: Fit flow: Down spacing: 4 on_render: || {
+                    let ro = route_on_index()
+                    let ro_last = ro >= 0 && ro == route_list().len() - 1
+                    let ro_custom = route != nil && route.id == "custom"
                     if !desk {
                     GestureView{width: Fill height: Fit on_tap: |x, y| toggle("route")
                         Drop{
@@ -1460,25 +1519,43 @@ let WizardCard = RoundedView{width: Fill max_width: by(9999, 560) height: by(Fil
                     if open == "route" || desk {
                         OptBox{
                         for i r in route_list() {
-                            if desk && i > 0 { DeskLine{} }
+                            if desk && i > 0 { if desk_mac && (i == ro || i - 1 == ro) { DeskGap{} } else { DeskLine{} } }
                             GestureView{width: Fill height: Fit on_tap: |x, y| select_route(r)
-                                Opt{
-                                    View{width: Fill height: Fit flow: Down spacing: 2
-                                        OptTitle{text: r.label}
-                                        OptNote{text: r.detail}
+                                if desk_mac && i == ro {
+                                    OptSel{
+                                        View{width: Fill height: Fit flow: Down spacing: 2
+                                            OptTitleSel{text: r.label}
+                                            OptNoteSel{text: r.detail}
+                                        }
                                     }
-                                    if route != nil && route.id == r.id { Tick{text: "@CHECK@"} }
+                                } else {
+                                    Opt{
+                                        View{width: Fill height: Fit flow: Down spacing: 2
+                                            OptTitle{text: r.label}
+                                            OptNote{text: r.detail}
+                                        }
+                                        if route != nil && route.id == r.id { Tick{text: "@CHECK@"} }
+                                    }
                                 }
                             }
                         }
-                        if desk { DeskLine{} }
+                        if desk { if desk_mac && (ro_custom || ro_last) { DeskGap{} } else { DeskLine{} } }
                         GestureView{width: Fill height: Fit on_tap: |x, y| custom_route()
-                            Opt{
-                                View{width: Fill height: Fit flow: Down spacing: 2
-                                    OptTitle{text: by("Custom endpoint…", "Custom Endpoint…")}
-                                    OptNote{text: "Your own base URL, OpenAI- or Anthropic-compatible"}
+                            if desk_mac && ro_custom {
+                                OptSel{
+                                    View{width: Fill height: Fit flow: Down spacing: 2
+                                        OptTitleSel{text: "Custom Endpoint…"}
+                                        OptNoteSel{text: "Your own base URL, OpenAI- or Anthropic-compatible"}
+                                    }
                                 }
-                                if route != nil && route.id == "custom" { Tick{text: "@CHECK@"} }
+                            } else {
+                                Opt{
+                                    View{width: Fill height: Fit flow: Down spacing: 2
+                                        OptTitle{text: by("Custom endpoint…", "Custom Endpoint…")}
+                                        OptNote{text: "Your own base URL, OpenAI- or Anthropic-compatible"}
+                                    }
+                                    if route != nil && route.id == "custom" { Tick{text: "@CHECK@"} }
+                                }
                             }
                         }
                         }

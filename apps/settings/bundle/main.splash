@@ -680,9 +680,20 @@ fn set_about(){
         Label{clip_y: false padding: 0 text: "Version " + st.version draw_text +: {color: ui_muted text_style: theme.font_regular{font_size: 8.25}}}
     }
 }
+// What the host says it runs on (`settings.state`'s `runs_on`); "" where it doesn't say.
+fn about_fact(key){
+    let on = try { st.runs_on } catch { nil }
+    if on == nil { return "" }
+    let v = nil
+    if key == "macos" { v = try { on.macos } catch { nil } }
+    if key == "chip" { v = try { on.chip } catch { nil } }
+    if key == "processor" { v = try { on.processor } catch { nil } }
+    if v == nil { return "" }
+    return v
+}
 // A Mac's About, as System Settings' is: the icon and the name, then a grouped list of what
-// the host says is true, and a button under it. `settings.state` gives the version alone:
-// no build, commit or platform, so none is shown (a host field would bring each).
+// the host says is true, and a button under it. `settings.state` gives the version and what
+// it runs on; no build or commit, so none is shown (a host field would bring each).
 fn set_about_mac(){
     View{width: Fill height: Fit flow: Down spacing: 8
         View{width: Fill height: Fit flow: Down align: Align{x: 0.5} spacing: 4 padding: Inset{top: 6 bottom: 8}
@@ -698,6 +709,18 @@ fn set_about_mac(){
             set_fact("Name", "OctoSense")
             UiSep{}
             set_fact("Version", st.version)
+            if about_fact("macos") != "" {
+                UiSep{}
+                set_fact("macOS", about_fact("macos"))
+            }
+            if about_fact("chip") != "" {
+                UiSep{}
+                set_fact("Chip", about_fact("chip"))
+            }
+            if about_fact("processor") != "" {
+                UiSep{}
+                set_fact("Processor", about_fact("processor"))
+            }
         }
         if st.has.update {
             View{width: Fill height: Fit flow: Right align: Align{x: 1.0}
