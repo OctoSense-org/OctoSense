@@ -695,11 +695,15 @@ fn add_attempt(d: &mut Value, prior: Option<&str>) -> Result<(), String> {
     }
     draft_fields(d, text(d, "body"))?;
     let operation = unique("send");
-    let domain = text(d, "from")
-        .split('@')
-        .nth(1)
-        .unwrap_or("octosense.local");
-    let payload = json!({"from":d["from"],"to":d["to"],"cc":text(d, "cc"),"subject":d["subject"],"body":d["body"],"in_reply_to":d["in_reply_to"],"references":d["references"],"message_id":format!("<{operation}@{domain}>")});
+    // A sender with no domain gets octosense.local, written whole in the
+    // Message-ID's own format string: a bare "octosense.local" literal can
+    // pool after another word in a Windows build, which the release scan then
+    // reads as a private host name.
+    let message_id = match text(d, "from").split('@').nth(1) {
+        Some(domain) => format!("<{operation}@{domain}>"),
+        None => format!("<{operation}@octosense.local>"),
+    };
+    let payload = json!({"from":d["from"],"to":d["to"],"cc":text(d, "cc"),"subject":d["subject"],"body":d["body"],"in_reply_to":d["in_reply_to"],"references":d["references"],"message_id":message_id});
     let attempt = json!({"operation_id":operation,"revision":d["revision"],"status":"awaiting_approval","payload":payload,"prior_attempt":prior});
     d["attempts"].as_array_mut().unwrap().push(attempt);
     d["status"] = json!("awaiting_approval");
