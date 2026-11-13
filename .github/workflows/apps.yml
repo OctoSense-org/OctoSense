@@ -156,7 +156,7 @@ jobs:
   apps:
     # macOS: the host services and AppCard link App Hub and Makepad, whose
     # host system-dependency set is verified on macOS (what the dev machines run).
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
