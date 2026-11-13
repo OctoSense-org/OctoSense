@@ -128,7 +128,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-14
+          - os: macos-15
             platform: macos-arm64
           - os: windows-2022
             platform: windows-x64
@@ -250,7 +250,7 @@ jobs:
   sign-macos:
     needs: [plan, package]
     if: needs.plan.outputs.sign == 'true'
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 90
     environment: release
     permissions:
