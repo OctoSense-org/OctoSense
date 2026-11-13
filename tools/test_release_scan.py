@@ -49,9 +49,11 @@ def appimage_bytes(runtime=b"", filesystem=b"", after=b"", elf_class=2, order="l
 class PatternTests(unittest.TestCase):
     def test_only_proven_octoscode_placeholder_seams_are_ignored(self):
         themes = b"/home/user/src/octoscode-app/home/user/src/octosSystemSolarizedSlateClaudeCodexLight"
+        # OctosCode 960bfa13's macOS binary aligns the theme names after the paths.
+        aligned_themes = themes.replace(b"octosSystem", b"octos" + b"\x00" * 5 + b"System")
         folder = b"/home/user/codeUse this folderb1_br_use"
         pooled_folder = b"b1_br_path/home/user/codeb1_br_use"
-        for known in (themes, folder, pooled_folder):
+        for known in (themes, aligned_themes, folder, pooled_folder):
             self.assertEqual(findings(known), [])
             for leak in (known + b"\x00/home/user/private", b"/home/user/private\x00" + known,
                          known.replace(b"/home/user/", b"/home/someone/", 1),
@@ -61,6 +63,9 @@ class PatternTests(unittest.TestCase):
         for standalone in (b"/home/user/src/octoscode-app", b"/home/user/src/octos", b"/home/user/code"):
             self.assertTrue(findings(standalone), standalone)
         for tampered in (
+            themes.replace(b"octosSystem", b"octos\x00\x00x\x00\x00System"),
+            themes.replace(b"octosSystem", b"octos" + b"\x00" * 16 + b"System"),
+            themes.replace(b"octosSystem", b"octos/private\x00System"),
             pooled_folder.replace(b"b1_br_path", b"another_field"),
             pooled_folder.replace(b"b1_br_use", b"another_button"),
             pooled_folder.replace(b"/home/user/code", b"/home/user/private"),

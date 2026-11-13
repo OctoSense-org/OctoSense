@@ -140,9 +140,14 @@ MAIL_LITERAL_SEAM = re.compile(
 # placeholder (733/780), button text and ID (736-738). Only the /home/user/
 # match spans inside these complete proven sequences qualify, never those
 # paths standing alone or a different field's private value.
+# At OctosCode 960bfa13 the same literals (seed_board2() 3567/3570, the theme
+# names 3178-3183, browser.rs 766/787) pool in the same order, but the linker
+# aligns the theme names with NUL padding after the second path; only NULs,
+# at most 15 of them, may sit there. Public source proof:
+# https://github.com/octos-org/octoscode-app/blob/960bfa139a49a8919bf9ded04d138500e756cc90/crates/octoscode-module/src/chrome.rs#L3567
 OCTOSCODE_PLACEHOLDER_SEAMS = (
     re.compile(rb"(?P<first>/home/user/)src/octoscode-app"
-               rb"(?P<second>/home/user/)src/octosSystemSolarizedSlateClaudeCodexLight"),
+               rb"(?P<second>/home/user/)src/octos\x00{0,15}SystemSolarizedSlateClaudeCodexLight"),
     re.compile(rb"(?P<first>/home/user/)codeUse this folderb1_br_use"),
     # The same browser.rs:733/737 literals can pool without the translated
     # button label. Require both surrounding widget IDs, not the path alone.
