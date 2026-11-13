@@ -11,6 +11,7 @@
 //! | standing rules, their conditions, cap, time box, "all off", the person's gesture | [`rules`] |
 //! | what rules and sheets read from the exact arguments; redaction; digest | [`facts`] |
 //! | the sheet model | [`sheet`] |
+//! | the same in plain words, for a Mac's surfaces | [`words`] |
 //! | the append-only, owner-only audit | [`audit`] |
 //! | consent at first use; `consent::granted(app)` | [`consent`] |
 //! | contacts for "recipients in my contacts", behind the person's consent | [`contacts`] |
@@ -33,6 +34,7 @@ pub mod consent;
 pub mod contacts;
 pub mod dev_hooks;
 pub mod facts;
+pub mod mac_kit;
 pub mod relay;
 pub mod router;
 pub mod rules;
@@ -40,6 +42,7 @@ pub mod settings_page;
 pub mod sheet;
 pub mod types;
 pub mod view;
+pub mod words;
 
 #[cfg(test)]
 mod tests;
@@ -58,6 +61,9 @@ pub struct Approvals {
     pub consent: consent::ConsentStore,
     /// Settings → Assistant → Approvals is open.
     pub settings_open: bool,
+    /// It has just been opened, and the shell has yet to put a Mac's System
+    /// Settings under it ([`take_settings_fresh`]).
+    settings_fresh: bool,
     /// Decisions for requests other than the bus's, until the relay is
     /// installed.
     queue: RecordingRelay,
@@ -117,15 +123,15 @@ impl Approvals {
         let external = Arc::new(Mutex::new(None));
         let dispatch = Dispatch { bus: bus.clone(), peer: peer.clone(), system_chat: system_chat.clone(), queue: queue.clone(), external: external.clone() };
         let router = Router::new(rules, audit, Box::new(dev_hooks::ShellDevMode), contacts, Box::new(dispatch));
-        Approvals { router, consent, settings_open: false, queue, bus, peer, system_chat, external }
+        Approvals { router, consent, settings_open: false, settings_fresh: false, queue, bus, peer, system_chat, external }
     }
     /// Sheets, rules, consent and the page: one number for "redraw".
     pub fn generation(&self) -> u64 {
         let now = now();
         // The time-box indicator counts minutes down.
         let minute = if self.router.rules.active_everything(now).is_empty() { 0 } else { now / 60 };
-        // An app agent's question is drawn on the same surface.
-        self.router.generation() + self.consent.generation() + self.router.contacts().generation() + u64::from(self.settings_open) + minute + crate::questions::generation()
+        // An app agent's question is drawn on the same surface, and so is a Mac's quit alert.
+        self.router.generation() + self.consent.generation() + self.router.contacts().generation() + u64::from(self.settings_open) + minute + crate::questions::generation() + crate::quit_alert::generation()
     }
     pub fn consent_granted(&self, app: &str) -> bool {
         self.consent.granted(app, self.router.hooks().grants_all(app))
@@ -236,6 +242,10 @@ pub fn app_confirm_answered(id: &RequestId, approved: bool, reason: &str) -> Res
 /// `consent::granted(app)`: whether `app` may have its agent now (the
 /// person allowed it, or developer mode grants everything). For #106's
 /// contained apps and the Rinx/native offer path.
+pub fn consent_prompt_up() -> bool {
+    with(|a| a.consent.prompt().is_some()).unwrap_or(false)
+}
+
 pub fn consent_granted(app: &str) -> bool {
     with(|a| a.consent_granted(app)).unwrap_or(false)
 }
@@ -261,6 +271,9 @@ pub fn consent_for_module(app: &str, label: &str, capabilities: &[&str]) -> bool
     with(|a| module_gate(a, app, label, capabilities)).unwrap_or(false)
 }
 
+/// The native apps whose own window needs their agent from the start.
+const ASKS_WHEN_OPENED: &[&str] = &["rinx"];
+
 /// [`consent_for_module`] on one `Approvals`.
 pub fn module_gate(a: &mut Approvals, app: &str, label: &str, capabilities: &[&str]) -> bool {
     if !capabilities.iter().any(|c| crate::ai_host::app_peers::OCTOS_SERVICES.contains(c)) { return false; }
@@ -268,9 +281,16 @@ pub fn module_gate(a: &mut Approvals, app: &str, label: &str, capabilities: &[&s
     if a.consent.granted(app, all) {
         return true;
     }
+    // Opening Calculator is no reason to ask about its agent: the first-use
+    // sheet waits until the person reaches for it ("Ask <app>", `agents::ask`),
+    // and this instance goes without. Only an app whose own window talks to
+    // its agent asks on the way in.
+    if !ASKS_WHEN_OPENED.contains(&app) {
+        return false;
+    }
     let manifest = serde_json::json!({ "capabilities": capabilities });
     let granted: Vec<String> = capabilities.iter().map(|c| c.to_string()).collect();
-    let summary = consent::AgentSummary::from_manifest(app, label, &manifest, &granted, "The model set in AI providers");
+    let summary = consent::AgentSummary::from_manifest(app, label, &manifest, &granted, "The model set in AI Providers");
     a.consent.ask(summary, all) == consent::State::Allowed
 }
 
@@ -301,7 +321,7 @@ fn contained_gate(a: &mut Approvals, app: &str, manifest: &serde_json::Value, gr
     let Some(name) = manifest["name"].as_str().filter(|name| !name.trim().is_empty()) else { return false };
     let all = a.router.hooks().grants_all(app);
     if a.consent.granted(app, all) { return true; }
-    let summary = consent::AgentSummary::from_manifest(app, name, manifest, granted, "The model set in AI providers");
+    let summary = consent::AgentSummary::from_manifest(app, name, manifest, granted, "The model set in AI Providers");
     a.consent.ask(summary, all) == consent::State::Allowed
 }
 
@@ -383,6 +403,18 @@ impl RequestNotices {
 pub fn generation() -> u64 {
     with(|a| a.generation()).unwrap_or(0)
 }
+/// What a Mac's menu bar says while a time box runs: the rule, the app's name and
+/// the minutes left.
+pub fn time_boxes() -> Vec<(RuleId, String, u64)> {
+    let now = now();
+    with(|a| a.router.rules.active_everything(now).into_iter().map(|r| (r.id.clone(), sheet::app_label(&r.app), r.minutes_left(now).unwrap_or(0))).collect()).unwrap_or_default()
+}
+
+/// Stop on that menu: what Stop does on a time box's banner.
+pub fn stop_time_box(id: &str) {
+    with(|a| a.router.delete_rule(&RuleId(id.to_string())));
+}
+
 /// Settings → Assistant → Approvals: every app that declares an agent is
 /// listed with its switch, whether or not it has asked yet.
 pub fn open_settings() {
@@ -390,13 +422,20 @@ pub fn open_settings() {
     with(|a| {
         register_agents(a, &apps);
         a.settings_open = true;
+        a.settings_fresh = true;
     });
+}
+
+/// The page was opened since the shell last asked: a Mac's System Settings
+/// comes forward under it (`App::approvals_page_opened`).
+pub fn take_settings_fresh() -> bool {
+    with(|a| std::mem::take(&mut a.settings_fresh)).unwrap_or(false)
 }
 
 /// Settings learns of every app that declares an agent.
 pub fn register_agents(a: &mut Approvals, apps: &[crate::apps::AgentApp]) {
     for app in apps {
-        let summary = consent::AgentSummary::from_manifest(&app.id, &app.name, &app.manifest, &app.octos, "The model set in AI providers");
+        let summary = consent::AgentSummary::from_manifest(&app.id, &app.name, &app.manifest, &app.octos, "The model set in AI Providers");
         a.consent.register(summary);
     }
 }
@@ -435,8 +474,26 @@ pub fn pointer(ui: &WidgetRef, cx: &mut Cx, event: &Event) -> bool {
     taken
 }
 
+/// The keyboard, before the rest of the shell: on a Mac, Escape answers with the
+/// Cancel-position button of what is up, the arrows and page keys move what
+/// scrolls. Every other style's sheets take no keys, as ever.
+pub fn key(ui: &WidgetRef, cx: &mut Cx, e: &KeyEvent) -> bool {
+    let settings = ui.widget(cx, ids!(shell_approvals_settings));
+    if settings.borrow_mut::<settings_page::ShellApprovalsSettings>().is_some_and(|mut s| s.key(cx, e)) {
+        ui.redraw(cx);
+        return true;
+    }
+    let sheets = ui.widget(cx, ids!(shell_approvals));
+    let taken = sheets.borrow_mut::<view::ShellApprovals>().is_some_and(|mut s| s.key(cx, e));
+    if taken {
+        ui.redraw(cx);
+    }
+    taken
+}
+
 /// `--test-action approval-sheet` / `approval-sheet-long` /
-/// `approval-command` / `approval-batch` / `approval-consent` /
+/// `approval-command` / `approval-batch` / `approval-batch-careful` /
+/// `approval-unknown` / `approval-not-auto` / `approval-question` / `approval-consent` /
 /// `approvals-settings`: put a sample in front, for hidden-window runs.
 /// Nothing here approves anything: the samples wait for the person.
 pub fn test_action(name: &str) -> bool {
@@ -458,7 +515,8 @@ pub fn test_action(name: &str) -> bool {
             let mut to: Vec<String> = (1..=20).map(|i| format!("friend{i}@example.org")).collect();
             to.push("attacker@evil.example".into());
             let subject = format!("invoice\u{202E}fdp.exe {}end of the subject", "long ".repeat(40));
-            approval_requested("os.mail", ToolSpec::host("mail.send"), json!({"to": to, "subject": subject}), Caller::AppAgent { app: "calendar".into() }, ctx("sample-long"));
+            let body = (1..=40).map(|i| format!("Line {i} of the message.")).collect::<Vec<_>>().join("\n");
+            approval_requested("os.mail", ToolSpec::host("mail.send"), json!({"to": to, "subject": subject, "body": body}), Caller::AppAgent { app: "calendar".into() }, ctx("sample-long"));
         }
         // A multi-line command: one numbered row per line.
         "approval-command" => {
@@ -470,16 +528,84 @@ pub fn test_action(name: &str) -> bool {
                 ctx("sample-command"),
             );
         }
+        // The system agent's plan: one booking and the two invitations that
+        // go with it, on one sheet.
         "approval-batch" => {
             let batch = Some(Batch { id: "plan-1".into(), plan: "Book Tue 3\u{2013}4 pm and invite 2".into() });
+            let plan = RequestContext { batch: batch.clone(), trigger: Trigger::SystemAgent, ..ctx("batch-0") };
+            approval_requested(
+                "os.calendar",
+                ToolSpec::host("calendar.add_event"),
+                json!({"title": "Planning", "start": "Tuesday 3:00 PM", "end": "Tuesday 4:00 PM"}),
+                Caller::SystemAgent,
+                plan,
+            );
             for (i, to) in ["ana@example.org", "bo@example.org"].iter().enumerate() {
                 approval_requested(
                     "os.mail",
                     ToolSpec::host("mail.send"),
                     json!({"to": [to], "subject": "Meeting Tue 3 pm"}),
-                    Caller::AppAgent { app: "calendar".into() },
-                    RequestContext { batch: batch.clone(), trigger: Trigger::SystemAgent, ..ctx(&format!("batch-{i}")) },
+                    Caller::SystemAgent,
+                    RequestContext { batch: batch.clone(), trigger: Trigger::SystemAgent, ..ctx(&format!("batch-{}", i + 1)) },
                 );
+            }
+        }
+        // A plan with a line that undoes something: on a Mac the default backs out.
+        "approval-batch-careful" => {
+            let batch = Some(Batch { id: "plan-2".into(), plan: "Move Planning to Tuesday".into() });
+            let plan = RequestContext { batch: batch.clone(), trigger: Trigger::SystemAgent, ..ctx("careful-0") };
+            approval_requested(
+                "os.calendar",
+                ToolSpec::host("calendar.add_event"),
+                json!({"title": "Planning", "start": "Tuesday 3:00 PM", "end": "Tuesday 4:00 PM"}),
+                Caller::SystemAgent,
+                plan,
+            );
+            approval_requested(
+                "os.calendar",
+                ToolSpec::host("calendar.remove_event").not_auto_approvable(),
+                json!({"event_id": "evt-1", "title": "Planning"}),
+                Caller::SystemAgent,
+                RequestContext { batch, trigger: Trigger::SystemAgent, ..ctx("careful-1") },
+            );
+        }
+        // A tool the shell has no words for, with nested arguments and a key.
+        "approval-unknown" => {
+            approval_requested(
+                "os.finance",
+                ToolSpec::host("finance.place_order"),
+                json!({
+                    "symbol": "ACME",
+                    "order": {"side": "buy", "quantity": 10, "limit_price": 12.5},
+                    "api_key": "sk-live-not-shown",
+                    "notes": ["first line", "second line"],
+                    "dry_run": false,
+                }),
+                Caller::SystemAgent,
+                ctx("sample-unknown"),
+            );
+        }
+        // No rule may answer this one: nothing to choose beside Allow.
+        "approval-not-auto" => {
+            approval_requested(
+                "os.calendar",
+                ToolSpec::host("calendar.remove_event").not_auto_approvable(),
+                json!({"event_id": "evt-1", "title": "Planning"}),
+                Caller::SystemAgent,
+                ctx("sample-not-auto"),
+            );
+        }
+        // An agent's question: answered here, or in the app's conversation.
+        "approval-question" => {
+            let question = crate::ai_host::app_peers::host_tools::AgentQuestion::parse(
+                &json!({"question_id": "sample-q", "turn_id": "t1", "title": "Book a Room", "body": "Pick where the meeting goes",
+                    "questions": [{"header": "Room", "question": "Which room should I book?", "options": [
+                        {"label": "Aspen", "description": "Seats 6"},
+                        {"label": "Birch", "description": "Seats 12"}]}]}),
+                "_main:api:octosense#peer-news-1",
+            );
+            if let Some(question) = question {
+                crate::questions::requested("os.news", None, question, crate::ai_host::app_peers::host_tools::QuestionAnswer::new(|_| {}));
             }
         }
         "approval-consent" => {
@@ -488,7 +614,7 @@ pub fn test_action(name: &str) -> bool {
                 name: "News".into(),
                 reads: vec!["News's files for the signed-in account".into(), "Its own memory".into()],
                 uses: vec!["Web search and page reading (the system toolbox)".into(), "News's own tools".into()],
-                model: "The model set in AI providers".into(),
+                model: "The model set in AI Providers".into(),
             });
         }
         "approvals-settings" => open_settings(),

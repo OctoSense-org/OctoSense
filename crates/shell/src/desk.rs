@@ -425,6 +425,109 @@ pub struct WmState {
     /// taskbar or column stays away, as in a slideshow's play mode. Esc and
     /// the app's own exit are the ways out.
     pub presentation: Option<ClientId>,
+    /// The apps the person keeps in a Mac's Dock, in order: a new Mac's
+    /// (`desktop::MAC_DOCK_PINNED`) until the Dock menu's Options ▸ Keep in
+    /// Dock or Remove from Dock changes it, then as they left it
+    /// (`mac_menus::load_dock_pins`).
+    pub dock_pins: Vec<String>,
+    /// A Mac's App Exposé, from a Dock menu's Show All Windows: the app's
+    /// windows on this desktop side by side over the dimmed desk until one is
+    /// chosen, or Esc (`App::open_expose`, `WmDesk::draw_expose`).
+    pub expose: Option<Expose>,
+    /// Whether the Mac Dock's Trash has anything in it: what Files last said
+    /// (`WmRequest::TrashFull`), until then what its Trash starts with
+    /// (`desktop::trash_starts_full`).
+    pub trash_full: bool,
+}
+
+/// A Mac's App Exposé (`WmState::expose`).
+#[derive(Clone, Debug, Default)]
+pub struct Expose {
+    pub app: String,
+    /// The windows it shows, oldest first.
+    pub clients: Vec<ClientId>,
+    /// Its windows in the Dock (minimized), oldest first: in a row at its foot.
+    pub minimized: Vec<ClientId>,
+    /// Where the desk last drew each, for the pointer and the arrow keys.
+    pub cells: Vec<(ClientId, Rect)>,
+    /// The window under the pointer or the arrow keys: ringed and named.
+    pub hover: Option<ClientId>,
+    /// When it opened (`Cx::seconds_since_app_start`): the windows fly to
+    /// their places over [`EXPOSE_FLIGHT`].
+    pub since: f64,
+}
+
+/// How long App Exposé's windows take to fly to their places, in seconds.
+pub const EXPOSE_FLIGHT: f64 = 0.3;
+/// App Exposé's row of minimized windows: the room it takes from the windows
+/// out (a rule, the row, a name under the one chosen), and its windows' height.
+const EXPOSE_DOCKED_BAND: f64 = 150.0;
+const EXPOSE_DOCKED_H: f64 = 90.0;
+
+/// App Exposé's minimized windows in their row at its foot, as a Mac's: each
+/// at `area`'s height, narrower all together when the row would not fit, side
+/// by side and centred.
+pub fn expose_row(area: Rect, sizes: &[DVec2]) -> Vec<Rect> {
+    const GAP: f64 = 28.0;
+    let widths: Vec<f64> = sizes.iter().map(|s| (s.x / s.y.max(1.0) * area.size.y).min(area.size.y * 2.0)).collect();
+    let total = widths.iter().sum::<f64>() + GAP * widths.len().saturating_sub(1) as f64;
+    let k = if total > area.size.x { area.size.x / total } else { 1.0 };
+    let mut x = area.pos.x + (area.size.x - total * k) * 0.5;
+    widths.iter().map(|w| {
+        let (w, h) = (w * k, area.size.y * k);
+        let r = Rect { pos: dvec2(x, area.pos.y + (area.size.y - h) * 0.5), size: dvec2(w, h) };
+        x += w + GAP * k;
+        r
+    }).collect()
+}
+
+/// Where App Exposé puts windows of `sizes` on `area`: a grid as near square
+/// as fits, each window scaled into its cell (never above 0.8 of itself) and
+/// centred in it, with room for a name under it; a short last row is centred.
+pub fn expose_cells(area: Rect, sizes: &[DVec2]) -> Vec<Rect> {
+    const GAP: f64 = 28.0;
+    const TITLE: f64 = 30.0;
+    let n = sizes.len();
+    if n == 0 || area.size.x <= 0.0 || area.size.y <= 0.0 {
+        return Vec::new();
+    }
+    let cols = (n as f64).sqrt().ceil() as usize;
+    let rows = n.div_ceil(cols);
+    let cell_w = ((area.size.x - GAP * (cols - 1) as f64) / cols as f64).max(1.0);
+    let cell_h = ((area.size.y - (GAP + TITLE) * rows as f64 + GAP) / rows as f64).max(1.0);
+    sizes.iter().enumerate().map(|(i, size)| {
+        let (row, col) = (i / cols, i % cols);
+        let in_row = if row + 1 == rows { n - row * cols } else { cols };
+        let row_w = in_row as f64 * cell_w + (in_row - 1) as f64 * GAP;
+        let x = area.pos.x + (area.size.x - row_w) * 0.5 + col as f64 * (cell_w + GAP);
+        let y = area.pos.y + row as f64 * (cell_h + TITLE + GAP);
+        let s = (cell_w / size.x.max(1.0)).min(cell_h / size.y.max(1.0)).min(0.8);
+        let (w, h) = (size.x * s, size.y * s);
+        Rect { pos: dvec2(x + (cell_w - w) * 0.5, y + (cell_h - h) * 0.5), size: dvec2(w, h) }
+    }).collect()
+}
+
+/// The window App Exposé's arrow keys go to from `from` in direction `dir`
+/// (x, y): the nearest whose centre lies that way, a step across counting
+/// double. None when nothing lies that way; the first window when none is
+/// chosen yet.
+pub fn expose_step(cells: &[(ClientId, Rect)], from: Option<ClientId>, dir: (f64, f64)) -> Option<ClientId> {
+    let centre = |r: &Rect| r.pos + r.size * 0.5;
+    let Some(here) = from.and_then(|c| cells.iter().find(|(id, _)| *id == c)) else {
+        return cells.first().map(|(c, _)| *c);
+    };
+    let at = centre(&here.1);
+    cells
+        .iter()
+        .filter(|(c, _)| *c != here.0)
+        .filter_map(|(c, r)| {
+            let d = centre(r) - at;
+            let along = d.x * dir.0 + d.y * dir.1;
+            let across = (d.x * dir.1 - d.y * dir.0).abs();
+            (along > 1.0).then_some((*c, along + across * 2.0))
+        })
+        .min_by(|a, b| a.1.total_cmp(&b.1))
+        .map(|(c, _)| c)
 }
 
 impl WmState {
@@ -541,19 +644,74 @@ script_mod! {
         }
     }
 
+    // A Mac Quick Look panel's marks where a window's lights are
+    // (`WmDesk::draw_quick_look_controls`): its close ✕ (kind 0), its
+    // enter-full-screen ⤢ (kind 1) and, full screen, the ⤡ that leaves it
+    // (kind 2). Files' own Quick Look glyphs (xmark, enlarge, shrink) on
+    // their 24-point grid, fitted to the quad.
+    set_type_default() do #(DrawQuickLookGlyph::script_shader(vm)) {
+        ..mod.draw.DrawQuad
+        color: #3c3c43
+        kind: 0.0
+        pixel: fn() {
+            let s = min(self.rect_size.x, self.rect_size.y) / 24.0
+            let o = (self.rect_size - vec2(24.0 * s, 24.0 * s)) * 0.5
+            let sdf = Sdf2d.viewport((self.pos * self.rect_size - o) / s)
+            if self.kind < 0.5 {
+                sdf.move_to(6.0, 6.0)
+                sdf.line_to(18.0, 18.0)
+                sdf.move_to(18.0, 6.0)
+                sdf.line_to(6.0, 18.0)
+            } else {
+                if self.kind < 1.5 {
+                    sdf.move_to(14.0, 4.0)
+                    sdf.line_to(20.0, 4.0)
+                    sdf.line_to(20.0, 10.0)
+                    sdf.move_to(20.0, 4.0)
+                    sdf.line_to(13.0, 11.0)
+                    sdf.move_to(10.0, 20.0)
+                    sdf.line_to(4.0, 20.0)
+                    sdf.line_to(4.0, 14.0)
+                    sdf.move_to(4.0, 20.0)
+                    sdf.line_to(11.0, 13.0)
+                } else {
+                    sdf.move_to(20.0, 10.0)
+                    sdf.line_to(14.0, 10.0)
+                    sdf.line_to(14.0, 4.0)
+                    sdf.move_to(14.0, 10.0)
+                    sdf.line_to(21.0, 3.0)
+                    sdf.move_to(4.0, 14.0)
+                    sdf.line_to(10.0, 14.0)
+                    sdf.line_to(10.0, 20.0)
+                    sdf.move_to(10.0, 14.0)
+                    sdf.line_to(3.0, 21.0)
+                }
+            }
+            sdf.stroke(self.color, 2.1)
+            return sdf.result
+        }
+    }
+
     mod.widgets.WmDeskBase = #(WmDesk::register_widget(vm))
     mod.widgets.WmDesk = set_type_default() do mod.widgets.WmDeskBase {
         width: Fill
         height: Fill
         draw_shadow +: {
             opacity: uniform(0.25)
+            bleed: uniform(24.0)
+            drop: uniform(6.0)
+            blur: uniform(8.0)
+            corner: uniform(10.0)
+            contact: uniform(0.0)
             pixel: fn() {
                 let p = self.pos*self.rect_size
                 let sdf = Sdf2d.viewport(p)
-                sdf.box(24.0,24.0,self.rect_size.x-48.0,self.rect_size.y-48.0,5.0)
+                sdf.box(self.bleed,self.bleed,self.rect_size.x-2.0*self.bleed,self.rect_size.y-2.0*self.bleed,self.corner*0.5)
                 let outside = smoothstep(-0.5,0.5,sdf.shape)
-                let shadow = GaussShadow.rounded_box_shadow(vec2(24.0,30.0),self.rect_size-vec2(24.0,18.0),p,8.0,10.0)
-                return vec4(0.0,0.0,0.0,shadow*outside*self.opacity)
+                let shadow = GaussShadow.rounded_box_shadow(vec2(self.bleed,self.bleed+self.drop),self.rect_size-vec2(self.bleed,self.bleed-self.drop),p,self.blur,self.corner)
+                let near = GaussShadow.rounded_box_shadow(vec2(self.bleed,self.bleed+1.0),self.rect_size-vec2(self.bleed,self.bleed-1.0),p,2.0,self.corner)
+                let cover = 1.0-(1.0-shadow*self.opacity)*(1.0-near*self.contact)
+                return vec4(0.0,0.0,0.0,cover*outside)
             }
         }
         terminal_glass: GaussRoundedView {
@@ -593,6 +751,7 @@ script_mod! {
         draw_menu_bg +: {}
         draw_menu_row +: {}
         draw_menu_line +: {}
+        draw_quick_look +: {}
         draw_menu_text +: {
             text_style: theme.font_code
             text_style.font_size: 9.5
@@ -663,6 +822,18 @@ struct DrawMenuLine {
     draw_super: DrawQuad,
     #[live]
     color: Vec4f,
+}
+
+/// A Mac Quick Look panel's control mark (its shader is above).
+#[derive(Script, ScriptHook)]
+#[repr(C)]
+struct DrawQuickLookGlyph {
+    #[deref]
+    draw_super: DrawQuad,
+    #[live]
+    color: Vec4f,
+    #[live]
+    kind: f32,
 }
 
 /// Per-tile animation state. The quad tweens toward the layout target on
@@ -802,6 +973,9 @@ pub enum WmDeskAction {
     /// A press on a tab dragged off the strip: tear that member out of its
     /// group and carry on as an ordinary tiled drag from `abs`.
     TearOutTab { client: ClientId, abs: Vec2d },
+    /// A Mac Quick Look panel's ⤢ (or, full screen, its ⤡) was clicked: the
+    /// panel goes full screen, or back (`release_chrome`).
+    PreviewFullScreen { client: ClientId },
     #[default]
     None,
 }
@@ -837,6 +1011,13 @@ pub struct WmDesk {
     #[rust] phone_scene_moved_at: f64,
     #[rust] phone_scene_record_timer: Timer,
     #[rust] desktop_frames: HashMap<ClientId, WindowFrame>,
+    /// App Exposé is up (`WmState::expose`): the tiles are still captured,
+    /// for its windows, but not put on the desk.
+    #[rust] expose_on: bool,
+    /// Its windows are still flying to their places.
+    #[rust] expose_moving: bool,
+    /// Where it last said its windows are (`wm: show all windows:`).
+    #[rust] expose_logged: String,
     #[rust] pub wallpaper: WidgetRef,
     #[rust] pub compositor: Option<BackdropCompositor>,
     /// This frame of the phone scene goes through the compositor
@@ -860,10 +1041,26 @@ pub struct WmDesk {
     #[rust] chrome_hover: Option<(ClientId, ChromeHit)>,
     #[rust] chrome_pressed: Option<(ClientId, ChromeHit)>,
     #[rust] minimized: HashSet<ClientId>,
+    /// Windows put away with their app last frame: they went without a flight to the
+    /// Dock, and come back without one.
+    #[rust] hidden_with_app: HashSet<ClientId>,
     #[rust] dock_warps: HashMap<ClientId, DockWarp>,
     /// `draw_window_chrome` draws a full-screen window's title bar over its
     /// content: solid, and with no resize edges.
     #[rust] chrome_overlay: bool,
+    /// `draw_window_chrome` draws only the lights and the edges over an app
+    /// that lays out its own unified toolbar (`crate::clients::unified_chrome`).
+    #[rust] chrome_unified: bool,
+    /// The Quick Look panels (`ClientSlot::is_preview`) on the desk last
+    /// frame: on a Mac their chrome is a close ✕ and a full-screen ⤢
+    /// (`draw_quick_look_controls`).
+    #[rust] preview_tiles: HashSet<ClientId>,
+    /// A Mac's Quick Look viewers drawn as panels: their frames stay while
+    /// they are hidden and warm, until their tiles go (see where `draw_walk`
+    /// drops frames).
+    #[rust] quick_look_frames: HashSet<ClientId>,
+    /// Those kept frames emptied since their panel was last drawn.
+    #[rust] quick_look_emptied: HashSet<ClientId>,
     #[live] draw_warp: DrawDockWarp,
     #[uid]
     uid: WidgetUid,
@@ -887,6 +1084,8 @@ pub struct WmDesk {
     draw_menu_row: DrawMenuRow,
     #[live]
     draw_menu_line: DrawMenuLine,
+    #[live]
+    draw_quick_look: DrawQuickLookGlyph,
     #[live]
     draw_menu_text: DrawText,
     #[live]
@@ -1039,6 +1238,17 @@ impl WmDesk {
     pub fn release_chrome(&mut self, cx: &mut Cx) -> Option<(ClientId, ChromeHit)> {
         let pressed = self.chrome_pressed.take();
         if pressed.is_some() { cx.redraw_area(self.area); }
+        // A Mac Quick Look panel's ⤢ (full screen, its ⤡) is never a window's
+        // zoom: released on it, it asks the WM to take the panel full screen
+        // or back.
+        if let Some((client, ChromeHit::Maximize)) = pressed {
+            if self.style.target == crate::desktop::DesktopStyle::Macos && self.preview_tiles.contains(&client) {
+                if self.chrome_hover == pressed {
+                    cx.widget_action(self.uid, WmDeskAction::PreviewFullScreen { client });
+                }
+                return None;
+            }
+        }
         pressed
     }
     fn item(&mut self, cx: &mut Cx, client: ClientId) -> Option<WidgetRef> {
@@ -1177,9 +1387,15 @@ impl WmDesk {
         else {
             return;
         };
+        // A Mac's Quick Look panel never takes the keyboard, yet it wears a
+        // window in front's look: no pale wash over its toolbar, the front
+        // shadow.
+        let focus = if self.style.target == crate::desktop::DesktopStyle::Macos && self.preview_tiles.contains(&client) { 1.0 } else { focus };
         if let Some(warp) = self.dock_warps.get_mut(&client) {
             if warp.minimized && !warp.active() { return; }
+            let bounds = warp.bounds();
             if let Some(frame) = warp.frame.as_mut().filter(|_| !warp.refresh) {
+                makepad_widgets::web_reader::cover_web_views(bounds, 0.0);
                 frame.freeze(cx);
                 if !frame.frozen() && self.composing { self.compositor.as_mut().unwrap().content_pass(frame.pass_id()); }
                 warp.draw(cx, &mut self.draw_warp);
@@ -1240,7 +1456,7 @@ impl WmDesk {
             Some(self.compositor.as_mut().unwrap().backdrop(cx, inner, 3.0))
         } else {None};
         let rounding = if fullscreen { 0.0 } else { self.style.mix(|s| s.rounding) };
-        if !fullscreen {
+        if !fullscreen && !self.expose_on {
             self.draw_window_shadow(cx, draw_rect, focus, fade);
         }
         // The glass frame's backdrop is requested HERE, before the capture
@@ -1275,7 +1491,13 @@ impl WmDesk {
         if let Some(snapshot) = backdrop {
             self.terminal_glass.draw_surface_with_backdrop(cx, inner, Some(snapshot), fade as f32);
         }
-        let title_h = if fullscreen { 0.0 } else { self.style.title_height().min((inner.size.y * 0.3).max(0.0)) };
+        // A Mac window with a unified toolbar has no title bar: the app draws to
+        // the window's top edge and the lights sit over its toolbar or sidebar.
+        let unified = !fullscreen
+            && self.style.target == crate::desktop::DesktopStyle::Macos
+            && !self.group_tabs.contains_key(&client)
+            && self.window_apps.get(&client).is_some_and(|app| crate::clients::unified_chrome(app));
+        let title_h = if fullscreen || unified { 0.0 } else { self.style.title_height().min((inner.size.y * 0.3).max(0.0)) };
         if title_h > 0.1 {
             self.draw_window_chrome(cx, client, draw_rect, title_h, focus, fade);
             inner.pos.y += title_h;
@@ -1350,7 +1572,7 @@ impl WmDesk {
             },
             dpi,
         );
-        let title_h = if fullscreen { 0.0 } else { self.style.target.title_height().min(settled_inner.size.y * 0.3) };
+        let title_h = if fullscreen || unified { 0.0 } else { self.style.target.title_height().min(settled_inner.size.y * 0.3) };
         settled_inner.pos.y += title_h;
         settled_inner.size.y = (settled_inner.size.y-title_h).max(1.0);
         let (_, settled_child) = split_groupbar(settled_inner, grouped);
@@ -1362,7 +1584,14 @@ impl WmDesk {
         // Hyprland stretches the frozen snapshot into the shrinking box —
         // no crop (that experiment read odd; git has it).
         let _ = (closing, unscaled_rect);
+        // What is behind this window leaves room for it, and its own web views keep to it.
+        makepad_widgets::web_reader::enter_web_view_window(draw_rect, rounding);
         if let Some(item) = self.item(cx, client) {
+            if let (Some(mut view), Some(app)) = (item.borrow_mut::<MpModuleView>(), self.window_apps.get(&client)) {
+                if view.failed() {
+                    view.set_face_icon(app, self.style.target);
+                }
+            }
             with_tile_host(&item, |view| {
                 // Minimize only changes the compositor quad. Reconfiguring the
                 // app to the taskbar target would destroy its responsive layout.
@@ -1374,8 +1603,14 @@ impl WmDesk {
                 // Inside a glass frame the body's corners follow the ring,
                 // concentric at the inset; square for every other style.
                 view.set_corner_radius(((rounding - inset).max(0.0) * 0.5 * glass_share) as f32);
+                view.set_title_band(if unified { crate::clients::UNIFIED_TOOLBAR } else { 0.0 });
             });
             item.draw_walk_all(cx, scope, Walk::abs_rect(child_rect));
+        }
+        if unified {
+            self.chrome_unified = true;
+            self.draw_window_chrome(cx, client, draw_rect, crate::clients::UNIFIED_TOOLBAR, focus, fade);
+            self.chrome_unified = false;
         }
         if fullscreen && top_reveal > 0.001 {
             // Over the content, under the bar, the two sliding down together
@@ -1383,9 +1618,12 @@ impl WmDesk {
             let h = self.style.target.title_height();
             let y = draw_rect.pos.y + top_bar - (top_bar + h) * (1.0 - crate::edge_reveal::ease(top_reveal));
             self.chrome_overlay = true;
-            self.draw_window_chrome(cx, client, Rect { pos: dvec2(draw_rect.pos.x, y), size: dvec2(draw_rect.size.x, h) }, h, focus, fade);
+            let bar = Rect { pos: dvec2(draw_rect.pos.x, y), size: dvec2(draw_rect.size.x, h) };
+            makepad_widgets::web_reader::cover_web_views(bar, 0.0);
+            self.draw_window_chrome(cx, client, bar, h, focus, fade);
             self.chrome_overlay = false;
         }
+        makepad_widgets::web_reader::leave_web_view_window();
         if let Some(mut frame) = capture {
             frame.end(cx);
             if self.composing {self.compositor.as_mut().unwrap().content_pass(frame.pass_id());}
@@ -1394,9 +1632,14 @@ impl WmDesk {
                 warp.draw(cx, &mut self.draw_warp);
                 if self.composing {self.compositor.as_mut().unwrap().content(warp.bounds());}
             } else {
-                self.draw_window_surface(cx, &frame, draw_rect, rounding as f32);
+                // Under App Exposé the window is only captured: its place on
+                // the desk is empty while its picture is in the grid.
+                if !self.expose_on {
+                    self.draw_window_surface(cx, &frame, draw_rect, rounding as f32);
+                    self.draw_window_rim(cx, draw_rect, rounding, fade);
+                }
                 self.desktop_frames.insert(client, frame);
-                if self.composing { self.compositor.as_mut().unwrap().content(draw_rect); }
+                if self.composing && !self.expose_on { self.compositor.as_mut().unwrap().content(draw_rect); }
             }
             return;
         }
@@ -1563,12 +1806,164 @@ impl WmDesk {
     pub fn chrome_button_rect(&self, client: ClientId, hit: ChromeHit) -> Option<Rect> {
         self.title_hits.iter().rev().find(|(c,_,h)|*c==client && *h==hit).map(|(_,r,_)|*r)
     }
+    /// A Mac's App Exposé (`WmState::expose`): the desk dimmed, and the app's
+    /// windows flown from where they are to a grid over it, those in the Dock
+    /// in a row at its foot under a rule, the one under the pointer or the
+    /// arrow keys ringed in the accent with its name under it. The Dock and the
+    /// bar stay over it.
+    fn draw_expose(&mut self, cx: &mut Cx2d, scope: &mut Scope, desk: Rect) {
+        use crate::shell::{rgb, alpha, ui::{rect, HAlign}};
+        let Some(state) = scope.data.get_mut::<WmState>() else { return };
+        let Some(expose) = state.expose.as_ref() else { return };
+        let (app, hover, since) = (expose.app.clone(), expose.hover, expose.since);
+        let shown: Vec<ClientId> = expose
+            .clients
+            .iter()
+            .copied()
+            .filter(|c| self.desktop_frames.contains_key(c) && self.anims.contains_key(c) && !self.minimized.contains(c))
+            .collect();
+        // Those in the Dock, by the picture of them the Dock keeps.
+        let docked: Vec<ClientId> = expose
+            .minimized
+            .iter()
+            .copied()
+            .filter(|c| self.minimized.contains(c) && self.dock_warps.get(c).is_some_and(|w| w.frame.is_some()))
+            .collect();
+        if shown.is_empty() && docked.is_empty() {
+            log!("wm: show all windows of {app}: none left");
+            state.expose = None;
+            return;
+        }
+        let dock = state.layout.desktop.dock;
+        let titles: Vec<String> = shown
+            .iter()
+            .chain(&docked)
+            .map(|c| state.clients.get(c).map(|s| s.display_title().to_string()).unwrap_or_default())
+            .collect();
+        let now = cx.seconds_since_app_start();
+        let t = ease_out_quint(((now - since) / EXPOSE_FLIGHT).clamp(0.0, 1.0));
+        let band = if docked.is_empty() { 0.0 } else { EXPOSE_DOCKED_BAND };
+        let area = rect(desk.pos.x + 48.0, desk.pos.y + 36.0, (desk.size.x - 96.0).max(1.0), (desk.size.y - 36.0 - dock - 44.0 - band).max(1.0));
+        let from: Vec<Rect> = shown.iter().map(|c| Self::lrect_to_rect(self.anims[c].cur)).collect();
+        let to = expose_cells(area, &from.iter().map(|r| r.size).collect::<Vec<_>>());
+        // The desk dims; a native web view stays under it.
+        makepad_widgets::web_reader::cover_web_views(desk, 0.0);
+        self.shell_draw.solid(cx, desk, alpha(rgb(0, 0, 0), (0.45 * t) as f32));
+        if self.composing { self.compositor.as_mut().unwrap().content(desk); }
+        let rounding = self.style.mix(|s| s.rounding);
+        let mut cells = Vec::new();
+        let mut corners = Vec::new();
+        for (i, client) in shown.iter().enumerate() {
+            let (a, b) = (from[i], to[i]);
+            let r = rect(lerp(a.pos.x, b.pos.x, t), lerp(a.pos.y, b.pos.y, t), lerp(a.size.x, b.size.x, t), lerp(a.size.y, b.size.y, t));
+            let corner = rounding * r.size.x / a.size.x.max(1.0);
+            self.draw_window_shadow(cx, r, 0.0, 1.0);
+            if let Some(frame) = self.desktop_frames.remove(client) {
+                self.draw_phone.new_draw_call(cx);
+                self.draw_window_surface(cx, &frame, r, corner as f32);
+                self.desktop_frames.insert(*client, frame);
+            }
+            if self.composing { self.compositor.as_mut().unwrap().content(r); }
+            cells.push((*client, r));
+            corners.push(corner);
+        }
+        // The minimized ones, under a rule at the foot: they fade in where they stay.
+        if !docked.is_empty() {
+            let rule = area.pos.y + area.size.y + 20.0;
+            self.shell_draw.solid(cx, rect(area.pos.x, rule, area.size.x, 1.0), alpha(rgb(255, 255, 255), (0.28 * t) as f32));
+            let sources: Vec<Rect> = docked.iter().map(|c| self.dock_warps[c].source).collect();
+            let row = expose_row(rect(area.pos.x, rule + 16.0, area.size.x, EXPOSE_DOCKED_H), &sources.iter().map(|r| r.size).collect::<Vec<_>>());
+            for ((client, r), source) in docked.iter().zip(row).zip(&sources) {
+                let corner = rounding * r.size.x / source.size.x.max(1.0);
+                self.draw_window_shadow(cx, r, 0.0, t);
+                if let Some(frame) = self.dock_warps.get_mut(client).and_then(|w| w.frame.take()) {
+                    self.draw_phone.new_draw_call(cx);
+                    self.draw_window_surface_faded(cx, &frame, r, corner as f32, t as f32);
+                    if let Some(warp) = self.dock_warps.get_mut(client) { warp.frame = Some(frame); }
+                }
+                if self.composing { self.compositor.as_mut().unwrap().content(r); }
+                cells.push((*client, r));
+                corners.push(corner);
+            }
+        }
+        if let Some(i) = hover.and_then(|h| cells.iter().position(|(c, _)| *c == h)).filter(|_| t >= 1.0) {
+            let r = cells[i].1;
+            let corner = corners[i];
+            let ring = rect(r.pos.x - 4.0, r.pos.y - 4.0, r.size.x + 8.0, r.size.y + 8.0);
+            // The ring's radius is half the corner it draws (`sdf.box` doubles it).
+            self.shell_draw.focus_ring(cx, ring, (corner + 4.0) * 0.5, 3.0, self.accent);
+            let title = titles[i].as_str();
+            let w = (self.shell_draw.measure(cx, false, 13.0, title) + 24.0).min((r.size.x + 80.0).max(140.0));
+            let pill = rect(r.pos.x + (r.size.x - w) * 0.5, r.pos.y + r.size.y + 10.0, w, 22.0);
+            self.shell_draw.rounded(cx, pill, 5.5, alpha(rgb(0, 0, 0), 0.62));
+            self.shell_draw.label_elided(cx, rect(pill.pos.x + 12.0, pill.pos.y, pill.size.x - 24.0, pill.size.y), false, 13.0, rgb(255, 255, 255), HAlign::Center, title);
+        }
+        self.expose_moving = t < 1.0;
+        if t >= 1.0 {
+            let said = cells
+                .iter()
+                .map(|(c, r)| format!("{c}@{:.0},{:.0},{:.0},{:.0}{}", r.pos.x, r.pos.y, r.size.x, r.size.y,
+                    if docked.contains(c) { " (minimized)" } else { "" }))
+                .collect::<Vec<_>>()
+                .join(" ");
+            if said != self.expose_logged {
+                log!("wm: show all windows: {said}");
+                self.expose_logged = said;
+            }
+        } else {
+            self.expose_logged.clear();
+        }
+        if let Some(expose) = scope.data.get_mut::<WmState>().and_then(|s| s.expose.as_mut()) {
+            expose.cells = cells;
+        }
+    }
+
     fn draw_window_shadow(&mut self, cx: &mut Cx2d, r: Rect, focus: f64, fade: f64) {
         use crate::shell::ui::rect;
         let t=&self.style;
         if t.share(|s| s.shadow > 0.0) > 0.001 {
-            self.draw_shadow.draw_vars.set_uniform(cx, live_id!(opacity), &[t.window_shadow_opacity(focus, fade)]);
-            self.draw_shadow.draw_abs(cx,rect(r.pos.x-24.0,r.pos.y-24.0,r.size.x+48.0,r.size.y+48.0));
+            let mut shadow = [t.window_shadow_opacity(focus, fade), 24.0, 6.0, 8.0, 10.0, 0.0];
+            if t.target == crate::desktop::DesktopStyle::Macos {
+                // A Mac window lifts well off the desk while it has focus, and
+                // sits lower behind the others; a tight line keeps its edge.
+                let lifted = (t.mix(|s| s.shadow) / 0.28 * fade) as f32;
+                let active = focus > 0.5;
+                shadow = [
+                    lifted * if active { 0.42 } else { 0.22 },
+                    72.0,
+                    if active { 24.0 } else { 10.0 },
+                    if active { 28.0 } else { 14.0 },
+                    t.mix(|s| s.rounding) as f32,
+                    lifted * 0.16,
+                ];
+            }
+            let [opacity, bleed, drop, blur, corner, contact] = shadow;
+            let vars = &mut self.draw_shadow.draw_vars;
+            vars.set_uniform(cx, live_id!(opacity), &[opacity]);
+            vars.set_uniform(cx, live_id!(bleed), &[bleed]);
+            vars.set_uniform(cx, live_id!(drop), &[drop]);
+            vars.set_uniform(cx, live_id!(blur), &[blur]);
+            vars.set_uniform(cx, live_id!(corner), &[corner]);
+            vars.set_uniform(cx, live_id!(contact), &[contact]);
+            let bleed = bleed as f64;
+            self.draw_shadow.draw_abs(cx,rect(r.pos.x-bleed,r.pos.y-bleed,r.size.x+bleed*2.0,r.size.y+bleed*2.0));
+        }
+    }
+    /// A Mac window's hairline: a dark line just outside the edge, and in the
+    /// dark appearance a light one just inside it, which is what separates two
+    /// dark windows.
+    fn draw_window_rim(&mut self, cx: &mut Cx2d, r: Rect, rounding: f64, fade: f64) {
+        use crate::shell::{rgb, alpha, ui::rect};
+        if self.style.target != crate::desktop::DesktopStyle::Macos || rounding <= 0.01 {
+            return;
+        }
+        let dark = self.style.dark;
+        let outer = rect(r.pos.x - 0.5, r.pos.y - 0.5, r.size.x + 1.0, r.size.y + 1.0);
+        let line = alpha(rgb(0, 0, 0), (if dark { 0.6 } else { 0.2 }) * fade as f32);
+        // The ring's radius is half the corner it draws (`sdf.box` doubles it).
+        self.shell_draw.focus_ring(cx, outer, (rounding + 0.5) * 0.5, 0.5, line);
+        if dark {
+            self.shell_draw.focus_ring(cx, r, rounding * 0.5, 0.5, alpha(rgb(255, 255, 255), 0.17 * fade as f32));
         }
     }
     fn draw_window_chrome(&mut self, cx: &mut Cx2d, client: ClientId, r: Rect, h: f64, focus: f64, fade: f64) {
@@ -1616,7 +2011,28 @@ impl WmDesk {
         if !self.chrome_overlay {
             self.chrome.color.w *= (1.0-glass_share) as f32;
         }
-        self.chrome.draw_abs(cx,title_fill);
+        if !self.chrome_unified {
+            self.chrome.draw_abs(cx,title_fill);
+            // A Mac's classic title bar ends in a hairline over what it holds, in
+            // both appearances. Terminal's tabs join its title bar and draw their own.
+            let joins=self.window_apps.get(&client).is_some_and(|app| crate::apps::mac_title_joins_tabs(app));
+            if t.target==DesktopStyle::Macos && retro<0.01 && !joins {
+                let line=alpha(rgb(0,0,0),opacity*if chrome_dark {0.5}else{0.12});
+                self.shell_draw.solid(cx,rect(title_fill.pos.x,title_fill.pos.y+title_fill.size.y-0.5,title_fill.size.x,0.5),line);
+            }
+        }
+        // A unified toolbar is the app's own drawing, so nothing else says the
+        // window is behind another: it pales, as a Mac's does, and the wash
+        // fades out so a sidebar under it shows no step.
+        if self.chrome_unified && t.target==DesktopStyle::Macos && focus<1.0 {
+            let wash=opacity*(1.0-focus as f32)*if chrome_dark {0.22}else{0.38};
+            let tint=if chrome_dark {rgb(0,0,0)}else{rgb(255,255,255)};
+            self.shell_draw.solid(cx,title_fill,alpha(tint,wash));
+            for step in 0..8 {
+                let y=title_fill.pos.y+title_fill.size.y+step as f64;
+                self.shell_draw.solid(cx,rect(title_fill.pos.x,y,title_fill.size.x,1.0),alpha(tint,wash*(1.0-(step+1) as f32/9.0)));
+            }
+        }
         if classic>0.01 {
             self.shell_draw.solid(cx,rect(title.pos.x,title.pos.y+h-2.0,title.size.x,2.0),alpha(rgb(212,208,200),opacity*classic));
         }
@@ -1638,8 +2054,14 @@ impl WmDesk {
                 self.shell_draw.solid(cx,rect(x+1.0,bottom,1.0,8.0),light);
             }
         }
-        self.title_hits.push((client,title,ChromeHit::Title));
-        let ink=lerp_color(alpha(if retro>0.5 || chrome_dark {rgb(255,255,255)}else{rgb(30,30,34)},opacity),alpha(roles.text,opacity),glass_share);
+        if !self.chrome_unified {
+            self.title_hits.push((client,title,ChromeHit::Title));
+        }
+        let mut ink=lerp_color(alpha(if retro>0.5 || chrome_dark {rgb(255,255,255)}else{rgb(30,30,34)},opacity),alpha(roles.text,opacity),glass_share);
+        // A Mac's window in the background says so in its title too.
+        if t.target.mac_family() {
+            ink.w*=(0.45+0.55*focus) as f32;
+        }
         let text=self.titles.get(&client).cloned().unwrap_or_default();
         // OctoSense keeps macOS's title layout: captions left, no app icon, the
         // title centred.
@@ -1652,18 +2074,29 @@ impl WmDesk {
             self.app_icons.draw(cx, app, t.target, rect(title.pos.x+7.0,title.pos.y+(h-size)*0.5,size,size),opacity,ink);
         }
         let text_rect=rect(title.pos.x+inset,title.pos.y,(title.size.x-inset-if centred {inset}else{142.0}).max(1.0),h);
-        self.shell_draw.label_elided(cx,text_rect,retro>0.5,12.0,ink,if centred {HAlign::Center}else{HAlign::Left},&text);
+        if !self.chrome_unified {
+            self.shell_draw.label_elided(cx,text_rect,retro>0.5 || mac_family,if mac_family {13.0}else{12.0},ink,if centred {HAlign::Center}else{HAlign::Left},&text);
+        }
         self.chrome.top_only=0.0;self.chrome.title_gradient=0.0;
         let mac=t.share(|s| s.caption_mac);
         let width=t.mix(|s| s.caption_width);
+        // A Mac's Quick Look panel has a close ✕ and a full-screen ⤢ in place
+        // of the lights (`draw_quick_look_controls`).
+        let quick_look=t.target==DesktopStyle::Macos && self.preview_tiles.contains(&client);
         for (i,hit,ico,color) in [(0,ChromeHit::Close,Ico::Close,rgb(255,95,86)),(1,ChromeHit::Minimize,Ico::WindowMin,rgb(255,189,46)),(2,ChromeHit::Maximize,Ico::WindowMax,rgb(39,201,63))] {
             if t.target == DesktopStyle::NextStep && hit == ChromeHit::Maximize { continue; }
+            if quick_look { continue; }
             let slot=if i==0 {0}else if i==1 {2}else{1};
             let right=title.pos.x+title.size.x-width-2.0-(slot as f64)*(width+2.0);
-            let left=title.pos.x+10.0+(i as f64)*23.0;
+            // A Mac's lights: 12-point discs, 20 apart, centred 14 from the corner.
+            let left=title.pos.x+5.0+(i as f64)*20.0;
             let bw=width+(18.0-width)*mac;
             let modern = t.target == DesktopStyle::Windows;
-            let button=if t.target==DesktopStyle::NextStep {
+            let button=if self.chrome_unified {
+                // A unified toolbar's lights: 20 in from the window's edge,
+                // centred on the toolbar's height.
+                rect(title.pos.x+17.0+(i as f64)*20.0,title.pos.y+(h-20.0)*0.5,18.0,20.0)
+            }else if t.target==DesktopStyle::NextStep {
                 rect(if hit==ChromeHit::Minimize {title.pos.x+3.0}else{title.pos.x+title.size.x-17.0},title.pos.y+4.0,14.0,14.0)
             }else if t.target==DesktopStyle::Windows2000 {
                 let gap=if slot>0 {2.0}else{0.0};
@@ -1690,18 +2123,31 @@ impl WmDesk {
                 let disc=if hovered && hit==ChromeHit::Close {alpha(roles.error,opacity)}else{alpha(roles.text,opacity*if hovered {0.30}else{0.18})};
                 self.chrome.color=lerp_color(self.chrome.color,disc,glass_share);
             }
-            let face=if mac>0.99 {rect(button.pos.x+2.0,button.pos.y+(button.size.y-14.0)*0.5,14.0,14.0)}else{button};
+            let face=if mac>0.99 {rect(button.pos.x+3.0,button.pos.y+(button.size.y-12.0)*0.5,12.0,12.0)}else{button};
+            // A window not in front wears gray lights until the pointer is on them.
+            let group_near = self.chrome_hover.is_some_and(|(c,h)| c==client && matches!(h,ChromeHit::Close|ChromeHit::Minimize|ChromeHit::Maximize));
+            // And one that doesn't zoom has a gray green light all the time, but for one
+            // that widens: its light is live and shows a Mac's + (it zooms its width).
+            let app = self.window_apps.get(&client);
+            let fixed = t.target==DesktopStyle::Macos && hit==ChromeHit::Maximize
+                && app.is_some_and(|app| crate::apps::mac_window_fixed(app));
+            let widens = fixed && app.is_some_and(|app| crate::apps::mac_window_widens(app));
+            let no_zoom = fixed && !widens;
+            if t.target==DesktopStyle::Macos && mac>0.99 && (no_zoom || (focus<0.5 && !group_near)) {
+                self.chrome.color=alpha(if chrome_dark {rgb(82,82,86)}else{rgb(208,208,212)},opacity);
+            }
             use crate::desktop::MacCaption;
             let group_hover = self.chrome_hover.is_some_and(|(c,h)| c==client && matches!(h,ChromeHit::Close|ChromeHit::Minimize|ChromeHit::Maximize));
-            self.chrome.caption = if mac>0.99 && group_hover {match hit {
+            self.chrome.caption = if mac>0.99 && group_hover && !no_zoom {match hit {
                 ChromeHit::Close => MacCaption::Close,
                 ChromeHit::Minimize => MacCaption::Minimize,
+                _ if widens => MacCaption::Zoom,
                 _ => MacCaption::Maximize,
             }} else {MacCaption::None};
             self.chrome.caption_ink = alpha(match hit {
-                ChromeHit::Close => rgb(153,35,30),
-                ChromeHit::Minimize => rgb(153,112,0),
-                _ => rgb(0,108,25),
+                ChromeHit::Close => rgb(122,22,18),
+                ChromeHit::Minimize => rgb(140,90,0),
+                _ => rgb(0,96,20),
             },opacity);
             if glass_share > 0.001 {
                 let glyph=if hovered && hit==ChromeHit::Close {rgb(255,255,255)}else{roles.text};
@@ -1723,6 +2169,9 @@ impl WmDesk {
             }else if mac<0.99 { self.shell_draw.icon_centered(cx,ico,button,11.0,alpha(if (modern && hovered && hit == ChromeHit::Close) || chrome_dark {rgb(255,255,255)}else{rgb(20,20,20)},opacity*(1.0-mac) as f32)); }
             self.title_hits.push((client,button,hit));
         }
+        if quick_look {
+            self.draw_quick_look_controls(cx, client, title, h, opacity, chrome_dark, self.chrome_overlay);
+        }
         self.chrome.pressed=0.0;
         // A full-screen window's title bar does not resize it.
         if self.chrome_overlay { return; }
@@ -1737,10 +2186,35 @@ impl WmDesk {
             (rect(r.pos.x+r.size.x-12.0,r.pos.y+r.size.y-12.0,12.0,12.0),1,1),
         ] {self.title_hits.push((client,edge,ChromeHit::Resize(x,y)));}
     }
+    /// A Mac Quick Look panel's two controls where a window's lights are: its
+    /// close ✕ and its enter-full-screen ⤢, or full screen (`full`) the ⤡
+    /// that leaves it. Plain marks in the secondary ink, 30 apart from 10 in,
+    /// on a rounded plate that shows under the pointer and darkens on a press.
+    #[allow(clippy::too_many_arguments)]
+    fn draw_quick_look_controls(&mut self, cx: &mut Cx2d, client: ClientId, title: Rect, h: f64, opacity: f32, dark: bool, full: bool) {
+        use crate::shell::{rgb, alpha, ui::rect};
+        for (i, hit) in [(0.0, ChromeHit::Close), (1.0, ChromeHit::Maximize)] {
+            let button = rect(title.pos.x + 10.0 + i * 30.0, title.pos.y + ((h - 24.0) * 0.5).max(0.0), 28.0, 24.0);
+            let hovered = self.chrome_hover == Some((client, hit));
+            let pressed = hovered && self.chrome_pressed == Some((client, hit));
+            if hovered {
+                let plate = if dark { rgb(255, 255, 255) } else { rgb(0, 0, 0) };
+                let strength = (if pressed { 0.16 } else { 0.08 }) * (if dark { 1.4 } else { 1.0 });
+                self.shell_draw.rounded(cx, button, 3.0, alpha(plate, opacity * strength));
+            }
+            self.draw_quick_look.kind = if hit == ChromeHit::Close { 0.0 } else if full { 2.0 } else { 1.0 };
+            self.draw_quick_look.color = alpha(if dark { rgb(235, 235, 245) } else { rgb(60, 60, 67) }, opacity * if dark { 0.75 } else { 0.8 });
+            let glyph = 15.0;
+            let at = rect((button.pos.x + (button.size.x - glyph) * 0.5).round(), (button.pos.y + (button.size.y - glyph) * 0.5).round(), glyph, glyph);
+            self.draw_quick_look.draw_abs(cx, at);
+            self.title_hits.push((client, button, hit));
+        }
+    }
 }
 
 impl Widget for WmDesk {
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        makepad_widgets::web_reader::web_view_frame_walks();
         cx.begin_turtle(walk, self.layout);
         let mut rect = cx.turtle().rect();
         self.desk_rect = rect;
@@ -1769,6 +2243,7 @@ impl Widget for WmDesk {
         };
 
         state.dock_backdrop = None;
+        self.expose_on = state.expose.is_some() && state.style.target == crate::desktop::DesktopStyle::Macos;
         self.terminal_clients = state.clients.iter().filter(|(_,s)| s.app == "terminal" && !matches!(state.style.target, crate::desktop::DesktopStyle::Windows2000 | crate::desktop::DesktopStyle::NextStep)).map(|(c,_)| *c).collect();
         if state.style.active() || self.style.active()
             || self.style.target != state.style.target || self.style.dark != state.style.dark {
@@ -1806,26 +2281,39 @@ impl Widget for WmDesk {
             for client in state.layout.clients_on(state.layout.active) {
                 let hidden=self.minimized.contains(&client);
                 let restored=was_minimized.contains(&client) && !hidden;
-                if (hidden && !was_minimized.contains(&client)) || restored {
+                let with_app=state.layout.desktop.hidden(client) || self.hidden_with_app.contains(&client);
+                if ((hidden && !was_minimized.contains(&client)) || restored) && !with_app {
                     if !self.dock_warps.contains_key(&client) {
                         let source=targets.iter().find(|(c,_)|*c==client).map(|(_,r)|Self::lrect_to_rect(*r))
                             .or_else(||self.anims.get(&client).map(|a|Self::lrect_to_rect(a.cur)));
                         if let (Some(source),Some(slot))=(source,state.clients.get(&client)) {
-                            self.dock_warps.insert(client,DockWarp::new(source,crate::desktop::dock_icon_bounds(state,size,&slot.app),restored));
+                            self.dock_warps.insert(client,DockWarp::new(source,crate::desktop::dock_icon_bounds(state,size,client,&slot.app),restored));
                         }
                     }
                     if let Some(warp)=self.dock_warps.get_mut(&client) {warp.minimized=hidden;}
                 }
                 if let Some(warp)=self.dock_warps.get_mut(&client) {
-                    if let Some(slot)=state.clients.get(&client) {warp.dock=crate::desktop::dock_icon_bounds(state,size,&slot.app);}
+                    // A Mac window on its way back leaves from the place it had:
+                    // that place in the Dock is gone the moment it is restored.
+                    let leaving=!warp.minimized && self.style.target==crate::desktop::DesktopStyle::Macos;
+                    if let Some(slot)=state.clients.get(&client).filter(|_|!leaving) {warp.dock=crate::desktop::dock_icon_bounds(state,size,client,&slot.app);}
                 }
             }
+            self.hidden_with_app=state.layout.clients_on(state.layout.active).into_iter().filter(|c|state.layout.desktop.hidden(*c)).collect();
             self.dock_warps.retain(|client,warp|state.clients.contains_key(client) && (warp.minimized || warp.active()));
         } else { self.dock_warps.clear(); }
+        if self.style.target==crate::desktop::DesktopStyle::Macos {
+            crate::desktop::set_dock_thumbs(self.dock_warps.iter().filter(|(_,w)|w.minimized).filter_map(|(c,w)| {
+                if w.active() {Some((*c,None))} else {w.frame.as_ref().map(|f|(*c,Some(f.texture().clone())))}
+            }).collect());
+        }
         for client in &self.minimized {
             if let Some(warp)=self.dock_warps.get(client) {
                 let r=warp.source;
                 targets.push((*client,LRect::new(r.pos.x,r.pos.y,r.size.x,r.size.y)));
+            } else if state.layout.desktop.hidden(*client) {
+                // Hide takes it off the desk where it stands.
+                if let Some(anim)=self.anims.get(client) { targets.push((*client,anim.target)); }
             } else if self.anims.contains_key(client) {
                 targets.push((*client,LRect::new(rect.pos.x+rect.size.x*0.5,rect.pos.y+rect.size.y+12.0,48.0,34.0)));
             }
@@ -1836,7 +2324,8 @@ impl Widget for WmDesk {
         let borders = state.borders;
         let dragging = state.dragging.clone();
         let pane_sliding = state.pane_sliding;
-        // A preview float dims everything behind it (Quick Look).
+        // A preview float (Quick Look) draws over everything, and off a Mac
+        // it dims what is behind it.
         let previews: Vec<ClientId> = targets
             .iter()
             .map(|(c, _)| *c)
@@ -1848,6 +2337,18 @@ impl Widget for WmDesk {
                     .unwrap_or(false)
             })
             .collect();
+        // On a Mac their chrome is a Quick Look panel's (`draw_window_chrome`).
+        self.preview_tiles = previews.iter().copied().collect();
+        if self.style.target == crate::desktop::DesktopStyle::Macos {
+            self.quick_look_frames.extend(previews.iter().copied());
+        }
+        // One its ⤢ took full screen is a full-screen window in the stack,
+        // under whatever comes in front of it, as any is.
+        let previews: Vec<ClientId> = if self.style.target == crate::desktop::DesktopStyle::Macos && state.layout.desktop.enabled {
+            previews.into_iter().filter(|c| !state.layout.is_fullscreen(*c)).collect()
+        } else {
+            previews
+        };
 
         // Which tiles wear a tab strip this frame, and what the tabs say.
         // Read straight out of the layout every frame — the desk keeps no
@@ -1927,8 +2428,29 @@ impl Widget for WmDesk {
         // when the workspace returns.
         self.anims
             .retain(|client, anim| live.contains(client) || anim.close_t.is_some());
+        // A Mac's Quick Look viewer, hidden and warm, keeps its frame until its
+        // tile goes. Dropped as the panel hid, its draw lists went to the frame
+        // made in the same draw for the window its Open with… opened, and a
+        // recycled list keeps its old draw calls: that frame's overlay list,
+        // never cleared, painted the hidden panel over the window.
+        let items = &self.items;
+        self.quick_look_frames.retain(|client| items.contains_key(client));
+        // Kept, but empty while the panel is away: nothing of it stays recorded
+        // (the viewer's old place included, which would still answer for it),
+        // and its texture shrinks to a point until the panel is drawn again.
+        let hidden: Vec<ClientId> = self.quick_look_frames.iter()
+            .filter(|client| !self.anims.contains_key(client) && !self.quick_look_emptied.contains(client)).copied().collect();
+        for client in hidden {
+            if let Some(frame) = self.desktop_frames.get_mut(&client) {
+                frame.begin(cx, Rect { pos: dvec2(0.0, 0.0), size: dvec2(1.0, 1.0) });
+                frame.end(cx);
+            }
+            self.quick_look_emptied.insert(client);
+        }
+        let (anims, kept) = (&self.anims, &self.quick_look_frames);
+        self.quick_look_emptied.retain(|client| !anims.contains_key(client) && kept.contains(client));
         let gone: Vec<ClientId> = self.desktop_frames.keys()
-            .filter(|client| !self.anims.contains_key(client)).copied().collect();
+            .filter(|client| !self.anims.contains_key(client) && !self.quick_look_frames.contains(client)).copied().collect();
         for client in gone {
             if let Some(frame) = self.desktop_frames.remove(&client) {
                 frame.forget(cx);
@@ -1968,21 +2490,39 @@ impl Widget for WmDesk {
             }
             self.draw_tile(cx, scope, *client, &borders);
         }
-        // Then the scrim and the previews floating over it.
+        // Then the scrim and the previews floating over it. A Mac's Quick
+        // Look panel dims nothing: it floats over the windows, which stay
+        // seen and clickable around it. Each preview tile declares its own
+        // cover over the web views under it (`enter_web_view_window`) and
+        // its own coverage to the compositor, so without a scrim nothing
+        // outside the panel is covered or recorded.
         if !previews.is_empty() {
-            self.draw_panel.alpha = 0.5;
-            self.draw_panel.draw_abs(cx, rect);
-            if self.composing { self.compositor.as_mut().unwrap().content(rect); }
+            if self.style.target != crate::desktop::DesktopStyle::Macos {
+                self.draw_panel.alpha = 0.5;
+                self.draw_panel.draw_abs(cx, rect);
+                makepad_widgets::web_reader::cover_web_views(rect, 0.0);
+                if self.composing { self.compositor.as_mut().unwrap().content(rect); }
+            }
             for client in &previews {
                 self.draw_tile(cx, scope, *client, &borders);
             }
+        }
+        // A Mac's App Exposé over all of it.
+        self.expose_moving = false;
+        if self.expose_on {
+            self.draw_expose(cx, scope, rect);
+        } else if let Some(state) = scope.data.get_mut::<WmState>() {
+            state.expose = None;
         }
 
         if self.composing {
             // The dock samples the final window stack. When no window reaches
             // its blur footprint it can share an earlier terminal checkpoint.
             let size = cx.owning_window_or_root_pass_size();
-            let dock = if self.style.share(|s| s.glass_shelf) > 0.001 {
+            let dock = if self.style.target == crate::desktop::DesktopStyle::Macos && crate::desktop::mac_launchpad() {
+                // Launchpad's frost lies over the whole window.
+                Some((Rect { pos: dvec2(0.0, 0.0), size }, crate::desktop::MAC_FROST_LEVEL))
+            } else if self.style.share(|s| s.glass_shelf) > 0.001 {
                 // As deep as whichever pill samples it. A dock hidden below
                 // the edge samples nothing.
                 let level = crate::desktop::dock_backdrop_level(&self.style, &self.shell_draw.material());
@@ -1998,7 +2538,7 @@ impl Widget for WmDesk {
             if let Some(state) = scope.data.get_mut::<WmState>() { state.dock_backdrop = snapshot; }
         }
 
-        let animating = self.dock_warps.values().any(DockWarp::active) || self.anims.values().any(|a| {
+        let animating = self.expose_moving || self.dock_warps.values().any(DockWarp::active) || self.anims.values().any(|a| {
             a.move_t < 1.0
                 || a.open_t < 1.0
                 || a.close_t.is_some()
@@ -2117,6 +2657,51 @@ impl Widget for WmDesk {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn app_expose_lays_windows_out_side_by_side_and_steps_between_them() {
+        let area = Rect { pos: dvec2(48.0, 36.0), size: dvec2(1304.0, 700.0) };
+        // One window: as it is but smaller, in the middle.
+        let one = expose_cells(area, &[dvec2(800.0, 500.0)]);
+        assert_eq!(one.len(), 1);
+        assert!((one[0].size.x - 640.0).abs() < 0.01, "never above 0.8 of itself: {:?}", one[0]);
+        assert!((one[0].pos.x + one[0].size.x * 0.5 - 700.0).abs() < 0.01);
+        // Three: two side by side, the third alone and centred under them.
+        let three = expose_cells(area, &[dvec2(800.0, 500.0), dvec2(600.0, 700.0), dvec2(900.0, 400.0)]);
+        assert_eq!(three.len(), 3);
+        assert!(three[0].pos.x + three[0].size.x < three[1].pos.x, "{three:?}");
+        assert!(three[2].pos.y > three[0].pos.y + three[0].size.y, "{three:?}");
+        assert!((three[2].pos.x + three[2].size.x * 0.5 - 700.0).abs() < 0.01, "{three:?}");
+        for r in &three {
+            assert!(r.pos.x >= area.pos.x && r.pos.x + r.size.x <= area.pos.x + area.size.x + 0.01, "{r:?}");
+            assert!(r.pos.y >= area.pos.y && r.pos.y + r.size.y <= area.pos.y + area.size.y + 0.01, "{r:?}");
+        }
+        let cells: Vec<(ClientId, Rect)> = vec![(7, three[0]), (8, three[1]), (9, three[2])];
+        assert_eq!(expose_step(&cells, None, (1.0, 0.0)), Some(7));
+        assert_eq!(expose_step(&cells, Some(7), (1.0, 0.0)), Some(8));
+        assert_eq!(expose_step(&cells, Some(8), (1.0, 0.0)), None);
+        assert_eq!(expose_step(&cells, Some(7), (0.0, 1.0)), Some(9));
+        assert_eq!(expose_step(&cells, Some(9), (0.0, -1.0)), Some(7));
+        assert!(expose_cells(area, &[]).is_empty());
+    }
+
+    /// The minimized windows' row: each at the row's height in its own shape,
+    /// centred; a row too long for the width shrinks as a whole.
+    #[test]
+    fn app_expose_keeps_minimized_windows_in_a_row_at_its_foot() {
+        let band = Rect { pos: dvec2(48.0, 600.0), size: dvec2(1304.0, 90.0) };
+        let two = expose_row(band, &[dvec2(800.0, 500.0), dvec2(500.0, 500.0)]);
+        assert_eq!(two.len(), 2);
+        assert!((two[0].size.y - 90.0).abs() < 0.01 && (two[0].size.x - 144.0).abs() < 0.01, "{two:?}");
+        assert!((two[1].size.x - 90.0).abs() < 0.01, "{two:?}");
+        assert!(two[0].pos.x + two[0].size.x < two[1].pos.x, "side by side: {two:?}");
+        let mid = (two[0].pos.x + two[1].pos.x + two[1].size.x) * 0.5;
+        assert!((mid - 700.0).abs() < 0.01, "centred: {two:?}");
+        let many = expose_row(band, &vec![dvec2(1600.0, 500.0); 12]);
+        assert!(many[0].pos.x >= band.pos.x - 0.01 && many[11].pos.x + many[11].size.x <= band.pos.x + band.size.x + 0.01, "{many:?}");
+        assert!(many[0].size.y < 90.0, "a long row shrinks: {:?}", many[0]);
+        assert!(expose_row(band, &[]).is_empty());
+    }
 
     #[test]
     fn hosted_items_remain_enumerable_when_the_widget_tree_refreshes() {

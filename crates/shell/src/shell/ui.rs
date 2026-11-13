@@ -29,6 +29,18 @@ use super::{
     NotificationTokens, ShellTokens, SpacingTokens, SurfaceTokens,
 };
 
+/// How [`ShellDraw::mac_panel_lights`] draws a panel's lights.
+#[derive(Clone, Copy, Default)]
+pub struct PanelLights {
+    pub dark: bool,
+    /// The panel is the one in front.
+    pub front: bool,
+    /// The pointer is on close.
+    pub over: bool,
+    /// Close is held down.
+    pub down: bool,
+}
+
 script_mod! {
     use mod.prelude.widgets_internal.*
     use mod.widgets.*
@@ -80,7 +92,11 @@ script_mod! {
             let sdf = Sdf2d.viewport(self.pos * self.rect_size)
             let h = self.width * 0.5
             sdf.box(h, h, self.rect_size.x - self.width, self.rect_size.y - self.width, self.radius)
-            sdf.stroke(self.color, self.width)
+            if self.width > 0.0 {
+                sdf.stroke(self.color, self.width)
+            } else {
+                sdf.fill(self.color)
+            }
             return sdf.result
         }
     }
@@ -540,6 +556,7 @@ script_mod! {
             menu +: {svg: crate_resource("self:resources/icons/menu.svg")}
             dot +: {svg: crate_resource("self:resources/icons/dot.svg")}
             octopus +: {svg: crate_resource("self:resources/icons/octopus.svg")}
+            sparkle +: {svg: crate_resource("self:resources/icons/sparkle.svg")}
             volume_0 +: {svg: crate_resource("self:resources/icons/volume-0.svg")}
             volume_1 +: {svg: crate_resource("self:resources/icons/volume-1.svg")}
             volume_2 +: {svg: crate_resource("self:resources/icons/volume-2.svg")}
@@ -551,8 +568,11 @@ script_mod! {
             bluetooth_off +: {svg: crate_resource("self:resources/icons/bluetooth-off.svg")}
             wifi +: {svg: crate_resource("self:resources/icons/wifi.svg")}
             wifi_off +: {svg: crate_resource("self:resources/icons/wifi-off.svg")}
+            wifi_arcs +: {svg: crate_resource("self:resources/icons/wifi-arcs.svg")}
+            wifi_arcs_off +: {svg: crate_resource("self:resources/icons/wifi-arcs-off.svg")}
             monitor +: {svg: crate_resource("self:resources/icons/monitor.svg")}
             battery +: {svg: crate_resource("self:resources/icons/battery.svg")}
+            bolt +: {svg: crate_resource("self:resources/icons/bolt.svg")}
             power +: {svg: crate_resource("self:resources/icons/power.svg")}
             calendar +: {svg: crate_resource("self:resources/icons/calendar.svg")}
             keyboard +: {svg: crate_resource("self:resources/icons/keyboard.svg")}
@@ -573,8 +593,14 @@ script_mod! {
             globe +: {svg: crate_resource("self:resources/icons/globe.svg")}
             play +: {svg: crate_resource("self:resources/icons/play.svg")}
             shirt +: {svg: crate_resource("self:resources/icons/shirt.svg")}
+            settings_gear +: {svg: crate_resource("self:resources/icons/gear.svg")}
+            settings_sun +: {svg: crate_resource("self:resources/icons/sun.svg")}
+            settings_key +: {svg: crate_resource("self:resources/icons/key.svg")}
             pulse +: {svg: crate_resource("self:resources/icons/pulse.svg")}
             photo +: {svg: crate_resource("self:resources/icons/photo.svg")}
+            control_center +: {svg: crate_resource("self:resources/icons/controls.svg")}
+            point_right +: {svg: crate_resource("self:resources/icons/point-right.svg")}
+            point_left +: {svg: crate_resource("self:resources/icons/point-left.svg")}
             window_min +: {svg: crate_resource("self:resources/icons/window-min.svg")}
             window_max +: {svg: crate_resource("self:resources/icons/window-max.svg")}
             window_restore +: {svg: crate_resource("self:resources/icons/window-restore.svg")}
@@ -672,6 +698,8 @@ pub struct ShellIcons {
     #[live]
     pub octopus: DrawSvg,
     #[live]
+    pub sparkle: DrawSvg,
+    #[live]
     pub volume_0: DrawSvg,
     #[live]
     pub volume_1: DrawSvg,
@@ -694,9 +722,15 @@ pub struct ShellIcons {
     #[live]
     pub wifi_off: DrawSvg,
     #[live]
+    pub wifi_arcs: DrawSvg,
+    #[live]
+    pub wifi_arcs_off: DrawSvg,
+    #[live]
     pub monitor: DrawSvg,
     #[live]
     pub battery: DrawSvg,
+    #[live]
+    pub bolt: DrawSvg,
     #[live]
     pub power: DrawSvg,
     #[live]
@@ -738,9 +772,21 @@ pub struct ShellIcons {
     #[live]
     pub shirt: DrawSvg,
     #[live]
+    pub settings_gear: DrawSvg,
+    #[live]
+    pub settings_sun: DrawSvg,
+    #[live]
+    pub settings_key: DrawSvg,
+    #[live]
     pub pulse: DrawSvg,
     #[live]
     pub photo: DrawSvg,
+    #[live]
+    pub control_center: DrawSvg,
+    #[live]
+    pub point_right: DrawSvg,
+    #[live]
+    pub point_left: DrawSvg,
     #[live]
     pub window_min: DrawSvg,
     #[live]
@@ -762,6 +808,7 @@ pub enum Ico {
     Menu,
     Dot,
     Octopus,
+    Sparkle,
     Volume0,
     Volume1,
     Volume2,
@@ -773,8 +820,12 @@ pub enum Ico {
     BluetoothOff,
     Wifi,
     WifiOff,
+    /// A Mac's Wi-Fi: two arcs over a fan, as its menu bar and Control Center draw it.
+    WifiArcs,
+    WifiArcsOff,
     Monitor,
     Battery,
+    Bolt,
     Power,
     Calendar,
     Keyboard,
@@ -800,6 +851,15 @@ pub enum Ico {
     Shirt,
     Pulse,
     Photo,
+    /// System Settings' General, Appearance and Keyboard panes, as its sidebar draws them.
+    Gear,
+    Sun,
+    Key,
+    /// A Mac's Control Center: two switches.
+    Controls,
+    /// Help's arrow at a menu item it found, from its left or its right.
+    PointRight,
+    PointLeft,
     WindowMin,
     WindowMax,
     WindowRestore,
@@ -811,6 +871,7 @@ impl ShellIcons {
             Ico::Menu => &mut self.menu,
             Ico::Dot => &mut self.dot,
             Ico::Octopus => &mut self.octopus,
+            Ico::Sparkle => &mut self.sparkle,
             Ico::Volume0 => &mut self.volume_0,
             Ico::Volume1 => &mut self.volume_1,
             Ico::Volume2 => &mut self.volume_2,
@@ -822,8 +883,11 @@ impl ShellIcons {
             Ico::BluetoothOff => &mut self.bluetooth_off,
             Ico::Wifi => &mut self.wifi,
             Ico::WifiOff => &mut self.wifi_off,
+            Ico::WifiArcs => &mut self.wifi_arcs,
+            Ico::WifiArcsOff => &mut self.wifi_arcs_off,
             Ico::Monitor => &mut self.monitor,
             Ico::Battery => &mut self.battery,
+            Ico::Bolt => &mut self.bolt,
             Ico::Power => &mut self.power,
             Ico::Calendar => &mut self.calendar,
             Ico::Keyboard => &mut self.keyboard,
@@ -844,8 +908,14 @@ impl ShellIcons {
             Ico::Globe => &mut self.globe,
             Ico::Play => &mut self.play,
             Ico::Shirt => &mut self.shirt,
+            Ico::Gear => &mut self.settings_gear,
+            Ico::Sun => &mut self.settings_sun,
+            Ico::Key => &mut self.settings_key,
             Ico::Pulse => &mut self.pulse,
             Ico::Photo => &mut self.photo,
+            Ico::Controls => &mut self.control_center,
+            Ico::PointRight => &mut self.point_right,
+            Ico::PointLeft => &mut self.point_left,
             Ico::WindowMin => &mut self.window_min,
             Ico::WindowMax => &mut self.window_max,
             Ico::WindowRestore => &mut self.window_restore,
@@ -932,6 +1002,10 @@ pub struct ShellDraw {
     /// into `overlay`.
     #[rust]
     hoisted: bool,
+    /// Between `begin_surface` and `end_surface`: what's drawn lies over the
+    /// windows, and their web views leave room for it (`covers`).
+    #[rust]
+    in_surface: bool,
     /// The frame `overlay` was last begun in — a surface hoists once per
     /// frame (see `begin_surface`).
     #[rust]
@@ -1243,6 +1317,8 @@ impl ShellDraw {
         // returned early last frame does not stay hoisted or flat for good.
         self.hoisted = false;
         self.force_flat = false;
+        self.in_surface = true;
+        makepad_widgets::web_reader::begin_web_view_surface();
         if !self.material.is_glass() {
             return;
         }
@@ -1273,6 +1349,8 @@ impl ShellDraw {
     /// this draw was hoisted and lifts a refused hoist's flat flag; a no-op
     /// under flat.
     pub fn end_surface(&mut self, cx: &mut Cx2d) {
+        self.in_surface = false;
+        makepad_widgets::web_reader::end_web_view_surface();
         if self.hoisted {
             if let Some(list) = self.overlay.as_mut() {
                 list.end(cx);
@@ -1350,10 +1428,19 @@ impl ShellDraw {
         self.glass_quad(cx, r, radius, true, self.material.border_alpha, opacity);
     }
 
+    /// A surface's ground lies over the windows. A native web view would lie over it,
+    /// unless it leaves room: every surface says so by drawing through the kit.
+    fn covers(&self, r: Rect, radius: f64) {
+        if self.in_surface {
+            makepad_widgets::web_reader::cover_web_views(r, radius);
+        }
+    }
+
     fn glass_quad(&mut self, cx: &mut Cx2d, r: Rect, radius: f64, shadow: bool, border_alpha: f32, opacity: f32) {
         if !self.paints_glass() || r.size.x <= 0.0 || r.size.y <= 0.0 || opacity <= 0.0 {
             return;
         }
+        self.covers(r, radius);
         let m = self.material;
         let g = &mut self.glass;
         g.tint_color = alpha(m.tint_color, m.tint_alpha);
@@ -1377,11 +1464,19 @@ impl ShellDraw {
         self.glass_rect(cx, r, 0.0, false);
     }
 
+    /// `glass_strip` without its ring: a Mac's menu bar ends in nothing.
+    pub fn glass_strip_plain(&mut self, cx: &mut Cx2d, r: Rect) {
+        self.glass_quad(cx, r, 0.0, false, 0.0, 1.0);
+    }
+
     /// A rounded ring `width` px wide just inside `r`, with `radius` px
     /// corners: the keyboard's focus ring.
     pub fn focus_ring(&mut self, cx: &mut Cx2d, r: Rect, radius: f64, width: f64, color: Vec4f) {
         if color.w <= 0.0 || r.size.x <= 0.0 || r.size.y <= 0.0 {
             return;
+        }
+        if width <= 0.0 {
+            self.covers(r, radius);
         }
         self.ring.color = color;
         self.ring.radius = radius as f32;
@@ -1389,11 +1484,40 @@ impl ShellDraw {
         self.ring.draw_abs(cx, r);
     }
 
+    /// A filled rounded rectangle: a menu bar item's wash.
+    /// A Mac panel's lights, the first disc at `x`, `y`, 12 points across and
+    /// 20 apart. Only close works; the other two are the gray of a control with
+    /// nothing to do, as on a Mac's own panels. A panel not in front has all
+    /// three gray until the pointer is on them. Answers where close is.
+    pub fn mac_panel_lights(&mut self, cx: &mut Cx2d, x: f64, y: f64, lights: PanelLights) -> Rect {
+        let idle = if lights.dark { super::rgb(82, 82, 86) } else { super::rgb(208, 208, 212) };
+        let close = rect(x, y, 12.0, 12.0);
+        let color = if !lights.front && !lights.over {
+            idle
+        } else if lights.down {
+            super::darker(super::rgb(255, 95, 86), 1.14)
+        } else {
+            super::rgb(255, 95, 86)
+        };
+        self.rounded(cx, close, 3.0, color);
+        self.rounded(cx, rect(x + 20.0, y, 12.0, 12.0), 3.0, idle);
+        self.rounded(cx, rect(x + 40.0, y, 12.0, 12.0), 3.0, idle);
+        if lights.over {
+            self.icon_centered(cx, Ico::Close, close, 9.0, super::rgb(120, 25, 20));
+        }
+        close
+    }
+
+    pub fn rounded(&mut self, cx: &mut Cx2d, r: Rect, radius: f64, color: Vec4f) {
+        self.focus_ring(cx, r, radius, 0.0, color);
+    }
+
     /// A flat fill.
     pub fn solid(&mut self, cx: &mut Cx2d, r: Rect, color: Vec4f) {
         if color.w <= 0.0 || r.size.x <= 0.0 || r.size.y <= 0.0 {
             return;
         }
+        self.covers(r, 0.0);
         self.fill.color = color;
         self.fill.draw_abs(cx, r);
     }
@@ -1411,6 +1535,17 @@ impl ShellDraw {
         width: f64,
     ) {
         if r.size.x <= 0.0 || r.size.y <= 0.0 {
+            return;
+        }
+        if fill.w > 0.0 {
+            self.covers(r, 0.0);
+        }
+        // Under glass (the Mac family) a control is rounded: fill, then its ring.
+        if self.paints_glass() && r.size.y <= 44.0 {
+            self.rounded(cx, r, 3.0, fill);
+            if width > 0.0 && border.w > 0.0 {
+                self.focus_ring(cx, r, 3.0, width, border);
+            }
             return;
         }
         self.chrome.color = fill;
@@ -1436,6 +1571,14 @@ impl ShellDraw {
     /// hands it over rather than the token).
     pub fn card(&mut self, cx: &mut Cx2d, r: Rect, s: &SurfaceTokens) {
         self.card_faded(cx, r, s, 1.0);
+    }
+
+    /// [`Self::card`] with corners of at most `radius`.
+    pub fn card_no_rounder(&mut self, cx: &mut Cx2d, r: Rect, s: &SurfaceTokens, radius: f64) {
+        let round = self.material.corner_radius;
+        self.material.corner_radius = round.min(radius);
+        self.card(cx, r, s);
+        self.material.corner_radius = round;
     }
 
     /// [`Self::card`] at `opacity`, fill, ring and shadow as one (a toast
@@ -2081,7 +2224,14 @@ pub fn wrap_styled<S: Copy + PartialEq>(runs: &[(&str, S)], max_w: f64, measure:
 /// As [`wrap_styled`], each line with whether the break before it took a
 /// space: text copied across the break gets it back. A break between CJK
 /// characters or inside a long word took none.
-pub fn wrap_styled_spaced<S: Copy + PartialEq>(runs: &[(&str, S)], max_w: f64, mut measure: impl FnMut(&str, S) -> f64) -> Vec<(Vec<(String, S)>, bool)> {
+pub fn wrap_styled_spaced<S: Copy + PartialEq>(runs: &[(&str, S)], max_w: f64, measure: impl FnMut(&str, S) -> f64) -> Vec<(Vec<(String, S)>, bool)> {
+    wrap_styled_spaced_between(runs, max_w, measure, |before, _| before)
+}
+
+/// As [`wrap_styled_spaced`], a space between two words in the style
+/// `between(before, after)` picks from theirs; [`wrap_styled_spaced`]'s is the
+/// earlier word's.
+pub fn wrap_styled_spaced_between<S: Copy + PartialEq>(runs: &[(&str, S)], max_w: f64, mut measure: impl FnMut(&str, S) -> f64, between: impl Fn(S, S) -> S) -> Vec<(Vec<(String, S)>, bool)> {
     fn push<S: PartialEq>(line: &mut Vec<(String, S)>, text: &str, style: S) {
         match line.last_mut() {
             Some((last, s)) if *s == style => last.push_str(text),
@@ -2104,6 +2254,9 @@ pub fn wrap_styled_spaced<S: Copy + PartialEq>(runs: &[(&str, S)], max_w: f64, m
             }
             Piece::Word(segments) => segments,
         };
+        if let (Some(before), Some((_, after))) = (space, segments.first()) {
+            space = Some(between(before, *after));
+        }
         let ww: f64 = segments.iter().map(|(t, s)| measure(t, *s)).sum();
         let gap = space.map_or(0.0, |s| measure(" ", s));
         let lone_closer = matches!(&segments[..], [(t, _)] if { let mut cs = t.chars(); matches!((cs.next(), cs.next()), (Some(c), None) if closes(c)) });
@@ -2259,6 +2412,16 @@ mod wrap_tests {
         assert_eq!(spaced("你好世界再见", 6.0), [("你好世".into(), false), ("界再见".into(), false)]);
         assert_eq!(spaced("abcdefgh", 4.0), [("abcd".into(), false), ("efgh".into(), false)]);
         assert_eq!(spaced("ab cdefghij", 4.0), [("ab".into(), false), ("cdef".into(), true), ("ghij".into(), false)]);
+    }
+
+    /// A space takes the earlier word's style, or the one `between` picks:
+    /// after inline code, the words' own, so the chip ends where its words do.
+    #[test]
+    fn a_space_between_two_styles_takes_the_one_chosen() {
+        let runs = [("with ", false), ("one", true), (" line", false)];
+        let line = |between: fn(bool, bool) -> bool| wrap_styled_spaced_between(&runs, 40.0, |s, _| width(s), between).remove(0).0;
+        assert_eq!(line(|before, _| before), [("with ".to_string(), false), ("one ".to_string(), true), ("line".to_string(), false)]);
+        assert_eq!(line(|before, after| before && after), [("with ".to_string(), false), ("one".to_string(), true), (" line".to_string(), false)]);
     }
 
     /// What is typed is shown as typed: a trailing space at once, a run of

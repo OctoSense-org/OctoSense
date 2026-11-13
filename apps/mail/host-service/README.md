@@ -9,6 +9,23 @@ required.
 Passwords and SMTP connections remain in this service. A model or app cannot
 approve sending.
 
+## Mail's own actions
+
+These belong to the system Mail app, on a foreground call from the person's own
+press. Another app and any agent tool call get an error.
+
+| Method | Input | Result |
+| --- | --- | --- |
+| `mail.move` | `account`, `folder`, `message`, and `to` (`archive` or `trash`) or `target` (a mailbox's `id` from `mail.folders`) | `moved`. In the trash already, or with no trash on the server, `trash` deletes for good, so ask first. POP3 can only delete. `target` needs IMAP and a mailbox the server still lists. |
+| `mail.mark` | `account`, `folder`, `message`, and `unread`, `flagged` or both (`true` or `false`) | `marked`. This device's copy changes at once; over IMAP the server's `\Seen` and `\Flagged` flags follow. |
+| `mail.attachment` | `account`, `folder`, `message`, `index` | `name`, `size`. Fetches the attachment and stages it beside the app's storage. |
+| `mail.attachment_keep` | none | `path`, `name`. The staged file, now in the app's storage, for `files.export`. Remove it afterwards. |
+
+Mail's composer also takes a list in `to` and an optional `cc` (`a@x, b@y`, at
+most 32 people, plain addresses). Every other composer, and every agent, names
+one person. `mail.message` answers `to` and `cc` as written, and `reply_to` and
+`reply_all_cc` as plain addresses without the account's own.
+
 ## Public composers
 
 | Method | Input | Result |
@@ -29,7 +46,7 @@ opens immediately with approval disabled while preparation runs off the UI
 thread. A bounded channel delivers the exact snapshot and result; the UI polls
 without waiting on draft I/O.
 
-The review shows app identity, account, From, To, subject and the complete body.
+The review shows app identity, account, From, To, Cc, subject and the complete body.
 Only a physical pointer/touch press **and** release on the native **Approve &
 Send** control authorizes that immutable revision. Instrumentation, synthetic
 clicks, script copies of the review widget and agent tools cannot approve it.

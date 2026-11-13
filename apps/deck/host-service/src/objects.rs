@@ -38,11 +38,15 @@
 //!   chart's 10,000 data points, 1,000 line breaks a text, 100,000 points
 //!   of position or size, 400 % bullets.
 
-use deckcraft_model::{Shape, ShapeId, ShapeKind};
+use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
+
+use deckcraft_engine::Clipboard;
+use deckcraft_model::{resolve, ColorRef, Fill, MediaId, Presentation, Rgba, Shape, ShapeId, ShapeKind, SlideId};
 use serde_json::{json, Value as Json};
 
 use crate::args;
-use crate::codes::{invalid, too_large};
+use crate::codes::{fail, invalid, too_large, Code};
 use crate::docs::{self, OpenDoc, MAX_BODY};
 use crate::gate::{self, Plan};
 use crate::pictures;
@@ -50,9 +54,9 @@ use crate::reading::{shapes_exist, MAX_SHAPES};
 use crate::Ctx;
 
 /// `slide.go` and one insert command (`insert.textBox`, `shape.insert`,
-/// `insert.picture`, `insert.table`, `insert.chart`), and, for a table or a
-/// chart, the one command that styles or titles it (`table.style`,
-/// `chart.options`).
+/// `insert.picture`, `insert.table`, `insert.chart`, `edit.paste`), and, for
+/// a table or a chart, the one command that styles or titles it
+/// (`table.style`, `chart.options`).
 const INSERT: usize = 3;
 /// The most cells one table insert fills (SERVICE.md decision 2): the rest
 /// of a larger table's text goes cell by cell through `deck.set_text`.
@@ -76,6 +80,322 @@ fn on_slide(doc: &OpenDoc, id: u32, ids: &[u32]) -> Result<usize, String> {
     let i = doc.slide_index(id)?;
     shapes_exist(doc, i, ids)?;
     Ok(i)
+}
+
+/// Resolve theme colours and fonts to their source values before pasting an
+/// ordinary object into a deck with a different theme.
+fn freeze_shape_look(ctx: &resolve::Ctx<'_>, shape: &Shape) -> Result<Shape, String> {
+    let unsupported = || fail(Code::Unsupported, "This item needs matching deck designs. Change the destination design to match, then paste again.");
+    if matches!(shape.kind, ShapeKind::Group { .. } | ShapeKind::Table(_) | ShapeKind::Chart(_) | ShapeKind::Opaque { .. }) {
+        return Err(unsupported());
+    }
+    fn freeze(value: &mut Json, ctx: &resolve::Ctx<'_>, ph: Option<Rgba>) -> Result<(), String> {
+        let damaged = || fail(Code::Damaged, "the copied item's appearance couldn't be read");
+        match value {
+            Json::Array(items) => for item in items { freeze(item, ctx, ph)?; },
+            Json::Object(fields) => {
+                if fields.get("base").and_then(Json::as_object).and_then(|base| base.get("kind")).and_then(Json::as_str)
+                    .is_some_and(|kind| matches!(kind, "rgb" | "scheme" | "preset" | "system"))
+                {
+                    let color: ColorRef = serde_json::from_value(Json::Object(fields.clone())).map_err(|_| damaged())?;
+                    *value = serde_json::to_value(ColorRef::rgb(ctx.color(&color, ph))).map_err(|_| damaged())?;
+                    return Ok(());
+                }
+                for (key, item) in fields {
+                    if matches!(key.as_str(), "font" | "fontEa" | "fontCs" | "fontSym" | "bulletFont") {
+                        if let Some(name) = item.as_str().filter(|name| name.starts_with("+mj-") || name.starts_with("+mn-")) {
+                            let name = ctx.master.theme.font(name);
+                            if name.is_empty() { return Err(fail(Code::Unsupported, "This item's font can't be copied to another design yet.")); }
+                            *item = Json::String(name);
+                        }
+                    }
+                    freeze(item, ctx, ph)?;
+                }
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+    fn resolved_run(ctx: &resolve::Ctx<'_>, shape: &Shape, para: &deckcraft_model::Paragraph, run: &deckcraft_model::RunProps) -> deckcraft_model::RunProps {
+        let mut props = resolve::run(ctx, shape, para, run);
+        if props.fill.is_none() { props.fill = Some(Fill::solid(ColorRef::rgb(resolve::text_color(ctx, &props)))); }
+        props.font = Some(resolve::font_family(ctx, &props));
+        props
+    }
+
+    let mut out = shape.clone();
+    out.xfrm = Some(resolve::xfrm(ctx, shape));
+    let (fill, fill_ph) = resolve::fill(ctx, shape);
+    let (line, line_ph) = resolve::line(ctx, shape);
+    let (effects, effects_ph) = resolve::effects(ctx, shape);
+    if matches!(fill, Some(Fill::Group | Fill::Background)) || matches!(line.fill, Some(Fill::Group | Fill::Background))
+        || effects.as_ref().is_some_and(|effects| effects.raw3d.is_some())
+    {
+        return Err(unsupported());
+    }
+    out.fill = fill;
+    out.line = Some(line);
+    out.effects = effects;
+    if let Some(text) = out.text.as_mut() {
+        text.body = resolve::body(ctx, shape);
+        for para in &mut text.paragraphs {
+            let original = para.clone();
+            para.props = resolve::para(ctx, shape, &original);
+            for run in &mut para.runs { run.props = resolved_run(ctx, shape, &original, &run.props); }
+            para.end_props = resolved_run(ctx, shape, &original, &original.end_props);
+        }
+    }
+    out.style = None;
+    let mut value = serde_json::to_value(out).map_err(|_| fail(Code::Damaged, "the copied item's appearance couldn't be read"))?;
+    for (field, ph) in [("fill", fill_ph), ("line", line_ph), ("effects", effects_ph)] {
+        if let Some(value) = value.get_mut(field) { freeze(value, ctx, ph)?; }
+    }
+    freeze(&mut value, ctx, None)?;
+    serde_json::from_value(value).map_err(|_| fail(Code::Damaged, "the copied item's appearance couldn't be read"))
+}
+
+/// Copy between decks, remapping media when IDs collide and refusing
+/// document-relative references the engine cannot yet migrate.
+fn cross_deck_clipboard(
+    source: &Presentation,
+    source_slide: u32,
+    target: &Presentation,
+    target_slide: u32,
+    clipboard: &Clipboard,
+    offset: f64,
+) -> Result<(Clipboard, u32), String> {
+    let unsupported = || fail(Code::Unsupported, "This item can't be pasted into another deck yet. Copy it again in its original deck to paste it there.");
+    let different_design = || fail(Code::Unsupported, "The decks need the same design. Match their designs, then paste again.");
+    if clipboard.shapes.is_empty() == clipboard.slides.is_empty() {
+        return Err(unsupported());
+    }
+    let from = source.slide(SlideId(source_slide)).ok_or_else(|| crate::docs::unknown_slide(source_slide))?;
+    let to = target.slide(SlideId(target_slide)).ok_or_else(|| crate::docs::unknown_slide(target_slide))?;
+    if source.embedded_fonts != target.embedded_fonts {
+        return Err(different_design());
+    }
+    if !clipboard.slides.is_empty() && (source.slide_size != target.slide_size || source.header_footer != target.header_footer
+        || source.default_text_style != target.default_text_style)
+    {
+        return Err(different_design());
+    }
+    let mut freeze_looks = false;
+    let mut designs = vec![json!(&source.default_text_style)];
+    if !clipboard.shapes.is_empty() {
+        let (source_master, _) = source.master_for(from).ok_or_else(unsupported)?;
+        let (target_master, _) = target.master_for(to).ok_or_else(unsupported)?;
+        if source_master.theme != target_master.theme || source_master.color_map != target_master.color_map {
+            freeze_looks = true;
+        }
+        freeze_looks |= source.default_text_style != target.default_text_style;
+        designs.push(json!(source_master));
+    }
+    let mut unsafe_item = false;
+    deckcraft_model::walk(&clipboard.shapes, &mut |shape, _| {
+        if shape.raw_ext.is_some() || matches!(shape.kind, ShapeKind::Opaque { .. }) {
+            unsafe_item = true;
+        }
+    });
+    for slide in &clipboard.slides {
+        let (source_master, source_layout) = source.layout(slide.layout).ok_or_else(unsupported)?;
+        let (target_master, target_layout) = target.layout(slide.layout).ok_or_else(unsupported)?;
+        if slide.raw_ext.is_some() { return Err(unsupported()); }
+        if source_layout != target_layout || source_master.theme != target_master.theme || source_master.color_map != target_master.color_map
+            || source_master.shapes != target_master.shapes || source_master.background != target_master.background
+            || source_master.title_style != target_master.title_style || source_master.body_style != target_master.body_style
+            || source_master.other_style != target_master.other_style || source_master.raw_ext != target_master.raw_ext
+        {
+            return Err(different_design());
+        }
+        designs.push(json!(source_master));
+        deckcraft_model::walk(&slide.shapes, &mut |shape, _| {
+            if shape.raw_ext.is_some() || matches!(shape.kind, ShapeKind::Opaque { .. }) {
+                unsafe_item = true;
+            }
+        });
+    }
+    fn inspect_refs(value: &Json, media: &mut BTreeSet<u32>) -> bool {
+        match value {
+            Json::Array(items) => items.iter().any(|item| inspect_refs(item, media)),
+            Json::Object(fields) => fields.iter().any(|(key, value)| {
+                if matches!(key.as_str(), "media" | "poster" | "preview" | "sound") {
+                    if let Some(id) = value.as_u64() {
+                        if let Ok(id) = u32::try_from(id) { media.insert(id); } else { return true; }
+                    }
+                }
+                (key == "kind" && value.as_str() == Some("slide"))
+                    || (matches!(key.as_str(), "rawExt" | "rawExtra") && !value.is_null())
+                    || inspect_refs(value, media)
+            }),
+            _ => false,
+        }
+    }
+    fn map_media(value: &mut Json, ids: &BTreeMap<u32, u32>) {
+        match value {
+            Json::Array(items) => items.iter_mut().for_each(|item| map_media(item, ids)),
+            Json::Object(fields) => {
+                for (key, value) in fields {
+                    if matches!(key.as_str(), "media" | "poster" | "preview" | "sound") {
+                        if let Some(new) = value.as_u64().and_then(|id| u32::try_from(id).ok()).and_then(|id| ids.get(&id)) {
+                            *value = json!(new);
+                        }
+                    }
+                    map_media(value, ids);
+                }
+            }
+            _ => {}
+        }
+    }
+    let mut design_media = BTreeSet::new();
+    if designs.iter().any(|design| inspect_refs(design, &mut design_media)) { return Err(unsupported()); }
+    for (_, id) in &source.embedded_fonts { design_media.insert(id.0); }
+    for id in design_media {
+        let original = source.media(MediaId(id)).ok_or_else(unsupported)?;
+        if target.media(MediaId(id)) != Some(original) {
+            if !clipboard.shapes.is_empty() && !source.embedded_fonts.iter().any(|(_, font)| font.0 == id) {
+                freeze_looks = true;
+            } else {
+                return Err(different_design());
+            }
+        }
+    }
+    let mut copied = clipboard.clone();
+    if freeze_looks {
+        let context = resolve::Ctx::for_slide(source, from).ok_or_else(unsupported)?;
+        copied.shapes = clipboard.shapes.iter().map(|shape| freeze_shape_look(&context, shape)).collect::<Result<_, _>>()?;
+    }
+    let mut value = json!({"shapes": &copied.shapes, "slides": &copied.slides});
+    let mut references = BTreeSet::new();
+    if unsafe_item || inspect_refs(&value, &mut references) {
+        return Err(unsupported());
+    }
+    let mut fixed = target.clone();
+    fixed.fix_next_id();
+    let mut next_id = fixed.next_id;
+    let mut ids = BTreeMap::new();
+    let mut media = Vec::new();
+    for id in references {
+        let item = clipboard.media.iter().find(|item| item.id == MediaId(id))
+            .or_else(|| source.media(MediaId(id))).ok_or_else(unsupported)?;
+        let mapped = if target.media(item.id) == Some(item) {
+            id
+        } else {
+            next_id = next_id.checked_add(1).ok_or_else(|| too_large("this deck has no room for another item"))?;
+            next_id
+        };
+        let mut item = item.clone();
+        item.id = MediaId(mapped);
+        ids.insert(id, mapped);
+        media.push(item);
+    }
+    map_media(&mut value, &ids);
+    copied.shapes = serde_json::from_value(value["shapes"].take()).map_err(|_| fail(Code::Damaged, "the copied item couldn't be read"))?;
+    copied.slides = serde_json::from_value(value["slides"].take()).map_err(|_| fail(Code::Damaged, "the copied item couldn't be read"))?;
+    copied.media = media;
+    // The engine tests whether an original ID occurs on this slide to decide
+    // whether to offset a paste. IDs are only unique within a deck.
+    let mut unused = u32::MAX;
+    while to.shape(ShapeId(unused)).is_some() {
+        unused = unused.checked_sub(1).ok_or_else(unsupported)?;
+    }
+    for shape in &mut copied.shapes {
+        shape.id = ShapeId(unused);
+        if let Some(rect) = shape.xfrm.as_mut() {
+            rect.x += offset;
+            rect.y += offset;
+        }
+    }
+    copied.pastes = 0;
+    Ok((copied, next_id))
+}
+
+/// The engine assigns new IDs when it pastes. Reconnect references to the
+/// pasted objects rather than leaving them pointing at IDs in the source deck.
+fn repair_pasted_references(
+    doc: &mut OpenDoc,
+    original: &Clipboard,
+    target_slide: u32,
+    before_slides: &[u32],
+    results: &[Json],
+    same_origin: bool,
+) -> Result<(), String> {
+    let damaged = || fail(Code::Damaged, "the copied item couldn't be pasted");
+    fn pair_shapes(source: &Shape, pasted: &Shape, ids: &mut BTreeMap<u32, u32>) -> Result<(), String> {
+        if source.children().len() != pasted.children().len() || ids.insert(source.id.0, pasted.id.0).is_some() {
+            return Err(fail(Code::Damaged, "the copied item couldn't be pasted"));
+        }
+        for (source, pasted) in source.children().iter().zip(pasted.children()) {
+            pair_shapes(source, pasted, ids)?;
+        }
+        Ok(())
+    }
+    fn fix_shapes(shapes: &mut [Shape], ids: &BTreeMap<u32, u32>, existing: &BTreeSet<u32>) {
+        for shape in shapes {
+            if let ShapeKind::Connector { start, end } = &mut shape.kind {
+                for endpoint in [start, end] {
+                    if let Some((old, port)) = *endpoint {
+                        *endpoint = ids.get(&old.0).map(|id| (ShapeId(*id), port)).or_else(|| existing.contains(&old.0).then_some((old, port)));
+                    }
+                }
+            }
+            if let Some(children) = shape.children_mut() { fix_shapes(children, ids, existing); }
+        }
+    }
+    fn fix_comments(comments: &mut [deckcraft_model::Comment], ids: &BTreeMap<u32, u32>) -> Result<(), String> {
+        for comment in comments {
+            if let Some(old) = comment.shape {
+                comment.shape = Some(ShapeId(*ids.get(&old.0).ok_or_else(|| fail(Code::Unsupported, "This item can't be pasted into another deck yet. Copy it again in its original deck to paste it there."))?));
+            }
+            fix_comments(&mut comment.replies, ids)?;
+        }
+        Ok(())
+    }
+
+    if !original.shapes.is_empty() {
+        let made = results.get(1).and_then(|result| result.get("ids")).and_then(Json::as_array).ok_or_else(damaged)?;
+        if made.len() != original.shapes.len() { return Err(damaged()); }
+        let ids: Vec<u32> = made.iter().map(|id| id.as_u64().and_then(|id| u32::try_from(id).ok()).ok_or_else(damaged)).collect::<Result<_, _>>()?;
+        let deck = doc.deck()?;
+        let slide = deck.slide(SlideId(target_slide)).ok_or_else(damaged)?;
+        let mut mapping = BTreeMap::new();
+        let mut existing = BTreeSet::new();
+        if same_origin { deckcraft_model::walk(&slide.shapes, &mut |shape, _| { existing.insert(shape.id.0); }); }
+        for (source, id) in original.shapes.iter().zip(&ids) {
+            pair_shapes(source, slide.shape(ShapeId(*id)).ok_or_else(damaged)?, &mut mapping)?;
+        }
+        let state = doc.st_mut()?;
+        let slide = Arc::make_mut(&mut state.doc).slide_mut(SlideId(target_slide)).ok_or_else(damaged)?;
+        for id in ids {
+            let shape = slide.shape_mut(ShapeId(id)).ok_or_else(damaged)?;
+            fix_shapes(std::slice::from_mut(shape), &mapping, &existing);
+        }
+    } else if !original.slides.is_empty() {
+        let deck = doc.deck()?;
+        let made: Vec<u32> = deck.slides.iter().map(|slide| slide.id.0).filter(|id| !before_slides.contains(id)).collect();
+        if made.len() != original.slides.len() { return Err(damaged()); }
+        let mut mappings = Vec::with_capacity(made.len());
+        for (source, id) in original.slides.iter().zip(&made) {
+            let pasted = deck.slide(SlideId(*id)).ok_or_else(damaged)?;
+            if source.shapes.len() != pasted.shapes.len() { return Err(damaged()); }
+            let mut mapping = BTreeMap::new();
+            for (source, pasted) in source.shapes.iter().zip(&pasted.shapes) { pair_shapes(source, pasted, &mut mapping)?; }
+            mappings.push(mapping);
+        }
+        let state = doc.st_mut()?;
+        let deck = Arc::make_mut(&mut state.doc);
+        for (id, mapping) in made.into_iter().zip(mappings) {
+            let slide = deck.slide_mut(SlideId(id)).ok_or_else(damaged)?;
+            fix_shapes(&mut slide.shapes, &mapping, &BTreeSet::new());
+            for animation in &mut slide.animations {
+                animation.shape = ShapeId(*mapping.get(&animation.shape.0).ok_or_else(damaged)?);
+                if let Some(trigger) = animation.trigger {
+                    animation.trigger = Some(ShapeId(*mapping.get(&trigger.0).ok_or_else(damaged)?));
+                }
+            }
+            fix_comments(&mut slide.comments, &mapping)?;
+        }
+    }
+    Ok(())
 }
 
 /// A shape of slide `i`, cloned.
@@ -259,7 +579,74 @@ pub(crate) fn insert(a: &Json, cx: &Ctx) -> Result<Json, String> {
                 inserted(doc, cx, cmds, "Insert chart", |_, _| Ok(json!({})))
             })
         }
-        other => Err(invalid(format!("{M}: `kind` is text, shape, picture, table or chart, not {other:?}"))),
+        // What Cut or Copy kept (`deck.shape`, `deck.slides_op`): shapes
+        // onto the slide, or slides after it. A clipboard token names this
+        // caller's retained copy, even after its source deck was closed.
+        "paste" => {
+            args::only(a, &["doc", "slide", "kind", "clipboard"], M)?;
+            let slide = args::id(a, "slide", M)?;
+            let token = args::opt_int_in(a, "clipboard", M, 1, i64::MAX)?.map(|id| id as u64);
+            let snapshot = token.map(|id| docs::copied(cx, id)).transpose()?;
+            docs::with_doc(a, cx, M, |doc| {
+                let i = on_slide(doc, slide, &[])?;
+                let before: Vec<u32> = doc.deck()?.slides.iter().map(|s| s.id.0).collect();
+                let cmds = vec![("slide.go", json!({ "index": i })), ("edit.paste", json!({}))];
+                let same_origin = snapshot.as_ref().is_some_and(|copy| copy.origin == doc.handle);
+                let transfer = match &snapshot {
+                    Some(copy) if same_origin => Some((copy.clipboard.clone(), None)),
+                    Some(copy) => {
+                        let target = doc.deck()?;
+                        let repeats = docs::copied_on(cx, copy.token, &doc.handle, slide)?;
+                        let offset = doc.session.prefs.duplicate_offset * f64::from(repeats);
+                        let (clipboard, next_id) = cross_deck_clipboard(&copy.source, copy.slide, &target, slide, &copy.clipboard, offset)?;
+                        Some((clipboard, Some(next_id)))
+                    }
+                    None => None,
+                };
+                let (old_clipboard, reserve) = match transfer {
+                    Some((clipboard, reserve)) => (Some(std::mem::replace(&mut doc.session.clipboard, clipboard)), reserve),
+                    None => (None, None),
+                };
+                let result = gate::change_with_hooks(
+                    doc, cx.area, Plan { method: M, most: INSERT, cmds }, "Paste",
+                    |doc| {
+                        if let Some(next_id) = reserve {
+                            let state = doc.st_mut()?;
+                            if next_id > state.doc.next_id {
+                                Arc::make_mut(&mut state.doc).next_id = next_id;
+                            }
+                        }
+                        Ok(())
+                    },
+                    |doc, results| {
+                        if let Some(copy) = &snapshot {
+                            repair_pasted_references(doc, &copy.clipboard, slide, &before, results, same_origin)?;
+                        }
+                        Ok(())
+                    },
+                );
+                if let Some(clipboard) = old_clipboard {
+                    if same_origin && result.is_ok() {
+                        if let Some(token) = token { docs::copied_pastes(cx, token, doc.session.clipboard.pastes); }
+                    } else {
+                        if result.is_ok() && snapshot.as_ref().is_some_and(|copy| !copy.clipboard.shapes.is_empty()) {
+                            if let Some(token) = token { docs::copied_on_advance(cx, token, &doc.handle, slide); }
+                        }
+                        doc.session.clipboard = clipboard;
+                    }
+                }
+                let done = result?;
+                let result = done.results.get(1).cloned().unwrap_or_default();
+                let extra = if result.get("slides").is_some() {
+                    let made: Vec<u32> = doc.deck()?.slides.iter().map(|s| s.id.0).filter(|id| !before.contains(id)).collect();
+                    json!({ "ids": [], "slides": made })
+                } else {
+                    json!({ "ids": result.get("ids").cloned().unwrap_or_else(|| json!([])), "slides": [] })
+                };
+                doc.answer(&done.changed, extra)
+            })
+        }
+        other => Err(invalid(format!("{M}: `kind` is text, shape, picture, table, chart or paste, not {other:?}"))),
     }
 }
 
@@ -546,8 +933,9 @@ pub(crate) fn format(a: &Json, cx: &Ctx) -> Result<Json, String> {
     })
 }
 
-/// `slide.go` and the op's one command.
-const SHAPE: usize = 2;
+/// `slide.go`, for Cut and Copy `edit.select` (they act on the selection),
+/// and the op's one command.
+const SHAPE: usize = 3;
 
 /// `deck.shape {doc, slide, ids, op, …}`.
 pub(crate) fn shape(a: &Json, cx: &Ctx) -> Result<Json, String> {
@@ -627,6 +1015,16 @@ pub(crate) fn shape(a: &Json, cx: &Ctx) -> Result<Json, String> {
         "delete" => {
             only(&[])?;
             ("edit.delete", json!({}), "Delete")
+        }
+        // The deck's own clipboard (its engine session's): `deck.insert
+        // {kind: "paste"}` puts the shapes back, on any of its slides.
+        "copy" => {
+            only(&[])?;
+            ("edit.copy", json!({}), "Copy")
+        }
+        "cut" => {
+            only(&[])?;
+            ("edit.cut", json!({}), "Cut")
         }
         "fill" => {
             only(&["color", "gradient", "none", "transparency"])?;
@@ -708,24 +1106,138 @@ pub(crate) fn shape(a: &Json, cx: &Ctx) -> Result<Json, String> {
         }
         other => {
             return Err(invalid(format!(
-                "{M}: `op` is bounds, move, rotate, flip, order, align, distribute, group, ungroup, duplicate, delete, fill, line, effects, style, lock or hide, not {other:?}"
+                "{M}: `op` is bounds, move, rotate, flip, order, align, distribute, group, ungroup, duplicate, delete, copy, cut, fill, line, effects, style, lock or hide, not {other:?}"
             )))
         }
     };
     params["ids"] = json!(ids);
     docs::with_doc(a, cx, M, |doc| {
         let i = on_slide(doc, slide, &ids)?;
-        let cmds = vec![("slide.go", json!({ "index": i })), (id, params)];
-        let done = gate::change(doc, cx.area, Plan { method: M, most: SHAPE, cmds }, label)?;
-        let result = done.results.get(1).cloned().unwrap_or_default();
+        let copy_source = if matches!(id, "edit.copy" | "edit.cut") { Some(doc.deck()?) } else { None };
+        // Group and Duplicate also turn placeholders into ordinary shapes.
+        // Keep each selected placeholder's effective look before the engine
+        // removes its link to the layout, without changing the original.
+        let looks = if matches!(id, "arrange.group" | "edit.duplicate") {
+            let deck = doc.deck()?;
+            let ctx = resolve::Ctx::for_slide(&deck, &deck.slides[i]);
+            deck.slides[i].shapes.iter().filter(|shape| ids.contains(&shape.id.0)).map(|shape| {
+                (shape.id.0, ctx.as_ref().filter(|_| shape.ph.is_some()).map(|ctx| with_its_look(ctx, shape)))
+            }).collect::<Vec<_>>()
+        } else {
+            Vec::new()
+        };
+        let mut cmds = vec![("slide.go", json!({ "index": i }))];
+        if matches!(id, "edit.copy" | "edit.cut") {
+            cmds.push(("edit.select", json!({ "ids": ids })));
+        }
+        cmds.push((id, params));
+        let plan = Plan { method: M, most: SHAPE, cmds };
+        let done = if looks.iter().any(|(_, look)| look.is_some()) {
+            gate::change_with_checked_finish(doc, cx.area, plan, label, |doc, results| {
+                let target_ids: Vec<u32> = if id == "edit.duplicate" {
+                    results.last().and_then(|result| result["ids"].as_array()).ok_or_else(|| invalid("deck.shape: the duplicated items could not be read"))?
+                        .iter().map(|id| id.as_u64().and_then(|id| u32::try_from(id).ok()).ok_or_else(|| invalid("deck.shape: the duplicated items could not be read")))
+                        .collect::<Result<_, _>>()?
+                } else {
+                    looks.iter().map(|(id, _)| *id).collect()
+                };
+                if target_ids.len() != looks.len() {
+                    return Err(invalid("deck.shape: the edited items could not be read"));
+                }
+                let state = doc.st_mut()?;
+                let deck = Arc::make_mut(&mut state.doc);
+                let slide = Arc::make_mut(deck.slides.get_mut(i).ok_or_else(|| invalid("deck.shape: the edited slide could not be read"))?);
+                for (target, (_, look)) in target_ids.into_iter().zip(looks) {
+                    let Some(look) = look else { continue };
+                    let shape = slide.shape_mut(ShapeId(target)).ok_or_else(|| invalid("deck.shape: the edited item could not be read"))?;
+                    shape.fill = look.fill;
+                    shape.line = look.line;
+                    shape.effects = look.effects;
+                    shape.style = look.style;
+                    shape.text = look.text;
+                }
+                Ok(())
+            })?
+        } else {
+            gate::change(doc, cx.area, plan, label)?
+        };
+        if matches!(id, "edit.copy" | "edit.cut") {
+            keep_look(doc, i)?;
+        }
+        let result = done.results.last().cloned().unwrap_or_default();
         let out_ids = match id {
             "arrange.group" => json!([result["id"]]),
             "arrange.ungroup" | "edit.duplicate" => result["ids"].clone(),
-            "edit.delete" => json!([]),
+            "edit.delete" | "edit.cut" => json!([]),
             _ => json!(ids),
         };
-        doc.answer(&done.changed, json!({ "ids": out_ids }))
+        let mut answer = doc.answer(&done.changed, json!({ "ids": out_ids }))?;
+        if let Some(source) = copy_source {
+            answer["clipboard"] = json!(docs::remember_copy(cx, doc, source, slide));
+        }
+        Ok(answer)
     })
+}
+
+/// A placeholder that goes to the clipboard pastes as a plain shape (the engine
+/// cuts its tie to the layout), so it takes along the look the layout and the
+/// master gave it on slide `slide`: its box, fill, outline, text body,
+/// paragraph and run styles. Keynote's copy of a title keeps the title's font,
+/// size and alignment the same way.
+fn keep_look(doc: &mut OpenDoc, slide: usize) -> Result<(), String> {
+    let deck = doc.deck()?;
+    let Some(ctx) = deck.slides.get(slide).and_then(|s| resolve::Ctx::for_slide(&deck, s)) else {
+        return Ok(());
+    };
+    let shapes: Vec<Shape> = doc.session.clipboard.shapes.iter().map(|sh| with_its_look(&ctx, sh)).collect();
+    doc.session.clipboard.shapes = shapes;
+    Ok(())
+}
+
+fn with_its_look(ctx: &resolve::Ctx, sh: &Shape) -> Shape {
+    let mut out = sh.clone();
+    if sh.ph.is_none() {
+        return out;
+    }
+    out.xfrm = Some(resolve::xfrm(ctx, sh));
+    // A fill or effects the theme gives by the shape's own style stay with that style.
+    if let (None, (Some(fill), None)) = (&sh.fill, resolve::fill(ctx, sh)) {
+        out.fill = Some(fill);
+    }
+    if let (None, (Some(effects), None)) = (&sh.effects, resolve::effects(ctx, sh)) {
+        out.effects = Some(effects);
+    }
+    let (layout, master) = resolve::parents(ctx, sh);
+    // A style on a parent supplies theme fill, line and effects through a
+    // placeholder colour. Once pasted the engine removes `ph`, so retain the
+    // style reference as well as the directly inherited properties. Keeping
+    // the reference lets the pasted shape follow later theme changes.
+    if out.style.is_none() {
+        if let Some(style) = layout.and_then(|parent| parent.style.as_ref()) {
+            out.style = Some(style.clone());
+        } else if let Some(style) = master.and_then(|parent| parent.style.as_ref()) {
+            let mut style = style.clone();
+            // Text resolution uses a shape's or layout's font reference, not
+            // the master placeholder's. Do not introduce a new text colour.
+            style.font_ref = ("none".into(), None);
+            out.style = Some(style);
+        }
+    }
+    if sh.line.is_none() && [layout, master].into_iter().flatten().any(|p| p.line.is_some()) {
+        out.line = Some(resolve::line(ctx, sh).0);
+    }
+    if let Some(text) = out.text.as_mut() {
+        text.body = resolve::body(ctx, sh);
+        for p in &mut text.paragraphs {
+            let para = p.clone();
+            p.props = resolve::para(ctx, sh, &para);
+            for r in &mut p.runs {
+                r.props = resolve::run(ctx, sh, &para, &r.props);
+            }
+            p.end_props = resolve::run(ctx, sh, &para, &para.end_props);
+        }
+    }
+    out
 }
 
 /// A gradient as `shape.fill` and `design.background` take it: 2 to 10

@@ -3,8 +3,14 @@
   "id": "os.youtube",
   "version": "1.0.0",
   "name": "YouTube",
-  "integrity": { "bundle_blake3": "" },
-  "capabilities": ["storage", "net", "glance"],
+  "integrity": {
+    "bundle_blake3": ""
+  },
+  "capabilities": [
+    "storage",
+    "net",
+    "glance"
+  ],
   "network": {
     "hosts": [
       "www.youtube.com",
@@ -14,7 +20,18 @@
   },
   "agent": {
     "profile": "read-only",
-    "tools": ["ask_user_question"],
-    "model": { "needs": ["tool_calling"] }
-  }
+    "tools": [
+      "ask_user_question"
+    ],
+    "model": {
+      "needs": [
+        "tool_calling"
+      ]
+    }
+  },
+  "window": {
+    "width": 1120,
+    "height": 740
+  },
+  "schema_minor": 1
 }

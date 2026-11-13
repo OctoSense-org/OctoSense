@@ -1,0 +1,42 @@
+diff --git a/widgets/src/splash.rs b/widgets/src/splash.rs
+--- a/widgets/src/splash.rs
++++ b/widgets/src/splash.rs
+@@ -3244,6 +3324,38 @@ pub fn register_agent_module(vm: &mut ScriptVm) {
+         },
+     );
+ 
++    // Explicitly retry an exhausted YouTube query without changing its words.
++    // In-flight and successful fetches stay shared; an old response cannot
++    // replace the new fetch because only a terminal failure is reset.
++    vm.add_method(
++        sys,
++        id_lut!(video_retry),
++        script_args_def!(query = NIL),
++        |vm, args| {
++            let mut query = String::new();
++            let v = script_value!(vm, args.query);
++            vm.bx.heap.cast_to_string(v, &mut query);
++            if query.trim().is_empty() {
++                return NIL;
++            }
++            let url = yt_search_url(&query);
++            if !makepad_script_std::script_url_allowed(vm.bx.heap.heap_key(), &url) {
++                return NIL;
++            }
++            let resources = &vm.host.cx_mut().script_data.resources;
++            if resources.data_fetch_failed_terminally(&url) {
++                resources.data_fetches.borrow_mut().remove(&url);
++                resources.data_fetch_retries.borrow_mut().remove(&url);
++                if let Ok(mut slot) = YT_PARSED.write() {
++                    if slot.as_ref().is_some_and(|(cached_url, _)| cached_url == &url) {
++                        *slot = None;
++                    }
++                }
++            }
++            NIL
++        },
++    );
++
+     // sys.videonum(query, 0, "count") -> how many results parsed. The shape
+     // fetched_rows expects of a searchable list, beside sys.searchnum.
+     vm.add_method(

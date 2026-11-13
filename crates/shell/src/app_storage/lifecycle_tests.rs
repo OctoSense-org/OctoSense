@@ -202,11 +202,12 @@ fn mails_accounts_open_and_remove_their_folders() {
     use octosense_mail_service::AccountEvent;
     let home = Scratch::new("mail");
     let host = storage(&home.0);
-    // App Hub's schema has no `storage.accounts` yet: Mail acts for the
-    // device, and its account events leave storage alone.
-    let added = AccountEvent::Added { app_id: "os.mail".into(), account: "id1".into() };
-    assert_eq!(mail_account(&host, &added), Change::None);
+    // An app with no account declaration acts for the device, so its Mail
+    // account events leave per-account storage alone.
+    let device_added = AccountEvent::Added { app_id: "org.example.device-mail".into(), account: "id1".into() };
+    assert_eq!(mail_account(&host, &device_added), Change::None);
     // Declared, each account gets its folder, and removing it deletes it.
+    let added = AccountEvent::Added { app_id: "os.mail".into(), account: "id1".into() };
     host.set_spec("os.mail", StorageSpec { accounts: true, ..Default::default() });
     let Change::SignedIn { folder, .. } = mail_account(&host, &added) else { panic!() };
     assert!(folder.is_dir());
@@ -248,6 +249,97 @@ fn should_suspend_mails_agent_and_delete_its_folder_when_its_account_is_removed(
     assert!(crate::host_tools::suspended_in(&host, "card.os.mail", Some("acct-1")), "its agent is suspended");
     assert_eq!(crate::host_tools::agent_workspace_in(&host, "card.os.mail", "acct-1"), None);
     assert!(!crate::host_tools::suspended_in(&host, "card.os.mail", Some("acct-2")), "another account is not");
+}
+
+/// On a fresh profile the shell prepares storage before the Card runner
+/// unpacks Mail. Its later account event must read the now-present manifest,
+/// bind the account and preserve the normal removal/suspension lifecycle.
+#[cfg(any(feature = "app-hub", native_mobile))]
+#[test]
+fn mail_first_launch_reads_its_manifest_before_handling_the_first_account() {
+    use octosense_mail_service::AccountEvent;
+    let home = Scratch::new("mail-first-launch");
+    let host = storage(&home.0);
+    let root = host.layout().apps_root().to_path_buf();
+    let packaged = octosense_app_hub_app::system_apps().iter().any(|app| app.id == "os.mail");
+    let before_unpack = prepare_script_app(&host, &root, "os.mail").unwrap();
+    if packaged {
+        assert!(before_unpack.accounts, "the current packed manifest is available before unpacking");
+    } else {
+        assert_eq!(before_unpack, StorageSpec::default());
+    }
+    let manifest: Value = serde_json::from_str(&std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../apps/mail/bundle/manifest.json")).unwrap()).unwrap();
+    write_json(&root.join(".system/os.mail/0001/manifest.json"), &manifest);
+    write_json(&root.join(".host/mail/accounts.json"), &json!([
+        {"id": "demo-account", "apps": ["os.mail"], "signed_in": 10}
+    ]));
+    let added = AccountEvent::Added { app_id: "os.mail".into(), account: "demo-account".into() };
+    let Change::SignedIn { folder, .. } = mail_account(&host, &added) else {
+        panic!("the first account must use the unpacked manifest");
+    };
+    assert!(folder.is_dir());
+    assert_eq!(contained_account_in(&host, "os.mail").as_deref(), Some("demo-account"));
+    let removed = AccountEvent::Removed { app_id: "os.mail".into(), account: "demo-account".into() };
+    assert!(matches!(mail_account(&host, &removed), Change::SignedOut { .. }));
+    assert!(host.is_signed_out("os.mail", Some("demo-account")));
+    assert!(!folder.exists());
+}
+
+/// An old unpacked build and an installed-looking directory cannot override
+/// the storage declaration of the system app shipped in this shell.
+#[cfg(any(feature = "app-hub", native_mobile))]
+#[test]
+fn current_system_app_manifest_wins_over_stale_unpacked_builds() {
+    let home = Scratch::new("mail-upgrade-manifest");
+    let host = storage(&home.0);
+    let root = host.layout().apps_root().to_path_buf();
+    let app_id = "os.storage-upgrade-test";
+    let bundle = home.0.join("current-bundle");
+    std::fs::create_dir_all(&bundle).unwrap();
+    std::fs::write(bundle.join("main.splash"), "View{}\n").unwrap();
+    write_json(&bundle.join("manifest.json"), &json!({"schema":1,"id":app_id,"version":"1.0.0","name":"Storage test",
+        "integrity":{"bundle_blake3":""},"capabilities":["storage"],"storage":{"accounts":true}}));
+    let packed = octosense_app_hub::pack::pack_system_app(&bundle).unwrap();
+    let system = octosense_appstore::system::SystemApp {
+        id: Box::leak(packed.id.into_boxed_str()), name: Box::leak(packed.name.into_boxed_str()),
+        pack: Box::leak(packed.pack_json.into_boxed_str()), assets: &[],
+    };
+    #[cfg(feature = "app-hub")]
+    crate::apps::test_system_apps::register(system);
+    #[cfg(all(native_mobile, not(feature = "app-hub")))]
+    octosense_appstore::system::register_system_app(system);
+    let stale = json!({"id": app_id, "storage": {"accounts": false}});
+    write_json(&root.join(".system").join(app_id).join("old-build/manifest.json"), &stale);
+    write_json(&root.join(app_id).join("bundle/manifest.json"), &stale);
+    assert!(prepare_script_app(&host, &root, app_id).unwrap().accounts);
+    assert!(host.spec(app_id).accounts);
+    write_json(&root.join(".host/mail/accounts.json"), &json!([
+        {"id": "demo-account", "apps": [app_id], "signed_in": 10}
+    ]));
+    assert_eq!(contained_account_in(&host, app_id).as_deref(), Some("demo-account"));
+}
+
+#[cfg(any(feature = "app-hub", native_mobile))]
+#[test]
+fn invalid_current_system_manifest_does_not_fall_back_to_an_old_version() {
+    let home = Scratch::new("invalid-system-manifest");
+    let host = storage(&home.0);
+    let root = host.layout().apps_root().to_path_buf();
+    let app_id = "os.storage-invalid-test";
+    let too_large = "A".repeat(((octosense_app_hub::admission::MAX_MANIFEST_BYTES as usize + 2) / 3) * 4 + 4);
+    let pack = json!({"schema":1,"files":{"manifest.json":too_large}}).to_string();
+    let system = octosense_appstore::system::SystemApp {
+        id: app_id, name: "Invalid manifest test", pack: Box::leak(pack.into_boxed_str()), assets: &[],
+    };
+    #[cfg(feature = "app-hub")]
+    crate::apps::test_system_apps::register(system);
+    #[cfg(all(native_mobile, not(feature = "app-hub")))]
+    octosense_appstore::system::register_system_app(system);
+    write_json(&root.join(".system").join(app_id).join("old-build/manifest.json"),
+        &json!({"id":app_id,"storage":{"accounts":true}}));
+    assert!(script_manifest(&root, app_id).is_none(), "an invalid current pack must not select old metadata");
+    assert_eq!(prepare_script_app(&host, &root, app_id).unwrap(), StorageSpec::default());
+    assert!(!host.has_spec(app_id));
 }
 
 /// A Mail account whose folder the startup check refused is refused for
@@ -304,8 +396,8 @@ fn should_record_the_storage_block_before_an_agent_is_prepared() {
     let home = Scratch::new("spec-first");
     let host = storage(&home.0);
     let root = host.layout().apps_root().to_path_buf();
-    write_json(&root.join(".system/os.mail/0001/manifest.json"), &json!({"id": "os.mail", "storage": {"accounts": true}}));
-    let seen = prepare_agent_with(&host, &root, "os.mail", |storage: &Storage| storage.spec("os.mail").accounts);
+    write_json(&root.join(".system/os.storagetest/0001/manifest.json"), &json!({"id": "os.storagetest", "storage": {"accounts": true}}));
+    let seen = prepare_agent_with(&host, &root, "os.storagetest", |storage: &Storage| storage.spec("os.storagetest").accounts);
     assert!(seen, "the spec is recorded before the agent is prepared");
 }
 
@@ -364,13 +456,27 @@ fn a_script_apps_manifest_block_is_recorded_at_install_and_launch() {
     }
     assert!(home.0.join("secrets/org.example.timer").is_dir());
     // A system app, from its newest unpacked build; none yet is the default.
-    assert_eq!(prepare_script_app(&host, &root, "os.news").unwrap(), StorageSpec::default());
-    write_json(&root.join(".system/os.news/0123/manifest.json"), &json!({"id": "os.news", "storage": {"max_bytes": 77}}));
-    assert_eq!(prepare_script_app(&host, &root, "os.news").unwrap().max_bytes, Some(77));
+    assert_eq!(prepare_script_app(&host, &root, "os.storagetest").unwrap(), StorageSpec::default());
+    write_json(&root.join(".system/os.storagetest/0123/manifest.json"), &json!({"id": "os.storagetest", "storage": {"max_bytes": 77}}));
+    assert_eq!(prepare_script_app(&host, &root, "os.storagetest").unwrap().max_bytes, Some(77));
     // A block the host refuses is an error, and the default holds.
     write_json(&root.join("org.example.bad/bundle/manifest.json"), &json!({"storage": {"external": ["home:rw"]}}));
     assert!(prepare_script_app(&host, &root, "org.example.bad").unwrap_err().contains("native apps only"));
     assert_eq!(host.spec("org.example.bad"), StorageSpec::default());
+}
+
+#[test]
+fn missing_manifest_does_not_cache_or_keep_an_old_storage_spec() {
+    let home = Scratch::new("late-manifest");
+    let host = storage(&home.0);
+    let root = host.layout().apps_root().to_path_buf();
+    host.set_spec("os.late", StorageSpec { accounts: true, ..Default::default() });
+    assert_eq!(prepare_script_app(&host, &root, "os.late").unwrap(), StorageSpec::default());
+    assert!(!host.has_spec("os.late"), "absence is not a manifest declaration");
+    write_json(&root.join(".system/os.late/0001/manifest.json"), &json!({"id": "os.late", "storage": {"accounts": false}}));
+    assert_eq!(contained_account_in(&host, "os.late").as_deref(), Some("device"));
+    assert!(host.has_spec("os.late"));
+    assert!(!host.spec("os.late").accounts);
 }
 
 #[test]

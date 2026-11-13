@@ -21,5 +21,10 @@
       ]
     },
     "instructions": "AGENT.md"
-  }
+  },
+  "window": {
+    "width": 1120,
+    "height": 740
+  },
+  "schema_minor": 1
 }

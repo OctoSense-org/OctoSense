@@ -14,8 +14,8 @@ card-host runs serve no host services:
            switches and marks are checked against what the stand-in reports,
            and a change and its undo against what it reports after them
   states   the same stand-in: a damaged deck, a protected, a held and an
-           unsupported presentation, the unsaved-changes bar, the storage-full
-           bar, and the empty library of a first run, light and dark
+           unsupported presentation, the unsaved-changes alert, the storage-full
+           alert, and the empty library of a first run, light and dark
   playback the same stand-in with make_fixture.py --media's Launch Film: the
            chosen clip's control, its Video widget playing the sample clip
            over the clip's box (two grabs a second apart must differ there,
@@ -221,9 +221,9 @@ class Driver:
         raise AssertionError(f"{text!r} is still on screen")
 
     def pictures(self):
-        """The app's own pictures (the engine's renders): inside its surface."""
+        """The app's own pictures (the engine's renders): inside its surface. A slide can be as wide as a full-screen stage, not as tall."""
         ax, ay, aw, ah = self.area()
-        return [w for w in self.widgets() if w["ty"] == "Image" and w["r"][2] < aw - 1
+        return [w for w in self.widgets() if w["ty"] == "Image" and (w["r"][2] < aw - 1 or w["r"][3] < ah - 1)
                 and ax - 1 <= w["r"][0] <= ax + aw and ay - 1 <= w["r"][1] <= ay + ah]
 
     def images(self, count, timeout=60.0):
@@ -279,7 +279,11 @@ class Shell(Driver):
         super().__init__(port)
         self.log = log
         self.window = self.process = self.weston = None
+        # A hidden run answers the Save panel from this folder.
+        self.save_dir = Path(home) / "saved"
+        self.save_dir.mkdir(parents=True, exist_ok=True)
         env = {
+            "MAKEPAD_TEST_SAVE_DIR": self.save_dir,
             "OCTOSENSE_HOME": home,
             "OCTOS_APP_CORE_DIR": home / "octos-home" / ".octos",
             "MAKEPAD_HOME": home / "makepad",
@@ -387,15 +391,10 @@ class Shell(Driver):
             time.sleep(0.3)
         raise AssertionError(f"the shell never logged {needle!r}")
 
-    def menu(self, words):
-        self.key("Space", cmd=1)
-        for char in words.lower():
-            self.key("Space" if char == " " else "Key" + char.upper())
-        self.key("Return")
-
-    def style(self, name, words):
+    def style(self, name):
+        """As its row does: a Mac's Spotlight leaves a style's dark twin to System Settings."""
         since = len(self.log.read_text(errors="replace"))
-        self.menu(words)
+        self.remote("event", data="mac-row:desktop." + name)
         self.logged(f"wm: desktop style {name} applied", since)
         time.sleep(1.5)
 
@@ -480,7 +479,7 @@ def slide_rect(app):
     """The canvas's slide picture: [x, y, w, h] in points (the largest picture
     right of the navigator and left of the inspector)."""
     ax, ay, aw, ah = app.area()
-    imgs = [w["r"] for w in app.pictures() if w["r"][2] > 300 and w["r"][1] > ay + 100]
+    imgs = [w["r"] for w in app.pictures() if w["r"][2] > 300 and w["r"][1] > ay + 70]
     assert imgs, "no slide on the canvas"
     return max(imgs, key=lambda r: r[2] * r[3])
 
@@ -492,32 +491,56 @@ def click_slide(app, px, py):
     app.click(x + px * k, y + py * k)
 
 
+def status_slide(app):
+    """The status bar's "Slide 5 of 12" as (5, 12), or None."""
+    for w in app.widgets():
+        m = re.search(r"Slide (\d+) of (\d+)", w.get("t") or "")
+        if m and w["ty"] == "Label":
+            return int(m.group(1)), int(m.group(2))
+    return None
+
+
 def pill_label(app):
-    """The pill's (or Present's bar's) "5 / 12". A snapshot taken while the
-    bar is drawn again can miss it: look again for a moment."""
+    """The toolbar's (or Present's bar's) "5 / 12". A snapshot taken while the
+    bar is drawn again can miss it: look again for a moment. Where a Mac's
+    toolbar gave the counter's room to the deck's name, the status bar's
+    "Slide 5 of 12" says it (with no rect: no ‹ and › stand beside it)."""
     for _ in range(10):
         found = [w for w in app.widgets() if re.fullmatch(r"\d+ / \d+", w.get("t") or "")]
         if found:
             return found[0]
+        said = status_slide(app)
+        if said:
+            return {"t": "%d / %d" % said, "ty": "Label", "r": None}
         time.sleep(0.3)
-    raise AssertionError("no \"n / N\" label (the pill or Present's bar)")
+    raise AssertionError("no \"n / N\" label (the pill or Present's bar), and no \"Slide n of N\"")
 
 
 def go_to(app, n):
-    """The canvas pill's ‹ and › until slide `n` shows (the navigator keeps no
-    scroll position a script could set; the pill always works)."""
+    """The toolbar's ‹ and › until slide `n` shows (the navigator keeps no
+    scroll position a script could set; these always work)."""
     for _ in range(40):
         label = pill_label(app)
         at, total = map(int, label["t"].split(" / "))
         if at == n:
             return
+        if label["r"] is None:
+            # No counter in the toolbar: slide n's row in the navigator, as a person would.
+            ax, ay, aw, ah = app.area()
+            rows = [l["r"] for l in app.widgets() if l["ty"] == "Label" and l.get("t") == str(n)
+                    and l["r"][0] < ax + 60 and l["r"][1] > ay + 52]
+            if rows:
+                app.click(rows[0][0] + 60, rows[0][1] + 30)
+            time.sleep(0.6)
+            continue
         x, y, w, h = label["r"]
         buttons = sorted((b["r"] for b in app.widgets() if b["ty"] in ("Button", "ButtonFlat") and not b.get("t")
                           and abs(b["r"][1] + b["r"][3] / 2 - (y + h / 2)) < 12), key=lambda r: r[0])
-        if at < n:
-            bx, by, bw, bh = [r for r in buttons if r[0] >= x + w - 1][0]
-        else:
-            bx, by, bw, bh = [r for r in buttons if r[0] + r[2] <= x + 1][-1]
+        beside = [r for r in buttons if r[0] >= x + w - 1] if at < n else [r for r in buttons if r[0] + r[2] <= x + 1][::-1]
+        if not beside:  # A snapshot taken while the bar is drawn again.
+            time.sleep(0.3)
+            continue
+        bx, by, bw, bh = beside[0]
         app.click(bx + bw / 2, by + bh / 2)
         time.sleep(0.6)
     raise AssertionError(f"never reached slide {n}")
@@ -538,9 +561,9 @@ def open_card(app, title):
     while the app was busy (drawing covers) is tried again, until the deck's
     tab shows."""
     for _ in range(4):
-        app.tap(title, "Label", below=380)
+        app.tap(title, "Label", below=app.area()[1] + 72)  # not its tab: below the toolbar and the tabs
         try:
-            wait_until(lambda: any(w["ty"] == "Label" and w.get("t") in (title, title + " •") and w["r"][1] < app.area()[1] + 70
+            wait_until(lambda: any(w["ty"] == "Label" and w.get("t") == title and w["r"][1] < app.area()[1] + 90
                                    for w in app.widgets()), "no tab", timeout=8)
             return
         except AssertionError:
@@ -549,7 +572,85 @@ def open_card(app, title):
 
 
 def home_tab(app):
-    app.tap("Home", "Label")
+    """The tab row's first tab, a house at the window's left edge under the toolbar."""
+    ax, ay, aw, ah = app.area()
+    tabs = [w["r"] for w in app.widgets() if w["ty"] == "GestureView" and abs(w["r"][0] - ax) < 2 and abs(w["r"][2] - 40) < 2]
+    assert tabs, "no Home tab"
+    x, y, w, h = tabs[0]
+    app.click(x + w / 2, y + h / 2)
+
+
+def right_click(app, x, y):
+    """A right click: the view under it opens a menu at the pointer."""
+    app.remote("m", k="move", x=x, y=y, wait=1)
+    app.remote("m", k="down", x=x, y=y, b=1, wait=1)
+    app.remote("m", k="up", x=x, y=y, b=1, wait=1)
+    time.sleep(0.3)
+
+
+def menu_rows(app, title):
+    """A menu's rows, which stay listed after it closes: the last of a title is the newest."""
+    return [w for w in app.widgets() if w["ty"] == "PopupMenuItem" and w.get("t") == title]
+
+
+def menu_pick(app, title):
+    wait_until(lambda: menu_rows(app, title), f"the menu has no {title!r}", timeout=10)
+    x, y, w, h = menu_rows(app, title)[-1]["r"]
+    app.click(x + w / 2, y + h / 2)
+    time.sleep(0.3)
+
+
+def unified(app):
+    """A Mac's window: the shell on a Mac draws apps in its unified style while its
+    desktop style is the Mac's, as its log last said; a run's dark pass picks
+    octosense-dark (the card host doesn't set the theme's ui_unified)."""
+    if not isinstance(app, Shell) or LINUX:
+        return False
+    styles = re.findall(r"wm: desktop style (\S+) applied", app.log.read_text(errors="replace"))
+    return bool(styles) and styles[-1].startswith("macos")
+
+
+def edited(app, timeout=30.0):
+    """Unsaved changes: the status line's Edited, or on a Mac "— Edited" after the deck's
+    name in the toolbar, as Keynote's title says."""
+    wait_until(lambda: any(w.get("t") in ("Edited", "— Edited") for w in app.widgets()),
+               "nothing says the deck is edited", timeout=timeout)
+
+
+def save_deck(app, timeout=60.0):
+    """Save: the toolbar's Save, then the status line's Saved. A Mac has no Save item, as
+    Keynote has none: File > Save (Command-S), then no "— Edited" and nothing under way."""
+    if not unified(app):
+        app.tap("Save", "Button")
+        app.find("Saved", "Label", timeout=timeout)
+        return
+    app.key("KeyS", cmd=1)
+    time.sleep(0.5)
+    wait_until(lambda: not any(w.get("t") in ("— Edited", "Saving…") for w in app.widgets()),
+               "the deck's name still says it is edited", timeout=timeout)
+
+
+def bar_has(app, word):
+    """Whether the toolbar shows `word`: a phone's and another desktop's keep Undo and Redo there."""
+    return any(w["ty"] == "Label" and w.get("t") == word for w in app.widgets())
+
+
+def undo(app):
+    """Undo: on a Mac Edit's (⌘Z), as Keynote's is, with no Undo in the toolbar; another style's toolbar keeps its own."""
+    if bar_has(app, "Undo"):
+        app.tap("Undo", "Label")
+    else:
+        app.key("KeyZ", cmd=1)
+    time.sleep(0.3)
+
+
+def redo(app):
+    """Redo: on a Mac Edit's (⇧⌘Z); another style's toolbar keeps its own."""
+    if bar_has(app, "Redo"):
+        app.tap("Redo", "Label")
+    else:
+        app.key("KeyZ", cmd=1, shift=1)
+    time.sleep(0.3)
 
 
 # ---------------------------------------------------------------- fixture journey (card-host)
@@ -567,7 +668,7 @@ def fixture_journey(app, out, dark):
         open_card(app, title)
         app.find("Slide 1 of ", "Label", exact=False, timeout=60)
         home_tab(app)
-        app.find("Start a new deck", "Label")
+        app.find("New Deck", "Label")
     app.tap(DECK, "Label", below=0, exact=False)
     app.find(" of 12", "Label", exact=False, timeout=60)
     app.images(4)
@@ -578,28 +679,29 @@ def fixture_journey(app, out, dark):
     click_slide(app, 250, 280)  # the bullet box: chosen
     app.find("Applies to", "Label")
     # As the stand-in reports the box (design 02): its text shrinks to fit, top.
-    expect("the box shrinking its text, top", lambda: switch_on(app, "Shrink text when it overflows") and segment(app, "Vertical alignment") == 0)
+    expect("the box shrinking its text, top", lambda: switch_on(app, "Shrink text when it overflows") and segment(app, "Vertical") == 0)
     click_slide(app, 250, 280)  # tapped again: its text in place
-    wait_until(lambda: any(w["ty"] == "TextInput" and (w.get("t") or "").startswith("Northwest led") for w in app.widgets()), "the box's text field never came")
-    field = [w for w in app.widgets() if w["ty"] == "TextInput" and (w.get("t") or "").startswith("Northwest led")][0]["r"]
+    wait_until(lambda: any(w["ty"] == "TextInput" and "Northwest led" in (w.get("t") or "") for w in app.widgets()), "the box's text field never came")
+    field = [w for w in app.widgets() if w["ty"] == "TextInput" and "Northwest led" in (w.get("t") or "")][0]["r"]
     app.click(field[0] + 250, field[1] + 76)  # after "rose 18%"
     app.grab(out, f"{p}02-edit-text")
     click_slide(app, 700, 520)  # the slide's empty corner: the text goes in, the box whole again
     app.gone("Applies to")
 
-    # 03: the chart strip and slide 4's chart.
+    # 03: the chart popover (the card host's strip) and slide 4's chart. A press off a
+    # desktop's popover closes it and goes no further, so the tool closes it first.
     go_to(app, 4)
     app.images(4)
-    app.tap("Chart", "Label", below=70)
-    app.find("Insert chart", "Button")
+    app.tap("Chart", "Label")
+    app.find("Doughnut", "Button")
+    app.tap("Chart", "Label")  # it closes again
+    app.gone("Doughnut")
     click_slide(app, 480, 300)
     app.find("Elements", "Label")
     # Design 03: title, data labels and gridlines on, no legend, colourful.
     expect("the chart's elements", lambda: switch_on(app, "Title") and not switch_on(app, "Legend") and switch_on(app, "Data labels")
-           and switch_on(app, "Gridlines") and segment(app, "Colours", 50) == 0)
+           and switch_on(app, "Gridlines") and segment(app, "Colors", 50) == 0)
     app.grab(out, f"{p}03-chart")
-    app.tap("Chart", "Label", below=70)  # the strip closes again
-    app.gone("Insert chart")
 
     # 04: the Layout segment on slide 7.
     seg(app, "Layout")
@@ -619,22 +721,21 @@ def fixture_journey(app, out, dark):
 
     # 06: the sorter, slides 5 and 6 chosen.
     app.tap("Sorter", "Button")
-    app.find("Drag slides to reorder", "Label")
+    app.find("12 slides", "Label", exact=False)
     app.images(10)
     tile_number(app, 1)  # the current slide starts chosen: unchoose it
     tile_number(app, 5)
     tile_number(app, 6)
-    app.find("2 selected", "Label")
+    app.find("2 selected", "Label", exact=False)
     app.grab(out, f"{p}06-sorter")
 
     # 07: New from an outline, its cards typed as the design shows them.
-    app.tap("New", "Button")
-    app.tap("New from an outline", "Button")
+    home_tab(app)
+    app.tap("New from an Outline…", "Button")
     app.find("Draft with AI", "Label")
     outline_cards(app)
     app.grab(out, f"{p}07-outline")
-    tab = app.find("New deck", "Label")["r"]
-    app.click(tab[0] + tab[2] + 22, tab[1] + tab[3] / 2)  # its close cross: the six decks' tabs again, as 09 and 10 draw them
+    close_tab(app, "New Outline")  # the six decks' tabs again, as 09 and 10 draw them
     app.gone("Draft with AI")
 
     # 08: Present on slide 4.
@@ -649,17 +750,19 @@ def fixture_journey(app, out, dark):
     app.find("Present", "Button")
 
     # 09: Export, after a presentation and a PDF.
-    app.tap("Export", "Button")
-    app.find("Saved in Quick Deck's storage", "Label")
-    app.tap("Presentation", "Label")
-    app.tap("Export presentation", "Button")
-    app.find(DECK + ".pptx", "Label", exact=False)
-    app.tap("PDF", "Label")
-    app.tap("Export PDF", "Button")
-    app.find(DECK + ".pdf", "Label", exact=False)
-    app.gone("OK", timeout=12)
+    app.tap("Export…", "Button")
+    app.find("Format:", "Label")
+    export_format(app, "Presentation")
+    app.find("Save…", "Button")
+    export_format(app, "PDF")
+    app.find("Save…", "Button")
     app.grab(out, f"{p}09-export")
-    app.tap("Export", "Button")  # back to the slides
+    # The card host has no Save panel: the app says so, and the sheet stays.
+    app.tap("Save…", "Button")
+    app.find("OctoSense couldn't open the Save panel. Try again.", "Label", timeout=20)
+    app.find("Format:", "Label")
+    app.tap("Cancel", "Button")  # back to the slides
+    app.gone("Format:")
 
     # 10: the Notes segment on slide 6 (the design draws it dark).
     seg(app, "Notes")
@@ -719,22 +822,25 @@ def reach(app, text, kind="Button", at=None):
     app.click(fx + fw / 2, fy + fh / 2)
 
 
-def switch_on(app, label):
-    """The switch on `label`'s row (a Toggle reports its state as `c`)."""
+def row_toggle(app, label):
+    """The switch on `label`'s row, or on a Mac the checkbox just before the label
+    (a Toggle and a CheckBox report their state as `c`): the nearest one."""
     lx, ly, lw, lh = app.find(label, "Label")["r"]
     cy = ly + lh / 2
-    found = [w for w in app.widgets() if "c" in w and w["r"][0] > lx and w["r"][1] <= cy <= w["r"][1] + w["r"][3]]
+    found = [w for w in app.widgets() if "c" in w and w["r"][1] <= cy <= w["r"][1] + w["r"][3]
+             and (w["r"][0] > lx or lx - 40 <= w["r"][0] + w["r"][2] <= lx)]
     assert found, f"no switch beside {label!r}"
-    return found[0]["c"] == 1
+    return min(found, key=lambda w: abs(w["r"][0] - lx))
+
+
+def switch_on(app, label):
+    """Whether `label`'s switch or checkbox is on."""
+    return row_toggle(app, label)["c"] == 1
 
 
 def switch_point(app, label):
-    """Where to click `label`'s switch."""
-    lx, ly, lw, lh = app.find(label, "Label")["r"]
-    cy = ly + lh / 2
-    found = [w["r"] for w in app.widgets() if "c" in w and w["r"][0] > lx and w["r"][1] <= cy <= w["r"][1] + w["r"][3]]
-    assert found, f"no switch beside {label!r}"
-    x, y, w, h = found[0]
+    """Where to click `label`'s switch or checkbox."""
+    x, y, w, h = row_toggle(app, label)["r"]
     return x + w / 2, y + h / 2
 
 
@@ -753,13 +859,45 @@ def selected_texts(app):
     return out
 
 
-def segment(app, label, below=60):
-    """Which of the segments under `label` is selected (0-based), or -1."""
+def segment_row(app, label, below=60):
+    """The segments beside `label`, or under it, left to right."""
     lx, ly, lw, lh = app.find(label, "Label")["r"]
-    row = sorted((w for w in app.widgets() if "selected" in w and ly + lh <= w["r"][1] <= ly + lh + below), key=lambda w: w["r"][0])
-    assert row, f"no segments under {label!r}"
-    on = [i for i, w in enumerate(row) if w["selected"] == "true"]
+    cy = ly + lh / 2
+    widgets = app.widgets()
+    row = [w for w in widgets if "selected" in w and w["r"][0] >= lx + lw and w["r"][1] <= cy <= w["r"][1] + w["r"][3]]
+    if not row:
+        row = [w for w in widgets if "selected" in w and ly + lh <= w["r"][1] <= ly + lh + below]
+    assert row, f"no segments at {label!r}"
+    return sorted(row, key=lambda w: w["r"][0])
+
+
+def segment(app, label, below=60):
+    """Which of the segments beside or under `label` is selected (0-based), or -1."""
+    on = [i for i, w in enumerate(segment_row(app, label, below)) if w["selected"] == "true"]
     return on[0] if on else -1
+
+
+def export_format(app, name):
+    """The Export sheet's Format pop-up: a real menu over the button. The pop-up
+    itself says what's chosen."""
+    lx, ly, lw, lh = app.find("Format:", "Label")["r"]
+    app.click(lx + lw + 80, ly + lh / 2)
+    menu_pick(app, name)
+    wait_until(lambda: any(w.get("t") == name and w["ty"] in ("Button", "ButtonFlat") for w in app.widgets()), f"the Format pop-up never said {name}", timeout=10)
+
+
+def press_stays(app, x, y):
+    """A press on a sheet or its dim stays there. The inspector's words would
+    change if the slide under it heard it."""
+    ax, ay, aw, ah = app.area()
+
+    def words():
+        return sorted(w["t"] for w in app.widgets() if w.get("t") and w["ty"] == "Label"
+                      and w["r"][0] > ax + aw - 280 and ay + 90 < w["r"][1])
+    said = words()
+    app.click(x, y)
+    time.sleep(1.0)
+    assert words() == said, "a press on the sheet reached the slide under it"
 
 
 def expect(what, check, timeout=30.0):
@@ -775,8 +913,8 @@ def tile_number(app, n):
     ax, ay, aw, ah = app.area()
     for _ in range(8):
         found = [f["r"] for f in app.widgets() if f["ty"] == "Label" and f.get("t") == str(n)
-                 and f["r"][1] > ay + 170 and f["r"][1] + f["r"][3] <= ay + ah - 50]
-        if found and found[0][1] - 70 > ay + 170:
+                 and f["r"][1] > ay + 110 and f["r"][1] + f["r"][3] <= ay + ah - 50]
+        if found and found[0][1] - 70 > ay + 110:
             x, y, w, h = found[0]
             app.click(x + 60, y - 70)
             return
@@ -785,11 +923,14 @@ def tile_number(app, n):
 
 
 def slide_count(app):
-    """The sorter's status line: "12 slides  ·  2 selected"."""
-    for w in app.widgets():
-        found = re.match(r"(\d+) slides?  ·  \d+ selected", w.get("t") or "")
-        if found:
-            return int(found[1])
+    """The sorter's status line: "12 slides", and what's selected. A snapshot
+    taken while the line is drawn again can miss it: look again for a moment."""
+    for _ in range(10):
+        for w in app.widgets():
+            found = re.fullmatch(r"(\d+) slides?(  ·  \d+ selected)?", w.get("t") or "")
+            if found:
+                return int(found[1])
+        time.sleep(0.3)
     raise AssertionError("no slide count on the status line")
 
 
@@ -810,9 +951,9 @@ def empty_field(app, hints):
     hint), scrolling the outline down until it is in view."""
     for _ in range(6):
         x, y, w, h = app.area()
-        found = sorted((f for f in app.widgets() if f["ty"] == "TextInput" and f.get("t") in hints and f["r"][1] > y + 300),
+        found = sorted((f for f in app.widgets() if f["ty"] == "TextInput" and f.get("t") in hints and f["r"][1] > y + 72),
                        key=lambda f: f["r"][1])
-        if found and found[0]["r"][1] + 30 < y + h - 70:
+        if found and found[0]["r"][1] + 30 < y + h - 30:
             return found[0]["r"]
         app.scroll(240, at=outline_point(app))
     raise AssertionError(f"no empty {hints[1]!r} field in view")
@@ -828,7 +969,7 @@ def outline_cards(app):
     app.tap("What is the deck about? A topic, the audience, the points to cover…", "TextInput")
     app.type("Quarterly update for the board: revenue by region, members, operations and our Q4 plans")
     if len([w for w in app.widgets() if w["ty"] == "TextInput" and w.get("t") in TITLE_HINTS]) < len(OUTLINE):
-        app.tap("Add slide", "Button")
+        app.tap("Add Slide", "Button")
     for title, points in OUTLINE:
         tx, ty, tw, th = empty_field(app, TITLE_HINTS)
         app.click(tx + tw / 2, ty + th / 2)
@@ -847,18 +988,19 @@ def fixture_states(app, out, dark):
     """The states the brief lists, on the fixture: damaged, protected, held,
     unsupported, unsaved changes."""
     p = "d" if dark else ""
-    app.find("Start a new deck", "Label")
-    for title, head, name in (("Damaged deck", "Couldn't open this deck", "s1-damaged"),
-                              ("Payroll 2025", "This presentation is protected with a password", "s2-protected"),
-                              ("Town hall recording", "Quick Deck can't open this presentation yet", "s3-held"),
-                              ("Minutes 2019", "Quick Deck opens .pptx presentations", "s4-unsupported")):
+    app.find("New Deck", "Label")
+    # A damaged deck says so once, with OK, which closes its tab; the others keep Close Tab.
+    for title, head, name, close in (("Damaged deck", "Couldn't Open This Deck", "s1-damaged", "OK"),
+                                     ("Payroll 2025", "This Presentation Is Protected with a Password", "s2-protected", "Close Tab"),
+                                     ("Town hall recording", "Quick Deck Can't Open This Presentation Yet", "s3-held", "Close Tab"),
+                                     ("Minutes 2019", "Quick Deck Opens .pptx Presentations", "s4-unsupported", "Close Tab")):
         app.scroll(1200)
         open_card(app, title)
         app.find(head, "Label", timeout=30)
         app.grab(out, f"{p}{name}")
-        app.tap("Close this tab", "Button")
+        app.tap(close, "Button")
         app.scroll(-3000)  # Home keeps its scroll: back to the top
-        app.find("Start a new deck", "Label")
+        app.find("New Deck", "Label")
     app.scroll(-3000)
     open_card(app, DECK)
     app.find(" of 12", "Label", exact=False, timeout=60)
@@ -868,8 +1010,7 @@ def fixture_states(app, out, dark):
     app.click(x + w / 2, y + 30)
     app.type("Thank the board.")
     app.find("Edited", "Label", timeout=20)
-    tab = app.find(DECK + " •", "Label")["r"]
-    app.click(tab[0] + tab[2] + 22, tab[1] + tab[3] / 2)  # its close cross
+    app.click(*tab_close_point(app, DECK))
     app.find("Save changes to “" + DECK + "”?", "Label")
     app.grab(out, f"{p}s5-unsaved")
     app.tap("Cancel", "Button")
@@ -877,18 +1018,21 @@ def fixture_states(app, out, dark):
 
 
 def full(app, out, dark):
-    """Storage full: a save is refused, the bar says so, the status line goes red."""
+    """Storage full: a save is refused and an alert says so. The stand-in refuses a save and no other write, so the
+    next drawing it answers clears the status line's word."""
     p = "d" if dark else ""
     open_card(app, DECK)
     app.find(" of 12", "Label", exact=False, timeout=60)
     app.tap("Save", "Button")
-    app.find("Quick Deck's storage is full: remove a deck or an export to make room. Your edits stay in the open deck.", "Label", timeout=20)
+    app.find("Quick Deck's Storage Is Full", "Label", timeout=20)
     app.grab(out, f"{p}s6-storage-full")
+    app.tap("OK", "Button")
+    app.gone("Quick Deck's Storage Is Full")
 
 
 def empty(app, out, dark):
     p = "d" if dark else ""
-    app.find("Start a new deck", "Label")
+    app.find("New Deck", "Label")
     app.find("Harbor", "Label")
     assert labels(app, "Recent") == 0, "an empty library shows Recent"
     app.grab(out, f"{p}s7-empty-library")
@@ -896,18 +1040,18 @@ def empty(app, out, dark):
 
 def missing(app, out, dark):
     p = "d" if dark else ""
-    app.find("The deck engine isn't available here", "Label", timeout=60)
-    app.find("Not available here", "Label")
+    app.find("Quick Deck Can't Open Decks on This Device", "Label", timeout=60)
+    app.find("Open…", "Button")
     app.grab(out, f"{p}m01-missing-home")
     open_card(app, DECK)
-    app.find("The deck engine isn't available here", "Label")
+    app.find("Quick Deck Can't Open Decks on This Device", "Label")
     app.grab(out, f"{p}m02-missing-deck")
-    app.tap("Close this tab", "Button")
-    app.tap("New from an outline", "Button")
+    app.tap("Close Tab", "Button")
+    app.tap("New from an Outline…", "Button")
     app.tap("What is the deck about? A topic, the audience, the points to cover…", "TextInput")
     app.type("Quarterly update for the board")
-    app.tap("Draft outline", "Button")
-    app.find("Drafting needs OctoSense's AI service, which isn't available here. You can still type the outline.", "Label", timeout=20)
+    app.tap("Draft Outline", "Button")
+    app.find("Drafting isn't available here. You can still type the outline.", "Label", timeout=20)
     app.grab(out, f"{p}m03-missing-outline")
 
 
@@ -1027,7 +1171,7 @@ def playback_journey(app, out, dark):
     app.tap("Play")
     app.find("Playing.", "Label", timeout=10)
     app.tap("Stop")
-    app.find("Play it here to check it. Playing doesn't change the deck.", "Label", timeout=10)
+    app.find("Ready to play.", "Label", timeout=10)
     assert clip_time(app) is None, "the control still tells a time after Stop"
     # Another slide stops it.
     canvas_button(app, "Play")
@@ -1088,7 +1232,6 @@ def playback_fresh(app, out, dark):
     click_slide(app, 480, 250)
     canvas_button(app, "Play")
     app.find(NO_PLAYER, "Label", timeout=40)
-    app.find("The player said: playback session unavailable: no media plugin installed", "Label")
     app.grab(out, f"{p}p11-unavailable")
 
 
@@ -1228,7 +1371,7 @@ def shell_playback(app, out, dark, home):
     app.images(2, timeout=120)
     go_to(app, 1)
     click_slide(app, 480, 280)
-    app.find("Starts when it's tapped.", "Label", timeout=30)
+    app.find("Starts when it's clicked.", "Label", timeout=30)
     app.tap("Present", "Button")
     app.find("Exit", "Button", timeout=60)
     full_screen(app)
@@ -1253,17 +1396,28 @@ def shell_playback(app, out, dark, home):
 
 def tab_label(app, title):
     """A deck's tab title in the tab row, or None."""
-    top = app.area()[1] + 70
+    top = app.area()[1] + 100
     found = [w["r"] for w in app.widgets() if w["ty"] == "Label" and w.get("t") == title and w["r"][1] < top]
     return found[0] if found else None
 
 
-def close_tab(app, title):
-    """A deck's tab: its close cross, right of its title."""
+def tab_close_point(app, title):
+    """A tab's close cross, at the tab's left end. It draws under the pointer."""
     tab = tab_label(app, title)
     assert tab, f"no tab {title!r}"
-    x, y, w, h = tab
-    app.click(x + w + 22, y + h / 2)
+    crosses = sorted((w["r"] for w in app.widgets() if w.get("t") == "×" and w["ty"] in ("Button", "ButtonFlat") and w["r"][0] < tab[0]), key=lambda r: r[0])
+    assert crosses, f"no close cross on the tab {title!r}"
+    x, y, w, h = crosses[-1]
+    return x + w / 2, y + h / 2
+
+
+def close_tab(app, title):
+    """A deck's tab's close cross. A Mac's window with one deck has no tab bar, as
+    Keynote's and Safari's: File > Close Tab (Command-W) closes it."""
+    if unified(app) and not [w for w in app.widgets() if w.get("i") == "tabs_box" and w["r"][3] > 2]:
+        app.key("KeyW", cmd=1)
+    else:
+        app.click(*tab_close_point(app, title))
     wait_until(lambda: tab_label(app, title) is None, f"the tab {title!r} stayed open", timeout=20)
 
 
@@ -1274,22 +1428,26 @@ def shell_journey(app, out, dark):
     the shell's own window. The dark pass works on what the light pass left."""
     p = "d" if dark else ""
     if not dark:
-        app.find("Start a new deck", "Label", timeout=90)
+        app.find("New Deck", "Label", timeout=90)
         app.find("Harbor", "Label", timeout=90)
         app.grab(out, "01-home-empty")
-        app.tap("New from an outline", "Button")
+        app.tap("New from an Outline…", "Button")
         app.find("Draft with AI", "Label")
         outline_cards(app)
         # Draft with AI in a home with no provider: the app says how to set one
         # up, and the typed outline stays.
-        app.tap("Draft outline", "Button")
-        said = ("to draft outlines", "couldn't draft", "isn't available here", "allowance", "Too many requests", "taking too long")
+        app.tap("Draft Outline", "Button")
+        said = ("No AI provider is set up", "couldn't draft", "isn't available here", "allowance", "Too many requests", "taking too long")
         wait_until(lambda: any(any(x in (w.get("t") or "") for x in said) for w in app.widgets()), "Draft with AI never answered", timeout=90)
         shown = [w.get("t") for w in app.widgets() if any(x in (w.get("t") or "") for x in said)]
         (out / "draft.json").write_text(json.dumps({"shown": shown}, indent=1))
+        # With no provider there's nothing to draft with until one is set up.
+        if "No AI provider is set up" in " ".join(shown):
+            assert not app.find("Draft Outline", "Button").get("enabled"), "Draft Outline is on with no provider"
+            app.find("Try Again", "Button")
         app.grab(out, "01b-draft")
         app.find("4 slides", "Label", exact=False)
-        app.tap("Make deck", "Button")
+        app.tap("Make Deck", "Button")
         app.find("Slide 1 of 4", "Label", exact=False, timeout=120)
     else:
         # The style switch keeps the screen: the deck is still open.
@@ -1304,11 +1462,14 @@ def shell_journey(app, out, dark):
     click_slide(app, 300, 200)
     click_slide(app, 300, 200)
     wait_until(lambda: any(w["ty"] == "TextInput" and "Highlights" in (w.get("t") or "") for w in app.widgets()), "no text field on slide 2's body")
-    field = [w for w in app.widgets() if w["ty"] == "TextInput" and "Highlights" in (w.get("t") or "")][0]["r"]
+    box = [w for w in app.widgets() if w["ty"] == "TextInput" and "Highlights" in (w.get("t") or "")][0]
+    # The field keeps the slide's look: its bullets are there, and aren't the deck's text.
+    assert "•" in box["t"], "the field dropped the slide's bullets: " + box["t"]
+    field = box["r"]
     app.click(field[0] + field[2] - 8, field[1] + field[3] - 8)
     app.key("ReturnKey")
     app.type("Questions")
-    app.find("Edited", "Label", timeout=30)
+    edited(app, timeout=30)
     app.grab(out, f"{p}03-text")
     click_slide(app, 900, 520)
     # bold the box
@@ -1318,15 +1479,14 @@ def shell_journey(app, out, dark):
     app.grab(out, f"{p}04-bold")
     # a chart on slide 4
     go_to(app, 4)
-    app.tap("Chart", "Label", below=70)
-    app.tap("Insert chart", "Button")
+    app.tap("Chart", "Label")
+    app.tap("Column", "Button")  # a kind's tile puts its chart on the slide
     app.find("Elements", "Label", timeout=60)
     app.images(2)
     app.grab(out, f"{p}05-chart")
-    # undo and redo
-    app.tap("Undo", "Label")
-    app.find("Redo", "Label")
-    app.tap("Redo", "Label")
+    # undo and redo, Edit's on a desktop
+    undo(app)
+    redo(app)
     # the layout and the theme
     seg(app, "Layout")
     app.find("Slide layout", "Label", timeout=60)
@@ -1350,35 +1510,33 @@ def shell_journey(app, out, dark):
     count = slide_count(app)
     tile_number(app, 4)  # the current slide starts chosen: unchoose it
     tile_number(app, 2)
-    app.find("1 selected", "Label")
-    app.tap("Duplicate", "Button")
+    app.find("1 selected", "Label", exact=False)
+    app.tap("Duplicate", "Label")
     app.find(f"{count + 1} slides", "Label", exact=False, timeout=60)
-    app.tap("Hide", "Button")
-    app.tap("Section", "Button")
+    app.tap("Hide", "Label")
+    app.tap("New Section", "Label")
     app.grab(out, f"{p}07-sorter")
     app.tap("Slides", "Button")
     # save
-    app.tap("Save", "Button")
-    app.find("Saved", "Label", timeout=60)
-    # export (the dark pass names its exports apart: an export never
-    # replaces another)
-    app.tap("Export", "Button")
-    name = DECK + (" (dark)" if dark else "")
-    if dark:
-        fx, fy, fw, fh = seek(app, DECK, "TextInput")
-        app.click(fx + fw - 6, fy + fh / 2)
-        app.type(" (dark)")
-        app.scroll(-3000)
-    app.tap("Presentation", "Label")
-    reach(app, "Export presentation")
-    seek(app, name + ".pptx  ·  ", "Label", exact=False, timeout=120)
-    app.scroll(-3000)
-    app.tap("PDF", "Label")
-    reach(app, "Export PDF")
-    seek(app, name + ".pdf  ·  ", "Label", exact=False, timeout=180)
-    app.grab(out, f"{p}08-export")
-    app.scroll(-3000)
-    app.tap("Export", "Button")
+    save_deck(app)
+    # export: through the Save panel (files.export). A hidden run answers it from
+    # MAKEPAD_TEST_SAVE_DIR (Shell starts with it), and only a key window may ask.
+    sx, sy, sw, sh = slide_rect(app)
+    app.remote("w", k="focus", wait=1)
+    saved = Path(app.save_dir)
+    for kind, ext, magic, again in (("Presentation", ".pptx", b"PK", True), ("PDF", ".pdf", b"%PDF", False)):
+        (saved / (DECK + ext)).unlink(missing_ok=True)
+        app.tap("Export…", "Button")
+        app.find("Format:", "Label", timeout=30)
+        press_stays(app, sx + sw * 0.5, sy + sh - 16)
+        export_format(app, kind)
+        if not again:
+            app.grab(out, f"{p}08-export")
+        reach(app, "Save…")
+        wait_until(lambda: (saved / (DECK + ext)).exists(), f"the {ext} never reached the Save panel's folder", timeout=180)
+        assert (saved / (DECK + ext)).read_bytes().startswith(magic), f"the saved {ext} isn't one"
+        app.gone("Format:", timeout=30)
+        app.find("Saved “" + DECK + ext + "”.", "Label", timeout=15)
     # present: the tap takes the whole screen (window.fullscreen); the light
     # pass leaves by Exit, the dark one by Esc, the shell's key in full
     # screen (a script gets no keys), and the window comes back either way.
@@ -1428,31 +1586,29 @@ def states_follow(app, out):
     go_to(app, 2)
     click_slide(app, 300, 200)
     app.find("Applies to", "Label", timeout=30)
-    seek(app, "Vertical alignment", "Label", at=inspector)
-    expect("the box's anchor", lambda: segment(app, "Vertical alignment") >= 0)
-    anchor, shrink = segment(app, "Vertical alignment"), switch_on(app, "Shrink text when it overflows")
+    seek(app, "Vertical", "Label", at=inspector)
+    expect("the box's anchor", lambda: segment(app, "Vertical") >= 0)
+    anchor, shrink = segment(app, "Vertical"), switch_on(app, "Shrink text when it overflows")
     target = 2 if anchor != 2 else 0
     seen["box"] = {"anchor": ["top", "middle", "bottom"][anchor], "shrink": shrink, "set_anchor": ["top", "middle", "bottom"][target], "set_shrink": not shrink}
-    lx, ly, lw, lh = app.find("Vertical alignment", "Label")["r"]
-    row = sorted((v for v in app.widgets() if "selected" in v and ly + lh <= v["r"][1] <= ly + lh + 60), key=lambda v: v["r"][0])
-    bx, by, bw, bh = row[target]["r"]
+    bx, by, bw, bh = segment_row(app, "Vertical")[target]["r"]
     app.click(bx + bw / 2, by + bh / 2)
-    expect("the new anchor", lambda: segment(app, "Vertical alignment") == target)
+    expect("the new anchor", lambda: segment(app, "Vertical") == target)
     app.click(*switch_point(app, "Shrink text when it overflows"))
     expect("the box's autofit changed", lambda: switch_on(app, "Shrink text when it overflows") != shrink)
     choose_again(300, 200, "Applies to")
-    seek(app, "Vertical alignment", "Label", at=inspector)
-    expect("the engine's new anchor and autofit", lambda: segment(app, "Vertical alignment") == target
+    seek(app, "Vertical", "Label", at=inspector)
+    expect("the engine's new anchor and autofit", lambda: segment(app, "Vertical") == target
            and switch_on(app, "Shrink text when it overflows") != shrink)
     app.grab(out, "10-box")
-    app.tap("Undo", "Label")
-    app.tap("Undo", "Label")
+    undo(app)
+    undo(app)
     settle()
-    seek(app, "Vertical alignment", "Label", at=inspector)
-    expect("the anchor and autofit back after Undo", lambda: segment(app, "Vertical alignment") == anchor
+    seek(app, "Vertical", "Label", at=inspector)
+    expect("the anchor and autofit back after Undo", lambda: segment(app, "Vertical") == anchor
            and switch_on(app, "Shrink text when it overflows") == shrink)
     settle()
-    expect("the anchor and autofit still back", lambda: segment(app, "Vertical alignment") == anchor
+    expect("the anchor and autofit still back", lambda: segment(app, "Vertical") == anchor
            and switch_on(app, "Shrink text when it overflows") == shrink)
     app.grab(out, "10b-box-undone")
 
@@ -1471,7 +1627,7 @@ def states_follow(app, out):
     expect("the engine's data labels", lambda: switch_on(app, "Data labels") != labels)
     app.images(2, timeout=60)
     app.grab(out, "11-chart")
-    app.tap("Undo", "Label")
+    undo(app)
     settle()
     seek(app, "Data labels", "Label", at=inspector)
     expect("the data labels back after Undo", lambda: switch_on(app, "Data labels") == labels)
@@ -1481,8 +1637,8 @@ def states_follow(app, out):
 
     # A table option: the total row (deck.slide's table).
     go_to(app, 3)
-    app.tap("Table", "Label", below=70)
-    app.tap("Insert table", "Button")
+    app.tap("Table", "Label")
+    app.tap("Insert Table", "Button")
     app.find("Header row", "Label", timeout=60)
     seek(app, "Total row", "Label", at=inspector)
     total = switch_on(app, "Total row")
@@ -1496,19 +1652,43 @@ def states_follow(app, out):
     expect("the engine's total row", lambda: switch_on(app, "Total row") != total)
     app.images(2, timeout=60)
     app.grab(out, "12-table")
-    app.tap("Undo", "Label")
+    undo(app)
     settle()
     seek(app, "Total row", "Label", at=inspector)
     expect("the total row back after Undo", lambda: switch_on(app, "Total row") == total)
     settle()
     expect("the total row still back", lambda: switch_on(app, "Total row") == total)
     app.grab(out, "12b-table-undone")
-    app.tap("Undo", "Label")  # and the table goes
+    # A cell on the canvas: a click on the chosen table opens its field, Return goes
+    # to the cell below, and what was typed is there when the cell is opened again.
+    def cell_field():
+        return [f for f in app.widgets() if f["ty"] == "TextInput" and f["r"][0] < x + w - 300]
+    fields = len(cell_field())
+    click_slide(app, 480, 270)
+    wait_until(lambda: len(cell_field()) > fields, "no field on the table's cell")
+    app.type("Alpha")
+    app.key("ReturnKey")
+    time.sleep(0.5)
+    app.type("Beta")
+    click_slide(app, 930, 525)
     app.gone("Header row", timeout=30)
+    settle()
+    click_slide(app, 480, 270)
+    app.find("Header row", "Label", timeout=30)
+    click_slide(app, 480, 270)
+    wait_until(lambda: any(f.get("t") == "Alpha" for f in cell_field()), "the cell lost what was typed")
+    click_slide(app, 930, 525)
+    app.gone("Header row", timeout=30)
+    settle()
+    undo(app)  # Beta
+    undo(app)  # Alpha
+    settle()
+    undo(app)  # and the table goes
+    settle()
 
     # The colour set (deck.state): Ocean, then Undo back to the theme's own.
     seg(app, "Theme")
-    app.find("Colours", "Label", timeout=30)
+    app.find("Colors", "Label", timeout=30)
     expect("the theme's colour set marked", lambda: "Ember" in selected_texts(app))
     seen["colours"] = sorted(t for t in selected_texts(app) if t != "Title")
     ox, oy, ow, oh = seek(app, "Ocean", "Label", at=inspector)
@@ -1518,7 +1698,7 @@ def states_follow(app, out):
     expect("the engine's colour set, Ocean", lambda: "Ocean" in selected_texts(app))
     app.images(2, timeout=60)
     app.grab(out, "13-colours")
-    app.tap("Undo", "Label")
+    undo(app)
     expect("Ocean unmarked after Undo", lambda: "Ocean" not in selected_texts(app), timeout=60)
     app.scroll(-3000, at=inspector)
     expect("the theme's colour set marked again after Undo", lambda: "Ember" in selected_texts(app), timeout=30)
@@ -1534,7 +1714,7 @@ def states_follow(app, out):
     expect("the engine's slide numbers", lambda: switch_on(app, "Slide numbers") != numbers)
     app.images(2, timeout=60)
     app.grab(out, "14-footer")
-    app.tap("Undo", "Label")
+    undo(app)
     settle()
     seek(app, "Slide numbers", "Label", at=inspector)
     expect("the slide numbers back after Undo", lambda: switch_on(app, "Slide numbers") == numbers, timeout=60)
@@ -1720,7 +1900,7 @@ def shell_runs(args, runs):
         if "shell" in runs:
             def light_then_dark(app, out):
                 shell_journey(app, out, dark=False)
-                app.style("octosense-dark", "octosense dark")
+                app.style("octosense-dark")
                 shell_journey(app, out, dark=True)
             session("shell", home, light_then_dark)
         if "restart" in runs:
@@ -1731,7 +1911,7 @@ def shell_runs(args, runs):
 
             def playback_light_then_dark(app, out):
                 shell_playback(app, out, False, media_home)
-                app.style("octosense-dark", "octosense dark")
+                app.style("octosense-dark")
                 shell_playback(app, out, True, media_home)
             session("playback", media_home, playback_light_then_dark)
 

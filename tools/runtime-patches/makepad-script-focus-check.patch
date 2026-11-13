@@ -1,0 +1,15 @@
+diff --git a/widgets/src/widget.rs b/widgets/src/widget.rs
+--- a/widgets/src/widget.rs
++++ b/widgets/src/widget.rs
+@@ -805,6 +805,11 @@
+         if method == live_id!(visible) {
+             return ScriptAsyncResult::Return(self.visible().into());
+         }
++        if method == live_id!(has_focus) {
++            let area = self.area();
++            let focused = !area.is_empty() && vm.with_cx_mut(|cx| cx.next_key_focus() == area);
++            return ScriptAsyncResult::Return(focused.into());
++        }
+         // Text likewise: a widget with `Widget::set_text` (an `Html` view's
+         // body, say) takes it from script without a `script_call` of its own.
+         if method == live_id!(set_text) {

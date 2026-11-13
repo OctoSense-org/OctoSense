@@ -12,15 +12,17 @@ count, never a host path or Android provider URI. No separate blob store is crea
 | --- | --- | --- |
 | `files.status` | `{}` | `import_supported`, `export_supported`, `photo_pick_supported`, `text_share_supported`, `storage_granted`, `max_file_bytes`, `max_import_bytes`, `max_share_text_bytes`, `foreground_required`; with live storage, `used_bytes` and `quota_bytes` |
 | `files.import` | `{"path":"/documents/report.pdf"}` | `{"cancelled":false,"path":"/documents/report.pdf","bytes":123,"name":"Q3 report.pdf"}` |
-| `files.pick_photo` | `{"path":"/photos/new.png"}` | Choose one PNG/JPEG/WebP; returns the import fields plus its signature-detected `mime` |
+| `files.pick_photo` | `{"path":"/photos/new.png"}`, or with `"full_size":true` | Choose one PNG/JPEG/WebP; returns the import fields plus its signature-detected `mime` |
 | `files.share` | `{"text":"Good morning 🌅"}` | Android only: `{"handoff":"chooser_opened","delivery":"unknown"}` after native chooser dispatch |
-| `files.export` | `{"path":"/documents/report.pdf","name":"Report.pdf"}` | The same success fields; `name` is an optional basename suggested to the native dialog |
+| `files.export` | `{"path":"/documents/report.pdf","name":"Report.pdf"}`, or with `"bundled":true` | The same success fields; `name` is an optional basename suggested to the native dialog. `bundled` reads the path from the app's own bundle (a sample it ships), never outside it |
 
 `pick_photo` uses an image-filtered document chooser; it does not grant photo-library
 access. Only PNG, JPEG and WebP signatures are accepted, independently of the filename
 or provider MIME label. It does not decode, resize, transcode or strip metadata. The
-1 MiB limit still applies: many original phone photos exceed it and are explicitly
-refused. Large originals and opaque large-blob handles remain a separate work item.
+1 MiB limit applies unless the call says `full_size`: many original phone photos exceed
+it and are explicitly refused. With `full_size` a photo may be as large as an import
+(`max_import_bytes`), for an app that keeps the original. Opaque large-blob handles
+remain a separate work item.
 
 `share` requires `files` but not `storage`, accepts only 1–8192 UTF-8 bytes of text,
 and rejects recipient/path/attachment fields. Android opens its existing system share
@@ -80,8 +82,8 @@ app cannot reach them, and the UI thread links the file in between script turns,
 after checking the live jail, its current quota and that the destination is still
 new. The bytes never pass through the script heap. Android's document loader holds
 a selection in the Java heap and copies it again into native memory, hence its
-smaller bound. Photo picks, exports and script writes keep the 1 MiB per-file
-limit (`max_file_bytes`). Paths reject traversal, symlinks, drive prefixes,
+smaller bound. Photo picks without `full_size` and script writes keep the 1 MiB
+per-file limit (`max_file_bytes`); an export reads up to the import bound. Paths reject traversal, symlinks, drive prefixes,
 alternate data streams, and Windows device names. Native selection loading, import
 staging and export destination IO run on the existing bounded task pool. A single
 transfer reservation limits concurrent dialogs, staged imports and snapshots; a

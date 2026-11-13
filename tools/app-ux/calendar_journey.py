@@ -33,6 +33,39 @@ class CalendarNative(AppNative):
                     time.sleep(.1)
         return result
 
+    def reachable(self, text=None, identifier=None, kind='Button'):
+        # A Mac's event popover has 24-point fields (the place) and its month cells 18-point event rows,
+        # under AppNative's 28-point floor for a control drawn whole: one that shows whole in the window is
+        # reachable as it is.
+        row = self.find(text, identifier, kind)
+        if row and row['r'][3] >= {'TextInput': 20, 'Button': 16}.get(kind, 28):
+            size = self.call('s')['w'][0]['sz']
+            if row['r'][1] >= 36 and row['r'][1] + row['r'][3] <= size[1] - 12:
+                return row
+        return super().reachable(text, identifier, kind)
+
+
+def close_popover(native):
+    """The desktop's event popover edits in place: Escape closes it, saved."""
+    native.call("k", k="press", c="Escape", wait=1)
+    native.wait(lambda: not native.find(identifier="e_title", kind="TextInput"))
+    time.sleep(.4)  # A popover that just closed leaves the window's keys alone for a moment.
+
+
+def open_on_desktop(native, title):
+    """Two quick clicks, with no frame request between them; a loaded machine may need another try."""
+    x, y, width, height = native.wait(lambda: native.find(text=title))["r"]
+    for attempt in range(4):
+        for click in range(2):
+            AppNative.call(native, "click", x=x + width / 2, y=y + height / 2)
+        try:
+            native.wait(lambda: native.find(identifier="e_place", kind="TextInput"), timeout=4)
+            return
+        except AssertionError:
+            if attempt == 3:
+                raise
+            time.sleep(.6)
+
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
@@ -48,6 +81,8 @@ def main():
     actions = [] if args.desktop else ["--test-action", "phone:ios"]
     actions += ["--test-action", "launch-calendar"]
     title = "Design review · 设计评审"
+    # A phone lists the event as a label; a Mac's month cell, as a row that opens it.
+    shown = "Button" if args.desktop else "Label"
     samples = []
     checks = []
     for attempt in range(2):
@@ -56,7 +91,8 @@ def main():
         try:
             native.label("Calendar")
             native.wait(lambda: native.find(text="+ Event"))
-            native.wait(lambda: (native.find(identifier="day_title", kind="Label") or {}).get("t"))
+            # The sidebar names the chosen day; a Mac's holds the month instead (mini_title).
+            native.wait(lambda: any((native.find(identifier=name, kind="Label") or {}).get("t") for name in ("day_title", "mini_title")))
             time.sleep(.8)  # Wait for the shell opening transition before pointer input.
             if args.desktop:
                 # Activate the hosted window before measuring its app controls.
@@ -70,7 +106,13 @@ def main():
                     native.click("+ Event")
                     native.wait(lambda: native.find(identifier="e_title", kind="TextInput"))
                     samples.append((time.perf_counter() - start) * 1000)
-                    native.click("Cancel")
+                    if args.desktop:
+                        # + Event makes a "New Event" at once, as on a Mac: Escape closes it, Undo takes it away.
+                        close_popover(native)
+                        native.call("k", k="press", c="KeyZ", cmd=1, wait=1)
+                        native.wait(lambda: not native.find(text="New Event", kind="Button"))
+                    else:
+                        native.click("Cancel")
                     native.wait(lambda: native.find(text="+ Event"))
                     time.sleep(.1)
                 native.click("+ Event")
@@ -86,20 +128,33 @@ def main():
                 if not args.desktop:
                     native.call("k", k="press", c="Escape", wait=1)
                     time.sleep(.3)
-                native.click("Save")
+                if args.desktop:
+                    close_popover(native)
+                else:
+                    native.click("Save")
                 native.wait(lambda: native.find(text="+ Event"))
-                native.reachable(text=title, kind="Label")
+                native.reachable(text=title, kind=shown)
                 checks.append("Created an event with Unicode title and multiline notes through native inputs")
             else:
-                native.reachable(text=title, kind="Label")
+                native.reachable(text=title, kind=shown)
                 checks.append("Saved event restored after complete process restart")
-            native.click("View event  ›")
-            native.wait(lambda: native.find(text="Edit"))
-            native.label("Studio · 第二会议室")
-            native.reachable(identifier="event_notes", kind="Label")
-            native.label("Check keyboard, contrast, and saved state.")
+            if args.desktop:
+                # A double click opens an event in its editor, the desktop's one view of it.
+                open_on_desktop(native, title)
+                held = lambda identifier: (native.find(identifier=identifier, kind="TextInput") or {}).get("t", "")
+                assert held("e_place") == "Studio · 第二会议室", held("e_place")
+                assert "Check keyboard, contrast, and saved state." in held("e_notes"), held("e_notes")
+            else:
+                native.click("View event  ›")
+                native.wait(lambda: native.find(text="Edit"))
+                native.label("Studio · 第二会议室")
+                native.reachable(identifier="event_notes", kind="Label")
+                native.label("Check keyboard, contrast, and saved state.")
             if attempt == 0:
-                native.click("Show in Glance")
+                if args.desktop:
+                    native.click_row(native.wait(lambda: native.find(text="Show in Glance")))
+                else:
+                    native.click("Show in Glance")
                 native.label("Event shown in Glance.")
                 checks.append("Same saved event published to Glance through its registered host service")
                 native.capture("calendar-published")

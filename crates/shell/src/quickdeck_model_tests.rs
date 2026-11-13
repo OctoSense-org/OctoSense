@@ -25,8 +25,9 @@ fn quickdeck_model(expression: &str) -> serde_json::Value {
     let result = vm.with_instruction_limit(500_000, |vm| {
         vm.eval(ScriptMod {
             file: "quickdeck_model_test.splash".into(),
-            // The app reaches `regex` and the math functions through the widgets prelude.
-            code: format!("use mod.math.*\nuse mod.std.regex\n{source}\n{expression}\n;"),
+            // The app reaches `regex` and the math functions through the widgets prelude,
+            // and `ui_unified` through the shared interface, which this leaves out.
+            code: format!("use mod.math.*\nuse mod.std.regex\nlet ui_unified = false\n{source}\n{expression}\n;"),
             ..Default::default()
         })
     });
@@ -262,9 +263,9 @@ fn a_refusal_is_read_by_its_code() {
     assert_eq!(state("something new"), json!("damaged"));
     assert_eq!(
         quickdeck_model("open_head(\"protected\").to_json()"),
-        json!("This presentation is protected with a password")
+        json!("This Presentation Is Protected with a Password")
     );
-    assert_eq!(quickdeck_model("open_head(\"full\").to_json()"), json!("Quick Deck has 8 decks open"));
+    assert_eq!(quickdeck_model("open_head(\"full\").to_json()"), json!("Quick Deck Has 8 Decks Open"));
 }
 
 #[test]
@@ -279,7 +280,7 @@ fn a_refused_import_says_what_to_do() {
     assert_eq!(words("too large", "presentation", "64 MB"), json!("That file is too big to add. 64 MB can be added."));
     assert_eq!(
         words("storage_full: 3 KB left", "picture", ""),
-        json!("Quick Deck's storage is full: remove a deck or an export to make room, then try again.")
+        json!("Quick Deck's storage is full: remove a deck or a picture to make room, then try again.")
     );
     assert_eq!(words("something else", "picture", ""), json!("OctoSense couldn't copy the picture in."));
 }
@@ -486,7 +487,7 @@ fn a_held_deck_is_explained_without_media() {
     // part past the import guard's bounds.
     let detail = quickdeck_model("open_detail(\"held\").to_json()");
     let text = detail.as_str().unwrap();
-    assert!(text.contains("zip") && text.contains("simpler copy") && !text.contains("video") && !text.contains("audio"), "{text}");
+    assert!(text.contains("embedded") && text.contains("simpler copy") && !text.contains("video") && !text.contains("audio"), "{text}");
     // The library card's own line (`doc_meta`, after the app's start, which
     // this harness leaves out) names no media either.
     assert!(QUICK_DECK.contains("if d.state == \"held\" { return \"Can't open this file\" }"));

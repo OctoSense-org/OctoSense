@@ -64,7 +64,7 @@
 //! `client_open`, `client_pair` (then `client_pair_ready` /
 //! `client_pair_show`, the export sheet's pattern) and `client_back`. They
 //! answer `{enabled, origin, endpoint, descriptor, profile_id, session_id,
-//! web_origin}`; no token ever reaches a script, the clipboard or a link. A
+//! web_origin, port}`; no token ever reaches a script, the clipboard or a link. A
 //! web client pairs with a one-time code drawn on a host sheet with a QR of
 //! its link ([`sheets::pair_client`]); leaving that sheet or closing the Talk
 //! to Octos sheet turns pairing off. See `crates/kernel/README.md`.
@@ -560,7 +560,7 @@ impl LlmService {
     /// call) is refused instead, and a sheet already up stays. Whether it rose.
     fn raise(&mut self, app_id: &str, may_prompt: bool, reply: Replier, kind: Kind, sheet: String, host: &mut dyn ServiceHost) -> bool {
         if !may_prompt {
-            reply.send(Err("Open AI providers to do this: it needs its sheet.".into()));
+            reply.send(Err("Open AI Providers to do this: it needs its sheet.".into()));
             return false;
         }
         if let Some(earlier) = self.pending.lock().unwrap().take() {
@@ -977,8 +977,10 @@ fn client_info() -> Result<Value, String> {
     } else {
         Default::default()
     };
+    // The port alone, for a Mac's sheet, which names this Mac rather than the address.
+    let port = origin.rsplit_once(':').map(|(_, port)| port.trim_end_matches('/')).filter(|port| port.parse::<u16>().is_ok()).unwrap_or_default();
     Ok(json!({"enabled": enabled, "origin": origin, "endpoint": endpoint, "descriptor": descriptor,
-        "profile_id": "_main", "session_id": kernel::SYSTEM_SESSION, "web_origin": web_origin}))
+        "profile_id": "_main", "session_id": kernel::SYSTEM_SESSION, "web_origin": web_origin, "port": port}))
 }
 
 /// Mint a pairing code and build its sheet: the code, and a QR of the web
@@ -1072,7 +1074,7 @@ impl HostService for LlmService {
         let id = text(&call.args, "id").to_string();
         match call.method() {
             "connect_client" => {
-                if call.app_id != "os.ai-providers" { return reply.send(Err("Open AI providers to connect a client.".into())); }
+                if call.app_id != "os.ai-providers" { return reply.send(Err("Open AI Providers to connect a client.".into())); }
                 self.raise(&call.app_id, call.may_prompt, reply, Kind::Connect, sheets::connect_client(), host);
             }
             method if method.starts_with("sheet.client_") => {

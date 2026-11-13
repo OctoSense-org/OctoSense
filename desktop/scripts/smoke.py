@@ -13,6 +13,7 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import time
 from urllib.parse import urlencode
@@ -92,6 +93,43 @@ def assert_no_runtime_errors(text):
     assert not failures, "Runtime rendering errors:\n" + "\n".join(failures)
 
 
+def client_logs(state, host_pid):
+    return set((state / "logs/clients").glob(f"octosense-{host_pid}-client-*.log"))
+
+
+def hosted_widgets(port, log, client):
+    """A hosted app's widgets, asked through the shell: Reference is a `network: none`
+    app, whose sandbox refuses it the listening socket of an instrument of its own."""
+    def answer():
+        start = log.stat().st_size
+        get(port, "event", data="client-widgets:reference")
+        deadline = time.monotonic() + 1.5
+        while time.monotonic() < deadline:
+            with log.open("rb") as file:
+                file.seek(start)
+                text = file.read().decode(errors="replace")
+            # A line still being written has no newline yet.
+            for line in reversed(text.split("\n")[:-1]):
+                match = re.search(rf"client-widgets {client} (\[.*\])\s*$", line)
+                if match:
+                    return json.loads(match[1])
+            time.sleep(0.02)
+        return None
+    return wait_for(f"client {client} answers with its widgets", answer)
+
+
+def hosted_widget(port, log, client, name):
+    return next((item for item in hosted_widgets(port, log, client) if item.get("id") == name), None)
+
+
+def shows_count(port, log, client, count):
+    return (hosted_widget(port, log, client, "count") or {}).get("text") == f"Count: {count}"
+
+
+def largest_tile(port):
+    return max(get(port, "snap", q="MpRunView")["s"], key=lambda item: item["r"][2] * item["r"][3])
+
+
 def settled_window_size(port):
     # Layout and child resize messages arrive asynchronously. A visible tile
     # during a workspace animation can still have an intermediate size.
@@ -99,7 +137,7 @@ def settled_window_size(port):
     since = time.monotonic()
     def settled():
         nonlocal last, since
-        size = get(port, "s")["w"][0]["sz"]
+        size = largest_tile(port)["r"][2:]
         now = time.monotonic()
         if size != last:
             last, since = size, now
@@ -107,46 +145,31 @@ def settled_window_size(port):
     return wait_for("child window size settles", settled)
 
 
-def check_styles(port, child_port, host_pid, log, artifacts):
+def check_styles(port, child, state, host_pid, log, artifacts):
     """Exercise live capture/style changes through the host with a retained app."""
-    current = "octosense"
     count = 1
-    clients = set(Path(tempfile.gettempdir()).glob(f"octosense-{host_pid}-client-*.log"))
-    styles = [("octosense", "OctoSense"), ("octosense-dark", "OctoSense Dark"),
-              ("octosense", "OctoSense"), ("macos", "macOS"), ("windows", "Windows"),
-              ("windows-2000", "Windows 2000"), ("nextstep", "NeXTSTEP"),
-              ("ios", "iOS"), ("android", "Android"), ("omarchy", "Omarchy"),
-              ("octosense-dark", "OctoSense Dark"), ("omarchy", "Omarchy")]
-    for index, (style, label) in enumerate(styles):
+    clients = client_logs(state, host_pid)
+    # Each style reaches its styles its own way (a Mac's bar menu, a phone's top bar, a
+    # launcher that also finds apps), so this runs the row they all run, by its test route.
+    styles = ["octosense-dark", "octosense", "macos", "windows", "windows-2000", "nextstep",
+              "ios", "android", "omarchy", "octosense-dark", "omarchy"]
+    for index, style in enumerate(styles):
         offset = len(log.read_text(errors="replace"))
-        if current in ("ios", "android"):
-            # Mobile Home consumes keyboard shortcuts; its top bar opens styles.
-            get(port, "click", x=130, y=13, wait=1)
-        else:
-            get(port, "k", c="Space", cmd=1, wait=1)
-        if current == "nextstep":
-            # The catalog-filtered Workspace menu starts with Applications,
-            # then Appearance. Select Appearance before typing a style name.
-            get(port, "k", c="ArrowDown", wait=1)
-            get(port, "k", c="enter", wait=1)
-        for char in label.lower():
-            get(port, "k", c="Space" if char == " " else "Key" + char.upper(), wait=1)
-        get(port, "k", c="enter", wait=1)
+        get(port, "event", data="mac-row:desktop." + style)
         wait_for(style + " applied", lambda: f"wm: desktop style {style} applied" in log.read_text(errors="replace")[offset:])
-        current = style
         time.sleep(0.9)  # Let the framebuffer transition and child restyle settle.
         if style in ("omarchy", "octosense", "octosense-dark"):
             wait_for(style + " wallpaper visible", lambda: get(port, "snap", q="bg_image").get("s"))
-        assert any(item.get("t") == f"Count: {count}" for item in get(child_port, "snap", q="count")["s"]), style
-        assert set(Path(tempfile.gettempdir()).glob(f"octosense-{host_pid}-client-*.log")) == clients, "style launched an extra client"
+        assert shows_count(port, log, child, count), style
+        assert client_logs(state, host_pid) == clients, "style launched an extra client"
         save_grab(artifacts, f"style-{index}-{style}", get(port, "g", scale=0.5))
         if style in ("octosense", "octosense-dark"):
-            tile = max(get(port, "snap", q="MpRunView")["s"], key=lambda item: item["r"][2] * item["r"][3])
-            button = get(child_port, "snap", q="increment")["s"][0]["r"]
-            get(port, "click", x=tile["r"][0] + button[0] + button[2]/2,
-                y=tile["r"][1] + button[1] + button[3]/2, wait=1)
+            tile = largest_tile(port)
+            button = hosted_widget(port, log, child, "increment")
+            get(port, "click", x=tile["r"][0] + button["x"] + button["width"]/2,
+                y=tile["r"][1] + button["y"] + button["height"]/2, wait=1)
             count += 1
-            wait_for("input inside glass window", lambda: any(item.get("t") == f"Count: {count}" for item in get(child_port, "snap", q="count")["s"]))
+            wait_for("input inside glass window", lambda: shows_count(port, log, child, count))
             get(port, "k", c="Space", cmd=1, wait=1)
             save_grab(artifacts, f"style-{index}-{style}-menu", get(port, "g", scale=0.5))
             get(port, "k", c="Escape", wait=1)
@@ -184,10 +207,11 @@ def main():
     (slow / "src").mkdir(parents=True)
     (slow / "Cargo.toml").write_text('[package]\nname="octosense-smoke-slow"\nversion="0.1.0"\nedition="2021"\n[workspace]\n')
     (slow / "src/main.rs").write_text("fn main() {}\n")
-    (slow / "build.rs").write_text('fn main() {\n'
-        'std::fs::write(std::env::var("OCTOSENSE_SMOKE_BUILD_MARKER").unwrap(), std::process::id().to_string()).unwrap();\n'
-        'std::thread::sleep(std::time::Duration::from_secs(45));\n}\n')
     marker = artifacts / "build.pid"
+    # The shell builds an app with a plain environment: the script's source says where.
+    (slow / "build.rs").write_text('fn main() {\n'
+        f'std::fs::write({json.dumps(str(marker))}, std::process::id().to_string()).unwrap();\n'
+        'std::thread::sleep(std::time::Duration::from_secs(45));\n}\n')
     catalog = [
         {"id": "reference", "label": "Reference", "manifest": manifest,
          "package": "octosense-reference", "bin": "octosense-reference", "policy": "new"},
@@ -198,11 +222,15 @@ def main():
     ]
     if not args.default_catalog:
         (state / "apps.json").write_text(json.dumps(catalog))
-    env = dict(os.environ, OCTOSENSE_HOME=str(state), MAKEPAD_REMOTE="true", CARGO_NET_OFFLINE="true",
-               OCTOSENSE_SMOKE_BUILD_MARKER=str(marker))
-    for key in ["MAKEPAD_HOME", "MAKEPAD_WM_ROOT", "MAKEPAD_WM_TEST_APP", "MAKEPAD_WM_THEME"]:
+    env = dict(os.environ, OCTOSENSE_HOME=str(state), MAKEPAD_HIDE_WINDOWS="1", CARGO_NET_OFFLINE="true")
+    for key in ["MAKEPAD_HOME", "MAKEPAD_REMOTE", "MAKEPAD_WM_ROOT", "MAKEPAD_WM_TEST_APP", "MAKEPAD_WM_THEME"]:
         env.pop(key, None)
-    command = ["cargo", "run"] if args.cargo_run else [str(root.parent / "target/release/octosense")]
+    # The flag, not the variable: the shell's children would inherit that and log their refused port.
+    command = (["cargo", "run", "--"] if args.cargo_run else [str(root.parent / "target/release/octosense")]) + ["--remote"]
+    # A Mac starts in its own style, whose keys go to the focused app. These checks
+    # drive the tiling keys, so they start in the style that has them.
+    if sys.platform == "darwin":
+        command += ["--test-action", "style:octosense"]
     log = artifacts / "host.log"
     port = None
     child_pids = []
@@ -215,7 +243,7 @@ def main():
         status = wait_for("desktop window", lambda: get(port, "s").get("w"))
         assert "OctoSense" in status[0]["t"], status
         wait_for("desktop first frame", lambda: get(port, "snap", q="main_window").get("s"))
-        assert not list(Path(tempfile.gettempdir()).glob(f"octosense-{host_pid}-client-*.log")), "unexpected startup child"
+        assert not client_logs(state, host_pid), "unexpected startup child"
         print("PASS: desktop starts without child apps", flush=True)
         wait_for("OctoSense light selected at startup",
                  lambda: "wm: desktop style octosense applied" in log.read_text(errors="replace"))
@@ -252,29 +280,32 @@ def main():
             get(port, "k", c="enter", wait=1)
 
         launch("Reference")
-        def child_remote():
-            for path in Path(tempfile.gettempdir()).glob(f"octosense-{host_pid}-client-*.log"):
-                result = remote(path)
-                if result and result[1] not in child_pids:
-                    return result
-            return None
-        child_port, child_pid = wait_for("reference app remote", child_remote, timeout=120)
+        def new_reference():
+            """A Reference client that has drawn, and its process."""
+            shown = re.findall(r"wm: reference client (\d+) first frame", log.read_text(errors="replace"))
+            clients = [int(client) for client in shown if int(client) not in seen_clients]
+            running = subprocess.run(["pgrep", "-P", str(host_pid), "-f", "octosense-reference"],
+                                     capture_output=True, text=True).stdout.split()
+            pids = [int(pid) for pid in running if int(pid) not in child_pids]
+            return (clients[0], pids[0]) if clients and pids else None
+        seen_clients = []
+        child, child_pid = wait_for("reference app starts", new_reference, timeout=120)
+        seen_clients.append(child)
         child_pids.append(child_pid)
         owned_groups.append(os.getpgid(child_pid))
-        wait_for("reference input", lambda: get(child_port, "snap", q="increment").get("s"))
-        tiles = wait_for("hosted tile", lambda: get(port, "snap", q="MpRunView").get("s"))
-        tile = max(tiles, key=lambda item: item["r"][2] * item["r"][3])
+        wait_for("reference input", lambda: hosted_widget(port, log, child, "increment"))
+        tile = wait_for("hosted tile", lambda: get(port, "snap", q="MpRunView").get("s")) and largest_tile(port)
 
-        def click_child(widget):
-            rect = get(child_port, "snap", q=widget)["s"][0]["r"]
+        def click_child(name):
+            item = hosted_widget(port, log, child, name)
             x, y = tile["r"][:2]
-            get(port, "click", x=x + rect[0] + rect[2]/2, y=y + rect[1] + rect[3]/2, wait=1)
+            get(port, "click", x=x + item["x"] + item["width"]/2, y=y + item["y"] + item["height"]/2, wait=1)
 
         click_child("increment")
-        wait_for("forwarded pointer increments counter", lambda: any(item.get("t") == "Count: 1" for item in get(child_port, "snap", q="count")["s"]))
+        wait_for("forwarded pointer increments counter", lambda: shows_count(port, log, child, 1))
         click_child("message")
         get(port, "t", t="Hello through OctoSense", wait=1)
-        wait_for("forwarded keyboard updates echo", lambda: any(item.get("t") == "Hello through OctoSense" for item in get(child_port, "snap", q="echo")["s"]))
+        wait_for("forwarded keyboard updates echo", lambda: (hosted_widget(port, log, child, "echo") or {}).get("text") == "Hello through OctoSense")
         print("PASS: pointer and keyboard input cross the host/client boundary", flush=True)
         # Let the shell's arrival animation finish before recording a frame.
         time.sleep(0.6)
@@ -290,28 +321,29 @@ def main():
         save_grab(artifacts, "workspace-empty", get(port, "g", scale=0.5))
         get(port, "k", c="Key2", cmd=1, wait=1)
         wait_for("app visible on destination workspace", lambda: get(port, "snap", q="MpRunView")["s"])
-        size = settled_window_size(child_port)
+        size = settled_window_size(port)
         get(port, "k", c="KeyF", cmd=1, wait=1)
-        wait_for("fullscreen expands child", lambda: get(child_port, "s")["w"][0]["sz"][0] > size[0] + 10)
-        settled_window_size(child_port)
+        wait_for("fullscreen expands child", lambda: largest_tile(port)["r"][2] > size[0] + 10)
+        settled_window_size(port)
         get(port, "k", c="KeyF", cmd=1, wait=1)
-        wait_for(f"fullscreen restores child size {size}", lambda: get(child_port, "s")["w"][0]["sz"] == size)
+        wait_for(f"fullscreen restores child size {size}", lambda: largest_tile(port)["r"][2:] == size)
         assert alive(child_pid), "client died on workspace/fullscreen changes"
         print("PASS: workspace and fullscreen operations retain the app", flush=True)
 
         launch("Reference")
-        second_port, second_pid = wait_for("second reference instance", child_remote, timeout=120)
+        second, second_pid = wait_for("second reference instance", new_reference, timeout=120)
+        seen_clients.append(second)
         child_pids.append(second_pid)
         owned_groups.append(os.getpgid(second_pid))
-        wait_for("second instance has independent state", lambda: any(item.get("t") == "Count: 0" for item in get(second_port, "snap", q="count")["s"]))
-        assert any(item.get("t") == "Count: 1" for item in get(child_port, "snap", q="count")["s"])
+        wait_for("second instance has independent state", lambda: shows_count(port, log, second, 0))
+        assert shows_count(port, log, child, 1)
         get(port, "k", c="KeyW", cmd=1, wait=1)
         wait_for("close window reaps second instance", lambda: not alive(second_pid))
         assert alive(child_pid), "closing one instance closed both"
         print("PASS: separate instances keep independent state and close individually", flush=True)
 
         if args.styles:
-            check_styles(port, child_port, host_pid, log, artifacts)
+            check_styles(port, child, state, host_pid, log, artifacts)
 
         slow_group = None
         if not args.default_catalog:
@@ -335,7 +367,7 @@ def main():
         else:
             print("PASS: host quit reaps its hosted app", flush=True)
         assert_no_runtime_errors(log.read_text(errors="replace"))
-        for path in Path(tempfile.gettempdir()).glob(f"octosense-{host_pid}-client-*.log"):
+        for path in client_logs(state, host_pid):
             assert_no_runtime_errors(path.read_text(errors="replace"))
     except Exception:
         if port:
@@ -370,12 +402,6 @@ def main():
         for group in owned_groups:
             if alive(-group):
                 os.killpg(group, 9)
-        # Client logs are created by the host in its normal temporary location.
-        # Copy this test host's logs before handing the report to the caller.
-        host_remote = remote(log)
-        if host_remote:
-            for path in Path(tempfile.gettempdir()).glob(f"octosense-{host_remote[1]}-client-*.log"):
-                shutil.copyfile(path, artifacts / path.name)
         print(f"Logs and app-provided frames: {artifacts}", flush=True)
 
 

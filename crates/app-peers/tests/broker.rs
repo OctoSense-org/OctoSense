@@ -2291,9 +2291,9 @@ fn an_approval_nobody_answers_expires_to_deny_and_the_stuck_turn_is_interrupted_
         }
     };
     assert_eq!(expired["params"]["id"], "a1");
-    assert_eq!(expired["params"]["reason"], "no answer in 1 s", "the reason says how long");
+    assert_eq!(expired["params"]["reason"], "no answer in 1 second", "the reason says how long");
     let answer = host.approvals.lock().unwrap()[0].1.clone();
-    assert!(answer.expire("no answer in 1 s"));
+    assert!(answer.expire("no answer in 1 second"));
     wait_for("the deny", || position(&script, "approval/respond").is_some());
     // The grace: the turn still runs, so it is interrupted and the queued
     // input starts; nothing is approved and nothing is answered twice.
@@ -2331,7 +2331,7 @@ fn a_host_expiry_just_before_the_brokers_deadline_still_frees_the_stuck_turn() {
     wait_for("the host", || host.approvals.lock().unwrap().len() == 1);
     // The host expires it at once, ahead of the broker's 400 ms.
     let answer = host.approvals.lock().unwrap()[0].1.clone();
-    assert!(answer.respond_with(false, &octosense_app_peers::host_tools::expired_note("no answer in 1 s")));
+    assert!(answer.respond_with(false, &octosense_app_peers::host_tools::expired_note("no answer in 1 second")));
     assert!(answer.expired());
     wait_for("the interrupt", || position(&script, "turn/interrupt").is_some());
     assert_eq!(calls_of(&script, "turn/interrupt")[0].1["turn_id"], "turn-i1");

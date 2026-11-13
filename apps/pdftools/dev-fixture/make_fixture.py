@@ -62,8 +62,13 @@ class Page:
         self.draw.text((x * S, y * S), text, font=f, fill=color)
         w = f.getlength(text) / S
         if record:
+            # Where each byte of the line starts, for a find's rectangles (engine.splash).
+            xs = []
+            for i, ch in enumerate(text):
+                xs.extend([round(x + f.getlength(text[:i]) / S, 2)] * len(ch.encode()))
+            xs.append(round(x + w, 2))
             self.lines.append({"n": len(self.lines) + 1, "text": text, "box": [round(x, 1), round(y, 1), round(w, 1), round(size * 1.25, 1)],
-                               "font": NAMES[kind], "size": size})
+                               "font": NAMES[kind], "size": size, "xs": xs})
         return w
 
     def para(self, x, y, width, text, kind="serif", size=11, leading=1.55, color=INK):
@@ -215,8 +220,12 @@ def lease():
             p.text(70, y, label, "serif", 10)
             if field:
                 rect = [160, y - 3, 210 if field in ("Tenant name", "Monthly rent") else 110, 18]
-                fields.append({"name": field, "type": "text", "value": {"Tenant name": "Maya Chen", "Unit": "4B", "Start date": "1 November 2026"}.get(field, ""),
+                value = {"Tenant name": "Maya Chen", "Unit": "4B", "Start date": "1 November 2026"}.get(field, "")
+                fields.append({"name": field, "type": "text", "value": value,
                                "required": field == "Monthly rent", "read_only": False, "page": 1, "rect": rect, "options": []})
+                # A filled form's page shows what it holds, as the engine's render does.
+                if value:
+                    p.text(rect[0] + 3, y, value, "serif", 10, record=False)
             else:
                 p.text(160, y, {"Landlord:": "Riverside Residences LLC", "Address:": "123 Riverfront Drive, Portland, OR 97201"}[label], "serif", 10)
             y += 26

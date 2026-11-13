@@ -219,7 +219,7 @@ App Flow 的[一次性模型调用](https://github.com/OctoSense-org/OctoSense-A
 3. 打开 AI providers（Start → Settings → AI providers），添加一个模型及其密钥。配置文件是 `$T/octos-home/.octos/profiles/_main.json`；使用文件密钥库时密钥就在其中，用完后请删除 `$T`。
 4. 与助手对话：F8 打开系统对话；在首次使用面板上允许某个应用的 Agent 之后，就能在该应用的 “Ask &lt;app&gt;” 面板中与它对话。你自己的脚本应用通过 [`octos` 服务](#脚本应用与-octos-服务)访问它的 Agent，此时请保持 `OCTOSENSE_CONTAINED_APPS` 未设置。AppCard（`--features app-appcard`）是另一个使用方。
 
-**隐藏窗口。** 加上 `MAKEPAD_HIDE_WINDOWS=1 MAKEPAD_REMOTE=<port>`，即可通过远程控制桥操作 Shell 而不占用屏幕（[桌面端 README § 远程控制桥](../desktop/README.zh-CN.md#远程控制桥)）。`desktop/scripts/ai_providers_remote.sh` 以这种方式端到端运行 AI providers，使用假密钥并禁止出站 HTTPS；`desktop/scripts/glance_remote.sh` 以同样的隐藏方式操作 glance 面板。
+**隐藏窗口。** 加上 `MAKEPAD_HIDE_WINDOWS=1 MAKEPAD_REMOTE=<port>`，即可通过远程控制桥操作 Shell 而不占用屏幕（[桌面端 README § 远程控制桥](../desktop/README.zh-CN.md#远程控制桥)）。`desktop/scripts/ai_providers_remote.py` 以这种方式端到端运行 AI providers，使用假密钥并禁止出站 HTTPS；`desktop/scripts/glance_remote.sh` 以同样的隐藏方式操作 glance 面板。
 
 **测试**（在仓库根目录）：
 

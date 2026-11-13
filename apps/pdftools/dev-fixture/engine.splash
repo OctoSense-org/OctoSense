@@ -6,14 +6,15 @@
 // what this answers. It keeps SERVICE.md's shapes, so the app runs its one
 // code path; the pages it serves never change (a rotation, an edit or a
 // filled field shows in the answers, not in the pictures).
-let fx = nil
+// It keeps what is open as the service does: an appearance change runs the script again.
 fn fx_load(){
-    if fx == nil {
-        let f = try { fs.read("dev/fixture.json").parse_json() } catch { nil }
-        if f == nil { f = {docs: {}} }
-        fx = {f: f open: {} next: 1 delay: optional(f, "delay", 0.12) fail: optional(f, "fail", "") ids: 100}
-    }
-    fx
+    let kept = try { mod.pdftools_fx } catch { nil }
+    if kept != nil { return kept }
+    let f = try { fs.read("dev/fixture.json").parse_json() } catch { nil }
+    if f == nil { f = {docs: {}} }
+    let made = {f: f open: {} next: 1 delay: optional(f, "delay", 0.12) fail: optional(f, "fail", "") ids: 100}
+    mod.pdftools_fx = made
+    made
 }
 // Every answer is worked out on a later turn, in a handler of its own.
 fn engine(method, args, done){
@@ -40,8 +41,9 @@ fn fx_find(x, s, args, run, done){
         let m = re.exec(l.text)
         if m != nil && run.matches.len() < optional(args, "limit", 200) {
             let b = l.box
-            let w = b[2] * m.value.len() / max(1, l.text.len())
-            let at = b[0] + b[2] * m.index / max(1, l.text.len())
+            // Where the match's bytes start and end, as make_fixture.py measured them.
+            let at = l.xs[m.index]
+            let w = l.xs[m.index + m.value.len()] - at
             run.matches.push({page: run.i + 1 rects: [[at, b[1], w, b[3]]] snippet: l.text.replace(m.value, "[[" + m.value + "]]")})
         }
     }

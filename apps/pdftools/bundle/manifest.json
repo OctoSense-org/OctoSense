@@ -6,5 +6,5 @@
   "name": "PDF Tools",
   "integrity": { "bundle_blake3": "" },
   "capabilities": ["storage", "files", "pdf"],
-  "window": { "width": 1536, "height": 1024 }
+  "window": { "width": 1180, "height": 740 }
 }

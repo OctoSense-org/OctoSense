@@ -1,0 +1,11 @@
+[package]
+name = "make-shapes"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[dependencies]
+deckcraft-geom = { git = "https://github.com/ymote/deckcraft.git", rev = "d0e57d7e25f9852179cc66be12dd6188f1c05535" }
+kurbo = "0.13"

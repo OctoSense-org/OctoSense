@@ -12,6 +12,7 @@ use std::sync::{
 };
 
 const BODY_MAX: usize = 8192;
+const MAX_RECIPIENTS: usize = 32;
 const RECORD_MAX: usize = 512 * 1024;
 const PUBLIC_COMPOSERS_MAX: usize = 128;
 // Each admitted record may reach RECORD_MAX, including its final receipt.
@@ -241,6 +242,28 @@ fn active() -> &'static Mutex<BTreeSet<PathBuf>> {
     static ACTIVE: OnceLock<Mutex<BTreeSet<PathBuf>>> = OnceLock::new();
     ACTIVE.get_or_init(Default::default)
 }
+
+/// Sends whose host sheet asked Mail to show its Sent mailbox (`Show Sent`, on
+/// a send whose outcome is unknown), until Mail's window hears it. Only a hint
+/// to the window: it sends nothing and authorizes nothing.
+fn show_sent_requests() -> &'static Mutex<BTreeSet<String>> {
+    static ASKED: OnceLock<Mutex<BTreeSet<String>>> = OnceLock::new();
+    ASKED.get_or_init(Default::default)
+}
+fn show_sent_key(publisher: &str, account: &str, draft: &str) -> String {
+    format!("{publisher}\n{account}\n{draft}")
+}
+pub fn request_show_sent(publisher: &str, account: &str, draft: &str) {
+    let mut asked = show_sent_requests().lock().unwrap_or_else(|e| e.into_inner());
+    if asked.len() >= 64 {
+        asked.clear();
+    }
+    asked.insert(show_sent_key(publisher, account, draft));
+}
+/// Whether Mail's window was asked to show Sent for this draft, once.
+pub fn take_show_sent(publisher: &str, account: &str, draft: &str) -> bool {
+    show_sent_requests().lock().unwrap_or_else(|e| e.into_inner()).remove(&show_sent_key(publisher, account, draft))
+}
 fn load(store: &Store, app: &str, account: &str, id: &str) -> Result<Value, String> {
     // Public composers have a separate host-minted namespace. Legacy reply
     // drafts remain Mail-only, including when another app shares the account.
@@ -296,7 +319,7 @@ fn load(store: &Store, app: &str, account: &str, id: &str) -> Result<Value, Stri
     {
         return Err("Invalid reply draft fields".into());
     }
-    fields(text(&d, "to"), text(&d, "subject"), text(&d, "body"))?;
+    draft_fields(&d, text(&d, "body"))?;
     let mut operations = BTreeSet::new();
     let attempts = d["attempts"].as_array().unwrap();
     if attempts.len() > 32
@@ -380,6 +403,27 @@ fn fields(to: &str, subject: &str, body: &str) -> Result<(), String> {
         return Err("Reply body must be at most 8192 UTF-8 bytes without NUL".into());
     }
     Ok(())
+}
+/// Mail's own composer addresses a list: `a@x, b@y`, each one plain address.
+pub(crate) fn recipients(list: &str) -> Result<Vec<String>, String> {
+    let all: Vec<String> = list.split([',', ';']).map(str::trim).filter(|a| !a.is_empty()).map(str::to_string).collect();
+    if all.len() > MAX_RECIPIENTS {
+        return Err(format!("A message goes to at most {MAX_RECIPIENTS} people."));
+    }
+    for one in &all {
+        fields(one, "", "").map_err(|_| format!("{one} isn't an email address."))?;
+    }
+    Ok(all)
+}
+/// A saved draft's fields. Only a draft from Mail's own composer has a list.
+fn draft_fields(d: &Value, body: &str) -> Result<(), String> {
+    let to = text(d, "to");
+    if text(d, "publisher") == "os.mail" && !text(d, "compose_id").is_empty() {
+        let first = recipients(to)?.into_iter().next().ok_or("Enter a recipient email address.")?;
+        recipients(text(d, "cc"))?;
+        return fields(&first, text(d, "subject"), body);
+    }
+    fields(to, text(d, "subject"), body)
 }
 fn single_address(raw: &str) -> Result<String, String> {
     let parsed = mailparse::addrparse(raw).map_err(|_| "Cannot parse source reply recipient")?;
@@ -546,7 +590,11 @@ fn update_locked(store: &Store, app: &str, account: &str, id: &str, expected: u6
         }
         d[k] = v.clone();
     }
-    fields(text(&d, "to"), text(&d, "subject"), text(&d, "body"))?;
+    // An edit of the recipient names one person, whoever composed the draft.
+    if object.contains_key("to") {
+        fields(text(&d, "to"), text(&d, "subject"), text(&d, "body"))?;
+    }
+    draft_fields(&d, text(&d, "body"))?;
     d["revision"] = json!(expected.checked_add(1).ok_or("Revision limit reached")?);
     d["body_origin"] = json!(if from_chat {
         "model_chat"
@@ -610,7 +658,7 @@ fn suggest(
     let _guard = lock();
     let mut d = load(store, app, account, id)?;
     revision(&d, expected)?;
-    fields(text(&d, "to"), text(&d, "subject"), body)?;
+    draft_fields(&d, body)?;
     if !matches!(text(&d, "status"), "draft" | "awaiting_approval") {
         return Err("This reply is no longer editable".into());
     }
@@ -645,13 +693,17 @@ fn add_attempt(d: &mut Value, prior: Option<&str>) -> Result<(), String> {
     if d["attempts"].as_array().unwrap().len() >= 32 {
         return Err("Reply attempt limit reached".into());
     }
-    fields(text(d, "to"), text(d, "subject"), text(d, "body"))?;
+    draft_fields(d, text(d, "body"))?;
     let operation = unique("send");
-    let domain = text(d, "from")
-        .split('@')
-        .nth(1)
-        .unwrap_or("octosense.local");
-    let payload = json!({"from":d["from"],"to":d["to"],"subject":d["subject"],"body":d["body"],"in_reply_to":d["in_reply_to"],"references":d["references"],"message_id":format!("<{operation}@{domain}>")});
+    // A sender with no domain gets octosense.local, written whole in the
+    // Message-ID's own format string: a bare "octosense.local" literal can
+    // pool after another word in a Windows build, which the release scan then
+    // reads as a private host name.
+    let message_id = match text(d, "from").split('@').nth(1) {
+        Some(domain) => format!("<{operation}@{domain}>"),
+        None => format!("<{operation}@octosense.local>"),
+    };
+    let payload = json!({"from":d["from"],"to":d["to"],"cc":text(d, "cc"),"subject":d["subject"],"body":d["body"],"in_reply_to":d["in_reply_to"],"references":d["references"],"message_id":message_id});
     let attempt = json!({"operation_id":operation,"revision":d["revision"],"status":"awaiting_approval","payload":payload,"prior_attempt":prior});
     d["attempts"].as_array_mut().unwrap().push(attempt);
     d["status"] = json!("awaiting_approval");
@@ -800,6 +852,13 @@ pub(crate) fn invalidate_locked(host_dir: &Path, account: Option<&str>) {
         .lock()
         .unwrap_or_else(|e| e.into_inner())
         .retain(|_, r| r.host_dir != host_dir || account.is_some_and(|a| r.account != a));
+}
+/// Drop only the removed app's reviews when an account is still shared.
+pub(crate) fn invalidate_app_locked(host_dir: &Path, account: &str, app: &str) {
+    reviews()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .retain(|_, r| r.host_dir != host_dir || r.account != account || r.app != app);
 }
 pub fn cancel_review(review: Review) -> Result<(), String> {
     let (_, vault) = configured()?;
@@ -975,6 +1034,7 @@ fn execute_pending(
     save(&store, &d)?;
     if status == "accepted" {
         contacts::record_sent(&store.dir, &r.account, text(&payload, "to"));
+        contacts::record_sent(&store.dir, &r.account, text(&payload, "cc"));
     }
     Ok(snapshot(&d))
 }
@@ -986,7 +1046,7 @@ fn for_agent(d: &Value) -> Value {
     let subject = text(d, "subject");
     let mut v = json!({"draft_id":d["draft_id"],"revision":d["revision"],"account":d["account"],
         "source_message":{"folder":d["source_message"]["folder"],"message":d["source_message"]["message"],"generation":d["source_message"]["generation"]},
-        "chat_thread":d["chat_thread"],"to":d["to"],"subject":clip(subject,512),"subject_truncated":subject.len()>clip(subject,512).len(),
+        "chat_thread":d["chat_thread"],"to":d["to"],"cc":text(d, "cc"),"subject":clip(subject,512),"subject_truncated":subject.len()>clip(subject,512).len(),
         "body":clip(body,1800),"body_truncated":body.len()>clip(body,1800).len(),"body_origin":d["body_origin"],"status":d["status"]});
     if let Some(a) = d["attempts"].as_array().and_then(|a| a.last()) {
         v["attempt"] = json!({"operation_id":a["operation_id"],"status":a["status"],"message_id":a["payload"]["message_id"]});
@@ -1121,7 +1181,7 @@ pub(crate) fn compose_draft(store: &Store, app: &str, args: &Value) -> Result<Va
     ];
     if args
         .as_object()
-        .is_none_or(|o| o.keys().any(|k| !allowed.contains(&k.as_str())))
+        .is_none_or(|o| o.keys().any(|k| !allowed.contains(&k.as_str()) && !(app == "os.mail" && k == "cc")))
     {
         return Err("Unsupported composer fields: one To address and plain text only".into());
     }
@@ -1149,7 +1209,19 @@ pub(crate) fn compose_draft(store: &Store, app: &str, args: &Value) -> Result<Va
     let to = args["to"].as_str().ok_or("to must be text")?;
     let subject = args["subject"].as_str().ok_or("subject must be text")?;
     let body = args["body"].as_str().ok_or("body must be text")?;
-    fields(to, subject, body)?;
+    // Mail itself may write to several people; another app's composer names one.
+    let (to, cc) = if app == "os.mail" {
+        let list = recipients(to)?;
+        fields(list.first().ok_or("Enter a recipient email address.")?, subject, body)?;
+        let cc = recipients(args["cc"].as_str().unwrap_or(""))?;
+        if list.len() + cc.len() > MAX_RECIPIENTS {
+            return Err(format!("A message goes to at most {MAX_RECIPIENTS} people."));
+        }
+        (list.join(", "), cc.join(", "))
+    } else {
+        fields(to, subject, body)?;
+        (to.to_string(), String::new())
+    };
     let supplied = text(args, "compose_id");
     let compose_id = if supplied.is_empty() {
         unique("compose")
@@ -1185,11 +1257,14 @@ pub(crate) fn compose_draft(store: &Store, app: &str, args: &Value) -> Result<Va
                 .ok_or("There is no such reply source")?;
             // Validate unsupported Reply-To even if the composer supplied an
             // edited To field; silently reducing a group is never acceptable.
-            single_address(if text(source, "reply_to").trim().is_empty() {
-                text(source, "address")
-            } else {
-                text(source, "reply_to")
-            })?;
+            // Mail's own composer shows the whole list and can send to it.
+            if app != "os.mail" {
+                single_address(if text(source, "reply_to").trim().is_empty() {
+                    text(source, "address")
+                } else {
+                    text(source, "reply_to")
+                })?;
+            }
             let original = headers(text(source, "message_id"))?;
             let refs = format!("{} {}", headers(text(source, "references"))?, original)
                 .trim()
@@ -1203,7 +1278,7 @@ pub(crate) fn compose_draft(store: &Store, app: &str, args: &Value) -> Result<Va
         };
         json!({"schema":1,"publisher":app,"account":account,"from":granted["address"],"draft_id":id,"compose_id":compose_id,"revision":1,
             "chat_thread":format!("reply-{}",&network::hash(&id)[..24]),"source_message":source_message,"email":email,
-            "to":to,"subject":subject,"body":body,"body_origin":"app","in_reply_to":in_reply_to,"references":references,"status":"draft","suggestions":[],"attempts":[]})
+            "to":to,"cc":cc,"subject":subject,"body":body,"body_origin":"app","in_reply_to":in_reply_to,"references":references,"status":"draft","suggestions":[],"attempts":[]})
     } else {
         let mut d = load(store, app, account, &id)?;
         if d["compose_id"] != compose_id {
@@ -1232,7 +1307,7 @@ pub(crate) fn compose_draft(store: &Store, app: &str, args: &Value) -> Result<Va
         }) {
             return Err("This message has a submission attempt; inspect its receipt instead of composing again".into());
         }
-        if d["to"] != to || d["subject"] != subject || d["body"] != body {
+        if d["to"] != to || text(&d, "cc") != cc || d["subject"] != subject || d["body"] != body {
             d["revision"] = json!(expected.checked_add(1).ok_or("Revision limit reached")?);
             for a in d["attempts"].as_array_mut().unwrap() {
                 if a["status"] == "awaiting_approval" {
@@ -1248,6 +1323,7 @@ pub(crate) fn compose_draft(store: &Store, app: &str, args: &Value) -> Result<Va
         d["kind"] = json!("public_compose");
     }
     d["to"] = json!(to);
+    d["cc"] = json!(cc);
     d["subject"] = json!(subject);
     d["body"] = json!(body);
     d["body_origin"] = json!("app");
@@ -2051,6 +2127,21 @@ mod tests {
         assert!(load(&f.store, "os.mail", "one", text(&legacy, "draft_id")).is_ok());
     }
     #[test]
+    fn unlinking_one_app_invalidates_only_its_own_review() {
+        let f = public_fixture();
+        let mine = composer_review(&f.store, "sample.mail", &public_args()).unwrap();
+        let theirs = composer_review(&f.store, "other.mail", &public_args()).unwrap();
+        let theirs_id = text(theirs.snapshot(), "draft_id").to_owned();
+        {
+            let _guard = lock();
+            invalidate_app_locked(&f.root, "one", "sample.mail");
+        }
+        assert!(f.send(mine).is_err(), "the unlinked app's review is no longer usable");
+        assert_eq!(f.transport.calls.load(Ordering::SeqCst), 0);
+        cancel_in(theirs, Arc::new(TestVault)).unwrap();
+        assert_eq!(load(&f.store, "other.mail", "one", &theirs_id).unwrap()["status"], "draft", "the other app's review is still usable");
+    }
+    #[test]
     fn edited_public_composer_invalidates_review_and_exact_snapshot_sends_once() {
         let f = public_fixture();
         let r = composer_review(&f.store, "sample.mail", &public_args()).unwrap();
@@ -2157,17 +2248,46 @@ mod tests {
         assert!(new["source_message"]["message"].is_null());
         assert_eq!(new["in_reply_to"], "");
         assert_eq!(new["references"], "");
-        args["cc"] = json!("third@example.com");
+        args["bcc"] = json!("third@example.com");
         assert!(compose_draft(&f.store, "os.mail", &args).is_err());
         let id = text(&new, "draft_id");
         let accepted = f.send(f.review(id, 1)).unwrap();
         assert_eq!(accepted["status"], "accepted");
-        args.as_object_mut().unwrap().remove("cc");
+        args.as_object_mut().unwrap().remove("bcc");
         args["compose_id"] = new["compose_id"].clone();
         args["expected_revision"] = json!(1);
         assert!(compose_draft(&f.store, "os.mail", &args)
             .unwrap_err()
             .contains("submission attempt"));
+    }
+    #[test]
+    fn mails_own_composer_writes_to_a_list_and_no_other_apps_does() {
+        let f = Fixture::new();
+        let list = json!({"account":"one","to":"a@example.com; b@example.com,","cc":"c@example.com","subject":"Hello","body":"All of you"});
+        let new = compose_draft(&f.store, "os.mail", &list).unwrap();
+        assert_eq!(new["to"], "a@example.com, b@example.com");
+        assert_eq!(new["cc"], "c@example.com");
+        let id = text(&new, "draft_id");
+        assert_eq!(f.send(f.review(id, 1)).unwrap()["status"], "accepted");
+        // The approved payload is what the review showed: everyone on it.
+        let saved = load(&f.store, "os.mail", "one", id).unwrap();
+        let payload = &saved["attempts"].as_array().unwrap().last().unwrap()["payload"];
+        assert_eq!(payload["to"], "a@example.com, b@example.com");
+        assert_eq!(payload["cc"], "c@example.com");
+
+        let mut bad = list.clone();
+        bad["to"] = json!("a@example.com, not an address");
+        assert!(compose_draft(&f.store, "os.mail", &bad).unwrap_err().contains("isn't an email address"));
+        bad["to"] = json!(" , ");
+        assert!(compose_draft(&f.store, "os.mail", &bad).is_err(), "nobody to write to");
+        bad["to"] = json!("a@example.com");
+        bad["cc"] = json!(vec!["x@example.com"; MAX_RECIPIENTS].join(", "));
+        assert!(compose_draft(&f.store, "os.mail", &bad).unwrap_err().contains("at most"));
+
+        assert!(compose_draft(&f.store, "other.app", &list).unwrap_err().contains("Unsupported composer fields"));
+        let mut one_field = list.clone();
+        one_field.as_object_mut().unwrap().remove("cc");
+        assert!(compose_draft(&f.store, "other.app", &one_field).is_err(), "another app names one person");
     }
     #[test]
     fn replacing_one_view_capability_keeps_the_other_review_usable() {

@@ -11,7 +11,7 @@ Splash 文件系统；导出会保存已有应用文件的快照。应用只收�
 | --- | --- | --- |
 | `files.status` | `{}` | `import_supported`、`export_supported`、`photo_pick_supported`、`text_share_supported`、`storage_granted`、`max_file_bytes`、`max_import_bytes`、`max_share_text_bytes`、`foreground_required`；有可用存储时另有 `used_bytes`、`quota_bytes` |
 | `files.import` | `{"path":"/documents/report.pdf"}` | `{"cancelled":false,"path":"/documents/report.pdf","bytes":123,"name":"Q3 report.pdf"}` |
-| `files.export` | `{"path":"/documents/report.pdf","name":"Report.pdf"}` | 相同的成功字段；可选的 `name` 是建议给系统对话框的文件名，不含目录 |
+| `files.export` | `{"path":"/documents/report.pdf","name":"Report.pdf"}`，或加上 `"bundled":true` | 相同的成功字段；可选的 `name` 是建议给系统对话框的文件名，不含目录。`bundled` 从应用自己的包（它自带的示例）读取该路径，不会读到包外 |
 
 有可用的应用存储时，`files.status` 还会说明应用存储已用多少、最多可用多少，应用无需
 自行统计文件即可显示“已用 14.6 MB，共 64 MB”。`used_bytes` 是宿主对应用 jail 的测量
@@ -92,11 +92,11 @@ Android Java 模板已编译通过，有 23 条已有的弃用警告。
 ## 图片选择与文本分享
 
 `files.status` 还返回 `photo_pick_supported`、`text_share_supported` 和
-`max_share_text_bytes`。`files.pick_photo({"path":"/photos/new.png"})` 复用原生文档选择器，
+`max_share_text_bytes`。`files.pick_photo({"path":"/photos/new.png"})`（可加 `"full_size":true`）复用原生文档选择器，
 仅显示 PNG、JPEG、WebP，并以文件字节签名核对类型，不信任扩展名或提供者的 MIME 标签。
 成功结果在导入字段之外增加 `mime`；取消返回 `{"cancelled":true}`。需要 `files` 和
 `storage`，只允许写入新的应用内路径。它不是整个照片库授权，也不解码、缩放、转码或删除元数据。
-仍有明确的 1 MiB 上限，许多手机原图会超限并被拒绝；大原图和大文件 handle 仍是后续工作。
+未声明 `full_size` 时仍有明确的 1 MiB 上限，许多手机原图会超限并被拒绝；声明 `full_size` 后，图片可达导入上限（`max_import_bytes`），供需要保留原图的应用使用。不透明的大文件 handle 仍是后续工作。
 
 `files.share({"text":"早上好 🌅"})` 仅支持 Android，需要 `files`，不需要 `storage`。
 文本上限为 8192 UTF-8 字节；不接受收件人、文件路径或附件字段。原生层确认打开系统分享选择器后

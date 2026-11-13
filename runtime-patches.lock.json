@@ -4,7 +4,7 @@
     "base_revision": "d653bc4493619ab979ccff165cf48c0c63b77d19",
     "patch": "tools/runtime-patches/makepad-settings.patch",
     "sha256": "3a79cddddc89dc4d064a9f0bdd17dc8111dcab9c796a334d95f61ecb9d5011aa",
-    "tree": "a9c02164806d633f8eb344de821d44e894907ba8",
+    "tree": "9ab9d3cb8f8df02b9990978c263849161893ff17",
     "product_fixes": [
       "Settings integration: Android IME synchronization, accessibility and reduced motion, GLES program-cache validation, obscured-gesture cancellation and scroll-position observation.",
       "Contained-app isolation and secret-input restrictions come from the pinned upstream runtime; the Settings overlay preserves those gates.",
@@ -53,7 +53,16 @@
       "Apple UI typeface (OctoSense-org/makepad#129): on macOS and iOS every text role leads with PingFang SC, read from the system and never packaged (Regular for regular and italic, Semibold for bold), fitted to the theme's line box so layouts keep their size; the bundled IBM Plex, LXGW WenKai and emoji chain stays behind it, code and icon roles keep their faces, and MAKEPAD_SYSTEM_FONTS=0 or another platform keeps today's chains. A font member can name a face of a collection (PingFang.ttc's face 0 is PingFang HK).",
       "CachedView can opt into an isolated depth buffer. Maps driving views use it so tilted terrain, roads and buildings are not hidden by host UI backgrounds, while route and navigation overlays retain normal composition.",
       "Finance's first open (OctoSense-org/makepad#130): an empty file is seeded with the demo household in one transaction instead of one commit per row, so the first open no longer freezes the UI for seconds of per-row journal syncs (the first-start test: 1.8-3.3 s to 0.29 s in release); a failed seed leaves the file empty for the next start to seed again.",
-      "Android buffer-stuffing recovery (OctoSense-org/makepad#128): the Choreographer beat carries its expected presentation time (API 33+), EGL frame timestamps report each frame's display time, and when two frames in a row reach the screen half a refresh late while a finger is down one beat is left unpainted, so a drag stops trailing the finger by an extra frame after one slow frame. `setprop debug.makepad.stuffing off` disables it."
+      "Android buffer-stuffing recovery (OctoSense-org/makepad#128): the Choreographer beat carries its expected presentation time (API 33+), EGL frame timestamps report each frame's display time, and when two frames in a row reach the screen half a refresh late while a finger is down one beat is left unpainted, so a drag stops trailing the finger by an extra frame after one slow frame. `setprop debug.makepad.stuffing off` disables it.",
+      "macOS desktop appearance and interaction updates for native apps and shared widgets, including keyboard navigation, focus rings, menus and related cross-platform runtime support.",
+      "Grid automatic placement handles unspecified rows and columns without integer underflow in debug builds.",
+      "Route offers Clear Search when a desktop place search has no results, while preserving directions input and retry actions.",
+      "Finance explains the sample accounts in new ledgers, the account-creation limitation and where imports go, without changing existing data.",
+      "macOS web readers report failed main-frame navigations instead of leaving an empty view; canceled and superseded navigations are ignored.",
+      "Script text inputs can select their existing contents, so in-place names can be replaced or edited at the caret.",
+      "Scripts can check a widget's pending keyboard focus before a delayed focus request.",
+      "YouTube search can retry an exhausted request using the original query, without replacing a pending or successful fetch.",
+      "macOS look, second part: later Mac appearance and interaction changes in the native apps (Sheets, Browser, Terminal, Task, Files, PDF, Image, Notes, Reminders, Clock, Weather, Calculator, Finance, Route and AI) and shared widgets (context and pop-up menus, map overlays, image quarter turns, text input), with the app-module menu rows that carry their own commands."
     ],
     "stacked": [
       {
@@ -215,6 +224,42 @@
       {
         "patch": "tools/runtime-patches/makepad-android-buffer-stuffing.patch",
         "sha256": "7f87b527e597c4b06908bfc265ec81d93d3d082cf773cfafdc5a31e3c782d817"
+      },
+      {
+        "patch": "tools/runtime-patches/makepad-macos-look.patch",
+        "sha256": "8f0aec59a0faaa79435e5af461919ef9b2558556081c8cb8cce07c38fcdce0fc"
+      },
+      {
+        "patch": "tools/runtime-patches/makepad-grid-auto-placement.patch",
+        "sha256": "7d407a400710088faa072129e6470a021e8244b70d66fc2ffd95f154e3e8c1c6"
+      },
+      {
+        "patch": "tools/runtime-patches/makepad-route-clear-search.patch",
+        "sha256": "6bf40d490643f46147ec2227760110a12ca31cb13ce2050a59bf26def35f6205"
+      },
+      {
+        "patch": "tools/runtime-patches/makepad-finance-sample-disclosure.patch",
+        "sha256": "8d3f870dcf8134e769663f1850966f4db0e5559643610f2df30afdaa7b515f4a"
+      },
+      {
+        "patch": "tools/runtime-patches/makepad-macos-webview-failures.patch",
+        "sha256": "d5991cb36cfa0b7fc998d71fdd87b58532794cf251d7d9db1122a29b8b416c46"
+      },
+      {
+        "patch": "tools/runtime-patches/makepad-script-text-selection.patch",
+        "sha256": "7298aec92a4aca622b704ff2d46a2a2b9c83eaf073e9b041cb126d7c8528b5c2"
+      },
+      {
+        "patch": "tools/runtime-patches/makepad-script-focus-check.patch",
+        "sha256": "ffbaadb2254fe4a890898e799374d591c283f83b8db83b72593bc9158157a662"
+      },
+      {
+        "patch": "tools/runtime-patches/makepad-youtube-query-retry.patch",
+        "sha256": "3fbdbd5cd1d1525991e5ac48d028b2fbfcfe0d53b13a58e86e299970894c24ca"
+      },
+      {
+        "patch": "tools/runtime-patches/makepad-macos-look-2.patch",
+        "sha256": "c1396d357f4724a2a9146a6e0367d491e111a7d54ba145b7eafd43f4bebc1829"
       }
     ]
   }

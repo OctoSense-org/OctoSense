@@ -1,0 +1,15 @@
+diff --git a/widgets/src/grid.rs b/widgets/src/grid.rs
+index 52743ba6f..65de76a4b 100644
+--- a/widgets/src/grid.rs
++++ b/widgets/src/grid.rs
+@@ -955,8 +955,8 @@ fn prepare_placements(&mut self, cx: &mut Cx2d) {
+             let cell = self.child_walks[index].cell.unwrap_or_default();
+             let col_span = normalized_span(cell.col_span).min(MAX_TRACKS);
+             let row_span = normalized_span(cell.row_span).min(MAX_TRACKS);
+-            let fixed_col = (cell.col != 0).then_some(cell.col as usize - 1);
+-            let fixed_row = (cell.row != 0).then_some(cell.row as usize - 1);
++            let fixed_col = (cell.col as usize).checked_sub(1);
++            let fixed_row = (cell.row as usize).checked_sub(1);
+             let placement = find_auto_placement(
+                 &self.occupancy,
+                 self.expanded_columns.len(),

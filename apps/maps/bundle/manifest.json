@@ -13,6 +13,9 @@
     "web",
     "glance"
   ],
+  "requires": [
+    "host-api-v1"
+  ],
   "network": {
     "hosts": [
       "photon.komoot.io",
@@ -33,5 +36,10 @@
         "tool_calling"
       ]
     }
-  }
+  },
+  "window": {
+    "width": 1120,
+    "height": 740
+  },
+  "schema_minor": 1
 }

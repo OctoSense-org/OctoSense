@@ -190,7 +190,10 @@ fn start_is_once_and_starts_no_kernel() {
 fn provider_import_caption_wraps_inside_a_phone_sheet() {
     use makepad_widgets::makepad_draw::cx_draw::CxDraw;
     let sheet = octosense_llm_service::sheets::import(false, true, false);
-    let caption = sheet.split_once("let Caption = ").unwrap().1.split_once('\n').unwrap().0;
+    let (before, after) = sheet.split_once("let Caption = ").unwrap();
+    // The caption draws with the sheet's own colours and sizes, which come before it.
+    let styles = before.rsplit_once("let desk = ").unwrap().1;
+    let caption = after.split_once('\n').unwrap().0;
     let text = "Choose image reads the code from a screenshot or photo.";
     let mut cx = Cx::new(Box::new(|_, _| {}));
     let root = cx.with_vm(|vm| {
@@ -198,7 +201,7 @@ fn provider_import_caption_wraps_inside_a_phone_sheet() {
         desktop_style::install(vm, desktop_style::StyleSheet::load(desktop_style::DesktopStyle::Android));
         vm.with_reload(makepad_widgets::script_mod);
         vm.bx.captured_errors = Some(Vec::new());
-        let value = vm.eval(ScriptMod {code:format!("use mod.prelude.widgets.*\nlet Caption = {caption}\nView{{width: Fill height: Fit padding: 16 flow: Down caption := Caption{{text: \"{text}\"}}}}"),..Default::default()});
+        let value = vm.eval(ScriptMod {code:format!("use mod.prelude.widgets.*\nlet desk = {styles}let Caption = {caption}\nView{{width: Fill height: Fit padding: 16 flow: Down caption := Caption{{text: \"{text}\"}}}}"),..Default::default()});
         let root = WidgetRef::script_from_value(vm,value);
         assert!(vm.take_errors().is_empty());
         root

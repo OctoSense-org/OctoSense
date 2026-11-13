@@ -832,7 +832,7 @@ pub(crate) mod tests {
         assert_eq!((notify["risk"].as_str(), notify["shareable"].as_bool(), notify["background"].as_bool()), (Some("act"), Some(false), Some(true)));
         let info = &loaded.tools[1];
         assert_eq!((info["risk"].as_str(), info["shareable"].as_bool(), info["background"].as_bool()), (Some("read"), Some(false), Some(false)));
-        assert_eq!(loaded.families, ["storage", "model", "glance"].iter().map(|f| f.to_string()).collect::<BTreeSet<String>>());
+        assert_eq!(loaded.families, ["storage", "model", "glance", "files"].iter().map(|f| f.to_string()).collect::<BTreeSet<String>>());
         assert_eq!(loaded.generic, ["ask_user_question"]);
     }
 

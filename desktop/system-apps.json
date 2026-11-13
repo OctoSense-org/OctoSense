@@ -1,6 +1,10 @@
 {
   "schema": 1,
   "source": "../apps",
-  "apps": ["news", "photos", "maps", "mail", "calendar", "ai-providers", "youtube", "quickdeck", "pdftools", "writer"],
-  "assets": {}
+  "apps": ["news", "photos", "maps", "mail", "calendar", "ai-providers", "youtube", "quickdeck", "pdftools", "writer", "settings"],
+  "assets": {
+    "photos": {
+      "photos": "../apps/photos/resources/photos"
+    }
+  }
 }

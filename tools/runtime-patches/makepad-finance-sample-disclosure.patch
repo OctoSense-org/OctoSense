@@ -1,0 +1,45 @@
+diff --git a/apps/finance/src/view.rs b/apps/finance/src/view.rs
+index ebbc41f..6c61fac 100644
+--- a/apps/finance/src/view.rs
++++ b/apps/finance/src/view.rs
+@@ -1634,6 +1634,26 @@ fn ui_by(touch, desk){ if ui_desk { desk } else { touch } }
+             }
+             DeskLine{}
+ 
++            // Native first runs seed an editable, persistent example household.
++            // Imports go into the account chosen in this same ledger, so keep
++            // that context visible on every desktop page, including Import.
++            sample_notice := SolidView{
++                width: Fill
++                height: Fit
++                flow: Down
++                padding: Inset{left: 14, right: 14, top: 6, bottom: 6}
++                draw_bg +: {color: mod.finance.bar}
++                sample_notice_text := Label{
++                    width: Fill
++                    height: Fit
++                    padding: 0
++                    clip_y: false
++                    text: "New ledgers include sample accounts and transactions. You can't add accounts yet; imports go to the selected account."
++                    draw_text +: {color: mod.finance.fg, text_style: theme.font_regular{font_size: 9.0, line_spacing: 1.2}}
++                }
++            }
++            DeskLine{}
++
+             screens := SolidView{
+                 width: Fill
+                 height: Fill
+@@ -3301,6 +3321,13 @@ fn sync_desk_worth(&mut self, cx: &mut Cx) {
+     /// What each page shows besides its data on a desktop: empty, failed, done.
+     fn sync_desk_pages(&mut self, cx: &mut Cx) {
+         // The file with the accounts: nothing else can be shown without it.
++        self.view(cx, ids!(sample_notice)).set_visible(cx, !self.db_failed);
++        let notice = if self.backend.has_import() {
++            "New ledgers include sample accounts and transactions. You can't add accounts yet; imports go to the selected account."
++        } else {
++            "Sample accounts and transactions are shown. Changes are not saved."
++        };
++        self.label(cx, ids!(sample_notice_text)).set_text(cx, notice);
+         self.view(cx, ids!(db_failed)).set_visible(cx, self.db_failed);
+         if self.db_failed {
+             for screen in Screen::ALL {

@@ -13,6 +13,7 @@ use super::facts;
 use super::contacts::ContactsSource;
 use super::rules::{Conditions, RuleDraft, MAX_EVERYTHING_MINUTES};
 use super::types::{Caller, Connection, Request, RequestId, Trigger};
+use super::words::Said;
 
 /// Why the router put a request in front of the person.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -84,6 +85,9 @@ pub struct Line {
     /// The app whose agent asked (its conversation's Stop stops that
     /// agent's turn); `None` for the system agent.
     pub agent: Option<String>,
+    /// The same request in plain words, for a Mac's sheet. The decision is
+    /// the same whichever words it is read in.
+    pub said: Said,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -98,6 +102,16 @@ pub struct Sheet {
 /// `os.mail` → `Mail`.
 pub fn app_label(app: &str) -> String {
     let id = app.strip_prefix("os.").unwrap_or(app);
+    // The names that are not their id with a capital.
+    match id {
+        "apphub" => return "App Hub".to_string(),
+        "octoscode" => return "OctosCode".to_string(),
+        "ai-providers" => return "AI Providers".to_string(),
+        "quickdeck" => return "Quick Deck".to_string(),
+        "pdftools" => return "PDF Tools".to_string(),
+        "youtube" => return "YouTube".to_string(),
+        _ => {}
+    }
     let mut chars = id.chars();
     match chars.next() {
         Some(c) => c.to_uppercase().collect::<String>() + chars.as_str(),
@@ -146,6 +160,7 @@ impl Line {
             always,
             answer: None,
             agent: super::router::agent_of(req),
+            said: super::words::said(req),
         }
     }
     /// "Mail · mail.send".
@@ -186,6 +201,7 @@ pub fn argument_rows(req: &Request) -> Vec<String> {
     let secret = &req.tool.secret_fields;
     if req.tool.command {
         if let Some(command) = req.args.get("command").and_then(serde_json::Value::as_str).filter(|_| !facts::is_secret("command", secret)) {
+            let command = facts::mask_text(command, Some("command")).0;
             let lines: Vec<&str> = command.split('\n').collect();
             let mut rows = vec![format!("command ({} line{}):", lines.len(), if lines.len() == 1 { "" } else { "s" })];
             let width = lines.len().to_string().len().max(1);

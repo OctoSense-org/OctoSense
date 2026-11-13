@@ -182,6 +182,12 @@ pub struct ChatModel {
     /// segment's saved text may be recorded at a ledger position before the
     /// tool calls its deltas followed.
     streamed: Vec<String>,
+    /// The turn `/new` runs ([`ChatModel::own_turn`]): the kernel's own
+    /// housekeeping. None of it reaches the transcript, and until it ends
+    /// what the kernel reads back is still the old conversation.
+    hidden_turn: Option<String>,
+    /// That turn ended: the driver reads the conversation again.
+    reload_wanted: bool,
 }
 
 impl ChatModel {
@@ -223,6 +229,24 @@ impl ChatModel {
     /// A turn this chat started without a visible prompt (`/new`).
     pub fn own_turn(&mut self, turn: &str) {
         self.own_turns.insert(turn.to_string());
+        self.hidden_turn = Some(turn.to_string());
+    }
+
+    /// The kernel is still clearing the conversation: a reload now would
+    /// bring the old one back.
+    pub fn clearing(&self) -> bool {
+        self.hidden_turn.is_some()
+    }
+
+    /// That turn will not be heard of again (it failed to start, or the
+    /// link that carried it is gone).
+    pub fn forget_hidden_turn(&mut self) {
+        self.hidden_turn = None;
+    }
+
+    /// Whether the hidden turn just ended, once.
+    pub fn take_reload(&mut self) -> bool {
+        std::mem::take(&mut self.reload_wanted)
     }
 
     /// Whether this chat started `turn` itself.
@@ -282,6 +306,15 @@ impl ChatModel {
         let s = |k: &str| params.get(k).and_then(Value::as_str).unwrap_or("").to_string();
         let turn = s("turn_id");
         let mut effects = Vec::new();
+        if self.hidden_turn.as_deref() == Some(turn.as_str()) {
+            let ended = matches!(method, "turn/completed" | "turn/error")
+                || (method == "projection/envelope" && params["payload"]["type"].as_str() == Some("turn_terminal"));
+            if ended {
+                self.hidden_turn = None;
+                self.reload_wanted = true;
+            }
+            return effects;
+        }
         match method {
             "turn/started" => {
                 // Another client's turn on the same conversation (Talk to
@@ -574,11 +607,25 @@ impl ChatModel {
         let rows = messages.as_array().map(Vec::as_slice).unwrap_or(&[]);
         let mut tools = ToolNames::new(&self.items, rows);
         let mut items = Vec::new();
+        // The turn of a `/new` the rows just passed.
+        let mut after_new: Option<Option<String>> = None;
         for row in rows {
             // The shell's note to the system agent is not the person's words.
             let text = crate::agents::strip_note(row.get("content").and_then(Value::as_str).unwrap_or("")).to_string();
             let turn = history_turn(row);
-            match row.get("role").and_then(Value::as_str).unwrap_or("") {
+            let role = row.get("role").and_then(Value::as_str).unwrap_or("");
+            // The kernel keeps its own `/new` and "Session cleared.": neither
+            // is the conversation.
+            if role == "user" && text.trim() == "/new" {
+                after_new = Some(turn);
+                continue;
+            }
+            if let Some(new_turn) = after_new.take() {
+                if role == "assistant" && ((new_turn.is_some() && new_turn == turn) || text.trim_start().starts_with("Session cleared")) {
+                    continue;
+                }
+            }
+            match role {
                 "user" => items.push(Item::Message { role: Role::User, text, turn, segment: None, seq: None, speaker: None }),
                 "assistant" if !text.trim().is_empty() => items.push(Item::Message { role: Role::Assistant, text, turn, segment: None, seq: None, speaker: None }),
                 "tool" => items.push(Item::Tool {

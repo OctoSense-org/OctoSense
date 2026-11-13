@@ -4,7 +4,7 @@ English | [简体中文](README.zh-CN.md)
 
 Quick Deck (`os.quickdeck`) is OctoSense's presentation app for the desktop:
 a library of decks, an editor with a slide navigator, a canvas and an
-inspector, a slide sorter with sections, New from an outline (typed, or
+inspector, a slide sorter with sections, New from an Outline (typed, or
 drafted with the person's own AI provider), Present and Export; a deck's video
 and audio play in the editor and in Present. The shell's
 `deck` engine service (deckcraft,
@@ -23,51 +23,65 @@ designs (approved 11 Oct 2026): the product requirements in
 measurements in `design/source/`, and one pixel map per screen in
 `design/map/` that ties every measured region to the widget that rebuilds it,
 its geometry, colours, type size, the runtime source it relies on and the
-review decision that applies.
+review decision that applies. Since then it has taken the Mac look of
+[apps/AGENTS.md](../AGENTS.md) on the shared interface: the screens keep the
+designs' parts and order, and their sizes and colours are the Mac's.
 
 ## The window
 
 | Region | What it holds |
 | --- | --- |
-| Tabs | Home, one tab per open deck (its title, a dot while it has unsaved changes, a close cross), the outline page's tab while it is open, and New, which goes Home. Titles share the row and are cut with an ellipsis when it is full |
-| Toolbar | Slides and Sorter; Text, Picture, Shape, Table, Chart (each opens its insert strip); Undo and Redo; Save, Export and Present |
-| Navigator | New slide, the sections (each folds), numbered thumbnails (the current one outlined, a hidden one dimmed) |
-| Canvas | The current slide, the engine's render at the canvas's width, with the selection's frame and handles; a chosen clip's control under it (Play; while it plays, pause or play on, stop, the time and the sound) and its video over its box ([Playing video and audio](#playing-video-and-audio)); the pill: previous, "5 / 12", next, zoom out, the zoom, zoom in, Fit |
-| Inspector | Format (what the selection is decides what shows: text, box, shape, picture, table, chart, a clip's playback, arrange), Layout (the eleven layouts, background, transition, skip), Theme (themes, colours, fonts, slide size, footer), Notes. Every switch and mark shows what the deck has: a box's anchor and autofit (`deck.format_state`), a chart's elements and palette and a table's options (`deck.slide`), the colour set, font pair and footer (`deck.open`, `deck.state`); a change shows at once, the service's next answer confirms it, and after Undo or Redo the deck's own come back without reopening |
-| Status line | Saved or Edited, "Slide 5 of 12 · 16:9" (in the sorter, "12 slides · 2 selected"), and what the app's storage holds against what it may hold, from the shell's `files.status` |
+| Toolbar | On a Mac, at the window's top edge with the lights over its leading 84 points: a press nothing claims in its 52 points moves the window (under a title bar and 40 points in any other style). On Home: the app's name, how many decks, New from an Outline… and Open…. On the outline page and on a deck that couldn't open: its title and what became of it. In a deck: Slides and Sorter; the slide's number between previous and next; zoom out, the zoom, zoom in, Fit; Text, Picture, Shape, Table, Chart (on a desktop Picture, Shape, Table and Chart each hang a popover from their tool, as Keynote's do: a press off it or Escape closes it, and a press on another insert tool opens that one's; on a phone each opens its insert strip); Undo and Redo on a phone (on a desktop they are in the Edit menu, ⌘Z and ⇧⌘Z, as Keynote's are); Save, Export… and Present, the one filled button. Under a sheet they dim and take no press |
+| Tabs | Under the toolbar once something is open, in a thin band: Home as an icon at the band's left, one tab per open deck with its title in the middle, the outline page's tab while it is open, and +, which goes Home, at the right. A deck with unsaved changes shows a dot at its tab's left end; the pointer on a tab shows the close cross there, and a right click has Close Tab, Save, Export… and Present. Titles share the row and are cut with an ellipsis when it is full |
+| Navigator | New slide, the sections (each folds), numbered thumbnails (the current one outlined, a hidden one dimmed), every slide in one scrolling list. A right click on a slide has Cut, Copy and Paste, then New Slide, Duplicate, Hide Slide, Delete, Move Earlier, Move Later and New Section |
+| Canvas | The current slide, the engine's render at the canvas's width, with the selection's frame and handles; a chosen clip's control under it (Play; while it plays, pause or play on, stop, the time and the sound) and its video over its box ([Playing video and audio](#playing-video-and-audio)) |
+| Inspector | A segmented control over Format (what the selection is decides what shows: text, box, shape, picture, table, chart, a clip's playback, arrange), Layout (the eleven layouts, background, transition, skip), Theme (themes, colours, fonts, slide size, footer), Notes. On a desktop its on/off rows are checkboxes, as Keynote's are (a phone keeps switches), and a table's row, column and cell commands are pull-downs that name them, as the cell's right click does. Every switch and mark shows what the deck has: a box's anchor and autofit (`deck.format_state`), a chart's elements and palette and a table's options (`deck.slide`), the colour set, font pair and footer (`deck.open`, `deck.state`); a change shows at once, the service's next answer confirms it, and after Undo or Redo the deck's own come back without reopening |
+| Status bar | Thin, in small text: Saved, Saving… (Save dims while it runs) or Edited, then what an export just saved; "Slide 5 of 12 · 16:9" (in the sorter, "12 slides" and how many are selected); what the app's storage holds against what it may hold, from the shell's `files.status`, and Storage Is Full…, which brings the alert back, while it is full |
 
-The designs are drawn at 1536 x 1024, and the manifest asks the desktop to
-open the window at that size (`"window": {"width": 1536, "height": 1024}`,
-App Hub's window hint, `"schema_minor": 1`). The desk clamps it: in the
-hidden shell's 1400 x 900 window on Linux, Quick Deck opens at 1296 x 698
-points. Below 1180 points wide the navigator narrows to 200 points and the
-inspector opens over the canvas from an Inspector button in the toolbar
-(**unverified**: no run used a window that narrow).
+It looks like a Mac app (the last section of [apps/AGENTS.md](../AGENTS.md)):
+13-point text, 28-point controls, hairlines, the shared interface's colours in
+light and dark. The manifest asks the desktop to open the window at 1536 x 1024
+(`"window": {"width": 1536, "height": 1024}`, App Hub's window hint,
+`"schema_minor": 1`). The desk clamps it: in the hidden shell's 1400 x 900
+window, Quick Deck opens with an app area of 1296 x 719 points. Below 1160 points wide (1232
+in a Mac's unified window, whose lights take 72 more) the
+toolbar's tools, the sorter's among them, show their icons without their names;
+below 960 the navigator narrows to 154 points and the inspector is put away behind
+an Inspector button in the toolbar. Out, it sits beside the canvas, which narrows
+to make room, so it never covers the slide; below 860 it takes the navigator's
+place while it is out. Below 860 the zoom leaves the toolbar and below 740 the
+slide's number does (72 points sooner in a unified window). Nothing clips down to
+700 points.
 
 ## Screens
 
 | Screen | What it does | Engine |
 | --- | --- | --- |
-| Home | Start a new deck from one of the engine's themes; New from an outline; Open a presentation from this device (.pptx, up to the host's import limit); Recent decks as cards with the engine's cover of their first slide, slides and size, when edited; Duplicate and Remove (asks once more) | `deck.themes`, `deck.cover`, `deck.create`, `deck.open`, `deck.save`, `deck.close` |
-| Editor | The navigator, the canvas and the inspector. Tap to choose (`deck.hit`), a long press adds to the choice, tap a chosen text box again (or double-tap) to type in it, drag to move, a handle to resize or rotate. Insert strips for text, pictures (from images/ or this device), shapes (the engine's gallery), tables and charts. A chosen video or sound plays from its control | `deck.slides`, `deck.slide`, `deck.view`, `deck.hit`, `deck.set_text`, `deck.format_state`, `deck.format`, `deck.insert`, `deck.shape`, `deck.picture`, `deck.table`, `deck.chart`, `deck.layouts`, `deck.slides_op`, `deck.design`, `deck.transition`, `deck.notes`, `deck.fonts`, `deck.shapes`, `deck.media` |
-| Sorter | Every slide as a tile in its sections, with its number and transition: choose slides, New slide, Duplicate, Delete, Hide or Show, Move earlier and later, drag a tile to move it, add, rename and remove sections | `deck.slides_op`, `deck.view` |
-| New from an outline | A card per slide (a title, then its points, one per line), a theme and a slide size, Make deck. Draft with AI asks the person's own provider for the cards (`model.complete`, fast class); without a provider it says to set one up in Settings → AI providers, and typing the outline works either way | `deck.create`; the host's `model.complete` |
-| Present | The slide alone on a dark stage that takes the whole screen: the Present tap asks the shell to put the window in full screen (`window.fullscreen`), and where the host can't (card-host, a phone), the stage fills the app's window. A small bar (previous, "4 / 12", next, Notes, the time, Exit) and an Exit in the corner; Esc, the shell's key in full screen, also ends the show, and the window comes back as it was. Each build step shows its end state, and nothing animates; a slide drawn for the smaller window is drawn again for the full screen. Notes opens a strip with the slide's notes. A clip set to play by itself starts when its slide shows, a tap on a clip plays or pauses it, and another slide or Exit stops it | `deck.show`, `deck.view {step}`, `deck.slide`, `deck.media`; the shell's `window.fullscreen` |
-| Export | Presentation (.pptx), PDF (slides, notes pages or handouts, 1 to 9 per page) or Images (one PNG a slide); all slides, the current one or a range; hidden slides in or out; a name. The deck's earlier exports are listed and can be removed | `deck.export` |
+| Home | A grid of the engine's themes: a click starts a new deck in one. New from an Outline… and Open… (.pptx, up to the host's import limit) in the toolbar; Recent decks with the engine's cover of their first slide, slides and size, when edited; a right click on a card, or its … button, has Open, Duplicate and Remove… (an alert asks once more). Theme tiles keep their size with or without Recent | `deck.themes`, `deck.cover`, `deck.create`, `deck.open`, `deck.save`, `deck.close` |
+| Editor | The navigator, the canvas and the inspector. Click to choose (`deck.hit`); a right click has Cut, Copy and Paste first, as Keynote's, then what the toolbar and the inspector offer for that object, among them Add to Selection (Shift-click, Command-click or a press and hold does the same). Cut and Copy keep objects, or with none chosen the slides chosen, for this Quick Deck session, even after their source tab closes; Paste puts objects on the slide in front and slides after it, and is grey until something is kept. Ordinary objects can cross themes and keep their look; slides need matching designs, and some complex or imported objects and links are not yet supported; the Edit menu has the same three with their keys, and Select All chooses every object on the slide (every slide in the sorter); click a chosen text box again (or double-click) to type in it, in place, with its bullets, numbers and line spacing; click a table's cell and type, Return goes to the cell below; drag to move, a handle to resize or rotate. The Font pop-up is a real menu with More Fonts…, a sheet that searches every font: a click picks a family, and Choose (the default) or a double click applies it. Text puts a box on the slide at once; pictures (from images/ or this device), shapes (a picture per preset of the engine's gallery, by category), tables and charts come from a popover on a desktop and a strip on a phone. A chosen video or sound plays from its control | `deck.slides`, `deck.slide`, `deck.view`, `deck.hit`, `deck.set_text`, `deck.format_state`, `deck.format`, `deck.insert`, `deck.shape`, `deck.picture`, `deck.table`, `deck.chart`, `deck.layouts`, `deck.slides_op`, `deck.design`, `deck.transition`, `deck.notes`, `deck.fonts`, `deck.shapes`, `deck.media` |
+| Sorter | Every slide as a tile in its sections, with its number and transition: choose slides; New Slide, Duplicate, Hide or Show, Delete, Earlier, Later and New Section in the toolbar and in a right click; drag a tile to move it; rename and remove sections | `deck.slides_op`, `deck.view` |
+| New from an Outline | A card per slide (a title, then its points, one per line), a theme and a slide size, and Make Deck, the default button, dimmed until the first slide has a title. Draft with AI asks the person's own provider for the cards (`model.complete`, fast class); without a provider it offers Open AI Providers… (`settings.open`), Draft Outline dims and Try Again asks again, and typing the outline works either way. A card's drag grip shows only under the pointer | `deck.create`; the host's `model.complete` |
+| Present | The slide alone on a dark stage that takes the whole screen: a click on Present asks the shell to put the window in full screen (`window.fullscreen`), and where the host can't (card-host, a phone), the stage fills the app's window. The slide fills the width the screen's shape allows. A small bar (previous, "4 / 12", next, Notes, the time, Exit) has a band of its own under the slide; a script can't see the pointer move, so it doesn't hide by itself: a right click has Next, Previous, Hide Notes, Hide Controls and Exit Show. Esc, the shell's key in full screen, also ends the show, and the window comes back as it was. Each build step shows its end state, and nothing animates; a slide drawn for the smaller window is drawn again for the full screen. Notes opens a strip with the slide's notes. A clip set to play by itself starts when its slide shows, a click on a clip plays or pauses it, and another slide or Exit stops it | `deck.show`, `deck.view {step}`, `deck.slide`, `deck.media`; the shell's `window.fullscreen` |
+| Export | A sheet under the toolbar, with its labels to the left of its controls: a Format pop-up (Presentation (.pptx), PDF or Images, one PNG a slide), for a PDF a Pages pop-up (Slides, Notes Pages or Handouts) and Slides per page, 1 to 9; all slides, the current one or a range; hidden slides in or out. Cancel sits left of the default button, Save…, which is dimmed until the range is right. Save… makes the file and hands it to the Mac's Save panel, which asks for its name and folder (an images export asks once per picture; Cancel stops there); the sheet closes and the status bar says what was saved | `deck.export`; the shell's `files.export` |
 
 Undo and Redo use the engine's history; Save writes the native `.deckcraft`
 file (`deck.undo`, `deck.redo`, `deck.save`, `deck.state`). Closing a tab with
-unsaved changes asks: Save, Don't save, or Cancel.
+unsaved changes asks in an alert: Don't Save, Cancel, or Save.
 
 States every screen handles: an empty library, a slide still rendering, a
-damaged deck ("Couldn't open this deck" and the engine's reason), a protected
+damaged deck ("Couldn't Open This Deck" and the engine's reason), a protected
 presentation (OctoSense keeps passwords on host sheets and there is none for
 presentations, so it is not opened), one the engine holds back (a zip
-inside it, or parts beyond the service's import guard, #448), one it doesn't read
-(.ppt, .key, .odp, PDF), eight decks already open, storage full (the bar
-under the tabs, and the status line goes red), unsaved changes when closing,
-and no engine on the device ("The deck engine isn't available here"), or an
-older one ("This OctoSense's deck engine is older than Quick Deck").
+inside it, or parts beyond the service's import guard, #448; the words say
+"something embedded in it"), one it doesn't read
+(.ppt, .key, .odp, PDF), eight decks already open, storage full (an alert when
+a write finds no room, with Show Pictures, whose popover (a phone's strip) removes one, and Go to Home,
+whose banner offers Remove Largest… for the largest deck no tab holds; then Storage
+Is Full… in the status bar; a clip too big to
+play says so by the clip, with no alert), unsaved changes when closing,
+and no engine on the device ("Quick Deck Can't Open Decks on This Device"), or an
+older one ("This Version of OctoSense Is Too Old for Quick Deck"). A failure
+that can change has Try Again; a refusal that can't has Close Tab and Remove….
 
 ## Playing video and audio
 
@@ -80,13 +94,13 @@ system's own player. Nothing in the app or the deck service decodes a clip.
   inside its foot, when the slide has no room below): Play; while it plays,
   pause or play on, stop, the time and the sound (mute). A video plays over its box at the canvas's zoom;
   a sound has the control alone, led by a speaker. The inspector says how
-  the clip plays in a show (by itself or on a tap, once or again until the
+  the clip plays in a show (by itself or on a click, once or again until the
   slide changes) and has the same Play, Pause and Stop. While a clip plays its
   frame has no handles and a change to it waits ("Stop the clip first");
   another slide, another choice, another tab, the sorter or Export stops it.
   Playing never changes the deck.
 - **In Present** a clip set to play by itself starts when its slide shows, a
-  tap on a clip plays or pauses it, and another slide, the show's end or Exit
+  click on a clip plays or pauses it, and another slide, the show's end or Exit
   stops it (a build step on the same slide doesn't). A paused clip, and a
   sound while it plays, show a small note with the time.
 - **How**: `deck.media {doc, slide, id}`, with the shape's own `id`, writes
@@ -112,7 +126,7 @@ unavailable"); on Windows, Media Foundation (never run for Quick Deck).
 
 ## Opening a presentation from this device
 
-"Open a presentation from this device" asks the shell's files service to copy
+Open… asks the shell's files service to copy
 one file the person chooses in the host's own dialog into `imports/`. The app
 names the new file first, because `files.import` takes its destination before
 the dialog opens: `Imported presentation.pptx`, then `Imported presentation
@@ -130,11 +144,11 @@ engine works in the same folder.
 
 | Path | Holds |
 | --- | --- |
-| `library.json` | Version 2: per deck file its title, slides, size, theme, when it was made, edited and opened, the slide and zoom it was left at, its cover and its exports; the pictures brought in; "Show notes while presenting"; the outline being written |
+| `library.json` | Version 2: per deck file its title, slides, size, theme, when it was made, edited and opened, the slide and zoom it was left at and its cover; the pictures brought in; "Show notes while presenting"; the outline being written |
 | `decks/*.deckcraft` | The decks, in the engine's native format |
 | `imports/*.pptx` | A presentation brought in from this device, until its first save |
 | `images/` | Pictures brought in for slides |
-| `exports/` | Exports: `.pptx`, `.pdf`, and a folder of PNGs per images export |
+| `exports/` | An export on its way to the Save panel: `.pptx`, `.pdf`, and a folder of PNGs per images export. Cleared after each one and at every start, older versions' exports with it |
 | `.cache/` | The service's renders and covers: at most 16 MiB and 64 files, at most 32 of them covers |
 | `.cache/media/` | The clips `deck.media` wrote for playing, named by a hash of their bytes: at most 32 MiB and 8 clips, used longest ago first; a deck's clips go when it closes |
 
@@ -150,19 +164,43 @@ Notes for whoever changes the script:
   pictures, then the navigator's thumbnails one PNG read per timer tick, the
   sorter's tiles, and Home's covers. The first call after the shell starts
   can wait for the engine's font warm-up.
-- **No scroll position for script apps.** The navigator and the sorter show a
-  window of slides around the current one (40 and 30), with "‹ Slides 1–n"
-  and "Slides n–N ›" to move it.
-- **No key events for script apps.** Every shortcut in the brief is a button:
+- **No scroll position for script apps.** The navigator and the sorter draw
+  every slide in a scroll view. The script can't scroll it, so previous and next
+  in the toolbar don't bring the current slide into view. One draw of 200 slides
+  goes past what one entry into the script may do (200,000 instructions, 64 ms),
+  so each draws in regions of a few slides (`nav_chunk_*`, `sorter_chunk_*`): a
+  new picture or another current slide draws only its region, and the list stays
+  where it was scrolled.
+- **No key events for script apps,** but for a view that holds the keyboard (`GestureView`'s `on_key`): the insert popover's layer takes it and closes on Escape. Every shortcut in the brief is a button:
   Undo, Redo, Save, Present, Exit, Duplicate, Delete, Move earlier and later.
+  On a Mac, Undo and Redo are the Edit menu's rows instead, ⌘Z and ⇧⌘Z: the
+  shell sends a menu row's key to the app as its command. Another desktop has no
+  menu bar, so its toolbar keeps them.
 - **No TextInput selection for script apps.** Formatting applies to a whole
   text box, or to the paragraphs chosen in the inspector (Applies to). A text
   box being edited is a text field over the slide, which the engine draws
-  without that box's text; the field shows plain lines, without bullets.
+  without that box's text. So it stays what will present, the field holds each
+  paragraph's mark (a bullet or number and its indent, in characters
+  `edit_plain` takes out again before the text goes to the engine) and the
+  engine's line pitch (`edit_look_next`, `edit_seed`, `edit_pitch`). It has one
+  face, one size and no hanging indent, the caret starts before the first mark
+  (no script call places it), and a new line has its bullet once editing ends.
+  A table's cell is the same field over the cell's rectangle, which assumes even
+  rows and columns: `deck.slide` reports no widths, heights or spans.
 - **Drawing a region again rebuilds its widgets** (`widgets/src/view.rs`), so
   a drag held by one of them ends: a drag on the slide draws its outline in a
   layer of its own and changes the shape once, when it is let go; the
-  sorter's strip names where a dragged tile would go.
+  status bar names where a dragged tile would go.
+- **A name defined twice at the top of the script splits its scope**
+  (`def_scope_value`): a function above the second definition then can't see any
+  name below it ("variable not found"), far from the cause. Top-level names are
+  unique.
+- **An `if … else` must end both branches the same way, in a function too:**
+  one ending in a `for` and the other in a call leaves the stack uneven
+  ("pop_stack_value on empty stack") and ends the callback.
+- **A generated folder.** `bundle/shapes/` is a line picture per preset, from the
+  engine's own geometry at deckcraft d0e57d7e:
+  `cargo run --locked --release --manifest-path apps/quickdeck/tests/make_shapes/Cargo.toml -- apps/quickdeck/bundle/shapes`.
 - **State lives on `mod.quickdeck_state`.** A light/dark switch runs the
   script again; every `let` starts over, `mod` survives, and `resume()` draws
   every region with the new look.
@@ -195,6 +233,29 @@ Notes for whoever changes the script:
   up by in its window): since #516 the shell's search for its bar found
   Quick Deck's toolbar first and panicked (#519). The toolbar region is
   `qd_toolbar`, and a model test keeps the names apart.
+- **The toolbar's tools keep Labels for their names.** The insert tools, Undo
+  and Redo are an icon button with a Label over it, because `tests/ui.py` finds
+  them as Labels. In a window under 1160 points only the icons show. A Mac's
+  toolbar has no Undo or Redo, so the shell's runs press ⌘Z and ⇧⌘Z there
+  (`undo`, `redo`), and tap the toolbar's in the other styles.
+- **Export is a sheet over the slides,** so the slides' regions stay shown and
+  the pump goes on drawing them under it (`t.view != "sorter"`).
+- **A GestureView hears every press over it,** also one that lands on a sheet,
+  its dim or a pop-up's list drawn above it: it shares presses so that a scroll
+  view around it can't take them, and gives way only to a widget inside its own
+  rect. So what floats says `press_spent()` (what closes a sheet, an alert, a
+  list or the insert popover; the note's bar; Present's bar) and what lies under
+  asks `press_free()`, which is false while the popover is open.
+  `tests/ui.py` checks the sheet's dim.
+- **`UNIFIED` is the shared `ui_unified`:** the shell's `unified_chrome` lists
+  Quick Deck, so in the Mac style it has no title bar, a 52-point toolbar and
+  the lights over that toolbar's first 84 points. Every other style, and
+  `card-host`, keeps a title bar over 40 points. A sheet's dim leaves the
+  band free (`QdScrim`) so the window still moves, and a Present the shell
+  refuses the whole screen starts its slide below the lights (`stage_band`).
+- **`enabled: false` only stops the press:** a button keeps its colours until
+  something calls `set_disabled`, which a script can't. So what's off says so
+  with its own colours (`PrimaryOff`, the `ink` a tool is drawn with).
 
 ## Testing
 
@@ -239,8 +300,8 @@ exceeded` in its log); `--budget-ms 1000` raises the shell's budget
 | --- | --- |
 | `missing` | `card-host` with the shipped bundle: no engine and no files service, on Home, in a deck's tab and on the outline page with its Draft with AI |
 | `fixture` | `card-host` with the dev fixture: every designed screen at the designs' 1536 x 1024, light and dark, each grab beside its design in `compare/`, then a table's options and the footer; the inspector's switches and marks are checked against what the stand-in reports, and a table option and the footer's date against what it reports after a change and its Undo |
-| `states` | The dev fixture's damaged, protected, held and unsupported presentations, the unsaved-changes bar, storage full and the empty library of a first run |
-| `shell` | A deck made from an outline with the real engine, then edited: text in place, bold, a chart, undo and redo, a layout, a theme, notes, the sorter, save, export and Present; light, then dark through the shell's own style menu. In the light pass the inspector's states follow real changes and their Undo: a box's anchor and autofit, a chart's data labels, a table's total row, the colour set and the footer, each read again from the engine (the shape chosen again, or the deck's design asked again) |
+| `states` | The dev fixture's damaged, protected, held and unsupported presentations, the unsaved-changes alert, storage full and the empty library of a first run |
+| `shell` | A deck made from an outline with the real engine, then edited: text in place with its bullets, bold, a chart, a table's cells typed on the slide, undo and redo, a layout, a theme, notes, the sorter, save, export (the presentation and the PDF through `files.export`, each one's bytes read from `MAKEPAD_TEST_SAVE_DIR`) and Present; light, then dark through the shell's own style menu. In the light pass the inspector's states follow real changes and their Undo: a box's anchor and autofit, a chart's data labels, a table's total row, the colour set and the footer, each read again from the engine (the shape chosen again, or the deck's design asked again) |
 | `restart` | The same home again: the library, the deck's cover and slides |
 | `playback` (`card-host`) | `make_fixture.py --media`'s Launch Film: the chosen clip's control, the sample clip playing over its box (two grabs a second apart must differ there, and the control's time move on), pause (the time holds), play on, stop, another slide stopping it, a sound's control, `unsupported:` and `storage_full:` in words, a clip the player can't open once a clip has played; Present: the clip that plays by itself (two grabs a second apart differ), a tap that pauses it and one that plays it on, the next slide; then a session where nothing has played, where that failure reads "Playback isn't available on this system"; light and dark |
 | `playback` (shell) | A home of its own holding `tests/media`'s decks: `deck.media` writes each clip into the storage, checked against the clip's own bytes (`.cache/media/<sha256>.mp4`, and `.wav`), and a closed deck's clips leave the cache; the native deck's video in the editor and in Present (where it starts by itself), its sound, and the `.pptx` copy's video in Present (which starts only on a tap): on a Mac each video must play (two grabs a second apart differ; the sound is never played, since these runs open no audio device), on Linux each must say "Playback isn't available on this system"; light, then dark |
@@ -328,24 +389,69 @@ for playback.
   clip's own bytes, closing the deck removed them, and Quick Deck stayed open
   through every step. The model tests pass (35; 36 with `--features
   app-hub`).
+- **Verified on 2 Nov 2026, the Mac look** (macOS, Apple silicon): the shell's
+  `shell`, `restart` and `playback` runs, light then dark, on the real engine and
+  the Mac's player, in a hidden shell (the release build of this branch, each
+  run's bundle put in place after a first boot unpacked it; `--budget-ms 5000`,
+  many hidden shells sharing the machine), and `card-host`'s `fixture`, `states`
+  and `missing` (a build of 9 Oct 2026). Besides them, in the hidden shell, light
+  and dark: the screens and states this README lists grabbed and read (all but
+  eight decks open and an older engine), on the real engine and on the dev
+  fixture, each wait held long enough to grab, and windows of 1100, 900 and 700
+  points, dragged to size. The model tests were not run in this pass; their
+  expressions the look could touch (the canvas's fit, zoom steps, the clip's
+  control, the refusals' words) were evaluated in the bundle's own VM.
+- **Verified on 3 Nov 2026, the unified window and where a press goes** (macOS,
+  Apple silicon; the release build of this branch, each run's bundle put in place
+  after a first boot unpacked it): the shell's `shell`, `restart` and `playback`
+  runs at the runtime's 64 ms budget, on the real engine and the Mac's player, and
+  `card-host`'s `missing`, `fixture` and `states` at 64 ms (a build of 9 Oct 2026),
+  with no script error in their logs. Besides them, in a hidden shell at a 1000 ms
+  budget, light and dark: this README's screens and states grabbed and read at
+  1296 x 719 points and about 700 points, on the real engine, with a slowed or
+  missing engine for the waits and the refusals only those show. A press on a
+  sheet, its dim, an alert's dim over a deck's card, the floating inspector's words
+  over the slide and the count on Present's bar each stayed there. The model tests
+  were not rerun after this pass's last edits.
+- **Verified 3 Nov 2026, the second review's changes** (macOS, Apple silicon, this
+  branch's release build with the current bundle swapped in after the first
+  unpack): the shell's `shell`, `restart` and `playback` with the real engine and
+  the Mac's player, and `card-host`'s `missing`, `fixture`, `states` and `playback`,
+  at the runtime's 64 ms, with no script error in their logs. Besides, in hidden
+  shells at a 1000 ms budget, light and dark, the screens and states listed here at
+  1296 x 719 points and about 700, each grab read: the Font menu and its sheet, the
+  shape pictures, a box edited with its bullets at the engine's line pitch, table
+  cells typed on the slide, the right-click menus on slides, objects, cards, tabs
+  and the stage, the storage alert, Home's tiles at one size with and without
+  Recent. In a hidden window, after `/w?k=focus`, `files.export` saved a `.pptx`, a
+  `.pdf` and a deck's pictures into `MAKEPAD_TEST_SAVE_DIR`, each file's first bytes
+  checked, with nothing left in `exports/`. A deck of 200 slides at 64 ms, no script
+  error: the navigator to slide 200, the slide opened with the list where it was,
+  and the sorter. A drag on an outline card's grip moved the card. The model tests
+  were not run on this pass; three of their pins name words this pass changed.
 - **Not verified**: a real import from the device (a hidden window on macOS
   has the dialog refused, and the Linux host has no dialog helper), so the
-  import guard's refusals through the app; Draft with AI with a real provider
-  (only the no-provider answer); a hidden shell on macOS; with the real
-  engine, pictures, tables, the shape gallery, backgrounds, Present's notes
-  strip with long notes and an images export (the dev fixture covers their
-  screens); windows narrower than 1180 points; other screen sizes; phones.
+  import guard's refusals through the app; the Mac's Save panel on screen (a
+  hidden window answers it from a folder); Draft with AI with a real provider
+  (only the no-provider answer); with the real engine, Present's notes
+  strip with long notes (the dev fixture covers its screen); other screen sizes;
+  phones.
   For playback: sound with audio out on any system (these runs open no audio
   device); Windows; a looping clip playing; a light/dark switch while a clip
   plays.
 - **Known**: the shell's window is smaller than the designs' 1536 x 1024, so
-  the theme panel, Export and the outline scroll. Theme previews draw the
-  app's own font (OctoSense bundles no theme fonts). A box being edited
-  shows plain lines without bullets. A built-in theme's own font pair is
+  the longer panels of the inspector and the outline scroll. Theme previews draw the
+  app's own font (OctoSense bundles no theme fonts). A box being edited has
+  one face and one size and no hanging indent, and a new line's bullet comes when
+  editing ends. A table's cell field assumes even rows and columns (`deck.slide`
+  reports no widths, heights or spans), so it sits off on an imported table
+  that has uneven ones. A script app gets no pointer moves, so Present's bar
+  doesn't hide by itself (Hide Controls in a right click). An
+  images export asks once per picture (`files.export` takes one file). A built-in theme's own font pair is
   named after the theme, so the pair with the same families is marked (Harbor's
   fonts are Classic's); an imported deck's own colours or fonts are named in a
-  hint. Present fills the app's window, not the screen. A `.pptx`'s clips
-  play only on a tap: deckcraft at d0e57d7e reads no autoplay or loop from a
+  hint. A `.pptx`'s clips
+  play only on a click: deckcraft at d0e57d7e reads no autoplay or loop from a
   PowerPoint file (SERVICE.md "As built in #515"), so only a native deck's
   clip starts by itself. A clip inside a group can't be chosen or played
   (`deck.slide` lists top-level shapes only). One clip plays at a time, and

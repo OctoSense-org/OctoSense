@@ -219,7 +219,7 @@ Except `--plan`, the commands below are **unverified**.
 3. Open AI providers (Start → Settings → AI providers) and add a model with its key. The profile is `$T/octos-home/.octos/profiles/_main.json`; with the file vault the key is in it, so delete `$T` afterwards.
 4. Talk to the assistant: F8 opens the system chat, and an app's "Ask &lt;app&gt;" panel reaches that app's agent once you allow it on the first-use sheet. A script app of your own reaches its agent through [the `octos` service](#script-apps-and-the-octos-service), with `OCTOSENSE_CONTAINED_APPS` left unset. AppCard (`--features app-appcard`) is another consumer.
 
-**Hidden windows.** Add `MAKEPAD_HIDE_WINDOWS=1 MAKEPAD_REMOTE=<port>` to drive the shell over the remote bridge without taking the screen ([desktop README § Remote-control bridge](../desktop/README.md#remote-control-bridge)). `desktop/scripts/ai_providers_remote.sh` runs AI providers end to end this way, with fake keys and outbound HTTPS denied; `desktop/scripts/glance_remote.sh` drives the glance panel the same hidden way.
+**Hidden windows.** Add `MAKEPAD_HIDE_WINDOWS=1 MAKEPAD_REMOTE=<port>` to drive the shell over the remote bridge without taking the screen ([desktop README § Remote-control bridge](../desktop/README.md#remote-control-bridge)). `desktop/scripts/ai_providers_remote.py` runs AI providers end to end this way, with fake keys and outbound HTTPS denied; `desktop/scripts/glance_remote.sh` drives the glance panel the same hidden way.
 
 **Tests** (from the repository root):
 

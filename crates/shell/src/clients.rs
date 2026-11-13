@@ -168,6 +168,13 @@ fn merge_catalog(base: Vec<AppDef>, bundled: Vec<AppDef>, system: Vec<AppDef>, i
 
 /// Catalog rows, bundled modules and the Card runner's apps (system and
 /// installed through App Hub), read fresh on each call.
+/// An app window's name in a desktop style. A Mac calls the updater Software
+/// Update, as its system menu's row does: its window's title, the Window menu
+/// and the menu bar say it alike.
+pub fn styled_label(mac: bool, app: &str, label: &str) -> String {
+    if mac && app == "updater" { "Software Update".to_string() } else { label.to_string() }
+}
+
 pub fn available_apps() -> Vec<AppDef> {
     registry()
 }
@@ -509,6 +516,9 @@ pub struct ClientSlot {
     /// installed app's own id. What host services check as the app in front
     /// ([`ClientSlot::foreground_app`]); `None` for every other client.
     pub card_app: Option<String>,
+    /// The name the catalog gives the app ("Files"), where a window that
+    /// names itself nothing, or only its id, is called that.
+    pub label: String,
     pub title: String,
     /// The process behind the slot: the build (`cargo build`) while
     /// `pending` holds the app, then the app itself.
@@ -574,6 +584,12 @@ pub struct ClientSlot {
     /// Its process died unexpectedly: the tile stays, closed, with a
     /// Restart (ADR 0004 §2); nothing runs behind it any more.
     pub stopped: bool,
+    /// The arguments its launch added after the app's own (a file to open,
+    /// `--settings`): what `WmRequest::LaunchOrFocus` matches a window by.
+    pub launch_args: Vec<String>,
+    /// A pop-up menu of its own is up (`AppToStudio::MenuUp`): a press off its
+    /// window only closes that menu (`App::app_menu_pointer`).
+    pub menu_up: bool,
 }
 
 impl ClientSlot {
@@ -585,6 +601,7 @@ impl ClientSlot {
             id,
             app: app.to_string(),
             card_app: None,
+            label: title.to_string(),
             title: title.to_string(),
             child: None,
             pending: None,
@@ -610,6 +627,8 @@ impl ClientSlot {
             closing: None,
             pane: false,
             stopped: false,
+            launch_args: Vec::new(),
+            menu_up: false,
         }
     }
 
@@ -850,30 +869,37 @@ fn reap_child_group(mut child: ProcessGroup, _grace: std::time::Duration, pool: 
 /// Final application shutdown cannot depend on UI ticks, destructors, or
 /// detached workers. Stop every group together and reap the direct children
 /// within one shared deadline, including builds that never connected.
+/// An app asked over its own socket first gets a close's [`CLOSE_GRACE`] to
+/// end by itself, as a Mac's apps do at a log out: a browser's engine writes
+/// a page's storage as it shuts down, and a signal to its group ends that.
 pub fn shutdown_clients(clients: &mut HashMap<ClientId, ClientSlot>) {
     let mut children: Vec<ProcessGroup> = Vec::new();
+    let mut asked: Vec<ProcessGroup> = Vec::new();
     let mut groups: Vec<i32> = Vec::new();
     for slot in clients.values_mut() {
-        if let Some(sender) = slot.sender.take() {
+        let polite = slot.sender.take().map(|sender| {
             crate::hub::send_to_app(&sender, vec![makepad_studio_protocol::StudioToApp::Kill]);
-        }
+        }).is_some();
         slot.pending = None;
         if let Some(child) = slot.child.take() {
-            #[cfg(not(unix))]
-            let mut child = child;
-            #[cfg(unix)]
-            child.state.signal(signal::SIGTERM, false);
-            #[cfg(not(unix))]
-            if !child.reaped() {
-                let _ = child.child.kill();
-            }
             groups.push(child.id() as i32);
-            children.push(child);
+            if polite {
+                asked.push(child);
+            } else {
+                children.push(terminate(child));
+            }
         }
         slot.task_pool = None;
     }
     // No remaining slot owns a child or sender, so Drop cannot queue cleanup.
     clients.clear();
+    let deadline = std::time::Instant::now() + CLOSE_GRACE;
+    while !asked.is_empty() && std::time::Instant::now() < deadline {
+        // A leader reaped here takes its group's leftovers with it (ProcessGroup::try_wait).
+        asked.retain_mut(|child| matches!(child.try_wait(), Ok(None)));
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    children.extend(asked.into_iter().map(terminate));
     for (phase, grace) in [GROUP_KILL_GRACE, std::time::Duration::from_secs(2)].into_iter().enumerate() {
         #[cfg(unix)]
         if phase == 1 {
@@ -907,6 +933,19 @@ pub fn shutdown_clients(clients: &mut HashMap<ClientId, ClientSlot>) {
     makepad_widgets::log!("octosense: child cleanup reached its shutdown deadline after termination");
 }
 
+/// SIGTERM to the group (the child alone on Windows) at the final shutdown.
+fn terminate(child: ProcessGroup) -> ProcessGroup {
+    #[cfg(not(unix))]
+    let mut child = child;
+    #[cfg(unix)]
+    child.state.signal(signal::SIGTERM, false);
+    #[cfg(not(unix))]
+    if !child.reaped() {
+        let _ = child.child.kill();
+    }
+    child
+}
+
 impl ClientSlot {
     pub fn exit_failure(&self, status: std::process::ExitStatus, label: &str) -> Option<String> {
         if self.closing.is_some() || self.warm || (self.ready && status.success()) {
@@ -938,12 +977,41 @@ impl ClientSlot {
     }
 
     pub fn display_title(&self) -> &str {
-        if self.title.is_empty() {
-            &self.app
-        } else {
+        if !self.title.is_empty() && !self.title.eq_ignore_ascii_case(&self.app) {
             &self.title
+        } else {
+            self.app_name()
         }
     }
+
+    /// The app's name, as a Mac's menu bar shows it.
+    pub fn app_name(&self) -> &str {
+        if self.label.is_empty() { &self.app } else { &self.label }
+    }
+}
+
+/// A unified toolbar's height: the band of the window a press moves, and the
+/// line the lights centre on. `apps/interface.splash` lays apps out to it.
+pub const UNIFIED_TOOLBAR: f64 = 52.0;
+
+/// The apps whose Mac window has no title bar, because the app draws one toolbar
+/// (or sidebar) to the window's top edge with room for the lights in it. An app
+/// reads the same fact from `theme.ui_unified`, and every other style keeps its
+/// title bar.
+pub fn unified_chrome(app: &str) -> bool {
+    matches!(
+        app.strip_prefix("os.").unwrap_or(app),
+        "news" | "mail" | "calendar" | "writer" | "photos" | "maps" | "youtube" | "ai-providers"
+            | "pdftools" | "quickdeck" | "notes" | "reminders" | "weather" | "clock" | "task"
+            | "files" | "finance" | "sheets" | "browser" | "image" | "pdf" | "aichat" | "route"
+            | "octoscode" | "apphub" | "settings" | "calculator"
+    )
+}
+
+/// The apps with tabs of their own. On a Mac their ⌘W closes the tab and only the
+/// last tab's closes the window, so the key is theirs; ⇧⌘W is the window's.
+pub fn closes_own_tabs(app: &str) -> bool {
+    matches!(app, "terminal" | "browser" | "files")
 }
 
 /// One line of a child's output, on its way to the tile.
@@ -1632,6 +1700,7 @@ pub fn spawn_client(
         id,
         app: app.id.to_string(),
         card_app: None,
+        label: app.label.to_string(),
         title: String::new(),
         child: Some(child),
         pending,
@@ -1659,6 +1728,8 @@ pub fn spawn_client(
         closing: None,
         pane: false,
         stopped: false,
+        launch_args: extra_args.to_vec(),
+        menu_up: false,
     })
 }
 
@@ -2625,6 +2696,14 @@ mod tests {
         drop(slot);
     }
 
+    /// A Mac names the updater's window as its system menu does; other styles and apps keep their names.
+    #[test]
+    fn a_mac_calls_the_updater_software_update() {
+        assert_eq!(styled_label(true, "updater", "OctoSense Updates"), "Software Update");
+        assert_eq!(styled_label(false, "updater", "OctoSense Updates"), "OctoSense Updates");
+        assert_eq!(styled_label(true, "notes", "Notes"), "Notes");
+    }
+
     /// The app host services treat as in front: a system app's manifest id
     /// as much as an installed app's. PDF Tools' "Open a PDF from this
     /// device" was refused as `foreground_required` in a focused window
@@ -2763,6 +2842,29 @@ mod tests {
             assert_eq!(unsafe { waitpid(*group, std::ptr::null_mut(), 1) }, -1,
                 "the wrapper must already be reaped");
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn final_shutdown_lets_an_asked_app_finish_before_its_group_is_signalled() {
+        let dir = std::env::temp_dir().join(format!("octosense-quit-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let kept = dir.join("kept");
+        // An app that takes a moment to write what it kept, as a browser's engine does.
+        let mut cmd = Command::new("/bin/sh");
+        cmd.args(["-c", &format!("sleep 0.6; echo kept > '{}'", kept.display())]);
+        own_process_group(&mut cmd);
+        let mut slot = ClientSlot::module(1, "browser", "Browser");
+        slot.child = Some(ProcessGroup::new(cmd.spawn().unwrap()));
+        let (tx, _rx) = std::sync::mpsc::channel();
+        slot.sender = Some(tx);
+        let mut clients = HashMap::from([(1, slot)]);
+        let started = std::time::Instant::now();
+        shutdown_clients(&mut clients);
+        assert!(kept.is_file(), "the app was signalled before it had written what it kept");
+        assert!(started.elapsed() < CLOSE_GRACE, "it ended by itself, so nothing waited for the grace");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[cfg(unix)]

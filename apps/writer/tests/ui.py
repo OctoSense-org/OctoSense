@@ -12,7 +12,9 @@ replaced by the dev fixture's stand-in engine (`dev-fixture/engine.splash`),
 with its settings in the app's storage as `dev/fixture.json`: B answers slowly
 (saving, preview, outline, export), C refuses word.convert (the save and
 export errors). The shipped bundle carries no fixture code. The real engine's
-flows are checked in a shell, not here.
+flows are checked in a shell, not here. So is the Mac's tree: card-host's style
+sheets don't say `ui_pointer`, so what this drives is TouchRoot, and DeskRoot's
+words ("New Document", "Export…", "Delete…") aren't the ones used here.
 
 Each run starts its own hidden card-host on 127.0.0.1:<port> with the app data
 of the run before it (MAKEPAD_HIDE_WINDOWS=1, MAKEPAD_REMOTE), drives it over

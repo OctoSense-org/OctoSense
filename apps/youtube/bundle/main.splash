@@ -3,37 +3,178 @@
 // Bundles carry this prelude so they work in the contained standalone host too.
 // Resolve the current theme after a host restyle, not a retained prelude alias.
 let theme = mod.theme
+// A desktop shell's style sheet says `ui_pointer = true`: the app gets pointer
+// metrics and the Mac layouts (13-point text, 28-point controls, a sidebar and
+// a toolbar). Anything else, a phone or a bare host, keeps the touch metrics.
+let ui_desk = try { theme.ui_pointer == true } catch { false }
+// A Mac's window has no title bar over an app that says so to the shell
+// (crates/shell/src/clients.rs, unified_chrome): the app draws to the window's top
+// edge, its toolbar is 52 points tall, and the lights sit over the leading 84 points
+// of the toolbar, or over the top of a sidebar. Other desktops keep a title bar.
+let ui_unified = ui_desk && try { theme.ui_unified == true } catch { false }
+fn ui_by(touch, desk){ if ui_desk { desk } else { touch } }
 let ui_ink = theme.color_text
 let ui_page = theme.color_bg_app
 let ui_light = dot(ui_ink, #x36b61200) < 0.5
-let ui_surface = if ui_light { #xffffff } else { mix(ui_page, ui_ink, 0.06) }
-let ui_field = mix(ui_page, ui_ink, 0.075)
-let ui_hover = mix(ui_page, ui_ink, 0.12)
-let ui_border = mix(ui_page, ui_ink, 0.22)
-let ui_muted = mix(ui_ink, ui_page, 0.24)
-let ui_link = mix(ui_ink, #x356bce, 0.25)
-let ui_primary = #x285cd6
-let ui_success = mix(ui_ink, #x28a55b, 0.20)
-let ui_danger = mix(ui_ink, #xe13b53, 0.20)
-let UiButton = ButtonFlat{height: 44 margin: 0 padding: Inset{left: 14 right: 14}
-    draw_bg +: {border_radius: 12.0 border_size: 0.0 color: #x00000000 color_hover: ui_hover color_down: ui_field color_focus: ui_hover}
-    draw_text +: {color: ui_link color_hover: ui_link color_down: ui_link color_focus: ui_link text_style: theme.font_bold{font_size: 14}}
+let ui_surface = if ui_light { #xffffff } else { mix(ui_page, ui_ink, ui_by(0.06, 0.07)) }
+let ui_field = if ui_desk && ui_light { #xffffff } else { mix(ui_page, ui_ink, ui_by(0.075, 0.07)) }
+let ui_hover = mix(ui_page, ui_ink, ui_by(0.12, 0.07))
+let ui_border = mix(ui_page, ui_ink, ui_by(0.22, 0.14))
+let ui_muted = mix(ui_ink, ui_page, ui_by(0.24, 0.26))
+// The Mac's system colours where the page is a Mac's, near white or near black;
+// a retro style's mid-gray page keeps text that is mostly ink.
+let ui_lum = dot(ui_page, #x36b61200)
+let ui_mac = ui_desk && (ui_lum > 0.86 || ui_lum < 0.25)
+let ui_link = if ui_mac { if ui_light { #x0060c0 } else { #x6cb8ff } } else { mix(ui_ink, #x356bce, 0.25) }
+let ui_primary = ui_by(#x285cd6, #x0071e3)
+let ui_success = if ui_mac { if ui_light { #x1a7030 } else { #x30d158 } } else { mix(ui_ink, #x28a55b, 0.20) }
+let ui_danger = if ui_mac { if ui_light { #xc70012 } else { #xffa097 } } else { mix(ui_ink, #xe13b53, 0.20) }
+// The Mac's surfaces: a sidebar and a toolbar a shade off the page, a selection
+// in the sidebar's own gray, a push button's face.
+let ui_sidebar = mix(ui_page, ui_ink, 0.03)
+let ui_bar = if ui_light { #xededf0 } else { #x303033 }
+let ui_selected = mix(ui_page, ui_ink, 0.11)
+let ui_button = if ui_light { #xffffff } else { mix(ui_page, ui_ink, 0.16) }
+// What a list or a document sits on: white in the light; in the dark, darker than
+// the window around it, as a Mac's content is.
+let ui_content = if ui_mac { if ui_light { #xffffff } else { #x1e1e1e } } else { ui_surface }
+// A selected row: the accent when it is the row the person is on, white text on it.
+let ui_accent_row = if ui_light { #x0064d2 } else { #x0a60c8 }
+// A Mac dims the window behind a sheet, more in the dark; the shell's own sheets
+// and the native apps' dim as much.
+let ui_sheet_dim = if ui_light { #x00000024 } else { #x00000052 }
+// A touch size in the type scale; on the desktop, the Mac's size for that role
+// (Makepad's font_size is three quarters of a point).
+fn ui_fs(n){
+    if !ui_desk { return n }
+    if n <= 12 { return 8.25 }
+    if n <= 13 { return 9 }
+    if n <= 16 { return 9.75 }
+    if n <= 18 { return 11.25 }
+    if n <= 21 { return 12.75 }
+    if n <= 24 { return 13.5 }
+    if n <= 28 { return 16.5 }
+    19.5
+}
+let ui_icons = {}
+fn ui_icon(name){
+    let handle = ui_icons[name]
+    if handle == nil {
+        handle = http_resource("{{assets}}/icons/ui-" + name + ".svg")
+        ui_icons[name] = handle
+    }
+    handle
+}
+let UiButton = ButtonFlat{height: ui_by(44, 28) margin: 0 padding: Inset{left: ui_by(14, 12) right: ui_by(14, 12)} spacing: 6
+    icon_walk: Walk{width: 15 height: 15}
+    draw_bg +: {border_radius: ui_by(12.0, 3.0) border_size: ui_by(0.0, 1.0) border_color: ui_border
+        color: ui_by(#x00000000, ui_button) color_hover: ui_by(ui_hover, mix(ui_button, ui_ink, 0.04)) color_down: ui_by(ui_field, mix(ui_button, ui_ink, 0.1)) color_focus: ui_by(ui_hover, ui_button)}
+    draw_text +: {color: ui_by(ui_link, ui_ink) color_hover: ui_by(ui_link, ui_ink) color_down: ui_by(ui_link, ui_ink) color_focus: ui_by(ui_link, ui_ink)
+        text_style: ui_by(theme.font_bold{font_size: 14}, theme.font_regular{font_size: 9.75})}
+    draw_icon +: {color: ui_ink}
 }
 let UiPrimary = UiButton{
-    draw_bg +: {color: ui_primary color_hover: #x3468df color_down: #x204cb8 color_focus: #x204cb8}
+    draw_bg +: {border_size: 0.0 color: ui_primary color_hover: ui_by(#x3468df, #x006edb) color_down: ui_by(#x204cb8, #x0060c0) color_focus: ui_by(#x204cb8, ui_primary)}
     draw_text +: {color: #xffffff color_hover: #xffffff color_down: #xffffff color_focus: #xffffff}
+    draw_icon +: {color: #xffffff}
 }
-let UiPill = UiButton{draw_bg +: {color: ui_surface border_radius: 22.0} draw_text +: {color: ui_ink color_hover: ui_ink color_down: ui_ink color_focus: ui_ink}}
-let UiField = TextInput{width: Fill height: 48 margin: 0 padding: Inset{left: 14 right: 14 top: 12 bottom: 12}
+let UiPill = UiButton{height: ui_by(44, 24) padding: Inset{left: ui_by(14, 10) right: ui_by(14, 10)}
+    draw_bg +: {color: ui_by(ui_surface, #x00000000) border_size: 0.0 border_radius: ui_by(22.0, 3.0)}
+    draw_text +: {color: ui_ink color_hover: ui_ink color_down: ui_ink color_focus: ui_ink}}
+let UiField = TextInput{width: Fill height: ui_by(48, 28) margin: 0 padding: Inset{left: ui_by(14, 8) right: ui_by(14, 8) top: ui_by(12, 6) bottom: ui_by(12, 6)}
     draw_bg +: {color: ui_field color_hover: ui_field color_focus: ui_field color_empty: ui_field
-        border_color: ui_border border_color_hover: ui_link border_color_focus: ui_link border_color_empty: ui_border border_radius: 12.0}
-    draw_text +: {color: ui_ink color_hover: ui_ink color_focus: ui_ink color_empty: ui_muted color_empty_hover: ui_muted color_empty_focus: ui_muted text_style: theme.font_regular{font_size: 15}}
+        border_color: ui_border border_color_hover: ui_by(ui_link, ui_border) border_color_focus: ui_link border_color_empty: ui_border border_radius: ui_by(12.0, 3.0)}
+    draw_text +: {color: ui_ink color_hover: ui_ink color_focus: ui_ink color_empty: ui_muted color_empty_hover: ui_muted color_empty_focus: ui_muted text_style: theme.font_regular{font_size: ui_by(15, 9.75)}}
     draw_selection.color: #x557dcc55
 }
-let UiCard = RoundedView{width: Fill height: Fit flow: Down spacing: 12 padding: 20
-    show_bg: true draw_bg +: {color: ui_surface border_radius: 16.0}}
-let UiCaption = Label{padding: 0 flow: Flow.Right{wrap: true} width: Fill draw_text +: {color: ui_muted text_style: theme.font_regular{font_size: 13 line_spacing: 1.4}}}
-let UiTitle = Label{padding: 0 flow: Flow.Right{wrap: true} width: Fill draw_text +: {color: ui_ink text_style: theme.font_bold{font_size: 28 line_spacing: 1.2}}}
+let UiCard = RoundedView{width: Fill height: Fit flow: Down spacing: ui_by(12, 8) padding: ui_by(20, 14)
+    show_bg: true draw_bg +: {color: ui_surface border_radius: ui_by(16.0, 5.0) border_size: ui_by(0.0, 1.0) border_color: ui_by(#x00000000, ui_border)}}
+let UiCaption = Label{padding: 0 flow: Flow.Right{wrap: true} width: Fill draw_text +: {color: ui_muted text_style: theme.font_regular{font_size: ui_by(13, 8.25) line_spacing: 1.4}}}
+let UiTitle = Label{padding: 0 flow: Flow.Right{wrap: true} width: Fill draw_text +: {color: ui_ink text_style: theme.font_bold{font_size: ui_by(28, 16.5) line_spacing: 1.2}}}
+// The Mac's parts. They are drawn on a desktop only; a phone keeps its pages.
+// A shader's border_radius is half the corner it draws: 3 is a 6-point corner.
+let UiSep = SolidView{width: Fill height: 1 draw_bg.color: ui_border}
+let UiVSep = SolidView{width: 1 height: Fill draw_bg.color: ui_border}
+let UiGlyph = Svg{width: 16 height: 16 animating: false draw_svg +: {color: ui_muted}}
+let UiTool = ButtonFlat{height: 28 margin: 0 padding: Inset{left: 8 right: 8} spacing: 5 icon_walk: Walk{width: 16 height: 16}
+    draw_bg +: {border_radius: 3.0 border_size: 0.0 color: #x00000000 color_hover: ui_hover color_down: ui_selected color_focus: #x00000000}
+    draw_text +: {color: ui_ink color_hover: ui_ink color_down: ui_ink color_focus: ui_ink text_style: theme.font_regular{font_size: 9.75}}
+    draw_icon +: {color: ui_ink}
+}
+let UiToolIcon = UiTool{width: 30 padding: 0 spacing: 0 text: ""}
+// A tool whose click hides it or the pane it sits on: it comes back unwashed.
+let UiPaneTool = UiToolIcon{reset_hover_on_click: true}
+// The clear button inside a search field, shown while it holds text.
+let UiSearchClear = UiPaneTool{visible: false width: 24 height: 24 icon_walk: Walk{width: 14 height: 14}
+    draw_bg +: {color_hover: #x00000000 color_down: #x00000000}
+    draw_icon +: {svg: ui_icon("search-clear") color: ui_muted}}
+let UiToolbar = SolidView{width: Fill height: if ui_unified { 52 } else { 40 } flow: Right align: Align{y: 0.5} spacing: 4 padding: Inset{left: 12 right: 10} draw_bg.color: ui_bar}
+// A toolbar that starts at the window's leading edge, with no sidebar beside it.
+let UiWindowToolbar = UiToolbar{padding: Inset{left: if ui_unified { 84 } else { 12 } right: 10}}
+let UiBarTitle = Label{clip_y: false padding: 0 text: "" max_lines: 1 draw_text +: {color: ui_ink text_style: theme.font_bold{font_size: 11.25}}}
+let UiBarSub = Label{clip_y: false padding: 0 text: "" max_lines: 1 draw_text +: {color: ui_muted text_style: theme.font_regular{font_size: 8.25}}}
+let UiSidebar = SolidView{width: 208 height: Fill flow: Down padding: Inset{left: 8 right: 8 top: if ui_unified { 52 } else { 8 } bottom: 8} spacing: 1 draw_bg.color: ui_sidebar}
+let UiSideHead = Label{padding: Inset{left: 8 top: 12 bottom: 4} text: "" draw_text +: {color: ui_muted text_style: theme.font_bold{font_size: 8.25}}}
+let UiSideRow = ButtonFlat{width: Fill height: 28 margin: 0 padding: Inset{left: 8 right: 8} spacing: 7 align: Align{x: 0.0 y: 0.5}
+    icon_walk: Walk{width: 16 height: 16} label_walk: Walk{width: Fill height: Fit}
+    draw_bg +: {border_radius: 3.0 border_size: 0.0 color: #x00000000 color_hover: #x00000000 color_down: ui_selected color_focus: #x00000000}
+    draw_text +: {color: ui_ink color_hover: ui_ink color_down: ui_ink color_focus: ui_ink text_style: theme.font_regular{font_size: 9.75}}
+    draw_icon +: {color: ui_link}
+}
+let UiSideRowOn = UiSideRow{draw_bg +: {color: ui_selected color_hover: ui_selected color_focus: ui_selected}}
+let UiSeg = ButtonFlat{height: 24 margin: 0 padding: Inset{left: 12 right: 12}
+    draw_bg +: {border_radius: 2.5 border_size: 0.0 color: #x00000000 color_hover: ui_hover color_down: ui_selected color_focus: #x00000000}
+    draw_text +: {color: ui_ink color_hover: ui_ink color_down: ui_ink color_focus: ui_ink text_style: theme.font_regular{font_size: 9.75}}
+}
+let UiSegOn = UiSeg{draw_bg +: {color: ui_button color_hover: ui_button color_focus: ui_button border_size: 1.0 border_color: ui_border}}
+let UiSegments = RoundedView{width: Fit height: 28 flow: Right align: Align{y: 0.5} spacing: 2 padding: 2 show_bg: true draw_bg +: {color: ui_selected border_radius: 3.5}}
+let UiSearch = UiField{padding: Inset{left: 26 right: 8 top: 6 bottom: 6}}
+let UiGroup = RoundedView{width: Fill height: Fit flow: Down show_bg: true draw_bg +: {color: ui_surface border_radius: 5.0 border_size: 1.0 border_color: ui_border}}
+let UiFormRow = View{width: Fill height: Fit flow: Right align: Align{y: 0.5} spacing: 12 padding: Inset{left: 14 right: 14 top: 8 bottom: 8}}
+let UiFormLabel = Label{clip_y: false padding: 0 width: Fill text: "" draw_text +: {color: ui_ink text_style: theme.font_regular{font_size: 9.75}}}
+let UiListRow = View{width: Fill height: Fit flow: Right align: Align{y: 0.5} spacing: 10 padding: Inset{left: 14 right: 14 top: 8 bottom: 8}}
+// A two-line row of a list: a line in the body size, a line under it in the small.
+let UiRowTitle = Label{clip_y: false padding: 0 width: Fill text: "" max_lines: 1 text_overflow: Ellipsis draw_text +: {color: ui_ink text_style: theme.font_regular{font_size: 9.75}}}
+let UiRowNote = Label{clip_y: false padding: 0 width: Fill text: "" max_lines: 1 text_overflow: Ellipsis draw_text +: {color: ui_muted text_style: theme.font_regular{font_size: 8.25}}}
+// A form: the label right-aligned in a 110-point column to the left of its control.
+let UiFormKey = Label{clip_y: false padding: 0 width: 110 text: "" align: Align{x: 1.0} draw_text +: {color: ui_ink text_style: theme.font_regular{font_size: 9.75}}}
+let UiFormLine = View{width: Fill height: Fit flow: Right align: Align{y: 0.5} spacing: 8}
+// A pop-up button: the choice, and the up-down mark at its trailing edge (an
+// Overlay of this over UiPopupMark).
+let UiPopup = UiButton{padding: Inset{left: 10 right: 28} align: Align{x: 0.0 y: 0.5}}
+let UiPopupMark = View{width: Fit height: Fit padding: Inset{right: 8} new_batch: true
+    Svg{width: 13 height: 13 animating: false draw_svg +: {svg: ui_icon("updown") color: ui_muted}}}
+// A small count or state beside a name.
+let UiBadge = RoundedView{width: Fit height: Fit padding: Inset{left: 6 right: 6 top: 2 bottom: 2} new_batch: true show_bg: true draw_bg +: {color: mix(ui_surface, ui_ink, 0.1) border_radius: 2.5}}
+let UiBadgeText = Label{clip_y: false padding: 0 text: "" draw_text +: {color: ui_ink text_style: theme.font_bold{font_size: 8.25}}}
+// A status bar along a window's bottom: small text on the bar's colour.
+let UiFootBar = SolidView{width: Fill height: 24 flow: Right align: Align{y: 0.5} spacing: 8 padding: Inset{left: 12 right: 12} draw_bg.color: ui_bar}
+// An empty list or an empty window: a glyph, a title, a line, and, under them, what
+// to do about it. Centred in what the empty state fills.
+let UiEmpty = View{width: Fill height: Fill flow: Down align: Align{x: 0.5 y: 0.5} spacing: 6 padding: 24
+    glyph := Svg{width: 36 height: 36 margin: Inset{bottom: 4} animating: false draw_svg +: {color: ui_muted}}
+    title := Label{clip_y: false padding: 0 text: "" draw_text +: {color: ui_ink text_style: theme.font_bold{font_size: 11.25}}}
+    note := Label{clip_y: false padding: 0 text: "" draw_text +: {color: ui_muted text_style: theme.font_regular{font_size: 9.75}}}
+}
+// A Mac's alert carries its app's icon, as the native apps' alerts do: 64 points
+// on top in the alert below. The shell draws it in its style's frame (`ReviewAppIcon`,
+// crates/shell/src/connected_review.rs; `app` is the bundle's id, "os.writer"); a host
+// without the shell has none, and the alert keeps its words alone.
+let UiAlertIcon = try { mod.widgets.ReviewAppIcon } catch { nil }
+let ui_alert_icon = ui_mac && UiAlertIcon != nil
+// A Mac's alert as macOS has drawn it since 11 (Files' Empty Trash): 260 points
+// wide, the app's 64-point icon on top, the title and its words centred under it,
+// then the buttons. Two sit side by side, each as wide as the other, the default
+// on the right (UiAlertRow, each button `width: Fill`); three or more stand one
+// over another, the default on top (UiAlertStack). A host with no app icon shows
+// the words alone. Off a Mac an app keeps its own sheet.
+let UiAlertPanel = RoundedShadowView{width: 260 height: Fit flow: Down align: Align{x: 0.5} padding: Inset{left: 16 right: 16 top: 20 bottom: 16} new_batch: true cursor: MouseCursor.Default
+    draw_bg +: {color: ui_surface border_size: 1.0 border_color: ui_border border_radius: 10.0 shadow_color: #x00000040 shadow_radius: 18.0 shadow_offset: vec2(0.0, 4.0)}}
+// A Label's margin counts twice: 10 and 6 points between icon, title and words.
+let UiAlertTitle = Label{clip_y: false width: Fill padding: 0 margin: Inset{top: 5} align: Align{x: 0.5} flow: Flow.Right{wrap: true} text: "" draw_text +: {color: ui_ink text_style: theme.font_bold{font_size: 9.75 line_spacing: 1.3}}}
+let UiAlertNote = Label{clip_y: false width: Fill padding: 0 margin: Inset{top: 3} align: Align{x: 0.5} flow: Flow.Right{wrap: true} text: "" draw_text +: {color: ui_ink text_style: theme.font_regular{font_size: 8.25 line_spacing: 1.3}}}
+let UiAlertRow = View{width: Fill height: Fit flow: Right spacing: 8 margin: Inset{top: 16}}
+let UiAlertStack = View{width: Fill height: Fit flow: Down spacing: 8 margin: Inset{top: 16}}
 // END shared app interface
 // YouTube: search YouTube, list what exists right now, play a tap in the
 // system web view. Results come from the runtime's keyless `sys.video`
@@ -46,9 +187,13 @@ let loaded_q = ""
 let failed = false
 let hits = []
 let history = []
+// A restyle rebuilds script state while the same History view stays visible.
+let remembered_history_error = try { mod.youtube_history_error } catch { nil }
+let history_error = if remembered_history_error == nil { "" } else { remembered_history_error }
+let remembered_query_error = try { mod.youtube_query_error } catch { nil }
+let query_error = if remembered_query_error == nil { "" } else { remembered_query_error }
 let playing = nil
 let screen = "search"   // search | history | player
-
 // ADR 0004 §11: the app's data is its account folder (a system app acts for
 // the device), the folder its agent works in; what it can fetch again is
 // cache/. A file an earlier build kept at the top of the jail moves on first
@@ -79,6 +224,15 @@ fn load_state(){
     }
 }
 
+fn save_query(){
+    let saved = try {
+        fs.write(data_path("query.json"), {q: q}.to_json())
+        true
+    } catch { false }
+    query_error = if saved { "" } else { "Couldn't remember which search was last. Check storage and submit again." }
+    mod.youtube_query_error = query_error
+}
+
 // The helper answers "—" while the results page loads and "n/a" once the
 // fetch has failed for good; otherwise how many results it parsed.
 fn read_hits(){
@@ -99,32 +253,57 @@ fn read_hits(){
         }
     }
     sync_status()
-    ui.list.render()
+    render_list()
 }
 
 fn search_for(text){
     let t = ("" + text).trim()
     if t == "" { return }
+    // Only an exhausted failure is reset; a successful or pending query keeps
+    // its shared fetch. This also retries a previously failed query revisited later.
+    sys.video_retry(t)
     q = t
     ui.search.set_text(q)
+    if !ui_desk {
+        mod.youtube_touch_query = q
+        touch_search_changed(q)
+    }
     loaded_q = ""
     failed = false
     hits = []
-    fs.write(data_path("query.json"), {q: q}.to_json())
+    save_query()
     show("search")
     sync_status()
-    ui.list.render()
+    render_list()
     read_hits()
 }
 
 fn sync_status(){
     let text = ""
-    if screen == "history" { text = "" }
+    if screen == "history" { text = history_error }
     else if q != "" && loaded_q != q { text = "Searching YouTube for “" + q + "”…" }
     else if failed { text = "Couldn't reach YouTube. Check the connection and search again." }
     else if hits.len() == 0 { text = "No videos found for “" + q + "”." }
     else { text = "Results for “" + q + "”" }
     ui.status.set_text(text)
+    ui.query_notice.set_visible(screen == "search" && query_error != "")
+    if !ui_desk { ui.search_retry_box.set_visible(screen == "search" && failed) }
+}
+
+// The runtime can reopen a failed fetch without changing the search words.
+fn touch_search_retry(){
+    // The retained button can be clicked before a restyled script's boot has
+    // completed. Its target is the committed query, never the field's draft.
+    let committed = try { mod.youtube_touch_query } catch { nil }
+    if committed != nil && committed != "" { q = committed }
+    if q == "" { return }
+    sys.video_retry(q)
+    loaded_q = ""
+    failed = false
+    hits = []
+    sync_status()
+    render_list()
+    read_hits()
 }
 
 fn meta(h){
@@ -139,34 +318,75 @@ fn remember(h){
     for v in history {
         if v.id != h.id && next.len() < 30 { next.push(v) }
     }
-    history = next
-    fs.write(data_path("history.json"), history.to_json())
+    // Playback should still open if local History cannot be updated.
+    let saved = try {
+        fs.write(data_path("history.json"), next.to_json())
+        true
+    } catch { false }
+    if saved {
+        history = next
+        history_error = ""
+    } else {
+        history_error = "Couldn't update History. Check storage, then reopen this video."
+    }
+    mod.youtube_history_error = history_error
+}
+
+// A render that produces no video rows can leave the previous rows in the
+// view. Hide that view until it has content; History gets its own empty state.
+fn render_list(){
+    if ui_desk { ui.list.render() return }
+    let empty = if screen == "history" { history.len() == 0 } else { hits.len() == 0 }
+    ui.history_empty.set_visible(screen == "history" && empty)
+    ui.list.set_visible(!empty)
+    if !empty { ui.list.render() }
 }
 
 fn show(name){
     screen = name
+    if !ui_desk { mod.youtube_touch_screen = name }
     ui.main.set_visible(name != "player")
     ui.player_pane.set_visible(name == "player")
     if name != "player" {
         sync_status()
         ui.tabs.render()
-        ui.list.render()
+        render_list()
     }
 }
 
 fn play(h){
+    mod.youtube_touch_from = screen
+    mod.youtube_touch_player = h
     playing = h
     remember(h)
     ui.player_title.set_text(h.title)
     ui.player_meta.set_text(meta(h))
-    ui.player_fail.set_text("")
+    ui.history_notice.set_visible(history_error != "")
     show("player")
-    ui.reader.open(h.embed)
+    touch_player_load()
+}
+
+fn touch_player_failed(){
+    if screen == "player" && playing != nil { ui.player_notice.set_visible(true) }
+}
+
+fn touch_player_load(){
+    if screen != "player" || playing == nil { return }
+    ui.player_notice.set_visible(false)
+    // Reopening the same address on a live native reader need not reload it.
+    ui.reader.close()
+    // A Mac's web view (the phone's preview) plays the player alone: YouTube's page takes
+    // it for an old browser. A phone opens the video's page, as before.
+    let player = "https://www.youtube.com/embed/" + playing.id + "?autoplay=1&playsinline=1&rel=0&enablejsapi=1"
+    if !ui.reader.open_embed(player, playing.embed) { touch_player_failed() }
 }
 
 fn close_player(){
     ui.reader.close()
     playing = nil
+    mod.youtube_touch_player = nil
+    let from = try { mod.youtube_touch_from } catch { nil }
+    if from == "history" || from == "search" { show(from) return }
     show(screen_before_player())
 }
 
@@ -176,21 +396,60 @@ fn screen_before_player(){
 }
 
 fn clear_history(){
+    // Do not remove the rows from memory unless storage accepted the clear.
+    // A write can fail, for example when this app's data is read-only.
+    let saved = try {
+        fs.write(data_path("history.json"), "[]")
+        true
+    } catch { false }
+    if !saved {
+        history_error = "Couldn't clear history. Try again."
+        mod.youtube_history_error = history_error
+        sync_status()
+        return
+    }
+    history_error = ""
+    mod.youtube_history_error = ""
     history = []
-    fs.write(data_path("history.json"), history.to_json())
-    ui.list.render()
+    sync_status()
+    render_list()
 }
 
+// Restyling runs the script again while the touch widgets remain. Keep both
+// the visible page and unsubmitted text needed by their callbacks.
+fn touch_search_changed(text){ mod.youtube_touch_field = "" + text }
+
 fn boot(){
+    // A query that could not be written still belongs to the live view. On a
+    // restyle the older on-disk value must not take its place.
+    let remembered_query = if ui_desk {
+        let v = try { mod.youtube_desk } catch { nil }
+        if v == nil { nil } else { try { v.query } catch { nil } }
+    } else { try { mod.youtube_touch_query } catch { nil } }
     load_state()
-    ui.search.set_text(q)
+    if query_error != "" && remembered_query != nil && remembered_query != "" { q = remembered_query }
+    let field = q
+    if !ui_desk {
+        mod.youtube_touch_query = q
+        let remembered_screen = try { mod.youtube_touch_screen } catch { nil }
+        if remembered_screen != nil { screen = remembered_screen }
+        if screen == "player" {
+            let remembered_player = try { mod.youtube_touch_player } catch { nil }
+            if remembered_player != nil { playing = remembered_player }
+        }
+        let remembered_field = try { mod.youtube_touch_field } catch { nil }
+        if remembered_field != nil { field = remembered_field }
+    }
+    ui.search.set_text(field)
     ui.tabs.render()
     sync_status()
-    ui.list.render()
+    render_list()
+    if !ui_desk && screen == "player" { ui.history_notice.set_visible(history_error != "") }
     read_hits()
 }
 start_timeout(0.05, || boot())
 start_interval(0.5, || read_hits())
+if ui_desk { start_timeout(0.06, || desk_boot()) }
 
 let ground = ui_page
 let ink = ui_ink
@@ -220,7 +479,7 @@ let VideoRow = GestureView{width: Fill height: Fit flow: Right spacing: 12 paddi
     }
 }
 
-SolidView{width: Fill height: Fill flow: Overlay align: Align{x: 0.5} show_bg: true draw_bg.color: ground
+let TouchRoot = SolidView{width: Fill height: Fill flow: Overlay align: Align{x: 0.5} show_bg: true draw_bg.color: ground
     main := SolidView{width: Fill max_width: 960 height: Fill flow: Down new_batch: true show_bg: true draw_bg.color: ground
         View{width: Fill height: Fit flow: Right align: Align{y: 0.5} spacing: 8 padding: Inset{left: 14 right: 12 top: 12 bottom: 8}
             RoundedView{width: 30 height: 21 align: Align{x: 0.5 y: 0.5} new_batch: true show_bg: true draw_bg.color: red draw_bg.border_radius: 6.0
@@ -231,10 +490,13 @@ SolidView{width: Fill height: Fill flow: Overlay align: Align{x: 0.5} show_bg: t
         View{width: Fill height: Fit padding: Inset{left: 12 right: 12 bottom: 8}
             search := UiField{width: Fill height: 48 empty_text: "Search YouTube"
                 on_return: |text| search_for(text)
+                on_change: |text| touch_search_changed(text)
                 draw_bg.border_radius: 20.0
             }
         }
         tabs := ScrollXView{width: Fill height: 60 flow: Right spacing: 8 padding: Inset{left: 12 right: 12 top: 2 bottom: 10}
+            // The topic strip can scroll without leaving a bright thumb at rest.
+            scroll_bars: ScrollBarsTabs{show_scroll_x: true show_scroll_y: false scroll_bar_x.drag_scrolling: true}
             on_render: || {
                 if screen == "history" { ChipOn{text: "History" on_click: || show("history")} }
                 else { Chip{text: "History" on_click: || show("history")} }
@@ -245,6 +507,14 @@ SolidView{width: Fill height: Fill flow: Overlay align: Align{x: 0.5} show_bg: t
             }
         }
         status := Label{width: Fill padding: Inset{left: 14 right: 14 bottom: 6} text: "" draw_text.color: secondary draw_text.text_style.font_size: 13}
+        query_notice := View{visible: false width: Fill height: Fit padding: Inset{left: 14 right: 14 bottom: 6}
+            Label{clip_y: false width: Fill flow: Flow.Right{wrap: true} text: "Couldn't remember which search was last. Check storage and submit again."
+                draw_text.color: secondary draw_text.text_style.font_size: 12}
+        }
+        search_retry_box := View{visible: false width: Fill height: Fit padding: Inset{left: 14 right: 14 bottom: 8}
+            UiPrimary{text: "Try Again" on_click: || touch_search_retry()}
+        }
+        View{width: Fill height: Fill flow: Overlay
         list := ScrollYView{width: Fill height: Fill flow: Down spacing: 4 padding: Inset{bottom: 24}
             on_render: || {
                 if screen == "history" {
@@ -268,6 +538,10 @@ SolidView{width: Fill height: Fill flow: Overlay align: Align{x: 0.5} show_bg: t
                 }
             }
         }
+        history_empty := View{visible: false width: Fill height: 200 align: Align{x: 0.5 y: 0.5}
+            Label{text: "Videos you play appear here." draw_text.color: secondary draw_text.text_style.font_size: 13}
+        }
+        }
     }
     player_pane := SolidView{visible: false width: Fill height: Fill flow: Down new_batch: true show_bg: true draw_bg.color: ground
         View{width: Fill height: Fit flow: Right align: Align{y: 0.5} padding: Inset{left: 4 right: 12 top: 6 bottom: 6} spacing: 6
@@ -277,7 +551,1180 @@ SolidView{width: Fill height: Fill flow: Overlay align: Align{x: 0.5} show_bg: t
                 player_meta := Label{width: Fill text: "" max_lines: 1 draw_text.color: secondary draw_text.text_style.font_size: 13}
             }
         }
-        player_fail := Label{width: Fill padding: Inset{left: 14 right: 14} text: "" draw_text.color: secondary draw_text.text_style.font_size: 13}
-        reader := WebReader{width: Fill height: Fill on_error: || ui.player_fail.set_text(ui.reader.error())}
+        history_notice := View{visible: false width: Fill height: Fit padding: Inset{left: 14 right: 14 top: 6 bottom: 6}
+            Label{clip_y: false width: Fill flow: Flow.Right{wrap: true}
+                text: "Couldn't update History. Check storage, then reopen this video." draw_text.color: secondary draw_text.text_style.font_size: 12}
+        }
+        // Some reader errors concern a blocked part of a usable page; leave
+        // the page in place and let the person choose whether to retry.
+        player_notice := View{visible: false width: Fill height: Fit flow: Down align: Align{x: 0.5} spacing: 8 padding: Inset{left: 20 right: 20 top: 16 bottom: 16}
+            Label{clip_y: false width: Fill align: Align{x: 0.5} flow: Flow.Right{wrap: true}
+                text: "There was a problem loading this video." draw_text.color: ink draw_text.text_style: theme.font_bold{font_size: 14}}
+            Label{clip_y: false width: Fill align: Align{x: 0.5} flow: Flow.Right{wrap: true}
+                text: "Check your connection, then try again." draw_text.color: secondary draw_text.text_style.font_size: 13}
+            UiPrimary{text: "Try Again" on_click: || touch_player_load()}
+        }
+        reader := WebReader{width: Fill height: Fill on_error: || touch_player_failed()}
     }
 }
+
+// The Mac's YouTube: History, the person's recent searches and the topics in a sidebar a
+// toolbar button collapses, the search field in the toolbar, and beside the sidebar what
+// is showing as thumbnail cards on white, or the video on black. A phone keeps its pages
+// above.
+//
+// The shell sends the app's size: as many cards of at least 220 points as fit beside the
+// sidebar (208, its hairline 1), the page's margins 40, gaps 16; when not even two do, the
+// dense list.
+let desk_cols = 3
+let desk_height = 660
+let desk_width = 0
+let desk_resize_n = 0
+// A toolbar button collapses the sidebar; a window too narrow for it starts without.
+let desk_side_open = true
+let desk_side_narrow = false
+fn desk_side_on(){
+    if desk_width > 0 && desk_width < 760 { return desk_side_narrow }
+    desk_side_open
+}
+fn desk_room(){
+    if desk_side_on() { return desk_width - 209 }
+    desk_width
+}
+fn desk_cols_now(){
+    // The shell hasn't said how wide the window is yet: nothing to go on.
+    if desk_width <= 0 { return desk_cols }
+    let cols = floor((desk_room() - 40 + 16) / 236)
+    if cols < 2 { return 1 }
+    cols
+}
+// The player's tools say their names where the toolbar has room for them, and are glyphs
+// where it has less. The search field keeps 140 points and takes a small share of the rest
+// (15 to the title's 100) up to 200, so the title has the room first; where the toolbar has
+// little (under 600 points over a playing video), the field folds into its magnifier, as a
+// Mac's toolbar folds a search field it has no room for.
+let desk_words = true
+let desk_tight = false
+let desk_folded = false
+fn desk_words_sync(){
+    if desk_width <= 0 { return }
+    let words = desk_room() >= 760
+    let tight = desk_room() < 600
+    if words != desk_words || tight != desk_tight {
+        desk_words = words
+        desk_tight = tight
+        ui.player_tools_body.render()
+        desk_fold_sync()
+    }
+}
+fn on_app_resize(width, height){
+    if !ui_desk || width <= 0 { return }
+    let side = desk_side_on()
+    let wider = width != desk_width
+    desk_width = width
+    if desk_side_on() != side { desk_side_sync() }
+    let cols = desk_cols_now()
+    if cols != desk_cols || height != desk_height {
+        desk_cols = cols
+        desk_height = height
+        ui.list.render()
+    } else if wider {
+        // A card's length draws on its own, and stays where it was when the card
+        // grows under it, until it is drawn again.
+        desk_resize_n = desk_resize_n + 1
+        let n = desk_resize_n
+        start_timeout(0.15, || {
+            if n == desk_resize_n { ui.list.render() }
+        })
+    }
+    desk_words_sync()
+    desk_remember()
+}
+fn desk_side_sync(){
+    let on = desk_side_on()
+    ui.side_box.set_visible(on)
+    // With no sidebar under them, the lights sit over the toolbar's leading edge.
+    ui.lights_gap.set_visible(ui_unified && !on)
+    desk_words_sync()
+    let cols = desk_cols_now()
+    if cols != desk_cols {
+        desk_cols = cols
+        ui.list.render()
+    }
+}
+fn desk_toggle_side(){
+    if desk_width > 0 && desk_width < 760 { desk_side_narrow = !desk_side_narrow } else { desk_side_open = !desk_side_open }
+    desk_side_sync()
+    desk_remember()
+}
+// What an empty list says stands in the middle of what the list has.
+fn desk_note_height(){
+    max(200, desk_height - if ui_unified { 53 } else { 41 })
+}
+// The topics as a sidebar and a title read them; what is searched stays the chip's own words.
+let desk_topics = ["Lofi Hip Hop Radio" "News Live" "Music" "NASA" "Cooking" "Documentary"]
+let desk_topic_glyphs = ["topic-headphones" "topic-live" "topic-music" "topic-planet" "topic-cooking" "topic-film"]
+fn desk_topic(c){
+    for i t in chips { if t == c { return desk_topics[i] } }
+    c
+}
+let desk_glyphs = {}
+fn desk_glyph(name){
+    let handle = desk_glyphs[name]
+    if handle == nil {
+        handle = http_resource("{{assets}}/icons/" + name + ".svg")
+        desk_glyphs[name] = handle
+    }
+    handle
+}
+fn is_topic(text){
+    for c in chips { if c == text { return true } }
+    false
+}
+// The person's own searches, the latest first: a section of the sidebar, each row removable.
+let desk_searches = []
+let desk_searches_error = ""
+let desk_last_topic = "lofi hip hop radio"
+fn desk_searches_load(){
+    if fs.exists(data_path("searches.json")) {
+        let v = fs.read(data_path("searches.json")).parse_json()
+        if v != nil { desk_searches = v }
+    }
+}
+fn desk_recent_notice_sync(){
+    ui.recent_notice_text.set_text(desk_searches_error)
+    ui.recent_notice.set_visible(desk_searches_error != "")
+}
+fn desk_searches_save(next, failure){
+    let saved = try {
+        fs.write(data_path("searches.json"), next.to_json())
+        true
+    } catch { false }
+    if saved {
+        desk_searches = next
+        desk_searches_error = ""
+    } else { desk_searches_error = failure }
+    desk_recent_notice_sync()
+    saved
+}
+fn desk_searches_add(text){
+    let next = [text]
+    for s in desk_searches {
+        if s != text && next.len() < 8 { next.push(s) }
+    }
+    desk_searches_save(next, "Couldn't save recent searches. Check storage.")
+}
+// What was being searched has gone from the list: the last topic stands in for it.
+fn desk_q_gone(){
+    if desk_side_is("search") {
+        desk_search(desk_last_topic)
+        return
+    }
+    q = desk_last_topic
+    loaded_q = ""
+    failed = false
+    hits = []
+    save_query()
+    read_hits()
+}
+fn desk_search_forget(text){
+    let next = []
+    for s in desk_searches {
+        if s != text { next.push(s) }
+    }
+    if !desk_searches_save(next, "Couldn't remove this search. Try again.") { desk_remember() return }
+    ui.tabs.render()
+    if q == text { desk_q_gone() }
+    desk_remember()
+}
+fn desk_searches_clear(){
+    if !desk_searches_save([], "Couldn't clear recent searches. Try again.") { desk_remember() return }
+    ui.tabs.render()
+    if !is_topic(q) { desk_q_gone() }
+    desk_remember()
+}
+// What the sidebar says is showing: with a video open, where it was clicked.
+fn desk_side_is(name){
+    if screen == "player" { return desk_from == name }
+    screen == name
+}
+// The field says what is searched only while a search of the person's own is showing.
+let desk_field = ""
+fn desk_field_set(text){
+    desk_field = text
+    ui.search.set_text(text)
+    ui.search_clear.set_visible(text != "")
+}
+fn desk_field_follow(){
+    if desk_side_is("search") && !is_topic(q) { desk_field_set(q) } else { desk_field_set("") }
+}
+fn desk_field_changed(text){
+    let was = desk_field
+    desk_field = "" + text
+    ui.search_clear.set_visible(desk_field != "")
+    if was != "" && desk_field == "" && desk_field_emptied() { ui.search.focus() }
+    desk_remember()
+}
+fn desk_clear_field(){
+    desk_field_set("")
+    desk_field_emptied()
+    desk_remember()
+    ui.search.focus()
+}
+// Esc empties the field and leaves it for the videos.
+fn desk_field_escape(){
+    if desk_sheet_up {
+        desk_clear_cancel()
+        return
+    }
+    desk_field_set("")
+    desk_field_emptied()
+    desk_remember()
+    ui.desk_keys.focus()
+}
+// A Mac: where the person was before their own search (a topic's words, or "history"),
+// to go back to when its field is emptied, the window's title too, as Music and TV
+// leave a search's results when its field is cleared. "" while none is known: the
+// last topic stands in. Other desktops keep the results. It is kept beside the last
+// search (`before.json`), so a restart that shows that search again knows it too.
+let desk_before = ""
+let desk_before_kept = nil
+fn desk_before_keep(){
+    if !ui_unified || desk_before_kept == desk_before { return }
+    let kept = try {
+        fs.write(data_path("before.json"), {before: desk_before}.to_json())
+        true
+    } catch { false }
+    if kept { desk_before_kept = desk_before }
+}
+fn desk_before_load(){
+    if !ui_unified || !fs.exists(data_path("before.json")) { return }
+    let v = try { fs.read(data_path("before.json")).parse_json() } catch { nil }
+    if v == nil { return }
+    let b = try { v.before } catch { nil }
+    if b != nil {
+        desk_before = "" + b
+        desk_before_kept = desk_before
+    }
+}
+fn desk_place(){
+    let side = screen
+    if screen == "player" { side = desk_from }
+    if side == "history" { return "history" }
+    if is_topic(q) { return q }
+    ""
+}
+// True when it went back: only from the results of the person's own search, not over a video.
+fn desk_field_emptied(){
+    if !ui_unified || screen == "player" || !desk_side_is("search") || is_topic(q) { return false }
+    let to = desk_before
+    desk_before = ""
+    desk_before_keep()
+    if to == "history" {
+        desk_show("history")
+        return true
+    }
+    if to == "" { to = desk_last_topic }
+    desk_search(to)
+    true
+}
+fn desk_search(text){
+    if desk_sheet_up { return }
+    let t = ("" + text).trim()
+    if t == "" { return }
+    // A row that is already showing: back to it from a video, or nothing to do.
+    if t == q && !failed && loaded_q == q && desk_side_is("search") && query_error == "" && desk_searches_error == "" {
+        if screen == "player" { desk_close() }
+        return
+    }
+    let here = desk_place()
+    desk_stop_video()
+    desk_cursor = nil
+    if is_topic(t) { desk_last_topic = t } else { desk_searches_add(t) }
+    if ui_unified {
+        if is_topic(t) { desk_before = "" }
+        else if here != "" { desk_before = here }
+        desk_before_keep()
+    }
+    search_for(t)
+    desk_field_follow()
+    desk_chrome_sync()
+    desk_remember()
+}
+// What was typed stays in the field, a topic's words too.
+fn desk_search_typed(text){
+    if ("" + text).trim() == "" { return }
+    desk_search(text)
+    desk_field_set(("" + text).trim())
+    desk_remember()
+}
+fn desk_try_again(){
+    sys.video_retry(q)
+    loaded_q = ""
+    failed = false
+    hits = []
+    sync_status()
+    ui.list.render()
+    read_hits()
+}
+// No Results' way on: this search goes, and the keyboard is ready for the next words.
+fn desk_clear_search(){
+    let text = q
+    desk_search_forget(text)
+    desk_field_set("")
+    ui.search.focus()
+}
+fn desk_side_search(text){
+    desk_search(text)
+    if !desk_sheet_up { ui.desk_keys.focus() }
+}
+fn desk_show(name){
+    if desk_sheet_up { return }
+    desk_before = ""
+    desk_before_keep()
+    desk_stop_video()
+    if !desk_side_is(name) { desk_cursor = nil }
+    show(name)
+    desk_field_follow()
+    desk_chrome_sync()
+    desk_remember()
+    ui.desk_keys.focus()
+}
+fn desk_count(n){
+    if n == 1 { return "1 video" }
+    "" + n + " videos"
+}
+fn in_rows(items, n){
+    let rows = []
+    let row = []
+    for it in items {
+        row.push(it)
+        if row.len() == n {
+            rows.push(row)
+            row = []
+        }
+    }
+    if row.len() > 0 { rows.push(row) }
+    rows
+}
+// Back to where the video was clicked. A phone's Back has its own rule, above.
+let desk_from = "search"
+// A press on a sheet still reaches the cards under it: a GestureView captures over
+// what's above it, for its scroll view's sake. So a card asks first, and the release
+// that closes the sheet comes while it's still "up".
+let desk_sheet_up = false
+fn desk_sheet_down(){
+    start_timeout(0.15, || { desk_sheet_up = false })
+}
+fn desk_ask_clear(){
+    desk_sheet_up = true
+    ui.clear_sheet.set_visible(true)
+    ui.desk_keys.focus()
+}
+fn desk_clear_cancel(){
+    ui.clear_sheet.set_visible(false)
+    desk_sheet_down()
+    ui.desk_keys.focus()
+}
+fn desk_clear_done(){
+    desk_clear_cancel()
+    clear_history()
+    ui.tabs.render()
+    desk_chrome_sync()
+}
+// A video plays beside the sidebar.
+fn desk_watch(h){ "https://www.youtube.com/watch?v=" + h.id }
+fn desk_open_reader(h){
+    ui.reader.open_embed("https://www.youtube.com/embed/" + h.id + "?autoplay=1&playsinline=1&rel=0&enablejsapi=1", h.embed)
+}
+// The player's page is clear until the player paints, and this waits under it until the reader
+// says the player is up. A page that never answers says nothing, so after a while the pane says so.
+// That page goes off the window, as it would cover the buttons, and goes on loading: if its player
+// comes up after all, it comes back.
+let desk_wait_n = 0
+let desk_up = false
+fn desk_wait_show(){
+    desk_wait_n = desk_wait_n + 1
+    let n = desk_wait_n
+    desk_up = false
+    ui.player_wait.set_visible(true)
+    start_timeout(8.0, || {
+        if n == desk_wait_n { desk_player_late() }
+    })
+}
+fn desk_wait_hide(){
+    desk_wait_n = desk_wait_n + 1
+    ui.player_wait.set_visible(false)
+}
+fn desk_player_late(){
+    ui.player_wait.set_visible(false)
+    ui.reader_place.set_visible(false)
+    desk_failed_title = "This Video Hasn't Loaded"
+    desk_failed_note = "Check your connection and try again."
+    ui.player_empty_body.render()
+    ui.player_empty.set_visible(true)
+}
+fn desk_player_up(){
+    desk_up = true
+    desk_remember()
+    desk_wait_hide()
+    ui.player_empty.set_visible(false)
+    ui.reader_place.set_visible(true)
+}
+fn desk_stop_video(){
+    if playing != nil {
+        ui.reader.close()
+        playing = nil
+    }
+    desk_wait_hide()
+}
+fn desk_video_up(h){
+    playing = h
+    ui.player_title.set_text(h.title)
+    ui.player_meta.set_text(meta(h))
+    ui.history_notice.set_visible(history_error != "")
+    desk_player_reset()
+    show("player")
+    desk_open_reader(h)
+    ui.tabs.render()
+    ui.player_tools_body.render()
+    desk_chrome_sync()
+    desk_remember()
+}
+fn desk_play(h){
+    if desk_sheet_up { return }
+    if screen != "player" { desk_from = screen }
+    remember(h)
+    desk_cursor = h.id
+    desk_up = false
+    desk_video_up(h)
+    desk_wait_show()
+    ui.desk_keys.focus()
+}
+fn desk_close(){
+    desk_back_to_list()
+    ui.desk_keys.focus()
+}
+// The video stops and the list it was opened from comes back. The list's keys wait for the
+// next frame (GestureView), so a field that wants the keyboard asks after this, never with it.
+fn desk_back_to_list(){
+    desk_stop_video()
+    show(desk_from)
+    desk_field_follow()
+    desk_chrome_sync()
+    desk_remember()
+}
+fn desk_player_reset(){
+    ui.player_fail_row.set_visible(false)
+    ui.player_empty.set_visible(false)
+    ui.reader_place.set_visible(true)
+    ui.player_fail.set_text("")
+}
+// The reader's own words name hosts and grants: here, plain ones. A page that failed is
+// gone; a blocked frame leaves the video playing. YouTube's player says no when it wants a
+// sign-in or when a video's owner keeps it on YouTube, and a browser the person uses gets past both.
+let desk_failed_title = ""
+let desk_failed_note = ""
+fn desk_player_failed(){
+    let why = ui.reader.error()
+    if why.search("could not load") == 0 {
+        desk_wait_hide()
+        ui.reader.close()
+        desk_failed_title = "This Video Can't Be Played"
+        if why.search("the player said") >= 0 { desk_failed_note = "YouTube won't show it in this window. You can watch it in your browser." }
+        else { desk_failed_note = "Check your connection and try again." }
+        ui.player_empty_body.render()
+        ui.player_empty.set_visible(true)
+    } else {
+        ui.player_fail.set_text("Part of this page was blocked.")
+        ui.player_fail_row.set_visible(true)
+    }
+}
+fn desk_player_again(){
+    desk_player_reset()
+    if playing != nil {
+        ui.reader.close()
+        desk_wait_show()
+        desk_open_reader(playing)
+    }
+}
+fn desk_copy(text){ host.request("clipboard.write", {text: text}, fn(r){}) }
+// A copy says so where the video's name and channel are, then they come back.
+let desk_copied_n = 0
+fn desk_copy_playing(){
+    if playing == nil { return }
+    desk_copy(desk_watch(playing))
+    desk_copied_n = desk_copied_n + 1
+    let n = desk_copied_n
+    ui.player_meta.set_text("Link copied")
+    start_timeout(1.6, || {
+        if n == desk_copied_n && playing != nil { ui.player_meta.set_text(meta(playing)) }
+    })
+}
+// A Mac's Share menu, under its toolbar glyph: the link, as Safari's and Maps' give it.
+// Open in Browser keeps its own glyph, which closes the player as it opens the page.
+fn desk_open_share(){
+    if playing != nil { ui.share_tool.open_menu(["Copy Link"], "") }
+}
+// The person's browser takes over the video: two would play at once.
+fn desk_left_for_browser(){
+    start_timeout(0.05, || desk_close())
+}
+fn desk_forget(h){
+    let next = []
+    for v in history {
+        if v.id != h.id { next.push(v) }
+    }
+    history = next
+    fs.write(data_path("history.json"), history.to_json())
+    ui.tabs.render()
+    ui.list.render()
+}
+// The keyboard, as in Music: the arrows move through the videos, Return or Space plays the one
+// they are on, Esc backs out and Command-F goes to the search field.
+let desk_cursor = nil
+fn desk_ring(h){
+    if h.id == desk_cursor { return 1.0 }
+    0.0
+}
+fn desk_shown(){
+    if desk_side_is("history") { return history }
+    if loaded_q == q && !failed { return hits }
+    []
+}
+fn desk_cursor_at(shown){
+    if desk_cursor == nil { return -1 }
+    for i h in shown {
+        if h.id == desk_cursor { return i }
+    }
+    -1
+}
+// In sight. A row's height depends on whether one of its titles takes a second line, so the
+// way up goes by the least it can be and the way down by the most.
+fn desk_reveal(at){
+    let seen = desk_note_height()
+    let y = ui.list.scroll_y()
+    if desk_cols == 1 {
+        let top = 1 + at * 80
+        if top < y { ui.list.set_scroll_y(top) }
+        else if top + 80 > y + seen { ui.list.set_scroll_y(top + 80 - seen) }
+        return
+    }
+    let art = (desk_room() - 40 - 16 * (desk_cols - 1)) / desk_cols * 9 / 16
+    let least = art + 39
+    let most = art + 58
+    let row = floor(at / desk_cols)
+    let top = 1 + row * (least + 18)
+    let end = 17 + row * (most + 18) + most
+    if row == 0 { ui.list.set_scroll_y(0) }
+    else if top < y { ui.list.set_scroll_y(top) }
+    else if end + 24 > y + seen { ui.list.set_scroll_y(end + 24 - seen) }
+}
+fn desk_cursor_by(by){
+    let shown = desk_shown()
+    if shown.len() == 0 { return }
+    let at = desk_cursor_at(shown)
+    let to = at + by
+    if at < 0 { to = 0 }
+    // Down from the row above a short last row lands on its last video.
+    if to >= shown.len() && by > 1 && floor(at / desk_cols) < floor((shown.len() - 1) / desk_cols) { to = shown.len() - 1 }
+    if to < 0 || to >= shown.len() { return }
+    desk_cursor = shown[to].id
+    ui.list.render()
+    desk_reveal(to)
+}
+fn desk_cursor_clear(){
+    if desk_cursor == nil { return }
+    desk_cursor = nil
+    ui.list.render()
+}
+fn desk_key(key, cmd, shift){
+    if desk_sheet_up { return }
+    if cmd {
+        if key == "KeyF" { desk_find() }
+        return
+    }
+    if screen == "player" {
+        if key == "Escape" { desk_close() }
+        return
+    }
+    if key == "ArrowRight" { desk_cursor_by(1) }
+    else if key == "ArrowLeft" { desk_cursor_by(0 - 1) }
+    else if key == "ArrowDown" { desk_cursor_by(desk_cols) }
+    else if key == "ArrowUp" { desk_cursor_by(0 - desk_cols) }
+    else if key == "Escape" { desk_cursor_clear() }
+    else {
+        let shown = desk_shown()
+        let at = desk_cursor_at(shown)
+        if at < 0 { return }
+        if key == "ReturnKey" || key == "Space" { desk_play(shown[at]) }
+        else if (key == "Backspace" || key == "Delete") && desk_side_is("history") {
+            // The next one takes its place under the arrows.
+            let next = nil
+            if at + 1 < shown.len() { next = shown[at + 1].id }
+            else if at > 0 { next = shown[at - 1].id }
+            desk_cursor = next
+            desk_forget(shown[at])
+        }
+    }
+}
+fn desk_keys_tap(){
+    if !desk_sheet_up { desk_cursor_clear() }
+}
+// A card's menu: what a click does, its link, and on History the way off the list.
+fn desk_card_menu(){
+    if screen == "history" { return ["Play" "-" "Copy Link" "Open in Browser" "-" "Remove from History"] }
+    ["Play" "-" "Copy Link" "Open in Browser"]
+}
+fn desk_card_urls(h){
+    if screen == "history" { return ["" "" "" desk_watch(h) "" ""] }
+    ["" "" "" desk_watch(h)]
+}
+fn desk_card_action(h, title){
+    if title == "Play" { desk_play(h) }
+    else if title == "Copy Link" { desk_copy(desk_watch(h)) }
+    else if title == "Remove from History" { desk_forget(h) }
+}
+// The Mac's menu bar: what the toolbar and a card's menu offer, and the sidebar's rows by key.
+fn desk_menu_video(){
+    if desk_sheet_up { return nil }
+    if playing != nil { return playing }
+    let shown = desk_shown()
+    let at = desk_cursor_at(shown)
+    if at < 0 { return nil }
+    shown[at]
+}
+fn app_menus(){
+    let free = !desk_sheet_up
+    let video = desk_menu_video()
+    let rows = [
+        {menu: "Edit" title: "Find…" key: "cmd+F" command: "find" enabled: free}
+        {menu: "View" title: if desk_side_on() { "Hide Sidebar" } else { "Show Sidebar" } key: "ctrl+cmd+S" command: "sidebar" enabled: free}
+        {menu: "View"}
+    ]
+    for i c in chips {
+        rows.push({menu: "View" title: desk_topics[i] key: "cmd+" + (i + 1) command: "topic" + i checked: desk_side_is("search") && c == q enabled: free})
+    }
+    rows.push({menu: "Video" title: "Play" key: "return" command: "play" enabled: playing == nil && video != nil})
+    rows.push({menu: "Video" title: "Back" key: "cmd+[" command: "back" enabled: free && playing != nil})
+    rows.push({menu: "Video"})
+    // The toolbar's two: Open in Browser, and Share with its Copy Link.
+    rows.push({menu: "Video" title: "Open in Browser" command: "browser" url: if video != nil { desk_watch(video) } else { "" } enabled: video != nil})
+    rows.push({menu: "Video" submenu: "Share" title: "Copy Link" key: "shift+cmd+C" command: "copy" enabled: video != nil})
+    rows.push({menu: "History" title: "Show History" key: "cmd+Y" command: "history" checked: desk_side_is("history") enabled: free})
+    rows.push({menu: "History"})
+    rows.push({menu: "History" title: "Remove from History" key: "cmd+delete" command: "forget" enabled: playing == nil && video != nil && desk_side_is("history")})
+    rows.push({menu: "History" title: "Clear History…" command: "clear" enabled: free && history.len() > 0})
+    rows
+}
+fn on_menu_command(command){
+    if desk_sheet_up { return }
+    if command == "find" { desk_find() }
+    else if command == "sidebar" { desk_toggle_side() }
+    else if command == "play" {
+        let v = desk_menu_video()
+        if playing == nil && v != nil { desk_play(v) }
+    }
+    else if command == "back" { if playing != nil { desk_close() } }
+    // The shell has opened the page; the video goes on there, as from the toolbar.
+    else if command == "browser" { if playing != nil { desk_left_for_browser() } }
+    else if command == "copy" {
+        let v = desk_menu_video()
+        if playing != nil { desk_copy_playing() }
+        else if v != nil { desk_copy(desk_watch(v)) }
+    }
+    else if command == "history" { desk_show("history") }
+    else if command == "forget" { if playing == nil && desk_side_is("history") { desk_key("Backspace", false, false) } }
+    else if command == "clear" { if history.len() > 0 { desk_ask_clear() } }
+    else { for i c in chips { if command == "topic" + i { desk_side_search(c) } } }
+}
+fn desk_history_menu(){
+    if history.len() == 0 { return [] }
+    ["Clear History…"]
+}
+// An appearance change runs this whole body again and only `mod` outlives it.
+fn desk_remember(){
+    mod.youtube_desk = {screen: screen from: desk_from playing: playing up: desk_up cols: desk_cols height: desk_height width: desk_width
+        side_open: desk_side_open side_narrow: desk_side_narrow field: desk_field last_topic: desk_last_topic query: q searches_error: desk_searches_error before: desk_before}
+}
+let desk_recalled = false
+fn desk_recall(){
+    let v = try { mod.youtube_desk } catch { nil }
+    if v == nil { return }
+    desk_recalled = true
+    desk_from = v.from
+    desk_cols = v.cols
+    desk_height = v.height
+    desk_width = v.width
+    desk_side_open = v.side_open
+    desk_side_narrow = v.side_narrow
+    desk_field = v.field
+    desk_last_topic = v.last_topic
+    desk_up = v.up
+    // A retained Retry can be pressed before the delayed storage load.
+    let remembered_query = try { v.query } catch { nil }
+    if remembered_query != nil && remembered_query != "" { q = remembered_query }
+    let remembered_searches_error = try { v.searches_error } catch { nil }
+    if remembered_searches_error != nil { desk_searches_error = remembered_searches_error }
+    let remembered_before = try { v.before } catch { nil }
+    if remembered_before != nil { desk_before = remembered_before }
+    if v.screen == "player" {
+        // The list's first render, just before this, remembered the list: the video has to say it's back.
+        if v.playing != nil { start_timeout(0.1, || {
+            desk_video_up(v.playing)
+            if !v.up { desk_wait_show() }
+        }) }
+    } else {
+        screen = v.screen
+    }
+    // A top-level statement with a value becomes a child of the body's view and moves the root's place
+    // among them: the re-run would then build a new tree beside the old one, a second video included.
+    nil
+}
+fn desk_boot(){
+    desk_searches_load()
+    if !desk_recalled { desk_before_load() }
+    if is_topic(q) { if !desk_recalled { desk_last_topic = q } }
+    else if !desk_recalled { desk_searches_add(q) }
+    desk_recent_notice_sync()
+    desk_side_sync()
+    if desk_width > 0 {
+        desk_words = desk_room() >= 760
+        desk_tight = desk_room() < 600
+    }
+    ui.tabs.render()
+    // The videos have the keyboard from the start; after an appearance change it stays where it was.
+    if !desk_recalled { ui.desk_keys.focus() }
+    // Words still being typed before an appearance change are still there.
+    if desk_recalled { desk_field_set(desk_field) } else { desk_field_follow() }
+    desk_chrome_sync()
+}
+// What the toolbar shows follows what is showing.
+fn desk_chrome_sync(){
+    let on_player = screen == "player"
+    ui.back_tool.set_visible(on_player)
+    ui.list_head.set_visible(!on_player)
+    ui.player_head.set_visible(on_player)
+    ui.player_tools.set_visible(on_player)
+    desk_fold_sync()
+    desk_clear_sync()
+}
+// A tight toolbar over a playing video: the search folds into its magnifier.
+fn desk_fold_sync(){
+    desk_folded = screen == "player" && desk_tight && playing != nil
+    ui.search_box.set_visible(!desk_folded)
+    ui.search_fold.set_visible(desk_folded)
+}
+// Find…, and the magnifier of a folded search: back to the list, the field ready for words.
+fn desk_find(){
+    if desk_folded { desk_back_to_list() }
+    ui.search.focus()
+}
+fn desk_clear_sync(){
+    ui.clear_tool.set_visible(screen == "history" && history.len() > 0)
+    ui.clear_off.set_visible(screen == "history" && history.len() == 0)
+}
+// What the toolbar says follows the list: every change of screen renders it.
+fn desk_bar(){
+    let on_history = desk_side_is("history")
+    if on_history {
+        ui.bar_title.set_text("History")
+        if history_error != "" { ui.status.set_text(history_error) }
+        else if history.len() == 0 { ui.status.set_text("No videos") }
+        else { ui.status.set_text(desk_count(history.len())) }
+    } else {
+        ui.bar_title.set_text(desk_topic(q))
+        // The page says it's searching.
+        if loaded_q != q { ui.status.set_text("") }
+        else if failed { ui.status.set_text("Not connected") }
+        else if hits.len() == 0 { ui.status.set_text("No videos") }
+        else { ui.status.set_text(desk_count(hits.len())) }
+    }
+    desk_clear_sync()
+    desk_remember()
+}
+// A card's second and third lines, as YouTube's own: who, then how many and how long ago.
+fn desk_stats(h){
+    let line = ""
+    if h.views != "" && h.views != "—" { line = h.views }
+    if h.age != "" && h.age != "—" {
+        if line != "" { line = line + "  ·  " }
+        line = line + h.age
+    }
+    line
+}
+fn desk_badge(h){
+    if h.length == "LIVE" { return #xcc0000 }
+    #x000000cc
+}
+
+// A thumbnail with the Mac's corners; a gray frame until the picture arrives.
+let DeskThumb = Image{fit: ImageFit.Horizontal placeholder_width: 320 placeholder_height: 180
+    draw_bg +: {
+        empty_color: uniform(ui_selected)
+        pixel: fn(){
+            let sdf = Sdf2d.viewport(self.pos * self.rect_size)
+            sdf.box(0.0, 0.0, self.rect_size.x, self.rect_size.y, 3.0)
+            let c = self.get_color()
+            sdf.fill(vec4(mix(self.empty_color.rgb, c.rgb, c.a), 1.0))
+            return sdf.result
+        }
+    }
+}
+// What a video's picture sits in: 3 points of room round it for the one ring a Mac draws,
+// round the video the keyboard is on and, the same ring, round the video a right click's
+// menu is about (the card's `menu_ring`). It never crosses the words under the picture.
+let DeskRing = View{flow: Overlay align: Align{x: 1.0 y: 1.0} padding: 3 show_bg: true
+    draw_bg +: {
+        ring_color: uniform(theme.color_focus)
+        ring: instance(0.0)
+        pixel: fn(){
+            let sdf = Sdf2d.viewport(self.pos * self.rect_size)
+            sdf.box(1.0, 1.0, self.rect_size.x - 2.0, self.rect_size.y - 2.0, 2.5)
+            sdf.stroke(vec4(self.ring_color.rgb, self.ring), 2.0)
+            return sdf.result
+        }
+    }
+}
+let DeskCorner = View{width: Fit height: Fit padding: Inset{right: 5 bottom: 5}
+    badge := RoundedView{width: Fit height: Fit padding: Inset{left: 5 right: 5 top: 2 bottom: 2} new_batch: true show_bg: true draw_bg +: {color: #x000000cc border_radius: 2.0}
+        length := Label{padding: 0 text: "" draw_text +: {color: #xffffff text_style: theme.font_bold{font_size: 8.25}}}
+    }
+}
+let DeskTitle = Label{padding: 0 width: Fill text: "" max_lines: 2 text_overflow: Ellipsis draw_text +: {color: ui_ink text_style: theme.font_bold{font_size: 9.75 line_spacing: 1.25}}}
+let DeskMeta = Label{padding: 0 width: Fill text: "" max_lines: 1 text_overflow: Ellipsis draw_text +: {color: ui_muted text_style: theme.font_regular{font_size: 8.25}}}
+// The words start where the picture does, 3 points in from the ring's room.
+let DeskCard = GestureView{width: Fill height: Fit flow: Down spacing: 3 menu_ring: "frame"
+    frame := DeskRing{width: Fill height: Fit
+        thumb := DeskThumb{width: Fill height: Fit}
+        corner := DeskCorner{}
+    }
+    text := View{width: Fill height: Fit flow: Down spacing: 2 padding: Inset{left: 3 right: 3}
+        title := DeskTitle{}
+        meta := DeskMeta{}
+        stats := DeskMeta{}
+    }
+}
+let DeskLine = GestureView{width: Fill height: Fit flow: Right spacing: 9 align: Align{y: 0.5} padding: Inset{left: 11 right: 14 top: 5 bottom: 5} menu_ring: "frame"
+    frame := DeskRing{width: 118 height: 69
+        thumb := DeskThumb{width: 112 height: 63 fit: ImageFit.CropToFill}
+        corner := DeskCorner{}
+    }
+    text := View{width: Fill height: Fit flow: Down spacing: 2
+        title := DeskTitle{}
+        meta := DeskMeta{}
+        stats := DeskMeta{}
+    }
+}
+let DeskNote = UiEmpty{note +: {width: Fill align: Align{x: 0.5} flow: Flow.Right{wrap: true}}}
+// A link that opens in the person's browser, with a button's face.
+let DeskLinkButton = LinkLabel{width: Fit height: 28 margin: 0 padding: Inset{left: 12 right: 12} spacing: 6 align: Align{x: 0.5 y: 0.5} text: ""
+    icon_walk: Walk{width: 0 height: 0}
+    label_walk: Walk{width: Fit height: Fit}
+    draw_text +: {color: ui_ink color_hover: ui_ink color_down: ui_ink color_focus: ui_ink text_style: theme.font_regular{font_size: 9.75}}
+    draw_bg +: {color: ui_button color_hover: mix(ui_button, ui_ink, 0.04) color_down: mix(ui_button, ui_ink, 0.1) color_focus: ui_button
+        edge: uniform(ui_border)
+        pixel: fn(){
+            let sdf = Sdf2d.viewport(self.pos * self.rect_size)
+            sdf.box(0.5, 0.5, self.rect_size.x - 1.0, self.rect_size.y - 1.0, 3.0)
+            sdf.fill_keep(mix(mix(self.color, self.color_hover, self.hover), self.color_down, self.down))
+            sdf.stroke(self.edge, 1.0)
+            return sdf.result
+        }
+    }
+}
+// And with a tool's.
+let DeskLinkTool = LinkLabel{width: Fit height: 28 margin: 0 padding: Inset{left: 8 right: 8} spacing: 5 align: Align{x: 0.5 y: 0.5} text: ""
+    icon_walk: Walk{width: 16 height: 16}
+    label_walk: Walk{width: Fit height: Fit}
+    draw_icon +: {svg: ui_icon("safari") color: ui_ink}
+    draw_text +: {color: ui_ink color_hover: ui_ink color_down: ui_ink color_focus: ui_ink text_style: theme.font_regular{font_size: 9.75}}
+    draw_bg +: {color: #x00000000 color_hover: ui_hover color_down: ui_selected color_focus: #x00000000
+        pixel: fn(){
+            let sdf = Sdf2d.viewport(self.pos * self.rect_size)
+            sdf.box(0.0, 0.0, self.rect_size.x, self.rect_size.y, 3.0)
+            sdf.fill(mix(mix(self.color, self.color_hover, self.hover), self.color_down, self.down))
+            return sdf.result
+        }
+    }
+}
+// A sheet: the window dims a little, and the panel hangs under the toolbar.
+let desk_shadow = if ui_light { #x00000038 } else { #x00000090 }
+// On a dark button's face the shared red falls short of 4.5:1.
+let desk_danger = if ui_light { ui_danger } else { #xffa29b }
+// A toolbar tool that can't act now: the Mac's disabled ink on the bar.
+let desk_off_ink = mix(ui_bar, ui_ink, 0.32)
+// A right click on it is for nothing, and not for what's under it.
+let DeskDim = GestureView{width: Fill height: Fill on_tap: |x, y| {} on_long_press: |x, y| {}
+    SolidView{width: Fill height: Fill draw_bg.color: ui_sheet_dim}
+}
+let DeskSheetPlace = View{width: Fill height: Fill flow: Down align: Align{x: 0.5} padding: Inset{top: if ui_unified { 53 } else { 41 } left: 16 right: 16}}
+let DeskSheetPanel = RoundedShadowView{height: Fit flow: Down spacing: 10 padding: Inset{left: 20 right: 20 top: 18 bottom: 16} cursor: MouseCursor.Default
+    draw_bg +: {color: ui_surface border_size: 1.0 border_color: ui_border border_radius: 5.0 shadow_color: desk_shadow shadow_radius: 18.0 shadow_offset: vec2(0.0, 4.0)}}
+let DeskSheetTitle = Label{clip_y: false width: Fill padding: 0 flow: Flow.Right{wrap: true} text: "" draw_text +: {color: ui_ink text_style: theme.font_bold{font_size: 9.75}}}
+let DeskSheetNote = Label{clip_y: false width: Fill padding: 0 flow: Flow.Right{wrap: true} text: "" draw_text +: {color: ui_muted text_style: theme.font_regular{font_size: 8.25 line_spacing: 1.3}}}
+let DeskSheetButtons = View{width: Fill height: Fit flow: Right spacing: 8 align: Align{x: 1.0 y: 0.5} margin: Inset{top: 6}}
+
+// A section's head in the sidebar. (The shared part's padding counts twice on a Label, which puts it right of the rows.)
+let DeskSideHead = UiSideHead{padding: Inset{left: 4 top: 12 bottom: 4}}
+// The way to empty a section, at its head's trailing edge.
+let DeskHeadClear = ButtonFlat{width: Fit height: 18 margin: Inset{top: 22} padding: Inset{left: 6 right: 6} grab_key_focus: false reset_hover_on_click: true
+    draw_bg +: {border_radius: 3.0 border_size: 0.0 color: #x00000000 color_hover: ui_hover color_down: ui_selected color_focus: #x00000000}
+    draw_text +: {color: ui_muted color_hover: ui_ink color_down: ui_ink color_focus: ui_muted text_style: theme.font_regular{font_size: 8.25}}
+}
+// A search of the person's own can be long; its row ends in an ellipsis, clear of the
+// control that removes it.
+let DeskOwnRow = UiSideRow{draw_icon +: {svg: ui_icon("search")} draw_text +: {max_lines: 1 text_overflow: Ellipsis}}
+let DeskOwnRowOn = UiSideRowOn{padding: Inset{left: 8 right: 26} draw_icon +: {svg: ui_icon("search")} draw_text +: {max_lines: 1 text_overflow: Ellipsis}}
+let DeskOwnRemove = UiSearchClear{visible: true width: 22 height: 22 icon_walk: Walk{width: 13 height: 13}}
+let DeskSidebarTool = UiPaneTool{draw_icon +: {svg: ui_icon("sidebar")} on_click: || desk_toggle_side()}
+let DeskLightsGap = View{visible: false width: 72 height: 1}
+let DeskRoot = SolidView{width: Fill height: Fill flow: Overlay draw_bg.color: ui_page
+    View{width: Fill height: Fill flow: Right
+        side_box := View{width: Fit height: Fill flow: Right
+            UiSidebar{
+                tabs := ScrollYView{width: Fill height: Fill flow: Down spacing: 1 on_render: || {
+                    GestureView{width: Fill height: Fit menu: desk_history_menu() on_menu: |title| desk_ask_clear()
+                        if desk_side_is("history") { UiSideRowOn{text: "History" draw_icon +: {svg: ui_icon("history")} on_click: || desk_show("history")} }
+                        else { UiSideRow{text: "History" draw_icon +: {svg: ui_icon("history")} on_click: || desk_show("history")} }
+                    }
+                    if desk_searches.len() > 0 {
+                        View{width: Fill height: Fit flow: Right
+                            // A Fill label's padding counts once, a Fit one's twice: this lines up with Topics.
+                            DeskSideHead{width: Fill padding: Inset{left: 8 top: 25 bottom: 2.5} text: "Recent Searches"}
+                            DeskHeadClear{text: "Clear" on_click: || desk_searches_clear()}
+                        }
+                        for s in desk_searches {
+                            GestureView{width: Fill height: Fit flow: Overlay menu: ["Remove from Recent Searches"] on_menu: |title| desk_search_forget(s)
+                                if desk_side_is("search") && s == q { DeskOwnRowOn{text: s on_click: || desk_side_search(s)} }
+                                else { DeskOwnRow{text: s on_click: || desk_side_search(s)} }
+                                if desk_side_is("search") && s == q {
+                                    View{width: Fill height: 28 flow: Right align: Align{x: 1.0 y: 0.5} padding: Inset{right: 3}
+                                        DeskOwnRemove{on_click: || desk_search_forget(s)}
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    DeskSideHead{text: "Topics"}
+                    for i c in chips {
+                        if desk_side_is("search") && c == q { UiSideRowOn{text: desk_topics[i] draw_icon +: {svg: desk_glyph(desk_topic_glyphs[i])} on_click: || desk_side_search(c)} }
+                        else { UiSideRow{text: desk_topics[i] draw_icon +: {svg: desk_glyph(desk_topic_glyphs[i])} on_click: || desk_side_search(c)} }
+                    }
+                }}
+            }
+            UiVSep{}
+        }
+        View{width: Fill height: Fill flow: Down
+            UiToolbar{
+                lights_gap := DeskLightsGap{}
+                DeskSidebarTool{}
+                back_tool := UiPaneTool{visible: false icon_walk: Walk{width: 20 height: 20} draw_icon +: {svg: ui_icon("chevron-left") preserve_viewbox: true} on_click: || desk_close()}
+                list_head := View{width: Fill height: Fit flow: Down spacing: 1 margin: Inset{left: 4}
+                    bar_title := UiBarTitle{width: Fill text_overflow: Ellipsis text: "YouTube"}
+                    status := UiBarSub{width: Fill text_overflow: Ellipsis}
+                }
+                player_head := View{visible: false width: Fill height: Fit flow: Down spacing: 1 margin: Inset{left: 4}
+                    player_title := UiBarTitle{width: Fill text_overflow: Ellipsis}
+                    player_meta := UiBarSub{width: Fill text_overflow: Ellipsis}
+                }
+                clear_tool := UiTool{visible: false reset_hover_on_click: true text: "Clear History…" draw_icon +: {svg: ui_icon("trash")} on_click: || desk_ask_clear()}
+                // An empty history: the same tool, off (a script can't switch a button off, so two stand in turn).
+                clear_off := UiTool{visible: false enabled: false text: "Clear History…" draw_icon +: {svg: ui_icon("trash") color: desk_off_ink}
+                    draw_bg +: {color_hover: #x00000000 color_down: #x00000000 color_disabled: #x00000000}
+                    draw_text +: {color: desk_off_ink color_hover: desk_off_ink color_down: desk_off_ink color_focus: desk_off_ink}}
+                player_tools := View{visible: false width: Fit height: Fit flow: Right spacing: 4 align: Align{y: 0.5}
+                    player_tools_body := View{width: Fit height: Fit flow: Right spacing: 4 align: Align{y: 0.5} on_render: || {
+                        if playing != nil {
+                            // A Mac's toolbar items are glyphs, as Safari's and TV's are; the link
+                            // is in the Share menu beside them.
+                            if ui_unified {
+                                DeskLinkTool{width: 30 padding: 0 spacing: 0 url: desk_watch(playing) on_click: || desk_left_for_browser()}
+                            } else {
+                                if desk_words {
+                                    UiTool{text: "Copy Link" draw_icon +: {svg: desk_glyph("link")} on_click: || desk_copy_playing()}
+                                    DeskLinkTool{text: "Open in Browser" url: desk_watch(playing) on_click: || desk_left_for_browser()}
+                                } else {
+                                    UiToolIcon{draw_icon +: {svg: desk_glyph("link")} on_click: || desk_copy_playing()}
+                                    DeskLinkTool{width: 30 padding: 0 spacing: 0 url: desk_watch(playing) on_click: || desk_left_for_browser()}
+                                }
+                            }
+                        }
+                    }}
+                    share_tool := GestureView{visible: ui_unified width: Fit height: Fit on_menu: |title| { if title == "Copy Link" { desk_copy_playing() } }
+                        UiToolIcon{draw_icon +: {svg: ui_icon("export")} on_click: || desk_open_share()}
+                    }
+                }
+                search_box := View{width: Fill{weight: 15 min: 140 max: 200} height: 28 flow: Overlay align: Align{y: 0.5}
+                    search := UiSearch{padding: Inset{left: 24 right: 22 top: 6 bottom: 6} empty_text: "Search YouTube" on_return: |text| desk_search_typed(text)
+                        on_change: |text| desk_field_changed(text) on_escape: |text| desk_field_escape()}
+                    UiGlyph{width: 12 height: 12 margin: Inset{left: 7} draw_svg +: {svg: ui_icon("search")}}
+                    View{width: Fill height: Fill flow: Right align: Align{x: 1.0 y: 0.5}
+                        search_clear := UiSearchClear{on_click: || desk_clear_field()}
+                    }
+                }
+                search_fold := UiToolIcon{visible: false draw_icon +: {svg: ui_icon("search")} on_click: || desk_find()}
+            }
+            UiSep{}
+            recent_notice := SolidView{visible: false width: Fill height: Fit flow: Down draw_bg.color: ui_content
+                View{width: Fill height: Fit flow: Right spacing: 6 align: Align{y: 0.5} padding: Inset{left: 14 right: 14 top: 7 bottom: 7}
+                    UiGlyph{width: 14 height: 14 draw_svg +: {svg: ui_icon("info") color: ui_muted}}
+                    recent_notice_text := Label{clip_y: false width: Fill padding: 0 text: "" draw_text +: {color: ui_ink text_style: theme.font_regular{font_size: 9}}}
+                }
+                UiSep{}
+            }
+            desk_keys := GestureView{width: Fill height: Fill flow: Overlay cursor: MouseCursor.Default
+                on_key: |key, cmd, shift| desk_key(key, cmd, shift) on_tap: |x, y, cmd, shift| desk_keys_tap()
+                main := SolidView{width: Fill height: Fill flow: Down draw_bg.color: ui_content
+                    query_notice := SolidView{visible: false width: Fill height: Fit flow: Down draw_bg.color: ui_content
+                        View{width: Fill height: Fit flow: Right spacing: 6 align: Align{y: 0.5} padding: Inset{left: 14 right: 14 top: 7 bottom: 7}
+                            UiGlyph{width: 14 height: 14 draw_svg +: {svg: ui_icon("info") color: ui_muted}}
+                            Label{clip_y: false width: Fill padding: 0 text: "Couldn't remember which search was last. Check storage and submit again." draw_text +: {color: ui_ink text_style: theme.font_regular{font_size: 9}}}
+                        }
+                        UiSep{}
+                    }
+                    list := ScrollYView{width: Fill height: Fill flow: Down on_render: || {
+                        desk_bar()
+                        let shown = hits
+                        if desk_side_is("history") { shown = history }
+                        // Always one child: a render that yields none keeps the last rows.
+                        View{width: Fill height: 1}
+                        if desk_side_is("history") && history.len() == 0 {
+                            DeskNote{height: desk_note_height()
+                                glyph +: {draw_svg +: {svg: ui_icon("history")}}
+                                title +: {text: "No History"}
+                                note +: {text: "Videos you play appear here."}
+                                UiButton{margin: Inset{top: 8} text: "Browse Videos" on_click: || desk_show("search")}
+                            }
+                        }
+                        if !desk_side_is("history") && q != "" && loaded_q != q {
+                            View{width: Fill height: desk_note_height() flow: Right align: Align{x: 0.5 y: 0.5} spacing: 8
+                                LoadingSpinner{width: 16 height: 16 draw_bg +: {color: ui_muted stroke_width: 2.0}}
+                                Label{clip_y: false padding: 0 text: "Searching…" draw_text +: {color: ui_muted text_style: theme.font_regular{font_size: 9.75}}}
+                            }
+                        }
+                        if !desk_side_is("history") && loaded_q == q && failed {
+                            DeskNote{height: desk_note_height()
+                                glyph +: {draw_svg +: {svg: ui_icon("globe")}}
+                                title +: {text: "Can't Reach YouTube"}
+                                note +: {text: "Check your connection and try again."}
+                                UiButton{margin: Inset{top: 8} text: "Try Again" on_click: || desk_try_again()}
+                            }
+                        }
+                        if !desk_side_is("history") && loaded_q == q && !failed && hits.len() == 0 {
+                            DeskNote{height: desk_note_height()
+                                glyph +: {draw_svg +: {svg: ui_icon("search")}}
+                                title +: {text: "No Results"}
+                                note +: {text: "No videos match “" + q + "”. Check the spelling or try other words."}
+                                UiButton{margin: Inset{top: 8} text: "Clear Search" on_click: || desk_clear_search()}
+                            }
+                        }
+                        if desk_cols > 1 && shown.len() > 0 {
+                            // The pictures sit where they did before the ring's room: 3 points less round each card.
+                            View{width: Fill height: Fit flow: Down spacing: 15 padding: Inset{left: 17 right: 17 top: 13 bottom: 24}
+                                for row in in_rows(shown, desk_cols) {
+                                    View{width: Fill height: Fit flow: Right spacing: 10
+                                        for h in row {
+                                            DeskCard{on_tap: |x, y| desk_play(h) menu: desk_card_menu() menu_urls: desk_card_urls(h) on_menu: |title| desk_card_action(h, title)
+                                                frame.thumb.src: http_resource(h.thumb) frame.draw_bg.ring: desk_ring(h)
+                                                frame.corner.badge.draw_bg.color: desk_badge(h) frame.corner.badge.length.text: h.length
+                                                text.title.text: h.title text.meta.text: h.channel text.stats.text: desk_stats(h)}
+                                        }
+                                        for k in desk_cols - row.len() { View{width: Fill height: 1} }
+                                    }
+                                }
+                            }
+                        }
+                        if desk_cols == 1 {
+                            for h in shown {
+                                DeskLine{on_tap: |x, y| desk_play(h) menu: desk_card_menu() menu_urls: desk_card_urls(h) on_menu: |title| desk_card_action(h, title)
+                                    frame.thumb.src: http_resource(h.thumb) frame.draw_bg.ring: desk_ring(h)
+                                    frame.corner.badge.draw_bg.color: desk_badge(h) frame.corner.badge.length.text: h.length
+                                    text.title.text: h.title text.meta.text: h.channel text.stats.text: desk_stats(h)}
+                                UiSep{margin: Inset{left: 14 right: 14}}
+                            }
+                        }
+                    }}
+                }
+                // The video on black, as a Mac's player has it.
+                player_pane := SolidView{visible: false width: Fill height: Fill flow: Down new_batch: true draw_bg.color: #x000000
+                    history_notice := SolidView{visible: false width: Fill height: Fit flow: Down draw_bg.color: ui_content
+                        View{width: Fill height: Fit flow: Right spacing: 6 align: Align{y: 0.5} padding: Inset{left: 14 right: 14 top: 7 bottom: 7}
+                            UiGlyph{width: 14 height: 14 draw_svg +: {svg: ui_icon("info") color: ui_muted}}
+                            Label{clip_y: false width: Fill padding: 0 text: "Couldn't update History. Check storage, then reopen this video." draw_text +: {color: ui_ink text_style: theme.font_regular{font_size: 9}}}
+                        }
+                        UiSep{}
+                    }
+                    player_fail_row := SolidView{visible: false width: Fill height: Fit flow: Down draw_bg.color: ui_content
+                        View{width: Fill height: Fit flow: Right spacing: 6 align: Align{y: 0.5} padding: Inset{left: 14 right: 14 top: 7 bottom: 7}
+                            UiGlyph{width: 14 height: 14 draw_svg +: {svg: ui_icon("info") color: ui_muted}}
+                            player_fail := Label{clip_y: false width: Fill padding: 0 text: "" draw_text +: {color: ui_ink text_style: theme.font_regular{font_size: 9}}}
+                        }
+                        UiSep{}
+                    }
+                    View{width: Fill height: Fill flow: Overlay
+                        // Under the player's page, which is clear until the player paints.
+                        player_wait := View{visible: false width: Fill height: Fill flow: Down align: Align{x: 0.5 y: 0.5}
+                            wait_spin := LoadingSpinner{width: 28 height: 28 draw_bg +: {color: #xffffff stroke_width: 2.5}}
+                        }
+                        // Only a Mac rounds a native view at its window's corners. Elsewhere it is square:
+                        // it stops short of them, over the pane's black. So a video plays without a mask, too.
+                        reader_place := View{width: Fill height: Fill padding: Inset{bottom: 12}
+                            reader := WebReader{width: Fill height: Fill on_error: || desk_player_failed() on_ready: || desk_player_up()}
+                        }
+                        player_empty := SolidView{visible: false width: Fill height: Fill draw_bg.color: ui_content
+                            player_empty_body := View{width: Fill height: Fill on_render: || {
+                                DeskNote{
+                                    glyph +: {draw_svg +: {svg: ui_icon("video")}}
+                                    title +: {text: desk_failed_title}
+                                    note +: {text: desk_failed_note}
+                                    View{width: Fit height: Fit margin: Inset{top: 8} flow: Right spacing: 8
+                                        UiButton{text: "Try Again" on_click: || desk_player_again()}
+                                        if playing != nil { DeskLinkButton{text: "Open in Browser" url: desk_watch(playing) on_click: || desk_left_for_browser()} }
+                                    }
+                                }
+                            }}
+                        }
+                    }
+                }
+            }
+        }
+    }
+    // Clear History: an alert that says what goes. On a Mac it is the alert macOS has
+    // drawn since 11 (the shared UiAlert parts): the app's icon on top, the words centred
+    // under it, Clear History and Cancel side by side and as wide as each other, Cancel,
+    // the default, on the right. Another desktop keeps its sheet.
+    clear_sheet := View{visible: false width: Fill height: Fill flow: Overlay new_batch: true over_web: true
+        DeskDim{}
+        DeskSheetPlace{
+            if ui_unified {
+                UiAlertPanel{
+                    if ui_alert_icon { UiAlertIcon{app: "os.youtube" width: 64 height: 64} }
+                    UiAlertTitle{text: "Clear History?"}
+                    UiAlertNote{text: "The videos you've watched in this app are removed from this list. Your searches aren't affected."}
+                    UiAlertRow{
+                        UiButton{width: Fill reset_hover_on_click: true text: "Clear History" draw_text +: {color: desk_danger color_hover: desk_danger color_down: desk_danger color_focus: desk_danger} on_click: || desk_clear_done()}
+                        UiPrimary{width: Fill key_default: true key_cancel: true reset_hover_on_click: true text: "Cancel" on_click: || desk_clear_cancel()}
+                    }
+                }
+            } else {
+                DeskSheetPanel{width: if ui_alert_icon { 420 } else { 340 }
+                    View{width: Fill height: Fit flow: Right spacing: 14
+                        if ui_alert_icon { UiAlertIcon{app: "os.youtube" width: 52 height: 52} }
+                        View{width: Fill height: Fit flow: Down spacing: 6
+                            DeskSheetTitle{text: "Clear History?"}
+                            DeskSheetNote{text: "The videos you've watched in this app are removed from this list. Your searches aren't affected."}
+                        }
+                    }
+                    DeskSheetButtons{
+                        UiButton{reset_hover_on_click: true text: "Clear History" draw_text +: {color: desk_danger color_hover: desk_danger color_down: desk_danger color_focus: desk_danger} on_click: || desk_clear_done()}
+                        UiPrimary{key_default: true key_cancel: true reset_hover_on_click: true text: "Cancel" on_click: || desk_clear_cancel()}
+                    }
+                }
+            }
+        }
+    }
+}
+
+if ui_desk { desk_recall() }
+if ui_desk { DeskRoot{} } else { TouchRoot{} }

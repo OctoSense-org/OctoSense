@@ -3,37 +3,178 @@
 // Bundles carry this prelude so they work in the contained standalone host too.
 // Resolve the current theme after a host restyle, not a retained prelude alias.
 let theme = mod.theme
+// A desktop shell's style sheet says `ui_pointer = true`: the app gets pointer
+// metrics and the Mac layouts (13-point text, 28-point controls, a sidebar and
+// a toolbar). Anything else, a phone or a bare host, keeps the touch metrics.
+let ui_desk = try { theme.ui_pointer == true } catch { false }
+// A Mac's window has no title bar over an app that says so to the shell
+// (crates/shell/src/clients.rs, unified_chrome): the app draws to the window's top
+// edge, its toolbar is 52 points tall, and the lights sit over the leading 84 points
+// of the toolbar, or over the top of a sidebar. Other desktops keep a title bar.
+let ui_unified = ui_desk && try { theme.ui_unified == true } catch { false }
+fn ui_by(touch, desk){ if ui_desk { desk } else { touch } }
 let ui_ink = theme.color_text
 let ui_page = theme.color_bg_app
 let ui_light = dot(ui_ink, #x36b61200) < 0.5
-let ui_surface = if ui_light { #xffffff } else { mix(ui_page, ui_ink, 0.06) }
-let ui_field = mix(ui_page, ui_ink, 0.075)
-let ui_hover = mix(ui_page, ui_ink, 0.12)
-let ui_border = mix(ui_page, ui_ink, 0.22)
-let ui_muted = mix(ui_ink, ui_page, 0.24)
-let ui_link = mix(ui_ink, #x356bce, 0.25)
-let ui_primary = #x285cd6
-let ui_success = mix(ui_ink, #x28a55b, 0.20)
-let ui_danger = mix(ui_ink, #xe13b53, 0.20)
-let UiButton = ButtonFlat{height: 44 margin: 0 padding: Inset{left: 14 right: 14}
-    draw_bg +: {border_radius: 12.0 border_size: 0.0 color: #x00000000 color_hover: ui_hover color_down: ui_field color_focus: ui_hover}
-    draw_text +: {color: ui_link color_hover: ui_link color_down: ui_link color_focus: ui_link text_style: theme.font_bold{font_size: 14}}
+let ui_surface = if ui_light { #xffffff } else { mix(ui_page, ui_ink, ui_by(0.06, 0.07)) }
+let ui_field = if ui_desk && ui_light { #xffffff } else { mix(ui_page, ui_ink, ui_by(0.075, 0.07)) }
+let ui_hover = mix(ui_page, ui_ink, ui_by(0.12, 0.07))
+let ui_border = mix(ui_page, ui_ink, ui_by(0.22, 0.14))
+let ui_muted = mix(ui_ink, ui_page, ui_by(0.24, 0.26))
+// The Mac's system colours where the page is a Mac's, near white or near black;
+// a retro style's mid-gray page keeps text that is mostly ink.
+let ui_lum = dot(ui_page, #x36b61200)
+let ui_mac = ui_desk && (ui_lum > 0.86 || ui_lum < 0.25)
+let ui_link = if ui_mac { if ui_light { #x0060c0 } else { #x6cb8ff } } else { mix(ui_ink, #x356bce, 0.25) }
+let ui_primary = ui_by(#x285cd6, #x0071e3)
+let ui_success = if ui_mac { if ui_light { #x1a7030 } else { #x30d158 } } else { mix(ui_ink, #x28a55b, 0.20) }
+let ui_danger = if ui_mac { if ui_light { #xc70012 } else { #xffa097 } } else { mix(ui_ink, #xe13b53, 0.20) }
+// The Mac's surfaces: a sidebar and a toolbar a shade off the page, a selection
+// in the sidebar's own gray, a push button's face.
+let ui_sidebar = mix(ui_page, ui_ink, 0.03)
+let ui_bar = if ui_light { #xededf0 } else { #x303033 }
+let ui_selected = mix(ui_page, ui_ink, 0.11)
+let ui_button = if ui_light { #xffffff } else { mix(ui_page, ui_ink, 0.16) }
+// What a list or a document sits on: white in the light; in the dark, darker than
+// the window around it, as a Mac's content is.
+let ui_content = if ui_mac { if ui_light { #xffffff } else { #x1e1e1e } } else { ui_surface }
+// A selected row: the accent when it is the row the person is on, white text on it.
+let ui_accent_row = if ui_light { #x0064d2 } else { #x0a60c8 }
+// A Mac dims the window behind a sheet, more in the dark; the shell's own sheets
+// and the native apps' dim as much.
+let ui_sheet_dim = if ui_light { #x00000024 } else { #x00000052 }
+// A touch size in the type scale; on the desktop, the Mac's size for that role
+// (Makepad's font_size is three quarters of a point).
+fn ui_fs(n){
+    if !ui_desk { return n }
+    if n <= 12 { return 8.25 }
+    if n <= 13 { return 9 }
+    if n <= 16 { return 9.75 }
+    if n <= 18 { return 11.25 }
+    if n <= 21 { return 12.75 }
+    if n <= 24 { return 13.5 }
+    if n <= 28 { return 16.5 }
+    19.5
+}
+let ui_icons = {}
+fn ui_icon(name){
+    let handle = ui_icons[name]
+    if handle == nil {
+        handle = http_resource("{{assets}}/icons/ui-" + name + ".svg")
+        ui_icons[name] = handle
+    }
+    handle
+}
+let UiButton = ButtonFlat{height: ui_by(44, 28) margin: 0 padding: Inset{left: ui_by(14, 12) right: ui_by(14, 12)} spacing: 6
+    icon_walk: Walk{width: 15 height: 15}
+    draw_bg +: {border_radius: ui_by(12.0, 3.0) border_size: ui_by(0.0, 1.0) border_color: ui_border
+        color: ui_by(#x00000000, ui_button) color_hover: ui_by(ui_hover, mix(ui_button, ui_ink, 0.04)) color_down: ui_by(ui_field, mix(ui_button, ui_ink, 0.1)) color_focus: ui_by(ui_hover, ui_button)}
+    draw_text +: {color: ui_by(ui_link, ui_ink) color_hover: ui_by(ui_link, ui_ink) color_down: ui_by(ui_link, ui_ink) color_focus: ui_by(ui_link, ui_ink)
+        text_style: ui_by(theme.font_bold{font_size: 14}, theme.font_regular{font_size: 9.75})}
+    draw_icon +: {color: ui_ink}
 }
 let UiPrimary = UiButton{
-    draw_bg +: {color: ui_primary color_hover: #x3468df color_down: #x204cb8 color_focus: #x204cb8}
+    draw_bg +: {border_size: 0.0 color: ui_primary color_hover: ui_by(#x3468df, #x006edb) color_down: ui_by(#x204cb8, #x0060c0) color_focus: ui_by(#x204cb8, ui_primary)}
     draw_text +: {color: #xffffff color_hover: #xffffff color_down: #xffffff color_focus: #xffffff}
+    draw_icon +: {color: #xffffff}
 }
-let UiPill = UiButton{draw_bg +: {color: ui_surface border_radius: 22.0} draw_text +: {color: ui_ink color_hover: ui_ink color_down: ui_ink color_focus: ui_ink}}
-let UiField = TextInput{width: Fill height: 48 margin: 0 padding: Inset{left: 14 right: 14 top: 12 bottom: 12}
+let UiPill = UiButton{height: ui_by(44, 24) padding: Inset{left: ui_by(14, 10) right: ui_by(14, 10)}
+    draw_bg +: {color: ui_by(ui_surface, #x00000000) border_size: 0.0 border_radius: ui_by(22.0, 3.0)}
+    draw_text +: {color: ui_ink color_hover: ui_ink color_down: ui_ink color_focus: ui_ink}}
+let UiField = TextInput{width: Fill height: ui_by(48, 28) margin: 0 padding: Inset{left: ui_by(14, 8) right: ui_by(14, 8) top: ui_by(12, 6) bottom: ui_by(12, 6)}
     draw_bg +: {color: ui_field color_hover: ui_field color_focus: ui_field color_empty: ui_field
-        border_color: ui_border border_color_hover: ui_link border_color_focus: ui_link border_color_empty: ui_border border_radius: 12.0}
-    draw_text +: {color: ui_ink color_hover: ui_ink color_focus: ui_ink color_empty: ui_muted color_empty_hover: ui_muted color_empty_focus: ui_muted text_style: theme.font_regular{font_size: 15}}
+        border_color: ui_border border_color_hover: ui_by(ui_link, ui_border) border_color_focus: ui_link border_color_empty: ui_border border_radius: ui_by(12.0, 3.0)}
+    draw_text +: {color: ui_ink color_hover: ui_ink color_focus: ui_ink color_empty: ui_muted color_empty_hover: ui_muted color_empty_focus: ui_muted text_style: theme.font_regular{font_size: ui_by(15, 9.75)}}
     draw_selection.color: #x557dcc55
 }
-let UiCard = RoundedView{width: Fill height: Fit flow: Down spacing: 12 padding: 20
-    show_bg: true draw_bg +: {color: ui_surface border_radius: 16.0}}
-let UiCaption = Label{padding: 0 flow: Flow.Right{wrap: true} width: Fill draw_text +: {color: ui_muted text_style: theme.font_regular{font_size: 13 line_spacing: 1.4}}}
-let UiTitle = Label{padding: 0 flow: Flow.Right{wrap: true} width: Fill draw_text +: {color: ui_ink text_style: theme.font_bold{font_size: 28 line_spacing: 1.2}}}
+let UiCard = RoundedView{width: Fill height: Fit flow: Down spacing: ui_by(12, 8) padding: ui_by(20, 14)
+    show_bg: true draw_bg +: {color: ui_surface border_radius: ui_by(16.0, 5.0) border_size: ui_by(0.0, 1.0) border_color: ui_by(#x00000000, ui_border)}}
+let UiCaption = Label{padding: 0 flow: Flow.Right{wrap: true} width: Fill draw_text +: {color: ui_muted text_style: theme.font_regular{font_size: ui_by(13, 8.25) line_spacing: 1.4}}}
+let UiTitle = Label{padding: 0 flow: Flow.Right{wrap: true} width: Fill draw_text +: {color: ui_ink text_style: theme.font_bold{font_size: ui_by(28, 16.5) line_spacing: 1.2}}}
+// The Mac's parts. They are drawn on a desktop only; a phone keeps its pages.
+// A shader's border_radius is half the corner it draws: 3 is a 6-point corner.
+let UiSep = SolidView{width: Fill height: 1 draw_bg.color: ui_border}
+let UiVSep = SolidView{width: 1 height: Fill draw_bg.color: ui_border}
+let UiGlyph = Svg{width: 16 height: 16 animating: false draw_svg +: {color: ui_muted}}
+let UiTool = ButtonFlat{height: 28 margin: 0 padding: Inset{left: 8 right: 8} spacing: 5 icon_walk: Walk{width: 16 height: 16}
+    draw_bg +: {border_radius: 3.0 border_size: 0.0 color: #x00000000 color_hover: ui_hover color_down: ui_selected color_focus: #x00000000}
+    draw_text +: {color: ui_ink color_hover: ui_ink color_down: ui_ink color_focus: ui_ink text_style: theme.font_regular{font_size: 9.75}}
+    draw_icon +: {color: ui_ink}
+}
+let UiToolIcon = UiTool{width: 30 padding: 0 spacing: 0 text: ""}
+// A tool whose click hides it or the pane it sits on: it comes back unwashed.
+let UiPaneTool = UiToolIcon{reset_hover_on_click: true}
+// The clear button inside a search field, shown while it holds text.
+let UiSearchClear = UiPaneTool{visible: false width: 24 height: 24 icon_walk: Walk{width: 14 height: 14}
+    draw_bg +: {color_hover: #x00000000 color_down: #x00000000}
+    draw_icon +: {svg: ui_icon("search-clear") color: ui_muted}}
+let UiToolbar = SolidView{width: Fill height: if ui_unified { 52 } else { 40 } flow: Right align: Align{y: 0.5} spacing: 4 padding: Inset{left: 12 right: 10} draw_bg.color: ui_bar}
+// A toolbar that starts at the window's leading edge, with no sidebar beside it.
+let UiWindowToolbar = UiToolbar{padding: Inset{left: if ui_unified { 84 } else { 12 } right: 10}}
+let UiBarTitle = Label{clip_y: false padding: 0 text: "" max_lines: 1 draw_text +: {color: ui_ink text_style: theme.font_bold{font_size: 11.25}}}
+let UiBarSub = Label{clip_y: false padding: 0 text: "" max_lines: 1 draw_text +: {color: ui_muted text_style: theme.font_regular{font_size: 8.25}}}
+let UiSidebar = SolidView{width: 208 height: Fill flow: Down padding: Inset{left: 8 right: 8 top: if ui_unified { 52 } else { 8 } bottom: 8} spacing: 1 draw_bg.color: ui_sidebar}
+let UiSideHead = Label{padding: Inset{left: 8 top: 12 bottom: 4} text: "" draw_text +: {color: ui_muted text_style: theme.font_bold{font_size: 8.25}}}
+let UiSideRow = ButtonFlat{width: Fill height: 28 margin: 0 padding: Inset{left: 8 right: 8} spacing: 7 align: Align{x: 0.0 y: 0.5}
+    icon_walk: Walk{width: 16 height: 16} label_walk: Walk{width: Fill height: Fit}
+    draw_bg +: {border_radius: 3.0 border_size: 0.0 color: #x00000000 color_hover: #x00000000 color_down: ui_selected color_focus: #x00000000}
+    draw_text +: {color: ui_ink color_hover: ui_ink color_down: ui_ink color_focus: ui_ink text_style: theme.font_regular{font_size: 9.75}}
+    draw_icon +: {color: ui_link}
+}
+let UiSideRowOn = UiSideRow{draw_bg +: {color: ui_selected color_hover: ui_selected color_focus: ui_selected}}
+let UiSeg = ButtonFlat{height: 24 margin: 0 padding: Inset{left: 12 right: 12}
+    draw_bg +: {border_radius: 2.5 border_size: 0.0 color: #x00000000 color_hover: ui_hover color_down: ui_selected color_focus: #x00000000}
+    draw_text +: {color: ui_ink color_hover: ui_ink color_down: ui_ink color_focus: ui_ink text_style: theme.font_regular{font_size: 9.75}}
+}
+let UiSegOn = UiSeg{draw_bg +: {color: ui_button color_hover: ui_button color_focus: ui_button border_size: 1.0 border_color: ui_border}}
+let UiSegments = RoundedView{width: Fit height: 28 flow: Right align: Align{y: 0.5} spacing: 2 padding: 2 show_bg: true draw_bg +: {color: ui_selected border_radius: 3.5}}
+let UiSearch = UiField{padding: Inset{left: 26 right: 8 top: 6 bottom: 6}}
+let UiGroup = RoundedView{width: Fill height: Fit flow: Down show_bg: true draw_bg +: {color: ui_surface border_radius: 5.0 border_size: 1.0 border_color: ui_border}}
+let UiFormRow = View{width: Fill height: Fit flow: Right align: Align{y: 0.5} spacing: 12 padding: Inset{left: 14 right: 14 top: 8 bottom: 8}}
+let UiFormLabel = Label{clip_y: false padding: 0 width: Fill text: "" draw_text +: {color: ui_ink text_style: theme.font_regular{font_size: 9.75}}}
+let UiListRow = View{width: Fill height: Fit flow: Right align: Align{y: 0.5} spacing: 10 padding: Inset{left: 14 right: 14 top: 8 bottom: 8}}
+// A two-line row of a list: a line in the body size, a line under it in the small.
+let UiRowTitle = Label{clip_y: false padding: 0 width: Fill text: "" max_lines: 1 text_overflow: Ellipsis draw_text +: {color: ui_ink text_style: theme.font_regular{font_size: 9.75}}}
+let UiRowNote = Label{clip_y: false padding: 0 width: Fill text: "" max_lines: 1 text_overflow: Ellipsis draw_text +: {color: ui_muted text_style: theme.font_regular{font_size: 8.25}}}
+// A form: the label right-aligned in a 110-point column to the left of its control.
+let UiFormKey = Label{clip_y: false padding: 0 width: 110 text: "" align: Align{x: 1.0} draw_text +: {color: ui_ink text_style: theme.font_regular{font_size: 9.75}}}
+let UiFormLine = View{width: Fill height: Fit flow: Right align: Align{y: 0.5} spacing: 8}
+// A pop-up button: the choice, and the up-down mark at its trailing edge (an
+// Overlay of this over UiPopupMark).
+let UiPopup = UiButton{padding: Inset{left: 10 right: 28} align: Align{x: 0.0 y: 0.5}}
+let UiPopupMark = View{width: Fit height: Fit padding: Inset{right: 8} new_batch: true
+    Svg{width: 13 height: 13 animating: false draw_svg +: {svg: ui_icon("updown") color: ui_muted}}}
+// A small count or state beside a name.
+let UiBadge = RoundedView{width: Fit height: Fit padding: Inset{left: 6 right: 6 top: 2 bottom: 2} new_batch: true show_bg: true draw_bg +: {color: mix(ui_surface, ui_ink, 0.1) border_radius: 2.5}}
+let UiBadgeText = Label{clip_y: false padding: 0 text: "" draw_text +: {color: ui_ink text_style: theme.font_bold{font_size: 8.25}}}
+// A status bar along a window's bottom: small text on the bar's colour.
+let UiFootBar = SolidView{width: Fill height: 24 flow: Right align: Align{y: 0.5} spacing: 8 padding: Inset{left: 12 right: 12} draw_bg.color: ui_bar}
+// An empty list or an empty window: a glyph, a title, a line, and, under them, what
+// to do about it. Centred in what the empty state fills.
+let UiEmpty = View{width: Fill height: Fill flow: Down align: Align{x: 0.5 y: 0.5} spacing: 6 padding: 24
+    glyph := Svg{width: 36 height: 36 margin: Inset{bottom: 4} animating: false draw_svg +: {color: ui_muted}}
+    title := Label{clip_y: false padding: 0 text: "" draw_text +: {color: ui_ink text_style: theme.font_bold{font_size: 11.25}}}
+    note := Label{clip_y: false padding: 0 text: "" draw_text +: {color: ui_muted text_style: theme.font_regular{font_size: 9.75}}}
+}
+// A Mac's alert carries its app's icon, as the native apps' alerts do: 64 points
+// on top in the alert below. The shell draws it in its style's frame (`ReviewAppIcon`,
+// crates/shell/src/connected_review.rs; `app` is the bundle's id, "os.writer"); a host
+// without the shell has none, and the alert keeps its words alone.
+let UiAlertIcon = try { mod.widgets.ReviewAppIcon } catch { nil }
+let ui_alert_icon = ui_mac && UiAlertIcon != nil
+// A Mac's alert as macOS has drawn it since 11 (Files' Empty Trash): 260 points
+// wide, the app's 64-point icon on top, the title and its words centred under it,
+// then the buttons. Two sit side by side, each as wide as the other, the default
+// on the right (UiAlertRow, each button `width: Fill`); three or more stand one
+// over another, the default on top (UiAlertStack). A host with no app icon shows
+// the words alone. Off a Mac an app keeps its own sheet.
+let UiAlertPanel = RoundedShadowView{width: 260 height: Fit flow: Down align: Align{x: 0.5} padding: Inset{left: 16 right: 16 top: 20 bottom: 16} new_batch: true cursor: MouseCursor.Default
+    draw_bg +: {color: ui_surface border_size: 1.0 border_color: ui_border border_radius: 10.0 shadow_color: #x00000040 shadow_radius: 18.0 shadow_offset: vec2(0.0, 4.0)}}
+// A Label's margin counts twice: 10 and 6 points between icon, title and words.
+let UiAlertTitle = Label{clip_y: false width: Fill padding: 0 margin: Inset{top: 5} align: Align{x: 0.5} flow: Flow.Right{wrap: true} text: "" draw_text +: {color: ui_ink text_style: theme.font_bold{font_size: 9.75 line_spacing: 1.3}}}
+let UiAlertNote = Label{clip_y: false width: Fill padding: 0 margin: Inset{top: 3} align: Align{x: 0.5} flow: Flow.Right{wrap: true} text: "" draw_text +: {color: ui_ink text_style: theme.font_regular{font_size: 8.25 line_spacing: 1.3}}}
+let UiAlertRow = View{width: Fill height: Fit flow: Right spacing: 8 margin: Inset{top: 16}}
+let UiAlertStack = View{width: Fill height: Fit flow: Down spacing: 8 margin: Inset{top: 16}}
 // END shared app interface
 let origin = {lat: 37.3350 lon: -121.8850 name: "San Jose (downtown)" picked: false}
 let q = ""
@@ -48,6 +189,19 @@ let screen = "search"   // search | place | route | drive | origin | stop
 let mode = "drive"
 let recents = []
 let saved = []
+// Large loaded lists keep their keys alongside the places. Change both only
+// after a successful write; smaller lists can use the ordinary scan.
+let saved_index = {}
+let saved_order = []
+let saved_index_ready = false
+let phone_saved_page = try { mod.maps_phone_saved_page } catch { 0 }
+if phone_saved_page == nil { phone_saved_page = 0 }
+// Until each file has been read, an empty in-memory list must not replace it.
+let recents_loaded = false
+let saved_loaded = false
+let saved_loading = false
+let saved_load_epoch = 0
+let places_checked = false
 let shown_pins = []     // the places behind the browse map's pins, in pin order
 let shown_route = ""
 let frame_next = false  // Directions frames the next route it draws: on entering it, on a new mode, and on a new start
@@ -59,6 +213,42 @@ let seen = {lat: 37.3350 lon: -121.8850}   // the browse map's centre (on_viewpo
 let centered = false    // the fix moves the map no more: it went there, the person moved it, or a card opened
 let app_target = nil    // where Maps last sent the map and hasn't seen it land: that landing is not the person's move
 let locating = false    // ◎ asked for a fix that hasn't come yet
+let seen_zoom = 13      // the browse map's zoom (on_viewport), for the desktop's zoom tools
+let desk_cut_flight = false   // a press stopped one of Maps' flights and no view has been reported since: `seen` is stale
+// The desktop keeps these sheets in a column beside the map. Set from `ui_desk`
+// under the script's timers: the script runs on its own in
+// crates/shell/src/maps_model_tests.rs, without the shared interface.
+let on_desk = false
+// A restyle starts a new run but old timers can still finish. Only the latest
+// run may complete a background read or replace the map's markers.
+let maps_run = try { mod.maps_run } catch { 0 }
+if maps_run == nil { maps_run = 0 }
+maps_run = maps_run + 1
+mod.maps_run = maps_run
+fn maps_current(){
+    let current = try { mod.maps_run } catch { nil }
+    current == maps_run
+}
+fn maps_claim_boot(){
+    let current = try { mod.maps_run } catch { 0 }
+    if current == nil { current = 0 }
+    if current < maps_run { mod.maps_run = maps_run }
+}
+let storage_state = try { mod.maps_storage } catch { nil }
+if storage_state == nil {
+    storage_state = {saved_error: false recent_error: false prefs_error: false prefs_ready: false prefs_unread: false
+        prefs_edits: {view: false style: false tilted: false side: false units: false}}
+    mod.maps_storage = storage_state
+}
+// A retained state from an older run may not have the preference fields yet.
+let prefs_was_ready = try { storage_state.prefs_ready } catch { nil }
+let prefs_was_unread = try { storage_state.prefs_unread } catch { nil }
+let prefs_were_edited = try { storage_state.prefs_edits } catch { nil }
+if prefs_was_ready == nil { storage_state.prefs_ready = false }
+if prefs_was_unread == nil { storage_state.prefs_unread = false }
+if prefs_were_edited == nil {
+    storage_state.prefs_edits = {view: false style: false tilted: false side: false units: false}
+}
 let OVERPASS = ["overpass-api.de" "overpass.kumi.systems" "overpass.openstreetmap.fr"]
 let CACHE_DAYS = 7
 let FETCH_SECS = 15      // a request with no answer by then has failed
@@ -335,6 +525,17 @@ fn place_details(body){
 // value just below zero into 0.
 fn round4(x){ round(x * 10000) / 10000 + 0 }
 fn coords_text(lat, lon){ "" + round4(lat) + ", " + round4(lon) }
+// A dropped pin's address, from the nearest answer: an address's own line and
+// its town, or the street and town around a named place; the coordinates when
+// it says neither.
+fn pin_address(h, lat, lon){
+    if h.cat == "Address" {
+        if h.label == "" { return h.name }
+        return h.name + ", " + h.label
+    }
+    if h.label == "" { return coords_text(lat, lon) }
+    h.label
+}
 // Straight-line distance (km): Directions gives the road's.
 fn distance_km(lat1, lon1, lat2, lon2){
     let dlat = radians(lat2 - lat1)
@@ -354,6 +555,36 @@ fn distance_text(km){
     let tenths = round(km * 10) / 10
     if tenths < 10 { return "" + tenths + " km" }
     "" + round(km) + " km"
+}
+// The road a step's words name: "Turn right onto Main Street", "Start on Main Street".
+fn desk_step_road(text){
+    let found = regex(" onto (.+)$").exec(text)
+    if found == nil { found = regex("^Start on (.+)$").exec(text) }
+    if found == nil { found = regex("^Continue on (.+)$").exec(text) }
+    if found == nil { return "" }
+    found.captures[1]
+}
+// A ramp says what its signs say, as a Mac's Maps does, where the map has them: its exit's
+// number and the place it leads to ("Take exit 12 toward San Jose"). Any other step whose road
+// has no name in the route ("Turn left") says where it leads: the next road a step names, one
+// or two steps on.
+fn desk_name_steps(steps){
+    for i s in steps {
+        let ramp = s.kind == "off ramp" || s.kind == "on ramp" || s.kind == "fork" || s.kind == "merge"
+        if s.kind == "off ramp" && s.exit != "" { s.text = "Take exit " + s.exit + s.text.strip_prefix("Take the exit") }
+        if ramp && s.toward != "" { s.text = s.text + " toward " + s.toward }
+        else if s.kind != "arrive" && desk_step_road(s.text) == "" {
+            let road = ""
+            for k in 2 {
+                let j = i + 1 + k
+                if road == "" && j < steps.len() && steps[j].kind != "arrive" {
+                    road = desk_step_road(steps[j].text)
+                }
+                if j < steps.len() && steps[j].kind == "arrive" { break }
+            }
+            if road != "" { s.text = s.text + " toward " + road }
+        }
+    }
 }
 // Photon's search, ranked near the visible map, and its reverse lookup
 // (the address at a point). `url_encode` leaves only letters, digits and
@@ -395,21 +626,59 @@ fn is_a_place(p){
     if !(lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180) { return false }
     !(lat > -1e-9 && lat < 1e-9 && lon > -1e-9 && lon < 1e-9)
 }
+fn has_place_key(s, k){
+    let id = text_of(s, "id")
+    if id != "" { return id == k }
+    let prefix = text_of(s, "name") + "@"
+    k.strip_prefix(prefix) != k && prefix + coord_key(s, "lat") + "," + coord_key(s, "lon") == k
+}
 fn is_saved(list, p){
     let k = place_key(p)
-    for s in list { if place_key(s) == k { return true } }
+    for s in list { if has_place_key(s, k) { return true } }
     false
+}
+fn saved_contains(p){
+    if !saved_index_ready { return is_saved(saved, p) }
+    let key = place_key(p)
+    try { saved_index[key] == true } catch { false }
 }
 fn without_saved(list, p){
     let k = place_key(p)
     let out = []
-    for s in list { if place_key(s) != k { out.push(s) } }
+    for s in list { if !has_place_key(s, k) { out.push(s) } }
     out
 }
 fn with_saved(list, p){
     let out = without_saved(list, p)
     out.push(as_place(p))
     out
+}
+fn toggle_saved_list(list, p){
+    let k = place_key(p)
+    let was_saved = false
+    let out = []
+    for s in list {
+        if has_place_key(s, k) { was_saved = true } else { out.push(s) }
+    }
+    if !was_saved { out.push(as_place(p)) }
+    {next: out was_saved: was_saved}
+}
+fn saved_change(p){
+    if !saved_index_ready || saved_order.len() != saved.len() {
+        let change = toggle_saved_list(saved, p)
+        change.indexed = false
+        return change
+    }
+    let key = place_key(p)
+    let was_saved = try { saved_index[key] == true } catch { false }
+    let next = []
+    let order = []
+    for i s in saved {
+        let k = saved_order[i]
+        if k != key { next.push(s) order.push(k) }
+    }
+    if !was_saved { next.push(as_place(p)) order.push(key) }
+    {next: next was_saved: was_saved indexed: true key: key order: order}
 }
 // A place's own fields, each of its kind: text, or a finite number or nil.
 // An entry from an older or broken file may lack any of them.
@@ -439,11 +708,12 @@ fn listed(list){
 // that show as rows (`listed`), each copied with a place's own fields
 // (`as_place`). An entry kept as read would be written back at the next
 // write, a bare word as text: a bare `NaN` name would become the name "NaN".
-fn places_in(text){
+fn places_from(list){
     let out = []
-    for p in listed(list_in(text)) { out.push(as_place(p)) }
+    for p in listed(list) { out.push(as_place(p)) }
     out
 }
+fn places_in(text){ places_from(list_in(text)) }
 // Recent places with `p` as the newest: once by name, at most 8, oldest
 // first. Not `remove(0)`: it reads the oldest entry on its own, which raises
 // for a bare word.
@@ -464,7 +734,18 @@ fn pin_places(list, open){
     let k = ""
     if shown { k = place_key(open) }
     let out = []
-    for s in list { if is_a_place(s) && place_key(s) != k && !is_saved(out, s) { out.push(s) } }
+    let keys = {}
+    for s in list {
+        let lat = number_of(s, "lat")
+        let lon = number_of(s, "lon")
+        if lat != nil && lon != nil && lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180 &&
+           !(lat > -1e-9 && lat < 1e-9 && lon > -1e-9 && lon < 1e-9) {
+            let id = text_of(s, "id")
+            let key = if id != "" { id } else { text_of(s, "name") + "@" + round4(lat) + "," + round4(lon) }
+            let known = try { keys[key] == true } catch { false }
+            if key != k && !known { keys[key] = true out.push(s) }
+        }
+    }
     if shown { out.push(open) }
     out
 }
@@ -472,14 +753,13 @@ fn pin_places(list, open){
 // the destination's (makepad's route pins): the open place, when it could
 // be pinned.
 fn pins_text(pins, open){
-    let k = ""
-    if is_a_place(open) { k = place_key(open) }
+    // pin_places already puts the valid open place last.
+    let shown = is_a_place(open)
     let out = ""
-    for p in pins {
-        let kind = 1
-        if k != "" && place_key(p) == k { kind = 2 }
+    for i p in pins {
+        let kind = if shown && i + 1 == pins.len() { 2 } else { 1 }
         if out != "" { out = out + ";" }
-        out = out + text_of(p, "lat") + "," + text_of(p, "lon") + "," + kind
+        out = out + p.lat + "," + p.lon + "," + kind
     }
     out
 }
@@ -502,18 +782,336 @@ fn fix_origin(){
         location_note("")
     }
 }
-// Recent places from an older build have no `id`, and either file may hold
-// anything a broken build wrote: each list keeps only its file's places
-// (`places_in`), so the next write drops the rest from the file too.
-fn load_recents(){
-    if fs.exists(data_path("recents.json")) { recents = places_in(fs.read(data_path("recents.json"))) }
+// Splash's JSON reader accepts incomplete input. Settings are small, so check
+// their complete JSON grammar before allowing a later write to replace them.
+fn stored_json_space(c, i){
+    while i < c.len() && (c[i] == 32 || c[i] == 9 || c[i] == 10 || c[i] == 13) { i = i + 1 }
+    i
 }
+fn stored_json_digit(c){ c >= 48 && c <= 57 }
+fn stored_json_hex(c){ stored_json_digit(c) || (c >= 65 && c <= 70) || (c >= 97 && c <= 102) }
+fn stored_json_string(c, i){
+    if i >= c.len() || c[i] != 34 { return -1 }
+    i = i + 1
+    while i < c.len() {
+        let ch = c[i]
+        i = i + 1
+        if ch == 34 { return i }
+        if ch < 32 { return -1 }
+        if ch == 92 {
+            if i >= c.len() { return -1 }
+            let esc = c[i]
+            i = i + 1
+            if esc == 117 {
+                for j in 4 {
+                    if i >= c.len() || !stored_json_hex(c[i]) { return -1 }
+                    i = i + 1
+                }
+            } else if esc != 34 && esc != 92 && esc != 47 && esc != 98 && esc != 102 && esc != 110 && esc != 114 && esc != 116 { return -1 }
+        }
+    }
+    -1
+}
+fn stored_json_word(c, i, word){
+    for ch in word.to_chars() {
+        if i >= c.len() || c[i] != ch { return -1 }
+        i = i + 1
+    }
+    i
+}
+fn stored_json_number(c, i){
+    if c[i] == 45 { i = i + 1 }
+    if i >= c.len() { return -1 }
+    if c[i] == 48 { i = i + 1 }
+    else if c[i] >= 49 && c[i] <= 57 {
+        while i < c.len() && stored_json_digit(c[i]) { i = i + 1 }
+    } else { return -1 }
+    if i < c.len() && c[i] == 46 {
+        i = i + 1
+        if i >= c.len() || !stored_json_digit(c[i]) { return -1 }
+        while i < c.len() && stored_json_digit(c[i]) { i = i + 1 }
+    }
+    if i < c.len() && (c[i] == 101 || c[i] == 69) {
+        i = i + 1
+        if i < c.len() && (c[i] == 43 || c[i] == 45) { i = i + 1 }
+        if i >= c.len() || !stored_json_digit(c[i]) { return -1 }
+        while i < c.len() && stored_json_digit(c[i]) { i = i + 1 }
+    }
+    i
+}
+fn stored_json_valid(text){
+    let c = text.to_chars()
+    let states = ["root_value"]
+    let i = 0
+    while states.len() > 0 {
+        i = stored_json_space(c, i)
+        let top = states.len() - 1
+        let state = states[top]
+        if state == "root_done" { return i == c.len() }
+        if i >= c.len() { return false }
+        let ch = c[i]
+        if state == "object_first" || state == "object_key" {
+            if state == "object_first" && ch == 125 { states.pop() i = i + 1 continue }
+            i = stored_json_string(c, i)
+            if i < 0 { return false }
+            states[top] = "object_colon"
+        } else if state == "object_colon" {
+            if ch != 58 { return false }
+            i = i + 1
+            states[top] = "object_value"
+        } else if state == "object_next" {
+            if ch == 125 { states.pop() i = i + 1 }
+            else if ch == 44 { states[top] = "object_key" i = i + 1 }
+            else { return false }
+        } else if state == "array_next" {
+            if ch == 93 { states.pop() i = i + 1 }
+            else if ch == 44 { states[top] = "array_value" i = i + 1 }
+            else { return false }
+        } else {
+            if state == "array_first" && ch == 93 { states.pop() i = i + 1 continue }
+            if state == "root_value" { states[top] = "root_done" }
+            else if state == "object_value" { states[top] = "object_next" }
+            else { states[top] = "array_next" }
+            if ch == 123 { states.push("object_first") i = i + 1 }
+            else if ch == 91 { states.push("array_first") i = i + 1 }
+            else if ch == 34 { i = stored_json_string(c, i) }
+            else if ch == 116 { i = stored_json_word(c, i, "true") }
+            else if ch == 102 { i = stored_json_word(c, i, "false") }
+            else if ch == 110 { i = stored_json_word(c, i, "null") }
+            else { i = stored_json_number(c, i) }
+            if i < 0 || states.len() > 33 { return false }
+        }
+    }
+    false
+}
+fn stored_json_complete(text){
+    // An unexpectedly huge settings file should not exhaust a UI callback.
+    if text.len() > 512 { return false }
+    stored_json_valid(text)
+}
+// Lists can be much larger than settings. Check their outer boundary using
+// native string operations; the reader below still accepts legacy bare values.
+fn stored_places_complete(text){
+    let clean = text.trim()
+    clean.strip_prefix("[") != clean && clean.strip_suffix("]") != clean
+}
+// A missing file starts an empty list. An unreadable or truncated file does
+// not: leave it alone until it can be read, so a later write can't replace it.
+fn read_places_list(name){
+    try {
+        if !fs.exists(data_path(name)) { [] }
+        else {
+            let text = fs.read(data_path(name))
+            if !stored_places_complete(text) { nil }
+            else {
+                let list = text.parse_json()
+                if list == nil || !list.is_array() { nil } else { list }
+            }
+        }
+    } catch { nil }
+}
+fn read_places(name){
+    try {
+        let list = read_places_list(name)
+        if list == nil { nil } else { places_from(list) }
+    } catch { nil }
+}
+fn load_recents(){
+    let next = read_places("recents.json")
+    recents_loaded = next != nil
+    if recents_loaded { recents = next }
+}
+fn saved_load_batch(job){
+    if !maps_current() || job.epoch != saved_load_epoch { return }
+    let end = min(job.at + 20, job.places.len())
+    while job.at < end {
+        let item = try {
+            let p = job.places[job.at]
+            if is_a_place(p) && text_of(p, "name") != "" { as_place(p) } else { nil }
+        } catch { nil }
+        job.at = job.at + 1
+        if item != nil {
+            let key = place_key(item)
+            job.out.push(item)
+            job.order.push(key)
+            job.keys[key] = true
+        }
+    }
+    if job.at < job.places.len() {
+        start_timeout(0.01, || saved_load_batch(job))
+        return
+    }
+    saved = job.out
+    saved_order = job.order
+    saved_index = job.keys
+    saved_index_ready = true
+    saved_loaded = true
+    saved_loading = false
+    if !places_checked {
+        places_checked = true
+        start_timeout(0.01, || boot_after_load())
+    } else { retry_storage_finish() }
+}
+// A large list is normalized in small callbacks, without allowing writes
+// until all of its original entries have been examined.
 fn load_saved(){
-    if fs.exists(data_path("saved.json")) { saved = places_in(fs.read(data_path("saved.json"))) }
+    if !maps_current() { return false }
+    if saved_loading { return false }
+    saved_load_epoch = saved_load_epoch + 1
+    saved_index_ready = false
+    let list = read_places_list("saved.json")
+    if list == nil { saved_loaded = false return true }
+    if list.len() > 200 {
+        saved_loaded = false
+        saved_loading = true
+        let job = {epoch: saved_load_epoch places: list at: 0 out: [] order: [] keys: {}}
+        start_timeout(0.01, || saved_load_batch(job))
+        return false
+    }
+    let next = try { places_from(list) } catch { nil }
+    saved_loaded = next != nil
+    if saved_loaded { saved = next }
+    true
+}
+// Stage the list until its write succeeds. The notice survives appearance
+// changes until the action succeeds or the person dismisses it.
+fn refresh_storage_notice(){
+    let message = ""
+    let saved_unavailable = !saved_loaded && !saved_loading
+    let read_error = saved_unavailable || !recents_loaded
+    let prefs_unread = on_desk && try { storage_state.prefs_unread == true } catch { false }
+    let prefs_error = on_desk && try { storage_state.prefs_error == true } catch { false }
+    if saved_unavailable && !recents_loaded {
+        message = "Saved Places and Recents couldn't be loaded. Try Again."
+    } else if saved_unavailable {
+        message = "Saved Places couldn't be loaded. Try Again before saving."
+    } else if !recents_loaded {
+        message = "Recents couldn't be loaded. Try Again before updating them."
+    } else if saved_loading {
+        message = "Loading Saved Places…"
+    } else if storage_state.saved_error && storage_state.recent_error {
+        message = "Couldn't update Saved Places or Recents. Check storage and try again."
+    } else if storage_state.saved_error {
+        message = "Couldn't update Saved Places. Check storage and try again."
+    } else if storage_state.recent_error {
+        message = "Couldn't update Recents. Check storage and try again."
+    } else if prefs_unread {
+        message = "Map settings couldn't be loaded. Try Again."
+    } else if prefs_error {
+        message = "Couldn't save map settings. Try Again."
+    }
+    ui.storage_text.set_text(message)
+    ui.storage_note.set_visible(message != "")
+    let retry = read_error || (!saved_loading && (prefs_unread || prefs_error) && !storage_state.saved_error && !storage_state.recent_error)
+    ui.storage_retry.set_visible(retry)
+    ui.storage_dismiss.set_visible(!retry && !saved_loading)
+    if on_desk {
+        ui.storage_drive_text.set_text(message)
+        ui.storage_drive_note.set_visible(screen == "drive" && message != "")
+        ui.storage_drive_retry.set_visible(retry)
+        ui.storage_drive_dismiss.set_visible(!retry && !saved_loading)
+    } else {
+        ui.storage_search_text.set_text(message)
+        ui.storage_search_note.set_visible(read_error || saved_loading)
+        ui.storage_search_retry.set_visible(read_error)
+    }
+}
+fn storage_result(kind, kept){
+    if kind == "saved" { storage_state.saved_error = !kept }
+    else { storage_state.recent_error = !kept }
+    refresh_storage_notice()
+}
+fn dismiss_storage_notice(){
+    storage_state.saved_error = false
+    storage_state.recent_error = false
+    refresh_storage_notice()
+}
+fn retry_storage_load(){
+    if !saved_loaded { load_saved() }
+    if !recents_loaded { load_recents() }
+    retry_storage_finish()
+}
+fn retry_storage_finish(){
+    if on_desk { desk_sel = -1 }
+    sync_save()
+    if screen == "search" || screen == "place" { show_pins() }
+    ui.results.render()
+    refresh_storage_notice()
+}
+fn retry_storage(){
+    if !saved_loaded || !recents_loaded { retry_storage_load() }
+    else if on_desk {
+        let prefs_unread = try { storage_state.prefs_unread == true } catch { false }
+        let prefs_error = try { storage_state.prefs_error == true } catch { false }
+        if prefs_unread {
+            if desk_prefs_read() && desk_prefs_dirty { desk_prefs_write() }
+        } else if prefs_error { desk_prefs_write() }
+    }
+}
+fn keep_saved(next){
+    if !saved_loaded { refresh_storage_notice() return false }
+    let kept = try { fs.write(data_path("saved.json"), next.to_json()) true } catch { false }
+    if kept { saved = next saved_index_ready = false }
+    storage_result("saved", kept)
+    kept
+}
+fn keep_saved_change(change){
+    if !keep_saved(change.next) { return false }
+    if change.indexed {
+        saved_order = change.order
+        saved_index[change.key] = !change.was_saved
+        saved_index_ready = true
+    }
+    true
+}
+fn saved_replace(old, replacement){
+    if !saved_contains(old) { return true }
+    if !saved_index_ready { return keep_saved(with_saved(without_saved(saved, old), replacement)) }
+    let before = place_key(old)
+    let after = place_key(replacement)
+    let next = []
+    let order = []
+    for i s in saved {
+        let key = saved_order[i]
+        if key != before && key != after { next.push(s) order.push(key) }
+    }
+    next.push(as_place(replacement))
+    order.push(after)
+    if !keep_saved(next) { return false }
+    saved_order = order
+    saved_index[before] = false
+    saved_index[after] = true
+    saved_index_ready = true
+    true
+}
+fn keep_recents(next){
+    if !recents_loaded { refresh_storage_notice() return false }
+    let kept = try { fs.write(data_path("recents.json"), next.to_json()) true } catch { false }
+    if kept { recents = next }
+    storage_result("recent", kept)
+    kept
 }
 fn remember(p){
-    recents = remembered(recents, p)
-    fs.write(data_path("recents.json"), recents.to_json())
+    keep_recents(remembered(recents, p))
+}
+fn phone_saved_rows(){
+    if !saved_loaded { return [] }
+    let pages = max(1, ceil(saved.len() / 100))
+    phone_saved_page = clamp(phone_saved_page, 0, pages - 1)
+    mod.maps_phone_saved_page = phone_saved_page
+    let first = phone_saved_page * 100
+    let rows = []
+    for offset in 100 {
+        let i = first + offset
+        if i < saved.len() { rows.push(saved[i]) }
+    }
+    rows
+}
+fn phone_saved_page_by(step){
+    phone_saved_page = clamp(phone_saved_page + step, 0, max(0, ceil(saved.len() / 100) - 1))
+    mod.maps_phone_saved_page = phone_saved_page
+    ui.results.render()
+    ui.results.set_scroll_y(0)
 }
 // Photon's search near the visible map (`seen`), on Return. Each search
 // takes the next `search_seq`; an answer that comes back after a newer
@@ -527,6 +1125,7 @@ fn search_for(text){
     if q == "" { search_state = "" } else { search_state = "loading" }
     show_results(true)
     ui.results.render()
+    if on_desk { desk_search_began() }
     if q == "" { return }
     let body = body_of(fetch(search_url(q, seen.lat, seen.lon)).await())
     if mine != search_seq { return }
@@ -535,6 +1134,7 @@ fn search_for(text){
     if found == nil { search_state = "failed" } else { hits = found; search_state = "done" }
     show_results(list_open)
     ui.results.render()
+    if on_desk { desk_results_came() }
 }
 // The list under the search box. On the search screen it is closed until the
 // box is tapped or a search is made, and a tap or drag on the map closes it.
@@ -544,14 +1144,17 @@ fn search_for(text){
 // ("‹ Back to route").
 fn show_results(open){
     list_open = open
-    let any = q != "" || listed(saved).len() > 0 || listed(recents).len() > 0
-    ui.results.set_visible((open || screen != "search") && any)
+    // Saved and recents have already been normalized while loading or writing.
+    let any = q != "" || saved.len() > 0 || recents.len() > 0
+    // A column has room for the list, so it never closes there.
+    ui.results.set_visible(on_desk || ((open || screen != "search") && any))
 }
 // A row's place: a search hit (`photon_hits`) or a Saved or Recent entry
 // (`listed`), so its name and coordinates are there; copied with every
 // field of a place.
 fn pick(row){
     let p = as_place(row)
+    if on_desk && finding != "" { desk_left_finding() }
     if finding == "stop" {
         stops.push({lat: p.lat lon: p.lon name: p.name})
         finding = ""
@@ -561,6 +1164,16 @@ fn pick(row){
     if finding == "origin" {
         origin = {lat: p.lat lon: p.lon name: p.name picked: true}
         location_note("")
+        finding = ""
+        show("route")
+        return
+    }
+    // The desktop's "Directions From Here" asks where to.
+    if finding == "to" {
+        place = p
+        card_seq = card_seq + 1
+        detail = blank_detail()
+        stops = []
         finding = ""
         show("route")
         return
@@ -588,6 +1201,8 @@ let CARD_ZOOM = 16
 let CARD_RISE = 160
 let CARD_WORLD = 16777216   // 256 · 2^16
 fn card_centre(p){
+    // In a column the card covers nothing: the place lands in the map's middle.
+    if on_desk { return {lat: p.lat lon: p.lon} }
     return {lat: p.lat - CARD_RISE / CARD_WORLD * 360 * cos(radians(p.lat)) lon: p.lon}
 }
 // A place's card, from a row (`pick`) or a pin (`marker_tapped`): a place
@@ -666,6 +1281,7 @@ fn render_details(){
     if has_details() { ui.details.render() }
 }
 fn place_distance(){
+    if on_desk { return desk_place_distance() }
     if sys.gps("ok") < 1 || !is_a_place(place) { return "" }
     distance_text(distance_km(sys.gps("lat"), sys.gps("lon"), place.lat, place.lon)) + " away"
 }
@@ -687,14 +1303,59 @@ fn fill_place(){
     render_details()
 }
 fn sync_save(){
-    if place != nil && is_saved(saved, place) { ui.save.set_text("Saved") } else { ui.save.set_text("Save") }
+    sync_save_known(place != nil && saved_contains(place))
+}
+fn sync_save_known(on){
+    if on_desk { desk_sync_save_known(on) return }
+    if on { ui.save.set_text("Saved") } else { ui.save.set_text("Save") }
 }
 fn toggle_save(){
     if place == nil { return }
-    if is_saved(saved, place) { saved = without_saved(saved, place) } else { saved = with_saved(saved, place) }
-    fs.write(data_path("saved.json"), saved.to_json())
-    sync_save()
+    let change = saved_change(place)
+    if !keep_saved_change(change) { return }
+    sync_save_known(!change.was_saved)
     show_pins()
+}
+// Split large pin lists across callbacks so loading or saving a place does not
+// spend the entire UI callback budget building every marker at once.
+let pin_epoch = 0
+fn pin_batch(job){
+    if !maps_current() || job.epoch != pin_epoch || (screen != "search" && screen != "place") { return }
+    let end = min(job.at + 20, job.places.len())
+    while job.at < end {
+        let p = job.places[job.at]
+        job.at = job.at + 1
+        if is_a_place(p) {
+            let key = place_key(p)
+            let known = try { job.keys[key] == true } catch { false }
+            if key != job.open_key && !known {
+                job.keys[key] = true
+                job.pins.push(p)
+                if job.marks != "" { job.marks = job.marks + ";" }
+                job.marks = job.marks + p.lat + "," + p.lon + ",1"
+            }
+        }
+    }
+    if job.at < job.places.len() {
+        start_timeout(0.01, || pin_batch(job))
+        return
+    }
+    if is_a_place(job.open) {
+        job.pins.push(job.open)
+        if job.marks != "" { job.marks = job.marks + ";" }
+        job.marks = job.marks + job.open.lat + "," + job.open.lon + ",2"
+    }
+    shown_pins = job.pins
+    ui.browse_map.set_route_markers(job.marks)
+}
+fn pin_later(list, open){
+    if !maps_current() { return }
+    pin_epoch = pin_epoch + 1
+    let key = if is_a_place(open) { place_key(open) } else { "" }
+    let job = {epoch: pin_epoch places: list at: 0 keys: {} pins: [] marks: "" open: open open_key: key}
+    shown_pins = []
+    ui.browse_map.set_route_markers("")
+    start_timeout(0.01, || pin_batch(job))
 }
 // Saved places, and the open one, as pins on the browse map; `shown_pins`
 // is the list the pins were drawn from, so a pin's tap finds its place.
@@ -702,9 +1363,15 @@ fn toggle_save(){
 // them on entering Directions, on a new start and on a new mode, and
 // `draw_route` with each line it draws.
 fn show_pins(){
+    if on_desk {
+        desk_show_pins()
+        return
+    }
     if screen != "search" && screen != "place" { return }
     let open = nil
     if screen == "place" { open = place }
+    if saved.len() > 100 { pin_later(saved, open) return }
+    pin_epoch = pin_epoch + 1
     shown_pins = pin_places(saved, open)
     ui.browse_map.set_route_markers(pins_text(shown_pins, open))
 }
@@ -737,7 +1404,10 @@ fn use_my_location(){
 // The browse map's callbacks. A tap or a drag on the map closes the search
 // list; a place card stays until Close.
 fn map_tapped(lat, lon){
+    // A double click's second press finds no flight: only a landing's report clears this.
+    if app_target != nil { desk_cut_flight = true }
     app_target = nil   // a press on the map ends Maps' flight
+    if on_desk { ui.map_keys.focus() }
     if screen == "search" { show_results(false) }
 }
 // MapView reports the viewport when any flight lands, Maps' own too: that
@@ -746,6 +1416,12 @@ fn map_tapped(lat, lon){
 // the landing apart: a flag would swallow the person's next pan.
 fn viewport_moved(lat, lon, zoom){
     seen = {lat: lat lon: lon}
+    seen_zoom = zoom
+    desk_cut_flight = false
+    if on_desk {
+        desk_view_moved(lat, lon)
+        desk_scale()
+    }
     if own_landing(app_target, lat, lon) {
         app_target = nil
         return
@@ -767,7 +1443,7 @@ fn map_long_pressed(lat, lon){
     app_target = nil   // a press on the map ends Maps' flight
     if screen != "search" && screen != "place" { return }
     if !is_a_place({lat: lat lon: lon}) { return }
-    place = {id: "" name: "Dropped pin" cat: "" label: coords_text(lat, lon) lat: lat lon: lon}
+    place = {id: "" name: if on_desk { "Dropped Pin" } else { "Dropped pin" } cat: "" label: coords_text(lat, lon) lat: lat lon: lon}
     open_card()
     let mine = card_seq
     let body = body_of(fetch(reverse_url(lat, lon)).await())
@@ -776,21 +1452,52 @@ fn map_long_pressed(lat, lon){
     if found == nil || found.len() == 0 { return }
     let h = found[0]
     let pressed = place
-    place = {id: h.id name: h.name cat: h.cat label: h.label lat: lat lon: lon}
-    if is_saved(saved, pressed) {
-        saved = with_saved(without_saved(saved, pressed), place)
-        fs.write(data_path("saved.json"), saved.to_json())
-    }
+    // A Mac's Maps keeps a dropped pin's title and puts its address under it.
+    if on_desk { place = {id: "" name: "Dropped Pin" cat: "" label: pin_address(h, lat, lon) lat: lat lon: lon} }
+    else { place = {id: h.id name: h.name cat: h.cat label: h.label lat: lat lon: lon} }
+    saved_replace(pressed, place)
     fill_place()   // its sync_save reads `saved` as just updated
     // Directions may already be open: its "To" names the place too.
     if screen == "route" { ui.rto.set_text(place.name) }
     show_pins()
     load_details(place, mine)
 }
+// A Mac's Maps zooms in on a double-click, the point under the pointer staying put; a pin is
+// dropped from the map's menu (Drop Pin). MapView reports a mouse's double-click as its long
+// press. Every other desktop style drops a pin there, as before.
+fn desk_map_double(lat, lon){
+    if !ui_unified {
+        map_long_pressed(lat, lon)
+        return
+    }
+    app_target = nil
+    if !is_a_place({lat: lat lon: lon}) { return }
+    let z = clamp(seen_zoom + 1, 3, 18)
+    if z == seen_zoom { return }
+    // Mercator: zooming about a point halves its distance to the centre, whatever the bearing.
+    let k = pow(2, seen_zoom - z)
+    let at = {lat: lat lon: lon}
+    // A first press that stopped a flight left the centre unheard: then the point is the centre.
+    if !desk_cut_flight {
+        let y = desk_merc_y(lat) + (desk_merc_y(seen.lat) - desk_merc_y(lat)) * k
+        at = {lat: desk_merc_lat(y) lon: lon + (seen.lon - lon) * k}
+    }
+    seen_zoom = z
+    centered = true
+    fly(at.lat, at.lon, z)
+    desk_remember()
+}
+// Mercator's y in base 2: a script's `log` is std's logger, not the logarithm.
+fn desk_merc_y(lat){ log2(tan(0.7853981633974483 + lat * 0.008726646259971648)) }
+fn desk_merc_lat(y){ (2 * atan(exp2(y)) - 1.5707963267948966) * 57.29577951308232 }
 // A pin's tap, by its position among the drawn pins (`shown_pins`). Its card
 // gets a copy with every field of a place, as a row's does (`pick`). The
 // open place's own pin does nothing.
 fn marker_tapped(i){
+    if on_desk {
+        desk_marker_tapped(i)
+        return
+    }
     if screen != "search" && screen != "place" { return }
     if !i.is_number() || i - i != 0 || i < 0 || i >= shown_pins.len() || floor(i) != i { return }
     let p = as_place(shown_pins[i])
@@ -801,12 +1508,17 @@ fn marker_tapped(i){
 // landing is known by its target. MapView ignores a point that isn't a place.
 fn fly(lat, lon, zoom){
     if !is_a_place({lat: lat lon: lon}) { return }
+    if on_desk { desk_pref_touch("view") }
     app_target = {lat: lat lon: lon}
     ui.browse_map.fly_to(lat, lon, zoom)
 }
 // ◎ flies to the fix, or asks for one: asking is the person's act, so it
 // happens only here and in use_my_location; every other read is passive.
 fn locate(){
+    if on_desk {
+        desk_locate()
+        return
+    }
     if sys.gps("ok") >= 1 {
         centered = true
         fly(sys.gps("lat"), sys.gps("lon"), 15)
@@ -848,6 +1560,7 @@ fn vias(){
     out
 }
 fn markers(){
+    if on_desk { return desk_markers() }
     let out = "" + origin.lat + "," + origin.lon + ",0"
     for st in stops { out = out + ";" + st.lat + "," + st.lon + ",1" }
     out + ";" + place.lat + "," + place.lon + ",2"
@@ -884,7 +1597,7 @@ fn show(s){
     // drive draw on different maps, and Directions draws again the route
     // that ‹ Back cleared, with the same key.
     shown_route = ""
-    ui.search_panel.set_visible(s == "search" || s == "origin" || s == "stop")
+    ui.search_panel.set_visible(s == "search" || s == "origin" || s == "stop" || s == "to")
     ui.place_panel.set_visible(s == "place")
     ui.route_panel.set_visible(s == "route")
     ui.browse_box.set_visible(s != "drive")
@@ -909,7 +1622,7 @@ fn show(s){
         ui.drive_2d.set_visible(!view3d)
         ui.views.render()
     }
-    if s == "search" || s == "origin" || s == "stop" {
+    if s == "search" || s == "origin" || s == "stop" || s == "to" {
         if s == "origin" { ui.search_hint.set_text("Choose a start") }
         else if s == "stop" { ui.search_hint.set_text("Add a stop") }
         else { ui.search_hint.set_text("Where to?") }
@@ -917,6 +1630,7 @@ fn show(s){
         ui.your_location.set_visible(s == "origin")
         ui.results.render()
     }
+    if on_desk { show_column(s) }
     show_results(s != "search")
     show_pins()
     tick()
@@ -931,7 +1645,15 @@ fn route_pins(){
 }
 // A new mode is framed once more. If its route fails, the framing shows its
 // pins (`route_pins`), not the line of an older start still on the map.
-fn set_mode(m){ mode = m; shown_route = ""; frame_next = true; route_pins(); ui.modes.render(); tick() }
+fn set_mode(m){
+    mode = m
+    shown_route = ""
+    frame_next = true
+    route_pins()
+    ui.modes.render()
+    if on_desk { ui.route_list.render() }
+    tick()
+}
 fn eta_field(){
     if mode == "walk" { return "walk" }
     if mode == "bike" { return "bike" }
@@ -986,6 +1708,10 @@ fn progress(){
     sys.navsecs(km * 1000 / 15.2) * 15.2
 }
 fn tick(){
+    if on_desk {
+        desk_tick()
+        return
+    }
     // The start becoming the fix (◎ Your location, or the first fix) is a
     // new start, not a move: Directions shows its pins at once and frames
     // its route once more. `shown_route` goes too: a fix on the old start's
@@ -1015,14 +1741,1404 @@ fn tick(){
         ui.remain.set_text(sys.navstep(origin.lat, origin.lon, place.lat, place.lon, d, "remmin", v) + " min  ·  " + sys.navstep(origin.lat, origin.lon, place.lat, place.lon, d, "rem", v))
     }
 }
+fn boot_after_load(){
+    if !maps_current() { return }
+    fix_origin()
+    if !on_desk || !desk_recall() {
+        // A person can reach Search before the deferred first boot finishes.
+        if on_desk { desk_restore_search_focus = try { ui.search.has_focus() } catch { false } }
+        show("search")
+        if on_desk { desk_restore_search_focus = false }
+    }
+    refresh_storage_notice()
+    // Opened from a notification Maps sent: what it is about (`desk_open_route`).
+    if on_desk {
+        desk_booted = true
+        let pending = desk_pending_route
+        desk_pending_route = ""
+        if pending != "" { desk_open_route(pending) }
+        else { host.request("glance.take_open", {}, fn(r){ if r.is_ok { desk_open_route(text_of(r.data, "route")) } }) }
+    }
+}
 fn boot(){
+    maps_claim_boot()
+    if !maps_current() { return }
     load_recents()
     load_saved()
-    fix_origin()
-    show("search")
+    places_checked = true
+    // Restore the window now; a long Saved load must not later undo an
+    // interaction started while the list was being prepared.
+    if saved_loading { boot_after_load() return }
+    // Loading a large list and restoring the window need separate callbacks.
+    if saved.len() > 100 { start_timeout(0.01, || boot_after_load()) return }
+    boot_after_load()
 }
 start_timeout(0.05, || boot())
 start_interval(0.5, || tick())
+
+// The desktop's layout. It runs after the script above, which reads `on_desk`.
+on_desk = ui_desk
+let note_timer = nil
+let recalled = false
+let desk_restore_search_focus = false
+let desk_width = 1120
+let desk_height = 640
+// Under this width a column would leave the map too little: it closes, and opens
+// again for what only it can show.
+let DESK_NARROW = 760
+let desk_side = true            // the column, as the person left it
+let desk_side_narrow = false    // the same while the window is narrow
+let desk_typed = ""             // what the search field holds, searched for or not
+let desk_sel = -1               // the list row the arrow keys are on
+let desk_saved_page = 0         // bounded pages keep large Saved lists responsive
+let desk_own_move = false       // the map's next report of its view is Maps' own framing
+let desk_can_locate = false     // this computer can say where it is
+let desk_fix_failed = false     // the last ask found no location: the route's start offers Try Again
+let desk_fix = nil              // {lat lon acc}: where it last said
+let desk_take_fix = false       // the person asked for the route to start there
+let desk_map_style = "Standard"  // Standard (the appearance's), Light or Dark
+let desk_tilted = false         // the plain map in 3D
+let desk_booted = false         // the first boot is done: a notification's route can open now
+let desk_pending_route = ""     // one handed over before that, opened once it is
+let desk_units = if ui_desk { sys.locale("distance_unit") } else { "km" }
+let desk_routes = nil           // sys.navroutes for the start, stops and place, the fastest first
+let desk_routes_key = ""        // what they are for
+let desk_routes_state = ""      // "nostart" | "loading" | "failed" | "ready"
+let desk_alt = 0                // the one chosen
+let desk_steps = []             // its steps, as the list shows them
+let desk_step_on = -1           // the step the map went to
+let desk_steps_shown = 60       // a list of hundreds would cost more than a render may
+let desk_banner_at = -1         // the step the drive's banner draws
+let desk_tiles_wait = 0         // ticks the view's tiles have been on their way
+let desk_menu_place = nil       // what a right press on the map was on
+let desk_menu_point = nil
+let desk_prefs_dirty = false
+
+// While the old settings cannot be read, remember the choices made in this
+// run so recovery can merge them with the settings that were not changed.
+fn desk_pref_touch(field){
+    if storage_state.prefs_ready { return }
+    if field == "view" { storage_state.prefs_edits.view = true }
+    else if field == "style" { storage_state.prefs_edits.style = true }
+    else if field == "tilted" { storage_state.prefs_edits.tilted = true }
+    else if field == "side" { storage_state.prefs_edits.side = true }
+    else if field == "units" { storage_state.prefs_edits.units = true }
+}
+fn desk_pref_has_edits(){
+    let e = storage_state.prefs_edits
+    e.view || e.style || e.tilted || e.side || e.units
+}
+
+// ---- The window: the column, the toolbar, the keyboard ----
+
+fn desk_column_open(){
+    if screen == "drive" { return false }
+    if desk_width < DESK_NARROW { return desk_side_narrow }
+    desk_side
+}
+fn desk_lay_out(){
+    let open = desk_column_open()
+    let map_width = desk_width - (if open { 301 } else { 0 })
+    // Keep every toolbar action reachable when the open column leaves little room.
+    let compact = map_width < 390
+    ui.column.set_visible(open)
+    // With no column the toolbar starts at the window's edge, past the lights.
+    ui.bar_gap.set_visible(!open && ui_unified)
+    // A Mac's sidebar button: beside the lights over an open sidebar, else at the toolbar's start.
+    ui.side_band_tool.set_visible(open && ui_unified)
+    ui.bar_side_tool.set_visible(!open || !ui_unified)
+    ui.map_title.set_visible(!compact)
+    ui.style_box.set_visible(!compact)
+    ui.share_tool.set_visible(!compact)
+    ui.more_tool.set_visible(compact)
+    ui.more_light.set_visible(ui_light)
+    ui.more_dark.set_visible(!ui_light)
+    ui.locate_box.set_visible(screen != "drive" && desk_can_locate && !compact)
+    ui.your_location.set_visible(screen == "origin" && desk_can_locate)
+}
+fn desk_reveal_column(){
+    if desk_width < DESK_NARROW { desk_side_narrow = true } else { desk_side = true }
+}
+fn desk_toggle_side(){
+    if desk_width < DESK_NARROW { desk_side_narrow = !desk_side_narrow }
+    else {
+        desk_side = !desk_side
+        desk_pref_touch("side")
+        desk_prefs_dirty = true
+    }
+    desk_lay_out()
+    desk_remember()
+}
+fn show_column(s){
+    let choosing = s == "origin" || s == "stop" || s == "to"
+    // What only the column can show, it shows.
+    if s == "place" || s == "route" || choosing { desk_reveal_column() }
+    desk_lay_out()
+    desk_typed = "" + ui.search.text()
+    ui.search_band.set_visible(s != "route" && s != "drive")
+    ui.search_clear.set_visible(desk_typed != "")
+    ui.map_tools.set_visible(s != "drive")
+    ui.map_bar.set_visible(s != "drive")
+    ui.drive_tools.set_visible(s == "drive")
+    refresh_storage_notice()
+    if s == "drive" {
+        ui.drive_title.set_text("To " + place.name)
+        desk_banner_at = -1
+        ui.map_keys.focus()
+    }
+    if s != "route" {
+        location_note("")
+        desk_fix_failed = false     // Try Again goes with the words it answers
+    }
+    if s == "route" {
+        ui.route_list.render()
+        // A route opens at its start, wherever the last one was left.
+        ui.route_scroll.set_scroll_y(0)
+    }
+    if choosing {
+        // While a start or a stop is chosen the map is a map of places.
+        ui.browse_map.clear_route()
+        if s == "origin" { ui.search_hint.set_text("Choose a Start") }
+        else if s == "stop" { ui.search_hint.set_text("Add a Stop") }
+        else { ui.search_hint.set_text("Choose a Destination") }
+        ui.finding_back.set_text(if s == "to" { "Back" } else { "Back to Route" })
+        if !desk_restore_search_focus { ui.search.focus() }
+    } else if s != "drive" && !desk_restore_search_focus {
+        ui.side_keys.focus()
+    }
+}
+fn on_app_resize(width, height){
+    if !on_desk { return }
+    let was_narrow = desk_width < DESK_NARROW
+    desk_width = width
+    if was_narrow != (width < DESK_NARROW) {
+        // Into a narrow window, a column in use stays; back out, the person's own choice holds.
+        desk_side_narrow = (screen != "search" && screen != "drive") || q != ""
+    }
+    desk_lay_out()
+    if height != desk_height {
+        desk_height = height
+        if q == "" || hits.len() == 0 { ui.results.render() }
+    }
+    desk_remember()
+}
+// How tall the column's list is: an empty one centres what it says in that.
+fn desk_list_height(){
+    let above = if ui_unified { 52 + 32 } else { 42 }
+    if finding != "" { above = above + 66 }
+    if finding == "origin" && desk_can_locate { above = above + 28 }
+    max(160, desk_height - above)
+}
+fn desk_find(){
+    if screen == "drive" { show("route") }
+    if screen == "route" { show("place") }
+    desk_reveal_column()
+    desk_lay_out()
+    ui.search.focus()
+}
+// Esc steps back, one level at a time, as the chevrons and closes do.
+fn desk_escape(){
+    if screen == "drive" { show("route") }
+    else if screen == "route" { show("place") }
+    else if screen == "place" { close_place() }
+    else if finding != "" { desk_finding_back() }
+    else if desk_typed != "" { clear_search() }
+}
+fn desk_left_finding(){
+    q = ""
+    hits = []
+    search_state = ""
+    search_seq = search_seq + 1
+    desk_sel = -1
+    ui.search.set_text("")
+}
+fn desk_finding_back(){
+    let back = if finding == "to" { "search" } else { "route" }
+    desk_left_finding()
+    finding = ""
+    show(back)
+}
+fn desk_saved_rows(){
+    if !saved_loaded { return [] }
+    let size = 100
+    let pages = max(1, ceil(saved.len() / size))
+    desk_saved_page = clamp(desk_saved_page, 0, pages - 1)
+    let first = desk_saved_page * size
+    let rows = []
+    for offset in size {
+        let i = first + offset
+        if i < saved.len() { rows.push(saved[i]) }
+    }
+    rows
+}
+fn desk_saved_page_by(step){
+    desk_saved_page = clamp(desk_saved_page + step, 0, max(0, ceil(saved.len() / 100) - 1))
+    desk_sel = -1
+    ui.results.render()
+    ui.results.set_scroll_y(0)
+    desk_remember()
+}
+// The list under the search field: the rows it shows, in order.
+fn desk_rows(){
+    if q != "" { return hits }
+    let out = []
+    for s in desk_saved_rows() { out.push(s) }
+    for r in newest_first(listed(recents)) { out.push(r) }
+    out
+}
+// Where a row starts in the list, to keep it in sight. A heading is 28 points.
+fn desk_row_top(rows, at){
+    let saved_rows = if q == "" { desk_saved_rows().len() } else { 0 }
+    let y = 0
+    if q == "" && saved.len() > 100 { y = y + 36 }
+    for i r in rows {
+        if q == "" && i == 0 && saved_rows > 0 { y = y + 28 }
+        if q == "" && i == saved_rows { y = y + 28 }
+        if i == at { return y }
+        y = y + 1 + (if text_of(r, "label") != "" { 40 } else { 28 })
+    }
+    y
+}
+fn desk_select_row(to, rows){
+    desk_sel = to
+    ui.results.render()
+    let top = desk_row_top(rows, to)
+    let seen_h = desk_list_height()
+    let y = ui.results.scroll_y()
+    if top < y { ui.results.set_scroll_y(top) }
+    else if top + 48 > y + seen_h { ui.results.set_scroll_y(top + 48 - seen_h) }
+}
+fn desk_forget_row(rows){
+    if desk_sel < 0 || desk_sel >= rows.len() || q != "" { return }
+    let p = rows[desk_sel]
+    if desk_sel < desk_saved_rows().len() { desk_toggle_saved(p) } else { desk_forget_recent(p) }
+    desk_sel = min(desk_sel, desk_rows().len() - 1)
+    ui.results.render()
+}
+fn desk_key(key, cmd, shift){
+    if key == "Escape" {
+        desk_escape()
+        return
+    }
+    if cmd || (screen != "search" && finding == "") { return }
+    let rows = desk_rows()
+    if key == "ArrowDown" {
+        if desk_sel + 1 < rows.len() { desk_select_row(desk_sel + 1, rows) }
+    } else if key == "ArrowUp" {
+        if desk_sel > 0 { desk_select_row(desk_sel - 1, rows) }
+    } else if key == "ReturnKey" {
+        if desk_sel >= 0 && desk_sel < rows.len() { pick(rows[desk_sel]) }
+    } else if key == "Backspace" || key == "Delete" {
+        desk_forget_row(rows)
+    }
+}
+// A quarter of the view at a time.
+fn desk_pan(right, up){
+    let at = seen
+    if app_target != nil { at = app_target }
+    let per_point = 360 / (256 * pow(2, seen_zoom))
+    let map_w = desk_width - (if desk_column_open() { 301 } else { 0 })
+    let lat = at.lat + up * (desk_height - 52) / 4 * per_point * cos(radians(at.lat))
+    centered = true
+    fly(clamp(lat, -85, 85), at.lon + right * map_w / 4 * per_point, seen_zoom)
+}
+fn desk_map_key(key, cmd, shift){
+    if key == "Escape" {
+        desk_escape()
+        return
+    }
+    if cmd || screen == "drive" { return }
+    if key == "ArrowLeft" { desk_pan(-1, 0) }
+    else if key == "ArrowRight" { desk_pan(1, 0) }
+    else if key == "ArrowUp" { desk_pan(0, 1) }
+    else if key == "ArrowDown" { desk_pan(0, -1) }
+    else if key == "Equals" { zoom_map(1) }
+    else if key == "Minus" { zoom_map(-1) }
+}
+fn desk_copy(text){ host.request("clipboard.write", {text: text}, fn(r){}) }
+
+// ---- The map: its look, its pins, its tiles, a right press ----
+
+// A Mac's Maps calls its everyday map Explore. It follows the appearance, as
+// Standard does; the saved name stays Standard.
+fn desk_style_title(style){
+    if ui_unified && style == "Standard" { return "Explore" }
+    return style
+}
+fn desk_style_named(title){
+    if title == "Explore" { return "Standard" }
+    return title
+}
+// A Mac's map pop-up holds the map's modes only, and this Maps has one: Explore. Whether a
+// dark window has a dark map is a setting of its own, View > Use Dark Map, as in Apple's Maps.
+fn desk_style_titles(){
+    if ui_unified { return ["Explore"] }
+    return [desk_style_title("Standard") "Light" "Dark"]
+}
+fn desk_pop_title(){ if ui_unified { "Explore" } else { desk_style_title(desk_map_style) } }
+fn desk_pop_chosen(title){ if !ui_unified { desk_set_style(desk_style_named(title)) } }
+// The map is dark: chosen so, or following a dark window.
+fn desk_dark_map(){ desk_map_style == "Dark" || (desk_map_style == "Standard" && !ui_light) }
+// Use Dark Map is for a dark window; in a light one it only turns off a dark map chosen before.
+fn desk_dark_map_on(){ !ui_light || desk_map_style == "Dark" }
+fn desk_toggle_dark_map(){
+    if !desk_dark_map_on() { return }
+    if desk_dark_map() { desk_set_style(if ui_light { "Standard" } else { "Light" }) }
+    else { desk_set_style("Standard") }
+}
+fn desk_apply_style(){
+    let theme = if desk_map_style == "Light" { 0 } else if desk_map_style == "Dark" { 1 } else if ui_light { 0 } else { 1 }
+    ui.browse_map.set_map_theme(theme)
+    ui.drive_map.set_map_theme(theme)
+    ui.drive_map_2d.set_map_theme(theme)
+    ui.style_pop.set_text(desk_pop_title())
+}
+fn desk_set_style(title){
+    desk_map_style = title
+    desk_pref_touch("style")
+    desk_prefs_dirty = true
+    desk_apply_style()
+    desk_remember()
+}
+fn desk_set_3d(on){
+    desk_tilted = on
+    desk_pref_touch("tilted")
+    desk_prefs_dirty = true
+    ui.browse_map.set_map_3d(on)
+    ui.map_modes.render()
+    desk_scale()
+    desk_remember()
+}
+// The search's places and the saved ones, each once, then the open place, last. A press
+// on one opens it, or picks it while a start or a stop is being chosen.
+fn desk_show_pins(){
+    if screen == "route" || screen == "drive" { return }
+    let open = nil
+    if screen == "place" { open = place }
+    let list = []
+    for h in hits { list.push(h) }
+    for s in saved { list.push(s) }
+    if list.len() > 100 { pin_later(list, open) return }
+    pin_epoch = pin_epoch + 1
+    shown_pins = pin_places(list, open)
+    ui.browse_map.set_route_markers(pins_text(shown_pins, open))
+}
+fn desk_search_began(){
+    desk_sel = -1
+    desk_show_pins()
+}
+// A search shows its places on the map, framed: all that lie together. A result on the
+// far side of the world doesn't take the map out to a globe.
+fn desk_results_came(){
+    desk_show_pins()
+    if hits.len() > 0 {
+        desk_pref_touch("view")
+        let first = hits[0]
+        let points = ""
+        for h in hits {
+            if distance_km(first.lat, first.lon, h.lat, h.lon) > 150 { continue }
+            if points != "" { points = points + ";" }
+            points = points + h.lat + "," + h.lon
+        }
+        centered = true
+        app_target = nil
+        desk_own_move = true
+        ui.browse_map.fit_points(points)
+    }
+    // The search handed the keyboard to the list when it began. Do not take
+    // it again here: the person may have returned to Search while it ran.
+}
+fn desk_view_moved(lat, lon){
+    desk_prefs_dirty = true
+    // The map's initial default report is not an edit to the saved view.
+    if !storage_state.prefs_ready && (abs(lat - 37.335) > 0.00001 || abs(lon + 121.885) > 0.00001 || abs(seen_zoom - 13) > 0.001) {
+        desk_pref_touch("view")
+    }
+    desk_remember()
+    if desk_own_move {
+        desk_own_move = false
+        return
+    }
+    // Restoring the map's view can report more than one movement. Keep a
+    // search in progress focused; an actual map press takes the keys itself.
+    let search_has_focus = try { ui.search.has_focus() } catch { false }
+    if !search_has_focus && !own_landing(app_target, lat, lon) { ui.map_keys.focus() }
+}
+fn desk_pin_at(i){
+    if screen == "route" || screen == "drive" { return nil }
+    if !i.is_number() || i - i != 0 || i < 0 || i >= shown_pins.len() || floor(i) != i { return nil }
+    as_place(shown_pins[i])
+}
+fn desk_marker_tapped(i){
+    let p = desk_pin_at(i)
+    if p == nil { return }
+    if finding != "" {
+        pick(p)
+        return
+    }
+    if screen == "place" && place_key(p) == place_key(place) { return }
+    open_place(p)
+}
+fn desk_markers(){
+    let out = ""
+    if is_a_place(origin) { out = "" + origin.lat + "," + origin.lon + ",0;" }
+    for st in stops { out = out + st.lat + "," + st.lon + ",1;" }
+    out + place.lat + "," + place.lon + ",2"
+}
+// What the map's tiles are doing, over the map: a place that isn't on disk yet takes a
+// moment, and a window of flat colour says nothing of why.
+fn desk_watch_tiles(){
+    let map = if screen == "drive" { active_drive_map() } else { ui.browse_map }
+    let state = map.tiles_state()
+    if state == "loading" { desk_tiles_wait = desk_tiles_wait + 1 } else { desk_tiles_wait = 0 }
+    let failed = state == "failed"
+    let loading = state == "loading" && desk_tiles_wait >= 2
+    ui.map_load.set_visible(failed || loading)
+    ui.map_load_spin.set_visible(loading)
+    ui.map_load_again.set_visible(failed)
+    if failed { ui.map_load_text.set_text("The map couldn't load. Check your connection.") }
+    else if loading { ui.map_load_text.set_text("Loading Map…") }
+}
+fn desk_tiles_again(){
+    desk_tiles_wait = 2
+    let map = if screen == "drive" { active_drive_map() } else { ui.browse_map }
+    map.retry_tiles()
+    desk_watch_tiles()
+}
+fn desk_map_context(lat, lon, pin, x, y){
+    desk_menu_point = {lat: lat lon: lon}
+    desk_menu_place = desk_pin_at(pin)
+    if desk_menu_place != nil {
+        ui.map_keys.open_menu(desk_place_titles(desk_menu_place, false), "", x, y, desk_place_urls(desk_menu_place, false))
+        return
+    }
+    let titles = []
+    if screen == "search" || screen == "place" { titles.push("Drop Pin") }
+    if finding == "" {
+        titles.push("Directions To Here")
+        titles.push("Directions From Here")
+        titles.push("-")
+    }
+    titles.push("Copy Coordinates")
+    ui.map_keys.open_menu(titles, "", x, y, [])
+}
+fn desk_map_menu(title){
+    if desk_menu_place != nil {
+        desk_place_chosen(desk_menu_place, title)
+        return
+    }
+    let at = desk_menu_point
+    if at == nil || !is_a_place(at) { return }
+    if title == "Drop Pin" { map_long_pressed(at.lat, at.lon) }
+    else if title == "Copy Coordinates" { desk_copy(coords_text(at.lat, at.lon)) }
+    else {
+        let here = {id: "" name: "Dropped Pin" cat: "" label: coords_text(at.lat, at.lon) lat: at.lat lon: at.lon}
+        if title == "Directions To Here" { desk_directions_to(here) }
+        else if title == "Directions From Here" { desk_directions_from(here) }
+    }
+}
+
+// ---- A place: its menu, its star, how far it is ----
+
+fn desk_link_of(p){
+    let lat = round4(p.lat)
+    let lon = round4(p.lon)
+    "https://www.openstreetmap.org/?mlat=" + lat + "&mlon=" + lon + "#map=17/" + lat + "/" + lon
+}
+fn desk_share_url(){
+    if (screen == "route" || screen == "drive") && is_a_place(origin) {
+        return "https://www.openstreetmap.org/directions?engine=fossgis_osrm_car&route=" + round4(origin.lat) + "%2C" + round4(origin.lon) + "%3B" + round4(place.lat) + "%2C" + round4(place.lon)
+    }
+    if (screen == "place" || screen == "route") && place != nil { return desk_link_of(place) }
+    "https://www.openstreetmap.org/#map=" + round(seen_zoom) + "/" + round4(seen.lat) + "/" + round4(seen.lon)
+}
+fn desk_open_share(){
+    ui.share_tool.open_menu(["Copy Link" "Open in Browser"], "", nil, nil, ["" desk_share_url()])
+}
+// The toolbar's overflow keeps the same style, share and location actions.
+fn desk_open_more(){
+    let rows = [desk_style_title("Standard") "Light" "Dark" "-" "Copy Link" "Open in Browser"]
+    let links = ["" "" "" "" "" desk_share_url()]
+    let current = desk_style_title(desk_map_style)
+    // A Mac's: the dark map's setting where it applies, then the link.
+    if ui_unified {
+        rows = ["Copy Link" "Open in Browser"]
+        links = ["" desk_share_url()]
+        current = ""
+        if desk_dark_map_on() {
+            rows = ["Use Dark Map" "-" "Copy Link" "Open in Browser"]
+            links = ["" "" "" desk_share_url()]
+            if desk_dark_map() { current = "Use Dark Map" }
+        }
+    }
+    if desk_can_locate {
+        rows.push("-")
+        rows.push("Show Your Location")
+        links.push("")
+        links.push("")
+    }
+    // This is a toolbar pull-down, so open it below the button while keeping
+    // the current style checked, even when that style is lower in the menu.
+    if ui_light { ui.more_light.open_menu(rows, current, 0, 32, links) }
+    else { ui.more_dark.open_menu(rows, current, 0, 32, links) }
+}
+fn desk_more_chosen(title){
+    let style = desk_style_named(title)
+    if title == "Use Dark Map" { desk_toggle_dark_map() }
+    else if style == "Standard" || style == "Light" || style == "Dark" { if !ui_unified { desk_set_style(style) } }
+    else if title == "Copy Link" { desk_copy(desk_share_url()) }
+    else if title == "Show Your Location" && desk_can_locate { locate() }
+}
+// A place's right-click menu, on a row and on its pin alike.
+fn desk_place_titles_for(p, recent, kept){
+    if finding != "" { return ["Choose" "-" "Copy Link" "Open in Browser"] }
+    let rows = ["Open" "Directions To Here" "Directions From Here" "-"]
+    rows.push(if kept { "Remove from Saved" } else { "Save" })
+    if recent { rows.push("Remove from Recents") }
+    rows.push("-")
+    rows.push("Copy Link")
+    rows.push("Open in Browser")
+    rows
+}
+fn desk_place_titles(p, recent){ desk_place_titles_for(p, recent, saved_contains(p)) }
+fn desk_place_links(p, titles){
+    let out = []
+    for title in titles { out.push(if title == "Open in Browser" { desk_link_of(p) } else { "" }) }
+    out
+}
+fn desk_place_urls(p, recent){
+    desk_place_links(p, desk_place_titles(p, recent))
+}
+fn desk_place_chosen(p, title){
+    if title == "Open" || title == "Choose" { pick(p) }
+    else if title == "Directions To Here" { desk_directions_to(p) }
+    else if title == "Directions From Here" { desk_directions_from(p) }
+    else if title == "Save" || title == "Remove from Saved" { desk_toggle_saved(p) }
+    else if title == "Remove from Recents" { desk_forget_recent(p) }
+    else if title == "Copy Link" { desk_copy(desk_link_of(p)) }
+}
+fn desk_toggle_saved(p){
+    let change = saved_change(p)
+    if !keep_saved_change(change) { return }
+    sync_save()
+    show_pins()
+    ui.results.render()
+}
+fn desk_forget_recent(p){
+    if !keep_recents(without_saved(recents, p)) { return }
+    ui.results.render()
+}
+fn desk_sync_save_known(on){
+    ui.save.set_visible(!on)
+    ui.saved_on.set_visible(on)
+    ui.results.render()
+}
+fn desk_directions_to(p){
+    place = as_place(p)
+    card_seq = card_seq + 1
+    detail = blank_detail()
+    if screen != "route" { stops = [] }
+    finding = ""
+    show("route")
+}
+fn desk_directions_from(p){
+    origin = {lat: p.lat lon: p.lon name: text_of(p, "name") picked: true}
+    location_note("")
+    if screen == "route" || (screen == "place" && place_key(place) != place_key(p)) { show("route") }
+    else { find_for("to") }
+}
+// What a notification Maps sent is about opens with it, as a Mac's does: its
+// route `directions/<lat>,<lon>/<name>` asks the way there from where the route
+// starts now, `place/<lat>,<lon>/<name>` shows the place. The shell hands it
+// over (`open:<route>`), or Maps asks for it as it opens; anything else, or a
+// drive under way, leaves Maps as it is.
+fn desk_open_route(route){
+    if !desk_booted { desk_pending_route = route return }
+    let parts = ("" + route).split("/")
+    if parts.len() < 3 || screen == "drive" { return }
+    let at = parts[1].split(",")
+    if at.len() != 2 { return }
+    let name = ""
+    for i part in parts { if i >= 2 { name = if name == "" { part } else { name + "/" + part } } }
+    let p = {id: "" name: name.trim() cat: "" label: "" lat: desk_route_number(at[0]) lon: desk_route_number(at[1])}
+    if p.name == "" || !is_a_place(p) { return }
+    if parts[0] == "directions" {
+        desk_directions_to(p)
+        // No start yet: the map shows where the way leads.
+        if !is_a_place(origin) { fly(p.lat, p.lon, CARD_ZOOM - 3) }
+    }
+    else if parts[0] == "place" { open_place(p) }
+}
+// A number written in a route, else nil (read inside the try, as `optional` reads).
+fn desk_route_number(text){
+    let v = try {
+        let x = ("" + text).trim().parse_json()
+        if x.is_number() && x - x == 0 { x } else { nil }
+    } catch { nil }
+    v
+}
+// Miles where the Mac's region uses them: feet under a tenth, tenths under ten.
+fn desk_distance_text(km){
+    if desk_units != "mi" { return distance_text(km) }
+    let miles = km * 0.621371
+    let tenths = round(miles * 10) / 10
+    if tenths < 0.1 { return "" + round(km * 3280.84 / 50) * 50 + " ft" }
+    if tenths < 10 { return "" + tenths + " mi" }
+    "" + round(miles) + " mi"
+}
+fn desk_set_units(unit){
+    desk_units = unit
+    desk_pref_touch("units")
+    desk_prefs_dirty = true
+    if screen == "place" { show_distance() }
+    if screen == "route" { ui.route_list.render() }
+    desk_scale()
+    desk_remember()
+}
+// The scale in the map's corner: the roundest distance that fits in 96 points, at the
+// view's middle. A tilted map has no one scale.
+let scale_points = 0
+let scale_words = ""
+fn scale_step(limit){
+    let unit = 1
+    while unit * 10 <= limit { unit = unit * 10 }
+    if unit * 5 <= limit { unit * 5 } else if unit * 2 <= limit { unit * 2 } else { unit }
+}
+fn desk_scale(){
+    if !ui_desk { return }
+    let point = 40075016.686 * cos(radians(seen.lat)) / (256 * pow(2, seen_zoom))
+    let room = 96 * point
+    let unit = if desk_units == "mi" { if room >= 1609.344 { 1609.344 } else { 0.3048 } } else { if room >= 1000 { 1000 } else { 1 } }
+    let count = scale_step(room / unit)
+    scale_points = count * unit / point
+    let word = if unit == 1609.344 { "mi" } else if unit == 0.3048 { "ft" } else if unit == 1000 { "km" } else { "m" }
+    scale_words = count + " " + word
+    ui.map_scale.set_visible(!desk_tilted)
+    ui.map_scale.render()
+}
+fn desk_place_distance(){
+    if desk_fix == nil || !is_a_place(place) { return "" }
+    desk_distance_text(distance_km(desk_fix.lat, desk_fix.lon, place.lat, place.lon)) + " away"
+}
+
+// ---- Where this computer is: the host's location service ----
+
+let DESK_NO_ACCESS = "Maps doesn't have access to your location.\nTurn it on in System Settings > Privacy & Security > Location Services."
+let DESK_NO_FIX = "Your location isn't available right now."
+// Every question to the host about the computer's location goes through here.
+fn desk_location_request(method, args, done){ host.request(method, args, done) }
+// Reads only: nothing asks the person until they press something that needs it. A person
+// who allowed it before gets the blue dot, and the map opens there if they haven't moved it.
+fn desk_location_boot(){
+    if !host.has("location") { return }
+    desk_location_request("location.permission.status", {}, fn(r){
+        if !r.is_ok { return }
+        desk_can_locate = optional(r.data, "location_sample_supported", false) == true
+        desk_lay_out()
+        if desk_can_locate && desk_location_allowed(r.data) { desk_sample(false) }
+    })
+}
+fn desk_location_allowed(data){
+    optional(data, "app_consent", false) == true && optional(data, "os_permission", "") == "granted"
+}
+fn desk_locate(){
+    if desk_fix == nil {
+        desk_ask_location()
+        return
+    }
+    centered = true
+    fly(desk_fix.lat, desk_fix.lon, 15)
+    desk_sample(false)
+}
+fn desk_ask_location(){
+    desk_location_request("location.permission.request", {}, fn(r){
+        if !r.is_ok { desk_location_failed(r.error) }
+        else if desk_location_allowed(r.data) {
+            desk_location_says("Finding Your Location…", false, true)
+            desk_sample(true)
+        }
+        else {
+            desk_take_fix = false
+            desk_location_says(DESK_NO_ACCESS, false, false)
+        }
+    })
+}
+fn desk_sample(asked){
+    desk_location_request("location.sample", {timeout_ms: 10000 max_age_ms: 60000}, fn(r){
+        let lat = nil
+        let lon = nil
+        if r.is_ok {
+            lat = number_of(r.data, "latitude")
+            lon = number_of(r.data, "longitude")
+        }
+        if is_a_place({lat: lat lon: lon}) {
+            desk_fix_came({lat: lat lon: lon acc: optional(r.data, "accuracy_m", 0)}, asked)
+            return
+        }
+        // Allowed no longer: the dot goes, and the arrow asks again.
+        let error = optional(r, "error", "")
+        let code = ("" + error).split(":")[0]
+        if code == "permission_denied" || code == "authorization_required" {
+            desk_fix = nil
+            ui.browse_map.clear_location()
+        }
+        if asked { desk_location_failed(error) }
+    })
+}
+// The person said Not Now: nothing to report. The rest in plain words: the host's own
+// text names its methods.
+fn desk_location_failed(error){
+    desk_take_fix = false
+    let code = ("" + error).split(":")[0]
+    if code == "cancelled" { desk_location_says("", false, false) }
+    else if code == "permission_denied" || code == "authorization_required" { desk_location_says(DESK_NO_ACCESS, false, false) }
+    else { desk_location_says(DESK_NO_FIX, true, false) }
+}
+fn desk_fix_came(fix, asked){
+    desk_fix = fix
+    ui.browse_map.set_location(fix.lat, fix.lon, fix.acc)
+    desk_location_says("", false, false)
+    if desk_take_fix || !origin.picked {
+        origin = {lat: fix.lat lon: fix.lon name: "Your Location" picked: false}
+        desk_take_fix = false
+    }
+    if screen == "place" { show_distance() }
+    if screen == "search" || screen == "place" {
+        if asked || !centered {
+            centered = true
+            fly(fix.lat, fix.lon, 15)
+        }
+    }
+    if screen == "route" { desk_route_tick() }
+}
+fn desk_use_my_location(){
+    desk_left_finding()
+    finding = ""
+    location_note("")
+    if desk_fix != nil {
+        origin = {lat: desk_fix.lat lon: desk_fix.lon name: "Your Location" picked: false}
+        show("route")
+        return
+    }
+    desk_take_fix = true
+    show("route")
+    desk_ask_location()
+}
+// The answer goes where the person is looking: beside a route under it, else over the map.
+fn desk_open_location_settings(){
+    host.request("settings.open", {pane: "location"}, fn(r){
+        if r.is_ok { note_on_map("", false, false) }
+    })
+}
+fn desk_location_says(text, again, waiting){
+    // Beside a route, a location that couldn't be had leaves Try Again where Use Your
+    // Location was: only what can work there, as a Mac's Maps offers.
+    let failed = text == DESK_NO_FIX
+    if failed != desk_fix_failed {
+        desk_fix_failed = failed
+        if screen == "route" { ui.route_list.render() }
+    }
+    // Said in one place: beside the route it's about, or else over the map.
+    if screen == "route" {
+        location_note(text)
+        note_on_map("", false, false)
+        return
+    }
+    note_on_map(text, again, waiting)
+}
+fn note_on_map(text, again, waiting){
+    if note_timer != nil {
+        stop_timer(note_timer)
+        note_timer = nil
+    }
+    // What's in the way of a location, with the way to it.
+    let no_access = ui_mac && text == DESK_NO_ACCESS
+    ui.map_note_text.set_text(if no_access { "Maps doesn't have access to your location." } else { text })
+    ui.map_note_again.set_visible(again)
+    ui.map_note_settings.set_visible(no_access)
+    ui.map_note.set_visible(text != "")
+    if text != "" && !waiting && !no_access { note_timer = start_timeout(8, || ui.map_note.set_visible(false)) }
+}
+
+// ---- A route: the alternatives and steps, the preview ----
+
+fn desk_chosen(){
+    if desk_routes == nil || desk_alt >= desk_routes.len() { return nil }
+    desk_routes[desk_alt]
+}
+fn desk_route_minutes(r){
+    if mode == "walk" { return r.m / 1000 * 12 }
+    if mode == "bike" { return r.m / 1000 * 4 }
+    r.min
+}
+fn desk_minutes_text(minutes){
+    let m = round(minutes)
+    if m < 60 { return "" + max(m, 1) + " min" }
+    let hours = floor(m / 60)
+    if hours >= 24 {
+        let days = floor(hours / 24)
+        let over = hours - days * 24
+        let text = "" + days + if days == 1 { " day" } else { " days" }
+        return if over == 0 { text } else { text + " " + over + " hr" }
+    }
+    let rest = m - hours * 60
+    if rest == 0 { return "" + hours + " hr" }
+    "" + hours + " hr " + rest + " min"
+}
+// The list's steps: a stop's arrival says where, and the way on from it continues.
+fn desk_steps_now(){
+    let r = desk_chosen()
+    let out = []
+    if r == nil || place == nil { return out }
+    let at = 0
+    let stop = 0
+    let last = r.steps.len() - 1
+    for i s in r.steps {
+        let text = s.instr
+        if s.kind == "arrive" {
+            if i == last { text = "Arrive at " + place.name }
+            else {
+                if stop < stops.len() { text = "Arrive at " + stops[stop].name }
+                stop = stop + 1
+            }
+        } else if s.kind == "depart" && i > 0 { text = "Continue" + text.strip_prefix("Start") }
+        out.push({text: text kind: s.kind modifier: s.modifier m: s.m at: at lat: number_of(s, "lat") lon: number_of(s, "lon")
+            exit: text_of(s, "exit") toward: text_of(s, "toward")})
+        at = at + s.m
+    }
+    if ui_unified { desk_name_steps(out) }
+    out
+}
+let map_icons = {}
+fn map_icon(name){
+    let handle = map_icons[name]
+    if handle == nil {
+        handle = http_resource("{{assets}}/icons/map-" + name + ".svg")
+        map_icons[name] = handle
+    }
+    handle
+}
+
+fn desk_turn_icon(s){
+    let kind = s.kind
+    let turn = s.modifier
+    if kind == "arrive" { return "pin" }
+    if kind == "roundabout" || kind == "rotary" || kind == "exit roundabout" || kind == "exit rotary" { return "roundabout" }
+    if kind == "depart" { return "straight" }
+    if turn == "uturn" { return "uturn" }
+    if turn == "left" || turn == "sharp left" { return "turn-left" }
+    if turn == "right" || turn == "sharp right" { return "turn-right" }
+    if turn == "slight left" { return "turn-slight-left" }
+    if turn == "slight right" { return "turn-slight-right" }
+    "straight"
+}
+// Written out, about 36 characters to a line of the column.
+fn desk_go_to_step(s, i){
+    desk_step_on = i
+    ui.route_list.render()
+    if is_a_place(s) { fly(s.lat, s.lon, 16) }
+}
+fn desk_choose_route(i){
+    desk_alt = i
+    desk_step_on = -1
+    desk_steps_shown = 60
+    desk_steps = desk_steps_now()
+    shown_route = ""
+    ui.route_list.render()
+    desk_route_tick()
+}
+fn desk_directions_text(){
+    let r = desk_chosen()
+    if r == nil { return "" }
+    let out = "From: " + origin.name + "\nTo: " + place.name + "\n" + desk_minutes_text(desk_route_minutes(r)) + ", " + desk_distance_text(r.m / 1000) + "\n"
+    for i s in desk_steps {
+        out = out + "\n" + (i + 1) + ". " + s.text
+        if s.m > 0 { out = out + " (" + desk_distance_text(s.m / 1000) + ")" }
+    }
+    out
+}
+fn desk_route_key(){ "" + origin.lat + "," + origin.lon + ">" + vias() + ">" + place.lat + "," + place.lon }
+// One answer per start, stops and place: no start, no question. A route from somewhere
+// the person isn't helps nobody.
+fn desk_routes_update(){
+    if !is_a_place(origin) {
+        desk_routes = nil
+        desk_routes_key = ""
+        desk_routes_state = "nostart"
+        return
+    }
+    let key = desk_route_key()
+    if key != desk_routes_key {
+        desk_routes_key = key
+        desk_routes = nil
+        desk_routes_state = "loading"
+        desk_alt = 0
+        desk_step_on = -1
+        desk_steps_shown = 60
+    }
+    if desk_routes != nil { return }
+    let answer = sys.navroutes(origin.lat, origin.lon, place.lat, place.lon, vias())
+    if answer == "n/a" { desk_routes_state = "failed" }
+    else if answer != "—" && answer != "" {
+        let found = answer.parse_json()
+        if found == nil || !found.is_array() || found.len() == 0 { desk_routes_state = "failed" }
+        else {
+            desk_routes = found
+            desk_routes_state = "ready"
+        }
+    }
+}
+// The chosen route's line. It is framed once, as on the phone: on entering Directions, on
+// a new mode and on a new start; after that the camera is the person's to drag and zoom.
+fn desk_draw_route(map, fit){
+    let r = desk_chosen()
+    if r == nil { return }
+    let key = desk_route_key() + ":" + mode + ":" + desk_alt
+    if shown_route == key { return }
+    map.set_nav_polyline(r.polyline)
+    map.set_route_markers(markers())
+    if fit && frame_next {
+        desk_own_move = true
+        map.fit_route(true)
+        frame_next = false
+    }
+    shown_route = key
+}
+fn desk_route_tick(){
+    let state = desk_routes_state
+    let key = desk_routes_key
+    desk_routes_update()
+    if state != desk_routes_state || key != desk_routes_key {
+        if key != desk_routes_key {
+            frame_next = true
+            shown_route = ""
+            route_pins()
+        }
+        desk_steps = desk_steps_now()
+        ui.route_list.render()
+    }
+    let started = is_a_place(origin)
+    ui.rfrom.set_text(if started { origin.name } else { "No start chosen" })
+    ui.route_change.set_text(if started { "Change" } else { "Choose…" })
+    if desk_routes_state == "ready" { desk_draw_route(ui.browse_map, true) }
+    // No line to frame: the failed route's own pins, with the start in sight.
+    if desk_routes_state == "failed" && frame_next {
+        desk_own_move = true
+        ui.browse_map.fit_route(true)
+        frame_next = false
+    }
+}
+// A route that failed stays failed for its address: a meter on, the start asks again.
+fn desk_route_again(){
+    origin = {lat: origin.lat + 0.00001 lon: origin.lon name: origin.name picked: origin.picked}
+    set_mode(mode)
+}
+fn desk_drive_tick(){
+    let r = desk_chosen()
+    if r == nil { return }
+    desk_draw_route(active_drive_map(), false)
+    if r.m <= 1 || desk_steps.len() == 0 { return }
+    // The preview's car: the map's own, at 34 mph along the line.
+    let d = sys.navsecs(r.m / 15.2) * 15.2
+    let at = 0
+    for i s in desk_steps { if s.at <= d { at = i } }
+    let next = min(at + 1, desk_steps.len() - 1)
+    let s = desk_steps[next]
+    ui.instr.set_text(s.text)
+    ui.ndist.set_text(desk_distance_text(max(s.at - d, 0) / 1000))
+    if next != desk_banner_at {
+        desk_banner_at = next
+        ui.banner_turn.render()
+    }
+    ui.banner.set_visible(true)
+    let left = 1 - d / r.m
+    ui.remain.set_text(desk_minutes_text(desk_route_minutes(r) * left) + "  ·  " + desk_distance_text((r.m - d) / 1000))
+}
+fn desk_tick(){
+    desk_watch_tiles()
+    if screen == "route" { desk_route_tick() }
+    if screen == "drive" { desk_drive_tick() }
+    if desk_prefs_dirty { desk_prefs_write() }
+    desk_remember()
+}
+
+// ---- What outlives the run ----
+
+// An appearance change runs this whole body again, and every `let` with it, and the
+// maps go back to where they are declared to start; `mod` outlives the run, so what
+// the person was doing comes back from there.
+fn desk_remember(){
+    if !recalled { return }   // a tick can come before the run's `boot`
+    mod.maps_desk = {screen: screen place: place detail: detail q: q hits: hits search_state: search_state finding: finding
+        origin: origin stops: stops mode: mode view3d: view3d seen: seen zoom: seen_zoom height: desk_height width: desk_width
+        typed: desk_typed sel: desk_sel saved_page: desk_saved_page side: desk_side narrow: desk_side_narrow can_locate: desk_can_locate fix: desk_fix
+        style: desk_map_style tilted: desk_tilted units: desk_units routes: desk_routes routes_key: desk_routes_key
+        routes_state: desk_routes_state alt: desk_alt step_on: desk_step_on steps_shown: desk_steps_shown}
+}
+fn desk_recall(){
+    recalled = true
+    // No start until the person or the computer gives one.
+    origin = {lat: 0 lon: 0 name: "" picked: false}
+    let v = optional(mod, "maps_desk", nil)
+    if v == nil {
+        desk_prefs_read()
+        ui.map_modes.render()
+        desk_scale()
+        desk_location_boot()
+        return false
+    }
+    place = v.place
+    detail = v.detail
+    q = v.q
+    hits = v.hits
+    search_state = v.search_state
+    finding = v.finding
+    origin = v.origin
+    stops = v.stops
+    mode = v.mode
+    view3d = v.view3d
+    seen = v.seen
+    seen_zoom = v.zoom
+    desk_height = v.height
+    desk_width = v.width
+    desk_typed = v.typed
+    desk_sel = v.sel
+    desk_saved_page = optional(v, "saved_page", 0)
+    desk_can_locate = v.can_locate
+    desk_fix = v.fix
+    desk_map_style = v.style
+    desk_tilted = v.tilted
+    desk_units = v.units
+    desk_routes = v.routes
+    desk_routes_key = v.routes_key
+    desk_routes_state = v.routes_state
+    desk_alt = v.alt
+    desk_step_on = v.step_on
+    desk_steps_shown = v.steps_shown
+    desk_steps = desk_steps_now()
+    centered = true
+    // Leave the existing input and caret alone when they already match.
+    desk_restore_search_focus = try { ui.search.has_focus() } catch { false }
+    if ("" + ui.search.text()) != desk_typed { ui.search.set_text(desk_typed) }
+    show(v.screen)
+    desk_restore_search_focus = false
+    desk_side = v.side
+    desk_side_narrow = v.narrow
+    desk_lay_out()
+    desk_apply_style()
+    desk_own_move = true
+    ui.browse_map.jump_to(seen.lat, seen.lon, seen_zoom)
+    if desk_tilted { ui.browse_map.set_map_3d(true) }
+    ui.map_modes.render()
+    desk_scale()
+    if desk_fix != nil { ui.browse_map.set_location(desk_fix.lat, desk_fix.lon, desk_fix.acc) }
+    // A restyle may happen while the old settings are unavailable. If access
+    // has returned, merge them with any choices made since that failure.
+    if storage_state.prefs_unread { desk_prefs_read() }
+    // Its answer went with the run that asked.
+    if search_state == "loading" { search_for(q) }
+    return true
+}
+// What a restart keeps besides Saved and Recent: the view and the window's choices.
+fn desk_prefs_write(){
+    desk_prefs_dirty = false
+    // Do not replace settings that have not been read. The changed fields stay
+    // in prefs_edits until Try Again can merge them with the old file.
+    if !storage_state.prefs_ready { refresh_storage_notice() return }
+    let had_error = try { storage_state.prefs_error == true } catch { false }
+    let kept = try {
+        fs.write(data_path("prefs.json"), {lat: seen.lat lon: seen.lon zoom: seen_zoom style: desk_map_style tilted: desk_tilted side: desk_side units: desk_units}.to_json())
+        true
+    } catch { false }
+    if !kept || had_error {
+        storage_state.prefs_error = !kept
+        refresh_storage_notice()
+    }
+}
+fn desk_prefs_read(){
+    let empty = {}
+    let v = try {
+        if !fs.exists(data_path("prefs.json")) { empty }
+        else {
+            let text = fs.read(data_path("prefs.json"))
+            if !stored_json_complete(text) { nil }
+            else {
+                let value = text.parse_json()
+                if value == nil || !value.is_object() { nil } else { value }
+            }
+        }
+    } catch { nil }
+    if v == nil {
+        storage_state.prefs_ready = false
+        storage_state.prefs_unread = true
+        refresh_storage_notice()
+        return false
+    }
+    let edits = storage_state.prefs_edits
+    let changed = desk_pref_has_edits()
+    let lat = number_of(v, "lat")
+    let lon = number_of(v, "lon")
+    let zoom = number_of(v, "zoom")
+    if !edits.view && is_a_place({lat: lat lon: lon}) && zoom != nil {
+        seen = {lat: lat lon: lon}
+        seen_zoom = zoom
+        centered = true
+        desk_own_move = true
+        ui.browse_map.jump_to(lat, lon, zoom)
+    }
+    let style = optional(v, "style", "")
+    if !edits.style && (style == "Standard" || style == "Light" || style == "Dark") {
+        desk_map_style = style
+        desk_apply_style()
+    }
+    if !edits.tilted && optional(v, "tilted", false) == true {
+        desk_tilted = true
+        ui.browse_map.set_map_3d(true)
+        ui.map_modes.render()
+    }
+    if !edits.side { desk_side = optional(v, "side", true) != false }
+    let units = optional(v, "units", "")
+    if !edits.units && (units == "mi" || units == "km") { desk_units = units }
+    storage_state.prefs_ready = true
+    storage_state.prefs_unread = false
+    storage_state.prefs_edits = {view: false style: false tilted: false side: false units: false}
+    desk_prefs_dirty = changed
+    // A place or route needs its column even if the old window hid it.
+    if screen == "place" || screen == "route" || screen == "origin" || screen == "stop" || screen == "to" { desk_reveal_column() }
+    desk_lay_out()
+    desk_scale()
+    if screen == "place" { show_distance() }
+    if screen == "route" { ui.route_list.render() }
+    refresh_storage_notice()
+    true
+}
+
+// ---- The menu bar ----
+
+// A Mac's menu bar asks for these while Maps is in front.
+fn app_menus(){
+    let card = screen == "place" && place != nil
+    let route = screen == "route"
+    let driving = screen == "drive"
+    // The Place rows act on the card's place, or on a Mac on the list's chosen row.
+    let chosen = desk_bar_place()
+    let placed = chosen != nil
+    let on_saved = if placed { saved_contains(chosen) } else { place != nil && saved_contains(place) }
+    // A Mac's Maps shares from File > Share; this one can copy the link. Export as PDF and
+    // Print aren't here: there is no print service.
+    let share = if ui_unified { "Share" } else { "" }
+    [
+        {menu: "File" submenu: share title: "Copy Link" key: "shift+cmd+C" command: "copy_link"}
+        {menu: "Edit" title: "Find…" key: "cmd+F" command: "find"}
+        {menu: "View" title: if desk_column_open() { "Hide Sidebar" } else { "Show Sidebar" } key: "ctrl+cmd+S" command: "sidebar" enabled: !driving}
+        {menu: "View"}
+        // A row with no menu is left out: a Mac has the one setting, the other styles the three looks.
+        {menu: if ui_unified { "" } else { "View" } title: desk_style_title("Standard") command: "style_standard" checked: desk_map_style == "Standard"}
+        {menu: if ui_unified { "" } else { "View" } title: "Light" command: "style_light" checked: desk_map_style == "Light"}
+        {menu: if ui_unified { "" } else { "View" } title: "Dark" command: "style_dark" checked: desk_map_style == "Dark"}
+        {menu: if ui_unified { "View" } else { "" } title: "Use Dark Map" command: "dark_map" checked: desk_dark_map() enabled: desk_dark_map_on()}
+        {menu: "View"}
+        {menu: "View" title: "3D Map" command: "map_3d" checked: desk_tilted enabled: !driving}
+        {menu: "View" title: "Zoom In" key: "cmd+=" command: "zoom_in" enabled: !driving}
+        {menu: "View" title: "Zoom Out" key: "cmd+-" command: "zoom_out" enabled: !driving}
+        {menu: "View" title: "Show Your Location" key: "cmd+L" command: "locate" enabled: desk_can_locate && !driving}
+        {menu: "View"}
+        {menu: "View" title: "Distances in Miles" command: "units_mi" checked: desk_units == "mi"}
+        {menu: "View" title: "Distances in Kilometers" command: "units_km" checked: desk_units != "mi"}
+        {menu: "Place" title: "Directions" key: "cmd+R" command: "directions" enabled: placed}
+        {menu: "Place" title: if on_saved { "Remove from Saved" } else { "Save" } key: "cmd+S" command: "save" enabled: placed}
+        {menu: "Place" title: "Close Place" command: "close_place" enabled: placed}
+        {menu: "Route" title: "Drive" key: "cmd+1" command: "mode_drive" checked: route && mode == "drive" enabled: route}
+        {menu: "Route" title: "Walk" key: "cmd+2" command: "mode_walk" checked: route && mode == "walk" enabled: route}
+        {menu: "Route" title: "Bike" key: "cmd+3" command: "mode_bike" checked: route && mode == "bike" enabled: route}
+        {menu: "Route"}
+        {menu: "Route" title: "Choose a Start…" command: "choose_start" enabled: route}
+        {menu: "Route" title: "Add Stop…" command: "add_stop" enabled: route && stops.len() < 2}
+        {menu: "Route" title: "Copy Directions" command: "copy_directions" enabled: route && desk_routes_state == "ready"}
+        {menu: "Route"}
+        {menu: "Route" title: "Preview Route" command: "preview" enabled: route && desk_routes_state == "ready"}
+        {menu: "Route" title: "End Preview" command: "end_preview" enabled: driving}
+    ]
+}
+fn on_menu_command(command){
+    let opened = ("" + command).strip_prefix("open:")
+    if opened != command { desk_open_route(opened) return }
+    let card = screen == "place" && place != nil
+    let route = screen == "route"
+    if command == "copy_link" { desk_copy(desk_share_url()) }
+    else if command == "find" { desk_find() }
+    else if command == "sidebar" { if screen != "drive" { desk_toggle_side() } }
+    else if command == "style_standard" { desk_set_style("Standard") }
+    else if command == "style_light" { desk_set_style("Light") }
+    else if command == "style_dark" { desk_set_style("Dark") }
+    else if command == "dark_map" { desk_toggle_dark_map() }
+    else if command == "map_3d" { if screen != "drive" { desk_set_3d(!desk_tilted) } }
+    else if command == "zoom_in" { if screen != "drive" { zoom_map(1) } }
+    else if command == "zoom_out" { if screen != "drive" { zoom_map(-1) } }
+    else if command == "locate" { if desk_can_locate && screen != "drive" { locate() } }
+    else if command == "units_mi" { desk_set_units("mi") }
+    else if command == "units_km" { desk_set_units("km") }
+    else if command == "directions" {
+        if card { show("route") }
+        else { let p = desk_bar_place(); if p != nil { desk_directions_to(p) } }
+    }
+    else if command == "save" {
+        if card { toggle_save() }
+        else { let p = desk_bar_place(); if p != nil { desk_toggle_saved(p); desk_follow_row(p) } }
+    }
+    else if command == "close_place" {
+        if card { close_place() }
+        else if desk_bar_place() != nil { desk_let_go_row() }
+    }
+    else if command == "mode_drive" { if route { set_mode("drive") } }
+    else if command == "mode_walk" { if route { set_mode("walk") } }
+    else if command == "mode_bike" { if route { set_mode("bike") } }
+    else if command == "choose_start" { if route { find_for("origin") } }
+    else if command == "add_stop" { if route && stops.len() < 2 { add_stop() } }
+    else if command == "copy_directions" { if route { desk_copy(desk_directions_text()) } }
+    else if command == "preview" { if route && desk_routes_state == "ready" { show("drive") } }
+    else if command == "end_preview" { if screen == "drive" { show("route") } }
+}
+// What the Place rows act on: the open card's place, or on a Mac the list's chosen row, as a
+// Mac's Maps acts on a selected favourite. Nothing while the list is choosing a start or a stop.
+fn desk_bar_place(){
+    if screen == "place" && place != nil { return place }
+    if !ui_unified || screen != "search" || finding != "" { return nil }
+    let rows = desk_rows()
+    if desk_sel < 0 || desk_sel >= rows.len() { return nil }
+    let p = as_place(rows[desk_sel])
+    if !is_a_place(p) { return nil }
+    p
+}
+// After Save or Remove from Saved, the chosen row stays on its place where the list moved it,
+// or lets go when the place left the list.
+fn desk_follow_row(p){
+    let k = place_key(p)
+    let at = -1
+    for i r in desk_rows() { if at < 0 && has_place_key(r, k) { at = i } }
+    desk_sel = at
+    ui.results.render()
+    desk_remember()
+}
+// Close Place with no card open: the chosen row lets go.
+fn desk_let_go_row(){
+    desk_sel = -1
+    ui.results.render()
+    desk_remember()
+}
+// A search from the field above a place's card leaves the card for its results.
+fn search_from_column(text){
+    if screen == "place" { close_place() }
+    // Return releases the search field; the list can take arrow keys while
+    // the answer is on its way, without a late answer stealing focus.
+    if ("" + text).trim() != "" { ui.side_keys.focus() }
+    search_for(text)
+}
+fn clear_search(){
+    ui.search.set_text("")
+    desk_typed = ""
+    ui.search_clear.set_visible(false)
+    search_for("")
+}
+// The plain map zooms by flights of its own: on_viewport says where it landed.
+// A second click during a flight goes on from where the first was heading.
+fn zoom_map(step){
+    let at = seen
+    if app_target != nil { at = app_target }
+    seen_zoom = clamp(seen_zoom + step, 3, 18)
+    centered = true
+    fly(at.lat, at.lon, seen_zoom)
+    if on_desk { desk_remember() }
+}
+// The list a column can show in the order a Mac shows it: the latest on top.
+fn newest_first(list){
+    let out = []
+    for i in list.len() { out.push(list[list.len() - 1 - i]) }
+    out
+}
+// A place's details as the card's rows; the website is a link of its own.
+fn detail_rows(){
+    let out = []
+    if detail.hours != "" { out.push({head: "Hours" text: desk_hours(detail.hours)}) }
+    if detail.phone != "" { out.push({head: "Phone" text: detail.phone}) }
+    if detail.cuisine != "" { out.push({head: "Cuisine" text: desk_cuisine(detail.cuisine)}) }
+    out
+}
+// OpenStreetMap writes opening hours for machines: "Mo-Th 11:00-22:00; Su 12:00-21:00".
+// The Mac's card writes them as Maps does, one rule to a line: "Mon-Thu 11:00 AM-10:00 PM"
+// (the UI font's en dash is as long as an em dash; its hyphen has the length of the en dash).
+// Words it can't read, such as a quoted comment, leave the whole text as mapped.
+let desk_hour_words = {Mo: "Mon" Tu: "Tue" We: "Wed" Th: "Thu" Fr: "Fri" Sa: "Sat" Su: "Sun" PH: "Holidays" Daily: "Daily"
+    Jan: "Jan" Feb: "Feb" Mar: "Mar" Apr: "Apr" May: "May" Jun: "Jun" Jul: "Jul" Aug: "Aug" Sep: "Sep" Oct: "Oct" Nov: "Nov" Dec: "Dec"
+    off: "Closed" closed: "Closed"}
+fn desk_clock(word){
+    let parts = word.split(":")
+    if parts.len() != 2 || parts[1].len() != 2 || !(parts[1].to_f64() >= 0) { return nil }
+    let h = parts[0].to_f64()
+    if !(h >= 0 && h <= 48) { return nil }
+    if h >= 24 { h = h - 24 }
+    let hour = if h == 0 { 12 } else if h > 12 { h - 12 } else { h }
+    let half = if h < 12 { " AM" } else { " PM" }
+    return "" + hour + ":" + parts[1] + half
+}
+fn desk_hour_word(word){
+    let known = optional(desk_hour_words, word, nil)
+    if known != nil { return known }
+    desk_clock(word)
+}
+fn desk_hours(raw){
+    let text = raw.trim()
+    if text == "24/7" || text == "00:00-24:00" || text == "Mo-Su 00:00-24:00" { return "Open 24 hours" }
+    let lines = ""
+    for rule in replace_all(text, "Mo-Su", "Daily").split(";") {
+        let line = ""
+        for word in replace_all(rule.trim(), ", ", ",").split(" ") {
+            if word == "" { continue }
+            let group = ""
+            for list_part in word.split(",") {
+                let span = ""
+                for atom in list_part.split("-") {
+                    let shown = desk_hour_word(atom)
+                    if shown == nil { return raw }
+                    if span != "" { span = span + "-" }
+                    span = span + shown
+                }
+                if group != "" { group = group + ", " }
+                group = group + span
+            }
+            if line != "" { line = line + " " }
+            line = line + group
+        }
+        if line == "" { continue }
+        if lines != "" { lines = lines + "\n" }
+        lines = lines + line
+    }
+    if lines == "" { return raw }
+    lines
+}
+// OpenStreetMap's cuisines are lower case: each starts with a capital on the Mac's card.
+let desk_capitals = {a: "A" b: "B" c: "C" d: "D" e: "E" f: "F" g: "G" h: "H" i: "I" j: "J" k: "K" l: "L" m: "M"
+    n: "N" o: "O" p: "P" q: "Q" r: "R" s: "S" t: "T" u: "U" v: "V" w: "W" x: "X" y: "Y" z: "Z"}
+fn desk_capital(word){
+    for low up in desk_capitals {
+        let first = "" + low
+        if word.search(first) == 0 { return up + word.strip_prefix(first) }
+    }
+    word
+}
+fn desk_cuisine(text){
+    let out = ""
+    for part in text.split(", ") {
+        if out != "" { out = out + ", " }
+        out = out + desk_capital(part)
+    }
+    out
+}
+// A website as its link reads: the host, without "www.".
+fn site_host(url){
+    let host = url.strip_prefix("https://").split("/")[0].split("?")[0].split("#")[0]
+    host.strip_prefix("www.")
+}
 
 let ink = ui_ink
 let secondary = ui_muted
@@ -1050,10 +3166,127 @@ let HitRow = GestureView{width: Fill height: Fit flow: Down padding: Inset{top: 
     label := Label{width: Fill text: "" max_lines: 1 draw_text.color: secondary draw_text.text_style.font_size: 13}
 }
 
-View{width: Fill height: Fill flow: Overlay show_bg: true draw_bg.color: #xe8eaed
+// A Mac's map: quiet land, white streets, and only the big roads in colour.
+let mac_map_day = MapThemeStyle{
+    background: #xf4f2ec
+    status_text: #x444444
+    label: #x1d1d1f
+    shiny: MapShinyStyle{bake_ao: true bake_shadows: true terrain_shadows: true water_fx: true foliage_fx: true}
+
+    MapFillRule{group: "building" color: #xe7e4dc}
+    MapFillRule{group: "building_outline" color: #xd6d2c8}
+    MapFillRule{group: "street_area" color: #xffffff}
+    MapFillRule{group: "bridge_area" color: #xdedbd3}
+    MapFillRule{group: "water" color: #xa2d3f2}
+    MapFillRule{group: "landuse" value: "residential" color: #xf0eee8}
+    MapFillRule{group: "landuse" value: "commercial" color: #xf3ecdf}
+    MapFillRule{group: "landuse" value: "retail" color: #xf5eadd}
+    MapFillRule{group: "landuse" value: "industrial" color: #xecebe6}
+    MapFillRule{group: "landuse" value: "forest" color: #xc6e3b6}
+    MapFillRule{group: "landuse" value: "grass" color: #xd3ebc3}
+    MapFillRule{group: "landuse" value: "meadow" color: #xd9edca}
+    MapFillRule{group: "landuse" value: "farmland" color: #xeef0dc}
+    MapFillRule{group: "landuse" value: "railway" color: #xecebe6}
+    MapFillRule{group: "landuse" value: "cemetery" color: #xcfe3c4}
+    MapFillRule{group: "landuse" value: "sand" color: #xf3ecd5}
+    MapFillRule{group: "landuse" value: "*" color: #xf0eee8}
+    MapFillRule{group: "leisure" value: "park" color: #xc9e8b8}
+    MapFillRule{group: "leisure" value: "garden" color: #xd3ebc3}
+    MapFillRule{group: "leisure" value: "golf_course" color: #xd3ebc3}
+    MapFillRule{group: "leisure" value: "pitch" color: #xbfe3b0}
+    MapFillRule{group: "leisure" value: "*" color: #xc9e8b8}
+
+    MapRoadRule{kind: "motorway" sort_rank: 700 casing_color: #xdba941 casing_width: 7.2 center_color: #xfbd46f center_width: 6.0}
+    MapRoadRule{kind: "trunk" sort_rank: 640 casing_color: #xdfb65a casing_width: 7.2 center_color: #xfde08f center_width: 6.0}
+    MapRoadRule{kind: "primary" sort_rank: 560 casing_color: #xcfcbc1 casing_width: 6.4 center_color: #xffffff center_width: 5.0}
+    MapRoadRule{kind: "secondary" sort_rank: 470 casing_color: #xd3cfc5 casing_width: 6.4 center_color: #xffffff center_width: 5.0}
+    MapRoadRule{kind: "busway" sort_rank: 470 casing_color: #xd3cfc5 casing_width: 6.4 center_color: #xffffff center_width: 5.0}
+    MapRoadRule{kind: "tertiary" sort_rank: 390 casing_color: #xd8d4cb casing_width: 6.2 center_color: #xffffff center_width: 5.0}
+    MapRoadRule{kind: "residential" sort_rank: 310 casing_color: #xdedad1 casing_width: 4.2 center_color: #xffffff center_width: 3.0}
+    MapRoadRule{kind: "unclassified" sort_rank: 310 casing_color: #xdedad1 casing_width: 4.2 center_color: #xffffff center_width: 3.0}
+    MapRoadRule{kind: "living_street" sort_rank: 310 casing_color: #xdedad1 casing_width: 4.0 center_color: #xfafafa center_width: 3.0}
+    MapRoadRule{kind: "service" sort_rank: 240 casing_color: #xe0dcd3 casing_width: 3.0 center_color: #xffffff center_width: 2.0}
+    MapRoadRule{kind: "pedestrian" sort_rank: 240 casing_color: #xdedad1 casing_width: 4.0 center_color: #xf6f4ef center_width: 3.0}
+    MapRoadRule{kind: "pedestrian" sort_rank: 300 casing_color: #xdedad1 casing_width: 4.0 center_color: #xfbfaf7 center_width: 2.8 min_zoom: 14.0}
+    MapRoadRule{kind: "cycleway" sort_rank: 160 center_color: #x8cc497 center_width: 0.9 center_shape_id: 10.0 min_zoom: 14.0}
+    MapRoadRule{kind: "footway" sort_rank: 160 center_color: #xc9c5bb center_width: 0.9 center_shape_id: 10.0 min_zoom: 15.0}
+    MapRoadRule{kind: "path" sort_rank: 160 center_color: #xc9c5bb center_width: 0.8 center_shape_id: 10.0 min_zoom: 15.0}
+    MapRoadRule{kind: "steps" sort_rank: 160 center_color: #xc9c5bb center_width: 2.0 center_shape_id: 10.0 min_zoom: 15.0}
+    MapRoadRule{kind: "track" sort_rank: 160 center_color: #xc9c5bb center_width: 1.0 center_shape_id: 10.0 min_zoom: 14.0}
+    MapRoadRule{kind: "*" sort_rank: 280 casing_color: #xdedad1 casing_width: 3.6 center_color: #xffffff center_width: 2.5}
+
+    MapWaterwayRule{kind: "river" sort_rank: 140 center_color: #xa2d3f2 center_width: 4.0}
+    MapWaterwayRule{kind: "canal" sort_rank: 140 center_color: #xa2d3f2 center_width: 3.0 min_zoom: 12.0}
+    MapWaterwayRule{kind: "stream" sort_rank: 140 center_color: #xa2d3f2 center_width: 1.4 min_zoom: 13.0}
+    MapWaterwayRule{kind: "*" sort_rank: 140 center_color: #xa2d3f2 center_width: 1.2 min_zoom: 13.0}
+    MapRailRule{sort_rank: 710 center_color: #xbdb9af center_width: 1.0}
+}
+// At night the streets stay near the ground, and the big roads carry the map.
+let mac_map_night = MapThemeStyle{
+    background: #x26282c
+    status_text: #xb2c7d8
+    label: #xe5eaf1
+    label_halo: #x26282c
+    shiny: MapShinyStyle{bake_ao: true water_fx: true foliage_fx: true}
+
+    MapFillRule{group: "building" color: #x36393e}
+    MapFillRule{group: "building_outline" color: #x2d3034}
+    MapFillRule{group: "tree_canopy" color: #x2c4a33}
+    MapFillRule{group: "tree_trunk" color: #x3a2f24}
+    MapFillRule{group: "street_area" color: #x3d4045}
+    MapFillRule{group: "bridge_area" color: #x3d4045}
+    MapFillRule{group: "water" color: #x17344f}
+    MapFillRule{group: "landuse" value: "residential" color: #x292b2f}
+    MapFillRule{group: "landuse" value: "commercial" color: #x2d2e32}
+    MapFillRule{group: "landuse" value: "retail" color: #x2d2e32}
+    MapFillRule{group: "landuse" value: "industrial" color: #x2a2b2f}
+    MapFillRule{group: "landuse" value: "forest" color: #x25382a}
+    MapFillRule{group: "landuse" value: "grass" color: #x293c2d}
+    MapFillRule{group: "landuse" value: "meadow" color: #x293c2d}
+    MapFillRule{group: "landuse" value: "farmland" color: #x2b3a2e}
+    MapFillRule{group: "landuse" value: "railway" color: #x2b2c30}
+    MapFillRule{group: "landuse" value: "cemetery" color: #x2b3a2f}
+    MapFillRule{group: "landuse" value: "sand" color: #x38352c}
+    MapFillRule{group: "landuse" value: "*" color: #x292b2f}
+    MapFillRule{group: "leisure" value: "park" color: #x2b4230}
+    MapFillRule{group: "leisure" value: "garden" color: #x2b4230}
+    MapFillRule{group: "leisure" value: "golf_course" color: #x2b4230}
+    MapFillRule{group: "leisure" value: "pitch" color: #x2f4d36}
+    MapFillRule{group: "leisure" value: "*" color: #x2b4230}
+
+    MapRoadRule{kind: "motorway" sort_rank: 700 casing_color: #x6b5a33 casing_width: 7.2 center_color: #xa88b4c center_width: 6.0}
+    MapRoadRule{kind: "trunk" sort_rank: 640 casing_color: #x665a3a casing_width: 7.2 center_color: #x98834f center_width: 6.0}
+    MapRoadRule{kind: "primary" sort_rank: 560 casing_color: #x3e4146 casing_width: 6.4 center_color: #x62656b center_width: 5.0}
+    MapRoadRule{kind: "secondary" sort_rank: 470 casing_color: #x3b3e43 casing_width: 6.4 center_color: #x5a5d63 center_width: 5.0}
+    MapRoadRule{kind: "busway" sort_rank: 470 casing_color: #x3b3e43 casing_width: 6.4 center_color: #x5a5d63 center_width: 5.0}
+    MapRoadRule{kind: "tertiary" sort_rank: 390 casing_color: #x383b40 casing_width: 6.2 center_color: #x52555b center_width: 5.0}
+    MapRoadRule{kind: "residential" sort_rank: 310 casing_color: #x33363a casing_width: 4.2 center_color: #x484b51 center_width: 3.0}
+    MapRoadRule{kind: "unclassified" sort_rank: 310 casing_color: #x33363a casing_width: 4.2 center_color: #x484b51 center_width: 3.0}
+    MapRoadRule{kind: "living_street" sort_rank: 310 casing_color: #x33363a casing_width: 4.0 center_color: #x45484e center_width: 3.0}
+    MapRoadRule{kind: "service" sort_rank: 240 casing_color: #x313438 casing_width: 3.0 center_color: #x42454a center_width: 2.0}
+    MapRoadRule{kind: "pedestrian" sort_rank: 240 casing_color: #x313438 casing_width: 4.0 center_color: #x3f4247 center_width: 3.0}
+    MapRoadRule{kind: "pedestrian" sort_rank: 300 casing_color: #x313438 casing_width: 4.0 center_color: #x3d4045 center_width: 2.8 min_zoom: 14.0}
+    MapRoadRule{kind: "cycleway" sort_rank: 160 center_color: #x4a5a50 center_width: 0.9 center_shape_id: 10.0 min_zoom: 14.0}
+    MapRoadRule{kind: "footway" sort_rank: 160 center_color: #x45484d center_width: 0.9 center_shape_id: 10.0 min_zoom: 15.0}
+    MapRoadRule{kind: "path" sort_rank: 160 center_color: #x45484d center_width: 0.8 center_shape_id: 10.0 min_zoom: 15.0}
+    MapRoadRule{kind: "steps" sort_rank: 160 center_color: #x45484d center_width: 2.0 center_shape_id: 10.0 min_zoom: 15.0}
+    MapRoadRule{kind: "track" sort_rank: 160 center_color: #x45484d center_width: 1.0 center_shape_id: 10.0 min_zoom: 14.0}
+    MapRoadRule{kind: "*" sort_rank: 280 casing_color: #x33363a casing_width: 3.6 center_color: #x45484e center_width: 2.5}
+
+    MapWaterwayRule{kind: "river" sort_rank: 140 center_color: #x17344f center_width: 4.0}
+    MapWaterwayRule{kind: "canal" sort_rank: 140 center_color: #x17344f center_width: 3.0 min_zoom: 12.0}
+    MapWaterwayRule{kind: "stream" sort_rank: 140 center_color: #x17344f center_width: 1.4 min_zoom: 13.0}
+    MapWaterwayRule{kind: "*" sort_rank: 140 center_color: #x17344f center_width: 1.2 min_zoom: 13.0}
+    MapRailRule{sort_rank: 710 center_color: #x585b61 center_width: 1.0}
+}
+let MacMapView = if ui_mac { MapView{style_light: mac_map_day style_dark: mac_map_night mac_look: ui_unified} } else { MapView{mac_look: ui_unified} }
+// A touch map's pins use depth internally; composite the map before its sheets.
+let BrowseMapLayer = if ui_mac { View } else { CachedView{texture_depth: true} }
+
+let TouchRoot = View{width: Fill height: Fill flow: Overlay show_bg: true draw_bg.color: #xe8eaed
     // No nav_mode: a plain map, so it can always be dragged and zoomed.
-    browse_box := View{width: Fill height: Fill
-        browse_map := MapView{width: Fill height: Fill dark_theme: !ui_light zoom: 13.0 min_zoom: 3.0 max_zoom: 18.0
+    browse_box := BrowseMapLayer{width: Fill height: Fill
+        browse_map := MacMapView{width: Fill height: Fill dark_theme: !ui_light zoom: 13.0 min_zoom: 3.0 max_zoom: 18.0
             center_lat: 37.3350 center_lon: -121.8850 archive_url: "https://makepad.nl/maps/world-20260926.mkmap" debug_cam: false
             on_tap: |lat, lon| map_tapped(lat, lon)
             on_long_press: |lat, lon| map_long_pressed(lat, lon)
@@ -1064,11 +3297,11 @@ View{width: Fill height: Fill flow: Overlay show_bg: true draw_bg.color: #xe8eae
         // Tilted geometry needs depth testing within the map, isolated from
         // the host window's background. Composite below the navigation UI.
         drive_3d := CachedView{width: Fill height: Fill texture_depth: true
-            drive_map := MapView{width: Fill height: Fill dark_theme: !ui_light nav_mode: "3d" nav_period: 100 nav_route_width: 14.0 zoom: 15.0 min_zoom: 3.0 max_zoom: 19.0
+            drive_map := MacMapView{width: Fill height: Fill dark_theme: !ui_light nav_mode: "3d" nav_period: 100 nav_route_width: 14.0 zoom: 15.0 min_zoom: 3.0 max_zoom: 19.0
                 center_lat: 37.3350 center_lon: -121.8850 archive_url: "https://makepad.nl/maps/world-20260926.mkmap" buildings_3d: true debug_cam: false}
         }
         drive_2d := CachedView{visible: false width: Fill height: Fill texture_depth: true
-            drive_map_2d := MapView{width: Fill height: Fill dark_theme: !ui_light nav_mode: "2d" nav_period: 100 nav_route_width: 11.0 zoom: 16.0 min_zoom: 3.0 max_zoom: 19.0
+            drive_map_2d := MacMapView{width: Fill height: Fill dark_theme: !ui_light nav_mode: "2d" nav_period: 100 nav_route_width: 11.0 zoom: 16.0 min_zoom: 3.0 max_zoom: 19.0
                 center_lat: 37.3350 center_lon: -121.8850 archive_url: "https://makepad.nl/maps/world-20260926.mkmap" debug_cam: false}
         }
     }
@@ -1091,6 +3324,11 @@ View{width: Fill height: Fill flow: Overlay show_bg: true draw_bg.color: #xe8eae
                     draw_text +: {color: ink color_hover: ink color_focus: ink color_empty: secondary color_empty_hover: secondary}
                 }
             }
+            storage_search_note := View{visible: false width: Fill height: Fit flow: Right spacing: 8 align: Align{y: 0.5}
+                storage_search_text := Label{clip_y: false padding: 0 width: Fill flow: Flow.Right{wrap: true} text: ""
+                    draw_text +: {color: ink text_style: theme.font_regular{font_size: 12 line_spacing: 1.2}}}
+                storage_search_retry := Link{text: "Try Again" on_click: || retry_storage()}
+            }
             // Choosing a start or a stop: the way back, above the list so it
             // never scrolls out of sight (the list keeps its place).
             finding_links := View{visible: false width: Fill height: Fit flow: Down
@@ -1108,9 +3346,18 @@ View{width: Fill height: Fill flow: Overlay show_bg: true draw_bg.color: #xe8eae
                 // With the box empty: Saved above Recent, each only with a
                 // row to show. An entry that isn't a named place has none.
                 if q == "" {
-                    let saved_rows = listed(saved)
+                    let saved_rows = phone_saved_rows()
                     if saved_rows.len() > 0 {
                         Label{text: "Saved" draw_text.color: secondary draw_text.text_style.font_size: 13}
+                        if saved.len() > 100 {
+                            View{width: Fill height: 48 flow: Right spacing: 6 align: Align{y: 0.5}
+                                Pill{text: "Previous" enabled: phone_saved_page > 0 on_click: || phone_saved_page_by(-1)
+                                    draw_text +: {color: if phone_saved_page > 0 { ui_ink } else { mix(ui_ink, ui_surface, 0.55) }}}
+                                Label{width: Fill text: (phone_saved_page * 100 + 1) + "–" + min((phone_saved_page + 1) * 100, saved.len()) + " of " + saved.len() draw_text.color: secondary draw_text.text_style.font_size: 13}
+                                Pill{text: "Next" enabled: (phone_saved_page + 1) * 100 < saved.len() on_click: || phone_saved_page_by(1)
+                                    draw_text +: {color: if (phone_saved_page + 1) * 100 < saved.len() { ui_ink } else { mix(ui_ink, ui_surface, 0.55) }}}
+                            }
+                        }
                         for s in saved_rows { HitRow{on_tap: |x, y| pick(s) name.text: text_of(s, "name") label.text: text_of(s, "label") label.visible: text_of(s, "label") != ""} }
                     }
                     let recent_rows = listed(recents)
@@ -1146,6 +3393,12 @@ View{width: Fill height: Fill flow: Overlay show_bg: true draw_bg.color: #xe8eae
             View{width: Fill height: Fit flow: Right spacing: 8 align: Align{y: 0.5}
                 Primary{text: "Directions" on_click: || show("route")}
                 save := Pill{text: "Save" on_click: || toggle_save()}
+            }
+            storage_note := View{visible: false width: Fill height: Fit flow: Right spacing: 8 align: Align{y: 0.5}
+                storage_text := Label{clip_y: false padding: 0 width: Fill flow: Flow.Right{wrap: true} text: ""
+                    draw_text +: {color: ink text_style: theme.font_regular{font_size: 12 line_spacing: 1.2}}}
+                storage_retry := Link{visible: false text: "Try Again" on_click: || retry_storage()}
+                storage_dismiss := Link{text: "Dismiss" on_click: || dismiss_storage_notice()}
             }
         }
         route_panel := Panel{visible: false
@@ -1216,3 +3469,500 @@ View{width: Fill height: Fill flow: Overlay show_bg: true draw_bg.color: #xe8eae
         site := WebReader{width: Fill height: Fill on_error: || ui.site_fail.set_text(ui.site.error())}
     }
 }
+
+// The Mac's Maps: a fixed column beside the map instead of sheets over it. The
+// maps are the phone's own, one definition with one set of handlers.
+// On the column's gray the shared muted text falls short of 4.5:1 in light, and
+// on a dark group's surface the shared link does: these two read on what Maps
+// draws them on.
+let desk_muted = mix(ui_ink, ui_sidebar, 0.27)
+let desk_on_accent = #xe8f0fb
+let desk_link = if ui_light { ui_link } else { mix(ui_link, ui_ink, 0.35) }
+// The shared chosen segment sits only ten levels above its track in dark: too faint to read.
+let desk_seg_on = if ui_light { ui_button } else { mix(ui_page, ui_ink, 0.28) }
+let DeskSegOn = UiSegOn{draw_bg +: {color: desk_seg_on color_hover: desk_seg_on color_focus: desk_seg_on}}
+let DeskHead = UiSideHead{padding: Inset{left: 4 top: 12 bottom: 4} draw_text +: {color: desk_muted}}
+let DeskHit = View{width: Fill height: 40 flow: Overlay
+    hit := UiSideRow{height: Fill text: ""}
+    lines := View{width: Fill height: Fill flow: Down align: Align{y: 0.5} spacing: 1 padding: Inset{left: 31 right: 8}
+        name := Label{padding: 0 width: Fill text: "" max_lines: 1 text_overflow: Ellipsis draw_text +: {color: ink text_style: theme.font_regular{font_size: 9.75}}}
+        address := Label{padding: 0 width: Fill text: "" max_lines: 1 text_overflow: Ellipsis draw_text +: {color: desk_muted text_style: theme.font_regular{font_size: 8.25}}}
+    }
+}
+// An empty list says so in the middle of the column, on the column's gray.
+let DeskEmpty = UiEmpty{padding: Inset{left: 20 right: 20 top: 12 bottom: 12}
+    note +: {width: Fill align: Align{x: 0.5} flow: Flow.Right{wrap: true} draw_text +: {color: desk_muted text_style: theme.font_regular{font_size: 9 line_spacing: 1.3}}}}
+let DeskLine = Label{padding: 0 width: Fill flow: Flow.Right{wrap: true} text: ""
+    draw_text +: {color: desk_muted text_style: theme.font_regular{font_size: 9 line_spacing: 1.3}}}
+let DeskFact = View{width: Fill height: Fit flow: Down spacing: 1 padding: Inset{left: 12 right: 12 top: 7 bottom: 7}
+    head := Label{padding: 0 text: "" draw_text +: {color: secondary text_style: theme.font_regular{font_size: 8.25}}}
+    value := Label{padding: 0 width: Fill flow: Flow.Right{wrap: true} text: "" draw_text +: {color: ink text_style: theme.font_regular{font_size: 9.75 line_spacing: 1.3}}}
+}
+let DeskStep = View{width: Fill height: 34 flow: Right align: Align{y: 0.5} spacing: 8 padding: Inset{left: 12 right: 6}}
+let DeskStepHead = Label{padding: 0 width: 32 text: "" draw_text +: {color: secondary text_style: theme.font_regular{font_size: 9}}}
+let DeskStepName = Label{padding: 0 width: Fill text: "" max_lines: 1 text_overflow: Ellipsis draw_text +: {color: ink text_style: theme.font_regular{font_size: 9.75}}}
+let DeskLink = UiTool{padding: Inset{left: 6 right: 6} icon_walk: Walk{width: 12 height: 12}
+    draw_bg +: {color_hover: mix(ui_surface, ui_ink, 0.05) color_down: mix(ui_surface, ui_ink, 0.1)}
+    draw_text +: {color: desk_link color_hover: desk_link color_down: desk_link color_focus: desk_link text_style: theme.font_regular{font_size: 9}}
+    draw_icon +: {color: desk_link}}
+// A place's website is a link: it opens in the browser, by a link's own path out.
+let DeskSiteLink = LinkLabel{width: Fit height: 18 margin: Inset{left: -6} padding: Inset{left: 6 right: 6} align: Align{x: 0.0 y: 0.5} text: ""
+    icon_walk: Walk{width: 0 height: 0}
+    label_walk: Walk{width: Fit height: Fit}
+    draw_text +: {color: desk_link color_hover: desk_link color_down: desk_link color_focus: desk_link text_style: theme.font_regular{font_size: 9.75}}
+    draw_bg +: {color: #x00000000 color_hover: mix(ui_surface, ui_ink, 0.05) color_down: mix(ui_surface, ui_ink, 0.1) color_focus: #x00000000
+        pixel: fn(){
+            let sdf = Sdf2d.viewport(self.pos * self.rect_size)
+            sdf.box(0.0, 0.0, self.rect_size.x, self.rect_size.y, 3.0)
+            sdf.fill(mix(mix(self.color, self.color_hover, self.hover), self.color_down, self.down))
+            return sdf.result
+        }
+    }
+}
+// What floats over a map: the surface, a hairline and a soft shadow.
+let DeskFloat = RoundedShadowView{width: Fit height: Fit new_batch: true cursor: MouseCursor.Default
+    draw_bg +: {color: ui_surface border_size: 1.0 border_color: ui_border border_radius: 4.0
+        shadow_color: #x00000033 shadow_radius: 8.0 shadow_offset: vec2(0.0, 1.0)}}
+// A glyph's own margins keep the strokes of a family alike.
+let DeskIcon = UiToolIcon{icon_walk: Walk{width: 20 height: 20} draw_icon +: {preserve_viewbox: true}}
+let DeskMapTool = UiToolIcon{icon_walk: Walk{width: 20 height: 20}
+    draw_icon +: {preserve_viewbox: true}
+    draw_bg +: {color_hover: mix(ui_surface, ui_ink, 0.06) color_down: mix(ui_surface, ui_ink, 0.12)}}
+// Menu widgets are cached by template. Give the two Mac appearances distinct
+// colors so reopening this menu after an appearance change uses the new look.
+let DeskLightMenu = PopupMenu{
+    draw_bg +: {color: #xececec border_color: #xbebebe border_color_2: #xbebebe shadow_color: #x00000052}
+    draw_separator +: {color: #xbebebe} draw_arrow +: {color: #x242426}
+    menu_item: PopupMenuItem{
+        draw_text +: {color: #x242426 color_hover: #xffffff color_active: #xffffff color_disabled: #x77777b}
+        draw_bg +: {color_hover: #x0064d2 color_active: #x007aff mark_color_active: #x1d1d1f mark_color_highlight: #xffffff}
+    }
+}
+let DeskDarkMenu = PopupMenu{
+    draw_bg +: {color: #x28282a border_color: #x5b5b60 border_color_2: #x5b5b60 shadow_color: #x00000080}
+    draw_separator +: {color: #x5b5b60} draw_arrow +: {color: #xf2f2f4}
+    menu_item: PopupMenuItem{
+        draw_text +: {color: #xf2f2f4 color_hover: #xffffff color_active: #xffffff color_disabled: #x98989e}
+        draw_bg +: {color_hover: #x0a60c8 color_active: #x0a84ff mark_color_active: #xf2f2f4 mark_color_highlight: #xffffff}
+    }
+}
+let DeskNoRow = #x00000000
+// One row of the list: a press opens it, the arrow keys go through it, a right click has
+// what the place's toolbar and card offer.
+fn desk_row(p, icon, at, recent){
+    let label = text_of(p, "label")
+    let kept = icon == "star-fill" || saved_contains(p)
+    let titles = desk_place_titles_for(p, recent, kept)
+    // The chosen row is drawn in the accent, white on blue, as Mail's and News' are.
+    let chosen = at == desk_sel
+    let on = if chosen { ui_accent_row } else { DeskNoRow }
+    GestureView{width: Fill height: if label != "" { 40 } else { 28 }
+        menu: titles menu_urls: desk_place_links(p, titles)
+        on_menu: |title| desk_place_chosen(p, title)
+        DeskHit{height: Fill
+            hit +: {draw_bg +: {color: on color_hover: if chosen { on } else { ui_hover } color_down: if chosen { on } else { ui_selected }}
+                draw_icon +: {svg: ui_icon(icon) color: if chosen { #xffffff } else { ui_link }} on_click: || {
+                desk_sel = at
+                ui.side_keys.focus()
+                pick(p)
+            }}
+            lines.name.text: text_of(p, "name") lines.name.draw_text.color: if chosen { #xffffff } else { ink }
+            lines.address.text: label lines.address.visible: label != "" lines.address.draw_text.color: if chosen { desk_on_accent } else { desk_muted }}
+    }
+}
+// One of the routes between the start and the place.
+fn desk_route_row(r, i){
+    let many = desk_routes.len() > 1
+    let on = if many && i == desk_alt { ui_selected } else { DeskNoRow }
+    let via = text_of(r, "via")
+    View{width: Fill height: if via != "" { 44 } else { 30 } flow: Overlay
+        UiSideRow{height: Fill text: "" enabled: many draw_bg +: {color: on color_hover: if many { ui_hover } else { DeskNoRow } color_down: if many { ui_selected } else { DeskNoRow }}
+            on_click: || desk_choose_route(i)}
+        View{width: Fill height: Fill flow: Down align: Align{y: 0.5} spacing: 1 padding: Inset{left: 12 right: 12}
+            View{width: Fill height: Fit flow: Right align: Align{y: 1.0} spacing: 8
+                Label{padding: 0 text: desk_minutes_text(desk_route_minutes(r)) draw_text +: {color: ink text_style: theme.font_bold{font_size: 11.25}}}
+                Label{padding: 0 text: desk_distance_text(r.m / 1000) draw_text +: {color: secondary text_style: theme.font_regular{font_size: 9}}}
+            }
+            if via != "" { Label{padding: 0 width: Fill text: "Via " + via max_lines: 1 text_overflow: Ellipsis draw_text +: {color: secondary text_style: theme.font_regular{font_size: 8.25}}} }
+        }
+    }
+}
+// One step of the chosen route: a press takes the map there.
+fn desk_step_row(s, i){
+    let on = if i == desk_step_on { ui_selected } else { DeskNoRow }
+    GestureView{width: Fill height: Fit menu: ["Copy Directions"] on_menu: |title| desk_copy(desk_directions_text())
+        on_tap: |x, y| desk_go_to_step(s, i)
+        SolidView{width: Fill height: Fit flow: Right align: Align{y: 0.5} spacing: 7 padding: Inset{left: 12 right: 10 top: 6 bottom: 6} draw_bg.color: on
+            Svg{width: 16 height: 16 animating: false draw_svg +: {svg: map_icon(desk_turn_icon(s)) preserve_viewbox: true color: secondary}}
+            View{width: Fill height: Fit flow: Down spacing: 1
+                Label{padding: 0 width: Fill flow: Flow.Right{wrap: true} text: s.text draw_text +: {color: ink text_style: theme.font_regular{font_size: 9.75 line_spacing: 1.2}}}
+                if s.m > 0 { Label{padding: 0 text: desk_distance_text(s.m / 1000) draw_text +: {color: secondary text_style: theme.font_regular{font_size: 8.25}}} }
+            }
+        }
+    }
+}
+let DeskRoot = SolidView{width: Fill height: Fill flow: Right draw_bg.color: ui_page
+    column := View{width: 301 height: Fill flow: Right
+        SolidView{width: Fill height: Fill flow: Down draw_bg.color: ui_sidebar
+            // The window's lights sit on this band; it stays unclaimed, so the window drags by it.
+            // A Mac's sidebar button sits on it beside the lights while the sidebar shows.
+            View{width: Fill height: if ui_unified { 52 } else { 0 } padding: Inset{left: 84 top: 12}
+                side_band_tool := UiPaneTool{visible: false icon_walk: Walk{width: 20 height: 20} draw_icon +: {svg: ui_icon("sidebar") preserve_viewbox: true} on_click: || desk_toggle_side()}
+            }
+            search_band := View{width: Fill height: Fit padding: Inset{left: 14 right: 14 top: if ui_unified { 0 } else { 10 } bottom: 4}
+                View{width: Fill height: 28 flow: Overlay align: Align{y: 0.5}
+                    search := UiSearch{padding: Inset{left: 26 right: 24 top: 6 bottom: 6} empty_text: "Search Maps"
+                        on_return: |text| search_from_column(text)
+                        on_escape: |text| {
+                            if finding != "" { desk_finding_back() }
+                            else {
+                                clear_search()
+                                ui.side_keys.focus()
+                            }
+                        }
+                        // An emptied box shows Saved and Recent again.
+                        on_change: |text| {
+                            desk_typed = "" + text
+                            ui.search_clear.set_visible(desk_typed != "")
+                            if desk_typed.trim() == "" && q != "" { search_for("") }
+                        }}
+                    UiGlyph{width: 14 height: 14 margin: Inset{left: 8} draw_svg +: {svg: ui_icon("search")}}
+                    View{width: Fill height: Fill flow: Right align: Align{x: 1.0 y: 0.5} padding: Inset{right: 2}
+                        search_clear := UiSearchClear{on_click: || { clear_search() ui.search.focus() }}
+                    }
+                }
+            }
+            // What's below the band answers to the keyboard: the band moves the window.
+            side_keys := GestureView{width: Fill height: Fill flow: Down cursor: MouseCursor.Default on_key: |key, cmd, shift| desk_key(key, cmd, shift)
+                search_panel := View{width: Fill height: Fill flow: Down
+                    // Choosing a start or a stop: the way back stays above the list.
+                    finding_links := View{visible: false width: Fill height: Fit flow: Down spacing: 1 padding: Inset{left: 8 right: 8}
+                        finding_back := UiSideRow{text: "Back to Route" draw_icon +: {svg: ui_icon("chevron-left")} on_click: || desk_finding_back()}
+                        search_hint := DeskHead{padding: Inset{left: 4 top: 8 bottom: 4} text: "Where to?"}
+                        your_location := UiSideRow{text: "Your Location" draw_icon +: {svg: ui_icon("location")} on_click: || desk_use_my_location()}
+                    }
+                    results := ScrollYView{width: Fill height: Fill flow: Down spacing: 1 padding: Inset{left: 8 right: 8 bottom: 8} on_render: || {
+                        if search_state == "loading" {
+                            View{width: Fill height: desk_list_height() flow: Right align: Align{x: 0.5 y: 0.5} spacing: 8
+                                LoadingSpinner{width: 16 height: 16 draw_bg +: {color: desk_muted stroke_width: 2.0}}
+                                Label{clip_y: false padding: 0 text: "Searching…" draw_text +: {color: desk_muted text_style: theme.font_regular{font_size: 9.75}}}
+                            }
+                        }
+                        else if search_state == "failed" {
+                            DeskEmpty{height: desk_list_height() glyph +: {draw_svg +: {svg: ui_icon("search")}}
+                                title +: {text: "Search Isn't Available"}
+                                note +: {text: "Check your connection and try again."}
+                                UiButton{margin: Inset{top: 8} text: "Try Again" on_click: || { ui.side_keys.focus() search_for(q) }}
+                            }
+                        }
+                        else if q != "" && hits.len() == 0 {
+                            DeskEmpty{height: desk_list_height() glyph +: {draw_svg +: {svg: ui_icon("search")}}
+                                title +: {text: "No Results"}
+                                note +: {text: "No places match “" + q + "”. Try a different name."}
+                                UiButton{margin: Inset{top: 8} text: "Clear Search" on_click: || { clear_search() ui.search.focus() }}
+                            }
+                        }
+                        for i h in hits { desk_row(h, "pin", i, false) }
+                        // With the box empty: Saved above Recent, each only with a
+                        // row to show, and what to do when neither has one.
+                        if q == "" {
+                            let saved_rows = desk_saved_rows()
+                            if saved_rows.len() > 0 {
+                                DeskHead{text: "Saved"}
+                                if saved.len() > 100 {
+                                    View{width: Fill height: 32 flow: Right spacing: 6 align: Align{y: 0.5}
+                                        UiButton{text: "Previous" enabled: desk_saved_page > 0 on_click: || desk_saved_page_by(-1)
+                                            draw_text +: {color: if desk_saved_page > 0 { ui_ink } else { mix(ui_ink, ui_sidebar, 0.55) }}}
+                                        UiCaption{width: Fill text: (desk_saved_page * 100 + 1) + "–" + min((desk_saved_page + 1) * 100, saved.len()) + " of " + saved.len()}
+                                        UiButton{text: "Next" enabled: (desk_saved_page + 1) * 100 < saved.len() on_click: || desk_saved_page_by(1)
+                                            draw_text +: {color: if (desk_saved_page + 1) * 100 < saved.len() { ui_ink } else { mix(ui_ink, ui_sidebar, 0.55) }}}
+                                    }
+                                }
+                                for i s in saved_rows { desk_row(s, "star-fill", i, false) }
+                            }
+                            let recent_rows = newest_first(listed(recents))
+                            if recent_rows.len() > 0 {
+                                DeskHead{text: "Recent"}
+                                for i r in recent_rows { desk_row(r, "clock", saved_rows.len() + i, true) }
+                            }
+                            if saved_rows.len() == 0 && recent_rows.len() == 0 {
+                                DeskEmpty{height: desk_list_height() glyph +: {draw_svg +: {svg: ui_icon("pin")}}
+                                    title +: {text: if !places_checked || saved_loading { "Loading Places…" } else if !saved_loaded || !recents_loaded { "Places Unavailable" } else { "No Places Yet" }}
+                                    note +: {text: if !places_checked || saved_loading { "" } else if !saved_loaded || !recents_loaded { "Try Again to load saved and recent places." } else if ui_unified { "Search for a place, or Control-click the map and choose Drop Pin." } else { "Search for a place, or double-click the map to drop a pin." }}
+                                    if places_checked && !saved_loading { UiButton{margin: Inset{top: 8} text: "Search for a Place" on_click: || desk_find()} }
+                                }
+                            }
+                        }
+                    }}
+                }
+                place_panel := ScrollYView{visible: false width: Fill height: Fill flow: Down spacing: 3 padding: Inset{left: 14 right: 14 top: 6 bottom: 14}
+                    View{width: Fill height: Fit flow: Right
+                        pname := Label{padding: Inset{top: 4} width: Fill flow: Flow.Right{wrap: true} text: "" draw_text +: {color: ink text_style: theme.font_bold{font_size: 12.75 line_spacing: 1.2}}}
+                        UiToolIcon{width: 22 icon_walk: Walk{width: 12 height: 12} draw_icon +: {svg: ui_icon("xmark")} on_click: || close_place()}
+                    }
+                    pcat := DeskLine{draw_text +: {text_style: theme.font_regular{font_size: 9.75}}}
+                    GestureView{width: Fill height: Fit flow: Down menu: ["Copy Address" "Copy Coordinates"]
+                        on_menu: |title| { if title == "Copy Address" { desk_copy(place.label) } else { desk_copy(coords_text(place.lat, place.lon)) } }
+                        paddr := DeskLine{}
+                    }
+                    pdist := DeskLine{}
+                    View{width: Fill height: Fit flow: Right spacing: 8 align: Align{y: 0.5} margin: Inset{top: 8 bottom: 10}
+                        UiPrimary{text: "Directions" draw_icon +: {svg: ui_icon("route")} on_click: || show("route")}
+                        save := UiButton{reset_hover_on_click: true text: "Save" draw_icon +: {svg: ui_icon("star")} on_click: || toggle_save()}
+                        saved_on := UiButton{visible: false reset_hover_on_click: true text: "Saved" draw_icon +: {svg: ui_icon("star-fill")} on_click: || toggle_save()}
+                    }
+                    // OpenStreetMap's details, as mapped; long opening hours wrap.
+                    details := View{width: Fill height: Fit flow: Down on_render: || {
+                        DeskHead{padding: Inset{left: 0 top: 4 bottom: 5} text: "Details"}
+                        UiGroup{
+                            let rows = detail_rows()
+                            for i row in rows {
+                                if i > 0 { UiSep{margin: Inset{left: 12}} }
+                                GestureView{width: Fill height: Fit menu: ["Copy"] on_menu: |title| desk_copy(row.text)
+                                    DeskFact{head.text: row.head value.text: row.text}
+                                }
+                            }
+                            if detail.website != "" {
+                                if rows.len() > 0 { UiSep{margin: Inset{left: 12}} }
+                                GestureView{width: Fill height: Fit flow: Down spacing: 1 padding: Inset{left: 12 right: 8 top: 7 bottom: 6}
+                                    menu: ["Open in Browser" "Copy Link"] menu_urls: [detail.website ""]
+                                    on_menu: |title| { if title == "Copy Link" { desk_copy(detail.website) } }
+                                    Label{padding: 0 text: "Website" draw_text +: {color: secondary text_style: theme.font_regular{font_size: 8.25}}}
+                                    DeskSiteLink{text: site_host(detail.website) url: detail.website}
+                                }
+                            }
+                        }
+                    }}
+                }
+                route_panel := View{visible: false width: Fill height: Fill flow: Down
+                    View{width: Fill height: 36 flow: Right align: Align{y: 0.5} spacing: 4 padding: Inset{left: 8 right: 12}
+                        UiPaneTool{icon_walk: Walk{width: 20 height: 20} draw_icon +: {svg: ui_icon("chevron-left") preserve_viewbox: true} on_click: || show("place")}
+                        UiBarTitle{text: "Directions"}
+                    }
+                    route_scroll := ScrollYView{width: Fill height: Fill flow: Down spacing: 10 padding: Inset{left: 14 right: 14 top: 4 bottom: 14}
+                        modes := UiSegments{width: Fill on_render: || {
+                            if mode == "drive" { DeskSegOn{width: Fill text: "Drive"} } else { UiSeg{width: Fill text: "Drive" on_click: || set_mode("drive")} }
+                            if mode == "walk" { DeskSegOn{width: Fill text: "Walk"} } else { UiSeg{width: Fill text: "Walk" on_click: || set_mode("walk")} }
+                            if mode == "bike" { DeskSegOn{width: Fill text: "Bike"} } else { UiSeg{width: Fill text: "Bike" on_click: || set_mode("bike")} }
+                        }}
+                        UiGroup{
+                            DeskStep{
+                                DeskStepHead{text: "From"}
+                                rfrom := DeskStepName{}
+                                route_change := DeskLink{text: "Change" on_click: || find_for("origin")}
+                            }
+                            stop_rows := View{width: Fill height: Fit flow: Down on_render: || {
+                                for i st in stops {
+                                    UiSep{margin: Inset{left: 12}}
+                                    GestureView{width: Fill height: Fit menu: ["Remove Stop"] on_menu: |title| remove_stop(i)
+                                        DeskStep{
+                                            DeskStepHead{text: "Stop"}
+                                            DeskStepName{text: st.name}
+                                            DeskLink{text: "Remove" on_click: || remove_stop(i)}
+                                        }
+                                    }
+                                }
+                                if stops.len() < 2 {
+                                    UiSep{margin: Inset{left: 12}}
+                                    DeskStep{padding: Inset{left: 6 right: 6}
+                                        DeskLink{text: "Add Stop…" draw_icon +: {svg: ui_icon("plus")} on_click: || add_stop()}
+                                    }
+                                }
+                            }}
+                            UiSep{margin: Inset{left: 12}}
+                            DeskStep{
+                                DeskStepHead{text: "To"}
+                                rto := DeskStepName{}
+                            }
+                        }
+                        location_status := UiCaption{visible: false text: "" draw_text +: {color: desk_muted}}
+                        route_list := View{width: Fill height: Fit flow: Down spacing: 8 on_render: || {
+                            if desk_routes_state != "nostart" { desk_fix_failed = false }
+                            if desk_routes_state == "nostart" {
+                                DeskEmpty{height: Fit margin: Inset{top: 18} glyph +: {draw_svg +: {svg: ui_icon("route")}}
+                                    title +: {text: "Choose a Start"}
+                                    note +: {text: "Maps needs to know where this route starts."}
+                                    UiPrimary{margin: Inset{top: 8} text: "Choose a Start…" on_click: || find_for("origin")}
+                                    if desk_can_locate { UiButton{text: if desk_fix_failed { "Try Again" } else { "Use Your Location" } on_click: || desk_use_my_location()} }
+                                }
+                            }
+                            else if desk_routes_state == "failed" {
+                                DeskEmpty{height: Fit margin: Inset{top: 18} glyph +: {draw_svg +: {svg: ui_icon("route")}}
+                                    title +: {text: "No Route Found"}
+                                    note +: {text: "Check your connection, or choose another start."}
+                                    UiButton{margin: Inset{top: 8} reset_hover_on_click: true text: "Try Again" on_click: || desk_route_again()}
+                                }
+                            }
+                            else if desk_routes_state == "ready" {
+                                UiGroup{
+                                    for i r in desk_routes {
+                                        if i > 0 { UiSep{margin: Inset{left: 12}} }
+                                        desk_route_row(r, i)
+                                    }
+                                }
+                                // Every mode travels OSRM's driving route: only the time differs.
+                                if mode != "drive" { UiCaption{text: "Estimated along the driving route." draw_text +: {color: desk_muted}} }
+                                View{width: Fill height: Fit flow: Right align: Align{x: 1.0}
+                                    UiButton{reset_hover_on_click: true text: "Preview Route" on_click: || show("drive")}
+                                }
+                                DeskHead{padding: Inset{left: 0 top: 4 bottom: 1} text: "Steps"}
+                                UiGroup{
+                                    // A Mac's list holds every step in one scroll.
+                                    for i s in desk_steps {
+                                        if ui_unified || i < desk_steps_shown {
+                                            if i > 0 { UiSep{margin: Inset{left: 35}} }
+                                            desk_step_row(s, i)
+                                        }
+                                    }
+                                    if !ui_unified && desk_steps.len() > desk_steps_shown {
+                                        UiSep{margin: Inset{left: 35}}
+                                        DeskStep{padding: Inset{left: 6 right: 6}
+                                            DeskLink{text: "Show " + (desk_steps.len() - desk_steps_shown) + " More Steps" on_click: || {
+                                                desk_steps_shown = desk_steps.len()
+                                                ui.route_list.render()
+                                            }}
+                                        }
+                                    }
+                                }
+                            }
+                            else {
+                                View{width: Fill height: 120 flow: Right align: Align{x: 0.5 y: 0.5} spacing: 8
+                                    LoadingSpinner{width: 16 height: 16 draw_bg +: {color: desk_muted stroke_width: 2.0}}
+                                    Label{clip_y: false padding: 0 text: "Finding Routes…" draw_text +: {color: desk_muted text_style: theme.font_regular{font_size: 9.75}}}
+                                }
+                            }
+                        }}
+                    }
+                }
+            }
+        }
+        UiVSep{}
+    }
+    View{width: Fill height: Fill flow: Down
+        map_bar := UiToolbar{
+            bar_gap := View{visible: false width: 72 height: 1}
+            bar_side_tool := UiPaneTool{icon_walk: Walk{width: 20 height: 20} draw_icon +: {svg: ui_icon("sidebar") preserve_viewbox: true} on_click: || desk_toggle_side()}
+            map_title := UiBarTitle{width: Fill text: "Maps"}
+            map_modes := UiSegments{on_render: || {
+                if desk_tilted { UiSeg{text: "2D" on_click: || desk_set_3d(false)} DeskSegOn{text: "3D"} }
+                else { DeskSegOn{text: "2D"} UiSeg{text: "3D" on_click: || desk_set_3d(true)} }
+            }}
+            style_box := View{width: 104 height: 28 flow: Overlay align: Align{x: 1.0 y: 0.5}
+                style_menu := GestureView{width: Fill height: 28 menu_words_at: 10 on_menu: |title| desk_pop_chosen(title)
+                    style_pop := UiPopup{width: Fill text: if ui_unified { "Explore" } else { "Standard" } on_click: || ui.style_menu.open_menu(desk_style_titles(), desk_pop_title())}
+                }
+                UiPopupMark{}
+            }
+            share_tool := GestureView{width: Fit height: Fit on_menu: |title| { if title == "Copy Link" { desk_copy(desk_share_url()) } }
+                DeskIcon{draw_icon +: {svg: ui_icon("export")} on_click: || desk_open_share()}
+            }
+            // Separate menu templates keep each appearance's cached menu in its own colors.
+            more_tool := View{visible: false width: Fit height: Fit
+                more_light := GestureView{width: Fit height: Fit popup_menu: if ui_unified { DeskLightMenu{} } else { PopupMenu{} } on_menu: |title| desk_more_chosen(title)
+                    UiPaneTool{draw_icon +: {svg: ui_icon("ellipsis") preserve_viewbox: true} on_click: || desk_open_more()}
+                }
+                more_dark := GestureView{visible: false width: Fit height: Fit popup_menu: if ui_unified { DeskDarkMenu{} } else { PopupMenu{} } on_menu: |title| desk_more_chosen(title)
+                    UiPaneTool{draw_icon +: {svg: ui_icon("ellipsis") preserve_viewbox: true} on_click: || desk_open_more()}
+                }
+            }
+            locate_box := View{visible: false width: Fit height: Fit
+                DeskIcon{draw_icon +: {svg: ui_icon("location")} on_click: || locate()}
+            }
+        }
+        // On a drive the column is gone: this one starts at the window's edge, past the lights.
+        drive_tools := UiWindowToolbar{visible: false spacing: 8
+            View{width: Fill height: Fit flow: Down spacing: 1
+                drive_title := UiBarTitle{width: Fill text_overflow: Ellipsis}
+                remain := UiBarSub{width: Fill text_overflow: Ellipsis}
+            }
+            views := UiSegments{on_render: || {
+                if view3d { UiSeg{text: "2D" on_click: || set_view(false)} DeskSegOn{text: "3D"} }
+                else { DeskSegOn{text: "2D"} UiSeg{text: "3D" on_click: || set_view(true)} }
+            }}
+            UiButton{reset_hover_on_click: true text: "End Preview" on_click: || show("route")}
+        }
+        UiSep{}
+        View{width: Fill height: Fill flow: Overlay
+            // The map answers to the keyboard once pressed, and a right press on it has
+            // a menu of its own: what the press was on decides the rows.
+            map_keys := GestureView{width: Fill height: Fill flow: Overlay
+                on_key: |key, cmd, shift| desk_map_key(key, cmd, shift)
+                on_menu: |title| desk_map_menu(title)
+                // As the drive's maps: a tilted map needs a depth buffer of its own, and only over
+                // one does the map's land draw, not the window's background through it.
+                CachedView{width: Fill height: Fill texture_depth: true
+                    browse_box := TouchRoot.browse_box{browse_map +: {on_context: |lat, lon, pin, x, y| desk_map_context(lat, lon, pin, x, y)
+                        on_long_press: |lat, lon| desk_map_double(lat, lon)}}
+                }
+                // Nearer than a phone's: with nothing over it, a window has room for the road ahead.
+                drive_box := TouchRoot.drive_box{drive_3d +: {drive_map +: {zoom: 17.0}}}
+            }
+            // Over the map, they take nothing but their own presses.
+            View{width: Fill height: Fill flow: Down align: Align{x: 0.5 y: 1.0} padding: Inset{left: 12 right: 12 bottom: 86}
+                map_load := DeskFloat{visible: false width: Fill max_width: 360 flow: Down spacing: 6 padding: Inset{left: 12 right: 10 top: 7 bottom: 7}
+                    View{width: Fill height: Fit flow: Right spacing: 8 align: Align{y: 0.5}
+                        map_load_spin := LoadingSpinner{width: 14 height: 14 draw_bg +: {color: desk_muted stroke_width: 2.0}}
+                        map_load_text := Label{clip_y: false padding: 0 width: Fill flow: Flow.Right{wrap: true} text: "" draw_text +: {color: ink text_style: theme.font_regular{font_size: 9}}}
+                    }
+                    View{width: Fill height: Fit flow: Right align: Align{x: 1.0}
+                        map_load_again := UiButton{visible: false height: 24 reset_hover_on_click: true text: "Try Again" on_click: || desk_tiles_again()}
+                    }
+                }
+            }
+            map_tools := View{width: Fill height: Fill flow: Down align: Align{x: 1.0} padding: 12
+                storage_note := DeskFloat{visible: false width: Fill max_width: 320 flow: Down spacing: 6 padding: Inset{left: 10 right: 10 top: 6 bottom: 6}
+                    storage_text := Label{clip_y: false padding: 0 width: Fill flow: Flow.Right{wrap: true} text: ""
+                        draw_text +: {color: ink text_style: theme.font_regular{font_size: 9 line_spacing: 1.2}}}
+                    View{width: Fill height: Fit flow: Right align: Align{x: 1.0}
+                        storage_retry := UiButton{visible: false text: "Try Again" on_click: || retry_storage()}
+                        storage_dismiss := UiButton{text: "Dismiss" on_click: || dismiss_storage_notice()}
+                    }
+                }
+                map_note := DeskFloat{visible: false flow: Right spacing: 8 align: Align{y: 0.5} padding: Inset{left: 10 right: 10 top: 6 bottom: 6}
+                    map_note_text := Label{clip_y: false padding: 0 text: "" draw_text +: {color: ink text_style: theme.font_regular{font_size: 9 line_spacing: 1.3}}}
+                    map_note_again := UiButton{visible: false height: 24 reset_hover_on_click: true text: "Try Again" on_click: || desk_ask_location()}
+                    map_note_settings := UiButton{visible: false height: 24 reset_hover_on_click: true text: "Open System Settings…" on_click: || desk_open_location_settings()}
+                }
+                View{width: Fit height: Fill}
+                View{width: Fill height: Fit flow: Right align: Align{y: 1.0}
+                    map_scale := View{width: Fit height: Fit on_render: || {
+                        DeskFloat{flow: Down spacing: 3 padding: Inset{left: 8 right: 8 top: 5 bottom: 6}
+                            map_scale_words := Label{clip_y: false padding: 0 text: scale_words draw_text +: {color: ink text_style: theme.font_regular{font_size: 8}}}
+                            SolidView{width: scale_points height: 2 draw_bg.color: ink}
+                        }
+                    }}
+                    View{width: Fill height: 1}
+                    map_zoom := DeskFloat{flow: Down
+                        DeskMapTool{draw_icon +: {svg: ui_icon("plus")} on_click: || zoom_map(1)}
+                        UiSep{}
+                        DeskMapTool{draw_icon +: {svg: ui_icon("minus")} on_click: || zoom_map(-1)}
+                    }
+                }
+            }
+            // Over the drive map: the next turn.
+            drive_bar := View{visible: false width: Fill height: Fill flow: Down align: Align{x: 0.5} spacing: 8 padding: 12
+                banner := DeskFloat{visible: false width: 340 flow: Right spacing: 10 padding: Inset{left: 12 right: 14 top: 8 bottom: 8} align: Align{y: 0.5}
+                    banner_turn := View{width: 28 height: 28 on_render: || {
+                        if desk_banner_at >= 0 && desk_banner_at < desk_steps.len() {
+                            UiGlyph{width: 28 height: 28 draw_svg +: {svg: map_icon(desk_turn_icon(desk_steps[desk_banner_at])) preserve_viewbox: true color: desk_link}}
+                        }
+                    }}
+                    View{width: Fill height: Fit flow: Down spacing: 1
+                        ndist := Label{padding: 0 text: "" draw_text +: {color: ink text_style: theme.font_bold{font_size: 11.25}}}
+                        instr := Label{padding: 0 width: Fill flow: Flow.Right{wrap: true} text: "" draw_text +: {color: ink text_style: theme.font_regular{font_size: 9.75}}}
+                    }
+                }
+                storage_drive_note := DeskFloat{visible: false width: Fill max_width: 320 flow: Down spacing: 6 padding: Inset{left: 10 right: 10 top: 6 bottom: 6}
+                    storage_drive_text := Label{clip_y: false padding: 0 width: Fill flow: Flow.Right{wrap: true} text: ""
+                        draw_text +: {color: ink text_style: theme.font_regular{font_size: 9 line_spacing: 1.2}}}
+                    View{width: Fill height: Fit flow: Right align: Align{x: 1.0}
+                        storage_drive_retry := UiButton{visible: false text: "Try Again" on_click: || retry_storage()}
+                        storage_drive_dismiss := UiButton{text: "Dismiss" on_click: || dismiss_storage_notice()}
+                    }
+                }
+            }
+        }
+    }
+}
+
+if ui_desk { DeskRoot{} } else { TouchRoot{} }

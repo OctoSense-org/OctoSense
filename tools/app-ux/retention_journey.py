@@ -6,6 +6,7 @@ from capture import ROOT
 from calendar_journey import CalendarNative
 
 p = argparse.ArgumentParser(description=__doc__)
+p.add_argument('--binary', type=Path, default=ROOT/'target/release/octosense')
 p.add_argument('--output', type=Path, required=True)
 a = p.parse_args()
 out = a.output.resolve(); out.mkdir(parents=True, exist_ok=True)
@@ -23,19 +24,36 @@ for i in range(6):
                   'UiTitle{text: "Workspace '+str(i)+'" draw_text.color: theme.color_text} '
                   'draft := UiField{width: Fill height: 120 is_multiline: true empty_text: "Unsent local draft"}}'}})
 fixture = out/'fixtures.json'; fixture.write_text(json.dumps(fixtures))
-n = CalendarNative(ROOT/'target/release/octosense', ['--test-action', 'glance-fixtures:'+str(fixture)], out, 'retention')
+n = CalendarNative(a.binary.resolve(), ['--test-action', 'glance-fixtures:'+str(fixture)], out, 'retention')
 checks=[]
 def key(c): n.call('k', k='press', c=c, wait=1)
+stacked = [False]
 def open_at(index):
+    mark = len(n.log_path.read_text())
     key('F9'); time.sleep(.2)
     for _ in range(12): key('ArrowUp')
-    for _ in range(index): key('ArrowDown')
+    # The Mac's Notification Center stacks one app's cards: Return on the
+    # stack expands it, and its cards follow its header. The panel logs its
+    # cards once per change, so the last answer stands when it logs none.
+    shown = [l for l in n.log_path.read_text()[mark:].splitlines() if 'glance panel: ' in l and ' card(s) ' in l]
+    if shown: stacked[0] = shown[-1].count('test.uxretention@') == 1
+    steps = index
+    if stacked[0]:
+        key('ReturnKey')
+        n.wait(lambda: 'glance panel: expanded group test.uxretention' in n.log_path.read_text()[mark:])
+        steps += 1
+    for _ in range(steps): key('ArrowDown')
     key('ReturnKey')
-    n.wait(lambda: ('glance sheet: opened test.uxretention/workspace-'+str(index) in n.log_path.read_text() or 'glance workspace: resume cached test.uxretention/workspace-'+str(index) in n.log_path.read_text()))
+    # Since this open: the second round would otherwise match the first's.
+    n.wait(lambda: ('glance sheet: opened test.uxretention/workspace-'+str(index) in n.log_path.read_text()[mark:] or 'glance workspace: resume cached test.uxretention/workspace-'+str(index) in n.log_path.read_text()[mark:]))
     time.sleep(.2)
 try:
     n.wait(lambda: 'glance fixture admission: Ok(6)' in n.log_path.read_text(), timeout=30)
-    key('F9')  # A new publication auto-opens the pointer-only panel; close it first.
+    # A new publication auto-opens the pointer-only panel, except in the Mac's
+    # style (a banner, and the column stays shut); close it first.
+    log = n.log_path.read_text()
+    if log.rfind('wm: glance panel open') > log.rfind('wm: glance panel closed'):
+        key('F9')
     for i in range(6):
         open_at(i)
         n.call('click', x=700, y=265)
