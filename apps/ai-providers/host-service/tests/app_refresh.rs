@@ -11,6 +11,7 @@ fn stale_provider_loads_are_ignored_and_sheet_refresh_uses_the_current_run() {
     };
     let code = format!(r#"
 let ui_desk = false
+let ui_unified = false
 let touch_run = 1
 let load_request = 0
 let providers = []
