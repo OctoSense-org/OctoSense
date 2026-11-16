@@ -168,6 +168,12 @@ acceptance-fixtures = ["app-hub", "octosense-oauth-service/acceptance-fixtures"]
 # The standalone phone shell (cfg `mobile_only`, build.rs; Android and
 # OpenHarmony get it without the flag).
 mobile-only = []
+# A phone build of the shell alone, without the app platform a phone target
+# otherwise carries (cfg `app_platform`, build.rs). The app platform reads
+# framework APIs the makepad this branch pins does not have yet (Splash
+# storage, guarded file dialogs, audio input leases, thread lanes); until it
+# has them this is the phone build that compiles.
+shell-only = []
 # The octos kernel as a shell service (octosense-kernel, via octosense-ai-host).
 octos-core = ["octosense-ai-host/octos-core"]
 # One `app-<id>` per native app (native-apps.json), and `mobile-apps`: the

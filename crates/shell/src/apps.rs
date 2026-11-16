@@ -60,7 +60,7 @@ fn linked_modules() -> Vec<&'static dyn AppModule> {
     let mut out: Vec<&'static dyn AppModule> = Vec::new();
     crate::native_apps::link(&mut out);
     out.extend(crate::ext::linked_modules());
-    #[cfg(all(unix, any(feature = "app-hub", native_mobile)))]
+    #[cfg(all(unix, app_platform))]
     if cfg!(dev_mode) {
         out.push(&crate::studio::module::STUDIO_MODULE);
     }
@@ -90,7 +90,7 @@ pub fn check_script_app_id(manifest_id: &str) -> Result<(), String> {
             return Err(format!("{manifest_id} takes the native app {name:?}'s name, which no script app may use"));
         }
     }
-    #[cfg(any(feature = "app-hub", native_mobile))]
+    #[cfg(app_platform)]
     octosense_app_policy::check_reserved_id(manifest_id)?;
     Ok(())
 }
@@ -112,14 +112,14 @@ pub fn card_manifest_id(app: &crate::clients::AppDef) -> Option<&str> {
 /// not parse (the Card runner then refuses it, or opens it as before). The
 /// hint grants nothing; the desk clamps it
 /// (`desktop_layout::preferred_size`).
-#[cfg(any(feature = "app-hub", native_mobile))]
+#[cfg(app_platform)]
 pub fn window_hint(cx: &mut makepad_widgets::Cx, app: &crate::clients::AppDef) -> Option<(f64, f64)> {
     window_hint_in(&octosense_app_hub_app::data_root(cx), app)
 }
 
 /// [`window_hint`] under App Hub's apps root `root`, the one the Card runner
 /// opens its apps from.
-#[cfg(any(feature = "app-hub", native_mobile))]
+#[cfg(app_platform)]
 fn window_hint_in(root: &Path, app: &crate::clients::AppDef) -> Option<(f64, f64)> {
     let manifest_id = card_manifest_id(app)?;
     let system = octosense_app_hub_app::system_apps().into_iter().find(|system| system.id == manifest_id);
@@ -133,7 +133,7 @@ fn window_hint_in(root: &Path, app: &crate::clients::AppDef) -> Option<(f64, f64
 }
 
 /// Without App Hub there is no script app to ask.
-#[cfg(not(any(feature = "app-hub", native_mobile)))]
+#[cfg(not(app_platform))]
 pub fn window_hint(_cx: &mut makepad_widgets::Cx, _app: &crate::clients::AppDef) -> Option<(f64, f64)> {
     None
 }
@@ -162,7 +162,7 @@ fn card_row(id: String, label: String, args: Vec<String>) -> crate::clients::App
 /// precedence over catalog rows of the same id (`clients::registry`); a
 /// linked native module of the same id would win.
 pub fn system_card_apps() -> Vec<crate::clients::AppDef> {
-    #[cfg(any(feature = "app-hub", native_mobile))]
+    #[cfg(app_platform)]
     {
         register_host_services();
         let native: Vec<&str> = linked_modules().iter().map(|m| m.id()).collect();
@@ -221,7 +221,7 @@ pub(crate) mod test_system_apps {
 /// The `llm` service (AI providers, `os.ai-providers`) is the assistant's
 /// and registers with the kernel in `ai_host::start`, at startup, with the
 /// `model` service (`model.complete`, ADR 0002) over the same providers.
-#[cfg(any(feature = "app-hub", native_mobile))]
+#[cfg(app_platform)]
 pub fn register_mail_services() {
     // Admission is separate from the manifest request, relay grant and
     // owner's shareable declaration. Offer only Mail's reviewed dependencies.
@@ -252,7 +252,7 @@ pub fn register_mail_services() {
     });
 }
 
-#[cfg(any(feature = "app-hub", native_mobile))]
+#[cfg(app_platform)]
 /// The `model` service's grant: an app as itself, by its host-side
 /// admission, and the system agent through the studio's image tool while
 /// developer mode covers it (ADR 0006 slice 2).
@@ -264,7 +264,7 @@ pub(crate) fn model_grant(app: &str, host_dir: &std::path::Path) -> bool {
 /// The budget scope of a `model` call: the app's contained account, and
 /// the device for the system agent's studio calls, in a build that has the
 /// studio.
-#[cfg(any(feature = "app-hub", native_mobile))]
+#[cfg(app_platform)]
 pub(crate) fn model_scope(app: &str) -> Option<String> {
     if crate::host_tools::studio::SUPPORTED && app == crate::host_tools::SYSTEM {
         return Some("device".into());
@@ -273,7 +273,7 @@ pub(crate) fn model_scope(app: &str) -> Option<String> {
         .map(|account| crate::app_storage::account_hash(&account))
 }
 
-#[cfg(any(feature = "app-hub", native_mobile))]
+#[cfg(app_platform)]
 pub fn register_host_services() {
     register_mail_services();
     static ONCE: std::sync::Once = std::sync::Once::new();
@@ -449,7 +449,7 @@ pub(crate) fn register_android_backend_fixture() -> Result<(), String> {
 
 /// Calendar is a granted dependency of Mail even in a headless background job.
 /// Register its service without creating a Calendar peer or opening an app.
-#[cfg(any(feature = "app-hub", native_mobile))]
+#[cfg(app_platform)]
 fn register_calendar_services() {
     static ONCE: std::sync::Once = std::sync::Once::new();
     ONCE.call_once(|| {
@@ -465,7 +465,7 @@ fn register_calendar_services() {
 /// service (`<apps root>/.host`), so the timer starts now rather than at
 /// News's first request. Without an apps root yet it attaches at that
 /// request instead.
-#[cfg(any(feature = "app-hub", native_mobile))]
+#[cfg(app_platform)]
 fn register_news() {
     let mut options = octosense_news_service::Options::default()
         .on_fetch(|report| {
@@ -538,7 +538,7 @@ fn octos_of(capabilities: &serde_json::Value) -> Vec<String> {
     capabilities.as_array().into_iter().flatten().filter_map(|c| c.as_str()).filter(|c| crate::ai_host::app_peers::OCTOS_SERVICES.contains(c)).map(str::to_string).collect()
 }
 
-#[cfg(any(feature = "app-hub", native_mobile))]
+#[cfg(app_platform)]
 fn script_agent_apps() -> Vec<AgentApp> {
     // Read once per data root and App Hub generation (an install or update
     // bumps it): the contained service asks on every call.
@@ -557,7 +557,7 @@ fn script_agent_apps() -> Vec<AgentApp> {
     apps
 }
 
-#[cfg(any(feature = "app-hub", native_mobile))]
+#[cfg(app_platform)]
 fn read_script_agent_apps(root: &Path) -> Vec<AgentApp> {
     let root = root.to_path_buf();
     let mut out = Vec::new();
@@ -575,7 +575,7 @@ fn read_script_agent_apps(root: &Path) -> Vec<AgentApp> {
     out
 }
 
-#[cfg(not(any(feature = "app-hub", native_mobile)))]
+#[cfg(not(app_platform))]
 fn script_agent_apps() -> Vec<AgentApp> {
     Vec::new()
 }
@@ -597,14 +597,14 @@ pub fn script_agent_app(manifest_path: &Path, id: &str, name: &str) -> Option<Ag
 }
 
 /// Whether the bundle beside a manifest ships an agent App Hub admits.
-#[cfg(any(feature = "app-hub", native_mobile))]
+#[cfg(app_platform)]
 fn bundle_ships_agent(bundle: &Path, manifest: &str) -> bool {
     let Ok(parsed) = octosense_app_contract::AppManifest::parse(manifest) else { return false };
     matches!(octosense_app_policy::AgentBundle::load(bundle, &parsed), Ok(Some(_)))
 }
 
 /// Without App Hub nothing admits a bundle: its `tools.json` is enough.
-#[cfg(not(any(feature = "app-hub", native_mobile)))]
+#[cfg(not(app_platform))]
 fn bundle_ships_agent(bundle: &Path, _manifest: &str) -> bool {
     bundle.join("tools.json").is_file()
 }
@@ -615,7 +615,7 @@ fn bundle_ships_agent(bundle: &Path, _manifest: &str) -> bool {
 /// bumps the generation (`App::installed_app_changed`), so it shows at once
 /// without the install directory being read on every frame.
 pub fn installed_card_apps() -> Vec<crate::clients::AppDef> {
-    #[cfg(any(feature = "app-hub", native_mobile))]
+    #[cfg(app_platform)]
     if let Some(root) = octosense_app_hub_app::data_root_if_set() {
         let key = (root.clone(), octosense_app_hub_app::icons::generation());
         return cached_installed_apps(key, || {
@@ -628,12 +628,12 @@ pub fn installed_card_apps() -> Vec<crate::clients::AppDef> {
     Vec::new()
 }
 
-#[cfg(any(feature = "app-hub", native_mobile))]
+#[cfg(app_platform)]
 thread_local! {
     static INSTALLED: std::cell::RefCell<Option<((std::path::PathBuf, u64), Vec<crate::clients::AppDef>)>> = const { std::cell::RefCell::new(None) };
 }
 
-#[cfg(any(feature = "app-hub", native_mobile))]
+#[cfg(app_platform)]
 fn cached_installed_apps(key: (std::path::PathBuf, u64), load: impl FnOnce() -> Vec<crate::clients::AppDef>) -> Vec<crate::clients::AppDef> {
     INSTALLED.with(|slot| {
         let mut slot = slot.borrow_mut();
@@ -653,16 +653,16 @@ pub fn studio_apps() -> Vec<crate::clients::AppDef> {
     if !cfg!(dev_mode) {
         return Vec::new();
     }
-    #[cfg(all(unix, any(feature = "app-hub", native_mobile)))]
+    #[cfg(all(unix, app_platform))]
     { return crate::host_tools::studio_bundles::installed_apps().into_iter()
         .map(|bundle| studio_row(bundle.id.clone(), bundle.name.clone(), Vec::new())).collect(); }
-    #[cfg(not(all(unix, any(feature = "app-hub", native_mobile))))]
+    #[cfg(not(all(unix, app_platform)))]
     { Vec::new() }
 }
 fn is_studio_app(id: &str) -> bool {
     id.starts_with("dev.studio.") && studio_apps().iter().any(|app| app.id == id)
 }
-#[cfg(all(unix, any(feature = "app-hub", native_mobile)))]
+#[cfg(all(unix, app_platform))]
 pub fn studio_row(id: String, label: String, args: Vec<String>) -> crate::clients::AppDef {
     crate::clients::AppDef { id, label, bin: "studio-app".into(), package: String::new(),
         dir: String::new(), manifest: None, args, policy: crate::clients::LaunchPolicy::OrFocus, target_dir: None }
@@ -962,7 +962,7 @@ mod tests {
     /// A fresh host must accept a compatible app before either App Hub or
     /// CardModule creates its first VM. Otherwise installs or cold launches
     /// fail until another app happens to register the same runtime ABI.
-    #[cfg(any(feature = "app-hub", native_mobile))]
+    #[cfg(app_platform)]
     #[test]
     fn cold_host_advertises_the_installed_card_contract() {
         if crate::module_host::run_with_isolated_module_data(
@@ -1105,13 +1105,13 @@ mod tests {
         for app in crate::native_apps::APPS {
             assert!(check_script_app_id(app.id).is_err(), "{}", app.id);
             assert!(check_script_app_id(&format!("com.example.{}", app.id)).is_err(), "{}", app.id);
-            #[cfg(any(feature = "app-hub", native_mobile))]
+            #[cfg(app_platform)]
             assert!(octosense_app_policy::RESERVED_NAMES.contains(&app.id), "App Hub's RESERVED_NAMES lacks the native app {}", app.id);
         }
         for ok in ["os.news", "org.example.timer", "dev.example.news", "org.example.terminal-notes"] {
             assert_eq!(check_script_app_id(ok), Ok(()), "{ok}");
         }
-        #[cfg(any(feature = "app-hub", native_mobile))]
+        #[cfg(app_platform)]
         for host in ["system", "toolbox", "com.example.dev"] {
             assert!(check_script_app_id(host).is_err(), "{host}");
         }
@@ -1120,7 +1120,7 @@ mod tests {
     /// The system apps this build's system-apps.json selects, in its order:
     /// the desktop and the phone pack different sets (no Camera on the
     /// desktop), chosen by `OCTOSENSE_SYSTEM_APPS` in `.cargo/config.toml`.
-    #[cfg(any(feature = "app-hub", native_mobile))]
+    #[cfg(app_platform)]
     fn system_app_ids() -> Vec<&'static str> {
         let text = include_str!(env!("OCTOSENSE_SYSTEM_APPS"));
         let json: serde_json::Value = serde_json::from_str(text).expect("system-apps.json parses");
@@ -1243,7 +1243,7 @@ mod tests {
         assert!(!matches_running_app(&system, "mailer", "Mail"), "a Card app focuses only itself");
     }
 
-    #[cfg(all(unix, any(feature = "app-hub", native_mobile)))]
+    #[cfg(all(unix, app_platform))]
     #[test]
     fn developer_apps_require_admitted_instances_and_exact_launch_identity() {
         let module: &'static dyn AppModule = &crate::studio::module::STUDIO_MODULE;
@@ -1261,7 +1261,7 @@ mod tests {
     /// The system apps this build packs (system-apps.json): each a Card app
     /// under its short id unless a native module of that id is linked, and
     /// each bundle registered with the runner.
-    #[cfg(any(feature = "app-hub", native_mobile))]
+    #[cfg(app_platform)]
     #[test]
     fn the_system_apps_ship_as_card_apps() {
         let registry = AppRegistry::default();
@@ -1407,7 +1407,7 @@ mod tests {
 
     #[test]
     fn module_open_names_the_card_app_and_opens_others_empty() {
-        #[cfg(any(feature = "app-hub", native_mobile))]
+        #[cfg(app_platform)]
         {
             let card: &'static dyn AppModule = &octosense_app_hub_app::CARD_MODULE;
             let system = card_row("mail".into(), "Mail".into(), vec![format!("{SYSTEM_ARG}os.mail")]);
@@ -1423,7 +1423,7 @@ mod tests {
         }
     }
 
-    #[cfg(any(feature = "app-hub", native_mobile))]
+    #[cfg(app_platform)]
     #[test]
     fn installed_apps_are_read_once_per_data_root_and_hub_generation() {
         let reads = std::cell::Cell::new(0);

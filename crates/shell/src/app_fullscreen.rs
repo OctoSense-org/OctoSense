@@ -488,10 +488,10 @@ impl Presenter {
     }
 }
 
-#[cfg(any(feature = "app-hub", native_mobile))]
+#[cfg(app_platform)]
 pub use service::{register, take_requests, Request};
 
-#[cfg(any(feature = "app-hub", native_mobile))]
+#[cfg(app_platform)]
 mod service {
     use super::*;
     use makepad_widgets::makepad_platform::SignalToUI;
@@ -573,7 +573,7 @@ impl App {
 
     /// The `window.fullscreen` requests waiting, answered: after the event
     /// that pumped them, on the UI thread.
-    #[cfg(any(feature = "app-hub", native_mobile))]
+    #[cfg(app_platform)]
     pub(crate) fn serve_window_requests(&mut self, cx: &mut Cx) {
         for request in take_requests() {
             if !request.reply.is_pending() {
@@ -596,7 +596,7 @@ impl App {
         }
     }
 
-    #[cfg(any(feature = "app-hub", native_mobile))]
+    #[cfg(app_platform)]
     fn window_request(&mut self, cx: &mut Cx, request: &Request) -> Result<Value, String> {
         let mobile = self.state.as_ref().is_none_or(|s| s.style.target.mobile());
         let window = if mobile { None } else { self.window_of(cx, &request.app, request.isolate) };

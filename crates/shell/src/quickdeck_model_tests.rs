@@ -387,7 +387,7 @@ fn move_earlier_and_later_put_the_chosen_slides_next_to_their_neighbours() {
 /// The designs are drawn at 1536 x 1024, and the shipped manifest asks the
 /// desktop to open Quick Deck's window at that size: App Hub's `window`,
 /// which needs `schema_minor` 1. The desk clamps it (`desktop_layout`).
-#[cfg(any(feature = "app-hub", native_mobile))]
+#[cfg(app_platform)]
 #[test]
 fn the_shipped_manifest_asks_for_the_designs_window_size() {
     let manifest = octosense_app_contract::AppManifest::parse(include_str!("../../../apps/quickdeck/bundle/manifest.json")).unwrap();

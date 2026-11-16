@@ -70,11 +70,11 @@ pub fn trusted_user_gesture() -> bool {
 }
 
 pub fn generation() -> u64 {
-    #[cfg(any(feature = "app-hub", native_mobile))]
+    #[cfg(app_platform)]
     {
         octosense_mail_service::drafts::generation() + UI_GENERATION.load(Ordering::Relaxed)
     }
-    #[cfg(not(any(feature = "app-hub", native_mobile)))]
+    #[cfg(not(app_platform))]
     {
         UI_GENERATION.load(Ordering::Relaxed)
     }
@@ -87,7 +87,7 @@ pub(crate) fn read(binding: &Binding) -> Result<Value, String> {
             "The Mail account changed. Reopen this card under its original account.".into(),
         );
     }
-    #[cfg(any(feature = "app-hub", native_mobile))]
+    #[cfg(app_platform)]
     {
         let value = octosense_mail_service::drafts::read(
             &host_dir()?,
@@ -102,7 +102,7 @@ pub(crate) fn read(binding: &Binding) -> Result<Value, String> {
         }
         Ok(value)
     }
-    #[cfg(not(any(feature = "app-hub", native_mobile)))]
+    #[cfg(not(app_platform))]
     {
         Err("Mail is unavailable in this packaging".into())
     }
@@ -247,7 +247,7 @@ fn invalidate_draft_review(binding: &Binding) {
         .unwrap()
         .entry(binding.draft_key())
         .or_default() += 1;
-    #[cfg(any(feature = "app-hub", native_mobile))]
+    #[cfg(app_platform)]
     {
         // A queued view has not captured its generation yet. Remove its token
         // now, including reviews queued by a different card of the same draft.
@@ -369,7 +369,7 @@ impl Session {
         let dirty = unsaved().lock().unwrap().get(&self.binding.draft_key()).cloned();
         let Some(dirty) = dirty else { return Ok(()); };
         if !account_valid(&self.binding.account) { return Err("The Mail account changed; your edits are retained".into()); }
-        #[cfg(any(feature = "app-hub", native_mobile))]
+        #[cfg(app_platform)]
         {
             let b = &self.binding;
             match octosense_mail_service::drafts::update(&host_dir()?, &b.publisher, &b.account, &b.draft_id, dirty.revision, &Value::Object(dirty.fields)) {
@@ -388,7 +388,7 @@ impl Session {
                 }
             }
         }
-        #[cfg(not(any(feature = "app-hub", native_mobile)))]
+        #[cfg(not(app_platform))]
         { let _ = dirty; Err("Mail is unavailable".into()) }
     }
     /// Explicit conflict resolution from a native control, never an agent.
@@ -424,7 +424,7 @@ impl Session {
     /// seeding chat, generated NAV, and background turns never mint one.
     pub fn chat_edit_binding(&self) -> Result<crate::glance_chat::ContextBinding, String> {
         let mut binding = self.chat_binding()?;
-        #[cfg(any(feature = "app-hub", native_mobile))]
+        #[cfg(app_platform)]
         if matches!(binding.draft["status"].as_str(), Some("draft" | "awaiting_approval")) {
             binding.draft["edit_token"] = json!(octosense_mail_service::drafts::issue_chat_edit(
                 &host_dir()?, &self.binding.publisher, &self.binding.account, &self.binding.draft_id,
@@ -452,7 +452,7 @@ impl Session {
         if !account_valid(&self.binding.account) {
             return Err("The Mail account changed".into());
         }
-        #[cfg(any(feature = "app-hub", native_mobile))]
+        #[cfg(app_platform)]
         {
             let dir = host_dir()?;
             let b = &self.binding;
@@ -538,7 +538,7 @@ impl Session {
             makepad_widgets::makepad_platform::SignalToUI::set_ui_signal();
             Ok(())
         }
-        #[cfg(not(any(feature = "app-hub", native_mobile)))]
+        #[cfg(not(app_platform))]
         {
             let _ = (write, origin, from_field);
             Err("Mail is unavailable in this packaging".into())
@@ -555,7 +555,7 @@ impl ChatEditLease {
 }
 impl Drop for ChatEditLease {
     fn drop(&mut self) {
-        #[cfg(any(feature = "app-hub", native_mobile))]
+        #[cfg(app_platform)]
         if let Some(token) = &self.0 { octosense_mail_service::drafts::revoke_chat_edit(token); }
     }
 }
@@ -575,15 +575,15 @@ pub fn seed_publication(binding: &Binding, source: &str, data: &Value) -> Result
     )
 }
 
-#[cfg(any(feature = "app-hub", native_mobile))]
+#[cfg(app_platform)]
 type Review = octosense_mail_service::drafts::Review;
 
-#[cfg(any(feature = "app-hub", native_mobile))]
+#[cfg(app_platform)]
 fn reviews() -> &'static Mutex<Vec<(String, Review)>> {
     static REVIEWS: OnceLock<Mutex<Vec<(String, Review)>>> = OnceLock::new();
     REVIEWS.get_or_init(Default::default)
 }
-#[cfg(any(feature = "app-hub", native_mobile))]
+#[cfg(app_platform)]
 pub(crate) fn queue_review(key: String, review: Review) {
     // A replacement may refer to the SAME deduplicated operation. Revoke its
     // old UI capability without cancelling the newly prepared operation.
@@ -598,18 +598,18 @@ pub(crate) fn queue_review(key: String, review: Review) {
     reviews().lock().unwrap().push((key, review));
     makepad_widgets::makepad_platform::SignalToUI::set_ui_signal();
 }
-#[cfg(any(feature = "app-hub", native_mobile))]
+#[cfg(app_platform)]
 pub fn take_review(key: &str) -> Option<Review> {
     let mut queue = reviews().lock().unwrap();
     let at = queue.iter().position(|(k, _)| k == key)?;
     Some(queue.remove(at).1)
 }
 pub fn requested_card() -> Option<String> {
-    #[cfg(any(feature = "app-hub", native_mobile))]
+    #[cfg(app_platform)]
     {
         reviews().lock().unwrap().last().map(|(key, _)| key.clone())
     }
-    #[cfg(not(any(feature = "app-hub", native_mobile)))]
+    #[cfg(not(app_platform))]
     {
         None
     }
@@ -618,13 +618,13 @@ pub fn cancel_for(key: &str) {
     let mut generations = review_generations().lock().unwrap();
     *generations.entry(key.to_string()).or_default() += 1;
     drop(generations);
-    #[cfg(any(feature = "app-hub", native_mobile))]
+    #[cfg(app_platform)]
     {
         if let Some(review) = take_review(key) {
             let _ = octosense_mail_service::drafts::cancel_review(review);
         }
     }
-    #[cfg(not(any(feature = "app-hub", native_mobile)))]
+    #[cfg(not(app_platform))]
     {
         let _ = key;
     }
@@ -711,7 +711,7 @@ pub fn accept_suggestion(binding: &Binding, id: &str, revision: u64) -> Result<(
         return Err("Resolve unsaved edits before accepting an AI suggestion".into());
     }
     read(binding)?;
-    #[cfg(any(feature = "app-hub", native_mobile))]
+    #[cfg(app_platform)]
     {
         invalidate_draft_review(binding);
         octosense_mail_service::drafts::accept_suggestion(
@@ -726,7 +726,7 @@ pub fn accept_suggestion(binding: &Binding, id: &str, revision: u64) -> Result<(
         action_result(binding, &Ok(()));
         Ok(())
     }
-    #[cfg(not(any(feature = "app-hub", native_mobile)))]
+    #[cfg(not(app_platform))]
     {
         let _ = (id, revision);
         Err("Mail is unavailable".into())
@@ -739,7 +739,7 @@ pub fn request_review(binding: &Binding) -> Result<(), String> {
     }
     let value = read(binding)?;
     let revision = value["revision"].as_u64().ok_or("Invalid draft revision")?;
-    #[cfg(any(feature = "app-hub", native_mobile))]
+    #[cfg(app_platform)]
     {
         let review = octosense_mail_service::drafts::prepare_review(
             &host_dir()?,
@@ -752,7 +752,7 @@ pub fn request_review(binding: &Binding) -> Result<(), String> {
         action_result(binding, &Ok(()));
         Ok(())
     }
-    #[cfg(not(any(feature = "app-hub", native_mobile)))]
+    #[cfg(not(app_platform))]
     {
         let _ = revision;
         Err("Mail is unavailable".into())

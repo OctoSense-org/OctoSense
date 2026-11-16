@@ -41,15 +41,15 @@ pub mod files;
 pub mod relay;
 pub mod schema;
 pub mod studio;
-#[cfg(all(unix, any(feature = "app-hub", native_mobile)))]
+#[cfg(all(unix, app_platform))]
 pub mod studio_bundles;
-#[cfg(all(unix, any(feature = "app-hub", native_mobile)))]
+#[cfg(all(unix, app_platform))]
 pub mod studio_image;
-#[cfg(any(feature = "app-hub", native_mobile))]
+#[cfg(app_platform)]
 pub(crate) mod admission;
 #[cfg(feature = "toolbox-peers")]
 pub mod toolbox;
-#[cfg(any(feature = "app-hub", native_mobile))]
+#[cfg(app_platform)]
 pub mod script_apps;
 #[cfg(feature = "app-hub")]
 pub mod engines;
@@ -58,7 +58,7 @@ pub mod areas;
 
 #[cfg(test)]
 mod tests;
-#[cfg(all(test, kernel, any(feature = "app-hub", native_mobile)))]
+#[cfg(all(test, kernel, app_platform))]
 mod real_kernel_tests;
 #[cfg(all(test, kernel, feature = "app-hub"))]
 mod scenario_tests;
@@ -124,14 +124,14 @@ pub fn pump() {
     // A headless Android job and a live window share the same relay.
     static PUMP: std::sync::Mutex<()> = std::sync::Mutex::new(());
     let Ok(_pump) = PUMP.try_lock() else { return };
-    #[cfg(any(feature = "app-hub", native_mobile))]
+    #[cfg(app_platform)]
     script_apps::poll();
     // Components' calls to their apps' host services (ADR 0014).
     #[cfg(wasm_functions)]
     crate::wasm_service::pump_host_calls();
     // The studio's image generations (ADR 0006 slice 2): `model.image`
     // calls under the calling agent's identity.
-    #[cfg(all(unix, any(feature = "app-hub", native_mobile)))]
+    #[cfg(all(unix, app_platform))]
     studio_image::pump();
     for _ in 0..8 {
         let events = std::mem::take(&mut *INBOX.lock().unwrap_or_else(|e| e.into_inner()));
@@ -289,16 +289,16 @@ pub struct ShellToolHost;
 
 impl ToolHost for ShellToolHost {
     fn admit_turn(&self, app_id: &str, _account: &str) -> Result<(), String> {
-        #[cfg(any(feature = "app-hub", native_mobile))]
+        #[cfg(app_platform)]
         admission::check(app_of_peer(app_id))?;
-        #[cfg(not(any(feature = "app-hub", native_mobile)))]
+        #[cfg(not(app_platform))]
         let _ = app_id;
         Ok(())
     }
 
     fn declarations(&self, app_id: &str, account: &str) -> Result<Vec<Value>, String> {
         let app = app_of_peer(app_id).to_string();
-        #[cfg(any(feature = "app-hub", native_mobile))]
+        #[cfg(app_platform)]
         admission::check(&app)?;
         ensure_loaded(app_id);
         let dev = crate::dev_mode::grants_all(&app);
@@ -348,7 +348,7 @@ impl ToolHost for ShellToolHost {
 
     fn admit_input(&self, app_id: &str, account: &str, input: &PeerInput) -> Result<(), InputRefusal> {
         let app = app_of_peer(app_id);
-        #[cfg(any(feature = "app-hub", native_mobile))]
+        #[cfg(app_platform)]
         admission::check(app).map_err(InputRefusal::Other)?;
         if suspended(app_id, Some(account)) {
             return Err(InputRefusal::SignedOut);
@@ -499,7 +499,7 @@ pub(crate) fn ensure_loaded(app_id: &str) {
     if with_relay(|r| r.catalog.knows(app)) {
         return;
     }
-    #[cfg(any(feature = "app-hub", native_mobile))]
+    #[cfg(app_platform)]
     if let Err(e) = script_apps::load(app) {
         makepad_widgets::log!("host tools: {app}'s tools: {e}");
     }
@@ -508,11 +508,11 @@ pub(crate) fn ensure_loaded(app_id: &str) {
 /// App Hub installed or updated a script app: its tools, grants and
 /// kernel tools again (the next registration of its peer takes them).
 pub fn script_app_installed(app: &str) {
-    #[cfg(any(feature = "app-hub", native_mobile))]
+    #[cfg(app_platform)]
     if let Err(e) = script_apps::load(app) {
         makepad_widgets::log!("host tools: {app}'s tools: {e}");
     }
-    #[cfg(not(any(feature = "app-hub", native_mobile)))]
+    #[cfg(not(app_platform))]
     let _ = app;
 }
 
@@ -652,9 +652,9 @@ struct ShellEnv;
 
 impl relay::Env for ShellEnv {
     fn admitted(&self, app: &str) -> Result<(), String> {
-        #[cfg(any(feature = "app-hub", native_mobile))]
+        #[cfg(app_platform)]
         { admission::check(app) }
-        #[cfg(not(any(feature = "app-hub", native_mobile)))]
+        #[cfg(not(app_platform))]
         { let _ = app; Ok(()) }
     }
     fn consent(&self, app: &str) -> bool {

@@ -29,14 +29,14 @@ pub const APP_TOOLS: &[&str] = &[
 pub fn is_tool(name: &str) -> bool {
     cfg!(dev_mode)
         && (name == RENDER
-            || cfg!(all(unix, any(feature = "app-hub", native_mobile))) && APP_TOOLS.contains(&name))
+            || cfg!(all(unix, app_platform)) && APP_TOOLS.contains(&name))
 }
 pub fn declarations(app: &str) -> Vec<Value> {
     if !cfg!(dev_mode) {
         return Vec::new();
     }
     let mut out = vec![declaration(app)];
-    if cfg!(all(unix, any(feature = "app-hub", native_mobile))) {
+    if cfg!(all(unix, app_platform)) {
         out.extend(
             APP_TOOLS
                 .iter()
@@ -58,7 +58,7 @@ pub fn granted_to(app: &str, tool: &str) -> bool {
 }
 /// The declaration of one of [`APP_TOOLS`].
 fn tool_declaration(app: &str, name: &str) -> Value {
-    #[cfg(all(unix, any(feature = "app-hub", native_mobile)))]
+    #[cfg(all(unix, app_platform))]
     if name == super::studio_image::TOOL {
         return super::studio_image::declaration(app);
     }
@@ -115,7 +115,7 @@ pub mod skill {
     ];
     /// Whether this build offers the skill: the studio with its bundle
     /// tools (the same condition as [`super::declarations`]'s second half).
-    pub const OFFERED: bool = super::SUPPORTED && cfg!(any(feature = "app-hub", native_mobile));
+    pub const OFFERED: bool = super::SUPPORTED && cfg!(app_platform);
 }
 pub const SOURCE_MAX: usize = 16 * 1024;
 pub const DATA_MAX: usize = 32 * 1024;
@@ -218,7 +218,7 @@ impl ToolExecutor for StudioExecutor {
             flag.store(true, Ordering::SeqCst);
         }
         crate::studio::cancel(id);
-        #[cfg(all(unix, any(feature = "app-hub", native_mobile)))]
+        #[cfg(all(unix, app_platform))]
         crate::studio::apps::cancel(id);
     }
 }
@@ -284,7 +284,7 @@ impl StudioExecutor {
         }
         let running = self.running.clone();
         std::thread::spawn(move || {
-            #[cfg(all(unix, any(feature = "app-hub", native_mobile)))]
+            #[cfg(all(unix, app_platform))]
             let outcome = if call.name == super::studio_image::TOOL {
                 super::studio_image::execute(&call, &root, &app, &tag, &flag, &reply)
             } else if call.name != RENDER {
@@ -292,7 +292,7 @@ impl StudioExecutor {
             } else {
                 render_call(&call, &root, &app, &tag, &flag, &reply)
             };
-            #[cfg(not(all(unix, any(feature = "app-hub", native_mobile))))]
+            #[cfg(not(all(unix, app_platform)))]
             let outcome = render_call(&call, &root, &app, &tag, &flag, &reply);
             reply.finish(outcome);
             running

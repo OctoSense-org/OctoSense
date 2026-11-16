@@ -40,9 +40,9 @@ fn env(lane: &str, turn: &str, cursor: u64, kind: &str, data: Value) -> Value {
 fn news_is_listed_as_having_an_agent() {
     let dir = std::env::temp_dir().join(format!("octosense-ask-apps-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
-    #[cfg(any(feature = "app-hub", native_mobile))]
+    #[cfg(app_platform)]
     let news = crate::host_tools::script_apps::tests::stamped_bundle("news", "ask", |_, _| {});
-    #[cfg(not(any(feature = "app-hub", native_mobile)))]
+    #[cfg(not(app_platform))]
     let news = {
         let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../apps/news/bundle");
         let d = dir.join("news");
@@ -459,9 +459,9 @@ fn wait(what: &str, done: impl Fn() -> bool) {
 /// Replace only the peer transport. Each child gets a real signed catalog,
 /// installed bundle and trust anchor without mutating the parallel suite's
 /// process-wide app registry, data root or environment.
-#[cfg(any(feature = "app-hub", native_mobile))]
+#[cfg(app_platform)]
 struct AgentFixture(std::path::PathBuf);
-#[cfg(any(feature = "app-hub", native_mobile))]
+#[cfg(app_platform)]
 impl AgentFixture {
     fn run_isolated(apps: &[&str], test: &str) -> bool {
         if std::env::var("OCTOSENSE_CHAT_FIXTURE_CHILD").as_deref() == Ok(test) {
@@ -527,7 +527,7 @@ impl AgentFixture {
         Self(bundle)
     }
 }
-#[cfg(any(feature = "app-hub", native_mobile))]
+#[cfg(app_platform)]
 impl Drop for AgentFixture {
     fn drop(&mut self) {
         let _ = std::fs::remove_dir_all(&self.0);
@@ -544,10 +544,10 @@ impl Drop for AgentFixture {
 fn the_panel_opens_a_sharing_context_and_sends_person_turns_there() {
     const APP: &str = "org.example.asktest";
     const OTHER: &str = "org.example.asktest2";
-    #[cfg(any(feature = "app-hub", native_mobile))]
+    #[cfg(app_platform)]
     if AgentFixture::run_isolated(&[APP, OTHER], "app_chat::tests::the_panel_opens_a_sharing_context_and_sends_person_turns_there") { return; }
     let _factory = crate::agents::FACTORY_TESTS.lock().unwrap_or_else(|e| e.into_inner());
-    #[cfg(any(feature = "app-hub", native_mobile))]
+    #[cfg(app_platform)]
     let _fixture = AgentFixture::new(APP);
     if crate::approvals::with(|_| ()).is_none() {
         crate::approvals::init_memory();
@@ -621,7 +621,7 @@ fn the_panel_opens_a_sharing_context_and_sends_person_turns_there() {
         other => panic!("{other:?}"),
     }
     assert_eq!(peers.0.lock().unwrap().len(), 1, "one peer per app");
-    #[cfg(any(feature = "app-hub", native_mobile))]
+    #[cfg(app_platform)]
     let _other_fixture = AgentFixture::new(OTHER);
     let other = AgentApp { id: OTHER.into(), name: "Other".into(), ..app.clone() };
     // The person has not answered the sheet: the call is held, and a call
@@ -660,10 +660,10 @@ fn the_panel_opens_a_sharing_context_and_sends_person_turns_there() {
 #[test]
 fn reopening_the_panel_keeps_the_persons_rows_and_the_live_follower() {
     const APP: &str = "org.example.askreopen";
-    #[cfg(any(feature = "app-hub", native_mobile))]
+    #[cfg(app_platform)]
     if AgentFixture::run_isolated(&[APP], "app_chat::tests::reopening_the_panel_keeps_the_persons_rows_and_the_live_follower") { return; }
     let _factory = crate::agents::FACTORY_TESTS.lock().unwrap_or_else(|e| e.into_inner());
-    #[cfg(any(feature = "app-hub", native_mobile))]
+    #[cfg(app_platform)]
     let _fixture = AgentFixture::new(APP);
     if crate::approvals::with(|_| ()).is_none() {
         crate::approvals::init_memory();
@@ -757,7 +757,7 @@ fn the_system_agent_is_told_about_agents_it_cannot_list() {
     let declarations = crate::agents::declarations();
     let names: Vec<String> = declarations.iter().map(|d| d["name"].as_str().unwrap().to_string()).collect();
     let mut expected = vec![crate::agents::LIST_TOOL, crate::agents::ASK_TOOL];
-    if cfg!(any(feature = "app-hub", native_mobile)) {
+    if cfg!(app_platform) {
         expected.extend([crate::agents::PROVISION_TOOL, crate::agents::STATUS_TOOL]);
     }
     assert_eq!(names, expected);

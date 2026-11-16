@@ -476,7 +476,7 @@ pub fn link(out: &mut Vec<&'static dyn AppModule>) {
     out.push(&makepad_sheets::SHEETS_MODULE);
     #[cfg(feature = "app-terminal")]
     out.push(&makepad_terminal::TERMINAL_MODULE);
-    #[cfg(any(feature = "app-hub", native_mobile))]
+    #[cfg(app_platform)]
     {
         out.push(&octosense_app_hub_app::APP_HUB_MODULE);
         out.push(&octosense_app_hub_app::CARD_MODULE);

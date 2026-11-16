@@ -1114,7 +1114,7 @@ fn the_system_agent_gets_the_read_tools_of_the_native_apps_that_run_here_never_t
 fn the_system_agents_whole_grant_fits_the_kernels_cap() {
     let mut most = grants::host_tools_given(true, true);
     most.extend(grants::native_system_tools_given(|_| true));
-    #[cfg(any(feature = "app-hub", native_mobile))]
+    #[cfg(app_platform)]
     most.extend(grants::CALENDAR_TOOLS.iter().map(|tool| tool.to_string()));
     #[cfg(feature = "craft-engines")]
     most.extend(grants::ENGINE_TOOLS.iter().map(|tool| tool.to_string()));

@@ -278,7 +278,7 @@ pub fn module_gate(a: &mut Approvals, app: &str, label: &str, capabilities: &[&s
 /// Card runner app asking the `octos` service.
 pub fn consent_for_contained(app: &str) -> bool {
     if cfg!(test) { return true; }
-    #[cfg(any(feature = "app-hub", native_mobile))]
+    #[cfg(app_platform)]
     {
         // Read the admitted bundle outside the approvals mutex. A script app
         // must never inherit the native-module defaults (device file access)
@@ -290,11 +290,11 @@ pub fn consent_for_contained(app: &str) -> bool {
         let octos: Vec<String> = crate::ai_host::app_peers::OCTOS_SERVICES.iter().map(|c| c.to_string()).collect();
         return with(|a| contained_gate(a, app, &loaded.manifest, &octos)).unwrap_or(false);
     }
-    #[cfg(not(any(feature = "app-hub", native_mobile)))]
+    #[cfg(not(app_platform))]
     false
 }
 
-#[cfg(any(feature = "app-hub", native_mobile, test))]
+#[cfg(any(app_platform, test))]
 fn contained_gate(a: &mut Approvals, app: &str, manifest: &serde_json::Value, granted: &[String]) -> bool {
     if manifest["id"].as_str() != Some(app) { return false; }
     if !granted.iter().any(|c| crate::ai_host::app_peers::OCTOS_SERVICES.contains(&c.as_str())) { return false; }

@@ -1,8 +1,8 @@
 //! Foreground-only, unpublished L0 previews. No app policy or live app storage
 //! is inherited: each render receives a disposable, zero-quota isolate.
-#[cfg(all(unix, any(feature = "app-hub", native_mobile)))]
+#[cfg(all(unix, app_platform))]
 pub mod apps;
-#[cfg(all(unix, any(feature = "app-hub", native_mobile)))]
+#[cfg(all(unix, app_platform))]
 pub mod module;
 use crate::dev_mode::DevTag;
 use makepad_widgets::*;
@@ -177,7 +177,7 @@ pub(crate) fn release_isolate(cx: &mut Cx, splash: &SplashRef) {
     };
     refuse_host_requests(cx, splash);
     crate::glance_card::drop_taps(heap);
-    #[cfg(any(feature = "app-hub", native_mobile))]
+    #[cfg(app_platform)]
     octosense_appstore::services::cancel_heap(heap);
 }
 

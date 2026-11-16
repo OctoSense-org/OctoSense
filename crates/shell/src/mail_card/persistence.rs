@@ -244,7 +244,7 @@ pub(crate) fn remove_publication(
 /// Called by Glance after host services have finished registering, never from
 /// the registration Once. Retry readiness/account changes without extending TTL.
 pub(crate) fn restore_publications() {
-    #[cfg(any(feature = "app-hub", native_mobile))]
+    #[cfg(app_platform)]
     {
         if !READY.load(Ordering::Acquire) || RESTORING.swap(true, Ordering::AcqRel) {
             return;

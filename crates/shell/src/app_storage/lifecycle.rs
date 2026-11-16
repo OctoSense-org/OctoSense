@@ -142,7 +142,7 @@ pub enum Change {
 /// (`storage.accounts: false`) acts for the device, which never signs out.
 pub fn account_changed(storage: &Arc<Storage>, service_app: &str, previous: Option<&str>, current: Option<&str>) -> Change {
     let app = app_of(service_app);
-    #[cfg(any(feature = "app-hub", native_mobile))]
+    #[cfg(app_platform)]
     if app == "os.mail" && previous != current {
         // Retire old capabilities before changing suspension/folder state.
         // This takes the same short lock as the service's SMTP claim, never
@@ -224,7 +224,7 @@ pub fn contained_account_in(storage: &Storage, app: &str) -> Option<String> {
     if !storage.spec(app).accounts {
         return Some(crate::ai_host::contained::ACCOUNT.to_owned());
     }
-    #[cfg(any(feature = "app-hub", native_mobile))]
+    #[cfg(app_platform)]
     {
         if let Some(connection) = octosense_oauth_service::host::active_connection(
             &storage.layout().apps_root().join(".host"), app,
@@ -233,13 +233,13 @@ pub fn contained_account_in(storage: &Storage, app: &str) -> Option<String> {
         }
         octosense_mail_service::active_account(&storage.layout().apps_root().join(".host"), app)
     }
-    #[cfg(not(any(feature = "app-hub", native_mobile)))]
+    #[cfg(not(app_platform))]
     None
 }
 
 /// Mail's host service gave an app an account, or took it away; its live
 /// agent is then bound to the account it acts for now.
-#[cfg(any(feature = "app-hub", native_mobile))]
+#[cfg(app_platform)]
 pub fn mail_account(storage: &Arc<Storage>, event: &octosense_mail_service::AccountEvent) -> Change {
     let change = mail_account_storage(storage, event);
     let (octosense_mail_service::AccountEvent::Added { app_id, .. } | octosense_mail_service::AccountEvent::Removed { app_id, .. }) = event;
@@ -249,7 +249,7 @@ pub fn mail_account(storage: &Arc<Storage>, event: &octosense_mail_service::Acco
     change
 }
 
-#[cfg(any(feature = "app-hub", native_mobile))]
+#[cfg(app_platform)]
 fn mail_account_storage(storage: &Arc<Storage>, event: &octosense_mail_service::AccountEvent) -> Change {
     use octosense_mail_service::AccountEvent;
     match event {
@@ -286,11 +286,11 @@ pub fn app_uninstalled(storage: &Arc<Storage>, root: &Path, manifest_id: &str) -
     if let Err(e) = storage.uninstall(manifest_id) {
         makepad_widgets::log!("app storage: {manifest_id}: uninstall left something behind: {e}");
     }
-    #[cfg(any(feature = "app-hub", native_mobile))]
+    #[cfg(app_platform)]
     if let Err(error)=octosense_oauth_service::host::forget_app(&root.join(".host"),manifest_id) {
         makepad_widgets::log!("app storage: OAuth uninstall could not finish: {error}");
     }
-    #[cfg(any(feature = "app-hub", native_mobile))]
+    #[cfg(app_platform)]
     if let Err(error)=crate::mail_background::forget_app(manifest_id) {
         makepad_widgets::log!("app storage: Glance uninstall could not finish: {error}");
     }
@@ -396,7 +396,7 @@ pub fn install(storage: &'static Arc<Storage>) {
     crate::ai_host::app_peers::storage::observe_accounts(Some(Arc::new(move |app: &str, previous: Option<&str>, current: Option<&str>| {
         account_changed(storage, app, previous, current);
     })));
-    #[cfg(any(feature = "app-hub", native_mobile))]
+    #[cfg(app_platform)]
     {
         octosense_mail_service::drafts::on_claim(Some(Arc::new(move |host_dir, app, account| {
             mail_claim_allowed(storage, host_dir, app, account)
@@ -419,7 +419,7 @@ pub fn install(storage: &'static Arc<Storage>) {
 /// Last check inside the Mail service's atomic send claim. It deliberately
 /// rechecks local admission and account metadata: no broker locks,
 /// draft calls, UI callbacks or networking. Account metadata writers hold the claim lock too.
-#[cfg(any(feature = "app-hub", native_mobile))]
+#[cfg(app_platform)]
 fn mail_claim_allowed(storage: &Storage, host_dir: &Path, app: &str, account: &str) -> Result<(), String> {
     if host_dir != storage.layout().apps_root().join(".host") {
         return Err("The review does not belong to this Mail host".into());
@@ -431,7 +431,7 @@ fn mail_claim_allowed(storage: &Storage, host_dir: &Path, app: &str, account: &s
     mail_account_claim_allowed(storage, host_dir, app, account)
 }
 
-#[cfg(any(feature = "app-hub", native_mobile))]
+#[cfg(app_platform)]
 fn mail_account_claim_allowed(
     storage: &Storage,
     host_dir: &Path,
@@ -451,7 +451,7 @@ fn mail_account_claim_allowed(
 /// `apps/.host/mail/`: name the folder for the service, and move every
 /// password an older build left there now (an old copy a failed delete
 /// left behind goes too, so a failure is retried at the next start).
-#[cfg(any(feature = "app-hub", native_mobile))]
+#[cfg(app_platform)]
 pub fn mail_secrets_at_startup(storage: &Storage) {
     let dir = mail_secrets_dir(storage.layout());
     if let Err(e) = super::ensure_private_dir(storage.layout().secrets_root(), &dir) {

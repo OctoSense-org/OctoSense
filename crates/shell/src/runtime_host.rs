@@ -8,7 +8,7 @@ pub fn init(data_dir: Option<String>, kernel: Option<PathBuf>) {
     static INIT: Once = Once::new();
     INIT.call_once(|| {
         let storage = crate::app_storage::init(data_dir.as_ref().map(PathBuf::from));
-        #[cfg(any(feature = "app-hub", native_mobile))]
+        #[cfg(app_platform)]
         octosense_app_hub_app::set_data_root(
             storage
                 .map(|s| s.layout().apps_root().to_path_buf())

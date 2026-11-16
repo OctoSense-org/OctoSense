@@ -157,7 +157,7 @@ pub fn prepare(app: &AgentApp) {
     set_prepared(&app.id, Some(Prepared::Preparing));
     let id = app.id.clone();
     let spawned = std::thread::Builder::new().name(format!("prepare-{id}")).spawn(move || {
-        #[cfg(any(feature = "app-hub", native_mobile))]
+        #[cfg(app_platform)]
         if let Err(error) = crate::agent_events::install_guidance(&id) {
             set_prepared(&id, Some(Prepared::Failed(error)));
             return;
@@ -198,7 +198,7 @@ pub fn prepare_allowed() {
 /// already allowed.
 pub fn start() {
     let _ = std::thread::Builder::new().name("agents-start".into()).spawn(prepare_allowed);
-    #[cfg(any(feature = "app-hub", native_mobile))]
+    #[cfg(app_platform)]
     crate::agent_events::start();
 }
 
@@ -229,7 +229,7 @@ pub fn conversation(app: &AgentApp, instance: &str) -> Result<Arc<dyn OctosConte
         return Err(format!("{}'s assistant is {}", app.name, access(&app.id).as_str()));
     }
     if !app.native {
-        #[cfg(any(feature = "app-hub", native_mobile))]
+        #[cfg(app_platform)]
         crate::agent_events::install_guidance(&app.id)?;
         let context = crate::ai_host::contained::conversation(&app.id, instance)?;
         set_prepared(&app.id, Some(Prepared::Ready));
@@ -247,7 +247,7 @@ pub fn conversation_for_account(app: &AgentApp, instance: &str, account: &str) -
     if crate::ai_host::contained::account_of(&app.id).as_deref() != Some(account) {
         return Err("Account changed; reopen the card under its original account".into());
     }
-    #[cfg(any(feature = "app-hub", native_mobile))]
+    #[cfg(app_platform)]
     crate::agent_events::install_guidance(&app.id)?;
     let context = crate::ai_host::contained::conversation_for_account(&app.id, instance, account)?;
     set_prepared(&app.id, Some(Prepared::Ready));
@@ -413,7 +413,7 @@ pub fn declarations() -> Vec<Value> {
             "confirm": "app",
         }),
     ];
-    #[cfg(any(feature = "app-hub", native_mobile))]
+    #[cfg(app_platform)]
     tools.extend([
         json!({
             "name": PROVISION_TOOL, "app": OWNER,
@@ -439,7 +439,7 @@ pub fn declarations() -> Vec<Value> {
 
 /// Whether `tool` is one of [`declarations`].
 pub fn is_agents_tool(tool: &str) -> bool {
-    tool == LIST_TOOL || tool == ASK_TOOL || cfg!(any(feature = "app-hub", native_mobile)) && matches!(tool, PROVISION_TOOL | STATUS_TOOL)
+    tool == LIST_TOOL || tool == ASK_TOOL || cfg!(app_platform) && matches!(tool, PROVISION_TOOL | STATUS_TOOL)
 }
 
 /// Answer the system agent's call of one of [`declarations`] (the system
@@ -447,12 +447,12 @@ pub fn is_agents_tool(tool: &str) -> bool {
 pub fn call(tool: &str, args: &Value) -> ToolOutcome {
     match tool {
         LIST_TOOL => ToolOutcome::Ok(list()),
-        #[cfg(any(feature = "app-hub", native_mobile))]
+        #[cfg(app_platform)]
         PROVISION_TOOL => match crate::agent_events::provision(args.clone()) {
             Ok(value) => ToolOutcome::Ok(value),
             Err(error) => ToolOutcome::error("agent_provision", error),
         },
-        #[cfg(any(feature = "app-hub", native_mobile))]
+        #[cfg(app_platform)]
         STATUS_TOOL => match crate::agent_events::status(args.clone()) {
             Ok(value) => ToolOutcome::Ok(value),
             Err(error) => ToolOutcome::error("agent_status", error),
