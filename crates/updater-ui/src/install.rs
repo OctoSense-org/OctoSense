@@ -63,7 +63,7 @@ fn plan(platform: Platform, path: &Path) -> Result<InstallPlan, String> {
 }
 
 /// The person's Downloads folder, and a verified copy of a download in it.
-#[cfg(any(target_os = "linux", test))]
+#[cfg(any(all(target_os = "linux", not(target_env = "ohos")), test))]
 mod downloads {
     use sha2::{Digest, Sha256};
     use std::{
@@ -73,7 +73,7 @@ mod downloads {
     };
 
     /// `XDG_DOWNLOAD_DIR` from `user-dirs.dirs`, else `~/Downloads`, else home.
-    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+    #[cfg_attr(not(all(target_os = "linux", not(target_env = "ohos"))), allow(dead_code))]
     pub(super) fn folder() -> Option<PathBuf> {
         let home = std::env::var_os("HOME")
             .map(PathBuf::from)
@@ -217,7 +217,7 @@ fn host_supports(platform: Platform) -> bool {
         Platform::MacArm64 => cfg!(all(target_os = "macos", target_arch = "aarch64")),
         Platform::WindowsX64 => cfg!(all(target_os = "windows", target_arch = "x86_64")),
         Platform::LinuxX64Deb | Platform::LinuxX64AppImage => {
-            cfg!(all(target_os = "linux", target_arch = "x86_64"))
+            cfg!(all(target_os = "linux", not(target_env = "ohos"), target_arch = "x86_64"))
         }
         Platform::AndroidArm64 => false,
     }
@@ -230,7 +230,7 @@ pub fn install(artifact: &VerifiedArtifact, cancellation: &Cancellation) -> Resu
         return Err("This update cannot be installed on the running platform.".into());
     }
     let path = artifact.revalidate().map_err(|error| error.to_string())?;
-    #[cfg(target_os = "linux")]
+    #[cfg(all(target_os = "linux", not(target_env = "ohos")))]
     let path = match artifact.platform() {
         Platform::LinuxX64Deb | Platform::LinuxX64AppImage => {
             if cancellation.is_cancelled() {

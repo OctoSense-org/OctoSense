@@ -346,7 +346,7 @@ impl Roots {
         if let Some(core) = octosense_ai_host::kernel::core_dir() {
             roots.denied.push(canonical(core));
         }
-        if cfg!(any(target_os = "macos", target_os = "linux", target_os = "windows")) && !cfg!(target_env = "ohos") {
+        if cfg!(any(target_os = "macos", all(target_os = "linux", not(target_env = "ohos")), target_os = "windows")) && !cfg!(target_env = "ohos") {
             if let Some(home) = crate::sandbox::person_home() {
                 let entry = crate::native_apps::find(app);
                 for grant in entry.map(|a| a.external).unwrap_or_default() {

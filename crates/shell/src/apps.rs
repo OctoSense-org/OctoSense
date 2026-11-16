@@ -832,7 +832,7 @@ pub fn runs_as_process(hosting: Hosting, processes: bool, process_form: bool) ->
 /// in a Wayland session: where Linux shares a child's frames zero-copy
 /// (DMA-BUF). Vulkan windowing panics on X11.
 pub fn vulkan_wayland() -> bool {
-    cfg!(all(target_os = "linux", makepad_vulkan)) && std::env::var_os("WAYLAND_DISPLAY").is_some()
+    cfg!(all(target_os = "linux", not(target_env = "ohos"), makepad_vulkan)) && std::env::var_os("WAYLAND_DISPLAY").is_some()
 }
 
 impl AppRegistry {

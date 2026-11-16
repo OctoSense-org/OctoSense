@@ -1732,7 +1732,7 @@ pub fn adopt_legacy_homes_later(layout: &crate::app_storage::Layout) {
             app.macos
         } else if cfg!(target_os = "windows") {
             app.windows
-        } else if cfg!(target_os = "linux") {
+        } else if cfg!(all(target_os = "linux", not(target_env = "ohos"))) {
             app.linux
         } else {
             Hosting::Module

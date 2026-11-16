@@ -159,7 +159,7 @@ pub(crate) fn connections(root: &Path) -> Result<Connections, String> {
     return Err("OAuth has no secure credential adapter on this platform".into());
     // Unlike the legacy Mail fallback, Windows/Linux OAuth credentials use
     // their OS credential service. Failure is explicit, never plaintext.
-    #[cfg(any(target_os = "windows", target_os = "linux"))]
+    #[cfg(any(target_os = "windows", all(target_os = "linux", not(target_env = "ohos"))))]
     {
         return Connections::open(&root, Arc::new(DesktopVault::new(&root)?));
     }
@@ -182,11 +182,11 @@ pub(crate) fn provider_transport(
     Ok(Arc::new(crate::transport::HttpsTransport::new()?))
 }
 
-#[cfg(any(target_os = "windows", target_os = "linux"))]
+#[cfg(any(target_os = "windows", all(target_os = "linux", not(target_env = "ohos"))))]
 struct DesktopVault {
     service: String,
 }
-#[cfg(any(target_os = "windows", target_os = "linux"))]
+#[cfg(any(target_os = "windows", all(target_os = "linux", not(target_env = "ohos"))))]
 impl DesktopVault {
     fn new(root: &Path) -> Result<Self, String> {
         use sha2::{Digest, Sha256};
@@ -204,7 +204,7 @@ impl DesktopVault {
             .map_err(|_| "The OS credential service is unavailable".to_owned())
     }
 }
-#[cfg(any(target_os = "windows", target_os = "linux"))]
+#[cfg(any(target_os = "windows", all(target_os = "linux", not(target_env = "ohos"))))]
 impl CredentialStore for DesktopVault {
     fn put(&self, key: &str, value: &str) -> Result<(), String> {
         self.entry(key)?

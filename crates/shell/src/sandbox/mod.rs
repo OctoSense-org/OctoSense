@@ -73,7 +73,7 @@ use std::process::Command;
 
 use crate::native_apps::{NativeApp, Network};
 
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", not(target_env = "ohos")))]
 pub mod linux;
 #[cfg(any(target_os = "macos", test))]
 pub mod macos;
@@ -221,7 +221,7 @@ impl Policy {
         let mut protected = vec![home.to_path_buf()];
         if cfg!(target_os = "macos") {
             protected.push(PathBuf::from("/Volumes"));
-        } else if cfg!(target_os = "linux") {
+        } else if cfg!(all(target_os = "linux", not(target_env = "ohos"))) {
             protected.push(PathBuf::from("/media"));
             protected.push(PathBuf::from("/mnt"));
         }
@@ -468,7 +468,7 @@ fn platform_command(program: &Path, args: &[String], policy: &Policy) -> (Comman
     (cmd, Some(Applied::Sandboxed(format!("{} (via sandbox-exec, profile {})", policy.summary(), profile.display()))))
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", not(target_env = "ohos")))]
 fn platform_command(program: &Path, args: &[String], policy: &Policy) -> (Command, Option<Applied>) {
     let mut cmd = Command::new(program);
     cmd.args(args);
@@ -486,7 +486,7 @@ fn platform_command(program: &Path, args: &[String], policy: &Policy) -> (Comman
     (cmd, Some(applied))
 }
 
-#[cfg(not(any(target_os = "macos", target_os = "linux")))]
+#[cfg(not(any(target_os = "macos", all(target_os = "linux", not(target_env = "ohos")))))]
 fn platform_command(program: &Path, args: &[String], policy: &Policy) -> (Command, Option<Applied>) {
     let mut cmd = Command::new(program);
     cmd.args(args);

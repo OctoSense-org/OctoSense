@@ -29,5 +29,5 @@ octosense-mail-service = { workspace = true, optional = true }
 [target.'cfg(target_os = "windows")'.dependencies]
 keyring = { version = "3", features = ["windows-native"], optional = true }
 
-[target.'cfg(target_os = "linux")'.dependencies]
+[target.'cfg(all(target_os = "linux", not(target_env = "ohos")))'.dependencies]
 keyring = { version = "3", features = ["sync-secret-service", "crypto-rust", "vendored"], optional = true }
