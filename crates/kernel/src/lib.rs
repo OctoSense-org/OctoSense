@@ -59,8 +59,8 @@ pub use launch::{Launch, Unavailable};
 
 use kernel::{Ctl, Inbound};
 
-/// The version of the embedded core (OpenHarmony).
-#[cfg(target_env = "ohos")]
+/// The version of the embedded core (OpenHarmony, in a build with `embedded-core`).
+#[cfg(all(target_env = "ohos", feature = "embedded-core"))]
 pub const EMBEDDED_VERSION: &str = octos_cli::embedded::VERSION;
 
 /// Where kernel and core diagnostics go (the kernel's stderr, starts and
