@@ -550,8 +550,7 @@ impl HostService for AuthService {
                     callback_tx,
                     callback_rx: Mutex::new(callback_rx),
                 });
-                if !makepad_widgets::web_reader::register_auth_lifetime(&ticket, &pending.cancelled)
-                {
+                if !register_auth_lifetime(&ticket, &pending.cancelled) {
                     pending
                         .original
                         .clone()
@@ -657,6 +656,19 @@ fn wait_for_consent(
         }
         std::thread::sleep(Duration::from_millis(100));
     }
+}
+
+/// Ties a sign-in to the in-app web reader that shows its pages, so closing the
+/// reader cancels it. `false`: the reader takes no further sign-in right now.
+#[cfg(feature = "web-reader")]
+fn register_auth_lifetime(ticket: &str, cancelled: &Arc<AtomicBool>) -> bool {
+    makepad_widgets::web_reader::register_auth_lifetime(ticket, cancelled)
+}
+
+/// Without a web reader in the framework a sign-in has only its own lifetime.
+#[cfg(not(feature = "web-reader"))]
+fn register_auth_lifetime(_ticket: &str, _cancelled: &Arc<AtomicBool>) -> bool {
+    true
 }
 
 fn complete_pending(pending: Arc<Pending>) {
@@ -1283,7 +1295,7 @@ content
     )
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "web-reader"))]
 #[path = "host_lifetime_tests.rs"]
 mod host_lifetime_tests;
 

@@ -8,6 +8,10 @@ publish = false
 [features]
 default = []
 host = ["dep:octosense-appstore", "dep:octosense-mail-service", "dep:keyring", "dep:makepad-widgets"]
+# Sign-in pages in the framework's in-app web reader, whose lifetime a sign-in
+# is tied to. Off for now: the makepad this branch pins has no web reader, so
+# every sign-in goes through the system browser.
+web-reader = ["host"]
 # Native acceptance executables only; no environment/config switch in releases.
 acceptance-fixtures = ["host"]
 
