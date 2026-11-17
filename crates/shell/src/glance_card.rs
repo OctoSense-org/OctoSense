@@ -323,7 +323,7 @@ pub fn ensure_nav() {
     }
     if !DONE.with(|d| d.replace(true)) {
         widget_async::register_splash_isolate_mod(install_nav);
-        #[cfg(any(feature = "app-hub", native_mobile))]
+        #[cfg(app_platform)]
         widget_async::register_splash_isolate_mod(|vm| {
             octosense_appstore::octoscript_widgets::tap::script_mod(vm);
         });
@@ -1209,9 +1209,9 @@ impl GlanceTiles {
             let splash = tile.card.clone();
             let sheet = tile.sheet.clone();
             let modal = sheet.borrow().is_some_and(|s| s.view.visible);
-            #[cfg(any(feature = "app-hub", native_mobile))]
+            #[cfg(app_platform)]
             let sheet_input = octosense_appstore::services::is_sheet_input_event(event);
-            #[cfg(not(any(feature = "app-hub", native_mobile)))]
+            #[cfg(not(app_platform))]
             let sheet_input = false; // This build cannot mount host service sheets.
             if modal && sheet_input {
                 // The foreground service sheet receives input exclusively.
@@ -1227,7 +1227,7 @@ impl GlanceTiles {
                 }),
                 None => tile.frame.handle_event(cx, event, &mut Scope::empty()),
             }}
-            #[cfg(any(feature = "app-hub", native_mobile))]
+            #[cfg(app_platform)]
             if tile.contained {
                 let host_dir = octosense_appstore::data_root(cx).join(".host");
                 octosense_appstore::services::pump(cx, &tile.app, &host_dir, &splash, &sheet);
@@ -1249,7 +1249,7 @@ impl GlanceTiles {
                 // takes its place (it may get the same heap key).
                 if let Some(heap) = splash.borrow_mut().and_then(|mut s| s.isolate_heap_key(cx)) {
                     drop_taps(heap);
-                    #[cfg(any(feature = "app-hub", native_mobile))]
+                    #[cfg(app_platform)]
                     octosense_appstore::services::cancel_heap(heap);
                 }
                 splash.set_text(cx, "");
@@ -1285,14 +1285,14 @@ fn retire_host_sheet(cx: &mut Cx, tile: &Tile) {
         let _ = splash_host::take_splash_host_requests_for(&[heap]);
     }
     sheet.handle_event(cx, &Event::Background, &mut Scope::empty());
-    #[cfg(any(feature = "app-hub", native_mobile))]
+    #[cfg(app_platform)]
     if sheet.call_script_fn(cx, id!(host_dismiss), &[]) {
         let host_dir = octosense_appstore::data_root(cx).join(".host");
         octosense_appstore::services::pump(cx, &tile.app, &host_dir, &tile.card, sheet);
     }
     if let Some(heap) = sheet.isolate_heap_key(cx) {
         drop_taps(heap);
-        #[cfg(any(feature = "app-hub", native_mobile))]
+        #[cfg(app_platform)]
         octosense_appstore::services::cancel_heap(heap);
         let _ = splash_host::take_splash_host_requests_for(&[heap]);
     }
@@ -1309,7 +1309,7 @@ fn isolate_of(cx: &mut Cx, splash: &SplashRef) -> Option<widget_async::SplashVmI
 /// Seat a new tile's isolate before its body runs: the publishing app's
 /// policy for a contained app, none for a native module (module docs).
 fn seat(cx: &mut Cx, splash: &SplashRef, app: &str, contained: bool) -> bool {
-    #[cfg(any(feature = "app-hub", native_mobile))]
+    #[cfg(app_platform)]
     if contained {
         // A legacy manifest must not inherit the shell's OS permissions.
         // Keep this fail-closed state if admission or the manifest reload fails.
@@ -1351,14 +1351,14 @@ fn seat(cx: &mut Cx, splash: &SplashRef, app: &str, contained: bool) -> bool {
 /// resolves them when it opens the app: a system app's from its shipped
 /// pack, any other from the last verified catalog. A tile is a background
 /// surface, so a service its card calls may not raise a sheet over it.
-#[cfg(any(feature = "app-hub", native_mobile))]
+#[cfg(app_platform)]
 pub fn app_isolate(cx: &Cx, app: &str) -> Result<octosense_app_policy::IsolateSettings, String> {
     let mut settings = admitted_app_isolate(cx, app)?;
     settings.host_prompts = false;
     Ok(settings)
 }
 
-#[cfg(any(feature = "app-hub", native_mobile))]
+#[cfg(app_platform)]
 fn admitted_app_isolate(cx: &Cx, app: &str) -> Result<octosense_app_policy::IsolateSettings, String> {
     let root = octosense_appstore::data_root(cx);
     let policy = match octosense_appstore::system::system_app(app) {
@@ -1383,7 +1383,7 @@ fn admitted_app_isolate(cx: &Cx, app: &str) -> Result<octosense_app_policy::Isol
 
 /// Whether this build can draw a card: the Card runner's vocabulary (the
 /// design and kit widgets a lowered card names) comes with App Hub.
-pub const CAN_RENDER: bool = cfg!(any(feature = "app-hub", native_mobile));
+pub const CAN_RENDER: bool = cfg!(app_platform);
 
 /// Give every Splash isolate the Card runner's vocabulary, once: the same
 /// registration the `card` module makes before it runs an app.
@@ -1395,9 +1395,9 @@ pub(crate) fn ensure_vocabulary(cx: &mut Cx) {
         return;
     }
     ensure_nav();
-    #[cfg(any(feature = "app-hub", native_mobile))]
+    #[cfg(app_platform)]
     cx.with_vm(|vm| makepad_app_module::AppModule::register(&octosense_app_hub_app::CARD_MODULE, vm));
-    #[cfg(not(any(feature = "app-hub", native_mobile)))]
+    #[cfg(not(app_platform))]
     let _ = cx;
 }
 

@@ -121,7 +121,7 @@ mod tests {
         let mobile = cfg!(any(target_os = "android", target_os = "ios", target_env = "ohos"));
         assert_eq!(cfg!(native_mobile), mobile, "native_mobile is exactly the phone targets");
         assert_eq!(processes_available(), !cfg!(target_arch = "wasm32") && !mobile);
-        if cfg!(any(target_os = "macos", target_os = "windows", target_os = "linux")) && !mobile {
+        if cfg!(any(target_os = "macos", target_os = "windows", all(target_os = "linux", not(target_env = "ohos")))) && !mobile {
             assert!(processes_available(), "a desktop hosts process apps");
         }
         assert!(now() >= 0.0);

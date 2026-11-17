@@ -173,7 +173,7 @@ pub fn command_execution() -> bool {
 pub fn host_tools() -> std::collections::BTreeSet<String> {
     let mut tools = host_tools_given(command_execution(), terminal_target());
     tools.extend(native_system_tools());
-    #[cfg(any(feature = "app-hub", native_mobile))]
+    #[cfg(app_platform)]
     {
         // Reviewed narrow system grant (ADR 0004 §7/§12), not every
         // shareable tool. Keep this check pure: the relay calls it while locked.
@@ -184,7 +184,7 @@ pub fn host_tools() -> std::collections::BTreeSet<String> {
     tools
 }
 
-#[cfg(any(feature = "app-hub", native_mobile))]
+#[cfg(app_platform)]
 pub(crate) const CALENDAR_TOOLS: &[&str] = &["calendar.events", "calendar.add_event", "calendar.notify"];
 
 /// The craft engines' tools the system agent may call (ADR 0013), each

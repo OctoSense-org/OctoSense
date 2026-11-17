@@ -7,6 +7,10 @@
 //! Android, iOS and OpenHarmony. Code reads them as `#[cfg(mobile_only)]` /
 //! `cfg!(native_mobile)`, never as the feature or the targets directly.
 //!
+//! `app_platform` marks a build with the app platform: feature `app-hub`, or
+//! a native mobile target without `--features shell-only`. Code reads
+//! `#[cfg(app_platform)]`, never `any(feature = "app-hub", native_mobile)`.
+//!
 //! `wasm_functions` marks a build that runs the `wasm` service (ADR 0011):
 //! feature `wasm-functions` on macOS, Windows, Linux, Android or OpenHarmony
 //! (there in Pulley, Wasmtime's interpreter: ADR 0014), the targets
@@ -34,6 +38,15 @@ fn main() {
     }
     if feature || target_os == "android" || target_env == "ohos" {
         println!("cargo:rustc-cfg=mobile_only");
+    }
+    // `app_platform`: this build carries the app platform (App Hub, the host
+    // services, cards): feature `app-hub`, or a native mobile target, which
+    // links it without flags unless the build asks for the shell alone
+    // (`shell-only`). Code reads `#[cfg(app_platform)]`.
+    println!("cargo:rustc-check-cfg=cfg(app_platform)");
+    let shell_only = std::env::var_os("CARGO_FEATURE_SHELL_ONLY").is_some();
+    if std::env::var_os("CARGO_FEATURE_APP_HUB").is_some() || (native_mobile && !shell_only) {
+        println!("cargo:rustc-cfg=app_platform");
     }
     println!("cargo:rustc-check-cfg=cfg(wasm_functions)");
     let wasm_target = matches!(target_os.as_str(), "macos" | "windows" | "android" | "linux");

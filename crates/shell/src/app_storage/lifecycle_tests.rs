@@ -135,7 +135,7 @@ fn a_contained_apps_peer_id_names_its_storage() {
 
 // ---- Mail's accounts --------------------------------------------------------
 
-#[cfg(any(feature = "app-hub", native_mobile))]
+#[cfg(app_platform)]
 #[test]
 fn mail_send_claim_rechecks_current_host_selection_and_suspension() {
     let home = Scratch::new("mail-send-claim");
@@ -162,7 +162,7 @@ fn mail_send_claim_rechecks_current_host_selection_and_suspension() {
     assert!(mail_claim_allowed(&host, &dir, "os.mail", "two").is_err());
 }
 
-#[cfg(any(feature = "app-hub", native_mobile))]
+#[cfg(app_platform)]
 #[test]
 fn public_mail_send_claim_rechecks_selected_account_and_requires_admission() {
     let home = Scratch::new("public-mail-send-claim");
@@ -196,7 +196,7 @@ fn public_mail_send_claim_rechecks_selected_account_and_requires_admission() {
     assert!(mail_claim_allowed(&host, &dir.join("wrong"), "sample.mail", "two").is_err());
 }
 
-#[cfg(any(feature = "app-hub", native_mobile))]
+#[cfg(app_platform)]
 #[test]
 fn mails_accounts_open_and_remove_their_folders() {
     use octosense_mail_service::AccountEvent;
@@ -225,7 +225,7 @@ fn mails_accounts_open_and_remove_their_folders() {
 /// manifest declares accounts, so each Mail account is its own agent, with
 /// its own folder as its workspace; removing the account suspends that
 /// agent (its calls `signed_out`, no turn) and deletes the folder.
-#[cfg(any(feature = "app-hub", native_mobile))]
+#[cfg(app_platform)]
 #[test]
 fn should_suspend_mails_agent_and_delete_its_folder_when_its_account_is_removed() {
     use octosense_mail_service::AccountEvent;
@@ -253,7 +253,7 @@ fn should_suspend_mails_agent_and_delete_its_folder_when_its_account_is_removed(
 /// A Mail account whose folder the startup check refused is refused for
 /// its own agent (the refusal is keyed by the account, as its workspace is),
 /// so its `peer/input` and calls are refused.
-#[cfg(all(unix, any(feature = "app-hub", native_mobile)))]
+#[cfg(all(unix, app_platform))]
 #[test]
 fn should_refuse_a_mail_accounts_agent_when_its_folder_reaches_the_secrets() {
     use octosense_mail_service::AccountEvent;
@@ -272,7 +272,7 @@ fn should_refuse_a_mail_accounts_agent_when_its_folder_reaches_the_secrets() {
 /// reads its account's folder (`read_parent`) for an account whose folder
 /// is clean and not for one the startup check refused or that was removed;
 /// an app without accounts is keyed by its device folder.
-#[cfg(all(unix, any(feature = "app-hub", native_mobile)))]
+#[cfg(all(unix, app_platform))]
 #[test]
 fn should_decide_read_parent_per_mail_account_with_the_same_rule_as_its_workspace() {
     use octosense_mail_service::AccountEvent;
@@ -311,7 +311,7 @@ fn should_record_the_storage_block_before_an_agent_is_prepared() {
 
 /// The account a contained app's agent acts for: the device without
 /// accounts; with them, the one Mail says is active, or none yet.
-#[cfg(any(feature = "app-hub", native_mobile))]
+#[cfg(app_platform)]
 #[test]
 fn should_bind_a_contained_agent_to_the_active_account_when_the_app_keeps_accounts() {
     let home = Scratch::new("contained-account");
@@ -331,7 +331,7 @@ fn should_bind_a_contained_agent_to_the_active_account_when_the_app_keeps_accoun
 /// was opened or its agent prepared): the block is read from the manifest
 /// then and recorded, so a signed-in Mail acts for its account, never the
 /// device.
-#[cfg(any(feature = "app-hub", native_mobile))]
+#[cfg(app_platform)]
 #[test]
 fn should_read_the_manifests_block_when_the_account_is_asked_first() {
     let home = Scratch::new("account-first");
@@ -489,7 +489,7 @@ fn settings_says_a_suspended_agents_memory_remains() {
 }
 
 /// At startup the shell moves every password Mail left under `apps/`.
-#[cfg(any(feature = "app-hub", native_mobile))]
+#[cfg(app_platform)]
 #[test]
 fn should_move_mails_old_passwords_when_the_shell_starts() {
     let home = Scratch::new("mail-move");
@@ -562,7 +562,7 @@ fn recording_purger(prefix: &'static str, erased: bool) -> Arc<Mutex<Vec<PurgeRe
 /// STAYS suspended (a broker still bound to it must not make a new agent)
 /// until it is added again. An erase that failed says the memory remains.
 /// Uninstalling erases every account's agent the same way.
-#[cfg(any(feature = "app-hub", native_mobile))]
+#[cfg(app_platform)]
 #[test]
 fn removing_an_account_or_uninstalling_erases_the_agents_after_the_folders() {
     let _one = PURGER_TESTS.lock().unwrap_or_else(|e| e.into_inner());
@@ -616,7 +616,7 @@ fn removing_an_account_or_uninstalling_erases_the_agents_after_the_folders() {
 /// The account is added again while its agent's purge still runs: it
 /// stays signed in when the purge ends (the purge's late success marks
 /// nothing), and is not reported as holding memory.
-#[cfg(any(feature = "app-hub", native_mobile))]
+#[cfg(app_platform)]
 #[test]
 fn an_account_added_again_while_its_purge_runs_stays_signed_in() {
     let _one = PURGER_TESTS.lock().unwrap_or_else(|e| e.into_inner());

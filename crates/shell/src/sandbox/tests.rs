@@ -100,7 +100,7 @@ fn sandbox_works_here() -> bool {
     if cfg!(target_os = "macos") {
         return Path::new(macos::SANDBOX_EXEC).is_file();
     }
-    #[cfg(target_os = "linux")]
+    #[cfg(all(target_os = "linux", not(target_env = "ohos")))]
     return linux::landlock_abi() > 0;
     #[allow(unreachable_code)]
     false
@@ -168,7 +168,7 @@ fn a_jail_only_app_reads_its_jail_and_is_refused_everything_else() {
 /// starts (found on Ubuntu 26.04, where `/usr/bin/cat` links into
 /// `/usr/lib/cargo/bin/coreutils/`): the sandbox allows the file it really
 /// runs, and nothing else beside it.
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", not(target_env = "ohos")))]
 #[test]
 fn a_program_reached_through_a_link_outside_its_roots_starts() {
     if !sandbox_works_here() {
@@ -203,7 +203,7 @@ fn a_program_reached_through_a_link_outside_its_roots_starts() {
 ///   -p 'SystemCallFilter=~landlock_create_ruleset landlock_add_rule landlock_restrict_self' \
 ///   <test binary> without_landlock
 /// ```
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", not(target_env = "ohos")))]
 #[test]
 fn without_landlock_the_app_still_starts_under_seccomp_and_says_so() {
     if linux::landlock_abi() > 0 {
@@ -229,12 +229,12 @@ fn without_landlock_the_app_still_starts_under_seccomp_and_says_so() {
 
 /// The seccomp program run on one system call, as the kernel would (the
 /// five classic-BPF instructions it uses).
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", not(target_env = "ohos")))]
 fn seccomp_verdict(filter: &[libc::sock_filter], arch: u32, nr: u32, arg0: u64) -> u32 {
     seccomp_verdict_args(filter, arch, nr, [arg0, 0, 0])
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", not(target_env = "ohos")))]
 fn seccomp_verdict_args(filter: &[libc::sock_filter], arch: u32, nr: u32, args: [u64; 3]) -> u32 {
     let word = |offset: u32| -> u32 {
         match offset {
@@ -262,7 +262,7 @@ fn seccomp_verdict_args(filter: &[libc::sock_filter], arch: u32, nr: u32, args: 
 /// Another ABI's system calls never get past the filter (found in review
 /// and on a real kernel: an x86_64 app forked through i386's `int 0x80`
 /// fork, number 2, under `processes: false`).
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(target_os = "linux", not(target_env = "ohos"), target_arch = "x86_64"))]
 #[test]
 fn seccomp_refuses_the_other_abis_of_the_kernel() {
     const X86_64: u32 = 0xC000_003E;
@@ -288,7 +288,7 @@ fn seccomp_refuses_the_other_abis_of_the_kernel() {
 /// Linux too (macOS's profile does it after every grant): `~/.cargo`,
 /// `~/.rustup`, the checkout and its target dir, a `rust-toolchain` file,
 /// the shell's own directory. The rest of the home stays writable.
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", not(target_env = "ohos")))]
 #[test]
 fn home_rw_leaves_the_next_builds_inputs_read_only() {
     let scratch = Scratch::new("readonly");
@@ -327,7 +327,7 @@ fn home_rw_leaves_the_next_builds_inputs_read_only() {
 /// local sockets, and refuses every other family (found on a real kernel:
 /// a jail-only app sent UDP to 1.1.1.1:53; review: vsock, Bluetooth, TIPC
 /// and RDS were open too).
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(target_os = "linux", not(target_env = "ohos"), target_arch = "x86_64"))]
 #[test]
 fn seccomp_keeps_network_none_to_tcp_and_local_sockets() {
     const X86_64: u32 = 0xC000_003E;
@@ -549,7 +549,7 @@ fn the_private_dirs_are_the_homes_roots_and_the_kernels() {
     assert!(host_private_dirs(Path::new("/"), Path::new("/a"), Path::new("/b"), Some(Path::new("/core"))).iter().all(|p| p != Path::new("/")), "never the root");
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", not(target_env = "ohos")))]
 #[test]
 fn landlock_splits_a_grant_around_the_private_dirs() {
     let scratch = Scratch::new("split");
@@ -684,7 +684,7 @@ fn a_program_path_that_is_or_holds_private_data_is_never_reopened() {
     assert!(crate::sandbox::program_reopenable(&octo.join("build/makepad"), &p.private));
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", not(target_env = "ohos")))]
 #[test]
 fn the_linux_rules_keep_a_program_inside_the_home_read_and_execute_only() {
     let scratch = Scratch::new("octoprog");
@@ -730,7 +730,7 @@ fn a_linked_checkout_into_the_octosense_home_is_not_reopened() {
     std::os::unix::fs::symlink(octo.join("build/makepad"), &build_link).unwrap();
     p.program = vec![build_link];
     assert!(macos::profile(&p).contains("even inside them"));
-    #[cfg(target_os = "linux")]
+    #[cfg(all(target_os = "linux", not(target_env = "ohos")))]
     {
         p.program = vec![link];
         let real = crate::sandbox::resolved(&octo);

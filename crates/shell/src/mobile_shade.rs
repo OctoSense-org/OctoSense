@@ -808,7 +808,7 @@ mod tests {
     fn zones(s: &ShadeState) -> ExclusionZones { let mut ex = ExclusionZones::default(); if let Some(z) = s.exclusion(screen()) { ex.add(z, [true; 4]); } ex }
 
     #[test]
-    #[cfg(any(feature = "app-hub", native_mobile))]
+    #[cfg(app_platform)]
     fn mail_notification_uses_launcher_art_without_changing_publisher_identity() {
         let mut shade = ShadeState::default();
         shade.post("os.mail", "Important mail", "", 0., vec![]);

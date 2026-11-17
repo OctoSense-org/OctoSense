@@ -99,7 +99,7 @@ pub struct ShellSystemHost;
 
 impl SystemHost for ShellSystemHost {
     fn declarations(&self) -> Vec<Value> {
-        #[cfg(any(feature = "app-hub", native_mobile))]
+        #[cfg(app_platform)]
         crate::host_tools::ensure_loaded("card.os.calendar");
         let granted: Vec<Value> = super::grants::host_tools()
             .into_iter()

@@ -12,9 +12,9 @@
 pub mod agents;
 pub mod runtime_host;
 mod update_restart;
-#[cfg(any(feature = "app-hub", native_mobile))]
+#[cfg(app_platform)]
 pub mod mail_background;
-#[cfg(any(feature = "app-hub", native_mobile))]
+#[cfg(app_platform)]
 pub mod agent_events;
 pub mod ai_bus;
 pub mod app_chat;
@@ -108,26 +108,26 @@ use studio::Renderer as StudioRenderer;
 mod glance_style;
 pub mod glance_chat;
 pub mod mail_card;
-#[cfg(any(feature = "app-hub", native_mobile))]
+#[cfg(app_platform)]
 pub mod mail_review;
-#[cfg(any(feature = "app-hub", native_mobile))]
+#[cfg(app_platform)]
 pub mod connected_review;
-#[cfg(any(feature = "app-hub", native_mobile))]
+#[cfg(app_platform)]
 pub mod platform_services;
-#[cfg(any(feature = "app-hub", native_mobile))]
+#[cfg(app_platform)]
 pub mod files_service;
-#[cfg(any(feature = "app-hub", native_mobile))]
+#[cfg(app_platform)]
 pub mod device_calendar;
-#[cfg(any(feature = "app-hub", native_mobile))]
+#[cfg(app_platform)]
 pub mod audio_service;
-#[cfg(any(feature = "app-hub", native_mobile))]
+#[cfg(app_platform)]
 pub mod glance_routes;
-#[cfg(any(feature = "app-hub", native_mobile))]
+#[cfg(app_platform)]
 pub mod connected_events;
-#[cfg(any(feature = "app-hub", native_mobile))]
+#[cfg(app_platform)]
 pub mod connected_backends;
 pub mod glance_digest;
-#[cfg(any(feature = "app-hub", native_mobile))]
+#[cfg(app_platform)]
 pub mod glance_notice;
 #[cfg(wasm_functions)]
 pub mod wasm_service;
@@ -795,7 +795,7 @@ pub struct DividerDrag {
 }
 
 impl App {
-    #[cfg(all(unix, any(feature = "app-hub", native_mobile)))]
+    #[cfg(all(unix, app_platform))]
     fn drain_studio(&mut self, cx: &mut Cx) {
         for instance in studio::apps::take_closes() {
             if let Some(client) = self.studio_clients.remove(&instance) {
@@ -914,7 +914,7 @@ impl App {
             self.notify(cx, "Could not open app", &error);
             return;
         }
-        #[cfg(any(feature = "app-hub", native_mobile))]
+        #[cfg(app_platform)]
         if let Some(manifest_id) = apps::card_manifest_id(app).filter(|id| !id.starts_with("os.")) {
             if let Err(error) = octosense_app_hub_app::catalog::try_may_open_from_environment(
                 octosense_app_hub_app::data_root(cx), manifest_id) {
@@ -924,7 +924,7 @@ impl App {
         }
         // Its manifest's storage block (ADR 0004 §11) lays out its folders
         // before the Card runner opens it, system apps included.
-        #[cfg(any(feature = "app-hub", native_mobile))]
+        #[cfg(app_platform)]
         if let (Some(manifest_id), Some(storage)) = (apps::card_manifest_id(app), app_storage::host()) {
             if let Err(e) = app_storage::lifecycle::prepare_script_app(storage, storage.layout().apps_root(), manifest_id) {
                 log!("app storage: {e}");
@@ -962,7 +962,7 @@ impl App {
             }
         }
 
-        #[cfg(all(unix, any(feature = "app-hub", native_mobile)))]
+        #[cfg(all(unix, app_platform))]
         if app.bin == "studio-app" && cfg!(dev_mode) {
             if let Err(error) = host_tools::studio_bundles::request_launch_installed(&app.id) {
                 self.notify(cx, "Could not open developer app", &error);
@@ -1820,7 +1820,7 @@ impl App {
     /// App Hub finished installing (or updating) `id`. An update replaces
     /// the bundle on disk, but a running Card keeps its old code and
     /// permissions: end its instances so the next open takes the new one.
-    #[cfg(any(feature = "app-hub", native_mobile))]
+    #[cfg(app_platform)]
     fn installed_app_changed(&mut self, cx: &mut Cx, id: &str) {
         crate::connected_backends::installed_changed(id);
         // Its storage (ADR 0004 §11): an install records the manifest's
@@ -4040,7 +4040,7 @@ impl App {
     }
 
     fn launch_glance_app(&mut self, cx: &mut Cx, app: &str, route: Option<&str>) {
-        #[cfg(any(feature = "app-hub", native_mobile))]
+        #[cfg(app_platform)]
         {
             // Glance stores the publisher's manifest ID, whereas installed
             // apps have a separate hub: launcher identity (ADR 0004).
@@ -4051,7 +4051,7 @@ impl App {
                 return;
             }
         }
-        #[cfg(any(feature = "app-hub", native_mobile))]
+        #[cfg(app_platform)]
         if app == "calendar" {
             if let Some(id) = route.and_then(|route| route.strip_prefix("event/")) {
                 let root = octosense_app_hub_app::data_root(cx).join(".host");
@@ -5520,7 +5520,7 @@ impl App {
     fn route_texture_readbacks(&mut self, cx: &mut Cx) {
         for result in cx.try_take_texture_readbacks() {
             let Some(result) = self.studio.readback(cx, result) else {continue};
-            #[cfg(all(unix, any(feature = "app-hub", native_mobile)))]
+            #[cfg(all(unix, app_platform))]
             let Some(result) = studio::apps::readback(cx, result) else {continue};
             #[cfg(target_os = "android")]
             if Some(result.ticket) == self.test_capture_ticket {
@@ -5578,7 +5578,7 @@ impl App {
                 }
             }
         }
-        #[cfg(all(feature = "dev-mode", any(feature = "app-hub", native_mobile)))]
+        #[cfg(all(feature = "dev-mode", app_platform))]
         if self.test_glance_fixtures.as_ref().is_some_and(|(timer, _)| timer.is_timer(te).is_some()) {
             if let Some((_, path)) = self.test_glance_fixtures.take() {
                 log!("glance fixture admission: {:?}", glance::publish_test_fixtures(&path));
@@ -5651,7 +5651,7 @@ impl App {
                     // launch-<app id>: spawn a registered app directly — the
                     // deterministic way to put one app on the desk in a test.
                     if self.groups_test_action(cx, name) { i += 2; continue; }
-                    #[cfg(all(feature = "dev-mode", any(feature = "app-hub", native_mobile)))]
+                    #[cfg(all(feature = "dev-mode", app_platform))]
                     if let Some(path) = name.strip_prefix("glance-fixtures:") {
                         self.test_glance_fixtures = Some((cx.start_timeout(1.5), path.into()));
                         i += 2;
@@ -5711,7 +5711,7 @@ impl App {
                         i += 2;
                         continue;
                     }
-                    #[cfg(all(unix, any(feature = "app-hub", native_mobile)))]
+                    #[cfg(all(unix, app_platform))]
                     if let Some(path) = name.strip_prefix("studio-flow:") {
                         let result = if cfg!(dev_mode) { host_tools::studio::test_flow(path) } else { Err("not a development build".to_string()) };
                         if let Err(error) = result { log!("studio flow: {error}"); }
@@ -5963,9 +5963,9 @@ fn frame_is_bound(slot: Option<&clients::ClientSlot>, socket: u64) -> bool {
 /// An app's name for people: a system app's manifest name, else a label
 /// made from its id.
 fn app_display_name(app: &str) -> String {
-    #[cfg(any(feature = "app-hub", native_mobile))]
+    #[cfg(app_platform)]
     return crate::glance_notice::app_name(app);
-    #[cfg(not(any(feature = "app-hub", native_mobile)))]
+    #[cfg(not(app_platform))]
     crate::approvals::sheet::app_label(app)
 }
 
@@ -6495,7 +6495,7 @@ impl MatchEvent for App {
                 shell::notifications::ShellNotificationsAction::Action(id) if self.glance_undo_toast == Some(id) => self.glance_undo(cx),
                 _ => {}
             }
-            #[cfg(any(feature = "app-hub", native_mobile))]
+            #[cfg(app_platform)]
             match wa.cast::<octosense_app_hub_app::AppHubAction>() {
                 octosense_app_hub_app::AppHubAction::Launch(id) => self.launch_app(cx, &id),
                 octosense_app_hub_app::AppHubAction::OpenInstalled(id) => self.launch_app(cx, &apps::installed_launch_id(&id)),
@@ -6652,7 +6652,7 @@ impl MatchEvent for App {
 
     fn handle_signal(&mut self, cx: &mut Cx) {
         if self.state.is_some() {
-            #[cfg(any(feature = "app-hub", native_mobile))]
+            #[cfg(app_platform)]
             for id in octosense_app_hub_app::take_completed_installs() {
                 self.installed_app_changed(cx, &id);
                 // Its tools, grants and kernel tools, as installed (ADR 0004 §7).
@@ -6661,7 +6661,7 @@ impl MatchEvent for App {
                 #[cfg(wasm_functions)]
                 wasm_service::warm(&id);
             }
-            #[cfg(all(unix, any(feature = "app-hub", native_mobile)))]
+            #[cfg(all(unix, app_platform))]
             if cfg!(dev_mode) {
                 self.drain_studio(cx);
             }
@@ -6770,13 +6770,13 @@ impl App {
         if let Event::AndroidIntegration { channel, payload } = event {
             if channel == "home_updater.result" { octosense_updater_ui::android_result(payload); }
         }
-        #[cfg(any(feature = "app-hub", native_mobile))]
+        #[cfg(app_platform)]
         self.audio_session_event(cx, event);
-        #[cfg(any(feature = "app-hub", native_mobile))]
+        #[cfg(app_platform)]
         platform_services::handle_event(cx, event);
-        #[cfg(any(feature = "app-hub", native_mobile))]
+        #[cfg(app_platform)]
         files_service::handle_event(cx, event);
-        #[cfg(any(feature = "app-hub", native_mobile))]
+        #[cfg(app_platform)]
         device_calendar::handle_event(cx, event);
         self.webview_render.handle_event(cx, event);
         self.shell_handle_event_inner(cx, event);
@@ -6786,7 +6786,7 @@ impl App {
         }
         // A switch or Home action must stop device access in this event, not
         // wait for the newly focused app's next draw.
-        #[cfg(any(feature = "app-hub", native_mobile))]
+        #[cfg(app_platform)]
         self.audio_session_event(cx, event);
         // Whatever module panicked during this event — in its tile's event
         // or draw, or in a call the shell made — is contained by now; show
@@ -6796,7 +6796,7 @@ impl App {
         // whether a presentation still holds (app_fullscreen.rs). Not in a
         // draw: an app's hook may redraw.
         if !matches!(event, Event::Draw(_)) {
-            #[cfg(any(feature = "app-hub", native_mobile))]
+            #[cfg(app_platform)]
             self.serve_window_requests(cx);
             self.sync_presentation(cx);
         }
@@ -6816,7 +6816,7 @@ impl App {
         }
     }
 
-    #[cfg(any(feature = "app-hub", native_mobile))]
+    #[cfg(app_platform)]
     fn audio_session_event(&mut self, cx: &mut Cx, event: &Event) {
         let glance = self
             .ui
@@ -6861,7 +6861,7 @@ impl App {
             }
         }
         if cfg!(dev_mode) {
-            #[cfg(all(unix, any(feature = "app-hub", native_mobile)))]
+            #[cfg(all(unix, app_platform))]
             studio::apps::tick(cx, event);
             let studio_surface = studio::surface_geometry(cx);
             self.studio.event(cx, event, studio_surface);

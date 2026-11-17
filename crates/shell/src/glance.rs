@@ -753,7 +753,7 @@ pub fn generation() -> u64 {
 /// Serve one `glance.*` call for `caller`: the same API for a contained app
 /// (through the Card runner's host service) and a native one.
 pub fn request(caller: &Caller, service: &str, args: &Value) -> Result<Value, String> {
-    #[cfg(any(feature = "app-hub", native_mobile))]
+    #[cfg(app_platform)]
     if matches!(service, "glance.publish" | "publish") && args.get("template").is_some() {
         caller.may_use()?;
         let Caller::Contained {app, ..} = caller else {return Err("Templates belong to installed apps".into());};
@@ -768,7 +768,7 @@ pub fn request(caller: &Caller, service: &str, args: &Value) -> Result<Value, St
     request_bound(caller, service, args, None)
 }
 
-#[cfg(any(feature = "app-hub", native_mobile, test))]
+#[cfg(any(app_platform, test))]
 fn template_args(args: &Value, body: &str, account: &str) -> Result<Value, String> {
     if args.get("script").is_some() || args.get("source").is_some() || args.get("data").is_some() {
         return Err("A template publication uses initial values, not source/script/data".into());
@@ -798,7 +798,7 @@ fn request_bound(caller: &Caller, service: &str, args: &Value, mail: Option<crat
     if method == "withdraw" {
         let id = args["card_id"].as_str().filter(|id| valid_card_id(id)).ok_or("Invalid card_id")?;
         crate::mail_card::remove_publication(&gate, &format!("{}/{id}", caller.app()))?;
-        #[cfg(any(feature = "app-hub", native_mobile))]
+        #[cfg(app_platform)]
         crate::mail_background::dismiss(&format!("{}/{id}", caller.app()), true)?;
     }
     let before = with_store(|store| store.cards.clone());
@@ -820,9 +820,9 @@ fn request_bound(caller: &Caller, service: &str, args: &Value, mail: Option<crat
                 // A payload-budget retirement must also retire its native
                 // notification record, or the next outbox scan resurrects it
                 // and can displace the publication we just admitted.
-                #[cfg(any(feature = "app-hub", native_mobile))]
+                #[cfg(app_platform)]
                 crate::mail_background::dismiss(&old.key(), true)?;
-                #[cfg(any(feature = "app-hub", native_mobile))]
+                #[cfg(app_platform)]
                 calendar_dismissed(old, true)?;
             }
         }
@@ -831,7 +831,7 @@ fn request_bound(caller: &Caller, service: &str, args: &Value, mail: Option<crat
             crate::mail_card::save_publication(&gate, args, binding, card.published_ms, card.expires_ms)?;
         }
     }
-    #[cfg(any(feature = "app-hub", native_mobile))]
+    #[cfg(app_platform)]
     if result.is_ok() && method == "publish" {
         let key = format!("{}/{}", caller.app(), args["card_id"].as_str().unwrap_or_default());
         if let Some(card) = with_store(|store| store.card(&key, now)) {
@@ -866,9 +866,9 @@ fn request_bound(caller: &Caller, service: &str, args: &Value, mail: Option<crat
 /// surface calls it every frame it draws the glance screen.
 pub fn expire_now() {
     crate::mail_card::restore_publications();
-    #[cfg(any(feature = "app-hub", native_mobile))]
+    #[cfg(app_platform)]
     crate::mail_background::restore_publications();
-    #[cfg(any(feature = "app-hub", native_mobile))]
+    #[cfg(app_platform)]
     restore_calendar_publications();
     if with_store(|store| {
         let before = store.len();
@@ -892,7 +892,7 @@ pub fn dismiss(key: &str) -> bool {
 
 /// Retire a completed host-bound reply without deleting its draft or receipts,
 /// changing the person's Undo action, or revoking the visible send receipt.
-#[cfg(any(feature = "app-hub", native_mobile))]
+#[cfg(app_platform)]
 pub(crate) fn retire_completed_mail(_gate: &std::sync::MutexGuard<'static, ()>, binding: &crate::mail_card::Binding) {
     let key = binding.key();
     let removed = with_store(|store| {
@@ -921,9 +921,9 @@ pub fn dismiss_all(keys: &[String]) -> usize {
         let card = store.card(key, now_ms())?;
         match crate::mail_card::set_publication_dismissed(&gate, &card, true) {
             Ok(true) => {
-                #[cfg(any(feature = "app-hub", native_mobile))]
+                #[cfg(app_platform)]
                 if crate::mail_background::dismiss(key, true).is_err() { return None; }
-                #[cfg(any(feature = "app-hub", native_mobile))]
+                #[cfg(app_platform)]
                 if calendar_dismissed(&card, true).is_err() { return None; }
                 store.take(key)
             },
@@ -948,9 +948,9 @@ pub fn undo_dismiss() -> Vec<String> {
             && crate::mail_card::publication_can_undo(card, now_ms())
             && crate::mail_card::set_publication_dismissed(&gate, card, false) == Ok(true)
     }).collect();
-    #[cfg(any(feature = "app-hub", native_mobile))]
+    #[cfg(app_platform)]
     let cards: Vec<_> = cards.into_iter().filter(|c| crate::mail_background::dismiss(&c.key(), false).is_ok()).collect();
-    #[cfg(any(feature = "app-hub", native_mobile))]
+    #[cfg(app_platform)]
     let cards: Vec<_> = cards.into_iter().filter(|c| calendar_dismissed(c, false).is_ok()).collect();
     let keys: Vec<String> = cards.iter().map(|c| c.key()).collect();
     let now = now_ms();
@@ -978,10 +978,10 @@ pub fn listed() -> Vec<GlanceCard> {
 }
 
 /// The `glance` family for the Card runner (App Hub's host services).
-#[cfg(any(feature = "app-hub", native_mobile))]
+#[cfg(app_platform)]
 pub struct GlanceService;
 
-#[cfg(any(feature = "app-hub", native_mobile))]
+#[cfg(app_platform)]
 impl octosense_appstore::services::HostService for GlanceService {
     fn family(&self) -> &'static str {
         "glance"
@@ -1003,7 +1003,7 @@ impl octosense_appstore::services::HostService for GlanceService {
     }
 }
 
-#[cfg(any(feature = "app-hub", native_mobile))]
+#[cfg(app_platform)]
 pub fn register() {
     octosense_appstore::services::register_host_service(Box::new(GlanceService));
 }
@@ -1013,19 +1013,19 @@ pub fn register() {
 /// identity. Capability declarations do not gate publication. Calendar's
 /// cards and every app's notice
 /// (glance_notice.rs) go out this way.
-#[cfg(any(feature = "app-hub", native_mobile))]
+#[cfg(app_platform)]
 pub fn publish_for(app: &str, args: &Value) -> Result<Value, String> {
     let caller = Caller::Contained { app: app.to_string(), admitted: crate::host_tools::script_apps::admitted(app) };
     request(&caller, "glance.publish", args)
 }
 
-#[cfg(any(feature = "app-hub", native_mobile))]
+#[cfg(app_platform)]
 pub fn withdraw_for(app: &str, id: &str) -> Result<(), String> {
     let caller = Caller::Contained {app:app.into(),admitted:crate::host_tools::script_apps::admitted(app)};
     request(&caller,"glance.withdraw",&json!({"card_id":id})).map(|_| ())
 }
 
-#[cfg(any(feature = "app-hub", native_mobile))]
+#[cfg(app_platform)]
 fn calendar_dismissed(card: &GlanceCard, dismissed: bool) -> Result<(), String> {
     if card.app != "os.calendar" { return Ok(()); }
     if let Some(host) = crate::app_storage::host() {
@@ -1034,7 +1034,7 @@ fn calendar_dismissed(card: &GlanceCard, dismissed: bool) -> Result<(), String> 
     Ok(())
 }
 
-#[cfg(any(feature = "app-hub", native_mobile))]
+#[cfg(app_platform)]
 fn restore_calendar_publications() {
     static RESTORED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
     if RESTORED.load(Ordering::Acquire) { return; }
@@ -1058,7 +1058,7 @@ fn restore_calendar_publications() {
     RESTORED.store(true,Ordering::Release);
 }
 
-#[cfg(any(feature = "app-hub", native_mobile))]
+#[cfg(app_platform)]
 pub fn publish_l0_for(app: &str, args: &Value) -> Result<Value, String> {
     if args.get("script").is_some() {
         return Err("Generated Mail cards accept L0 source only".into());
@@ -1070,7 +1070,7 @@ pub fn publish_l0_for(app: &str, args: &Value) -> Result<Value, String> {
 }
 
 /// Opt-in developer harness; normal app attribution/admission still applies.
-#[cfg(all(feature = "dev-mode", any(feature = "app-hub", native_mobile)))]
+#[cfg(all(feature = "dev-mode", app_platform))]
 pub(crate) fn publish_test_fixtures(path: &str) -> Result<usize, String> {
     // Real app publishers pass their admitted glance grant. test.*
     // prototypes carry no app capabilities and have no agent.
@@ -1092,7 +1092,7 @@ pub(crate) fn publish_test_fixtures(path: &str) -> Result<usize, String> {
 
 /// Only installed as the Rust Mail service callback. Ordinary glance.publish
 /// rejects the reserved field, even when the caller is os.mail.
-#[cfg(any(feature = "app-hub", native_mobile))]
+#[cfg(app_platform)]
 pub fn publish_mail_l0_for(app: &str, args: &Value) -> Result<Value, String> {
     let Some(metadata) = args.get("mail_binding") else { return publish_l0_for(app, args); };
     if app != "os.mail" || args.get("script").is_some() { return Err("Bound Mail cards require os.mail L0 source".into()); }
@@ -1113,7 +1113,7 @@ pub fn publish_mail_l0_for(app: &str, args: &Value) -> Result<Value, String> {
 }
 
 /// Hide an inactive account's cards without dismissing its durable publications.
-#[cfg(any(feature = "app-hub", native_mobile))]
+#[cfg(app_platform)]
 pub(crate) fn hide_other_mail_accounts(active: Option<&str>) {
     let removed = with_store(|store| {
         let before = store.cards.len();
@@ -1126,7 +1126,7 @@ pub(crate) fn hide_other_mail_accounts(active: Option<&str>) {
 
 /// Revalidate cached L0, retaining the original absolute lifetime. The caller
 /// holds the publication gate; restore neither notifies nor rewrites the cache.
-#[cfg(any(feature = "app-hub", native_mobile))]
+#[cfg(app_platform)]
 pub(crate) fn restore_mail_publication(args: &Value, binding: crate::mail_card::Binding, published: u64, expires: u64) -> Result<(), String> {
     let now = now_ms();
     if expires <= now || published >= expires { return Err("Expired Mail publication".into()); }
@@ -1149,7 +1149,7 @@ pub(crate) fn restore_mail_publication(args: &Value, binding: crate::mail_card::
 }
 
 /// Native notification restore: the account comes from private host storage.
-#[cfg(any(feature = "app-hub", native_mobile))]
+#[cfg(app_platform)]
 pub(crate) fn restore_notification_for(app: &str, args: &Value, account: &str, published: u64, expires: u64) -> Result<(), String> {
     if app == "os.mail" {return restore_mail_notification(args,account,published,expires);}
     crate::apps::check_script_app_id(app)?;
@@ -1171,7 +1171,7 @@ pub(crate) fn restore_notification_for(app: &str, args: &Value, account: &str, p
 }
 
 /// Legacy Mail L0/binding restoration keeps its stricter source contract.
-#[cfg(any(feature = "app-hub", native_mobile))]
+#[cfg(app_platform)]
 pub(crate) fn restore_mail_notification(args: &Value, account: &str, published: u64, expires: u64) -> Result<(), String> {
     let _gate = crate::mail_card::publication_guard();
     if crate::ai_host::contained::account_of("os.mail").as_deref() != Some(account) { return Err("Inactive account".into()); }
@@ -1287,7 +1287,7 @@ pub fn demo_mail_publishes() -> Vec<Value> {
 }
 
 /// `OCTOSENSE_GLANCE_DEMO=many`'s notices: (app, card id, title, text).
-#[cfg(any(feature = "app-hub", native_mobile))]
+#[cfg(app_platform)]
 const DEMO_NOTICES: &[(&str, &str, &str, &str)] = &[
     ("os.calendar", "dentist", "Dentist at 3 pm", "Main St 12. Leave by 2:40 to be on time."),
     ("os.photos", "hike", "12 new photos", "From Saturday's hike; three are already favourites."),
@@ -1325,7 +1325,7 @@ pub fn publish_demo_if_asked() {
             if demo == "mail" {
                 return;
             }
-            #[cfg(any(feature = "app-hub", native_mobile))]
+            #[cfg(app_platform)]
             for &(app, card_id, title, body) in DEMO_NOTICES {
                 let args = crate::glance_notice::publish_args(app, &json!({"title": title, "body": body, "card_id": card_id}), now_ms());
                 if let Err(e) = args.and_then(|args| request(&Caller::admitted(app), "glance.publish", &args)) {
@@ -1368,7 +1368,7 @@ mod tests {
         assert!(template_args(&oversized,"Label {}","owned").is_err());
     }
 
-    #[cfg(any(feature = "app-hub", native_mobile))]
+    #[cfg(app_platform)]
     #[test]
     fn completed_mail_retirement_keeps_other_accounts_new_messages_and_undo() {
         let gate = crate::mail_card::publication_guard();
@@ -1469,7 +1469,7 @@ mod tests {
 
     /// Calendar's event and agenda cards are valid L0 cards the store
     /// admits as Calendar's.
-    #[cfg(any(feature = "app-hub", native_mobile))]
+    #[cfg(app_platform)]
     #[test]
     fn calendars_cards_are_admitted_as_its_own() {
         use octosense_calendar_service as cal;
@@ -1486,7 +1486,7 @@ mod tests {
 
     /// Mail's `mail.notify` card is a valid L0 card the store admits as
     /// Mail's, and a Mail without the `glance` grant cannot publish it.
-    #[cfg(any(feature = "app-hub", native_mobile))]
+    #[cfg(app_platform)]
     #[test]
     fn mails_notice_card_is_admitted_as_mails_own() {
         let mut store = GlanceStore::default();
@@ -1502,7 +1502,7 @@ mod tests {
     /// Every system app's notice (`<namespace>.notify`) is a valid L0 card,
     /// with that app's icon, that the store admits as that app's own and
     /// that opens it; another app cannot publish it.
-    #[cfg(any(feature = "app-hub", native_mobile))]
+    #[cfg(app_platform)]
     #[test]
     fn every_apps_notice_card_is_admitted_as_its_own() {
         for app in ["os.news", "os.photos", "os.maps", "os.youtube", "os.camera", "os.calendar", "os.ai-providers"] {

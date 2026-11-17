@@ -13,12 +13,12 @@ use makepad_widgets::*;
 use octoscript_ui_l0::InstanceStore;
 use crate::card_presentation::Presentation;
 
-#[cfg(any(feature = "app-hub", native_mobile))]
+#[cfg(app_platform)]
 use crate::mail_review::{MailReview, MailToolbar};
-#[cfg(not(any(feature = "app-hub", native_mobile)))]
+#[cfg(not(app_platform))]
 #[derive(Default)]
 struct MailReview;
-#[cfg(not(any(feature = "app-hub", native_mobile)))]
+#[cfg(not(app_platform))]
 #[derive(Default)]
 struct MailToolbar;
 
@@ -255,7 +255,7 @@ impl ShellGlanceSheet {
     pub fn accepts_pointer(&mut self, _event: &Event) -> bool { self.is_open() }
 
     fn revoke_review(&mut self) {
-        #[cfg(any(feature = "app-hub", native_mobile))]
+        #[cfg(app_platform)]
         self.review.close();
         if let Some(open) = &self.open { crate::mail_card::cancel_for(&open.key); }
     }
@@ -287,7 +287,7 @@ impl ShellGlanceSheet {
         if self.keyboard_visible {
             cx.set_key_focus(Area::Empty); cx.hide_text_ime(); self.redraw(cx); return;
         }
-        #[cfg(any(feature = "app-hub", native_mobile))]
+        #[cfg(app_platform)]
         if self.review.is_active() && self.open.as_ref().is_some_and(|o| o.card.card_id != "host-review") {
             if self.open.as_ref().is_some_and(|o| crate::glance::card(&o.key).is_none()) {
                 self.close(cx); return;
@@ -369,7 +369,7 @@ impl ShellGlanceSheet {
         let card = match crate::glance::card(key) {
             Some(card) => card,
             None => {
-                #[cfg(any(feature = "app-hub", native_mobile))]
+                #[cfg(app_platform)]
                 if let Some(review) = crate::mail_card::take_review(key) {
                     // Superseding a view revokes its token only: both reviews
                     // may refer to the same deduplicated send operation.
@@ -395,7 +395,7 @@ impl ShellGlanceSheet {
                 return false;
             }
         };
-        #[cfg(any(feature = "app-hub", native_mobile))]
+        #[cfg(app_platform)]
         {
             if let Some(old) = self.open.as_ref().filter(|old| old.key != key) { crate::mail_card::cancel_for(&old.key); }
             self.review.replace();
@@ -460,7 +460,7 @@ impl ShellGlanceSheet {
         self.resume_store = None;
         self.close_touch = None;
         self.mail_toolbar = MailToolbar::default();
-        #[cfg(any(feature = "app-hub", native_mobile))]
+        #[cfg(app_platform)]
         self.review.close();
         if let Some(open) = self.open.take() {
             crate::mail_card::cancel_for(&open.key);
@@ -504,7 +504,7 @@ impl ShellGlanceSheet {
             None => {
                 // Completion clears the feed immediately, but the person who
                 // just sent a reply can still read the authoritative receipt.
-                #[cfg(any(feature = "app-hub", native_mobile))]
+                #[cfg(app_platform)]
                 if self.review.is_active() && self.mail_binding().as_ref().is_some_and(crate::mail_card::completed) { return; }
                 self.close(cx);
             }
@@ -593,7 +593,7 @@ impl ShellGlanceSheet {
         self.redraw(cx);
     }
 
-    #[cfg(any(feature = "app-hub", native_mobile))]
+    #[cfg(app_platform)]
     fn poll_review(&mut self, cx: &mut Cx) {
         if let Some(open) = &self.open {
             let generation = crate::mail_card::review_generation(&open.key);
@@ -638,7 +638,7 @@ impl Widget for ShellGlanceSheet {
         let screen = cx.turtle().rect();
         // Publication teardown can cancel a host sheet and answer its app.
         // It runs in handle_event, never inside the drawing pass.
-        #[cfg(any(feature = "app-hub", native_mobile))]
+        #[cfg(app_platform)]
         if self.is_open() { self.poll_review(cx); }
         // Every frame, open or closed: the kit keeps its overlay in tree order.
         self.d.begin_surface(cx);
@@ -675,9 +675,9 @@ impl Widget for ShellGlanceSheet {
             else { sheet_rect(screen, if self.chatting || open.card.l0.as_ref().is_some_and(|l| l.mail.is_some()) {600.0} else {card_h + if self.chat_available {TABS} else {0.0}}) };
             let sheet = self.presentation.rect(destination);
             self.sheet = sheet;
-            #[cfg(any(feature = "app-hub", native_mobile))]
+            #[cfg(app_platform)]
             let reviewing = self.review.is_active();
-            #[cfg(not(any(feature = "app-hub", native_mobile)))]
+            #[cfg(not(app_platform))]
             let reviewing = false;
             let native_mail = open.card.l0.as_ref().is_some_and(|l| l.mail.is_some());
             let focus_layout = self.fullscreen && self.keyboard_visible && destination.size.y < 260.0
@@ -695,9 +695,9 @@ impl Widget for ShellGlanceSheet {
             self.visible_sheet = sheet.clip((screen.pos, screen.pos + screen.size));
             cx.begin_turtle(Walk::abs_rect(self.visible_sheet), Layout::default());
             let close = close_rect(sheet);
-            #[cfg(any(feature = "app-hub", native_mobile))]
+            #[cfg(app_platform)]
             let heading = if self.review.is_active() { "Mail reply" } else { &open.card.title };
-            #[cfg(not(any(feature = "app-hub", native_mobile)))]
+            #[cfg(not(app_platform))]
             let heading = &open.card.title;
             if !focus_layout {
                 self.d.label_elided(cx, rect(sheet.pos.x + PAD + 4.0, sheet.pos.y + 4.0, sheet.size.x - PAD * 2.0 - CLOSE - 8.0, HEADER - 4.0), true, 14.0, ink, HAlign::Left, heading);
@@ -706,7 +706,7 @@ impl Widget for ShellGlanceSheet {
             let mut card = card_rect(sheet);
             let key = Self::tile_key(&open.key);
             if reviewing {
-                #[cfg(any(feature = "app-hub", native_mobile))]
+                #[cfg(app_platform)]
                 self.review.draw(cx, &mut self.d, card, &tok);
             } else {
                 // Only the active pane draws and receives input. The generated
@@ -742,7 +742,7 @@ impl Widget for ShellGlanceSheet {
                     }
                     self.mail.draw_walk_all(cx, scope, Walk::abs_rect(rect(body_sheet.pos.x, card.pos.y, body_sheet.size.x, card.size.y)));
                 } else {
-                #[cfg(any(feature = "app-hub", native_mobile))]
+                #[cfg(app_platform)]
                 let card = if let Some(binding) = open.card.l0.as_ref().and_then(|l| l.mail.as_ref()).filter(|_| !self.keyboard_visible) {
                     let toolbar = rect(card.pos.x, card.pos.y + (card.size.y - MailToolbar::HEIGHT).max(0.), card.size.x, MailToolbar::HEIGHT);
                     self.mail_toolbar.draw(cx, &mut self.d, toolbar, &tok, binding);
@@ -798,7 +798,7 @@ impl Widget for ShellGlanceSheet {
         self.tiles.sync_foreground(cx, !self.app_suspended && !closing,
             cfg!(target_os = "android") && self.app_suspended && !closing);
         self.poll_compose(cx);
-        #[cfg(any(feature = "app-hub", native_mobile))]
+        #[cfg(app_platform)]
         self.poll_review(cx);
         if let Event::TouchUpdate(e) = event {
             use makepad_platform::event::TouchState;
@@ -838,7 +838,7 @@ impl Widget for ShellGlanceSheet {
             }
             _ => {}
         }
-        #[cfg(any(feature = "app-hub", native_mobile))]
+        #[cfg(app_platform)]
         if self.review.is_active() {
             self.review.handle_event(event);
             if !self.review.is_active() && self.open.as_ref().is_some_and(|o|
@@ -884,7 +884,7 @@ impl Widget for ShellGlanceSheet {
         }
         if self.mail_binding().is_some() {
             self.mail.handle_event(cx, event, scope);
-            #[cfg(any(feature = "app-hub", native_mobile))]
+            #[cfg(app_platform)]
             {
                 if let Some(mut mail) = self.mail.borrow_mut::<crate::mail_clip::MailClip>() {
                     if let Some(binding) = mail.take_review() {
@@ -897,7 +897,7 @@ impl Widget for ShellGlanceSheet {
             }
             return;
         }
-        #[cfg(any(feature = "app-hub", native_mobile))]
+        #[cfg(app_platform)]
         if let Some(binding) = self.open.as_ref().and_then(|o| o.card.l0.as_ref()).and_then(|l| l.mail.clone()).filter(|_| !self.keyboard_visible) {
             if self.mail_toolbar.handle_event(event, &binding, &mut self.review) {
                 if self.review.is_active() {
@@ -918,7 +918,7 @@ impl Widget for ShellGlanceSheet {
         }
         self.tiles.handle_event(cx, event);
         self.dispatch_taps(cx);
-        #[cfg(any(feature = "app-hub", native_mobile))]
+        #[cfg(app_platform)]
         { self.poll_review(cx); if self.review.is_active() { self.redraw(cx); } }
     }
 }

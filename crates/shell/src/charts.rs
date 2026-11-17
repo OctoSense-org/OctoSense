@@ -17,7 +17,7 @@ pub fn register(vm: &mut ScriptVm) {
 
 /// Compatibility discovery must also work before the first app VM opens.
 pub(crate) fn register_feature() {
-    #[cfg(any(feature = "app-hub", native_mobile))]
+    #[cfg(app_platform)]
     octosense_appstore::host_api::register_runtime_feature("charts.d3", 1);
 }
 

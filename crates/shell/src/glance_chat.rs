@@ -258,7 +258,7 @@ mod tests {
     /// prepared its agent in this run. The account comes from Mail's
     /// manifest then; before, the unrecorded block read as "no accounts"
     /// and the thread went to the device folder.
-    #[cfg(any(feature = "app-hub", native_mobile))]
+    #[cfg(app_platform)]
     #[test]
     fn a_cards_thread_is_kept_under_the_account_the_agent_acts_for() {
         use crate::app_storage::{lifecycle::contained_account_in, Layout, Storage};

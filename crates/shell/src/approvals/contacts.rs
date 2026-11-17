@@ -90,14 +90,14 @@ impl ContactsSource for MailContacts {
 /// The shell's contacts source: Mail's data where Mail's host service is
 /// linked (App Hub, and every phone build), else nobody.
 pub fn shell_source() -> Box<dyn ContactsSource> {
-    #[cfg(any(feature = "app-hub", native_mobile))]
+    #[cfg(app_platform)]
     {
         Box::new(MailContacts::new(
             || octosense_app_hub_app::data_root_if_set().map(|root| root.join(".host")),
             octosense_mail_service::contacts::known_addresses,
         ))
     }
-    #[cfg(not(any(feature = "app-hub", native_mobile)))]
+    #[cfg(not(app_platform))]
     {
         Box::new(NoContacts)
     }

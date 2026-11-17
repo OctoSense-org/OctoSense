@@ -2,7 +2,7 @@
 use makepad_widgets::{app_icon, desktop_style::{DesktopStyle as UpstreamStyle, StyleSheet}, *};
 use super::{icon_family, icon_frame};
 use super::icon_frame::DrawIconImage;
-#[cfg(any(feature = "app-hub", native_mobile))]
+#[cfg(app_platform)]
 use super::icon_frame::SvgIconTexture;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -125,9 +125,9 @@ pub fn icon_assets(style: UpstreamStyle) -> Vec<app_icon::IconAsset> {
 /// App Hub's store icon: App Hub's own when it is linked, else the same icon
 /// kept beside the other app art.
 fn apphub_svg() -> &'static str {
-    #[cfg(any(feature = "app-hub", native_mobile))]
+    #[cfg(app_platform)]
     return octosense_app_hub_app::APP_ICON_SVG;
-    #[cfg(not(any(feature = "app-hub", native_mobile)))]
+    #[cfg(not(app_platform))]
     return include_str!("../../resources/icons/apps/apphub.svg");
 }
 
@@ -164,14 +164,14 @@ fn own_artwork(style: UpstreamStyle) -> Option<[&'static str; 2]> {
 pub struct AppIconDraw {
     draw: app_icon::AppIconDraw,
     original_png: Option<(DrawIconImage, Texture)>,
-    #[cfg(any(feature = "app-hub", native_mobile))]
+    #[cfg(app_platform)]
     library: InstalledIcons,
     /// The styles whose catalog this drawer has seen to, by discriminant.
     installed: [bool; UpstreamStyle::ALL.len()],
 }
 impl AppIconDraw {
     pub fn draw(&mut self, cx: &mut Cx2d, name: &str, style: DesktopStyle, rect: Rect, opacity: f32, ink: Vec4f) {
-        #[cfg(any(feature = "app-hub", native_mobile))]
+        #[cfg(app_platform)]
         if !icon_family::owns_svg(name)
             && self.library.draw(cx, name, style.framework(), rect, opacity) { return; }
         if let Some(bytes) = icon_family::png(name) {
@@ -207,17 +207,17 @@ impl AppIconDraw {
     }
 }
 
-#[cfg(any(feature = "app-hub", native_mobile))]
+#[cfg(app_platform)]
 #[derive(Default)]
 struct InstalledIcons {
     root: Option<std::path::PathBuf>,
     generation: u64,
     entries: std::collections::HashMap<String, Option<InstalledIcon>>,
 }
-#[cfg(any(feature = "app-hub", native_mobile))]
+#[cfg(app_platform)]
 enum InstalledIcon { Svg(DrawIconImage, SvgIconTexture), Png(DrawIconImage, Texture) }
 
-#[cfg(any(feature = "app-hub", native_mobile))]
+#[cfg(app_platform)]
 impl InstalledIcons {
     fn draw(&mut self, cx: &mut Cx2d, name: &str, style: UpstreamStyle, rect: Rect, opacity: f32) -> bool {
         use octosense_app_hub_app::icons::{self, IconData};

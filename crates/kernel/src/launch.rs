@@ -100,11 +100,16 @@ pub(crate) struct Inputs<'a> {
 /// [`prepare`] makes the directories right before a start.
 pub(crate) fn resolve(inputs: &Inputs) -> Result<Launch, Unavailable> {
     let core_dir = inputs.core_dir.ok_or(Unavailable::NoCoreDir)?;
-    #[cfg(target_env = "ohos")]
+    #[cfg(all(target_env = "ohos", feature = "embedded-core"))]
     {
         let _ = inputs.program;
         let _ = inputs.env;
         Ok(Launch::Embedded { home: dirs::kernel_home(core_dir) })
+    }
+    #[cfg(all(target_env = "ohos", not(feature = "embedded-core")))]
+    {
+        let _ = (core_dir, inputs.program, inputs.env);
+        Err(Unavailable::Unsupported("OpenHarmony without the in-process core"))
     }
     #[cfg(target_os = "ios")]
     {

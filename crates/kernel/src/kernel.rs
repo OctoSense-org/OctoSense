@@ -44,12 +44,12 @@ const STDIO_GRACE: Duration = Duration::from_secs(3);
 /// after its stdin closes (octos `SERVE_SHUTDOWN_GRACE`).
 const SHARED_GRACE: Duration = Duration::from_secs(12);
 /// The embedded core drains owned turns on EOF (as AppCard allowed it).
-#[cfg(target_env = "ohos")]
+#[cfg(all(target_env = "ohos", feature = "embedded-core"))]
 const EMBEDDED_GRACE: Duration = Duration::from_secs(12);
 
 enum Running {
     Child(tokio::process::Child),
-    #[cfg(target_env = "ohos")]
+    #[cfg(all(target_env = "ohos", feature = "embedded-core"))]
     Embedded(tokio::task::JoinHandle<()>),
 }
 
@@ -140,7 +140,7 @@ fn start(launch: &Launch, network: &Network, log: &LogSink, tail: &Tail) -> Resu
                 Io { writer: Box::pin(stdin), lines, running: Running::Child(child), lifeline: None, stderr }
             })
         }
-        #[cfg(target_env = "ohos")]
+        #[cfg(all(target_env = "ohos", feature = "embedded-core"))]
         Launch::Embedded { home } => {
             let (client, server) = tokio::io::duplex(1024 * 1024);
             let (reader, writer) = tokio::io::split(client);
@@ -160,8 +160,8 @@ fn start(launch: &Launch, network: &Network, log: &LogSink, tail: &Tail) -> Resu
                 stderr: None,
             })
         }
-        #[cfg(not(target_env = "ohos"))]
-        Launch::Embedded { .. } => Err("an embedded core exists only on OpenHarmony".into()),
+        #[cfg(not(all(target_env = "ohos", feature = "embedded-core")))]
+        Launch::Embedded { .. } => Err("an embedded core exists only on OpenHarmony, in a build with `embedded-core`".into()),
     }
 }
 
@@ -230,7 +230,7 @@ async fn prepare_network(
 
 /// The embedded core logs through `tracing`; send it to the log sink, once
 /// per process (as AppCard's embedded transport did).
-#[cfg(target_env = "ohos")]
+#[cfg(all(target_env = "ohos", feature = "embedded-core"))]
 fn init_embedded_tracing(log: &LogSink) {
     struct Sink(LogSink);
     impl std::io::Write for Sink {
@@ -257,7 +257,7 @@ async fn exited(running: &mut Running) -> String {
             Ok(status) => format!("the kernel exited ({status})"),
             Err(e) => format!("waiting for the kernel failed: {e}"),
         },
-        #[cfg(target_env = "ohos")]
+        #[cfg(all(target_env = "ohos", feature = "embedded-core"))]
         Running::Embedded(task) => match task.await {
             Ok(()) => "the embedded core stopped".into(),
             Err(e) => format!("the embedded core failed: {e}"),
@@ -283,7 +283,7 @@ async fn stop(io: Io) {
                 let _ = child.wait().await;
             }
         }
-        #[cfg(target_env = "ohos")]
+        #[cfg(all(target_env = "ohos", feature = "embedded-core"))]
         Running::Embedded(task) => {
             if !task.is_finished() && tokio::time::timeout(EMBEDDED_GRACE, &mut *task).await.is_err() {
                 task.abort();

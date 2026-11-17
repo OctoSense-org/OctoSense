@@ -68,6 +68,8 @@ app-weather = ["octosense-shell/app-weather"]
 # END native-apps: features
 # The phone shell alone, on the desktop (Android sets it itself).
 mobile-only = ["octosense-shell/mobile-only"]
+# A phone build without the app platform (see octosense-shell's `shell-only`).
+shell-only = ["octosense-shell/shell-only"]
 # The octos kernel as a shell service (octosense-kernel, via octosense-ai-host).
 octos-core = ["octosense-shell/octos-core"]
 app-aichat = ["octosense-shell/app-aichat"]

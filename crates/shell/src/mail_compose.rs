@@ -36,7 +36,7 @@ impl ComposeReply {
             self.error = Some("This Mail card is no longer available".into());
             return;
         }
-        #[cfg(any(feature = "app-hub", native_mobile))]
+        #[cfg(app_platform)]
         {
             let account = card.account.clone().unwrap();
             let card_id = card.card_id.clone();
@@ -62,7 +62,7 @@ impl ComposeReply {
                 Err(error) => self.error = Some(format!("Cannot prepare reply: {error}")),
             }
         }
-        #[cfg(not(any(feature = "app-hub", native_mobile)))]
+        #[cfg(not(app_platform))]
         {
             self.error = Some("Mail is unavailable in this build".into());
         }

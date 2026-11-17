@@ -19,6 +19,10 @@ publish     = false
 # builds without it): only then does an Android kernel take the launch extra
 # `makepad.OCTOS_PROXY`. The shells' and AppCard's `dev-mode` turn it on.
 dev-mode = []
+# OpenHarmony's in-process core (the target table below). Off for now: octos
+# builds on octoscript-core, which is not yet on the script API of the makepad
+# this branch pins, so an OpenHarmony build runs without a kernel, as iOS does.
+embedded-core = ["dep:octos-cli", "dep:tracing-subscriber"]
 
 [dependencies]
 tokio      = { version = "1", features = ["rt-multi-thread", "sync", "io-util", "process", "time", "macros"] }
@@ -40,8 +44,8 @@ octos-core = { workspace = true }
 # source and rev as AppCard (apps/appcard/app/Cargo.toml); move them together.
 # A consumer workspace must also carry the `nix` patch AppCard documents.
 [target.'cfg(target_env = "ohos")'.dependencies]
-octos-cli = { workspace = true, features = ["api", "git", "ast"] }
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+octos-cli = { workspace = true, features = ["api", "git", "ast"], optional = true }
+tracing-subscriber = { version = "0.3", features = ["env-filter"], optional = true }
 
 # A desktop checks its packaged `octos-kernel` against the receipt's SHA-256
 # before running it (`launch::verify_packaged`).

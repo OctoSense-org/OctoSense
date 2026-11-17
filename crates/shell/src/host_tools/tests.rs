@@ -196,7 +196,7 @@ fn reply_pair(id: &str) -> (ToolReply, Sent) {
     reply(id)
 }
 
-#[cfg(any(feature = "app-hub", native_mobile))]
+#[cfg(app_platform)]
 #[test]
 fn cold_mail_loads_calendar_without_preparing_its_agent() {
     // Process-wide registries must start empty; a separate test process also
@@ -236,7 +236,7 @@ fn cold_mail_loads_calendar_without_preparing_its_agent() {
     let _ = std::fs::remove_dir_all(root);
 }
 
-#[cfg(any(feature = "app-hub", native_mobile))]
+#[cfg(app_platform)]
 #[test]
 fn admitted_mail_calendar_grants_route_to_the_real_calendar_store() {
     use super::script_apps::{self, HostServiceExecutor};
@@ -754,7 +754,7 @@ fn a_peer_is_offered_exactly_its_granted_toolbox_tools_marked_with_their_owner_a
     every.push(super::relay::DEV_RUN.to_string());
     if super::studio::SUPPORTED { every.push(super::studio::RENDER.to_string()); }
     // `studio.image` is the system agent's alone.
-    #[cfg(all(unix, any(feature="app-hub", native_mobile)))]
+    #[cfg(all(unix, app_platform))]
     every.extend(super::studio::APP_TOOLS.iter().filter(|name| **name != "studio.image").map(|name| name.to_string()));
     every.sort();
     assert_eq!(offered_names(&relay, "calendar", true, true), every);
@@ -1412,7 +1412,7 @@ fn studio_render_is_scoped_revocable_and_schema_checked() {
     assert!(relay.catalog.offered("os.news", true, true).iter().any(|d| d["name"] == super::studio::RENDER));
 }
 
-#[cfg(all(unix, any(feature="app-hub",native_mobile)))]
+#[cfg(all(unix, app_platform))]
 #[test]
 fn studio_app_tools_are_own_caller_only_and_disappear_on_revocation() {
     let mut relay=Relay::default();
@@ -1445,7 +1445,7 @@ fn studio_app_tools_are_own_caller_only_and_disappear_on_revocation() {
     }
     // An app's agent naming `studio.image` directly is refused by the relay
     // itself, before the schema check or the executor.
-    #[cfg(all(unix, any(feature="app-hub", native_mobile)))]
+    #[cfg(all(unix, app_platform))]
     {
         let mut c=call("studio-app-image","studio.image","os.news");c.app="os.news".into();
         c.args=json!({"prompt":"a red square on white"});
