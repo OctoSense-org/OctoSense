@@ -61,12 +61,27 @@ pub fn register_native_specs(storage: &Storage) {
     }
 }
 
-/// A script app's `manifest.json` under App Hub's data root: an installed
-/// app's bundle ([`crate::apps::installed_bundle`]), or the newest unpacked build of a system app
-/// (`<root>/.system/<id>/<build>/`). `None` before either exists (a system
-/// app the Card runner has not unpacked yet).
+/// A script app's storage declaration. For a system app shipped in this build,
+/// read its compiled pack: an older unpacked version may still be on disk and
+/// the current one may not have been unpacked yet. Other apps use their
+/// installed manifest, or an unpacked system build when none is registered.
 pub fn script_manifest(root: &Path, manifest_id: &str) -> Option<Value> {
     super::validate_app_id(manifest_id).ok()?;
+    #[cfg(any(feature = "app-hub", native_mobile))]
+    if manifest_id.starts_with("os.") {
+        if let Some(system) = octosense_app_hub_app::system_apps().into_iter().find(|app| app.id == manifest_id) {
+            use base64::Engine as _;
+            let pack: octosense_app_hub::pack::Pack = serde_json::from_str(system.pack).ok()?;
+            if pack.schema != octosense_app_hub::pack::PACK_SCHEMA { return None; }
+            let encoded = pack.files.get(octosense_app_policy::MANIFEST_FILE)?;
+            let max_manifest = octosense_app_hub::admission::MAX_MANIFEST_BYTES;
+            if encoded.len() as u64 > max_manifest.div_ceil(3) * 4 { return None; }
+            let bytes = base64::engine::general_purpose::STANDARD.decode(encoded).ok()?;
+            if bytes.len() as u64 > max_manifest { return None; }
+            let manifest: Value = serde_json::from_slice(&bytes).ok()?;
+            return (manifest["id"].as_str() == Some(manifest_id)).then_some(manifest);
+        }
+    }
     let installed = crate::apps::installed_bundle(root, manifest_id).join("manifest.json");
     let path = if installed.is_file() {
         installed
@@ -90,10 +105,18 @@ pub fn prepare_script_app(storage: &Arc<Storage>, root: &Path, manifest_id: &str
     // A native app's folders and spec are never a script app's to set.
     crate::apps::check_script_app_id(manifest_id)?;
     let spec = match script_manifest(root, manifest_id) {
-        Some(manifest) => StorageSpec::from_manifest(&manifest, AppKind::Script).map_err(|e| format!("{manifest_id}: {e}"))?,
-        None => StorageSpec::default(),
+        Some(manifest) => {
+            let spec = StorageSpec::from_manifest(&manifest, AppKind::Script).map_err(|e| format!("{manifest_id}: {e}"))?;
+            storage.set_spec(manifest_id, spec.clone());
+            spec
+        }
+        None => {
+            // A system app can be opened before its first unpack finishes.
+            // Do not cache that absence as a manifest declaring no accounts.
+            storage.clear_spec(manifest_id);
+            StorageSpec::default()
+        }
     };
-    storage.set_spec(manifest_id, spec.clone());
     storage.installed(manifest_id);
     storage.open(manifest_id).map_err(|e| format!("{manifest_id}: {e}"))?;
     Ok(spec)
@@ -241,8 +264,13 @@ pub fn contained_account_in(storage: &Storage, app: &str) -> Option<String> {
 /// agent is then bound to the account it acts for now.
 #[cfg(any(feature = "app-hub", native_mobile))]
 pub fn mail_account(storage: &Arc<Storage>, event: &octosense_mail_service::AccountEvent) -> Change {
-    let change = mail_account_storage(storage, event);
     let (octosense_mail_service::AccountEvent::Added { app_id, .. } | octosense_mail_service::AccountEvent::Removed { app_id, .. }) = event;
+    // The Card runner may have unpacked the app after storage was first
+    // prepared. Record its declaration before deciding how accounts behave.
+    if !storage.has_spec(app_id) {
+        record_manifest_spec(storage, storage.layout().apps_root(), app_id);
+    }
+    let change = mail_account_storage(storage, event);
     if storage.spec(app_id).accounts {
         crate::ai_host::contained::account_changed(app_id);
     }

@@ -34,6 +34,9 @@ pub enum BarModule {
     Style,
     Appearance,
     Workspace(usize),
+    /// A Mac's one item for its desktops, while there are several: the current one's
+    /// number, and a menu of them.
+    Desktops,
     /// `widgets/ActiveWindow.qml` — not in the stock `shell.json` center
     /// list, but our bar carries it right after the workspaces.
     ActiveWindow,
@@ -61,6 +64,15 @@ pub enum BarModule {
     WindowMin,
     WindowMax,
     WindowClose,
+    /// A Mac's status item while a time box runs (`approvals::time_boxes`): its
+    /// menu says what is approved and for how long, with Stop.
+    TimeBox,
+    /// A menu title on a Mac's menu bar: File, Edit, View, Window, Help.
+    MacMenu(usize),
+    /// A Mac's own items at the bar's right end, beside the clock: Spotlight, and
+    /// Control Center with its modules.
+    Spotlight,
+    ControlCenter,
 }
 
 /// One workspace pill.
@@ -92,11 +104,17 @@ pub struct BarData {
     pub indicators: Vec<Indicator>,
     /// The focused window's title (`ActiveWindow.qml`).
     pub active_window: Option<String>,
+    /// The focused app's name: a Mac's menu bar shows it in bold.
+    pub active_app: Option<String>,
     /// The focused app's name, when it has an agent: the bar offers
     /// "Ask <name>".
     pub ask_agent: Option<String>,
     /// Already formatted — `dddd HH:mm`, or the alt `d MMMM 'W'ww yyyy`.
     pub clock: String,
+    /// `sample_mac_clock`, for a Mac-family bar; empty uses `clock`.
+    pub mac_clock: String,
+    /// A Mac bar's menus after the app's name: the app in front can add its own.
+    pub mac_titles: Vec<String>,
     pub keyboard_layout: Option<String>,
     pub weather: Option<String>,
     pub system_update: bool,
@@ -106,6 +124,8 @@ pub struct BarData {
     /// not there.
     pub bluetooth: Option<bool>,
     pub network: Option<bool>,
+    /// The Mac's Wi-Fi, where it has one ([`sample_wifi`]).
+    pub wifi: Option<Wifi>,
     pub volume: Option<u32>,
     pub muted: bool,
     pub brightness: Option<u32>,
@@ -117,12 +137,28 @@ pub struct BarData {
     /// The glance screen's cards and how many arrived since the panel was
     /// last open (`None`: no glance button).
     pub glance: Option<(usize, usize)>,
+    /// A Mac's running time box: the minutes left of the one that ends first.
+    pub time_box: Option<u64>,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Battery {
     pub percent: u32,
     pub charging: bool,
+}
+
+/// The Mac's Wi-Fi, as far as an app may read it. macOS keeps the names of
+/// networks from an app without Location access, so the joined one is known
+/// by its link and its lock alone.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Wifi {
+    /// Its device (`en0`), which turns it on and off.
+    pub device: String,
+    pub on: bool,
+    /// Joined to a network.
+    pub joined: bool,
+    /// The joined network asks for a password.
+    pub secure: bool,
 }
 
 impl BarData {
@@ -160,14 +196,18 @@ impl BarData {
             ],
             indicators: default_indicators(),
             active_window: Some("terminal — ~/makepad".into()),
+            active_app: Some("Terminal".into()),
             ask_agent: None,
             clock: "Thursday 21:34".into(),
+            mac_clock: "Thu Oct 1  21:34".into(),
+            mac_titles: ["File", "Edit", "View", "Window", "Help"].map(String::from).to_vec(),
             keyboard_layout: Some("en".into()),
             weather: None,
             system_update: false,
             tray: vec![],
             bluetooth: Some(true),
             network: Some(true),
+            wifi: None,
             volume: Some(62),
             muted: false,
             brightness: Some(80),
@@ -178,6 +218,7 @@ impl BarData {
             open_panel: None,
             maximized: false,
             glance: None,
+            time_box: None,
         }
     }
 }
@@ -245,6 +286,45 @@ fn run(cmd: &str, args: &[&str]) -> Option<String> {
 /// core on this thread alone.
 pub fn sample_clock(alt: bool) -> String {
     local_time(if alt { c"%-d %B W%V %Y" } else { c"%A %H:%M" })
+}
+
+/// Whether a Mac-family bar's clock writes 24 hours. A Mac follows its own setting,
+/// which the status sampler reads; a hidden test shell stays on 12 hours.
+static MAC_CLOCK_24_HOUR: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(!cfg!(target_os = "macos"));
+
+/// Read the Mac's Date & Time setting: AppleScript writes a time in it, with a
+/// marker for the half of the day (`PM`, `下午`) only on a 12-hour Mac.
+#[cfg(target_os = "macos")]
+fn sample_mac_hour_cycle() {
+    if crate::launch_input::hidden_windows() {
+        return;
+    }
+    if let Some(time) = run("osascript", &["-e", "time string of (current date)"]) {
+        let hours_24 = !time.chars().any(char::is_alphabetic);
+        MAC_CLOCK_24_HOUR.store(hours_24, std::sync::atomic::Ordering::Relaxed);
+    }
+}
+
+/// Whether the Mac is in its dark appearance. A test shell's stays what its
+/// test asked for, whatever this machine is set to.
+pub fn sample_mac_dark() -> Option<bool> {
+    #[cfg(target_os = "macos")]
+    if !crate::launch_input::hidden_windows() {
+        // The key exists only while the Mac is dark.
+        return Some(run("defaults", &["read", "-g", "AppleInterfaceStyle"]).is_some_and(|style| style.trim() == "Dark"));
+    }
+    None
+}
+
+/// The clock as a Mac's menu bar shows it: `Mon Nov 2  9:41 PM`, or `Mon Nov 2  21:41`
+/// on a Mac set to 24 hours.
+pub fn sample_mac_clock() -> String {
+    if MAC_CLOCK_24_HOUR.load(std::sync::atomic::Ordering::Relaxed) {
+        local_time(c"%a %b %-d  %H:%M")
+    } else {
+        local_time(c"%a %b %-d  %-I:%M %p")
+    }
 }
 
 /// Now, in local time, formatted by `strftime`'s `fmt` (`%H:%M`): the C
@@ -318,6 +398,9 @@ pub struct SampledStatus {
     pub battery: Option<Battery>,
     pub network: Option<bool>,
     pub bluetooth: Option<bool>,
+    pub wifi: Option<Wifi>,
+    /// The Mac's own appearance; never read for a hidden test shell.
+    pub mac_dark: Option<bool>,
 }
 
 /// Spawn the lifetime sampler worker: refreshes the cheap facts every second
@@ -343,17 +426,50 @@ pub fn start_status_sampler(
             let mut round: u32 = 0;
             let mut status = SampledStatus::default();
             let wait = CancellationToken::new();
+            // System Profiler can be slow or wait on a hardware service. Keep
+            // that read off the clock/status worker as well as off the UI.
+            #[cfg(target_os = "macos")]
+            let (bluetooth_tx, bluetooth_rx) = std::sync::mpsc::channel();
+            #[cfg(target_os = "macos")]
+            let mut bluetooth_pending = false;
+            // Each `osascript` wakes the permission and audio daemons, so the
+            // volume is one of the slow facts: the shell's own changes show at
+            // once, a change made elsewhere within five seconds. Nobody sees a
+            // hidden test shell's bar, so it asks once a minute.
+            let slow_every: u32 = if crate::launch_input::hidden_windows() { 60 } else { 5 };
             loop {
-                let (volume, muted) = sample_volume();
-                status.volume = volume;
-                status.muted = muted;
+                #[cfg(target_os = "macos")]
+                if let Ok(bluetooth) = bluetooth_rx.try_recv() {
+                    status.bluetooth = bluetooth;
+                    bluetooth_pending = false;
+                }
                 status.clock = sample_clock(false);
                 status.clock_alt = sample_clock(true);
                 refresh_script_utc_offset();
-                if round % 5 == 0 {
+                #[cfg(target_os = "macos")]
+                if round % 60 == 0 {
+                    sample_mac_hour_cycle();
+                }
+                if round % slow_every == 0 {
+                    let (volume, muted) = sample_volume();
+                    status.volume = volume;
+                    status.muted = muted;
                     status.battery = sample_battery();
                     status.network = sample_network();
-                    status.bluetooth = sample_bluetooth();
+                    status.wifi = sample_wifi();
+                    #[cfg(target_os = "macos")]
+                    if !bluetooth_pending {
+                        let tx = bluetooth_tx.clone();
+                        bluetooth_pending = std::thread::Builder::new()
+                            .name("wm-bluetooth".into())
+                            .spawn(move || { let _ = tx.send(sample_bluetooth()); })
+                            .is_ok();
+                    }
+                    #[cfg(not(target_os = "macos"))]
+                    {
+                        status.bluetooth = sample_bluetooth();
+                    }
+                    status.mac_dark = sample_mac_dark();
                 }
                 if tx.send(status.clone()).is_err() {
                     break;
@@ -387,20 +503,11 @@ pub fn sample_volume() -> (Option<u32>, bool) {
     }
 }
 
-/// `pmset -g batt` — percent plus whether it is charging.
+/// `pmset -g batt` — percent plus whether it is on its adapter.
 pub fn sample_battery() -> Option<Battery> {
     #[cfg(target_os = "macos")]
     {
-        let out = run("pmset", &["-g", "batt"])?;
-        let percent = out
-            .split('\t')
-            .nth(1)
-            .or_else(|| out.split(';').next())
-            .and_then(|s| s.split('%').next())
-            .and_then(|s| s.rsplit(|c: char| !c.is_ascii_digit()).next())
-            .and_then(|s| s.parse::<u32>().ok())?;
-        let charging = out.contains("AC Power") || out.contains("charging");
-        Some(Battery { percent, charging })
+        parse_battery(&run("pmset", &["-g", "batt"])?)
     }
     #[cfg(not(target_os = "macos"))]
     {
@@ -408,20 +515,137 @@ pub fn sample_battery() -> Option<Battery> {
     }
 }
 
+/// What `pmset -g batt` says. Its first line names the source: "discharging" holds "charging".
+#[cfg(any(target_os = "macos", test))]
+fn parse_battery(out: &str) -> Option<Battery> {
+    let percent = out
+        .split('\t')
+        .nth(1)
+        .or_else(|| out.split(';').next())
+        .and_then(|s| s.split('%').next())
+        .and_then(|s| s.rsplit(|c: char| !c.is_ascii_digit()).next())
+        .and_then(|s| s.parse::<u32>().ok())?;
+    Some(Battery { percent, charging: out.contains("'AC Power'") })
+}
+
 /// Whether we have a default route with an address on it.
 pub fn sample_network() -> Option<bool> {
     #[cfg(target_os = "macos")]
     {
-        let iface = run("route", &["-n", "get", "default"])?;
-        let dev = iface
-            .lines()
-            .find_map(|l| l.trim().strip_prefix("interface: "))
-            .map(|s| s.trim().to_string())?;
-        Some(run("ipconfig", &["getifaddr", &dev]).map(|s| !s.trim().is_empty()) == Some(true))
+        match lookup_default_route(&["-n", "get", "default"])? {
+            // No IPv4 route alone does not establish that a device with an
+            // IPv6 default route is offline. This sampler cannot yet confirm
+            // an IPv6 address, so keep that case unknown.
+            None => match lookup_default_route(&["-n", "get", "-inet6", "default"])? {
+                None => Some(false),
+                Some(_) => None,
+            },
+            // A failed or empty address read does not rule out IPv6 or an
+            // inaccessible interface, so it must not be presented as offline.
+            Some(dev) => run("ipconfig", &["getifaddr", &dev])
+                .filter(|address| !address.trim().is_empty())
+                .map(|_| true),
+        }
     }
     #[cfg(not(target_os = "macos"))]
     {
         None
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn lookup_default_route(args: &[&str]) -> Option<Option<String>> {
+    // `route get` can exit successfully when the default is absent and
+    // report "not in table" only on stderr. Other failures stay unknown.
+    let route = std::process::Command::new("route")
+        .env("LC_ALL", "C")
+        .args(args)
+        .output().ok()?;
+    let out = std::str::from_utf8(&route.stdout).ok()?;
+    let err = std::str::from_utf8(&route.stderr).ok()?;
+    default_route_device(out, err, route.status.success()).map(|device| device.map(str::to_owned))
+}
+
+/// Outer None means unknown; Some(None) means the default route is absent.
+#[cfg(any(target_os = "macos", test))]
+fn default_route_device<'a>(out: &'a str, err: &str, success: bool) -> Option<Option<&'a str>> {
+    let device = out.lines()
+        .find_map(|line| line.trim().strip_prefix("interface:"))
+        .map(str::trim)
+        .filter(|name| !name.is_empty());
+    if err.trim() == "route: writing to routing socket: not in table" {
+        return if device.is_none() { Some(None) } else { None };
+    }
+    if !success { return None; }
+    device.map(Some)
+}
+
+/// The Wi-Fi device, whether it is on and the network it joined: quick reads
+/// (`networksetup`, `ipconfig getsummary`). None where there is no Wi-Fi.
+pub fn sample_wifi() -> Option<Wifi> {
+    #[cfg(target_os = "macos")]
+    {
+        let device = wifi_device(&run("networksetup", &["-listallhardwareports"])?)?;
+        let on = run("networksetup", &["-getairportpower", &device])?.trim_end().ends_with(": On");
+        let (joined, secure) = if on { run("ipconfig", &["getsummary", &device]).map_or((false, false), |summary| wifi_link(&summary)) } else { (false, false) };
+        Some(Wifi { device, on, joined, secure })
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        None
+    }
+}
+
+/// The Wi-Fi port's device in `networksetup -listallhardwareports`.
+#[cfg(any(target_os = "macos", test))]
+fn wifi_device(ports: &str) -> Option<String> {
+    let mut lines = ports.lines().map(str::trim);
+    while let Some(line) = lines.next() {
+        if matches!(line.strip_prefix("Hardware Port:").map(str::trim), Some("Wi-Fi" | "AirPort")) {
+            return lines.next()?.strip_prefix("Device:").map(str::trim).filter(|device| !device.is_empty()).map(str::to_string);
+        }
+    }
+    None
+}
+
+/// Whether `ipconfig getsummary`'s Wi-Fi joined a network, and whether that
+/// one has a lock. Only the summary's own fields count, not its addresses'.
+#[cfg(any(target_os = "macos", test))]
+fn wifi_link(summary: &str) -> (bool, bool) {
+    let field = |key: &str| summary.lines().find_map(|line| line.strip_prefix("  ")?.strip_prefix(key)?.strip_prefix(" : ").map(str::trim));
+    let joined = field("LinkStatusActive") == Some("TRUE") && field("SSID").is_some();
+    let secure = joined && field("Security").is_some_and(|kind| !kind.is_empty() && !matches!(kind.to_ascii_uppercase().as_str(), "NONE" | "OPEN"));
+    (joined, secure)
+}
+
+/// Turn the Mac's Wi-Fi on or off, as its menu's switch does. False when
+/// `networksetup` refused.
+pub fn set_wifi_power(device: &str, on: bool) -> bool {
+    run("networksetup", &["-setairportpower", device, if on { "on" } else { "off" }]).is_some()
+}
+
+/// Turn the Mac's Bluetooth on or off, as its menu's switch does: IOBluetooth's
+/// own preference call (the one `blueutil` makes), looked up when it is
+/// needed. False where this macOS has no such call.
+pub fn set_bluetooth_power(on: bool) -> bool {
+    #[cfg(target_os = "macos")]
+    unsafe {
+        let framework = libc::dlopen(c"/System/Library/Frameworks/IOBluetooth.framework/IOBluetooth".as_ptr(), libc::RTLD_LAZY);
+        if framework.is_null() {
+            return false;
+        }
+        let call = libc::dlsym(framework, c"IOBluetoothPreferenceSetControllerPowerState".as_ptr());
+        if call.is_null() {
+            return false;
+        }
+        let set: extern "C" fn(i32) = std::mem::transmute(call);
+        set(on as i32);
+        true
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = on;
+        false
     }
 }
 
@@ -430,20 +654,47 @@ pub fn sample_network() -> Option<bool> {
 pub fn sample_bluetooth() -> Option<bool> {
     #[cfg(target_os = "macos")]
     {
-        let out = run(
+        let old = run(
             "defaults",
             &[
                 "read",
                 "/Library/Preferences/com.apple.Bluetooth",
                 "ControllerPowerState",
             ],
-        )?;
-        Some(out.trim() == "1")
+        );
+        match old.as_deref().map(str::trim) {
+            Some("1") => Some(true),
+            Some("0") => Some(false),
+            _ => run("system_profiler", &["SPBluetoothDataType", "-json"])
+                .and_then(|out| parse_bluetooth_profile(&out)),
+        }
     }
     #[cfg(not(target_os = "macos"))]
     {
         None
     }
+}
+
+/// System Profiler's machine-readable controller state. Ignore devices and
+/// addresses; only an unambiguous known controller state can be shown.
+#[cfg(any(target_os = "macos", test))]
+fn parse_bluetooth_profile(out: &str) -> Option<bool> {
+    let data: serde_json::Value = serde_json::from_str(out).ok()?;
+    let entries = data.get("SPBluetoothDataType")?.as_array()?;
+    let mut state = None;
+    for entry in entries {
+        let Some(controller) = entry.get("controller_properties") else { continue };
+        let next = match controller.get("controller_state")?.as_str()? {
+            "attrib_on" => true,
+            "attrib_off" => false,
+            _ => return None,
+        };
+        if state.is_some_and(|previous| previous != next) {
+            return None;
+        }
+        state = Some(next);
+    }
+    state
 }
 
 // ======================================================================
@@ -468,6 +719,24 @@ const PANEL_PILL_INSET: f64 = 2.0;
 const ACTIVE_WINDOW_MAX: f64 = 280.0;
 /// `Ui/Button.qml` tooltip `delay` — 400ms of hover before it shows.
 const TOOLTIP_DELAY: f64 = 0.4;
+// A Mac's menu bar: 13-point text, 15-point status glyphs, items with room for
+// a wash, a translucent strip over the wallpaper.
+const MAC_BAR_TEXT: f64 = 13.0;
+const MAC_BAR_ICON: f64 = 15.0;
+const MAC_BAR_SLOT: f64 = 28.0;
+const MAC_BAR_PAD: f64 = 8.0;
+const MAC_BAR_ALPHA: f32 = 0.74;
+const MAC_BAR_ALPHA_DARK: f32 = 0.62;
+/// A Mac's own glyph where it draws a status item differently: its Wi-Fi is arcs
+/// over a fan, not the other styles' solid fan.
+fn mac_glyph(mac: bool, ico: Ico) -> Ico {
+    match (mac, ico) {
+        (true, Ico::Wifi) => Ico::WifiArcs,
+        (true, Ico::WifiOff) => Ico::WifiArcsOff,
+        _ => ico,
+    }
+}
+
 /// The window controls: three slots of this width at the bar's far right,
 /// the usual caption-button proportion (wider than an icon slot, so a
 /// close is an easy target), a gap before the status modules.
@@ -672,6 +941,10 @@ impl ShellBar {
     }
 
     fn draw_bar_inner(&mut self, cx: &mut Cx2d, r: Rect) {
+        if self.data.style.mac_family() {
+            self.draw_mac_bar(cx, r);
+            return;
+        }
         let tok = self.d.tokens(self.tokens);
         let fg = tok.bar.text;
         let accent = tok.bar.active;
@@ -951,6 +1224,276 @@ impl ShellBar {
         }
     }
 
+    /// A Mac's menu bar: the system mark, the focused app's name in bold and
+    /// what the app offers; the status items and the clock at the right edge.
+    /// The modules are the same as on every other bar, so their presses,
+    /// panels and tooltips work unchanged; only their places differ.
+    fn draw_mac_bar(&mut self, cx: &mut Cx2d, r: Rect) {
+        let tok = self.d.tokens(self.tokens);
+        let fg = tok.bar.text;
+        let news = tok.notifications.countdown;
+        let slot = MAC_BAR_SLOT;
+        let canvas = MAC_BAR_ICON;
+        let text = MAC_BAR_TEXT;
+        self.hits.clear();
+        self.screen = r;
+        // Launchpad takes the whole screen, as on a Mac.
+        if self.data.style == crate::desktop::DesktopStyle::Macos && crate::desktop::mac_launchpad() {
+            self.draw_bg.color = Vec4f::default();
+            self.draw_bg.draw_abs(cx, r);
+            return;
+        }
+        self.draw_bg.color = if self.d.material().is_glass() {
+            Vec4f::default()
+        } else {
+            let opacity = if self.data.dark { MAC_BAR_ALPHA_DARK } else { MAC_BAR_ALPHA };
+            alpha(tok.bar.background, opacity)
+        };
+        self.draw_bg.draw_abs(cx, r);
+        self.d.glass_strip_plain(cx, r);
+
+        let mac = self.data.style == crate::desktop::DesktopStyle::Macos;
+        // ---- left: the mark, the workspaces when there are several (a Mac's are a
+        // status item: nothing sits between its mark and its menus), the app
+        let mut x = r.pos.x + self.pad_left.max(EDGE_MARGIN);
+        let mark = rect(x, r.pos.y, slot + 4.0, r.size.y);
+        self.mac_wash(cx, BarModule::Menu, mark, fg);
+        self.d.icon_centered(cx, Ico::Octopus, mark, canvas, fg);
+        self.hits.push((BarModule::Menu, mark));
+        x += mark.size.x + 4.0;
+        if !mac && self.data.workspaces.len() > 1 {
+            for (i, ws) in self.data.workspaces.clone().iter().enumerate() {
+                let cell = rect(x, r.pos.y, WS_WIDTH, r.size.y);
+                self.mac_wash(cx, BarModule::Workspace(i), cell, fg);
+                let color = fade(fg, if ws.focused { 1.0 } else { 0.55 });
+                self.d.label(cx, cell, ws.focused, text - 1.0, color, super::ui::HAlign::Center, &ws.label);
+                self.hits.push((BarModule::Workspace(i), cell));
+                x += WS_WIDTH + WS_SPACING;
+            }
+            x += 6.0;
+        }
+        // A Mac always names the app in front; with no window up, the desktop's.
+        let active = self.data.active_app.clone().or_else(|| mac.then(|| "OctoSense".to_string()));
+        if let Some(name) = active {
+            let name_w = self.d.measure(cx, true, text, &name).min(ACTIVE_WINDOW_MAX);
+            let cell = rect(x, r.pos.y, name_w + MAC_BAR_PAD * 2.0, r.size.y);
+            self.mac_wash(cx, BarModule::ActiveWindow, cell, fg);
+            self.d.label_elided(cx, rect(cell.pos.x + MAC_BAR_PAD, cell.pos.y, name_w, cell.size.y), true, text, fg, super::ui::HAlign::Left, &name);
+            self.hits.push((BarModule::ActiveWindow, cell));
+            x += cell.size.x;
+        }
+        let (controls_left, modules_right) = right_cluster_layout(r.pos.x + r.size.x, self.window_controls);
+        let mut clock = if self.data.mac_clock.is_empty() { self.data.clock.clone() } else { self.data.mac_clock.clone() };
+        if mac {
+            // On a narrow screen the clock gives up its date before a menu goes, and then
+            // the last menu goes first, as on a Mac. What's on the right never gives way.
+            let time_box = self.data.time_box.map_or(0.0, |left| self.d.measure(cx, false, text, &format!("{left} min")) + 8.0 + 5.0 + MAC_BAR_PAD * 2.0);
+            let titles: f64 = self.data.mac_titles.clone().iter().map(|title| self.d.measure(cx, false, text, title) + MAC_BAR_PAD * 2.0).sum();
+            let own = slot * 2.0;
+            let room = modules_right - time_box - own - x;
+            if titles + self.d.measure(cx, false, text, &clock) + MAC_BAR_PAD * 2.0 > room {
+                if let Some((_, time)) = clock.rsplit_once("  ") {
+                    clock = time.to_string();
+                }
+            }
+            let titles_end = x + room - self.d.measure(cx, false, text, &clock) - MAC_BAR_PAD * 2.0;
+            for (i, title) in self.data.mac_titles.clone().iter().enumerate() {
+                let w = self.d.measure(cx, false, text, title) + MAC_BAR_PAD * 2.0;
+                if x + w > titles_end {
+                    break;
+                }
+                let cell = rect(x, r.pos.y, w, r.size.y);
+                self.mac_wash(cx, BarModule::MacMenu(i), cell, fg);
+                self.d.label(cx, cell, false, text, fg, super::ui::HAlign::Center, title);
+                self.hits.push((BarModule::MacMenu(i), cell));
+                x += w;
+            }
+        } else if let Some(name) = self.data.ask_agent.clone() {
+            let label = format!("Ask {name}");
+            let w = self.d.measure(cx, false, text, &label) + MAC_BAR_PAD * 2.0;
+            let cell = rect(x, r.pos.y, w, r.size.y);
+            self.mac_wash(cx, BarModule::AskAgent, cell, fg);
+            self.d.label(cx, cell, false, text, fg, super::ui::HAlign::Center, &label);
+            self.hits.push((BarModule::AskAgent, cell));
+        }
+
+        // ---- right: the window's controls where the platform draws none,
+        // then the clock at the edge and the status items before it
+        if let Some(mut cx_ctrl) = controls_left {
+            let controls = [
+                (BarModule::WindowMin, Ico::WindowMin),
+                (BarModule::WindowMax, if self.data.maximized { Ico::WindowRestore } else { Ico::WindowMax }),
+                (BarModule::WindowClose, Ico::Close),
+            ];
+            for (module, ico) in controls {
+                let cell = rect(cx_ctrl, r.pos.y, WINDOW_CONTROL_WIDTH, r.size.y);
+                self.mac_wash(cx, module, cell, fg);
+                self.d.icon_centered(cx, ico, cell, canvas * 0.8, fg);
+                self.hits.push((module, cell));
+                cx_ctrl += WINDOW_CONTROL_WIDTH;
+            }
+        }
+        let clock_w = self.d.measure(cx, false, text, &clock) + MAC_BAR_PAD * 2.0;
+        let clock_rect = rect((modules_right - clock_w).floor(), r.pos.y, clock_w, r.size.y);
+        self.mac_wash(cx, BarModule::Clock, clock_rect, fg);
+        self.d.label(cx, clock_rect, false, text, fg, super::ui::HAlign::Center, &clock);
+        self.hits.push((BarModule::Clock, clock_rect));
+        let mut rx = clock_rect.pos.x;
+        // A Mac's own items, which never give way: Control Center by the clock, then Spotlight.
+        if mac {
+            for (module, ico) in [(BarModule::ControlCenter, Ico::Controls), (BarModule::Spotlight, Ico::Search)] {
+                rx -= slot;
+                let cell = rect(rx, r.pos.y, slot, r.size.y);
+                self.mac_wash(cx, module, cell, fg);
+                self.d.icon_centered(cx, ico, cell, canvas, fg);
+                self.hits.push((module, cell));
+            }
+        }
+        // A running time box is never one that gives way below: this must not go unsaid.
+        if let Some(left) = self.data.time_box.filter(|_| mac) {
+            let label = format!("{left} min");
+            let label_w = self.d.measure(cx, false, text, &label);
+            let w = label_w + 8.0 + 5.0 + MAC_BAR_PAD * 2.0;
+            rx -= w;
+            let cell = rect(rx, r.pos.y, w, r.size.y);
+            self.mac_wash(cx, BarModule::TimeBox, cell, fg);
+            let amber = crate::approvals::mac_kit::mac_ink(self.data.dark).amber;
+            self.d.rounded(cx, rect(cell.pos.x + MAC_BAR_PAD, (cell.pos.y + (cell.size.y - 8.0) * 0.5).round(), 8.0, 8.0), 2.0, amber);
+            self.d.label(cx, rect(cell.pos.x + MAC_BAR_PAD + 13.0, cell.pos.y, label_w, cell.size.y), false, text, fg, super::ui::HAlign::Left, &label);
+            self.hits.push((BarModule::TimeBox, cell));
+        }
+        // On a narrow screen a Mac's status items give way to its menus.
+        let no_room = |rx: f64, w: f64| mac && rx - w < x;
+        let modules = self.right_modules();
+        for (module, ico, available) in modules.iter().rev() {
+            // A Mac shows no item for what this machine doesn't have: no battery, no display
+            // control. Its clock opens the notifications, so it has no bell either.
+            if mac && (!*available || *module == BarModule::Glance) {
+                continue;
+            }
+            // A Mac's battery is the widest of them: its charge shows in it.
+            let battery = self.data.battery.filter(|_| mac && *module == BarModule::Power);
+            let slot = slot + if battery.is_some() { 6.0 } else { 0.0 };
+            if no_room(rx, slot) {
+                break;
+            }
+            rx -= slot;
+            let cell = rect(rx, r.pos.y, slot, r.size.y);
+            let mut color = if *available { fg } else { fade(fg, 0.4) };
+            if *module == BarModule::Power {
+                if let Some(b) = self.data.battery {
+                    if !b.charging && b.percent <= 20 {
+                        color = tok.bar.active;
+                    }
+                }
+            }
+            if *module == BarModule::Audio && self.data.muted {
+                color = fade(fg, 0.4);
+            }
+            let glance = if *module == BarModule::Glance { self.data.glance } else { None };
+            if glance.is_some_and(|(_, new)| new > 0) {
+                color = news;
+            }
+            self.mac_wash(cx, *module, cell, fg);
+            match battery {
+                Some(b) => self.draw_mac_battery(cx, cell, b, fg),
+                None => self.d.icon_centered(cx, mac_glyph(mac, *ico), cell, canvas, color),
+            }
+            if let Some((count, new)) = glance.filter(|(count, _)| *count > 0) {
+                let label = if count > 9 { "9+".to_string() } else { count.to_string() };
+                let px = tok.font.caption * 0.8;
+                let h = (px * 1.25).round();
+                let w = (self.d.measure(cx, true, px, &label) + 4.0).max(h);
+                let badge = rect((cell.pos.x + cell.size.x * 0.5 + canvas * 0.15).round(), (cell.pos.y + cell.size.y * 0.5 - canvas * 0.6).round(), w, h);
+                if new > 0 {
+                    self.d.solid(cx, badge, news);
+                    self.d.label(cx, badge, true, px, tok.bar.background, super::ui::HAlign::Center, &label);
+                } else {
+                    self.d.label(cx, badge, true, px, fade(fg, 0.7), super::ui::HAlign::Center, &label);
+                }
+            }
+            self.hits.push((*module, cell));
+        }
+        // A Mac's menu bar has no item for its desktops: the keys reach them
+        // (⌃1 to ⌃9, ⌃← and ⌃→, listed under Keyboard Shortcuts), and the
+        // Dock goes to the desktop of the window it brings forward.
+        // The appearance; the style lives under the system mark's menu. A Mac keeps
+        // both there.
+        if !mac && self.data.style.supports_dark() && !no_room(rx, slot) {
+            rx -= slot;
+            let cell = rect(rx, r.pos.y, slot, r.size.y);
+            self.mac_wash(cx, BarModule::Appearance, cell, fg);
+            self.d.icon_centered(cx, if self.data.dark { Ico::Moon } else { Ico::Brightness }, cell, canvas, fg);
+            self.hits.push((BarModule::Appearance, cell));
+        }
+        // On a Mac the assistant is a status item, and a status item stays put whatever
+        // app is in front: the front app's agent when it has one, else OctoSense's own.
+        if mac && !no_room(rx, slot) {
+            rx -= slot;
+            let cell = rect(rx, r.pos.y, slot, r.size.y);
+            self.mac_wash(cx, BarModule::AskAgent, cell, fg);
+            self.d.icon_centered(cx, Ico::Sparkle, cell, canvas, fg);
+            self.hits.push((BarModule::AskAgent, cell));
+        }
+        // What the system is doing (recording, say): only while it does.
+        let status = self.status_slot();
+        for (i, ind) in self.data.indicators.clone().iter().enumerate().rev() {
+            if !ind.active {
+                continue;
+            }
+            rx -= status;
+            let cell = rect(rx, r.pos.y, status, r.size.y);
+            self.d.icon_centered(cx, ind.active_icon, cell, canvas, tok.bar.active);
+            self.hits.push((BarModule::Indicator(i), cell));
+        }
+        if self.data.system_update {
+            rx -= status;
+            let cell = rect(rx, r.pos.y, status, r.size.y);
+            self.d.icon_centered(cx, Ico::Refresh, cell, canvas, tok.bar.active);
+            self.hits.push((BarModule::SystemUpdate, cell));
+        }
+
+        if let Some(module) = self.hover {
+            if self.hover_time >= TOOLTIP_DELAY {
+                self.draw_tooltip(cx, r, module);
+            }
+        }
+    }
+
+    /// A menu bar item's rounded wash, under the pointer or while its panel
+    /// is open.
+    /// A Mac's battery item: the charge in its body, a bolt on the adapter, red when it runs low.
+    fn draw_mac_battery(&mut self, cx: &mut Cx2d, cell: Rect, b: Battery, fg: Vec4f) {
+        let (w, h) = (22.0, 11.0);
+        let x = (cell.pos.x + (cell.size.x - w - 2.5) * 0.5).round();
+        let y = (cell.pos.y + (cell.size.y - h) * 0.5).round();
+        self.d.focus_ring(cx, rect(x, y, w, h), 3.0, 1.0, fade(fg, 0.5));
+        self.d.rounded(cx, rect(x + w + 1.0, y + 3.5, 1.5, h - 7.0), 0.75, fade(fg, 0.5));
+        let charge = (w - 4.0) * (b.percent.min(100) as f64 / 100.0);
+        let ink = if b.charging {
+            fade(fg, 0.45)
+        } else if b.percent <= 20 {
+            crate::approvals::mac_kit::mac_ink(self.data.dark).danger
+        } else {
+            fg
+        };
+        self.d.rounded(cx, rect(x + 2.0, y + 2.0, charge.max(2.0), h - 4.0), 1.5, ink);
+        if b.charging {
+            self.d.icon_centered(cx, Ico::Bolt, rect(x, y, w, h), 10.0, fg);
+        }
+    }
+
+    fn mac_wash(&mut self, cx: &mut Cx2d, module: BarModule, cell: Rect, fg: Vec4f) {
+        let open = self.data.open_panel == Some(module);
+        let mac = self.data.style == crate::desktop::DesktopStyle::Macos;
+        // A Mac's menu bar lights an item only while its menu is open.
+        if !open && (mac || self.hover != Some(module)) {
+            return;
+        }
+        let wash = rect(cell.pos.x, cell.pos.y + 2.0, cell.size.x, cell.size.y - 4.0);
+        self.d.rounded(cx, wash, 2.5, fade(fg, if open { 0.2 } else { 0.1 }));
+    }
+
     /// The tooltip a module shows after 400ms of hover.
     fn tooltip_for(&self, module: BarModule) -> String {
         match module {
@@ -958,21 +1501,27 @@ impl ShellBar {
             BarModule::Appearance => "Toggle light / dark appearance".into(),
             BarModule::Menu => "Applications".into(),
             BarModule::Workspace(i) => format!("Workspace {}", i + 1),
+            BarModule::Desktops => "Desktops".into(),
             BarModule::ActiveWindow => self
                 .data
                 .active_window
                 .clone()
                 .unwrap_or_default(),
-            BarModule::AskAgent => format!("Talk to {}'s agent (Shift+F8)", self.data.ask_agent.clone().unwrap_or_default()),
+            BarModule::AskAgent => match self.data.ask_agent.clone() {
+                Some(name) => format!("Talk to {name}'s agent (Shift+F8)"),
+                None => "Ask OctoSense (F8)".into(),
+            },
             BarModule::Glance => match self.data.glance {
                 Some((count, new)) if new > 0 => format!("At a glance (F9): {count} card(s), {new} new"),
                 Some((count, _)) => format!("At a glance (F9): {count} card(s)"),
                 None => "At a glance (F9)".into(),
             },
+            BarModule::Clock if self.data.style == crate::desktop::DesktopStyle::Macos => "Notifications".into(),
             BarModule::Clock => "Calendar".into(),
             BarModule::KeyboardLayout => "Keyboard layout".into(),
             BarModule::Weather => "Weather".into(),
             BarModule::SystemUpdate => "Pending updates".into(),
+            BarModule::TimeBox => format!("Approving everything an app asks, {} min left", self.data.time_box.unwrap_or(0)),
             BarModule::Tray(_) => "Tray".into(),
             BarModule::Bluetooth => match self.data.bluetooth {
                 Some(true) => "Bluetooth on".into(),
@@ -1006,6 +1555,9 @@ impl ShellBar {
                 if self.data.maximized { "Restore".into() } else { "Maximize".into() }
             }
             BarModule::WindowClose => "Close".into(),
+            BarModule::MacMenu(_) => String::new(),
+            BarModule::Spotlight => "Spotlight".into(),
+            BarModule::ControlCenter => "Control Center".into(),
         }
     }
 
@@ -1043,8 +1595,27 @@ impl ShellBar {
         );
     }
 
+    /// The Mac's menu titles in the bar's order: the mark, the app, then File and
+    /// the rest. Their rects are where the menus open.
+    pub fn mac_title_rects(&self) -> Vec<Rect> {
+        let find = |module: BarModule| self.module_rect(module).unwrap_or_default();
+        let mut rects = vec![find(BarModule::Menu), find(BarModule::ActiveWindow)];
+        for i in 0..self.data.mac_titles.len() {
+            // A title with no room on a narrow screen: the arrow keys still reach its menu,
+            // which opens where the titles end.
+            let end = rects.last().map_or(Rect::default(), |last| Rect { pos: dvec2(last.pos.x + last.size.x, last.pos.y), size: dvec2(0.0, last.size.y) });
+            rects.push(self.module_rect(BarModule::MacMenu(i)).unwrap_or(end));
+        }
+        rects
+    }
+
     pub fn module_at(&self, p: Vec2d) -> Option<BarModule> {
         module_at_in(&self.hits, p)
+    }
+
+    /// Every item the bar drew, with where it drew it.
+    pub fn cells(&self) -> &[(BarModule, Rect)] {
+        &self.hits
     }
 
     /// The rect a module occupies — the panels anchor to it.
@@ -1107,7 +1678,8 @@ impl Widget for ShellBar {
                     }
                     self.reveal_indicators = reveal;
                     if over {
-                        cx.set_cursor(MouseCursor::Hand);
+                        let cursor = desktop_style::control_cursor(cx);
+                        cx.set_cursor(cursor);
                     }
                     self.redraw(cx);
                 }
@@ -1135,6 +1707,50 @@ impl Widget for ShellBar {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn missing_default_route_is_offline_but_other_lookup_failures_are_unknown() {
+        let missing = "route: writing to routing socket: not in table\n";
+        assert_eq!(default_route_device("", missing, true), Some(None));
+        assert_eq!(default_route_device("", missing, false), Some(None));
+        assert_eq!(default_route_device("   interface: en0\n", "", true), Some(Some("en0")));
+        assert_eq!(default_route_device("   interface: en0\n", missing, true), None);
+        assert_eq!(default_route_device("", "permission denied\n", false), None);
+        assert_eq!(default_route_device("", "", true), None);
+        assert_eq!(default_route_device("   interface:  \n", "", true), None);
+    }
+
+    #[test]
+    fn wifi_is_read_from_its_port_and_its_summary_alone() {
+        let ports = "Hardware Port: Ethernet\nDevice: en0\nEthernet Address: x\n\nHardware Port: Wi-Fi\nDevice: en1\nEthernet Address: y\n";
+        assert_eq!(wifi_device(ports).as_deref(), Some("en1"));
+        assert_eq!(wifi_device("Hardware Port: Ethernet\nDevice: en0\n"), None);
+        let summary = "<dictionary> {\n  BSSID : <redacted>\n  IPv4 : <array> {\n    0 : <dictionary> {\n      Security : NONE\n    }\n  }\n  InterfaceType : WiFi\n  LinkStatusActive : TRUE\n  SSID : <redacted>\n  Security : WPA2_PSK\n}\n";
+        assert_eq!(wifi_link(summary), (true, true));
+        assert_eq!(wifi_link(&summary.replace("WPA2_PSK", "NONE")), (true, false), "an open network has no lock");
+        assert_eq!(wifi_link(&summary.replace("LinkStatusActive : TRUE", "LinkStatusActive : FALSE")), (false, false));
+        assert_eq!(wifi_link("<dictionary> {\n  InterfaceType : WiFi\n  LinkStatusActive : TRUE\n}\n"), (false, false), "no network joined");
+    }
+
+    #[test]
+    fn bluetooth_profile_accepts_only_a_known_unambiguous_controller_state() {
+        assert_eq!(parse_bluetooth_profile(r#"{"SPBluetoothDataType":[{"controller_properties":{"controller_state":"attrib_on"}}]}"#), Some(true));
+        assert_eq!(parse_bluetooth_profile(r#"{"SPBluetoothDataType":[{"controller_properties":{"controller_state":"attrib_off"}}]}"#), Some(false));
+        assert_eq!(parse_bluetooth_profile(r#"{"SPBluetoothDataType":[{"controller_properties":{"controller_state":"attrib_unknown"}}]}"#), None);
+        assert_eq!(parse_bluetooth_profile(r#"{"SPBluetoothDataType":[{"controller_properties":{}}]}"#), None);
+        assert_eq!(parse_bluetooth_profile(r#"{"SPBluetoothDataType":[{"controller_properties":{"controller_state":"attrib_on"}},{"controller_properties":{"controller_state":"attrib_off"}}]}"#), None);
+        assert_eq!(parse_bluetooth_profile(r#"{"SPBluetoothDataType":[]}"#), None);
+        assert_eq!(parse_bluetooth_profile("invalid"), None);
+    }
+
+    #[test]
+    fn a_macs_battery_is_on_its_adapter_only_when_the_first_line_says_so() {
+        let battery = parse_battery("Now drawing from 'Battery Power'\n -InternalBattery-0 (id=1)\t64%; discharging; 3:42 remaining present: true\n").unwrap();
+        assert_eq!((battery.percent, battery.charging), (64, false));
+        let adapter = parse_battery("Now drawing from 'AC Power'\n -InternalBattery-0 (id=23134307)\t100%; charged; 0:00 remaining present: true\n").unwrap();
+        assert_eq!((adapter.percent, adapter.charging), (100, true));
+        assert!(parse_battery("Now drawing from 'AC Power'\n").is_none(), "a Mac with no battery");
+    }
 
     #[test]
     fn the_volume_ladder_matches_the_osd_thresholds() {

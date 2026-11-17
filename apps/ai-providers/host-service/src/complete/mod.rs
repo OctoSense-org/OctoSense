@@ -519,7 +519,7 @@ impl ModelHost {
             None => Vec::new(),
         };
         if candidates.is_empty() {
-            return Err(Refusal::new(Code::NoProvider, "No AI provider is set up. Add one in AI providers."));
+            return Err(Refusal::new(Code::NoProvider, "No AI provider is set up. Add one in AI Providers."));
         }
         let ordered = order(candidates, request.class);
         let now = (self.clock)();

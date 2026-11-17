@@ -36,5 +36,10 @@
     ]
   },
   "schema": 1,
-  "version": "1.0.0"
+  "version": "1.0.0",
+  "window": {
+    "width": 1180,
+    "height": 740
+  },
+  "schema_minor": 1
 }

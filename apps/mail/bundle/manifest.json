@@ -9,7 +9,8 @@
   "capabilities": [
     "storage",
     "mail",
-    "glance"
+    "glance",
+    "files"
   ],
   "storage": {
     "accounts": true
@@ -37,5 +38,10 @@
         "mail.messages.new"
       ]
     }
-  }
+  },
+  "window": {
+    "width": 1120,
+    "height": 740
+  },
+  "schema_minor": 1
 }

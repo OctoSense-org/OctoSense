@@ -135,6 +135,73 @@ fn a_find_snippet_marks_its_match_in_bold() {
 }
 
 #[test]
+fn find_ignores_outdated_results_after_a_new_search_or_close() {
+    // Run the app's actual handlers with a held engine callback, so results
+    // can arrive out of order or after the person closes Find.
+    let function = |name: &str| {
+        let start = PDF_TOOLS.find(&format!("\nfn {name}(")).expect("PDF Tools function") + 1;
+        let end = PDF_TOOLS[start..].find("\n}\n").expect("function end") + 2;
+        &PDF_TOOLS[start..start + end]
+    };
+    let code = format!(r#"
+let tab = {{state: "ready" doc: "d1" page: 1 find: nil finding: false find_n: 0
+    find_draft: "" find_from: nil panel: "pages" panel_kept: "pages" side_off: false find_side: false}}
+let callbacks = []
+let jumps = 0
+let renders = 0
+fn cur_tab() {{ tab }}
+fn engine(method, args, done) {{ callbacks.push(done) }}
+fn auto_fit(t) {{ false }}
+fn show() {{ renders = renders + 1 }}
+fn go_page(t, page) {{}}
+fn go_match(t, index) {{ jumps = jumps + 1 }}
+fn action_failed(what, error) {{ error }}
+{}
+{}
+{}
+{}
+{}
+find_text("old")
+find_text("new")
+callbacks[1]({{is_ok: true data: {{total: 0 matches: []}}}})
+callbacks[0]({{is_ok: true data: {{total: 1 matches: [{{page: 2}}]}}}})
+let new_empty = tab.find.query == "new" && tab.find.total == 0 && !tab.finding && jumps == 0
+find_text("old error")
+find_text("new match")
+callbacks[3]({{is_ok: true data: {{total: 1 matches: [{{page: 3}}]}}}})
+callbacks[2]({{is_ok: false error: "old failure"}})
+let new_match = tab.find.query == "new match" && tab.find.total == 1 && tab.find.error == "" && jumps == 1
+// A repeated query is still a different request.
+find_text("same")
+find_text("same")
+callbacks[5]({{is_ok: false error: "latest failure"}})
+callbacks[4]({{is_ok: true data: {{total: 1 matches: [{{page: 2}}]}}}})
+let repeated = tab.find.error == "latest failure" && tab.find.total == 0 && jumps == 1
+find_text("closed search")
+end_find(tab)
+let before_late = renders
+callbacks[6]({{is_ok: true data: {{total: 1 matches: [{{page: 2}}]}}}})
+let closed = tab.find == nil && !tab.finding && tab.panel == "pages" && renders == before_late && jumps == 1
+find_text("closed tab")
+tab.state = "closed"
+let before_tab_close = renders
+callbacks[7]({{is_ok: false error: "late"}})
+let closed_tab = renders == before_tab_close && tab.find.error == ""
+[new_empty new_match repeated closed closed_tab].to_json()
+;"#, function("optional"), function("panel_after_find"), function("find_text"), function("drop_find"), function("end_find"));
+    let mut host = ScriptVmHost::new((), ());
+    let mut vm = ScriptVm { host: &mut host, bx: Box::new(ScriptVmBase::new()) };
+    vm.bx.captured_errors = Some(Vec::new());
+    let value = vm.with_instruction_limit(500_000, |vm| vm.eval(ScriptMod {
+        file: "pdftools_find_order.splash".into(), code, ..Default::default()
+    }));
+    let errors = vm.take_errors();
+    assert!(errors.is_empty(), "PDF find script errors: {errors:?}");
+    let result = vm.bx.heap.string_with(value, |_, value| value.to_string()).unwrap();
+    assert_eq!(serde_json::from_str::<serde_json::Value>(&result).unwrap(), json!([true, true, true, true, true]));
+}
+
+#[test]
 fn an_avatar_shows_the_first_letters_of_the_first_and_last_names() {
     let initials = |name: &str| pdftools_model(&format!("initials_of(\"{name}\").to_json()"));
     assert_eq!(initials("Jun Park"), json!("JP"));
@@ -154,23 +221,25 @@ fn a_comment_date_is_read_as_the_service_writes_it() {
     assert_eq!(pdftools_model("comment_time(\"later\").to_json()"), json!(null));
 }
 
-/// The designs are drawn at 1536 x 1024, and the shipped manifest asks the
-/// desktop to open PDF Tools' window at that size: App Hub's `window`, which
-/// needs `schema_minor` 1. The desk clamps it (`desktop_layout`).
+/// The shipped manifest asks the desktop to open PDF Tools' window at the size
+/// of a document window on a laptop's screen: App Hub's `window`, which needs
+/// `schema_minor` 1. The desk clamps it (`desktop_layout`).
 #[cfg(any(feature = "app-hub", native_mobile))]
 #[test]
 fn the_shipped_manifest_asks_for_the_designs_window_size() {
     let manifest = octosense_app_contract::AppManifest::parse(include_str!("../../../apps/pdftools/bundle/manifest.json")).unwrap();
     assert_eq!(manifest.schema_minor, 1);
-    assert_eq!(manifest.window, Some(octosense_app_contract::WindowHint::new(1536, 1024)));
+    assert_eq!(manifest.window, Some(octosense_app_contract::WindowHint::new(1180, 740)));
 }
 
 #[test]
 fn the_storage_line_reads_what_files_status_says() {
-    // Design 08's status line, from files.status's used_bytes and quota_bytes.
-    assert_eq!(pdftools_model("used_text(15309209, 67108864).to_json()"), json!("14.6 of 64 MB used"));
-    assert_eq!(pdftools_model("used_text(92160, 67108864).to_json()"), json!("90 KB of 64 MB used"));
-    assert_eq!(pdftools_model("used_text(4002, 8388608).to_json()"), json!("4 KB of 8 MB used"));
+    // Home's status bar, from files.status's used_bytes and quota_bytes: the room
+    // left, as Finder's status bar says of a disk.
+    assert_eq!(pdftools_model("available_text(15309209, 67108864).to_json()"), json!("49.4 MB available"));
+    assert_eq!(pdftools_model("available_text(92160, 67108864).to_json()"), json!("63.9 MB available"));
+    assert_eq!(pdftools_model("available_text(4002, 8388608).to_json()"), json!("7.9 MB available"));
+    assert_eq!(pdftools_model("available_text(66900000, 67108864).to_json()"), json!("204 KB available"), "under 1 MB, in KB");
     assert_eq!(
         pdftools_model("usage_from({used_bytes: 15309209 quota_bytes: 67108864}).to_json()"),
         json!({"used": 15309209, "quota": 67108864})
@@ -215,7 +284,7 @@ fn an_edit_sends_its_text_and_alignment_and_a_chosen_colour() {
     assert_eq!(changes(edit("New", "left", "nil")), json!(true));
     assert_eq!(changes(edit("Old", "right", "nil")), json!(true), "an alignment alone");
     assert_eq!(changes(edit("Old", "left", "\"#000000\"")), json!(true), "a colour alone");
-    assert_eq!(pdftools_model("colour_name(nil).to_json()"), json!("Its own colour"));
+    assert_eq!(pdftools_model("colour_name(nil).to_json()"), json!("Its own color"));
     assert_eq!(pdftools_model("colour_name(\"#c01c28\").to_json()"), json!("Red"));
     // What the panel offers is what pdf.edit_text takes.
     assert_eq!(pdftools_model("ALIGNS.to_json()"), json!(["left", "center", "right", "justify"]));
@@ -283,7 +352,7 @@ fn a_search_gives_the_left_side_back_when_it_ends() {
 #[test]
 fn read_mode_shows_the_pages_alone() {
     // The user: "there is no full screen read mode?". In Read mode only the
-    // pages, the floating bar and the corner control that leaves it show.
+    // pages and the bar at their foot, which also leaves it, show.
     assert_eq!(
         pdftools_model("chrome_for(true).to_json()"),
         json!({"tabs": false, "modebar": false, "rail": false, "panels": false, "right": false, "toolrow": false, "status": false, "exit": true})

@@ -271,6 +271,48 @@ pub fn test(account: &Value) -> Result<Value, String> {
     let _ = wire.pop("QUIT");
     Ok(json!({"available":count,"tls_verified":true,"transport":"device-pop3"}))
 }
+/// A POP3 message's number in this session, by its unique id.
+fn pop_number(wire: &mut Wire, uid: &str) -> Result<Option<String>, String> {
+    wire.pop("UIDL")?;
+    Ok(wire.multiline(20_000_000)?.iter().find_map(|line| {
+        let mut parts = std::str::from_utf8(line).ok()?.split_whitespace();
+        let number = parts.next()?;
+        (parts.next()? == uid).then(|| number.to_string())
+    }))
+}
+
+/// Delete a message from a POP3 mailbox. One gone already is what was asked.
+pub fn pop_delete(account: &Value, uid: &str) -> Result<(), String> {
+    let mut wire = pop_connect(account)?;
+    if let Some(number) = pop_number(&mut wire, uid)? {
+        wire.pop(&format!("DELE {number}"))?;
+    }
+    // The server only deletes on a clean QUIT.
+    wire.pop("QUIT")?;
+    Ok(())
+}
+
+/// A POP3 message whole, as the server keeps it.
+pub fn pop_raw(account: &Value, uid: &str) -> Result<Vec<u8>, String> {
+    let mut wire = pop_connect(account)?;
+    let number = pop_number(&mut wire, uid)?.ok_or("This message is no longer on the server.")?;
+    wire.pop(&format!("RETR {number}"))?;
+    let raw = wire.multiline(2_100_000)?.concat();
+    let _ = wire.pop("QUIT");
+    Ok(raw)
+}
+
+/// The name and bytes of a message's attachment number `index`.
+pub fn attachment_of(raw: &[u8], index: usize) -> Result<(String, Vec<u8>), String> {
+    let message = decode(raw, "")?;
+    let item = &message["attachment_items"][index];
+    if item.is_null() {
+        return Err("This attachment is no longer in the message.".into());
+    }
+    let bytes = STANDARD.decode(text(item, "data")).map_err(|_| "This attachment can't be read.")?;
+    Ok((text(item, "filename").to_string(), bytes))
+}
+
 pub fn fetch(account: &Value, seen: &HashSet<String>) -> Result<Value, String> {
     let mut wire = pop_connect(account)?;
     let available = String::from_utf8_lossy(&wire.pop("STAT")?)
@@ -443,9 +485,13 @@ pub fn send_checked(account: &Value, draft: &Value) -> Result<Value, super::draf
     // this message. Once bytes may have reached the server, fail uncertain.
     let prepared = (|| -> Result<_, String> {
     validate(account)?;
-    let to = text(draft, "to").trim();
-    if !to.contains('@') || to.contains(['\r', '\n', '<', '>', ' ', ',', ';']) {
-        return Err("Enter one recipient email address.".into());
+    let everyone = [text(draft, "to"), text(draft, "cc")]
+        .into_iter()
+        .map(super::drafts::recipients)
+        .collect::<Result<Vec<_>, _>>()?
+        .concat();
+    if text(draft, "to").trim().is_empty() || everyone.is_empty() {
+        return Err("Enter a recipient email address.".into());
     }
     let subject = text(draft, "subject");
     if subject.contains(['\r', '\n']) {
@@ -470,12 +516,16 @@ pub fn send_checked(account: &Value, draft: &Value) -> Result<Value, super::draf
     ));
     wire.smtp(&format!("AUTH PLAIN {auth}"), &[235])?;
     wire.smtp(&format!("MAIL FROM:<{}>", text(account, "address")), &[250])?;
-    wire.smtp(&format!("RCPT TO:<{to}>"), &[250, 251])?;
+    for one in &everyone {
+        wire.smtp(&format!("RCPT TO:<{one}>"), &[250, 251])?;
+    }
     wire.smtp("DATA", &[354])?;
     Ok(wire)
     })().map_err(SendFailure::BeforeDelivery)?;
     let mut wire = prepared;
-    let to = text(draft, "to").trim();
+    // The addresses were checked above. A long list folds, one to a line.
+    let folded = |list: &str| list.trim().replace(", ", ",\r\n ");
+    let to = folded(text(draft, "to"));
     let subject = text(draft, "subject");
     let id = text(draft, "message_id");
     let encoded = STANDARD.encode(text(draft, "body"));
@@ -486,6 +536,10 @@ pub fn send_checked(account: &Value, draft: &Value) -> Result<Value, super::draf
         .collect::<Vec<_>>()
         .join("\r\n");
     let mut message=format!("From: {}\r\nTo: {to}\r\nSubject: =?UTF-8?B?{}?=\r\nDate: {}\r\nMessage-ID: {id}\r\nMIME-Version: 1.0\r\nContent-Type: text/plain; charset=UTF-8\r\nContent-Transfer-Encoding: base64\r\n",text(account,"address"),STANDARD.encode(subject),chrono::Utc::now().to_rfc2822());
+    let cc = folded(text(draft, "cc"));
+    if !cc.is_empty() {
+        message.push_str(&format!("Cc: {cc}\r\n"));
+    }
     for (key, name) in [("in_reply_to", "In-Reply-To"), ("references", "References")] {
         let v = text(draft, key);
         if !v.is_empty() && !v.contains(['\r', '\n']) {

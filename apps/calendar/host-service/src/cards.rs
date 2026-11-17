@@ -130,6 +130,55 @@ pub fn refresh(
     Ok(())
 }
 
+/// An event's cards as they are kept, which a remove keeps for Undo.
+pub fn of_event(root: &Path, event: &str) -> Vec<Publication> {
+    let _guard = CARDS.lock().unwrap();
+    read(root).unwrap_or_default().into_iter().filter(|p| p.event == event).collect()
+}
+
+/// Undo of a remove: the event's cards come back as they were. One still on
+/// the glance screen is shown again without another notification, with its
+/// own deadline; a dismissed one stays dismissed; an expired one stays gone.
+pub fn put_back(
+    root: &Path,
+    event: &Event,
+    kept: Vec<Publication>,
+    publisher: Option<&CardPublisher>,
+) -> Result<(), String> {
+    let now = chrono::Utc::now().timestamp_millis().max(0) as u64;
+    let mut back = Vec::new();
+    let mut outcome = Ok(());
+    for old in kept.into_iter().filter(|p| p.expires > now) {
+        let card_id = text(&old.args, "card_id").to_string();
+        let priority = old.args["priority"].as_i64().unwrap_or(70);
+        if !old.dismissed {
+            let Some(publisher) = publisher else {
+                outcome = Err("Calendar put the event back, but Glance is unavailable.".into());
+                continue;
+            };
+            let mut args = saved_event_card_args(event, &card_id, priority);
+            args["notify"] = json!(false);
+            args["expires"] = json!((old.expires.saturating_sub(now) / 1000).clamp(60, 604800));
+            if let Err(error) = publisher(APP, args) {
+                outcome = Err(error);
+                continue;
+            }
+        }
+        back.push(Publication { args: saved_event_card_args(event, &card_id, priority), ..old });
+    }
+    if back.is_empty() {
+        return outcome;
+    }
+    let _guard = CARDS.lock().unwrap();
+    let mut all = read(root)?;
+    for card in back {
+        all.retain(|p| text(&p.args, "card_id") != text(&card.args, "card_id"));
+        all.push(card);
+    }
+    write(root, &all)?;
+    outcome
+}
+
 pub fn remove(root: &Path, event: &str) -> Result<(), String> {
     let retiring = {
         let _guard = CARDS.lock().unwrap();
@@ -187,13 +236,13 @@ mod tests {
         edit["start"] = json!("2026-10-06T10:30");
         handle(APP, "update_event", &edit, &root, at, Some(&publisher)).unwrap();
         let seen = calls.lock().unwrap();
-        assert_eq!(seen[1]["data"]["ev"]["metric2_value"], "10:30 PDT");
+        assert_eq!(seen[1]["data"]["ev"]["metric2_value"], "10:30 AM PDT");
         assert_eq!(seen[1]["notify"], false);
         assert_eq!(seen[1]["open"]["route"], format!("event/{}", event.id));
         drop(seen);
         let restored = publications(&root, now + 1000).unwrap();
         assert_eq!(restored.len(), 1);
-        assert_eq!(restored[0].args["data"]["ev"]["metric2_value"], "10:30 PDT");
+        assert_eq!(restored[0].args["data"]["ev"]["metric2_value"], "10:30 AM PDT");
         set_dismissed(&root, &event.id, true).unwrap();
         assert!(publications(&root, now + 1000).unwrap().is_empty());
         set_dismissed(&root, &event.id, false).unwrap();

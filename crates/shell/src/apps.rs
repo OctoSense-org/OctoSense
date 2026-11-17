@@ -138,6 +138,69 @@ pub fn window_hint(_cx: &mut makepad_widgets::Cx, _app: &crate::clients::AppDef)
     None
 }
 
+/// The size a built-in pane opens at on a desktop when it isn't a whole
+/// window of content: the Updates pane is the size of a Software Update pane
+/// (on a Mac its tallest state's, and the pane then fits each state's words),
+/// and Reference of its form, with a Mac panel's 20 points below its last
+/// row, under its title bar (28 points on a Mac, 32 elsewhere). Calculator opens at its basic keys, as
+/// a Mac's does: its own controls widen the window for the scientific keys
+/// and the history (`WindowRequest::Resize`). In the Mac style (`mac`) its
+/// window is unified: a 52-point toolbar in place of the title bar and its
+/// own 40-point one, 20 points less.
+pub fn native_window_hint(app: &crate::clients::AppDef, mac: bool) -> Option<(f64, f64)> {
+    match app.id.as_str() {
+        "updater" => Some((640.0, if mac { 284.0 } else { 330.0 })),
+        "reference" => Some((560.0, if mac { 160.0 } else { 164.0 })),
+        "calculator" => Some((252.0, if mac && crate::clients::unified_chrome(&app.id) { 405.0 } else { 425.0 })),
+        _ => None,
+    }
+}
+
+/// The smallest a person can drag a window of this app in the Mac style, as a Mac's own
+/// windows stop: before its toolbar collides or its first action falls off (every app
+/// was looked at this size, ADR 0015). The app's own controls may still ask for less
+/// (`WindowRequest::Resize`), and a window that is already smaller keeps what it has.
+pub fn mac_window_minimum(app: &str) -> (f64, f64) {
+    match app {
+        "calculator" => (252.0, 405.0),
+        "reference" => (420.0, 160.0),
+        "calendar" => (620.0, 420.0),
+        "mail" => (600.0, 400.0),
+        // System Settings keeps its sidebar and its Search: it never goes narrow on a Mac.
+        "settings" => (600.0, 400.0),
+        "octoscode" => (640.0, 420.0),
+        "apphub" => (560.0, 360.0),
+        // Notes keeps a note column a person can read (275 points) beside its folders and
+        // its list.
+        "notes" => (520.0, 300.0),
+        "quickdeck" | "pdftools" | "maps" | "sheets" | "finance" => (480.0, 320.0),
+        _ => (420.0, 300.0),
+    }
+}
+
+/// A window that has nothing to do with more room: Calculator's keys stop at their
+/// largest, and Reference's form is all it holds, as a Mac's form window is fixed to
+/// its content. In the macOS style its green light and Zoom do nothing and show it,
+/// and its edges don't size it, but for [`mac_window_widens`], whose green light and
+/// Zoom widen it to the room; its own controls still ask for room.
+pub fn mac_window_fixed(app: &str) -> bool {
+    matches!(app, "calculator" | "reference")
+}
+
+/// A fixed window whose side edges and corners still size it, in width only, as a
+/// Mac form window's do: Reference's field fills what it is given, down to
+/// [`mac_window_minimum`], and a taller window would show nothing more.
+pub fn mac_window_widens(app: &str) -> bool {
+    app == "reference"
+}
+
+/// A window whose own tab bar (or pane toolbar) carries on from its classic title
+/// bar, as a Mac's Terminal's tabs and its Settings window's panes do: no hairline
+/// between them.
+pub fn mac_title_joins_tabs(app: &str) -> bool {
+    app == "terminal"
+}
+
 /// A system app's launcher row carries its manifest id as this argument.
 const SYSTEM_ARG: &str = "--system=";
 
@@ -295,6 +358,12 @@ pub fn register_host_services() {
         // `window.fullscreen`: an app's own window in presentation full
         // screen, from the person's tap (app_fullscreen.rs).
         crate::app_fullscreen::register();
+        // `clipboard.write`: an app copies text at the person's click
+        // (app_clipboard.rs).
+        crate::app_clipboard::register();
+        // `settings.open`: an app sends the person to AI Providers at their click
+        // (app_settings_link.rs).
+        crate::app_settings_link::register();
         // App Hub admits bundles before the first CardModule is opened. The
         // linked card runner already supports app tools at that point, so its
         // ABI must not depend on a card's lazy VM registration.
@@ -467,6 +536,16 @@ fn register_calendar_services() {
 /// request instead.
 #[cfg(any(feature = "app-hub", native_mobile))]
 fn register_news() {
+    // A test run can hold the feeds back (`news_slow_feeds` in the app config),
+    // to see what News says while they come.
+    #[derive(Default)]
+    struct SlowFeeds(octosense_news_service::HttpFetcher);
+    impl octosense_news_service::Fetcher for SlowFeeds {
+        fn get(&self, request: &octosense_news_service::Request) -> Result<octosense_news_service::Response, String> {
+            std::thread::sleep(std::time::Duration::from_secs(6));
+            octosense_news_service::Fetcher::get(&self.0, request)
+        }
+    }
     let mut options = octosense_news_service::Options::default()
         .on_fetch(|report| {
             // M3 routes this to News's peer, to wake its agent; logged for now.
@@ -480,6 +559,9 @@ fn register_news() {
         })
         // `news.notify` (News's agent's tool): the shell's notice card, as News.
         .on_notify(crate::glance_notice::notify);
+    if crate::launch_input::flag("news_slow_feeds") {
+        options = options.fetcher(std::sync::Arc::new(SlowFeeds::default()));
+    }
     match octosense_app_hub_app::data_root_if_set() {
         Some(root) => {
             let host_dir = root.join(".host");
@@ -959,6 +1041,50 @@ pub(crate) fn installed_bundle(root: &Path, app_id: &str) -> PathBuf {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(any(feature = "app-hub", native_mobile))]
+    #[test]
+    fn no_window_opens_below_the_size_it_can_be_dragged_to() {
+        for (app, (w, h)) in [("updater", (640.0, 330.0)), ("reference", (560.0, 160.0)), ("calculator", (252.0, 405.0))] {
+            let (min_w, min_h) = mac_window_minimum(app);
+            assert!(min_w <= w && min_h <= h, "{app} opens at {w}x{h} but stops at {min_w}x{min_h}");
+        }
+        for manifest in std::fs::read_dir(concat!(env!("CARGO_MANIFEST_DIR"), "/../../apps")).unwrap().flatten() {
+            let Ok(text) = std::fs::read_to_string(manifest.path().join("bundle/manifest.json")) else { continue };
+            let Some(window) = octosense_app_contract::AppManifest::parse(&text).ok().and_then(|m| m.window) else { continue };
+            let app = manifest.file_name().to_string_lossy().to_string();
+            let (min_w, min_h) = mac_window_minimum(&app);
+            assert!(min_w <= f64::from(window.width) && min_h <= f64::from(window.height), "{app} opens below its smallest size");
+        }
+    }
+
+    #[test]
+    fn native_window_hint_opens_calculator_at_its_basic_keys() {
+        let app = |id: &str| crate::clients::AppDef {
+            id: id.into(),
+            label: id.into(),
+            bin: String::new(),
+            package: String::new(),
+            dir: String::new(),
+            manifest: None,
+            args: Vec::new(),
+            policy: crate::clients::LaunchPolicy::OrFocus,
+            target_dir: None,
+        };
+        // Four 56-point keys and their gaps across; the keys, the display and
+        // the 32-point title bar down, or a Mac's unified 52-point toolbar.
+        assert_eq!(super::native_window_hint(&app("calculator"), false), Some((252.0, 425.0)));
+        assert_eq!(super::native_window_hint(&app("calculator"), true), Some((252.0, 405.0)));
+        assert_eq!(super::native_window_hint(&app("updater"), true), Some((640.0, 284.0)));
+        assert_eq!(super::native_window_hint(&app("updater"), false), Some((640.0, 330.0)));
+        assert_eq!(super::native_window_hint(&app("reference"), true), Some((560.0, 160.0)));
+        assert_eq!(super::native_window_hint(&app("reference"), false), Some((560.0, 164.0)));
+        assert_eq!(super::native_window_hint(&app("notes"), true), None);
+        // Both open at their content's size and keep it in the macOS style.
+        assert!(super::mac_window_fixed("calculator") && super::mac_window_fixed("reference"));
+        assert!(super::mac_window_widens("reference") && !super::mac_window_widens("calculator"));
+        assert!(!super::mac_window_fixed("notes"));
+    }
+
     /// A fresh host must accept a compatible app before either App Hub or
     /// CardModule creates its first VM. Otherwise installs or cold launches
     /// fail until another app happens to register the same runtime ABI.

@@ -637,6 +637,7 @@ impl ShellGallery {
                     self.menu.open_at(cx, "", MenuSkin::Menu);
                     self.redraw(cx);
                 }
+                ShellMenuAction::MacSwitched | ShellMenuAction::MacSlide(..) => {}
                 ShellMenuAction::None => {}
             }
         }

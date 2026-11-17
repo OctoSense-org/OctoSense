@@ -432,6 +432,12 @@ impl Storage {
         self.state().specs.insert(app_id.to_owned(), spec);
     }
 
+    /// A missing manifest is not a declaration of default storage. Forget
+    /// an earlier spec so a later lookup can read the unpacked manifest.
+    pub(crate) fn clear_spec(&self, app_id: &str) {
+        self.state().specs.remove(app_id);
+    }
+
     pub fn spec(&self, app_id: &str) -> StorageSpec {
         self.state().specs.get(app_id).cloned().unwrap_or_default()
     }

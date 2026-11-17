@@ -69,7 +69,7 @@ tools/ci-local.sh --only all --linux-host --offload --list   # what runs where
 
 `JOBS` in `tools/ci_local.py` says which steps stay here (`mac_steps`):
 
-| Job (GitHub: macos-14) | Stays on the Mac | Goes to the Linux host |
+| Job (GitHub: macos-15) | Stays on the Mac | Goes to the Linux host |
 | --- | --- | --- |
 | desktop / `desktop` | Compile the desktop; desktop tools and scripts | The shell-source, single-graph and native-apps checks |
 | desktop / `native-host-api` | All of it (a real macOS host) | Nothing |

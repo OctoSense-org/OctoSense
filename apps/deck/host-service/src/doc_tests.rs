@@ -1720,6 +1720,108 @@ fn layouts_themes_fonts_and_shapes() {
 }
 
 #[test]
+fn a_copied_placeholder_keeps_its_look() {
+    // The engine pastes a placeholder as a plain shape: the service first gives it
+    // the look the layout gave the original, as Keynote's copy of a title keeps
+    // the title's font, size and alignment.
+    let w = World::new();
+    let doc = w.sample_open("board.deckcraft", 2);
+    let ids = w.slide_ids(&doc);
+    let title = w.shape_where(&doc, ids[0], "text", "Northwind Cooperative");
+    let look = |slide: u64, id: u64| {
+        let f = w.ok("format_state", json!({ "doc": doc, "slide": slide, "id": id }));
+        (f["font"].clone(), f["size"].clone(), f["align"].clone(), f["bold"].clone(), f["color"].clone())
+    };
+    let shape = |slide: u64, id: u64| w.shapes(&doc, slide).into_iter().find(|x| x["id"] == json!(id)).unwrap();
+    let was = look(ids[0], title);
+    assert!(shape(ids[0], title)["placeholder"].is_string() || shape(ids[0], title)["placeholder"].is_object(), "{}", shape(ids[0], title));
+    w.ok("shape", json!({ "doc": doc, "slide": ids[0], "ids": [title], "op": "copy" }));
+    let pasted = w.ok("insert", json!({ "doc": doc, "slide": ids[1], "kind": "paste" }));
+    let copy = pasted["ids"][0].as_u64().unwrap();
+    assert_eq!(look(ids[1], copy), was);
+    let made = shape(ids[1], copy);
+    assert!(made["placeholder"].is_null(), "{made}");
+    assert_eq!(made["box"], shape(ids[0], title)["box"]);
+    // Cut keeps the look too.
+    let body = w.shape_where(&doc, ids[1], "text", "First point\nSecond point");
+    let was = look(ids[1], body);
+    w.ok("shape", json!({ "doc": doc, "slide": ids[1], "ids": [body], "op": "cut" }));
+    let back = w.ok("insert", json!({ "doc": doc, "slide": ids[0], "kind": "paste" }))["ids"][0].as_u64().unwrap();
+    assert_eq!(look(ids[0], back), was);
+}
+
+#[test]
+fn a_grouped_placeholder_keeps_its_look_and_undo_restores_it() {
+    let w = World::new();
+    let doc = w.sample_open("board.deckcraft", 1);
+    let slide = w.slide_ids(&doc)[0];
+    let title = w.shape_where(&doc, slide, "text", "Northwind Cooperative");
+    let body = w.shape_where(&doc, slide, "text", "Q3 2026 board update");
+    let look = |id| {
+        let f = w.ok("format_state", json!({"doc": doc, "slide": slide, "id": id}));
+        (f["font"].clone(), f["size"].clone(), f["align"].clone(), f["bold"].clone(), f["color"].clone())
+    };
+    let original = look(title);
+    let before = w.shapes(&doc, slide);
+    w.ok("shape", json!({"doc": doc, "slide": slide, "ids": [title, body], "op": "group"}));
+    assert_eq!(look(title), original, "grouping must not change the title's inherited text appearance");
+    w.ok("undo", json!({"doc": doc}));
+    assert_eq!(w.shapes(&doc, slide), before, "undo restores the original placeholders");
+    w.ok("redo", json!({"doc": doc}));
+    assert_eq!(look(title), original);
+}
+
+#[test]
+fn a_duplicated_placeholder_keeps_its_look_without_changing_the_original() {
+    let w = World::new();
+    let doc = w.sample_open("board.deckcraft", 1);
+    let slide = w.slide_ids(&doc)[0];
+    let title = w.shape_where(&doc, slide, "text", "Northwind Cooperative");
+    let look = |id| {
+        let f = w.ok("format_state", json!({"doc": doc, "slide": slide, "id": id}));
+        (f["font"].clone(), f["size"].clone(), f["align"].clone(), f["bold"].clone(), f["color"].clone())
+    };
+    let original = look(title);
+    let before = w.shapes(&doc, slide);
+    let duplicate = w.ok("shape", json!({"doc": doc, "slide": slide, "ids": [title], "op": "duplicate"}))["ids"][0].as_u64().unwrap();
+    assert_eq!(look(duplicate), original, "duplicating must not change the title's inherited text appearance");
+    assert_eq!(w.shapes(&doc, slide).into_iter().find(|shape| shape["id"] == json!(title)), before.iter().find(|shape| shape["id"] == json!(title)).cloned());
+    w.ok("undo", json!({"doc": doc}));
+    assert_eq!(w.shapes(&doc, slide), before);
+    w.ok("redo", json!({"doc": doc}));
+    assert_eq!(look(duplicate), original);
+}
+
+#[test]
+fn grouping_or_duplicating_cannot_materialize_oversized_inherited_text() {
+    let w = World::new();
+    let mut model = sample(1);
+    let layout_id = model.slides[0].layout;
+    let master = Arc::make_mut(&mut model.masters[0]);
+    let layout = master.layouts.iter_mut().find(|layout| layout.id == layout_id).unwrap();
+    let title = layout.shapes.iter_mut().find(|shape| shape.ph_type().is_some_and(|kind| kind.is_title())).unwrap();
+    title.text.as_mut().unwrap().list_style.set(0, deckcraft_model::text::LevelStyle {
+        run: deckcraft_model::RunProps { size: Some(super::MAX_FONT_SIZE + 1.0), ..Default::default() },
+        ..Default::default()
+    });
+    w.put("oversized.deckcraft", &native(&model));
+    let doc = w.open("oversized.deckcraft");
+    let slide = w.slide_ids(&doc)[0];
+    let title = w.shape_where(&doc, slide, "text", "Northwind Cooperative");
+    let body = w.shape_where(&doc, slide, "text", "Q3 2026 board update");
+    let before = w.shapes(&doc, slide);
+    let rev = w.ok("state", json!({"doc": doc}))["rev"].clone();
+    let steps = undo_len(&doc);
+    for (op, ids) in [("group", vec![title, body]), ("duplicate", vec![title])] {
+        let error = w.err("shape", json!({"doc": doc, "slide": slide, "ids": ids, "op": op}));
+        coded(&error, "too_large");
+        assert_eq!(w.shapes(&doc, slide), before, "a refused {op} must be atomic");
+        assert_eq!(w.ok("state", json!({"doc": doc}))["rev"], rev);
+        assert_eq!(undo_len(&doc), steps);
+    }
+}
+
+#[test]
 fn format_state_of_a_box_and_of_a_paragraph() {
     let w = World::new();
     let doc = w.sample_open("board.deckcraft", 2);
@@ -1761,6 +1863,22 @@ fn slide_operations() {
     let now = w.slide_ids(&doc);
     assert_eq!(now.len(), 6);
     coded(&w.err("slides_op", json!({ "doc": doc, "op": "delete", "slides": now })), "invalid");
+    // Copy and Cut keep slides in the deck's clipboard (Cut never every
+    // slide); Paste puts them after the slide named.
+    coded(&w.err("slides_op", json!({ "doc": doc, "op": "cut", "slides": now })), "invalid");
+    let copied = w.ok("slides_op", json!({ "doc": doc, "op": "copy", "slides": [now[1]] }));
+    assert_eq!((copied["changed"].clone(), w.slide_ids(&doc)), (json!([]), now.clone()), "{copied}");
+    let pasted = w.ok("insert", json!({ "doc": doc, "slide": now[3], "kind": "paste" }));
+    let made: Vec<u64> = pasted["slides"].as_array().unwrap().iter().map(|c| c.as_u64().unwrap()).collect();
+    assert_eq!((made.len(), pasted["ids"].clone()), (1, json!([])), "{pasted}");
+    assert_eq!(w.slide_ids(&doc)[4], made[0]);
+    w.ok("slides_op", json!({ "doc": doc, "op": "cut", "slides": [made[0]] }));
+    assert_eq!(w.slide_ids(&doc), now);
+    w.ok("insert", json!({ "doc": doc, "slide": now[0], "kind": "paste" }));
+    let back = w.slide_ids(&doc);
+    assert_eq!((back.len(), back[0], back[2]), (7, now[0], now[1]), "{back:?}");
+    w.ok("slides_op", json!({ "doc": doc, "op": "delete", "slides": [back[1]] }));
+    assert_eq!(w.slide_ids(&doc), now);
     // Move: the slides named, in their order, at the position named.
     let order = w.slide_ids(&doc);
     w.ok("slides_op", json!({ "doc": doc, "op": "move", "slides": [order[1], order[0]], "to": 3 }));
@@ -2083,6 +2201,27 @@ fn arranging_and_styling_shapes() {
     let copies = op(json!({ "ids": [a], "op": "duplicate" }))["ids"].clone();
     assert_eq!(copies.as_array().unwrap().len(), 1);
     assert_eq!(op(json!({ "ids": copies, "op": "delete" }))["ids"], json!([]));
+    // Copy keeps the shapes in the deck's clipboard and changes nothing; Paste
+    // puts a copy back, a step aside on the slide it came from and where it
+    // was on another; Cut takes the shape away and keeps it.
+    let count = |slide: u64| w.shapes(&doc, slide).len();
+    let (n, steps) = (count(s), undo_len(&doc));
+    let copied = op(json!({ "ids": [a], "op": "copy" }));
+    assert_eq!((copied["changed"].clone(), copied["ids"].clone()), (json!([]), json!([a])), "{copied}");
+    assert_eq!(undo_len(&doc), steps);
+    let paste = |slide: u64| w.ok("insert", json!({ "doc": doc, "slide": slide, "kind": "paste" }));
+    let pasted = paste(s);
+    let here = pasted["ids"].as_array().unwrap()[0].as_u64().unwrap();
+    assert_eq!((pasted["changed"].clone(), pasted["slides"].clone(), count(s)), (json!([s]), json!([]), n + 1), "{pasted}");
+    let (was, now) = (box_of(a), box_of(here));
+    assert!(now[0].as_f64().unwrap() > was[0].as_f64().unwrap() && now[1].as_f64().unwrap() > was[1].as_f64().unwrap(), "{was} {now}");
+    let other = w.slide_ids(&doc)[0];
+    let away = paste(other)["ids"].as_array().unwrap()[0].as_u64().unwrap();
+    assert_eq!(w.shapes(&doc, other).into_iter().find(|x| x["id"] == json!(away)).unwrap()["box"], was);
+    let cut = op(json!({ "ids": [here], "op": "cut" }));
+    assert_eq!((cut["changed"].clone(), cut["ids"].clone(), count(s)), (json!([s]), json!([]), n), "{cut}");
+    assert_eq!(paste(s)["ids"].as_array().unwrap().len(), 1);
+    assert_eq!(count(s), n + 1);
     // A fill never takes a picture, a pattern or a path.
     for (key, value) in [("picture", json!(0)), ("path", json!("images/dot.png")), ("pattern", json!({ "preset": "pct50" }))] {
         let mut args = json!({ "doc": doc, "slide": s, "ids": [a], "op": "fill", "color": "#000000" });
@@ -2096,6 +2235,500 @@ fn arranging_and_styling_shapes() {
     coded(&w.err("shape", json!({ "doc": doc, "slide": s, "ids": [a], "op": "style", "index": 42 })), "invalid");
     coded(&w.err("shape", json!({ "doc": doc, "slide": s, "ids": [a], "op": "spin" })), "invalid");
     coded(&w.err("shape", json!({ "doc": doc, "slide": s, "ids": [999_999], "op": "delete" })), "unknown_id");
+}
+
+#[test]
+fn copied_shape_can_be_pasted_between_open_decks_without_moving_it() {
+    let w = World::new();
+    // Both decks come from the same template, so their shape IDs collide.
+    // A paste into the other deck should still land at its original position.
+    let source = w.sample_open("source.deckcraft", 6);
+    let target = w.sample_open("target.deckcraft", 6);
+    let source_slide = w.slide_ids(&source)[4];
+    let target_slide = w.slide_ids(&target)[4];
+    let shape = w.shape_where(&source, source_slide, "text", "First");
+    let original = w.shapes(&source, source_slide).into_iter().find(|s| s["id"] == json!(shape)).unwrap();
+    let target_count = w.shapes(&target, target_slide).len();
+    let source_rev = w.ok("state", json!({"doc": source}))["rev"].clone();
+    let steps = undo_len(&target);
+    let token = w.ok("shape", json!({"doc": source, "slide": source_slide, "ids": [shape], "op": "copy"}))["clipboard"].clone();
+    let pasted = w.ok("insert", json!({
+        "doc": target, "slide": target_slide, "kind": "paste",
+        "clipboard": token.clone()
+    }));
+    let id = pasted["ids"][0].as_u64().unwrap();
+    let copy = w.shapes(&target, target_slide).into_iter().find(|s| s["id"] == json!(id)).unwrap();
+    assert_eq!((copy["text"].clone(), copy["box"].clone()), (original["text"].clone(), original["box"].clone()));
+    assert_eq!(w.shapes(&target, target_slide).len(), target_count + 1);
+    assert_eq!(w.ok("state", json!({"doc": source}))["rev"], source_rev);
+    assert_eq!(undo_len(&target), steps + 1);
+    let again = w.ok("insert", json!({"doc": target, "slide": target_slide, "kind": "paste", "clipboard": token}));
+    let second_id = again["ids"][0].as_u64().unwrap();
+    let second = w.shapes(&target, target_slide).into_iter().find(|s| s["id"] == json!(second_id)).unwrap();
+    assert!(second["box"][0].as_f64().unwrap() > copy["box"][0].as_f64().unwrap());
+    assert!(second["box"][1].as_f64().unwrap() > copy["box"][1].as_f64().unwrap());
+    w.ok("undo", json!({"doc": target}));
+    w.ok("undo", json!({"doc": target}));
+    assert_eq!(w.shapes(&target, target_slide).len(), target_count);
+}
+
+#[test]
+fn cross_deck_picture_remaps_colliding_media_and_survives_undo_and_save() {
+    let w = World::new();
+    let source_model = sample(6);
+    let mut target_model = source_model.clone();
+    let original_media = source_model.media[0].data.clone();
+    let mut different = original_media.as_ref().clone();
+    different.extend_from_slice(b"different destination image");
+    target_model.media[0].data = Arc::new(different.clone());
+    assert_eq!(source_model.media[0].id, target_model.media[0].id);
+    w.put("source.deckcraft", &native(&source_model));
+    w.put("target.deckcraft", &native(&target_model));
+    let source = w.open("source.deckcraft");
+    let target = w.open("target.deckcraft");
+    let source_slide = w.slide_ids(&source)[4];
+    let target_slide = w.slide_ids(&target)[4];
+    let picture = w.shape_where(&source, source_slide, "kind", "picture");
+    let token = w.ok("shape", json!({"doc": source, "slide": source_slide, "ids": [picture], "op": "copy"}))["clipboard"].clone();
+    w.ok("close", json!({"doc": source}));
+    let before = w.shapes(&target, target_slide).len();
+    let pasted = w.ok("insert", json!({"doc": target, "slide": target_slide, "kind": "paste", "clipboard": token}));
+    let pasted_id = pasted["ids"][0].as_u64().unwrap() as u32;
+    let bytes = |doc: &str, shape: u32| docs::with_open(doc, |open| {
+        let deck = open.deck().unwrap();
+        let slide = deck.slide(deckcraft_model::SlideId(target_slide as u32)).unwrap();
+        let deckcraft_model::ShapeKind::Picture { fill } = &slide.shape(ShapeId(shape)).unwrap().kind else { panic!("expected a picture") };
+        (fill.media, deck.media(fill.media).unwrap().data.clone())
+    }).unwrap();
+    let (media, data) = bytes(&target, pasted_id);
+    assert_ne!(media, target_model.media[0].id, "the destination's existing ID belongs to different bytes");
+    assert_eq!(data.as_ref(), original_media.as_ref());
+    assert_ne!(data.as_ref(), &different);
+    w.ok("undo", json!({"doc": target}));
+    assert_eq!(w.shapes(&target, target_slide).len(), before);
+    w.ok("redo", json!({"doc": target}));
+    assert_eq!(bytes(&target, pasted_id).1.as_ref(), original_media.as_ref());
+    w.ok("save", json!({"doc": target}));
+    w.ok("close", json!({"doc": target}));
+    let reopened = w.open("target.deckcraft");
+    assert_eq!(bytes(&reopened, pasted_id).1.as_ref(), original_media.as_ref());
+}
+
+#[test]
+fn copied_slide_can_be_pasted_after_its_source_deck_closes() {
+    let w = World::new();
+    let source = w.sample_open("source.deckcraft", 3);
+    let target = w.sample_open("target.deckcraft", 3);
+    let source_slide = w.slide_ids(&source)[1];
+    let target_slides = w.slide_ids(&target);
+    let source_rows = w.ok("slides", json!({"doc": source}));
+    let title = source_rows["slides"].as_array().unwrap().iter().find(|row| row["id"] == source_slide).unwrap()["title"].clone();
+    assert_eq!(title, "Slide 2");
+    let token = w.ok("slides_op", json!({"doc": source, "op": "copy", "slides": [source_slide]}))["clipboard"].clone();
+    w.ok("close", json!({"doc": source}));
+    let result = w.ok("insert", json!({"doc": target, "slide": target_slides[0], "kind": "paste", "clipboard": token}));
+    let made = result["slides"][0].as_u64().unwrap();
+    assert_eq!(w.slide_ids(&target)[1], made);
+    let target_rows = w.ok("slides", json!({"doc": target}));
+    assert_eq!(target_rows["slides"].as_array().unwrap().iter().find(|row| row["id"] == made).unwrap()["title"], title);
+    w.ok("undo", json!({"doc": target}));
+    assert_eq!(w.slide_ids(&target), target_slides);
+}
+
+#[test]
+fn multiple_copied_slides_keep_order_and_animation_targets() {
+    let w = World::new();
+    let source = w.sample_open("source.deckcraft", 6);
+    let target = w.sample_open("target.deckcraft", 6);
+    let source_ids = w.slide_ids(&source);
+    let target_ids = w.slide_ids(&target);
+    let token = w.ok("slides_op", json!({"doc": source, "op": "copy", "slides": [source_ids[1], source_ids[4]]}))["clipboard"].clone();
+    w.ok("close", json!({"doc": source}));
+    let made = w.ok("insert", json!({"doc": target, "slide": target_ids[0], "kind": "paste", "clipboard": token}))["slides"].as_array().unwrap().clone();
+    assert_eq!(made.len(), 2);
+    let (first, second) = (made[0].as_u64().unwrap(), made[1].as_u64().unwrap());
+    assert_eq!(&w.slide_ids(&target)[1..3], &[first, second]);
+    let rows = w.ok("slides", json!({"doc": target}));
+    for (id, title) in [(first, "Slide 2"), (second, "Slide 5")] {
+        assert_eq!(rows["slides"].as_array().unwrap().iter().find(|row| row["id"] == id).unwrap()["title"], title);
+    }
+    let animation_texts = docs::with_open(&target, |open| {
+        let deck = open.deck().unwrap();
+        let slide = deck.slide(deckcraft_model::SlideId(second as u32)).unwrap();
+        slide.animations.iter().map(|animation| slide.shape(animation.shape).unwrap().text.as_ref().unwrap().text()).collect::<Vec<_>>()
+    }).unwrap();
+    assert_eq!(animation_texts, vec!["First", "Second"]);
+    w.ok("undo", json!({"doc": target}));
+    assert_eq!(w.slide_ids(&target), target_ids);
+}
+
+#[test]
+fn copied_slide_keeps_animation_targets_in_the_new_deck() {
+    let w = World::new();
+    let source = w.sample_open("source.deckcraft", 6);
+    let target = w.sample_open("target.deckcraft", 6);
+    let source_slide = w.slide_ids(&source)[4];
+    let target_slide = w.slide_ids(&target)[0];
+    let animation_texts = |doc: &str, slide: u64| docs::with_open(doc, |open| {
+        let deck = open.deck().unwrap();
+        let slide = deck.slide(deckcraft_model::SlideId(slide as u32)).unwrap();
+        slide.animations.iter().map(|animation| {
+            slide.shape(animation.shape).unwrap().text.as_ref().unwrap().text()
+        }).collect::<Vec<_>>()
+    }).unwrap();
+    let expected = animation_texts(&source, source_slide);
+    assert_eq!(expected, vec!["First", "Second"]);
+    let token = w.ok("slides_op", json!({"doc": source, "op": "copy", "slides": [source_slide]}))["clipboard"].clone();
+    w.ok("close", json!({"doc": source}));
+    let made = w.ok("insert", json!({"doc": target, "slide": target_slide, "kind": "paste", "clipboard": token}))["slides"][0].as_u64().unwrap();
+    assert_eq!(animation_texts(&target, made), expected);
+    w.ok("save", json!({"doc": target}));
+    w.ok("close", json!({"doc": target}));
+    let reopened = w.open("target.deckcraft");
+    assert_eq!(animation_texts(&reopened, made), expected);
+}
+
+#[test]
+fn cross_deck_shape_keeps_its_rendered_look_in_a_different_theme() {
+    let w = World::new();
+    let source = w.sample_open("source.deckcraft", 6);
+    let target = w.sample_open("target.deckcraft", 6);
+    let source_slide = w.slide_ids(&source)[4];
+    let target_slide = w.slide_ids(&target)[4];
+    let shape = w.shape_where(&source, source_slide, "text", "First");
+    w.ok("shape", json!({"doc": source, "slide": source_slide, "ids": [shape], "op": "fill", "color": "accent1"}));
+    w.ok("design", json!({"doc": target, "theme": "Ember"}));
+    let token = w.ok("shape", json!({"doc": source, "slide": source_slide, "ids": [shape], "op": "copy"}))["clipboard"].clone();
+    let font = |doc: &str, slide: u64, id: u64| docs::with_open(doc, |open| {
+        let deck = open.deck().unwrap();
+        let slide = deck.slide(deckcraft_model::SlideId(slide as u32)).unwrap();
+        let shape = slide.shape(ShapeId(id as u32)).unwrap();
+        let para = &shape.text.as_ref().unwrap().paragraphs[0];
+        let ctx = deckcraft_model::resolve::Ctx::for_slide(&deck, slide).unwrap();
+        let props = deckcraft_model::resolve::run(&ctx, shape, para, &para.runs[0].props);
+        deckcraft_model::resolve::font_family(&ctx, &props)
+    }).unwrap();
+    let source_font = font(&source, source_slide, shape);
+    let target_shape = w.shape_where(&target, target_slide, "text", "First");
+    assert_ne!(source_font, font(&target, target_slide, target_shape), "the fixture needs different theme fonts");
+    let opts = render::RenderOpts { scale: 1.0, ..Default::default() };
+    let original = docs::with_open(&source, |doc| render::render_slide(&doc.deck().unwrap(), 4, &opts)).unwrap();
+    let pasted_id = w.ok("insert", json!({"doc": target, "slide": target_slide, "kind": "paste", "clipboard": token}))["ids"][0].as_u64().unwrap();
+    assert_eq!(font(&target, target_slide, pasted_id), source_font);
+    let pasted = docs::with_open(&target, |doc| render::render_slide(&doc.deck().unwrap(), 4, &opts)).unwrap();
+    let (before, after) = (original.to_straight(), pasted.to_straight());
+    assert_eq!((original.width, original.height), (pasted.width, pasted.height));
+    // The selected rectangle is at (50, 400), 100 × 60 points. Compare its
+    // interior, including its text, without sampling the slide background.
+    for y in 404..456 {
+        for x in 54..146 {
+            let i = ((y * original.width + x) * 4) as usize;
+            assert_eq!(&before[i..i + 4], &after[i..i + 4], "appearance changed at {x}, {y}");
+        }
+    }
+}
+
+#[test]
+fn copied_placeholder_keeps_its_inherited_theme_style() {
+    let w = World::new();
+    let mut source_model = sample(2);
+    let slide_id = source_model.slides[0].id;
+    let layout_id = source_model.slides[0].layout;
+    let title_id = source_model.slides[0].shapes.iter()
+        .find(|shape| shape.ph_type().is_some_and(|kind| kind.is_title())).unwrap().id;
+    let master = Arc::make_mut(&mut source_model.masters[0]);
+    let layout = master.layouts.iter_mut().find(|layout| layout.id == layout_id).unwrap();
+    let title = layout.shapes.iter_mut().find(|shape| shape.ph_type().is_some_and(|kind| kind.is_title())).unwrap();
+    title.fill = None;
+    title.line = None;
+    title.effects = None;
+    title.style = Some(deckcraft_model::ShapeStyle::accent(deckcraft_model::SchemeSlot::Accent1));
+    let target_model = source_model.clone();
+    w.put("source.deckcraft", &native(&source_model));
+    w.put("target.deckcraft", &native(&target_model));
+    let source = w.open("source.deckcraft");
+    let target = w.open("target.deckcraft");
+    let effective_colors = |doc: &str, slide: u32, shape: u32| docs::with_open(doc, |open| {
+        let deck = open.deck().unwrap();
+        let slide = deck.slide(deckcraft_model::SlideId(slide)).unwrap();
+        let shape = slide.shape(ShapeId(shape)).unwrap();
+        let ctx = deckcraft_model::resolve::Ctx::for_slide(&deck, slide).unwrap();
+        let (fill, placeholder) = deckcraft_model::resolve::fill(&ctx, shape);
+        let fill = match fill {
+            Some(deckcraft_model::Fill::Solid { color }) => Some(ctx.color(&color, placeholder)),
+            _ => None,
+        };
+        let (line, placeholder) = deckcraft_model::resolve::line(&ctx, shape);
+        let line = match line.fill {
+            Some(deckcraft_model::Fill::Solid { color }) => Some(ctx.color(&color, placeholder)),
+            _ => None,
+        };
+        (fill, line)
+    }).unwrap();
+    let original = effective_colors(&source, slide_id.0, title_id.0);
+    assert!(original.0.is_some() && original.1.is_some(), "fixture needs inherited theme fill and line");
+    let token = w.ok("shape", json!({"doc": source, "slide": slide_id.0, "ids": [title_id.0], "op": "copy"}))["clipboard"].clone();
+    let pasted = w.ok("insert", json!({"doc": target, "slide": slide_id.0, "kind": "paste", "clipboard": token.clone()}))["ids"][0].as_u64().unwrap();
+    assert_eq!(effective_colors(&target, slide_id.0, pasted as u32), original, "inherited colours must survive a paste into a deck with the same theme");
+    let same_deck = w.ok("insert", json!({"doc": source, "slide": slide_id.0, "kind": "paste", "clipboard": token}))["ids"][0].as_u64().unwrap();
+    assert_eq!(effective_colors(&source, slide_id.0, same_deck as u32), original, "the same deck must keep the inherited colours too");
+    w.ok("design", json!({"doc": target, "colors": "Berry"}));
+    let recolored = effective_colors(&target, slide_id.0, title_id.0);
+    assert_ne!(recolored, original, "fixture needs a visible theme change");
+    assert_eq!(effective_colors(&target, slide_id.0, pasted as u32), recolored, "the pasted item should still follow its theme");
+    w.ok("save", json!({"doc": target}));
+    w.ok("close", json!({"doc": target}));
+    let reopened = w.open("target.deckcraft");
+    assert_eq!(effective_colors(&reopened, slide_id.0, pasted as u32), recolored);
+}
+
+#[test]
+fn copied_placeholder_does_not_gain_a_master_placeholder_text_color() {
+    let w = World::new();
+    let mut model = sample(1);
+    let slide_id = model.slides[0].id;
+    let layout_id = model.slides[0].layout;
+    let title_id = model.slides[0].shapes.iter()
+        .find(|shape| shape.ph_type().is_some_and(|kind| kind.is_title())).unwrap().id;
+    model.default_text_style = Default::default();
+    let master = Arc::make_mut(&mut model.masters[0]);
+    master.title_style = Default::default();
+    let layout = master.layouts.iter_mut().find(|layout| layout.id == layout_id).unwrap();
+    let title = layout.shapes.iter_mut().find(|shape| shape.ph_type().is_some_and(|kind| kind.is_title())).unwrap();
+    title.fill = None;
+    title.line = None;
+    title.effects = None;
+    title.style = None;
+    title.text = None;
+    let title = master.shapes.iter_mut().find(|shape| shape.ph_type().is_some_and(|kind| kind.is_title())).unwrap();
+    title.fill = None;
+    title.line = None;
+    title.effects = None;
+    title.text = None;
+    let mut style = deckcraft_model::ShapeStyle::accent(deckcraft_model::SchemeSlot::Accent1);
+    style.font_ref = ("minor".into(), Some(deckcraft_model::ColorRef::rgb(deckcraft_model::Rgba::rgb(255, 0, 0))));
+    title.style = Some(style);
+    w.put("source.deckcraft", &native(&model));
+    w.put("target.deckcraft", &native(&model));
+    let source = w.open("source.deckcraft");
+    let target = w.open("target.deckcraft");
+    let text_color = |doc: &str, shape: u32| docs::with_open(doc, |open| {
+        let deck = open.deck().unwrap();
+        let slide = deck.slide(slide_id).unwrap();
+        let shape = slide.shape(ShapeId(shape)).unwrap();
+        let ctx = deckcraft_model::resolve::Ctx::for_slide(&deck, slide).unwrap();
+        let para = &shape.text.as_ref().unwrap().paragraphs[0];
+        let props = deckcraft_model::resolve::run(&ctx, shape, para, &para.runs[0].props);
+        deckcraft_model::resolve::text_color(&ctx, &props)
+    }).unwrap();
+    let original = text_color(&source, title_id.0);
+    assert_ne!(original, deckcraft_model::Rgba::rgb(255, 0, 0), "the master placeholder's font reference is not inherited");
+    let token = w.ok("shape", json!({"doc": source, "slide": slide_id.0, "ids": [title_id.0], "op": "copy"}))["clipboard"].clone();
+    let pasted = w.ok("insert", json!({"doc": target, "slide": slide_id.0, "kind": "paste", "clipboard": token}))["ids"][0].as_u64().unwrap();
+    assert_eq!(text_color(&target, pasted as u32), original, "copying the fill must not change the title's text color");
+}
+
+#[test]
+fn cross_theme_mixed_selection_with_a_table_is_refused_without_changes() {
+    let w = World::new();
+    let source = w.sample_open("source.deckcraft", 6);
+    let target = w.sample_open("target.deckcraft", 6);
+    let source_slide = w.slide_ids(&source)[2];
+    let target_slide = w.slide_ids(&target)[2];
+    let shapes = w.shapes(&source, source_slide);
+    let table = w.shape_where(&source, source_slide, "kind", "table");
+    let ordinary = shapes.iter().find(|shape| shape["id"] != json!(table)).unwrap()["id"].clone();
+    w.ok("design", json!({"doc": target, "theme": "Ember"}));
+    let token = w.ok("shape", json!({"doc": source, "slide": source_slide, "ids": [ordinary, table], "op": "copy"}))["clipboard"].clone();
+    let before = w.shapes(&target, target_slide);
+    let rev = w.ok("state", json!({"doc": target}))["rev"].clone();
+    let steps = undo_len(&target);
+    let error = w.err("insert", json!({"doc": target, "slide": target_slide, "kind": "paste", "clipboard": token}));
+    coded(&error, "unsupported");
+    assert!(error.contains("Change the destination design to match, then paste again."), "{error}");
+    assert_eq!(w.shapes(&target, target_slide), before);
+    assert_eq!(w.ok("state", json!({"doc": target}))["rev"], rev);
+    assert_eq!(undo_len(&target), steps);
+}
+
+#[test]
+fn cross_deck_slide_does_not_silently_inherit_a_different_master() {
+    let w = World::new();
+    let source_model = sample(6);
+    let mut target_model = source_model.clone();
+    Arc::make_mut(&mut target_model.masters[0]).background = Some(deckcraft_model::Background::Fill {
+        fill: deckcraft_model::Fill::solid(deckcraft_model::ColorRef::rgb(deckcraft_model::Rgba::rgb(200, 40, 40))),
+    });
+    w.put("source.deckcraft", &native(&source_model));
+    w.put("target.deckcraft", &native(&target_model));
+    let source = w.open("source.deckcraft");
+    let target = w.open("target.deckcraft");
+    let background = |doc: &str| docs::with_open(doc, |open| open.deck().unwrap().masters[0].background.clone()).unwrap();
+    assert_ne!(background(&source), background(&target));
+    let source_slide = w.slide_ids(&source)[4];
+    let target_slides = w.slide_ids(&target);
+    let token = w.ok("slides_op", json!({"doc": source, "op": "copy", "slides": [source_slide]}))["clipboard"].clone();
+    let rev = w.ok("state", json!({"doc": target}))["rev"].clone();
+    let steps = undo_len(&target);
+    let error = w.err("insert", json!({"doc": target, "slide": target_slides[0], "kind": "paste", "clipboard": token}));
+    coded(&error, "unsupported");
+    assert!(error.contains("The decks need the same design."));
+    assert_eq!(w.slide_ids(&target), target_slides);
+    assert_eq!(w.ok("state", json!({"doc": target}))["rev"], rev);
+    assert_eq!(undo_len(&target), steps);
+}
+
+#[test]
+fn a_bad_copied_animation_rolls_back_the_whole_paste() {
+    let w = World::new();
+    let mut model = sample(6);
+    Arc::make_mut(&mut model.slides[4]).animations[0].shape = ShapeId(999_999);
+    w.put("source.deckcraft", &native(&model));
+    let source = w.open("source.deckcraft");
+    let target = w.sample_open("target.deckcraft", 6);
+    let source_slide = w.slide_ids(&source)[4];
+    let target_slides = w.slide_ids(&target);
+    let token = w.ok("slides_op", json!({"doc": source, "op": "copy", "slides": [source_slide]}))["clipboard"].clone();
+    let state = w.ok("state", json!({"doc": target}));
+    let steps = undo_len(&target);
+    let error = w.err("insert", json!({"doc": target, "slide": target_slides[0], "kind": "paste", "clipboard": token}));
+    coded(&error, "damaged");
+    assert_eq!(w.slide_ids(&target), target_slides);
+    assert_eq!(w.ok("state", json!({"doc": target}))["rev"], state["rev"]);
+    assert_eq!(undo_len(&target), steps);
+}
+
+#[test]
+fn copied_connectors_follow_the_pasted_objects() {
+    let w = World::new();
+    let mut model = sample(6);
+    let slide = model.slides[4].clone();
+    let first = slide.shapes.iter().find(|shape| shape.text.as_ref().is_some_and(|text| text.text() == "First")).unwrap().id;
+    let second = slide.shapes.iter().find(|shape| shape.text.as_ref().is_some_and(|text| text.text() == "Second")).unwrap().id;
+    let connector = ShapeId(model.alloc_id());
+    Arc::make_mut(&mut model.slides[4]).shapes.push(deckcraft_model::Shape {
+        id: connector,
+        kind: deckcraft_model::ShapeKind::Connector { start: Some((first, 1)), end: Some((second, 2)) },
+        ..Default::default()
+    });
+    w.put("source.deckcraft", &native(&model));
+    w.put("target.deckcraft", &native(&model));
+    let source = w.open("source.deckcraft");
+    let target = w.open("target.deckcraft");
+    let slide = w.slide_ids(&source)[4];
+    let target_slide = w.slide_ids(&target)[4];
+    let token = w.ok("shape", json!({"doc": source, "slide": slide, "ids": [first.0, second.0, connector.0], "op": "copy"}))["clipboard"].clone();
+    let made = w.ok("insert", json!({"doc": target, "slide": target_slide, "kind": "paste", "clipboard": token}))["ids"].as_array().unwrap().clone();
+    let (first, second, connector) = (made[0].as_u64().unwrap() as u32, made[1].as_u64().unwrap() as u32, made[2].as_u64().unwrap() as u32);
+    let links = docs::with_open(&target, |doc| {
+        let deck = doc.deck().unwrap();
+        let slide = deck.slide(deckcraft_model::SlideId(target_slide as u32)).unwrap();
+        let deckcraft_model::ShapeKind::Connector { start, end } = &slide.shape(ShapeId(connector)).unwrap().kind else { panic!("expected connector") };
+        (*start, *end)
+    }).unwrap();
+    assert_eq!(links, (Some((ShapeId(first), 1)), Some((ShapeId(second), 2))));
+}
+
+#[test]
+fn a_foreign_source_clipboard_is_not_readable() {
+    let w = World::new();
+    let target = w.sample_open("target.deckcraft", 2);
+    w.put("foreign.deckcraft", &native(&sample(2)));
+    let foreign = w.call_full("os.notes", "open", json!({"path": "foreign.deckcraft"}), true, 0).unwrap();
+    let foreign_slide = w.call_full("os.notes", "slides", json!({"doc": foreign["doc"]}), true, 0).unwrap()["slides"][0]["id"].as_u64().unwrap();
+    let foreign_shapes = w.call_full("os.notes", "slide", json!({"doc": foreign["doc"], "slide": foreign_slide}), true, 0).unwrap();
+    let shape = foreign_shapes["shapes"][0]["id"].as_u64().unwrap();
+    let copied = w.call_full("os.notes", "shape", json!({"doc": foreign["doc"], "slide": foreign_slide, "ids": [shape], "op": "copy"}), true, 0).unwrap();
+    let slide = w.slide_ids(&target)[0];
+    let error = w.err("insert", json!({"doc": target, "slide": slide, "kind": "paste", "clipboard": copied["clipboard"]}));
+    coded(&error, "invalid");
+}
+
+#[test]
+fn an_old_clipboard_token_never_pastes_a_newer_copy() {
+    let w = World::new();
+    let source = w.sample_open("source.deckcraft", 6);
+    let target = w.sample_open("target.deckcraft", 6);
+    let slide = w.slide_ids(&source)[4];
+    let target_slide = w.slide_ids(&target)[4];
+    let first = w.shape_where(&source, slide, "text", "First");
+    let second = w.shape_where(&source, slide, "text", "Second");
+    let old = w.ok("shape", json!({"doc": source, "slide": slide, "ids": [first], "op": "copy"}))["clipboard"].clone();
+    let current = w.ok("shape", json!({"doc": source, "slide": slide, "ids": [second], "op": "copy"}))["clipboard"].clone();
+    let before = w.shapes(&target, target_slide).len();
+    coded(&w.err("insert", json!({"doc": target, "slide": target_slide, "kind": "paste", "clipboard": old})), "invalid");
+    assert_eq!(w.shapes(&target, target_slide).len(), before);
+    let made = w.ok("insert", json!({"doc": target, "slide": target_slide, "kind": "paste", "clipboard": current}))["ids"][0].as_u64().unwrap();
+    let text = w.shapes(&target, target_slide).into_iter().find(|s| s["id"] == made).unwrap()["text"].clone();
+    assert_eq!(text, "Second");
+}
+
+#[test]
+fn clipboard_tokens_do_not_cross_storage_or_isolate_boundaries() {
+    let source_world = World::new();
+    let other_world = World::new();
+    let source = source_world.sample_open("source.deckcraft", 6);
+    let target = other_world.sample_open("target.deckcraft", 6);
+    let slide = source_world.slide_ids(&source)[4];
+    let target_slide = other_world.slide_ids(&target)[4];
+    let shape = source_world.shape_where(&source, slide, "text", "First");
+    let token = source_world.ok("shape", json!({"doc": source, "slide": slide, "ids": [shape], "op": "copy"}))["clipboard"].clone();
+    coded(&other_world.err("insert", json!({"doc": target, "slide": target_slide, "kind": "paste", "clipboard": token})), "invalid");
+
+    let isolated = source_world.call_full(APP, "shape", json!({"doc": source, "slide": slide, "ids": [shape], "op": "copy"}), true, 41).unwrap();
+    let error = source_world.call_full(APP, "insert", json!({"doc": source, "slide": slide, "kind": "paste", "clipboard": isolated["clipboard"]}), true, 42).unwrap_err();
+    coded(&error, "invalid");
+    docs::isolate_closed(41);
+    let error = source_world.call_full(APP, "insert", json!({"doc": source, "slide": slide, "kind": "paste", "clipboard": isolated["clipboard"]}), true, 41).unwrap_err();
+    coded(&error, "invalid");
+}
+
+#[test]
+fn retained_copy_does_not_keep_unselected_slides_or_pictures() {
+    let w = World::new();
+    let source = w.sample_open("source.deckcraft", 6);
+    let slide = w.slide_ids(&source)[4];
+    let shape = w.shape_where(&source, slide, "text", "First");
+    let token = w.ok("shape", json!({"doc": source, "slide": slide, "ids": [shape], "op": "copy"}))["clipboard"].as_u64().unwrap();
+    let area = Area::new(&w.root, None, true);
+    let snapshot = docs::copied(&Ctx { area: &area, app: APP, isolate: 0 }, token).unwrap();
+    assert_eq!(snapshot.source.slides.len(), 1);
+    assert!(snapshot.source.slides[0].shapes.is_empty(), "uncopied objects must not stay in the source context");
+    assert!(snapshot.source.media.is_empty(), "the unselected picture must not stay in the source context");
+}
+
+#[test]
+fn different_theme_picture_bytes_are_not_silently_reused() {
+    let w = World::new();
+    let mut source_model = sample(6);
+    let id = source_model.media[0].id;
+    let source_bytes = source_model.media[0].data.clone();
+    Arc::make_mut(&mut source_model.masters[0]).theme.format.fills[0] = deckcraft_model::Fill::Picture(
+        deckcraft_model::style::PictureFill { media: id, ..Default::default() }
+    );
+    let shape = source_model.slides[4].shapes.iter().find(|shape| shape.text.as_ref().is_some_and(|text| text.text() == "First")).unwrap();
+    assert_eq!(shape.style.as_ref().unwrap().fill_ref.0, 1);
+    assert!(shape.fill.is_none());
+    let mut target_model = source_model.clone();
+    target_model.media[0].data = Arc::new(b"different theme picture".to_vec());
+    w.put("source.deckcraft", &native(&source_model));
+    w.put("target.deckcraft", &native(&target_model));
+    let source = w.open("source.deckcraft");
+    let target = w.open("target.deckcraft");
+    let slide = w.slide_ids(&source)[4];
+    let target_slide = w.slide_ids(&target)[4];
+    let shape = w.shape_where(&source, slide, "text", "First");
+    let token = w.ok("shape", json!({"doc": source, "slide": slide, "ids": [shape], "op": "copy"}))["clipboard"].clone();
+    let made = w.ok("insert", json!({"doc": target, "slide": target_slide, "kind": "paste", "clipboard": token}))["ids"][0].as_u64().unwrap();
+    let bytes = docs::with_open(&target, |doc| {
+        let deck = doc.deck().unwrap();
+        let slide = deck.slide(deckcraft_model::SlideId(target_slide as u32)).unwrap();
+        let shape = slide.shape(ShapeId(made as u32)).unwrap();
+        let Some(deckcraft_model::Fill::Picture(fill)) = &shape.fill else { panic!("the source theme picture must become an explicit fill") };
+        deck.media(fill.media).unwrap().data.clone()
+    }).unwrap();
+    assert_eq!(bytes.as_ref(), source_bytes.as_ref());
+    assert_ne!(bytes.as_ref(), b"different theme picture");
 }
 
 #[test]

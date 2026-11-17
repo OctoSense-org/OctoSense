@@ -748,6 +748,10 @@ impl ModuleHost {
                 instance.root.redraw(cx);
             });
         }
+        // A `new_batch` panel has its own draw list, which a redraw of the root
+        // does not reach: left up across an appearance change, it would stay in
+        // the old appearance.
+        cx.redraw_all();
     }
 
     /// The person turned `app`'s agent off (ADR 0004 §4): every instance of
@@ -847,6 +851,28 @@ impl ModuleHost {
             .unwrap_or(CloseDecision::Allow);
         self.close_gate.answered(client, decision, root.widget_uid());
         decision
+    }
+
+    /// What the live instance `client` adds to a Mac's menu bar now
+    /// (`AppModule::menu_rows`, outside its isolate, contained). `None` for a
+    /// failed instance, a non-module, a module with nothing to add and one
+    /// that panicked while answering.
+    pub fn menu_rows(&mut self, cx: &mut Cx, client: ClientId) -> Option<String> {
+        let instance = self.instances.get(&client).filter(|i| i.failed.is_none())?;
+        let (module, root, vm_id) = (instance.module, instance.root.clone(), instance.vm_id);
+        contain_outside(cx, vm_id, "menu_rows", |cx| module.menu_rows(cx, &root)).flatten()
+    }
+
+    /// The person chose a row of the live instance `client` that carries its
+    /// own command (`AppModule::menu_command`, inside its isolate, contained).
+    /// False for a failed instance, a non-module, a command it doesn't know
+    /// and one it panicked on.
+    pub fn menu_command(&mut self, cx: &mut Cx, client: ClientId, command: &str) -> bool {
+        let Some(instance) = self.instances.get(&client).filter(|i| i.failed.is_none()) else {
+            return false;
+        };
+        let (module, root, vm_id) = (instance.module, instance.root.clone(), instance.vm_id);
+        contain(cx, vm_id, "menu_command", |cx| module.menu_command(cx, &root, command)).unwrap_or(false)
     }
 
     /// The shell is quitting: ask every live instance. The clients that

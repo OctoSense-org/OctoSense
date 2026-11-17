@@ -75,7 +75,9 @@ fn describe_capability(cap: &str) -> String {
         "crawl" => "Crawling websites (the system toolbox)".into(),
         "model" => "One-shot model calls".into(),
         "command" | "commands" => "Running commands, each approved by you".into(),
-        c if c.starts_with("octos.") => format!("Its agent ({c})"),
+        "storage" => "Its storage on this device".into(),
+        "net" => "The network".into(),
+        c if c.starts_with("octos.") => "Its own assistant".into(),
         c if c.contains('.') => format!("Another app's tool: {c}"),
         c => c.to_string(),
     }

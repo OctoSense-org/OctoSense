@@ -4,17 +4,19 @@
 //!
 //! | method | args | answer |
 //! |---|---|---|
-//! | `<namespace>.notify` | `{title, body, card_id?, priority?}` | `{card_id, replaced, expires_at}` once the card is on the glance screen ([`notify`]) |
+//! | `<namespace>.notify` | `{title, body, card_id?, priority?, route?}` | `{card_id, replaced, expires_at}` once the card is on the glance screen ([`notify`]) |
 //!
 //! **One card for every app.** [`NOTICE_CARD`] is a fixed L0 card: the
 //! app's icon (a meaning from L0's closed set, [`icon`]) and name
 //! ([`app_name`]), put in by the shell ([`card`]), and from the call the
 //! title (1 to [`TITLE_MAX`] characters) and text (1 to [`BODY_MAX`]), with
 //! the time ([`publish_args`]). A model writes text, never card code. The
-//! card opens the app, posts a notification, and is published through the
-//! glance service as the calling app, only when that app's admitted
-//! manifest was granted `glance` ([`crate::glance::publish_for`]). The same
-//! `card_id` replaces the app's earlier notice.
+//! card opens the app (at `route` when the call gives one: the app's own
+//! words for what the notice is about, data it reads, never a path),
+//! posts a notification, and is published through the glance service as
+//! the calling app, only when that app's admitted manifest was granted
+//! `glance` ([`crate::glance::publish_for`]). The same `card_id` replaces
+//! the app's earlier notice.
 //!
 //! **Who answers.** A tool runs on the host service of its namespace
 //! (`host_tools::script_apps`). An app whose namespace has a service of its
@@ -83,10 +85,11 @@ fn clip(text: &str, max: usize) -> String {
 }
 
 /// The `glance.publish` arguments for `app`'s notice: its [`card`],
-/// filled from the call (`{title, body, card_id?, priority?}`), opening
-/// `app`, with a notification titled `<App> · <title>`. A blank or long
-/// title or body is refused before anything is published; `now_ms` names a
-/// notice that gives no `card_id`.
+/// filled from the call (`{title, body, card_id?, priority?, route?}`),
+/// opening `app` (at `route` when it gives one), with a notification titled
+/// `<App> · <title>`. A blank or long title or body, or a route that is long
+/// or holds a control character, is refused before anything is published;
+/// `now_ms` names a notice that gives no `card_id`.
 pub fn publish_args(app: &str, args: &Value, now_ms: u64) -> Result<Value, String> {
     let field = |key: &str| args.get(key).and_then(Value::as_str).unwrap_or("").trim().to_string();
     let (title, body) = (field("title"), field("body"));
@@ -101,6 +104,14 @@ pub fn publish_args(app: &str, args: &Value, now_ms: u64) -> Result<Value, Strin
         id => id,
     };
     let priority = args.get("priority").and_then(Value::as_i64).unwrap_or(PRIORITY_DEFAULT).clamp(0, 100);
+    let route = field("route");
+    if route.len() > crate::glance::ROUTE_MAX || route.chars().any(char::is_control) {
+        return Err(format!("Provide a route of at most {} bytes, with no control characters.", crate::glance::ROUTE_MAX));
+    }
+    let mut open = json!({"app": app.strip_prefix("os.").unwrap_or(app)});
+    if !route.is_empty() {
+        open["route"] = json!(route);
+    }
     let name = app_name(app);
     let as_of = crate::shell::bar::local_time(c"%H:%M");
     Ok(json!({
@@ -109,7 +120,7 @@ pub fn publish_args(app: &str, args: &Value, now_ms: u64) -> Result<Value, Strin
         "card_id": card_id, "title": clip(&format!("{name} \u{00b7} {title}"), crate::glance::TITLE_MAX),
         "source": card(app, &name),
         "data": {"note": {"title": title, "summary": body, "as_of": as_of}},
-        "priority": priority, "open": {"app": app.strip_prefix("os.").unwrap_or(app)}, "notify": true,
+        "priority": priority, "open": open, "notify": true,
     }))
 }
 
@@ -192,6 +203,14 @@ mod tests {
         assert!(publish_args("os.mail", &json!({"title": " ", "body": "x"}), 0).is_err());
         assert!(publish_args("os.mail", &json!({"title": "x".repeat(81), "body": "x"}), 0).is_err());
         assert!(publish_args("os.mail", &json!({"title": "x", "body": "y".repeat(601)}), 0).is_err());
+        // A route says what the notice is about, in the app's own words: the card opens it there.
+        assert!(args["open"].get("route").is_none(), "no route, the app's front page");
+        let routed = publish_args("os.maps", &json!({"title": "Traffic", "body": "Leave now", "route": "directions/37.6,-122.4/SFO"}), 0).unwrap();
+        assert_eq!((routed["open"]["app"].as_str(), routed["open"]["route"].as_str()), (Some("maps"), Some("directions/37.6,-122.4/SFO")));
+        assert!(publish_args("os.maps", &json!({"title": "x", "body": "y", "route": "r".repeat(crate::glance::ROUTE_MAX + 1)}), 0).is_err());
+        for control in ["place/\nx", "place/\u{7}x"] {
+            assert!(publish_args("os.maps", &json!({"title": "x", "body": "y", "route": control}), 0).is_err(), "{control:?}");
+        }
         // A full-length title still makes a notification the glance
         // service takes: the app's name comes first, the end is cut.
         let long = publish_args("os.youtube", &json!({"title": "t".repeat(80), "body": "x"}), 0).unwrap();

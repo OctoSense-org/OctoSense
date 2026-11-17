@@ -1043,7 +1043,7 @@ fn an_expired_host_tool_approval_is_denied_with_its_reason() {
     for event in w.decided() {
         relay.handle(event, &mut w);
     }
-    assert_eq!(answers.lock().unwrap().as_slice(), &[(false, "expired: no answer in 10 min".to_string())]);
+    assert_eq!(answers.lock().unwrap().as_slice(), &[(false, "expired: no answer in 10 minutes".to_string())]);
     assert_eq!(w.router.expired().len(), 1);
 }
 

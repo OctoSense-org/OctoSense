@@ -25,12 +25,60 @@
 //! keyboard at once; the shell then shows the app closed with a Restart
 //! (`show_failed`) and frees the instance in the host's order.
 
+use crate::desktop::DesktopStyle;
 use crate::hub::ClientId;
 use crate::module_host::{contain, is_failed};
+use crate::octosense::style::AppIconDraw;
 use crate::run_view::MpRunViewAction;
 use crate::tile::TileHost;
+use makepad_widgets::button::KeyButtons;
 use makepad_widgets::gauss_view::CaptureGauss;
 use makepad_widgets::*;
+use std::collections::HashSet;
+
+/// Find the focused widget in this instance's own tree. A screen rectangle
+/// is not enough: overlapping windows can put two widgets at the same point.
+fn focus_widget(root: &WidgetRef, area: Area) -> Option<WidgetUid> {
+    if area.is_empty() {
+        return None;
+    }
+    let mut pending = vec![root.clone()];
+    let mut seen = HashSet::new();
+    while let Some(widget) = pending.pop() {
+        let uid = widget.widget_uid();
+        if uid.0 == 0 || !seen.insert(uid.0) {
+            continue;
+        }
+        if !widget.visible() {
+            continue;
+        }
+        if widget.area() == area {
+            return Some(uid);
+        }
+        widget.children(&mut |_, child| pending.push(child));
+    }
+    None
+}
+
+/// Resolve a remembered widget to its current area after it has redrawn.
+fn focus_area(root: &WidgetRef, wanted: WidgetUid) -> Option<Area> {
+    let mut pending = vec![root.clone()];
+    let mut seen = HashSet::new();
+    while let Some(widget) = pending.pop() {
+        let uid = widget.widget_uid();
+        if uid.0 == 0 || !seen.insert(uid.0) {
+            continue;
+        }
+        if !widget.visible() {
+            continue;
+        }
+        if uid == wanted {
+            return Some(widget.area());
+        }
+        widget.children(&mut |_, child| pending.push(child));
+    }
+    None
+}
 
 script_mod! {
     use mod.prelude.widgets_internal.*
@@ -44,12 +92,21 @@ script_mod! {
         // The instance's ground: the theme's window background, so a root
         // that paints only its own chrome still sits on the desk's colour.
         draw_bg +: { color: mod.wm_theme.background }
-        // The app closed after an error: a line saying so, and Restart.
+        // The app closed after an error: its icon, a line saying so, and
+        // Reopen, as a process app's face says it (resources/startup.splash).
         draw_note +: {
-            text_style: theme.font_regular
-            text_style.font_size: 13
+            text_style: theme.font_bold
+            text_style.font_size: 14
         }
-        draw_button +: { color: #0a84ff }
+        draw_button +: {
+            color: #x0071e3
+            pixel: fn() {
+                let sdf = Sdf2d.viewport(self.pos * self.rect_size)
+                sdf.box(0. 0. self.rect_size.x self.rect_size.y 3.)
+                sdf.fill(self.color)
+                return sdf.result
+            }
+        }
         draw_button_text +: {
             color: #fff
             text_style: theme.font_regular
@@ -73,6 +130,9 @@ pub struct MpModuleView {
     draw_bg: DrawColor,
     #[rust]
     root: Option<WidgetRef>,
+    /// See `TileHost::set_title_band`.
+    #[rust]
+    title_band: f64,
     #[rust]
     client: Option<ClientId>,
     /// The isolate the root was minted in: installed on `Cx` around every
@@ -88,6 +148,15 @@ pub struct MpModuleView {
     /// The WM's focus is on this tile: keys reach the root.
     #[rust]
     focused: bool,
+    /// The instance's last focused widget, not an Area that redraw may retire.
+    #[rust]
+    focus_bookmark: Option<(WidgetUid, bool)>,
+    /// Avoid walking the same tree on every key while focus stays put.
+    #[rust]
+    checked_focus: Option<(Area, bool)>,
+    /// The app draws a sheet whose buttons answer the keyboard: see `sheet_keys`.
+    #[rust]
+    sheet_up: bool,
     /// One of the app's widgets took the last hover the root was handed
     /// (`hover_claim`): it holds the hover until a move tells it otherwise.
     #[rust]
@@ -109,6 +178,11 @@ pub struct MpModuleView {
     /// the line the tile shows once the shell has named the app.
     #[rust]
     stopped: Option<String>,
+    /// Which app's icon the closed face shows, in which style's frame (`set_face_icon`).
+    #[rust]
+    face_icon: Option<(String, DesktopStyle)>,
+    #[rust]
+    app_icons: AppIconDraw,
     /// Out of sight on the phone (`set_asleep`): the app gets no frames and
     /// its redraws are held, but timers, network replies and messages
     /// still reach it, so its state stays current (and audio keeps
@@ -158,6 +232,8 @@ impl MpModuleView {
     pub fn set_root(&mut self, cx: &mut Cx, client: ClientId, vm_id: SplashVmId, root: WidgetRef) {
         cx.widget_tree_insert_child(self.uid, live_id!(root), root.clone());
         self.root = Some(root);
+        self.focus_bookmark = None;
+        self.checked_focus = None;
         self.client = Some(client);
         self.vm_id = vm_id;
         self.script_viewport = None;
@@ -173,12 +249,19 @@ impl MpModuleView {
     /// it drains the fault; until then the tile says so plainly.
     pub fn show_failed(&mut self, cx: &mut Cx, label: &str) {
         self.stop(cx);
-        self.stopped = Some(format!("{label} stopped after an error"));
+        self.stopped = Some(format!("{label} quit unexpectedly"));
     }
 
     /// Whether this tile shows a failed instance.
     pub fn failed(&self) -> bool {
         self.stopped.is_some()
+    }
+
+    /// The desk says, as it draws the tile, whose icon a closed face wears.
+    pub fn set_face_icon(&mut self, app: &str, style: DesktopStyle) {
+        if self.face_icon.as_ref().is_none_or(|(have, was)| have != app || *was != style) {
+            self.face_icon = Some((app.to_string(), style));
+        }
     }
 
     fn stop(&mut self, cx: &mut Cx) {
@@ -189,29 +272,50 @@ impl MpModuleView {
             }
         }
         self.focused = false;
+        self.focus_bookmark = None;
+        self.checked_focus = None;
+        self.sheet_keys(cx, false);
         self.hovered = false;
         if self.stopped.is_none() {
-            self.stopped = Some("The app stopped after an error".to_string());
+            self.stopped = Some("The app quit unexpectedly".to_string());
         }
         self.draw_bg.redraw(cx);
     }
 
-    /// The closed face: a line and a Restart button, centred. The face's
-    /// turtle centres them as it ends, which moves the button after it was
-    /// walked, so a press is tested against the drawn button (`on_restart`),
-    /// not the rect `walk_turtle` gave: that one is at the face's top left.
+    /// The closed face: the app's icon, a line and a Reopen button, centred
+    /// as one block. A press is tested against the drawn button (`on_restart`).
     fn draw_stopped(&mut self, cx: &mut Cx2d, rect: Rect) {
         let Some(line) = self.stopped.clone() else { return };
         let ground = self.draw_bg.color;
         let luminance = 0.299 * ground.x + 0.587 * ground.y + 0.114 * ground.z;
-        self.draw_note.color = if luminance > 0.5 { vec4(0.11, 0.11, 0.12, 1.0) } else { vec4(0.94, 0.94, 0.96, 1.0) };
-        cx.begin_turtle(Walk::abs_rect(rect), Layout { align: Align { x: 0.5, y: 0.5 }, spacing: 14.0, ..Layout::flow_down() });
-        self.draw_note.draw_walk(cx, Walk::fit(), Align::default(), &line);
-        let button = cx.walk_turtle(Walk::fixed(120.0, 36.0));
+        let ink = if luminance > 0.5 { vec4(0.11, 0.11, 0.12, 1.0) } else { vec4(0.94, 0.94, 0.96, 1.0) };
+        self.draw_note.color = ink;
+        // A phone's finger, or a desktop's pointer and thirteen points.
+        let (size, button) = if cfg!(mobile_only) { (13.0, (120.0, 36.0)) } else { (9.75, (96.0, 28.0)) };
+        self.draw_button_text.text_style.font_size = size;
+        let room = (rect.size.x - 32.0).max(1.0) as f32;
+        let words = self.draw_note.layout(cx, 0.0, 0.0, Some(room), true, Align { x: 0.5, y: 0.0 }, &line);
+        let tall = words.size_in_lpxs.height as f64;
+        let below = tall + 14.0 + button.1;
+        // The icon gives way in a window too short for all of it.
+        let icon = self.face_icon.clone().filter(|_| rect.size.y >= below + 74.0 + 16.0);
+        let middle = rect.pos.x + rect.size.x * 0.5;
+        let mut top = rect.pos.y + (rect.size.y - below - if icon.is_some() { 74.0 } else { 0.0 }) * 0.5;
+        if let Some((app, style)) = icon {
+            let at = Rect { pos: dvec2(middle - 32.0, top), size: dvec2(64.0, 64.0) };
+            self.app_icons.draw(cx, &app, style, at, 1.0, ink);
+            top += 74.0;
+        }
+        // The lines are centred in the room they were laid out in, so that's the box
+        // they need: one only as wide as the words clips them away.
+        let at = Rect { pos: dvec2(middle - room as f64 * 0.5, top), size: dvec2(room as f64, tall) };
+        cx.begin_turtle(Walk::abs_rect(at), Layout::default());
+        self.draw_note.draw_walk_laidout(cx, Walk::fit(), &words);
+        cx.end_turtle();
+        let button = Rect { pos: dvec2(middle - button.0 * 0.5, top + tall + 14.0), size: dvec2(button.0, button.1) };
         self.draw_button.draw_abs(cx, button);
         cx.begin_turtle(Walk::abs_rect(button), Layout { align: Align { x: 0.5, y: 0.5 }, ..Layout::default() });
-        self.draw_button_text.draw_walk(cx, Walk::fit(), Align::default(), "Restart");
-        cx.end_turtle();
+        self.draw_button_text.draw_walk(cx, Walk::fit(), Align::default(), "Reopen");
         cx.end_turtle();
     }
 
@@ -259,12 +363,36 @@ impl MpModuleView {
         }
     }
 
+    /// While a sheet whose buttons answer the keyboard shows, it owns the keyboard, as a
+    /// Mac's does: nothing under it hears a key. What had the keyboard has it again when
+    /// the sheet leaves, unless someone asked for it since. Only this window's: one app's
+    /// sheet never takes the keyboard from the window a person is typing in.
+    fn sheet_keys(&mut self, cx: &mut Cx, up: bool) {
+        if up == self.sheet_up {
+            return;
+        }
+        self.sheet_up = up;
+        if up {
+            if self.focused {
+                cx.sheet_takes_keyboard(self.uid.0);
+            }
+        } else if let Some((under, pressed)) = cx.sheet_left_keyboard(self.uid.0) {
+            let here = cx.key_focus();
+            if self.focused && cx.next_key_focus() == here && !here.is_valid(cx) && under.is_valid(cx) {
+                cx.restore_key_focus(under, pressed);
+            }
+        }
+    }
+
     /// Drop the root — called by the host right before the instance's
     /// isolate is freed. The tile keeps drawing its ground through the
     /// close animation, nothing else.
     pub fn clear_root(&mut self, cx: &mut Cx) {
         self.root = None;
         self.focused = false;
+        self.focus_bookmark = None;
+        self.checked_focus = None;
+        self.sheet_keys(cx, false);
         self.hovered = false;
         self.draw_bg.redraw(cx);
     }
@@ -282,6 +410,10 @@ impl MpModuleView {
 }
 
 impl TileHost for MpModuleView {
+    fn set_title_band(&mut self, height: f64) {
+        self.title_band = height;
+    }
+
     fn client(&self) -> Option<ClientId> {
         self.client
     }
@@ -302,15 +434,54 @@ impl TileHost for MpModuleView {
         if !self.area.is_valid(cx) {
             return false;
         }
+        let returning = !self.focused;
         self.focused = true;
+        // A widget clicked in this event takes precedence over the bookmark.
+        // A sheet above the app's document keeps its keyboard until it leaves.
+        if returning && !self.sheet_up && cx.next_key_focus().is_empty() {
+            if let (Some(root), Some((uid, pressed))) = (self.root.as_ref(), self.focus_bookmark) {
+                let area = contain(cx, self.vm_id, "restoring keyboard focus", |_cx| focus_area(root, uid)).flatten();
+                if let Some(area) = area.filter(|area| area.is_valid(cx)) {
+                    cx.restore_key_focus(area, pressed);
+                }
+            }
+        }
         true
     }
 
+    fn sheet_owns_keyboard(&self) -> bool {
+        self.sheet_up
+    }
+
+    fn remember_keyboard(&mut self, cx: &mut Cx) {
+        if !self.focused {
+            return;
+        }
+        let current = cx.key_focus();
+        let pressed = cx.key_focus_pressed();
+        if current.is_empty() || self.checked_focus == Some((current, pressed)) {
+            return;
+        }
+        self.checked_focus = Some((current, pressed));
+        if let Some(uid) = self.root.as_ref().and_then(|root| {
+            contain(cx, self.vm_id, "remembering keyboard focus", |_cx| focus_widget(root, current)).flatten()
+        }) {
+            self.focus_bookmark = Some((uid, pressed));
+        }
+    }
+
     fn release_keyboard(&mut self, cx: &mut Cx) {
+        let current = cx.key_focus();
+        self.remember_keyboard(cx);
+        let owns_current = self.root.as_ref().is_some_and(|root| {
+            contain(cx, self.vm_id, "checking keyboard focus", |_cx| focus_widget(root, current)).flatten().is_some()
+        });
         self.focused = false;
-        // Whatever inside held the keyboard must let go too, or a field in
-        // a tile behind the pane would keep eating keys.
-        cx.set_key_focus(Area::Empty);
+        // Do not erase a different widget's focus request from this same
+        // press; otherwise clear the old window's keyboard on release.
+        if owns_current && cx.next_key_focus() == current {
+            cx.set_key_focus(Area::Empty);
+        }
     }
 
     fn set_takes_key_focus(&mut self, on: bool) {
@@ -510,6 +681,22 @@ impl Widget for MpModuleView {
             let pending = &cx.new_draw_event;
             (pending.draw_lists.len(), pending.draw_lists_and_children.len(), pending.redraw_all)
         });
+        // A sheet's buttons answer the keyboard: Return or Escape is a press on one, as a
+        // click on it would be, unless a host service's sheet over them has the keyboard.
+        if let (true, Event::KeyDown(key)) = (self.sheet_up, event) {
+            let Some(covered) = contain(cx, self.vm_id, "its sheet", |cx| crate::app_fullscreen::host_sheet_up(cx, &root)) else {
+                self.stop(cx);
+                return;
+            };
+            let buttons = cx.global::<KeyButtons>();
+            buttons.covered = covered;
+            // What an app that panicked on its way through a hidden view left counted.
+            buttons.hidden = 0;
+            let answers = !key.is_repeat && matches!(key.key_code, KeyCode::ReturnKey | KeyCode::NumpadEnter | KeyCode::Escape);
+            if let (false, true, Some(client)) = (covered, answers, self.client) {
+                cx.widget_action(self.uid, MpRunViewAction::Pressed { client });
+            }
+        }
         if contain(cx, self.vm_id, "an event", |cx| root.handle_event(cx, event, scope)).is_none() {
             self.stop(cx);
             return;
@@ -532,6 +719,13 @@ impl Widget for MpModuleView {
         // misses it.
         if let Some(handled) = press {
             if handled.get().is_empty() {
+                // In the band of a Mac window's unified toolbar, it moves the
+                // window: none of the app's controls wanted it.
+                if let (Event::MouseDown(e), Some(client), Some(rect)) = (event, self.client, rect) {
+                    if e.button.contains(MouseButton::PRIMARY) && e.abs.y - rect.pos.y < self.title_band {
+                        cx.widget_action(self.uid, MpRunViewAction::TitlePress { client, abs: e.abs, time: e.time });
+                    }
+                }
                 handled.set(self.area);
             }
         }
@@ -634,9 +828,23 @@ impl Widget for MpModuleView {
             if resized == Some(true) {
                 cx.with_vm_and_async(|_| {});
             }
+            // One app's fields are one group: Tab stays in its window.
+            let nav_outer = cx.set_nav_group(self.uid.0);
+            let buttons_outer = std::mem::take(&mut cx.global::<KeyButtons>().drawn);
             let drawn = resized.and_then(|_| {
-                contain(cx, self.vm_id, "its draw", |cx| root.draw_walk_all(cx, scope, Walk::fill()))
+                contain(cx, self.vm_id, "its draw", |cx| {
+                    // A host service's sheet over the app is over its web views too.
+                    if let Some(mut sheet) = root.splash(cx, ids!(sheet)).borrow_mut() {
+                        sheet.view.over_web = true;
+                    }
+                    root.draw_walk_all(cx, scope, Walk::fill())
+                })
             });
+            cx.set_nav_group(nav_outer);
+            let sheet_up = std::mem::replace(&mut cx.global::<KeyButtons>().drawn, buttons_outer);
+            if drawn.is_some() {
+                self.sheet_keys(cx, sheet_up);
+            }
             if drawn.is_none() {
                 cx.unwind_to(mark);
                 CaptureGauss::unwind_scope_to(cx, captures);

@@ -617,6 +617,19 @@ pub fn key(e: &KeyEvent) -> bool {
     if !is_open() {
         return false;
     }
+    // A Mac: a disabled field takes no keys but Escape; while an answer runs
+    // Return keeps the draft instead of refusing it.
+    if view::mac::active() {
+        let k = composer::key(e);
+        let snapshot = snapshot();
+        let usable = matches!(snapshot.phase(), model::Phase::Ready | model::Phase::Running { .. });
+        if !usable && !matches!(k, composer::Key::Close | composer::Key::Pass) {
+            return composer::keeps_unused(e);
+        }
+        if k == composer::Key::Send && snapshot.phase().running_turn().is_some() && snapshot.open_question().is_none() {
+            return true;
+        }
+    }
     match composer::key(e) {
         composer::Key::Close => close(),
         composer::Key::Send => send_draft(),
@@ -660,6 +673,9 @@ pub fn key(e: &KeyEvent) -> bool {
 pub fn text_input(event: &makepad_widgets::makepad_platform::event::TextInputEvent) -> bool {
     if !is_open() {
         return false;
+    }
+    if view::mac::typing_blocked(matches!(snapshot().phase(), model::Phase::Ready | model::Phase::Running { .. })) {
+        return true;
     }
     let submit = with(|c| {
         if c.draft.text_input(event) {

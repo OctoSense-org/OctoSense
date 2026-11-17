@@ -77,11 +77,12 @@ OctoSense-System-Apps 仓库（已归档）。
 ### 共用外观
 
 新闻、相册、邮件、日历、地图、AI providers、YouTube、Quick Deck、PDF Tools 和 Writer 共用
-[`interface.splash`](interface.splash)：页面、卡片和输入框跟随主题，
-辅助文字保持可读，操作按钮高 44 点，输入框高 48 点。桌面内容限制最大宽度，
-窄窗口保留相同操作。相机和媒体查看器保留深色观看背景。应用大厅的原生模块
-采用相同的间距和操作层级。展开的 Glance 卡片及卡片内聊天在桌面和手机端
-使用同一套 Shell。
+[`interface.splash`](interface.splash)：界面跟随主题，辅助文字保持可读。
+手机端使用页面式布局，操作按钮高 44 点，输入框高 48 点。桌面端的每种样式都会设置
+`theme.ui_pointer`，应用按 Mac 应用的方式绘制：侧边栏和工具栏、13 点文字、
+28 点控件、白色内容区和细分隔线（约定见 [AGENTS.md](AGENTS.md#the-mac-look-on-a-desktop)）。
+相机和媒体查看器保留深色观看背景。应用大厅的原生模块遵循相同约定。展开的 Glance 卡片及
+卡片内聊天在桌面和手机端使用同一套 Shell。
 
 键盘缩小当前应用的可视区域时，Shell 通过应用自己的滚动区域显示当前输入框，
 固定操作栏保留原位。地图图块随宿主切换明暗外观。相机按钮使用深色底板，
@@ -101,16 +102,16 @@ OctoSense-System-Apps 仓库（已归档）。
 | 应用 | Id | 功能 | 权限（manifest） | 网络主机（manifest） | 宿主服务 |
 | --- | --- | --- | --- | --- | --- |
 | [News](news/bundle) | `os.news` | Hacker News、TechMeme 和 Google News 的订阅源，分标签页（Today、HN、TechMeme、Google、Saved），带文章阅读器 | `storage`、`net`、`images`、`web`、`news`、`glance` | `hn.algolia.com`、`www.techmeme.com`、`news.google.com`、`api.gdeltproject.org`、`feeds.bbci.co.uk`、`feeds.npr.org`、`www.theguardian.com`、`feeds.arstechnica.com` | [`news`](news/host-service) |
-| [Photos](photos/bundle) | `os.photos` | 示例相册：AI 整理的回忆、可选主题提示、保存的故事和幻灯片；本地回忆、相簿、人物、收藏、可多选的网格、全屏查看器 | `storage`、`glance`、`model` | 无（宿主调用模型） | `model.complete`；桌面上用自己的 `photos` 服务：`photos.notify` 经 Shell 的通知回调、`photos.info` 在照片引擎上；手机不带该引擎，由 Shell 通知服务应答 `photos.notify`，`photos.info` 不可用（原图使用资源挂载） |
-| [Maps](maps/bundle) | `os.maps` | 随时可拖动和缩放的 `MapView` 地点地图：按可见区域搜索、带 OpenStreetMap 详情（营业时间、电话、网站、菜系）的地点卡片、以图钉显示的收藏地点、长按查看“这里是什么”、可更改起点并最多添加两个途经点的路线，以及带逐向导航和 2D/3D 视图的驾驶模式；有 GPS 定位时从当前位置开始；所有地图都使用 makepad 预先烘焙的世界地图（`makepad.nl`），3D 驾驶视图中的建筑是立体的；地点详情通过 Overpass 读取 OpenStreetMap | `storage`、`net`、`location`、`web`、`glance` | `photon.komoot.io`、`router.project-osrm.org`、`overpass-api.de`、`overpass.kumi.systems`、`overpass.openstreetmap.fr`、`makepad.nl` | Shell 通知服务的 `maps.notify` |
+| [Photos](photos/bundle) | `os.photos` | 示例相册：AI 整理的回忆、可选主题提示、保存的故事和幻灯片；本地回忆、相簿、人物、收藏、可多选的网格、全屏查看器；桌面上还可以导入、导出和删除照片，并有信息面板 | `storage`、`files`、`glance`、`model` | 无（宿主调用模型） | `model.complete`；桌面上用自己的 `photos` 服务：`photos.notify` 经 Shell 的通知回调、`photos.info` 在照片引擎上；手机不带该引擎，由 Shell 通知服务应答 `photos.notify`，`photos.info` 不可用（原图使用资源挂载） |
+| [Maps](maps/bundle) | `os.maps` | 随时可拖动和缩放的 `MapView` 地点地图：按可见区域搜索、带 OpenStreetMap 详情（营业时间、电话、网站、菜系）的地点卡片、以图钉显示的收藏地点、长按查看“这里是什么”、可更改起点并最多添加两个途经点的路线，以及带逐向导航和 2D/3D 视图的驾驶模式；有 GPS 定位时从当前位置开始；在 Mac 上，搜索到的地点以图钉显示并框在地图中，侧栏列出路线的备选和步骤，驾驶变为预览，地图可选样式并有 3D 视图，路线要等主机的定位服务或用户给出起点；所有地图都使用 makepad 预先烘焙的世界地图（`makepad.nl`），3D 驾驶视图中的建筑是立体的；地点详情通过 Overpass 读取 OpenStreetMap | `storage`、`net`、`location`、`web`、`glance` | `photon.komoot.io`、`router.project-osrm.org`、`overpass-api.de`、`overpass.kumi.systems`、`overpass.openstreetmap.fr`、`makepad.nl` | Shell 通知服务的 `maps.notify` |
 | [Camera](camera/bundle) | `os.camera`（Home） | 基于运行时 `CameraPreview` 控件的拍照和录像，闪光灯和变焦，最近一张的缩略图和查看器 | `storage`、`camera`、`microphone`、`library`、`glance` | 无 | Shell 通知服务的 `camera.notify` |
 | [Mail](mail/bundle) | `os.mail` | 账户、文件夹、邮件列表、阅读（HTML 由服务重建）和写信；它的 Agent 把通知卡片放到 glance 屏幕上（`mail.notify`） | `storage`、`mail`、`glance` | 无（由服务联网，而不是应用） | [`mail`](mail/host-service) |
 | [AI providers](ai-providers/bundle) | `os.ai-providers` | 助手的大模型服务商：一个主用与若干备用，每项都有来自 octos 模型目录的型号下拉菜单和“测试连接”；添加向导（系列、型号、线路、密钥、测试）；“为手机显示二维码”，以及通过相机、图片或粘贴导入 | `storage`、`llm` | 无（由服务联网，而不是应用） | [`llm`](ai-providers/host-service) |
-| [YouTube](youtube/bundle) | `os.youtube` | YouTube 搜索（运行时无需密钥的 `sys.video`，读取 YouTube 自己的搜索结果页），带缩略图和直播或时长角标的结果列表、话题标签，在 `WebReader` 中播放 YouTube 移动版观看页，以及本机播放记录 | `storage`、`net`、`glance` | `www.youtube.com`、`m.youtube.com`、`i.ytimg.com` | Shell 通知服务的 `youtube.notify` |
+| [YouTube](youtube/bundle) | `os.youtube` | YouTube 搜索（运行时无需密钥的 `sys.video`，读取 YouTube 自己的搜索结果页），带缩略图和直播或时长角标的结果列表、话题标签，在 `WebReader` 中播放（Mac 上用 YouTube 的嵌入式播放器，其他平台用移动版观看页），以及本机播放记录 | `storage`、`net`、`glance` | `www.youtube.com`、`m.youtube.com`、`i.ytimg.com` | Shell 通知服务的 `youtube.notify` |
 | [Calendar](calendar/bundle) | `os.calendar` | 月历、按日列表、日程详情与编辑器；Glance 使用应用自有卡片，并能打开已保存日程 | `calendar`、`glance` | 无 | [`calendar`](calendar/host-service)（日历持有执行器；跨应用工具需授权） |
 | [Quick Deck](quickdeck/bundle) | `os.quickdeck`（桌面） | 演示文稿编辑器：带封面的演示文稿库，带幻灯片导航栏、画布和检查器（Format、Layout、Theme、Notes）的编辑器，原地编辑文本，图片、形状、表格和带数据的图表，带分节的幻灯片浏览视图，从大纲新建（手动输入，或由用户自己的 AI 提供方起草），放映和导出（.pptx、PDF、图片）；在系统有播放器时，于编辑器和放映中播放演示文稿的视频和音频；从本设备打开演示文稿。见[它的 README](quickdeck/README.zh-CN.md)，其中有测试它的各次运行 | `storage`、`files`、`deck`、`model` | 无 | [`deck`](deck/host-service) 引擎服务中 [design/SERVICE.md](quickdeck/design/SERVICE.md) 规定的打开文档方法，在应用自己的存储中运行；Shell 的 `files.status` 和 `files.import`；Draft with AI 使用 `model.complete` |
 | [PDF Tools](pdftools/bundle) | `os.pdftools`（桌面） | 管理自己存储中的 PDF：带首页预览的资料库，带页面缩略图、可查找的文字和信息的文档视图；单页视图；三步合并（选择、排序、完成），以及按固定页数或在指定页面处拆分；从设备打开 PDF（最大 64 MiB）和移除 PDF。见[它的 README](pdftools/README.zh-CN.md)，其中介绍了测试它的隐藏 Shell 流程 | `storage`、`files`、`pdf` | 无 | 在应用自己的存储中工作的 [`pdf`](pdf/host-service) 引擎服务：`pdf.info`、`pdf.render`、`pdf.text`、`pdf.merge`、`pdf.split`；Shell 的 `files.status` 和 `files.import` |
-| [Writer](writer/bundle) | `os.writer`（桌面端） | 白纸上的安静编辑器（以 `#` 开头的行是标题，`-` 是列表项，`>` 是引用）、文档列表、保存为 Word 文档、预览已保存的文档并按其标题生成大纲，以及导出为 PDF、Markdown、HTML 或 OpenDocument；草稿自动保存在应用自己的存储中 | `storage`、`word` | 无 | [`word`](word/host-service)（`word.convert`、`word.info`、`word.inspect`），在 Writer 自己的存储中 |
+| [Writer](writer/bundle) | `os.writer`（桌面端） | 白纸上的文档编辑器，输入时即应用格式（以 `#` 开头的行变为标题，`-` 变为列表项，`>` 变为引用，`**词**` 变为粗体）、带文档库和大纲的侧边栏、保存为 Word 文档、预览已保存的文档，以及通过存储面板导出为 PDF、Markdown、HTML 或 OpenDocument；草稿自动保存在应用自己的存储中 | `storage`、`word`、`files` | 无 | [`word`](word/host-service)（`word.convert`、`word.info`、`word.inspect`），在 Writer 自己的存储中 |
 | [AppCard](appcard) | 原生，需显式启用 | AppCard 助手：路由大脑选择或组合一个应用 Agent，由它生成实时的 Splash 或 webview 卡片。Shell 只在启用 `app-appcard` 时链接它；默认不发布 | 不适用（不是 bundle） | 不适用 | Shell 的 octos 内核 |
 
 能力名称由共享的 `octosense-app-contract` 1.x crate 定义（App Hub 的
@@ -125,6 +126,9 @@ WebView 页面、图库导出、邮件、新闻、Glance 或单次模型调用�
 - **YouTube**：在 OnePlus 6 上测试（2026-09-27），搜索、结果、播放和播放记录都正常；
   关闭播放器会结束页面（makepad#43，已在运行时中）。播放打开的是 YouTube 移动版观看页，
   它会静音自动播放，并显示自己的“Open App”提示。搜索读取 YouTube 的搜索结果页，依赖其布局。
+  在 Mac 上（2026-11-04，Mac mini 上的隐藏窗口 Shell）通过 `open_embed` 用 YouTube 的嵌入式播放器播放；
+  YouTube 不允许在此显示的视频会说明原因并提供“Open in Browser”。YouTube 把某个地址当作机器人时，
+  会拒绝约一小时，看起来也是这样。Mac 上尚未试过：真实屏幕上的窗口、点击播放器内部、声音。
 - **Camera**：Redmi Note 12 独立测试包（2026-10-07）已通过延迟首次授权、
   前后镜头切换、Photo/Video 预览模式切换和后台恢复。`Fill` 预览拉伸已修正，
   原生 GPU 的圆形尺寸对比通过；手机明亮场景的外观对比仍待验证。
@@ -461,6 +465,187 @@ Shell 自己为应用窗口提供的服务。用户点按或点击应用窗口�
 所以什么都不会改变：`{applied: false, fullscreen: false, fills_screen: true}`。这个服务
 属于 Shell（`crates/shell/src/app_fullscreen.rs`），不属于 App Hub，`runtime.list` 目前还
 不列出它。
+
+### `clipboard` 服务
+
+Shell 自己提供的复制文本服务。用户点按或点击应用里的某个控件时（如 Copy Link 一行），
+`clipboard.write {text}` 把文本放到剪贴板，回答 `{copied: true}`。它要求的按下和
+`window.fullscreen` 相同：在桌面上是最近 5 秒内在应用自己的窗口里按过应用，而且绝不接受
+Agent 的调用。拒绝以下列前缀开头：`gesture_required:`、`agent_call:`、`not_a_window:`、
+`invalid_arguments:`（只接受一个不超过 1 MiB 的 `text` 字符串）或 `busy:`。应用不能读取
+剪贴板：读取仍然只能由用户粘贴到输入框。不需要任何能力。这个服务属于 Shell
+（`crates/shell/src/app_clipboard.rs`），不属于 App Hub。
+
+### `settings` 服务
+
+`settings.open {pane: "ai-providers"}` 在用户点按或点击应用里的控件时打开 AI Providers，让需要模型的应用可以把用户带去设置（如 Photos 的 `Open AI Providers…`）。`{pane: "location"}` 打开 Mac 自己的定位设置，供被拒绝定位的应用使用（如 Maps 的 `Open System Settings…`）；其他系统只应答，不打开任何内容。两者要求的按下都和 `clipboard.write` 相同，它不打开其他任何内容，也绝不接受 Agent 的调用。拒绝以下列前缀开头：`gesture_required:`、`agent_call:`、`not_a_window:`、`invalid_arguments:` 或 `busy:`。这个服务属于 Shell（`crates/shell/src/app_settings_link.rs`）。
+
+只有“系统设置”（`os.settings`）可以使用这个服务的其余部分：`settings.state`、`settings.set {key, value}`、`settings.commands {on}`、`settings.restart_assistant`，以及 `settings.open` 的更多面板。其他应用调用它们会被拒绝。开启命令执行需要用户在宿主绘制的面板上输入指定文字；应用只能请求显示这个面板。
+
+### 焦点、按键和三个陷阱
+
+`ui.<field>.focus()` 把键盘交给 `TextInput`，效果和点它一样。还没绘制的输入框在第一次绘制时获得焦点。设置已有内容后，`ui.<field>.select_all()` 会选中实际文本，接下来输入会替换它，方向键则可以在原文本中移动光标。任意控件的 `has_focus()` 表示当前事件结束后它是否将持有键盘；尚未绘制的控件返回 false。
+
+带 `on_key` 的 `GestureView` 也可以持有键盘：按下它之后，或调用 `ui.<id>.focus()` 之后：
+
+```
+grid := GestureView{
+    on_tap: |x, y, cmd, shift| pick(x, y, cmd, shift)
+    on_key: |key, cmd, shift| moved(key, cmd, shift)
+    list := ScrollYView{...}
+}
+```
+
+`key` 是按键名称：`"ArrowLeft"`、`"Escape"`、`"Space"`、`"ReturnKey"`、`"Backspace"`、`"KeyA"`。`cmd` 在 Mac 上是 Command，在其他平台是 Control。`on_tap` 的第三、第四个参数也是这两个值，供用修饰键选择的列表使用；按在内部视图上的操作仍归那个视图，所以行自己的处理函数要调用 `ui.grid.focus()`。`ui.<scroller>.scroll_y()` 和 `ui.<scroller>.set_scroll_y(y)` 读取和设置滚动视图的位置，让列表能把按键移动到的行保持在视野内。
+
+按下按钮、复选框或单选按钮时，键盘仍留在通过 `on_key` 持有它的视图上，和 Mac 上的工具栏一样，列表的按键之后继续有效。键盘被表单或输入框拿走后，只有应用明确要求才会交回：表单关闭时调用 `ui.grid.focus()`。
+
+`TextInput` 的 `on_escape: |text|` 在按下 Escape 键时调用，用于让搜索框清空自己，或关闭表单。
+
+表单的按钮会自己响应键盘：显示期间，Return 按下 `Button{key_default: true}`，Escape 按下 `Button{key_cancel: true}`。只要这样的按钮还在显示，表单就独占键盘：它下面的内容听不到任何按键，表单离开后键盘回到原处。表单叠放时，只有最前面的响应。这两个标记只用在表单的按钮上。答案带破坏性的询问，把这两项都给蓝色的取消按钮。
+
+Tab 把键盘移到下一个文本框并选中其中的文字，Shift+Tab 移到上一个，按阅读顺序循环。它只在同一个脚本的输入框之间移动：应用自己的，或应用上方宿主面板的。按钮和其他控件会被跳过，和 Mac 一样。面板或弹出框在外层 `View` 上写 `nav_group: true`，Tab 就不会走出去。作为编辑区的 `TextInput`（例如邮件正文）写 `keeps_tab: true`：Tab 可以进入，但不会离开。代表整张表单的输入框（只画一个，盖在用户正在填的字段上）用 `on_tab: |text, shift|` 自己接管 Tab：它独占自己的 `nav_group`，没有下一站，由应用画出下一个字段。
+
+使用鼠标时，如果区域的 `render()` 要替换的控件正持有鼠标按下状态或拥有打开的菜单，渲染会等待，结束后绘制最新的结果。封面到达或定时器本来会让这次按下落空，现在它仍算作一次点击；所在行被重绘时，菜单也保持打开。在 Mac 上，已到达的结果会在处理按下之前先绘制，所以区域刚重绘后的点击会落在现在显示的内容上，而不是它背后的东西上。这些应用都不需要做任何事。触摸不等待。
+
+- 正文里的 `if … else` 两个分支要用同样的方式结束。如果一个分支以普通控件结束，另一个以 `name := Widget{…}` 结束，外层带名字的视图会消失，而那一行不报错（`widget 'x' not found in tree`）。把带名字的控件包进一个 `View`。
+- `height: Fit` 父视图里的 `height: Fill` 子视图会塌缩，它后面的子视图不会绘制。父视图是 Fit 时，子视图也写 `height: Fit`。
+- `if`/`else` 语句的第一个块以不留下值的语句（`for`、`let` 或以 `;` 结尾的语句）结尾、而 `else` 块以表达式（例如一次调用）结尾时，只要第一个块执行，脚本的栈就少一个值。函数会在下一条语句处停止，报 `pop_stack_value on empty stack`，位置是那条语句的第一个记号。反过来则没有问题。先挑出要处理的项再处理，像照片的 `desk_recover` 那样，或者让两个块都以循环结尾。
+
+### 右键菜单
+
+`GestureView` 可以在右键单击或 Control 单击它的任何位置（包括子视图）时弹出菜单：
+
+```
+GestureView{
+    menu: ["Open", "Copy Link", "-", "Delete…"]
+    on_menu: |title| act_on(title)
+    menu_urls: ["", "", page]
+    Label{text: "A row"}
+}
+```
+
+`"-"` 画一条分隔线。`on_menu` 收到标题，然后是视图被按下位置的 x 和 y。`menu_urls` 按
+`menu` 中的位置对应，这样的菜单项不调用脚本，直接按链接自己的路径打开页面。
+`ui.<id>.open_menu()` 在视图下方打开同一个菜单，用于工具栏上的下拉按钮。没有 `menu` 的视图把
+右键当作 `on_long_press`。只有 `menu` 而没有其他处理函数的视图，会把左键单击留给它周围的视图。
+手机没有这两种按键，所以同样的操作要留在长按或可见的控件上。
+
+在打开的菜单外按左键只会关闭菜单，指针下方的内容不会收到这次按下。在菜单外按右键会关闭它，并打开所按位置的菜单。按菜单栏、程序坞、桌面或其他窗口同样会关闭它。
+
+菜单打开期间，视图周围会画出焦点色的圆环，就像 Mac 的访达给菜单所作用的对象画的那样。
+`menu_ring: "frame"` 按 id 指定圆环所围绕的子视图，例如卡片的图片，这样圆环不会压到卡片的文字。
+在图片外给这个子视图留出画圆环的位置（padding 为 3），键盘选中时的圆环也用同样的画法，让两者一致。
+
+弹出按钮是包在按钮外面的同一种视图，选项在打开时给出：
+
+```
+pick := GestureView{
+    width: Fit height: 28
+    on_menu: |title| choose(title)
+    UiPopup{text: chosen on_click: || ui.pick.open_menu(names, chosen)}
+}
+```
+
+`ui.<id>.open_menu(titles, current)` 把菜单盖在视图上，名为 `current` 的那一行打勾并正对按钮，
+文字与按钮的文字对齐。声明 `menu_current: "Paris"` 会在视图的右键菜单里给同一行打勾。操作菜单没有勾。
+`open_menu(titles, "", x, y)` 则在视图的该位置打开菜单，就像下文地图的 `on_context` 那样；第五个参数是它的 `menu_urls`。
+
+比应用窗口更高的菜单可以用滚轮滚动，且不会超出窗口。
+
+### 网页
+
+`WebReader` 在平台自己的 Web 视图中显示网页。`open` 用于网页，`open_embed` 用于视频：
+
+```splash
+reader := WebReader{width: Fill height: Fill on_ready: || player_up() on_error: || player_failed()}
+```
+
+```text
+ui.reader.open(url)                  // 打开成功时返回 true
+ui.reader.open_embed(player, page)   // Mac：只显示播放器。其他平台：打开它的网页
+ui.reader.close()
+ui.reader.is_open()
+ui.reader.error()                    // 上一个页面失败的原因
+```
+
+在 Mac 上，`open_embed` 用 `player`（专供嵌入的播放器的 https 地址）填满视图；播放器开始绘制之前视图是透明的，
+所以加载时能看到应用画在它后面的内容。播放器就绪时运行 `on_ready`。播放器拒绝时调用 `on_error`，
+`error()` 以 `the player said <code>` 结尾，视图随之隐藏：要重试，先调用 `close()`。在其他平台上，
+`open_embed` 打开 `page`，`on_ready` 在 Web 视图报告页面已加载时运行（Linux、Windows），
+或在打开后立即运行，因为 Web 视图从不报告（Android、iOS）。在 Mac 或手机上，普通的 `open` 不会调用 `on_ready`。
+
+Web 视图盖在窗口绘制的所有内容之上，所以在它前面的东西必须声明自己。在桌面样式下，菜单、提示、模态框、
+宿主面板、其他窗口、程序坞、菜单栏及其菜单、横幅、Glance 栏和助手面板都会声明。在 Mac 上，页面会挖掉这部分，
+其余部分继续显示，所以菜单下的视频会在菜单周围继续播放。页面不显示的地方不接收点击，并且在窗口的圆角处被裁圆。
+在其他平台上，只要有东西与页面重叠，页面就隐藏。手机上的页面和以前一样。
+
+应用自己盖在阅读器上的面板，要在最外层的 `View` 上写 `over_web: true` 来声明：
+
+```splash
+clear_sheet := View{visible: false width: Fill height: Fill flow: Overlay new_batch: true over_web: true
+    ...
+}
+```
+
+这样它就在此前绘制的阅读器前面，而不在它内部的阅读器前面。没有声明的遮罩会止于页面，页面不会变暗。
+远程接口的 `/web` 给出每个页面的图片，并用 `mask` 给出人实际看到的部分；
+`tools/app-ux/capture.py` 中的 `paste_web_views` 会应用它，所以截图里被遮住的页面就是被遮住的样子。
+
+### 地图
+
+`MapView` 绘制 makepad 的世界地图。下面这些由 Maps 在 Mac 上调用；手机的视图树一个都不用，它们在任何样式下都可用：
+
+```splash
+CachedView{width: Fill height: Fill texture_depth: true
+    map := MapView{width: Fill height: Fill
+        on_context: |lat, lon, pin, x, y| ui.keys.open_menu(["Drop Pin"], "", x, y)
+    }
+}
+```
+
+`on_context` 对应右键或 Control-点按：`pin` 是图钉的位置（与 `on_marker` 相同），没有图钉时为 -1；`x`、`y` 从地图左上角算起。
+设置后，右键拖动不再旋转地图；Option 拖动仍可旋转。会倾斜的 `MapView` 外面需要这个 `CachedView`：直接画在窗口上时它没有自己的深度缓冲，
+倾斜时瓦片不显示，窗口背景还会透过陆地显示出来。
+
+- `ui.map.fit_points("37.33,-121.88;37.40,-121.90")` 把这些点框在视图中央，并把地图转正、保持倾斜。
+  `fit_route(true)` 对路线做同样的事，不留驾驶横幅的空间。
+- `ui.map.jump_to(lat, lon, zoom)` 立刻跳到该处，没有飞行动画。
+- `ui.map.tiles_state()` 为 `"ready"`、`"loading"`（视图所示内容有超过十分之一仍在路上）或 `"failed"`。`ui.map.retry_tiles()` 重新请求失败的瓦片。
+- `ui.map.set_location(lat, lon, accuracy_m)` 和 `clear_location()` 根据应用通过 `location.sample` 取得的位置绘制和清除圆点。
+- `ui.map.set_map_theme(0)`（浅色）或 `1`（深色）覆盖 `dark_theme`。`set_map_3d(true)` 让普通地图倾斜并抬高建筑。
+
+`sys.navroutes(lat1, lon1, lat2, lon2, vias)` 与 `sys.navroute` 一样向 OSRM 请求驾车路线及其备选路线。加载时返回 `"—"`，失败时返回 `"n/a"`，
+否则返回 JSON 文本：由 `{min, m, via, polyline, steps: [{instr, kind, modifier, m, lat, lon}]}` 组成的列表。
+`sys.locale("distance_unit")` 按 Mac 的地区为 `"mi"` 或 `"km"`，其他平台为 `"km"`。
+
+### YouTube 搜索
+
+`sys.video(query, index, field)` 读取 YouTube 的搜索结果。它报告最终失败后，
+`sys.video_retry(query)` 会清除该失败状态；下一次 `sys.video` 用相同的搜索词重新请求。
+进行中和成功的请求不受影响，应用的网络权限仍然生效。
+
+### Mac 的菜单栏
+
+在 macOS 样式下，每次打开菜单，以及每次按住 Command 按键时，菜单栏都会向最前面的应用询问它自己的菜单项：
+
+```
+fn app_menus(){
+    [
+        {menu: "File" title: "New Note" key: "cmd+N" command: "new"}
+        {menu: "File"}
+        {menu: "View" title: "Sorted" command: "sorted" checked: sorted}
+        {menu: "Message" title: "Reply" key: "shift+cmd+R" command: "reply" enabled: reading != nil}
+    ]
+}
+fn on_menu_command(command){
+    if command == "new" { new_note() }
+}
+```
+
+`menu` 可以是 App、File、Edit、View 或 Help，也可以是应用自己的名字，自己的菜单排在 View 和 Window 之间。没有标题的项是一条分隔线。`key` 以 Mac 的符号显示（`shift+cmd+R`、`ctrl+cmd+S`、`cmd+left`、`cmd+delete`）。带 `cmd` 的按键归菜单项所有，无论键盘焦点在窗口的哪里，和 Mac 一样；只有文本框保留它编辑时要用的键：A、C、V、X、Z、方向键和 Delete。Edit 菜单里名为 Undo、Redo、Cut、Copy、Paste 或 Select All 的项，在没有文本可操作时代替标准项。`command: "key:cmd+B"` 把该按键发给应用，而不调用 `on_menu_command`，并且不拦截真实的按键，用于已经响应这个键的控件。`enabled` 省略时为 true。从菜单里选择，对需要一次按压的服务也算一次按压。`submenu` 把菜单项放进所在菜单里同名的子菜单，子菜单出现在它的第一项原本的位置（Task 的“显示 > 更新频率”）。菜单项有上限：64 项，每个标题 60 个字符。进程应用没有脚本可供询问，它在菜单项变化时用 `makepad_wm_api::menu_rows` 以 JSON 发送同样的菜单项，并以 `WmEvent::MenuCommand { command }` 收到被选中的项（`key:` 菜单项则收到对应按键）。
+
+其他样式不会询问。菜单项说的是此刻的事实，所以 `app_menus` 要快，也不要有副作用。
 
 ### `mail` 服务
 

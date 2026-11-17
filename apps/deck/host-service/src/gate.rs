@@ -183,7 +183,63 @@ pub(crate) struct Change {
 /// Run a change method's `plan` on `doc` (module doc): all or nothing, one
 /// undo step labelled `label`.
 pub(crate) fn change(doc: &mut OpenDoc, area: &Area, plan: Plan, label: &str) -> Result<Change, String> {
+    change_with_preparation(doc, area, plan, label, |_| Ok(()))
+}
+
+/// Prepare document-local IDs inside the same rollback and undo boundary as
+/// the admitted commands. Used when a paste brings media from another deck.
+pub(crate) fn change_with_preparation(
+    doc: &mut OpenDoc,
+    area: &Area,
+    plan: Plan,
+    label: &str,
+    prepare: impl FnOnce(&mut OpenDoc) -> Result<(), String>,
+) -> Result<Change, String> {
+    change_with_hooks(doc, area, plan, label, prepare, |_, _| Ok(()))
+}
+
+/// Finish an admitted edit by materializing existing appearance on its
+/// output. The finish step may not add content, and its resolved sizes must
+/// still fit the same limits as the engine's commands.
+pub(crate) fn change_with_checked_finish(
+    doc: &mut OpenDoc,
+    area: &Area,
+    plan: Plan,
+    label: &str,
+    finish: impl FnOnce(&mut OpenDoc, &[Json]) -> Result<(), String>,
+) -> Result<Change, String> {
+    let method = plan.method;
+    change_with_hooks(doc, area, plan, label, |_| Ok(()), |doc, results| {
+        let before = Held::of(&doc.session);
+        finish(doc, results)?;
+        let after = Held::of(&doc.session);
+        if after.slides > before.slides || after.shapes > before.shapes || after.most_on_a_slide > before.most_on_a_slide
+            || after.cells > before.cells || after.points > before.points || after.chars > before.chars || after.media > before.media
+        {
+            return Err(fail(Code::Damaged, "the edited item's appearance could not be preserved"));
+        }
+        if let Some(why) = after.over() {
+            return Err(too_large(format!("{method}: the edited appearance would leave the presentation with {why}")));
+        }
+        Ok(())
+    })
+}
+
+/// As above, with a final repair inside the same undo boundary. The finish
+/// step may only change IDs unless its caller also validates the result.
+pub(crate) fn change_with_hooks(
+    doc: &mut OpenDoc,
+    area: &Area,
+    plan: Plan,
+    label: &str,
+    prepare: impl FnOnce(&mut OpenDoc) -> Result<(), String>,
+    finish: impl FnOnce(&mut OpenDoc, &[Json]) -> Result<(), String>,
+) -> Result<Change, String> {
     let before = Before::take(doc)?;
+    if let Err(e) = prepare(doc) {
+        before.restore(doc);
+        return Err(e);
+    }
     let results = match exec(&mut doc.session, area, &plan, &mut doc.held) {
         Ok(results) => results,
         Err(e) => {
@@ -191,6 +247,10 @@ pub(crate) fn change(doc: &mut OpenDoc, area: &Area, plan: Plan, label: &str) ->
             return Err(e);
         }
     };
+    if let Err(e) = finish(doc, &results) {
+        before.restore(doc);
+        return Err(e);
+    }
     let st = doc.st_mut()?;
     if Arc::ptr_eq(&st.doc, &before.doc) || same_content(&before.doc, &st.doc) {
         // Nothing changed (the engine's copies aside): the deck as it was, no

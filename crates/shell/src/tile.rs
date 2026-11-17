@@ -20,8 +20,15 @@ pub trait TileHost {
     /// Claim the compositor's key focus for this window. False while the
     /// tile has no live area yet; the WM keeps such a focus pending.
     fn focus_keyboard(&mut self, cx: &mut Cx) -> bool;
+    /// Remember this window's own focused widget before an input can focus
+    /// another window. Process tiles keep their focus in the child process.
+    fn remember_keyboard(&mut self, _cx: &mut Cx) {}
     /// Give the keyboard back if this tile holds it.
     fn release_keyboard(&mut self, cx: &mut Cx);
+    /// The app shows a sheet that owns the keyboard: what's under it waits.
+    fn sheet_owns_keyboard(&self) -> bool {
+        false
+    }
     /// FOCUS RULE: a Quick-Look panel never takes the keyboard.
     fn set_takes_key_focus(&mut self, on: bool);
     /// The cursor the window asked for (a process child sends it; an
@@ -41,5 +48,9 @@ pub trait TileHost {
     /// A corner clip on the window body (Sdf2d half-radius; 0 = square),
     /// so an inset body cannot overpaint a glass frame's corner arcs. A
     /// module tile draws its own root and needs none.
+    /// The height of the band at the top of the window where a press that no
+    /// control takes moves the window: a Mac's unified toolbar
+    /// (`WmDesk::draw_tile`). Zero for a window with a title bar of its own.
+    fn set_title_band(&mut self, _height: f64) {}
     fn set_corner_radius(&mut self, _radius: f32) {}
 }

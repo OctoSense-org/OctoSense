@@ -3,37 +3,178 @@
 // Bundles carry this prelude so they work in the contained standalone host too.
 // Resolve the current theme after a host restyle, not a retained prelude alias.
 let theme = mod.theme
+// A desktop shell's style sheet says `ui_pointer = true`: the app gets pointer
+// metrics and the Mac layouts (13-point text, 28-point controls, a sidebar and
+// a toolbar). Anything else, a phone or a bare host, keeps the touch metrics.
+let ui_desk = try { theme.ui_pointer == true } catch { false }
+// A Mac's window has no title bar over an app that says so to the shell
+// (crates/shell/src/clients.rs, unified_chrome): the app draws to the window's top
+// edge, its toolbar is 52 points tall, and the lights sit over the leading 84 points
+// of the toolbar, or over the top of a sidebar. Other desktops keep a title bar.
+let ui_unified = ui_desk && try { theme.ui_unified == true } catch { false }
+fn ui_by(touch, desk){ if ui_desk { desk } else { touch } }
 let ui_ink = theme.color_text
 let ui_page = theme.color_bg_app
 let ui_light = dot(ui_ink, #x36b61200) < 0.5
-let ui_surface = if ui_light { #xffffff } else { mix(ui_page, ui_ink, 0.06) }
-let ui_field = mix(ui_page, ui_ink, 0.075)
-let ui_hover = mix(ui_page, ui_ink, 0.12)
-let ui_border = mix(ui_page, ui_ink, 0.22)
-let ui_muted = mix(ui_ink, ui_page, 0.24)
-let ui_link = mix(ui_ink, #x356bce, 0.25)
-let ui_primary = #x285cd6
-let ui_success = mix(ui_ink, #x28a55b, 0.20)
-let ui_danger = mix(ui_ink, #xe13b53, 0.20)
-let UiButton = ButtonFlat{height: 44 margin: 0 padding: Inset{left: 14 right: 14}
-    draw_bg +: {border_radius: 12.0 border_size: 0.0 color: #x00000000 color_hover: ui_hover color_down: ui_field color_focus: ui_hover}
-    draw_text +: {color: ui_link color_hover: ui_link color_down: ui_link color_focus: ui_link text_style: theme.font_bold{font_size: 14}}
+let ui_surface = if ui_light { #xffffff } else { mix(ui_page, ui_ink, ui_by(0.06, 0.07)) }
+let ui_field = if ui_desk && ui_light { #xffffff } else { mix(ui_page, ui_ink, ui_by(0.075, 0.07)) }
+let ui_hover = mix(ui_page, ui_ink, ui_by(0.12, 0.07))
+let ui_border = mix(ui_page, ui_ink, ui_by(0.22, 0.14))
+let ui_muted = mix(ui_ink, ui_page, ui_by(0.24, 0.26))
+// The Mac's system colours where the page is a Mac's, near white or near black;
+// a retro style's mid-gray page keeps text that is mostly ink.
+let ui_lum = dot(ui_page, #x36b61200)
+let ui_mac = ui_desk && (ui_lum > 0.86 || ui_lum < 0.25)
+let ui_link = if ui_mac { if ui_light { #x0060c0 } else { #x6cb8ff } } else { mix(ui_ink, #x356bce, 0.25) }
+let ui_primary = ui_by(#x285cd6, #x0071e3)
+let ui_success = if ui_mac { if ui_light { #x1a7030 } else { #x30d158 } } else { mix(ui_ink, #x28a55b, 0.20) }
+let ui_danger = if ui_mac { if ui_light { #xc70012 } else { #xffa097 } } else { mix(ui_ink, #xe13b53, 0.20) }
+// The Mac's surfaces: a sidebar and a toolbar a shade off the page, a selection
+// in the sidebar's own gray, a push button's face.
+let ui_sidebar = mix(ui_page, ui_ink, 0.03)
+let ui_bar = if ui_light { #xededf0 } else { #x303033 }
+let ui_selected = mix(ui_page, ui_ink, 0.11)
+let ui_button = if ui_light { #xffffff } else { mix(ui_page, ui_ink, 0.16) }
+// What a list or a document sits on: white in the light; in the dark, darker than
+// the window around it, as a Mac's content is.
+let ui_content = if ui_mac { if ui_light { #xffffff } else { #x1e1e1e } } else { ui_surface }
+// A selected row: the accent when it is the row the person is on, white text on it.
+let ui_accent_row = if ui_light { #x0064d2 } else { #x0a60c8 }
+// A Mac dims the window behind a sheet, more in the dark; the shell's own sheets
+// and the native apps' dim as much.
+let ui_sheet_dim = if ui_light { #x00000024 } else { #x00000052 }
+// A touch size in the type scale; on the desktop, the Mac's size for that role
+// (Makepad's font_size is three quarters of a point).
+fn ui_fs(n){
+    if !ui_desk { return n }
+    if n <= 12 { return 8.25 }
+    if n <= 13 { return 9 }
+    if n <= 16 { return 9.75 }
+    if n <= 18 { return 11.25 }
+    if n <= 21 { return 12.75 }
+    if n <= 24 { return 13.5 }
+    if n <= 28 { return 16.5 }
+    19.5
+}
+let ui_icons = {}
+fn ui_icon(name){
+    let handle = ui_icons[name]
+    if handle == nil {
+        handle = http_resource("{{assets}}/icons/ui-" + name + ".svg")
+        ui_icons[name] = handle
+    }
+    handle
+}
+let UiButton = ButtonFlat{height: ui_by(44, 28) margin: 0 padding: Inset{left: ui_by(14, 12) right: ui_by(14, 12)} spacing: 6
+    icon_walk: Walk{width: 15 height: 15}
+    draw_bg +: {border_radius: ui_by(12.0, 3.0) border_size: ui_by(0.0, 1.0) border_color: ui_border
+        color: ui_by(#x00000000, ui_button) color_hover: ui_by(ui_hover, mix(ui_button, ui_ink, 0.04)) color_down: ui_by(ui_field, mix(ui_button, ui_ink, 0.1)) color_focus: ui_by(ui_hover, ui_button)}
+    draw_text +: {color: ui_by(ui_link, ui_ink) color_hover: ui_by(ui_link, ui_ink) color_down: ui_by(ui_link, ui_ink) color_focus: ui_by(ui_link, ui_ink)
+        text_style: ui_by(theme.font_bold{font_size: 14}, theme.font_regular{font_size: 9.75})}
+    draw_icon +: {color: ui_ink}
 }
 let UiPrimary = UiButton{
-    draw_bg +: {color: ui_primary color_hover: #x3468df color_down: #x204cb8 color_focus: #x204cb8}
+    draw_bg +: {border_size: 0.0 color: ui_primary color_hover: ui_by(#x3468df, #x006edb) color_down: ui_by(#x204cb8, #x0060c0) color_focus: ui_by(#x204cb8, ui_primary)}
     draw_text +: {color: #xffffff color_hover: #xffffff color_down: #xffffff color_focus: #xffffff}
+    draw_icon +: {color: #xffffff}
 }
-let UiPill = UiButton{draw_bg +: {color: ui_surface border_radius: 22.0} draw_text +: {color: ui_ink color_hover: ui_ink color_down: ui_ink color_focus: ui_ink}}
-let UiField = TextInput{width: Fill height: 48 margin: 0 padding: Inset{left: 14 right: 14 top: 12 bottom: 12}
+let UiPill = UiButton{height: ui_by(44, 24) padding: Inset{left: ui_by(14, 10) right: ui_by(14, 10)}
+    draw_bg +: {color: ui_by(ui_surface, #x00000000) border_size: 0.0 border_radius: ui_by(22.0, 3.0)}
+    draw_text +: {color: ui_ink color_hover: ui_ink color_down: ui_ink color_focus: ui_ink}}
+let UiField = TextInput{width: Fill height: ui_by(48, 28) margin: 0 padding: Inset{left: ui_by(14, 8) right: ui_by(14, 8) top: ui_by(12, 6) bottom: ui_by(12, 6)}
     draw_bg +: {color: ui_field color_hover: ui_field color_focus: ui_field color_empty: ui_field
-        border_color: ui_border border_color_hover: ui_link border_color_focus: ui_link border_color_empty: ui_border border_radius: 12.0}
-    draw_text +: {color: ui_ink color_hover: ui_ink color_focus: ui_ink color_empty: ui_muted color_empty_hover: ui_muted color_empty_focus: ui_muted text_style: theme.font_regular{font_size: 15}}
+        border_color: ui_border border_color_hover: ui_by(ui_link, ui_border) border_color_focus: ui_link border_color_empty: ui_border border_radius: ui_by(12.0, 3.0)}
+    draw_text +: {color: ui_ink color_hover: ui_ink color_focus: ui_ink color_empty: ui_muted color_empty_hover: ui_muted color_empty_focus: ui_muted text_style: theme.font_regular{font_size: ui_by(15, 9.75)}}
     draw_selection.color: #x557dcc55
 }
-let UiCard = RoundedView{width: Fill height: Fit flow: Down spacing: 12 padding: 20
-    show_bg: true draw_bg +: {color: ui_surface border_radius: 16.0}}
-let UiCaption = Label{padding: 0 flow: Flow.Right{wrap: true} width: Fill draw_text +: {color: ui_muted text_style: theme.font_regular{font_size: 13 line_spacing: 1.4}}}
-let UiTitle = Label{padding: 0 flow: Flow.Right{wrap: true} width: Fill draw_text +: {color: ui_ink text_style: theme.font_bold{font_size: 28 line_spacing: 1.2}}}
+let UiCard = RoundedView{width: Fill height: Fit flow: Down spacing: ui_by(12, 8) padding: ui_by(20, 14)
+    show_bg: true draw_bg +: {color: ui_surface border_radius: ui_by(16.0, 5.0) border_size: ui_by(0.0, 1.0) border_color: ui_by(#x00000000, ui_border)}}
+let UiCaption = Label{padding: 0 flow: Flow.Right{wrap: true} width: Fill draw_text +: {color: ui_muted text_style: theme.font_regular{font_size: ui_by(13, 8.25) line_spacing: 1.4}}}
+let UiTitle = Label{padding: 0 flow: Flow.Right{wrap: true} width: Fill draw_text +: {color: ui_ink text_style: theme.font_bold{font_size: ui_by(28, 16.5) line_spacing: 1.2}}}
+// The Mac's parts. They are drawn on a desktop only; a phone keeps its pages.
+// A shader's border_radius is half the corner it draws: 3 is a 6-point corner.
+let UiSep = SolidView{width: Fill height: 1 draw_bg.color: ui_border}
+let UiVSep = SolidView{width: 1 height: Fill draw_bg.color: ui_border}
+let UiGlyph = Svg{width: 16 height: 16 animating: false draw_svg +: {color: ui_muted}}
+let UiTool = ButtonFlat{height: 28 margin: 0 padding: Inset{left: 8 right: 8} spacing: 5 icon_walk: Walk{width: 16 height: 16}
+    draw_bg +: {border_radius: 3.0 border_size: 0.0 color: #x00000000 color_hover: ui_hover color_down: ui_selected color_focus: #x00000000}
+    draw_text +: {color: ui_ink color_hover: ui_ink color_down: ui_ink color_focus: ui_ink text_style: theme.font_regular{font_size: 9.75}}
+    draw_icon +: {color: ui_ink}
+}
+let UiToolIcon = UiTool{width: 30 padding: 0 spacing: 0 text: ""}
+// A tool whose click hides it or the pane it sits on: it comes back unwashed.
+let UiPaneTool = UiToolIcon{reset_hover_on_click: true}
+// The clear button inside a search field, shown while it holds text.
+let UiSearchClear = UiPaneTool{visible: false width: 24 height: 24 icon_walk: Walk{width: 14 height: 14}
+    draw_bg +: {color_hover: #x00000000 color_down: #x00000000}
+    draw_icon +: {svg: ui_icon("search-clear") color: ui_muted}}
+let UiToolbar = SolidView{width: Fill height: if ui_unified { 52 } else { 40 } flow: Right align: Align{y: 0.5} spacing: 4 padding: Inset{left: 12 right: 10} draw_bg.color: ui_bar}
+// A toolbar that starts at the window's leading edge, with no sidebar beside it.
+let UiWindowToolbar = UiToolbar{padding: Inset{left: if ui_unified { 84 } else { 12 } right: 10}}
+let UiBarTitle = Label{clip_y: false padding: 0 text: "" max_lines: 1 draw_text +: {color: ui_ink text_style: theme.font_bold{font_size: 11.25}}}
+let UiBarSub = Label{clip_y: false padding: 0 text: "" max_lines: 1 draw_text +: {color: ui_muted text_style: theme.font_regular{font_size: 8.25}}}
+let UiSidebar = SolidView{width: 208 height: Fill flow: Down padding: Inset{left: 8 right: 8 top: if ui_unified { 52 } else { 8 } bottom: 8} spacing: 1 draw_bg.color: ui_sidebar}
+let UiSideHead = Label{padding: Inset{left: 8 top: 12 bottom: 4} text: "" draw_text +: {color: ui_muted text_style: theme.font_bold{font_size: 8.25}}}
+let UiSideRow = ButtonFlat{width: Fill height: 28 margin: 0 padding: Inset{left: 8 right: 8} spacing: 7 align: Align{x: 0.0 y: 0.5}
+    icon_walk: Walk{width: 16 height: 16} label_walk: Walk{width: Fill height: Fit}
+    draw_bg +: {border_radius: 3.0 border_size: 0.0 color: #x00000000 color_hover: #x00000000 color_down: ui_selected color_focus: #x00000000}
+    draw_text +: {color: ui_ink color_hover: ui_ink color_down: ui_ink color_focus: ui_ink text_style: theme.font_regular{font_size: 9.75}}
+    draw_icon +: {color: ui_link}
+}
+let UiSideRowOn = UiSideRow{draw_bg +: {color: ui_selected color_hover: ui_selected color_focus: ui_selected}}
+let UiSeg = ButtonFlat{height: 24 margin: 0 padding: Inset{left: 12 right: 12}
+    draw_bg +: {border_radius: 2.5 border_size: 0.0 color: #x00000000 color_hover: ui_hover color_down: ui_selected color_focus: #x00000000}
+    draw_text +: {color: ui_ink color_hover: ui_ink color_down: ui_ink color_focus: ui_ink text_style: theme.font_regular{font_size: 9.75}}
+}
+let UiSegOn = UiSeg{draw_bg +: {color: ui_button color_hover: ui_button color_focus: ui_button border_size: 1.0 border_color: ui_border}}
+let UiSegments = RoundedView{width: Fit height: 28 flow: Right align: Align{y: 0.5} spacing: 2 padding: 2 show_bg: true draw_bg +: {color: ui_selected border_radius: 3.5}}
+let UiSearch = UiField{padding: Inset{left: 26 right: 8 top: 6 bottom: 6}}
+let UiGroup = RoundedView{width: Fill height: Fit flow: Down show_bg: true draw_bg +: {color: ui_surface border_radius: 5.0 border_size: 1.0 border_color: ui_border}}
+let UiFormRow = View{width: Fill height: Fit flow: Right align: Align{y: 0.5} spacing: 12 padding: Inset{left: 14 right: 14 top: 8 bottom: 8}}
+let UiFormLabel = Label{clip_y: false padding: 0 width: Fill text: "" draw_text +: {color: ui_ink text_style: theme.font_regular{font_size: 9.75}}}
+let UiListRow = View{width: Fill height: Fit flow: Right align: Align{y: 0.5} spacing: 10 padding: Inset{left: 14 right: 14 top: 8 bottom: 8}}
+// A two-line row of a list: a line in the body size, a line under it in the small.
+let UiRowTitle = Label{clip_y: false padding: 0 width: Fill text: "" max_lines: 1 text_overflow: Ellipsis draw_text +: {color: ui_ink text_style: theme.font_regular{font_size: 9.75}}}
+let UiRowNote = Label{clip_y: false padding: 0 width: Fill text: "" max_lines: 1 text_overflow: Ellipsis draw_text +: {color: ui_muted text_style: theme.font_regular{font_size: 8.25}}}
+// A form: the label right-aligned in a 110-point column to the left of its control.
+let UiFormKey = Label{clip_y: false padding: 0 width: 110 text: "" align: Align{x: 1.0} draw_text +: {color: ui_ink text_style: theme.font_regular{font_size: 9.75}}}
+let UiFormLine = View{width: Fill height: Fit flow: Right align: Align{y: 0.5} spacing: 8}
+// A pop-up button: the choice, and the up-down mark at its trailing edge (an
+// Overlay of this over UiPopupMark).
+let UiPopup = UiButton{padding: Inset{left: 10 right: 28} align: Align{x: 0.0 y: 0.5}}
+let UiPopupMark = View{width: Fit height: Fit padding: Inset{right: 8} new_batch: true
+    Svg{width: 13 height: 13 animating: false draw_svg +: {svg: ui_icon("updown") color: ui_muted}}}
+// A small count or state beside a name.
+let UiBadge = RoundedView{width: Fit height: Fit padding: Inset{left: 6 right: 6 top: 2 bottom: 2} new_batch: true show_bg: true draw_bg +: {color: mix(ui_surface, ui_ink, 0.1) border_radius: 2.5}}
+let UiBadgeText = Label{clip_y: false padding: 0 text: "" draw_text +: {color: ui_ink text_style: theme.font_bold{font_size: 8.25}}}
+// A status bar along a window's bottom: small text on the bar's colour.
+let UiFootBar = SolidView{width: Fill height: 24 flow: Right align: Align{y: 0.5} spacing: 8 padding: Inset{left: 12 right: 12} draw_bg.color: ui_bar}
+// An empty list or an empty window: a glyph, a title, a line, and, under them, what
+// to do about it. Centred in what the empty state fills.
+let UiEmpty = View{width: Fill height: Fill flow: Down align: Align{x: 0.5 y: 0.5} spacing: 6 padding: 24
+    glyph := Svg{width: 36 height: 36 margin: Inset{bottom: 4} animating: false draw_svg +: {color: ui_muted}}
+    title := Label{clip_y: false padding: 0 text: "" draw_text +: {color: ui_ink text_style: theme.font_bold{font_size: 11.25}}}
+    note := Label{clip_y: false padding: 0 text: "" draw_text +: {color: ui_muted text_style: theme.font_regular{font_size: 9.75}}}
+}
+// A Mac's alert carries its app's icon, as the native apps' alerts do: 64 points
+// on top in the alert below. The shell draws it in its style's frame (`ReviewAppIcon`,
+// crates/shell/src/connected_review.rs; `app` is the bundle's id, "os.writer"); a host
+// without the shell has none, and the alert keeps its words alone.
+let UiAlertIcon = try { mod.widgets.ReviewAppIcon } catch { nil }
+let ui_alert_icon = ui_mac && UiAlertIcon != nil
+// A Mac's alert as macOS has drawn it since 11 (Files' Empty Trash): 260 points
+// wide, the app's 64-point icon on top, the title and its words centred under it,
+// then the buttons. Two sit side by side, each as wide as the other, the default
+// on the right (UiAlertRow, each button `width: Fill`); three or more stand one
+// over another, the default on top (UiAlertStack). A host with no app icon shows
+// the words alone. Off a Mac an app keeps its own sheet.
+let UiAlertPanel = RoundedShadowView{width: 260 height: Fit flow: Down align: Align{x: 0.5} padding: Inset{left: 16 right: 16 top: 20 bottom: 16} new_batch: true cursor: MouseCursor.Default
+    draw_bg +: {color: ui_surface border_size: 1.0 border_color: ui_border border_radius: 10.0 shadow_color: #x00000040 shadow_radius: 18.0 shadow_offset: vec2(0.0, 4.0)}}
+// A Label's margin counts twice: 10 and 6 points between icon, title and words.
+let UiAlertTitle = Label{clip_y: false width: Fill padding: 0 margin: Inset{top: 5} align: Align{x: 0.5} flow: Flow.Right{wrap: true} text: "" draw_text +: {color: ui_ink text_style: theme.font_bold{font_size: 9.75 line_spacing: 1.3}}}
+let UiAlertNote = Label{clip_y: false width: Fill padding: 0 margin: Inset{top: 3} align: Align{x: 0.5} flow: Flow.Right{wrap: true} text: "" draw_text +: {color: ui_ink text_style: theme.font_regular{font_size: 8.25 line_spacing: 1.3}}}
+let UiAlertRow = View{width: Fill height: Fit flow: Right spacing: 8 margin: Inset{top: 16}}
+let UiAlertStack = View{width: Fill height: Fit flow: Down spacing: 8 margin: Inset{top: 16}}
 // END shared app interface
 let catalog = [
     {id: "stock-aquarium-fish" file: "stock-aquarium-fish.jpg" title: "An underwater world" date: "2026-09-17" location: "Aquarium" people: [] tags: ["animals" "fish" "aquarium" "underwater"] moment: "September snapshots"}
@@ -114,6 +255,7 @@ let catalog = [
 ]
 let assets = "{{assets}}"
 let months = ["January" "February" "March" "April" "May" "June" "July" "August" "September" "October" "November" "December"]
+let months_short = ["Jan" "Feb" "Mar" "Apr" "May" "Jun" "Jul" "Aug" "Sep" "Oct" "Nov" "Dec"]
 let specials = ["\\" "." "*" "+" "?" "(" ")" "[" "]" "{" "}" "|" "^" "$"]
 let store = {version: 1 next_id: 1 albums: [] favorites: []}
 let memories = []
@@ -139,6 +281,20 @@ let slide_timer = nil
 let editor_id = 0
 let editor_selected = []
 let message = ""
+// The Mac's layout (below the boot) keeps its own chrome. These stay nil on a
+// phone, whose pages run this script exactly as they always have.
+let desk_chrome = nil
+let desk_open = nil
+let desk_viewer = nil
+let desk_resized = nil
+let desk_memory = nil
+let desk_stored = nil
+let desk_sheet_up = false
+// A sheet or an alert is on the window now. desk_sheet_up also covers the moment after one
+// closes, for the press that closed it; the menu bar's rows come from outside the window.
+let desk_sheet_shown = false
+let desk_alert_says = nil
+let desk_selection_key = ""
 
 // ---- data -------------------------------------------------------------
 
@@ -172,6 +328,8 @@ fn has_item(list, x){
     false
 }
 fn is_favorite(id){ has_item(store.favorites, id) }
+// A photo imported on a Mac, beside the sample library.
+fn is_own(id){ id.search("own-") == 0 }
 
 fn build_memories(){
     let out = []
@@ -182,7 +340,7 @@ fn build_memories(){
         }
         if !found { out.push({title: p.moment date: p.date photos: [p.id] summary: "A collection of moments from your library." source: "local"}) }
     }
-    out.retain(|m| m.photos.len() >= 2)
+    out.retain(|m| m.photos.len() >= 2 && m.title != "")
     out
 }
 
@@ -299,6 +457,7 @@ fn memory_input(){
     {prompt: memory_prompt.trim() photos: photos}
 }
 fn sync_memory_controls(){
+    if desk_memory != nil { desk_memory(); return }
     if route == "memories" { ui.list.render() }
 }
 fn finish_memories(status){
@@ -373,9 +532,16 @@ fn generate_memories(){
 fn open_memory(index){
     if index >= 0 && index < memories.len() { go_to("memory", memories[index]) }
 }
+// A memory's date. A desktop writes a range as Photos does: "Mar 3–9, 2026",
+// "Mar 30 – Apr 2, 2026", with both years only across a new year.
 fn memory_date(m){
-    if m.source == "ai" && m.start != m.end { return display_date(m.start) + " – " + display_date(m.end) }
-    display_date(m.date)
+    if m.source != "ai" || m.start == m.end { return display_date(m.date) }
+    let a = m.start.split("-")
+    let b = m.end.split("-")
+    if !ui_desk || a[0] != b[0] { return display_date(m.start) + " – " + display_date(m.end) }
+    let from = months_short[a[1].to_f64() - 1] + " " + a[2].to_f64()
+    if a[1] == b[1] { return from + "–" + b[2].to_f64() + ", " + b[0] }
+    from + " – " + months_short[b[1].to_f64() - 1] + " " + b[2].to_f64() + ", " + b[0]
 }
 fn build_people(){
     let out = []
@@ -430,6 +596,7 @@ fn search_ids(){
 }
 fn route_ids(){
     if route == "memory" { return route_arg.photos }
+    if route == "deleted" { return desk_deleted_ids() }
     if route == "album" {
         let a = album_of(route_arg)
         if a == nil { return [] }
@@ -456,6 +623,7 @@ fn month_title(date){
 }
 fn display_date(date){
     let parts = date.split("-")
+    if ui_desk { return months_short[parts[1].to_f64() - 1] + " " + parts[2].to_f64() + ", " + parts[0] }
     months[parts[1].to_f64() - 1] + " " + parts[2].to_f64() + ", " + parts[0]
 }
 
@@ -465,6 +633,7 @@ fn go_to(to, arg){
     route = to
     route_arg = arg
     sync_chrome()
+    if desk_open != nil { desk_open(); return }
     ui.list.render()
 }
 fn go_back_fn(){
@@ -479,6 +648,7 @@ fn title_text(){
     if route == "memory" { return route_arg.title }
     if route == "library" { return "Library" }
     if route == "favorites" { return "Favorites" }
+    if route == "deleted" { return "Recently Deleted" }
     if route == "person" { return route_arg }
     if route == "album" {
         let a = album_of(route_arg)
@@ -498,6 +668,7 @@ fn subtitle_text(){
     "" + n + " photos"
 }
 fn sync_chrome(){
+    if desk_chrome != nil { desk_chrome(); return }
     ui.title.set_text(title_text())
     ui.subtitle.set_text(subtitle_text())
     let nested = route == "album" || route == "person" || route == "favorites" || route == "editor" || route == "memory"
@@ -527,6 +698,7 @@ fn close_viewer(){
     stop_slides()
     ui.viewer.set_visible(false)
     ui.main.set_visible(true)
+    if desk_chrome != nil { desk_chrome() }
     ui.list.render()
 }
 fn step_photo(offset){
@@ -541,6 +713,7 @@ fn sync_viewer(){
     ui.viewer_meta.set_text(display_date(p.date) + "  ·  " + p.location)
     ui.viewer_count.set_text("" + (viewer_index + 1) + " of " + viewer_ids.len())
     if is_favorite(p.id) { ui.favorite.set_text("♥") } else { ui.favorite.set_text("♡") }
+    if desk_viewer != nil { desk_viewer() }
     ui.stage.render()
 }
 fn toggle_favorite(){
@@ -565,11 +738,13 @@ fn toggle_slides(){
     playing = true
     slide_timer = start_interval(3, || advance_slides())
     ui.playback.set_text("Pause")
+    if desk_viewer != nil { desk_viewer() }
 }
 fn stop_slides(){
     playing = false
     if slide_timer != nil { stop_timer(slide_timer); slide_timer = nil }
     ui.playback.set_text("Play")
+    if desk_viewer != nil { desk_viewer() }
 }
 
 // ---- albums -----------------------------------------------------------
@@ -578,6 +753,7 @@ fn new_album(){
     editor_id = 0
     editor_selected = []
     ui.album_name.set_text("")
+    if desk_chrome != nil { desk_album_name = "" }
     go_to("editor", "")
 }
 fn edit_album(){
@@ -587,16 +763,23 @@ fn edit_album(){
     editor_selected = []
     for id in a.photos { editor_selected.push(id) }
     ui.album_name.set_text(a.title)
+    if desk_chrome != nil { desk_album_name = a.title }
     go_to("editor", "")
 }
 fn toggle_select(id){
     if has_item(editor_selected, id) { editor_selected.retain(|s| s != id) } else { editor_selected.push(id) }
     ui.subtitle.set_text(subtitle_text())
     ui.list.render()
+    if desk_chrome != nil { desk_remember() }
 }
 fn save_album(){
     let name = ("" + ui.album_name.text()).trim()
-    if name == "" { message = "Give your album a name."; ui.message.set_text(message); return }
+    if name == "" {
+        message = "Give your album a name."
+        ui.message.set_text(message)
+        if desk_chrome != nil { desk_chrome() }
+        return
+    }
     if editor_id > 0 {
         let a = album_of(editor_id)
         if a != nil { a.title = name; a.photos = editor_selected }
@@ -673,11 +856,12 @@ fn on_app_resize(width, height){
         tile_rows = rows
         ui.tile_grid.render()
     }
+    if desk_resized != nil { desk_resized(width, height) }
 }
 fn tile_ids(rows){
     let out = []
-    for id in store.favorites { if out.len() < rows * 3 { out.push(id) } }
-    for p in catalog { if out.len() < rows * 3 && !has_item(out, p.id) { out.push(p.id) } }
+    for id in store.favorites { if out.len() < rows * 3 && !is_own(id) { out.push(id) } }
+    for p in catalog { if out.len() < rows * 3 && !is_own(p.id) && !has_item(out, p.id) { out.push(p.id) } }
     out
 }
 
@@ -718,6 +902,7 @@ fn empty_text(){
 
 fn boot(){
     load_store()
+    if desk_stored != nil { desk_stored() }
     load_memories()
     people = build_people()
     sync_chrome()
@@ -774,8 +959,9 @@ let MemoryCard = GestureView{width: Fill height: 240 flow: Overlay
     }
 }
 
-HostedView{width: Fill height: Fill
-    full: View{width: Fill height: Fill flow: Overlay align: Align{x: 0.5} show_bg: true draw_bg.color: ground
+// A phone's pages. The Mac's layout, DeskFull, is below them.
+let TouchFull =
+    View{width: Fill height: Fill flow: Overlay align: Align{x: 0.5} show_bg: true draw_bg.color: ground
         main := View{width: Fill max_width: 960 height: Fill flow: Down
             View{width: Fill height: Fit flow: Right align: Align{y: 0.5} padding: Inset{left: 16 right: 16 top: 8}
                 back := View{width: Fit height: Fit Flat{text: "‹ Back" on_click: || go_back_fn()}}
@@ -951,6 +1137,2810 @@ HostedView{width: Fill height: Fill
             }
         }
     }
+// ---- the Mac's layout -----------------------------------------------------
+// One window of the Mac's Photos: a source list, a toolbar over white content, a
+// dense grid of square photos, and an open photo in the grid's place, beside the
+// source list, with its own toolbar.
+// The script above runs as it is; what follows is only what this layout adds.
+let desk_width = 911      // the content column: the window less the sidebar and its hairline
+let desk_height = 670
+let desk_zoom = 128       // the cell the person zoomed to; the width decides how many fit
+let desk_cell = 128
+let desk_cards = 3
+let desk_card = 285
+let desk_shown = ""       // the destination on screen: a new one opens at its top
+let desk_icons = {}
+let desk_thumbs = {}
+let desk_viewing = false
+// A Mac's slideshow: the whole screen, black, with its own controls (desk_show_open).
+let desk_show = false
+let desk_show_full = false     // the shell has the window full screen for it (on_app_fullscreen)
+let desk_show_bar_ticket = 0   // the controls' latest showing: an older one's timeout does nothing
+let desk_show_was_playing = false
+let desk_album_name = ""  // what the album's name field holds
+let desk_window = 1120    // the whole window, to lay out again when the inspector opens
+let desk_side_wanted = true // a Mac's sidebar in a window 640 points wide or more, until it's hidden
+let desk_side_open = false  // and in a narrower one, where it gives way first, while it's asked for
+let desk_selection = []   // the photos picked in the grid
+let desk_anchor = ""      // where a Shift run starts
+let desk_cursor = ""      // where the arrow keys go from
+let desk_tap_id = ""      // a second click on a photo opens it; the list is new by then, so it's counted here
+let desk_tap_at = 0
+let desk_info_open = false
+let desk_asks = []        // what the delete sheet is asking about
+let desk_asked_album = 0  // the album its sheet is asking about
+let desk_rename_id = 0
+let desk_naming = 0       // the album whose name the sidebar is typing in place (a Mac's New Album, Rename Album)
+let desk_naming_was = ""  // its name before: Escape puts it back, and an empty field keeps it
+let desk_naming_run = 0   // invalidates a delayed focus request from an earlier rename
+let desk_was_naming = false // a name was being typed when the appearance changed
+let desk_search_open = false // the person opened the search a short toolbar keeps as its magnifier
+let desk_samples = catalog // the sample library; `catalog` holds what's left of it and what was imported
+let desk_scale = "all"      // the Library's time scale on a Mac: years, months or all (Photos' Years, Months, All Photos)
+let desk_scale_to = ""      // where a tile opened: the year whose months, or the month All Photos shows first
+let desk_scale_in_more = false // the time scale waits behind the toolbar's », with no room beside the title
+let desk_fulls = {}         // the tiles' key photos, held as the thumbnails are
+let desk_scales = [{id: "years" name: "Years"} {id: "months" name: "Months"} {id: "all" name: "All Photos"}]
+// The samples' own pixels and bytes, for Info's Size: what the files are.
+let desk_pixels = [
+    {file: "stock-aquarium-fish.jpg" w: 1200 h: 900 bytes: 170216}
+    {file: "family.png" w: 1024 h: 1024 bytes: 1787919}
+    {file: "01-adult-man.png" w: 1254 h: 1254 bytes: 2078168}
+    {file: "02-adult-woman.png" w: 1254 h: 1254 bytes: 2094578}
+    {file: "03-older-man.png" w: 1254 h: 1254 bytes: 2262387}
+    {file: "04-older-woman.png" w: 1254 h: 1254 bytes: 2285037}
+    {file: "05-boy.png" w: 1254 h: 1254 bytes: 2187864}
+    {file: "06-girl.png" w: 1254 h: 1254 bytes: 2198844}
+    {file: "alex-office.png" w: 1024 h: 1536 bytes: 2478949}
+    {file: "sofia-office.png" w: 1024 h: 1536 bytes: 2442998}
+    {file: "stock-garden-petals.jpg" w: 1200 h: 800 bytes: 85858}
+    {file: "alex-stadium.png" w: 1024 h: 1536 bytes: 2568577}
+    {file: "noah-football.png" w: 1024 h: 1536 bytes: 2812722}
+    {file: "alex-noah-lily-stadium-wide.png" w: 1536 h: 1024 bytes: 2455411}
+    {file: "stock-city-bicycles.jpg" w: 800 h: 1200 bytes: 275928}
+    {file: "james-library.png" w: 1024 h: 1536 bytes: 2811902}
+    {file: "stock-hiking-together.jpg" w: 800 h: 1200 bytes: 113490}
+    {file: "noah-school.png" w: 1024 h: 1536 bytes: 2578257}
+    {file: "lily-school.png" w: 1024 h: 1536 bytes: 2869464}
+    {file: "stock-morning-coffee.jpg" w: 1200 h: 803 bytes: 63522}
+    {file: "alex-forest.png" w: 1024 h: 1536 bytes: 3350617}
+    {file: "noah-trail.png" w: 1024 h: 1536 bytes: 3246029}
+    {file: "lily-meadow.png" w: 1024 h: 1536 bytes: 3279896}
+    {file: "grandparents-children-trail.png" w: 1536 h: 1024 bytes: 3216307}
+    {file: "james-garden.png" w: 1024 h: 1536 bytes: 3223215}
+    {file: "rose-garden.png" w: 1024 h: 1536 bytes: 3178667}
+    {file: "james-rose-garden.png" w: 1536 h: 1024 bytes: 3194172}
+    {file: "stock-train-journey.jpg" w: 800 h: 1200 bytes: 176050}
+    {file: "sunlit-woods.jpg" w: 1200 h: 800 bytes: 369997}
+    {file: "woodland.jpg" w: 1200 h: 1981 bytes: 558962}
+    {file: "meadow.jpg" w: 1200 h: 800 bytes: 50670}
+    {file: "stock-sunset-sailboat.jpg" w: 1200 h: 849 bytes: 116529}
+    {file: "forest.jpg" w: 1200 h: 799 bytes: 323861}
+    {file: "stock-elephant-egret.jpg" w: 1200 h: 675 bytes: 179265}
+    {file: "alex-sofia-cafe.png" w: 1536 h: 1024 bytes: 2664925}
+    {file: "stock-koi-pond.jpg" w: 1200 h: 795 bytes: 95265}
+    {file: "sofia-market.png" w: 1024 h: 1536 bytes: 2876663}
+    {file: "rose-market.png" w: 1024 h: 1536 bytes: 2823415}
+    {file: "sofia-rose-lily-market-wide.png" w: 1536 h: 1024 bytes: 2803184}
+    {file: "stock-garden-zinnias.jpg" w: 960 h: 1200 bytes: 165738}
+    {file: "lake.jpg" w: 1200 h: 800 bytes: 226435}
+    {file: "alpine.jpg" w: 1200 h: 800 bytes: 143685}
+    {file: "night-sky.jpg" w: 1200 h: 801 bytes: 215292}
+    {file: "stock-bicycle-benches.jpg" w: 800 h: 1200 bytes: 254210}
+    {file: "mountain.jpg" w: 1200 h: 795 bytes: 173016}
+    {file: "stock-mountain-walk.jpg" w: 960 h: 1200 bytes: 187184}
+    {file: "stock-coffee-camera.jpg" w: 1200 h: 800 bytes: 90930}
+    {file: "stock-railway-yard.jpg" w: 800 h: 1200 bytes: 159272}
+    {file: "stock-butterfly-wildflowers.jpg" w: 1200 h: 800 bytes: 162359}
+    {file: "stock-elephant-waterhole.jpg" w: 900 h: 1200 bytes: 257032}
+    {file: "stock-music-practice.jpg" w: 800 h: 1200 bytes: 112401}
+    {file: "stock-breakfast-table.jpg" w: 1200 h: 801 bytes: 126865}
+    {file: "stock-city-basketball.jpg" w: 1200 h: 800 bytes: 182855}
+    {file: "stock-forest-cascade.jpg" w: 800 h: 1200 bytes: 198946}
+    {file: "stock-summer-fruit.jpg" w: 1200 h: 800 bytes: 186261}
+    {file: "coast.jpg" w: 1200 h: 800 bytes: 118342}
+    {file: "james-harbor.png" w: 1024 h: 1536 bytes: 2777476}
+    {file: "rose-pier.png" w: 1024 h: 1536 bytes: 2385056}
+    {file: "ocean.jpg" w: 1200 h: 800 bytes: 94797}
+    {file: "beach.jpg" w: 1200 h: 798 bytes: 141892}
+    {file: "sofia-beach.png" w: 1024 h: 1536 bytes: 2532640}
+    {file: "lily-beach.png" w: 1024 h: 1536 bytes: 2563680}
+    {file: "family-four-beach-wide.png" w: 1536 h: 1024 bytes: 2940646}
+    {file: "stock-neighborhood-street.jpg" w: 800 h: 1200 bytes: 162667}
+    {file: "stock-bridge-arches.jpg" w: 1200 h: 1034 bytes: 361263}
+    {file: "stock-street-companions.jpg" w: 1200 h: 800 bytes: 116569}
+    {file: "stock-home-guitar.jpg" w: 1200 h: 800 bytes: 86192}
+    {file: "stock-library-shelves.jpg" w: 800 h: 1200 bytes: 134899}
+    {file: "stock-court-lines.jpg" w: 1200 h: 800 bytes: 306087}
+    {file: "desert.jpg" w: 1200 h: 795 bytes: 195490}
+    {file: "stock-mossy-waterfall.jpg" w: 1200 h: 694 bytes: 279479}
+    {file: "stock-fruit-market.jpg" w: 675 h: 1200 bytes: 172512}
+    {file: "stock-downtown-avenue.jpg" w: 800 h: 1200 bytes: 127734}
+    {file: "stock-glass-skybridge.jpg" w: 900 h: 1200 bytes: 257187}
+    {file: "stock-pets-at-play.jpg" w: 1200 h: 800 bytes: 94723}
+]
+
+// The bundle's own glyphs, beside the shared family's.
+fn desk_icon(name){
+    let handle = desk_icons[name]
+    if handle == nil {
+        handle = http_resource(assets + "/icons/" + name + ".svg")
+        desk_icons[name] = handle
+    }
+    handle
+}
+// Held here so going back to a destination finds its pictures still loaded.
+fn desk_thumb(id){
+    let handle = desk_thumbs[id]
+    if handle == nil {
+        if is_own(id) {
+            let p = desk_any_photo(id)
+            if p == nil { return nil }
+            handle = try { binary_resource(fs.read_bytes(data_path(p.stored))) } catch { nil }
+        } else {
+            handle = http_resource(thumb_url(id))
+        }
+        desk_thumbs[id] = handle
+    }
+    handle
+}
+// ---- Rotate: a quarter turn kept in the library's own record (library.json's `turns`, clockwise
+// quarter turns by photo). The file stays as it was, as Photos keeps an original; the grid, the
+// open photo, the tiles and Info show it turned.
+fn desk_turns(id){
+    let turns = optional(store, "turns", nil)
+    if turns == nil { return 0 }
+    let n = optional(turns, id, 0)
+    if n == nil { return 0 }
+    n
+}
+fn desk_rotate(ids, by){
+    if desk_sheet_up || ids.len() == 0 || route == "deleted" { return }
+    if optional(store, "turns", nil) == nil { store.turns = {} }
+    for id in ids { store.turns[id] = (desk_turns(id) + by + 4) % 4 }
+    save_store()
+    ui.list.render()
+    ui.sidebar.render()
+    desk_info_render()
+    if desk_viewing { ui.stage.render() }
+    desk_keys_home()
+}
+// A picture's pixels from its header: PNG, JPEG or WebP, all the files service takes.
+fn desk_be16(b, i){ b[i] * 256 + b[i + 1] }
+fn desk_le16(b, i){ b[i] + b[i + 1] * 256 }
+fn desk_le24(b, i){ b[i] + b[i + 1] * 256 + b[i + 2] * 65536 }
+fn desk_image_size(b){
+    let n = b.len()
+    if n >= 24 && b[0] == 137 && b[1] == 80 && b[2] == 78 && b[3] == 71 {
+        return {w: desk_be16(b, 16) * 65536 + desk_be16(b, 18) h: desk_be16(b, 20) * 65536 + desk_be16(b, 22)}
+    }
+    if n >= 30 && b[0] == 82 && b[1] == 73 && b[2] == 70 && b[3] == 70 && b[8] == 87 && b[9] == 69 && b[10] == 66 && b[11] == 80 && b[12] == 86 && b[13] == 80 && b[14] == 56 {
+        if b[15] == 32 { return {w: desk_le16(b, 26) % 16384 h: desk_le16(b, 28) % 16384} }
+        if b[15] == 76 { return {w: 1 + b[21] + (b[22] % 64) * 256 h: 1 + floor(b[22] / 64) + b[23] * 4 + (b[24] % 16) * 1024} }
+        if b[15] == 88 { return {w: 1 + desk_le24(b, 24) h: 1 + desk_le24(b, 27)} }
+        return nil
+    }
+    if n < 4 || b[0] != 255 || b[1] != 216 { return nil }
+    // JPEG: from marker to marker, to the frame's header.
+    let i = 2
+    let out = nil
+    while out == nil && i >= 0 && i + 9 < n {
+        if b[i] != 255 { i = -1 }
+        else {
+            let m = b[i + 1]
+            if m == 255 { i = i + 1 }
+            else if m == 1 || (m >= 208 && m <= 216) { i = i + 2 }
+            else if m >= 192 && m <= 207 && m != 196 && m != 200 && m != 204 { out = {w: desk_be16(b, i + 7) h: desk_be16(b, i + 5)} }
+            else { i = i + 2 + desk_be16(b, i + 2) }
+        }
+    }
+    out
+}
+fn desk_pixels_of(p){
+    if is_own(p.id) {
+        let w = optional(p, "w", 0)
+        if w == nil || w <= 0 { return nil }
+        return {w: w h: optional(p, "h", 0) bytes: optional(p, "bytes", 0)}
+    }
+    for s in desk_pixels { if s.file == p.file { return s } }
+    nil
+}
+fn desk_bytes_text(n){
+    if n >= 1000000 { return "" + (floor(n / 100000 + 0.5) / 10) + " MB" }
+    if n >= 1000 { return "" + floor(n / 1000 + 0.5) + " KB" }
+    "" + n + " bytes"
+}
+// Info's Size: on its side, a picture is as tall as it was wide.
+fn desk_size_text(p){
+    let s = desk_pixels_of(p)
+    if s == nil { return "" }
+    let w = s.w
+    let h = s.h
+    if desk_turns(p.id) % 2 == 1 {
+        w = s.h
+        h = s.w
+    }
+    let out = "" + w + " × " + h
+    if s.bytes != nil && s.bytes > 0 { out = out + " · " + desk_bytes_text(s.bytes) }
+    out
+}
+// ---- the Library's time scale, on a Mac (Photos' Years, Months and All Photos): Years and Months
+// show a tile a year or a month, its key photo under its name, in the grid's place; a year opens
+// its months, a month opens All Photos at that month. A search shows what it found as a grid.
+fn desk_scaled(){
+    ui_unified && desk_scale != "all" && route == "library" && query == "" && catalog.len() > 0
+}
+// Newest first, as the grid is: each with its photos, and a favorite for its key photo where it has one.
+fn desk_scale_groups(){
+    let out = []
+    for p in catalog {
+        let parts = p.date.split("-")
+        let key = if desk_scale == "years" { parts[0] } else { parts[0] + "-" + parts[1] }
+        if out.len() == 0 || out[out.len() - 1].key != key {
+            out.push({key: key title: if desk_scale == "years" { parts[0] } else { month_title(p.date) } ids: [] cover: p.id})
+        }
+        let g = out[out.len() - 1]
+        g.ids.push(p.id)
+        if is_favorite(p.id) && !is_favorite(g.cover) { g.cover = p.id }
+    }
+    out
+}
+fn desk_count_text(n){
+    if n == 1 { return "1 photo" }
+    "" + n + " photos"
+}
+// A month's places, as Photos names them under the month.
+fn desk_places_text(ids){
+    let names = []
+    for id in ids {
+        let p = photo_of(id)
+        if p != nil && p.location != "" && !has_item(names, p.location) { names.push(p.location) }
+    }
+    if names.len() == 0 { return desk_count_text(ids.len()) }
+    if names.len() == 1 { return names[0] }
+    if names.len() == 2 { return names[0] + " and " + names[1] }
+    names[0] + ", " + names[1] + " and " + (names.len() - 2) + " more"
+}
+// The places line as a tile `room` points wide holds it whole: the two first places and how many
+// more, else the first and how many more, else how many places (about 6.3 points a letter at the
+// tile's 11 points). Photos shortens its line; it never cuts a word.
+fn desk_places_fit(ids, room){
+    let most = floor(room / 6.3)
+    let full = desk_places_text(ids)
+    if full.len() <= most { return full }
+    let names = []
+    for id in ids {
+        let p = photo_of(id)
+        if p != nil && p.location != "" && !has_item(names, p.location) { names.push(p.location) }
+    }
+    if names.len() < 2 { return desk_count_text(ids.len()) }
+    let shorter = names[0] + " and " + (names.len() - 1) + " more"
+    if shorter.len() <= most { return shorter }
+    "" + names.len() + " places"
+}
+// Years: two tiles across a window's grid, three in a wide one; Months: the memories' cards.
+fn desk_tile_n(){
+    if desk_scale == "months" { return desk_cards }
+    let n = floor((desk_width - 28) / 360)
+    if n < 1 { n = 1 }
+    n
+}
+fn desk_tile_w(){
+    let n = desk_tile_n()
+    floor((desk_width - 40 - 12 * (n - 1)) / n)
+}
+fn desk_tile_h(){ floor(desk_tile_w() * 0.62) }
+// A tile's key photo, sharp at a tile's size: the thumbnail, then the photo itself over it (an
+// imported photo's own file is both).
+fn desk_full(id){
+    let p = photo_of(id)
+    if is_own(id) || p == nil { return desk_thumb(id) }
+    let handle = desk_fulls[id]
+    if handle == nil {
+        handle = http_resource(full_url(p))
+        desk_fulls[id] = handle
+    }
+    handle
+}
+fn desk_set_scale(scale){
+    if !ui_unified || desk_sheet_up || route != "library" || query != "" || desk_viewing || catalog.len() == 0 { return }
+    if scale == desk_scale { return }
+    desk_name_end()
+    desk_scale = scale
+    desk_scale_to = ""
+    desk_selection = []
+    desk_anchor = ""
+    desk_cursor = ""
+    ui.subtitle.set_text(desk_subtitle())
+    desk_tools()
+    ui.scale_tools.render()
+    ui.fav_tools.render()
+    desk_info_render()
+    // Each scale opens at its top, in a scroller of its own.
+    ui.list_host.render()
+    ui.zoom.focus()
+    desk_remember()
+}
+fn desk_open_year(key){
+    if desk_sheet_up { return }
+    desk_set_scale("months")
+    desk_scale_to = key
+    start_timeout(0.05, || desk_scale_scroll())
+}
+fn desk_open_month(key){
+    if desk_sheet_up { return }
+    desk_set_scale("all")
+    desk_scale_to = key
+    start_timeout(0.05, || desk_scale_scroll())
+}
+fn desk_scale_scroll(){
+    let to = desk_scale_to
+    desk_scale_to = ""
+    if to != "" { ui.list.set_scroll_y(desk_scale_top(to)) }
+}
+// Where a tile opened, in the list's own points (see desk_content and desk_reveal): the row of the
+// year's first month, or the month's heading; no further than the list goes.
+fn desk_scale_top(to){
+    let seen = desk_height - 53
+    let at = -1
+    let end = 0
+    if desk_scale == "months" {
+        let groups = desk_scale_groups()
+        let n = desk_tile_n()
+        for i g in groups { if at < 0 && g.key.search(to) == 0 { at = floor(i / n) * (desk_tile_h() + 12) } }
+        end = 16 + floor((groups.len() + n - 1) / n) * (desk_tile_h() + 12) + 12
+    } else {
+        let title = month_title(to + "-01")
+        let top = 2
+        for s in library_sections(route_ids()) {
+            if at < 0 && s.title == title { at = top }
+            top = top + 34 + grid_rows_of(s.ids, columns).len() * (desk_cell + 2)
+        }
+        end = top
+    }
+    if at < 0 { return 0 }
+    if at > end - seen { at = end - seen }
+    if at < 0 { at = 0 }
+    at
+}
+fn desk_cell_for(n){ floor((desk_width - 2 - 2 * n) / n) }
+fn desk_can_zoom(n){
+    if n < 1 { return false }
+    let cell = desk_cell_for(n)
+    cell >= 56 && cell <= 240
+}
+// Whole points, 2 between and around the cells; true when anything moved.
+fn desk_fit(){
+    let n = round((desk_width - 2) / (desk_zoom + 2))
+    if n < 1 { n = 1 }
+    let cell = desk_cell_for(n)
+    let cards = floor((desk_width - 28) / 252)
+    if cards < 2 && desk_width >= 440 { cards = 2 }
+    if cards < 1 { cards = 1 }
+    let card = floor((desk_width - 40 - 12 * (cards - 1)) / cards)
+    let moved = n != columns || cell != desk_cell || cards != desk_cards || card != desk_card
+    columns = n
+    desk_cell = cell
+    desk_cards = cards
+    desk_card = card
+    moved
+}
+// The toolbar's optional tools. A narrow window keeps the title and the actions.
+fn desk_tools(){
+    let grid = route != "memories" && route != "editor" && route != "deleted"
+    // The toolbar runs over the inspector too: its room is the grid's and the inspector's.
+    let bar = desk_width + desk_info_width()
+    let any = route_ids().len() > 0
+    let room = 440
+    if route == "memory" { room = 300 }
+    if route == "editor" { room = 640 }
+    // Years and Months have tiles, not a grid to zoom.
+    let scaled = desk_scaled()
+    let zoom = route != "memories" && any && bar >= room && !scaled
+    let zoom_more = ui_unified && route != "memories" && route != "editor" && any && !zoom && !scaled
+        && (desk_can_zoom(columns - 1) || desk_can_zoom(columns + 1))
+    // A Mac keeps Import in the File menu and makes albums from the sidebar, so its
+    // toolbar holds tools, not words. Another desktop has no menu bar: they stay here.
+    let words = !ui_unified && route == "library"
+    let import = words && bar >= 640
+    let create = words && bar >= 760
+    // Recently Deleted: what's picked comes back, or goes for good.
+    let trash = route == "deleted" && any
+    let recover = trash && desk_selection.len() > 0
+    // The Library's time scale, beside the title while the title and the search keep their room
+    // (measured as All Photos lays the toolbar out, so it stays put across the three), else behind
+    // the toolbar's ».
+    let scale_base = ui_unified && route == "library" && query == "" && any
+    let zoom_all = bar >= room
+    let more_all = !zoom_all && (desk_can_zoom(columns - 1) || desk_can_zoom(columns + 1))
+    let scale = scale_base && bar - desk_bar_used(grid, zoom_all, false, false, more_all, false, false) - 229 >= 240
+    desk_scale_in_more = scale_base && !scale
+    let more = (words && bar < 760) || zoom_more || desk_scale_in_more
+    ui.scale_bar.set_visible(scale)
+    ui.zoom_tools.set_visible(zoom)
+    ui.import_tool.set_visible(import)
+    ui.create.set_visible(create)
+    ui.more_tool.set_visible(more)
+    ui.memory_tool.set_visible(route == "memories")
+    ui.recover_tool.set_visible(recover)
+    ui.purge_tool.set_visible(trash)
+    let purge = if desk_selection.len() > 0 { "Delete…" } else { "Delete All…" }
+    ui.purge_tool.set_text(purge)
+    ui.fav_tools.set_visible(grid)
+    ui.info_tool.set_visible(grid && !desk_info_open && any)
+    ui.info_off.set_visible(grid && !desk_info_open && !any)
+    ui.info_tool_on.set_visible(grid && desk_info_open)
+    ui.share_tool.set_visible(grid && desk_selection.len() > 0)
+    ui.share_off.set_visible(grid && desk_selection.len() == 0)
+    ui.info_pane.set_visible(grid && desk_info_open)
+    ui.viewer_info_pane.set_visible(desk_info_open)
+    ui.viewer_info_tool.set_visible(!desk_info_open)
+    ui.viewer_info_tool_on.set_visible(desk_info_open)
+    // The title has the room first: the search field gives up width (down to 110), then
+    // folds into its magnifier. A search in progress, or one the person opened, stays a field.
+    let used = desk_bar_used(grid, zoom, import, create, more, recover, trash) + if scale { 229 } else { 0 }
+    let fold = bar - used < 240
+    let field = route != "editor" && (!fold || query != "" || desk_search_open)
+    ui.searchbar.set_visible(field)
+    ui.search_tool.set_visible(route != "editor" && !field)
+    ui.search_clear.set_visible(query != "")
+}
+// What the toolbar's tools take beside the title and the search: their widths, the
+// gaps before them and the search's, and the toolbar's padding.
+fn desk_bar_used(grid, zoom, import, create, more, recover, trash){
+    let used = 22 + 6
+    if zoom { used = used + 66 }
+    if grid { used = used + 108 }
+    if import { used = used + 73 }
+    if create { used = used + 109 }
+    if more { used = used + 31 }
+    if route == "album" && !ui_unified { used = used + 103 }
+    if route == "memories" { used = used + 158 }
+    if route == "memory" { used = used + 124 }
+    if recover { used = used + 75 }
+    if trash { used = used + 91 }
+    used
+}
+// The inspector takes its width from the grid wherever it shows.
+fn desk_info_width(){
+    if desk_info_open && route != "memories" && route != "editor" && route != "deleted" { return 261 }
+    0
+}
+// A Mac's sidebar: hidden with its button, and folded away first when the window
+// narrows past 640 points, as a Mac's sidebar gives way; asked for there, it stays
+// beside the grid. Another desktop keeps it.
+fn desk_side_shown(){
+    if !ui_unified { return true }
+    if desk_window < 640 { return desk_side_open }
+    desk_side_wanted
+}
+fn desk_side_w(){ if desk_side_shown() { 209 } else { 0 } }
+fn desk_side_layout(){
+    let shown = desk_side_shown()
+    ui.side_col.set_visible(shown)
+    ui.lights_gap.set_visible(ui_unified && !shown)
+    ui.viewer_lights_gap.set_visible(ui_unified && !shown)
+}
+fn desk_toggle_side(){
+    if !ui_unified || desk_sheet_up { return }
+    if desk_window < 640 { desk_side_open = !desk_side_open } else { desk_side_wanted = !desk_side_wanted }
+    desk_side_layout()
+    desk_resize(desk_window, desk_height)
+    desk_remember()
+}
+fn desk_resize(width, height){
+    // Across 640 points the sidebar folds away, or comes back as it was before.
+    if (width < 640) != (desk_window < 640) {
+        if width >= 640 && desk_side_open { desk_side_wanted = true }
+        desk_side_open = false
+        desk_window = width
+        desk_side_layout()
+    }
+    desk_window = width
+    let w = width - desk_side_w() - desk_info_width()
+    let taller = height != desk_height
+    desk_height = height
+    if w == desk_width && !taller { return }
+    desk_width = w
+    if desk_shown == "" {
+        desk_fit()
+        return
+    }
+    desk_tools()
+    let moved = desk_fit()
+    // Not the time scale: drawn again from a resize, it came back at a stale place.
+    if moved { ui.zoom_tools.render() }
+    // An empty state sits in the middle of the window; a year's or a month's tiles take its width.
+    if moved || route_ids().len() == 0 || desk_scaled() { ui.list.render() }
+    desk_remember()
+}
+fn desk_zoom_to(n){
+    if !desk_can_zoom(n) { return }
+    desk_zoom = desk_cell_for(n)
+    desk_fit()
+    ui.zoom_tools.render()
+    // The time scale is a batch of its own: drawn again with the zoom tools, it stays in
+    // its place instead of where an earlier pass of the toolbar had it.
+    ui.scale_tools.render()
+    ui.list.render()
+    desk_remember()
+}
+fn desk_pinch(scale, phase){
+    if desk_scaled() { return }
+    if phase == 0 { pinch_start = columns; return }
+    let n = floor(pinch_start / scale + 0.5)
+    if n != columns { desk_zoom_to(n) }
+}
+fn desk_key(){
+    if route == "memory" { return "memory/" + route_arg.title }
+    route + "/" + route_arg
+}
+fn desk_sync(){
+    // A new state ends a name being typed in the sidebar; what was typed is the album's.
+    desk_naming = 0
+    // A selection belongs to what's showing: a photo that leaves the grid (one
+    // unfavorited in Favorites, one taken out of its album) leaves it too.
+    if desk_selection.len() > 0 {
+        let showing = route_ids()
+        desk_selection.retain(|s| has_item(showing, s))
+    }
+    desk_selection_key = desk_key()
+    // Collections' albums, people and favorites live in the sidebar here, so
+    // what a phone calls home is the Library.
+    if route == "collections" { route = "library"; route_arg = "" }
+    // A Mac has no chooser: photos join an album with Add To. One another desktop's
+    // style left up comes back as its album.
+    if ui_unified && route == "editor" { desk_leave_chooser() }
+    // A selection belongs to the destination it was made in.
+    if desk_shown != "" && desk_key() != desk_shown {
+        desk_selection = []
+        desk_anchor = ""
+        desk_cursor = ""
+    }
+    let w = desk_window - desk_side_w() - desk_info_width()
+    if w != desk_width {
+        desk_width = w
+        desk_fit()
+    }
+    ui.title.set_text(desk_title())
+    ui.subtitle.set_text(desk_subtitle())
+    desk_side_layout()
+    desk_tools()
+    ui.fav_tools.render()
+    ui.scale_tools.render()
+    desk_info_render()
+    ui.edit.set_visible(route == "album" && !ui_unified)
+    ui.play_memory.set_visible(route == "memory")
+    ui.editor_bar.set_visible(route == "editor" && editor_id == 0)
+    ui.editor_tools.set_visible(route == "editor")
+    ui.confirm_box.set_visible(false)
+    ui.photo_sheet.set_visible(false)
+    ui.rename_sheet.set_visible(false)
+    if desk_sheet_up { desk_sheet_down() }
+    ui.message.set_text(message)
+    ui.message_bar.set_visible(message != "")
+    desk_alert_show()
+    ui.sidebar.render()
+    ui.zoom_tools.render()
+    desk_memory_sync()
+    if route == "editor" {
+        if desk_shown == "" { ui.album_name.set_text(desk_album_name) }
+        desk_save_state()
+    }
+    if desk_shown == "" {
+        // The first sync: a run after an appearance change puts back what was up.
+        desk_shown = desk_key()
+        ui.side_tool.render()
+        ui.search.set_text(query)
+        // A name being typed ended with the run that drew its field (what was typed is the
+        // album's): the keys go back to the grid.
+        if desk_was_naming && !desk_viewing { ui.zoom.focus() }
+        desk_was_naming = false
+        if desk_viewing {
+            sync_viewer()
+            ui.main.set_visible(false)
+            ui.viewer.set_visible(true)
+            ui.viewer_keys.focus()
+            return
+        }
+    }
+    desk_viewing = false
+    desk_remember()
+}
+fn desk_leave_chooser(){
+    if editor_id > 0 {
+        route = "album"
+        route_arg = editor_id
+        return
+    }
+    route = "library"
+    route_arg = ""
+}
+// A new destination gets a new scroller, so it opens at its top; the same one
+// keeps its place.
+fn desk_show_list(){
+    if desk_key() != desk_shown {
+        desk_shown = desk_key()
+        ui.list_host.render()
+    } else {
+        ui.list.render()
+    }
+}
+// Search looks through the whole library, from wherever the person is.
+fn desk_search(text){
+    desk_name_end()
+    query = ("" + text).trim()
+    desk_selection = []
+    desk_anchor = ""
+    desk_cursor = ""
+    if query != "" && route != "library" {
+        message = ""
+        go_to("library", "")
+        return
+    }
+    desk_tools()
+    ui.list_host.render()
+    desk_selection_sync()
+}
+// An appearance change runs this whole body again, and every `let` with it; `mod`
+// outlives the run, so the place the person was at comes back from there.
+fn desk_remember(){
+    mod.photos_desk = {route: route route_arg: route_arg query: query zoom: desk_zoom width: desk_width height: desk_height
+        editor_id: editor_id editor_selected: editor_selected album_name: desk_album_name memory_prompt: memory_prompt memory_status: memory_status
+        viewing: desk_viewing viewer_ids: viewer_ids viewer_index: viewer_index
+        window: desk_window selection: desk_selection anchor: desk_anchor cursor: desk_cursor info: desk_info_open
+        side_wanted: desk_side_wanted side_open: desk_side_open
+        alert: desk_alert_says naming: desk_naming != 0 scale: desk_scale}
+}
+fn desk_recall(){
+    let v = optional(mod, "photos_desk", nil)
+    if v == nil { return }
+    route = v.route
+    route_arg = v.route_arg
+    query = v.query
+    desk_zoom = v.zoom
+    desk_width = v.width
+    desk_height = v.height
+    editor_id = v.editor_id
+    editor_selected = v.editor_selected
+    desk_album_name = v.album_name
+    memory_prompt = v.memory_prompt
+    memory_status = v.memory_status
+    desk_viewing = v.viewing
+    viewer_ids = v.viewer_ids
+    viewer_index = v.viewer_index
+    desk_window = v.window
+    desk_side_wanted = optional(v, "side_wanted", true)
+    desk_side_open = optional(v, "side_open", false)
+    desk_selection = v.selection
+    desk_anchor = v.anchor
+    desk_cursor = v.cursor
+    desk_info_open = v.info
+    desk_alert_says = v.alert
+    desk_was_naming = optional(v, "naming", false)
+    desk_scale = optional(v, "scale", "all")
+    load_store()
+    desk_store_loaded()
+    load_memories()
+    people = build_people()
+}
+fn desk_go(to, arg){
+    message = ""
+    desk_name_end()
+    desk_search_open = false
+    if query != "" {
+        query = ""
+        ui.search.set_text("")
+    }
+    // The sidebar stays beside an open photo: a place chosen there closes it.
+    if desk_viewing { desk_leave_viewer() }
+    go_to(to, arg)
+}
+fn desk_leave_viewer(){
+    stop_slides()
+    desk_viewing = false
+    ui.viewer.set_visible(false)
+    ui.main.set_visible(true)
+    ui.zoom.focus()
+}
+// Where the keys go back to: the photo while it's open, else the grid.
+fn desk_keys_home(){
+    if desk_viewing { ui.viewer_keys.focus() } else { ui.zoom.focus() }
+}
+fn desk_viewer_sync(){
+    // The photo has the keys: as it opens, and after a press on its toolbar. Not while a Mac's
+    // slideshow is over it or opening (below), which asks for them itself: of two asks in one
+    // turn the photo's lands last, as its view hears an event after the show's layer does.
+    if desk_naming == 0 && !(ui_unified && (desk_show || playing)) { ui.viewer_keys.focus() }
+    desk_viewing = true
+    desk_remember()
+    let favorite = false
+    if viewer_ids.len() > 0 {
+        favorite = is_favorite(viewer_ids[viewer_index])
+        let p = photo_of(viewer_ids[viewer_index])
+        if p != nil && p.location == "" { ui.viewer_meta.set_text(display_date(p.date)) }
+    }
+    ui.favorite_off.set_visible(!favorite)
+    ui.favorite_on.set_visible(favorite)
+    ui.play_button.set_visible(!playing)
+    ui.pause_button.set_visible(playing)
+    // A Mac steps with the arrow keys; another desktop keeps its pager as well.
+    ui.viewer_pager.set_visible(!ui_unified)
+    desk_info_render()
+    // A Mac plays a slideshow over the whole screen, as Photos does, not in the viewer.
+    if ui_unified {
+        if playing && !desk_show { desk_show_open() }
+        else if desk_show { desk_show_sync() }
+    }
+}
+// ---- the slideshow on a Mac: the whole screen, black, the photo alone, and its own controls
+// at the bottom (‹, Play or Pause, ›, where it is, and Exit), which step away while it plays.
+// Space pauses and plays, the arrows step, Esc (the shell's key in full screen) ends it.
+fn desk_show_open(){
+    desk_show = true
+    desk_show_was_playing = !playing
+    ui.show_layer.set_visible(true)
+    // Nothing of the window under the show takes a press: the viewer's own tap would pause it,
+    // a row's press would open what is under the photo.
+    ui.desk_body.set_visible(false)
+    ui.side_tool.set_visible(false)
+    desk_show_sync()
+    // The Play press asks the shell for the whole screen (window.fullscreen), within the seconds
+    // a press counts for, as Quick Deck's Present does. Where it can't, the show fills the window.
+    host.request("window.fullscreen", {on: true}, fn(r){})
+}
+fn desk_show_sync(){
+    ui.show_play.set_visible(!playing)
+    ui.show_pause.set_visible(playing)
+    if viewer_ids.len() > 0 { ui.show_count.set_text("" + (viewer_index + 1) + " of " + viewer_ids.len()) }
+    ui.show_stage.render()
+    if playing != desk_show_was_playing {
+        desk_show_was_playing = playing
+        desk_show_bar_on()
+    }
+    ui.show_keys.focus()
+}
+// The controls show, and while the show plays they step away three seconds later, as a Mac's
+// slideshow's do; a click on the photo brings them back. Paused, they stay.
+fn desk_show_bar_on(){
+    if !desk_show { return }
+    ui.show_bar.set_visible(true)
+    desk_show_bar_ticket = desk_show_bar_ticket + 1
+    let ticket = desk_show_bar_ticket
+    if playing {
+        start_timeout(3, || { if ticket == desk_show_bar_ticket && desk_show && playing { ui.show_bar.set_visible(false) } })
+    }
+}
+// A step keeps the show going: the next photo comes its three seconds after this one.
+fn desk_show_step(by){
+    if playing {
+        if slide_timer != nil { stop_timer(slide_timer) }
+        slide_timer = start_interval(3, || advance_slides())
+    }
+    step_photo(by)
+}
+fn desk_show_key(key, cmd){
+    if cmd { return }
+    if key == "Space" { toggle_slides() }
+    else if key == "ArrowRight" { desk_show_step(1) }
+    else if key == "ArrowLeft" { desk_show_step(-1) }
+    else if key == "Escape" { desk_show_close() }
+}
+// Exit, Esc, or the full screen ending another way: back in the viewer, on the photo it reached.
+fn desk_show_close(){
+    if !desk_show { return }
+    desk_show = false
+    desk_show_bar_ticket = desk_show_bar_ticket + 1
+    stop_slides()
+    ui.desk_body.set_visible(true)
+    ui.side_tool.set_visible(true)
+    ui.show_layer.set_visible(false)
+    if desk_show_full {
+        desk_show_full = false
+        host.request("window.fullscreen", {on: false}, fn(r){})
+    }
+    if desk_viewing && desk_naming == 0 { ui.viewer_keys.focus() }
+}
+// The shell's word that the window's full screen began or ended (window.fullscreen): Esc, ⌘F or
+// another window ends the slideshow with it; one that begins after the show ended goes back.
+fn on_app_fullscreen(on){
+    desk_show_full = on
+    if on && !desk_show {
+        desk_show_full = false
+        host.request("window.fullscreen", {on: false}, fn(r){})
+    } else if !on && desk_show {
+        desk_show_close()
+    }
+}
+// Back in the grid, the photo the person was looking at is the one picked.
+fn desk_close_viewer(){
+    if desk_show { desk_show_close() }
+    if viewer_ids.len() > 0 {
+        let id = viewer_ids[viewer_index]
+        if has_item(route_ids(), id) {
+            desk_selection = [id]
+            desk_anchor = id
+            desk_cursor = id
+        }
+    }
+    close_viewer()
+    if desk_cursor != "" { desk_reveal(desk_cursor) }
+    ui.zoom.focus()
+}
+fn desk_clear_search(){
+    ui.search.set_text("")
+    desk_search("")
+}
+fn desk_search_escape(){
+    desk_search_open = false
+    desk_clear_search()
+    ui.zoom.focus()
+}
+// Find…, and the magnifier a short toolbar keeps: the field opens, ready for words.
+fn desk_find(){
+    desk_name_end()
+    if desk_viewing { desk_close_viewer() }
+    desk_search_open = true
+    desk_tools()
+    ui.search.focus()
+}
+// The field folds back into its magnifier once the person is elsewhere with nothing typed.
+fn desk_search_fold(){
+    if !desk_search_open || query != "" { return }
+    desk_search_open = false
+    desk_tools()
+}
+// The title and the note in a Mac's words: a window's title takes Title Case.
+fn desk_title(){
+    if route == "editor" {
+        if editor_id > 0 { return "Add Photos" }
+        return "New Album"
+    }
+    title_text()
+}
+fn desk_subtitle(){
+    if route == "memories" { return "" + memories.len() + " memories" }
+    if desk_selection.len() > 0 && route != "editor" { return "" + desk_selection.len() + " of " + route_ids().len() + " selected" }
+    subtitle_text()
+}
+// Save is the default button: dimmed until the album has a name.
+fn desk_save_state(){
+    let named = desk_album_name.trim() != ""
+    ui.editor_save.set_visible(named)
+    ui.editor_save_off.set_visible(!named)
+}
+fn desk_named(text){
+    desk_album_name = "" + text
+    desk_save_state()
+    desk_remember()
+}
+// A press on a sheet still reaches the GestureViews below it (they capture over
+// what's above them, for their scroll views' sake): a card asks first. The release
+// that closes a sheet reaches them too, so the sheet stays "up" a moment longer.
+fn desk_sheet_down(){
+    if desk_alert_says == nil { desk_sheet_shown = false }
+    // An alert can come up inside that moment, when what went wrong is known at once.
+    start_timeout(0.15, || { if desk_alert_says == nil { desk_sheet_up = false } })
+    // The keyboard comes back to what the sheet covered.
+    if desk_viewing { ui.viewer_keys.focus() } else { ui.zoom.focus() }
+}
+fn desk_open_memory(at){
+    if !desk_sheet_up { open_memory(at) }
+}
+fn desk_toggle(id){
+    if !desk_sheet_up { toggle_select(id) }
+}
+// ---- picking photos
+// What shows the selection, wherever it's shown.
+fn desk_selection_sync(){
+    ui.subtitle.set_text(desk_subtitle())
+    desk_tools()
+    ui.fav_tools.render()
+    desk_info_render()
+    desk_remember()
+}
+fn desk_pick(ids, id){
+    desk_selection = ids
+    desk_anchor = id
+    desk_cursor = id
+    ui.list.render()
+    desk_selection_sync()
+}
+fn desk_run(ids, from, to){
+    let a = index_of(ids, from)
+    let b = index_of(ids, to)
+    if a > b {
+        let t = a
+        a = b
+        b = t
+    }
+    let out = []
+    for i id in ids { if i >= a && i <= b { out.push(id) } }
+    out
+}
+// A click picks a photo, Command adds or takes away one, Shift a run from the last
+// click; a second click on the same photo opens it. The grid takes the keyboard.
+fn desk_click(ids, id, cmd, shift){
+    if desk_sheet_up { return }
+    desk_name_end()
+    desk_search_fold()
+    let now = time_now()
+    let again = id == desk_tap_id && now - desk_tap_at < 0.45 && !cmd && !shift
+    desk_tap_id = id
+    desk_tap_at = now
+    if again {
+        desk_tap_id = ""
+        // A deleted photo is only to recover or let go: it doesn't open.
+        if route != "deleted" { open_photo(ids, index_of(ids, id)) }
+        return
+    }
+    if message != "" { desk_say("") }
+    ui.zoom.focus()
+    if shift && has_item(ids, desk_anchor) {
+        desk_selection = desk_run(ids, desk_anchor, id)
+        desk_cursor = id
+        ui.list.render()
+        desk_selection_sync()
+    } else if cmd {
+        if has_item(desk_selection, id) { desk_selection.retain(|s| s != id) } else { desk_selection.push(id) }
+        desk_pick(desk_selection, id)
+    } else {
+        desk_pick([id], id)
+    }
+}
+fn desk_clear_selection(){
+    if desk_selection.len() == 0 { return }
+    desk_selection = []
+    ui.list.render()
+    desk_selection_sync()
+}
+fn desk_grid_tap(){
+    if desk_sheet_up { return }
+    desk_name_end()
+    desk_search_fold()
+    desk_clear_selection()
+}
+// The rows as the grid draws them: month headings start a new row.
+fn desk_rows_of(ids){
+    let out = []
+    for section in library_sections(ids) {
+        for row in grid_rows_of(section.ids, columns) { out.push(row) }
+    }
+    out
+}
+fn desk_reveal(id){
+    if desk_scaled() { return }
+    let ids = route_ids()
+    if !has_item(ids, id) { return }
+    let top = 2
+    let found = false
+    for section in library_sections(ids) {
+        if found { break }
+        if section.title != "" { top = top + 34 }
+        for row in grid_rows_of(section.ids, columns) {
+            if has_item(row, id) {
+                found = true
+                break
+            }
+            top = top + desk_cell + 2
+        }
+    }
+    let seen = desk_height - if ui_unified { 53 } else { 41 }
+    let at = ui.list.scroll_y()
+    if top < at { ui.list.set_scroll_y(max(top - 8, 0)) }
+    else if top + desk_cell > at + seen { ui.list.set_scroll_y(top + desk_cell + 8 - seen) }
+}
+fn desk_move(dx, dy, shift){
+    let ids = route_ids()
+    if ids.len() == 0 { return }
+    let next = desk_cursor
+    if !has_item(ids, desk_cursor) {
+        next = ids[0]
+    } else if dx != 0 {
+        let i = index_of(ids, desk_cursor) + dx
+        if i < 0 || i >= ids.len() { return }
+        next = ids[i]
+    } else {
+        let rows = desk_rows_of(ids)
+        for r row in rows {
+            if has_item(row, desk_cursor) {
+                let to = r + dy
+                if to < 0 || to >= rows.len() { return }
+                let c = index_of(row, desk_cursor)
+                if c >= rows[to].len() { c = rows[to].len() - 1 }
+                next = rows[to][c]
+                break
+            }
+        }
+    }
+    if shift && has_item(ids, desk_anchor) {
+        desk_selection = desk_run(ids, desk_anchor, next)
+        desk_cursor = next
+        ui.list.render()
+        desk_selection_sync()
+    } else {
+        desk_pick([next], next)
+    }
+    desk_reveal(next)
+}
+fn desk_more_rows(){
+    if ui_unified {
+        let rows = []
+        if desk_scale_in_more {
+            rows.push("Years")
+            rows.push("Months")
+            rows.push("All Photos")
+        }
+        if !desk_scaled() && route != "memories" && route != "editor" {
+            if rows.len() > 0 && (desk_can_zoom(columns - 1) || desk_can_zoom(columns + 1)) { rows.push("-") }
+            if desk_can_zoom(columns - 1) { rows.push("Zoom In") }
+            if desk_can_zoom(columns + 1) { rows.push("Zoom Out") }
+        }
+        return rows
+    }
+    if desk_width + desk_info_width() < 640 { return ["Import…", "New Album"] }
+    ["New Album"]
+}
+fn desk_more_chosen(title){
+    if title == "Zoom In" { desk_zoom_to(columns - 1) }
+    else if title == "Zoom Out" { desk_zoom_to(columns + 1) }
+    else if title == "Years" { desk_set_scale("years") }
+    else if title == "Months" { desk_set_scale("months") }
+    else if title == "All Photos" { desk_set_scale("all") }
+    else if title == "Import…" { desk_import() } else { desk_new_album_with([]) }
+}
+fn desk_close_sheets(){
+    desk_alert_close()
+    ui.confirm_box.set_visible(false)
+    ui.memory_sheet.set_visible(false)
+    ui.photo_sheet.set_visible(false)
+    ui.rename_sheet.set_visible(false)
+    desk_sheet_down()
+}
+fn desk_grid_key(key, cmd, shift){
+    if desk_sheet_up {
+        if key == "Escape" { desk_close_sheets() }
+        return
+    }
+    if route == "memories" || route == "editor" || desk_scaled() { return }
+    if cmd {
+        if key == "KeyA" {
+            let all = []
+            for id in route_ids() { all.push(id) }
+            desk_selection = all
+            ui.list.render()
+            desk_selection_sync()
+        }
+        else if key == "KeyI" { if route != "deleted" { desk_toggle_info() } }
+        else if key == "Backspace" || key == "Delete" { desk_ask_delete_photos(desk_selection) }
+        return
+    }
+    if key == "ArrowRight" { desk_move(1, 0, shift) }
+    else if key == "ArrowLeft" { desk_move(-1, 0, shift) }
+    else if key == "ArrowDown" { desk_move(0, 1, shift) }
+    else if key == "ArrowUp" { desk_move(0, -1, shift) }
+    else if key == "Escape" { desk_clear_selection() }
+    else if key == "ReturnKey" || key == "Space" {
+        let ids = route_ids()
+        if route != "deleted" && has_item(ids, desk_cursor) { open_photo(ids, index_of(ids, desk_cursor)) }
+    }
+    else if key == "Backspace" || key == "Delete" {
+        // In an album, Delete takes a photo out of it; Command-Delete deletes it.
+        if route == "album" { desk_remove_from_album(desk_selection) } else { desk_ask_delete_photos(desk_selection) }
+    }
+}
+fn desk_viewer_key(key, cmd){
+    if desk_sheet_up {
+        if key == "Escape" { desk_close_sheets() }
+        return
+    }
+    // A key that still reaches the photo under a slideshow is the show's: its Esc ends the show
+    // and leaves the photo open.
+    if desk_show { desk_show_key(key, cmd); return }
+    if cmd {
+        if key == "KeyI" { desk_toggle_info() }
+        return
+    }
+    if key == "ArrowRight" { stop_slides(); step_photo(1) }
+    else if key == "ArrowLeft" { stop_slides(); step_photo(-1) }
+    else if key == "Escape" { desk_close_viewer() }
+    else if key == "Space" { toggle_slides() }
+    else if key == "Backspace" || key == "Delete" { desk_ask_delete_photos(desk_targets()) }
+}
+// A Mac's menu bar asks for these while Photos is in front.
+fn app_menus(){
+    let free = !desk_sheet_shown && route != "memories" && route != "editor" && !desk_show
+    let ids = desk_targets()
+    let some = free && ids.len() > 0
+    let n = ids.len()
+    // What's in Recently Deleted can only come back or go for good.
+    let live = route != "deleted"
+    let scaled = desk_scaled()
+    let scale_on = ui_unified && free && route == "library" && query == "" && !desk_viewing && catalog.len() > 0
+    let rows = [
+        {menu: "File" title: "Import…" key: "shift+cmd+I" command: "import" enabled: !desk_sheet_shown && !desk_show}
+        {menu: "File" title: "New Album" key: "cmd+N" command: "album" enabled: !desk_sheet_shown && !desk_show}
+        {menu: "File" title: "New Album with Selection" command: "album_selection" enabled: some && live}
+        {menu: "File"}
+        {menu: "File" title: if n > 1 { "Export " + n + " Photos…" } else { "Export…" } key: "shift+cmd+E" command: "export" enabled: some && live}
+        {menu: "Edit" title: "Select All" key: "cmd+A" command: "all" enabled: free && !desk_viewing && !scaled}
+        {menu: "Edit" title: "Find…" key: "cmd+F" command: "find" enabled: free}
+        {menu: "View" title: "Years" key: "cmd+1" command: "scale_years" checked: scale_on && desk_scale == "years" enabled: scale_on}
+        {menu: "View" title: "Months" key: "cmd+2" command: "scale_months" checked: scale_on && desk_scale == "months" enabled: scale_on}
+        {menu: "View" title: "All Photos" key: "cmd+3" command: "scale_all" checked: scale_on && desk_scale == "all" enabled: scale_on}
+        {menu: "View"}
+        {menu: "View" title: if desk_info_open { "Hide Info" } else { "Show Info" } key: "cmd+I" command: "info" enabled: free && live}
+        {menu: "View"}
+        {menu: "View" title: if desk_side_shown() { "Hide Sidebar" } else { "Show Sidebar" } key: "ctrl+cmd+S" command: "sidebar" enabled: ui_unified && !desk_sheet_shown && !desk_show}
+        {menu: "View"}
+        {menu: "View" title: "Zoom In" key: "cmd+=" command: "zoom_in" enabled: free && !desk_viewing && !scaled && desk_can_zoom(columns - 1)}
+        {menu: "View" title: "Zoom Out" key: "cmd+-" command: "zoom_out" enabled: free && !desk_viewing && !scaled && desk_can_zoom(columns + 1)}
+        {menu: "Image" title: if some && desk_all_favorite(ids) { "Unfavorite" } else { "Favorite" } command: "favorite" enabled: some && live}
+        // Photos' keys: Command-R turns a photo counterclockwise, as its toolbar button does.
+        {menu: "Image" title: "Rotate Counterclockwise" key: "cmd+R" command: "rotate_left" enabled: some && live}
+        {menu: "Image" title: "Rotate Clockwise" key: "alt+cmd+R" command: "rotate_right" enabled: some && live}
+        {menu: "Image" title: if playing || desk_show { "Stop Slideshow" } else { "Slideshow" } command: "slides" enabled: (free && desk_viewing) || desk_show}
+        {menu: "Image"}
+    ]
+    // Add To: the albums, as a photo's own menu lists them.
+    let adds = desk_add_menu_rows(some && live)
+    for row in adds { rows.push(row) }
+    if !live { rows.push({menu: "Image" title: if n > 1 { "Recover " + n + " Photos" } else { "Recover" } command: "recover" enabled: some}) }
+    rows.push({menu: "Image" title: if n > 1 { "Delete " + n + " Photos…" } else { "Delete Photo…" } key: "cmd+delete" command: "delete" enabled: some})
+    rows
+}
+fn desk_add_menu_rows(on){
+    let out = []
+    for a in first_n(store.albums, 8) {
+        let live = on && !(route == "album" && route_arg == a.id)
+        // A Mac's Photos keeps the albums in one Add to submenu, by name.
+        if ui_unified { out.push({menu: "Image" submenu: "Add to" title: desk_menu_name(a.title) command: "add_" + a.id enabled: live}) }
+        else { out.push({menu: "Image" title: "Add to “" + desk_short(a.title) + "”" command: "add_" + a.id enabled: live}) }
+    }
+    if out.len() > 0 { out.push({menu: "Image"}) }
+    out
+}
+fn on_menu_command(command){
+    if desk_sheet_shown { return }
+    // Over the slideshow, Stop Slideshow is the one row that acts.
+    if desk_show {
+        if command == "slides" { desk_show_close() }
+        return
+    }
+    desk_name_end()
+    // Import and New Album work from anywhere.
+    if command == "import" { desk_import(); return }
+    if command == "album" { desk_new_album_with([]); return }
+    if command == "sidebar" { desk_toggle_side(); return }
+    if route == "memories" || route == "editor" { return }
+    let ids = desk_targets()
+    if command == "album_selection" { if ids.len() > 0 && route != "deleted" { desk_new_album_with(ids) } }
+    else if command.search("add_") == 0 { if route != "deleted" { desk_add_to(command.replace("add_", "").to_f64(), ids) } }
+    else if command == "export" { if ids.len() > 0 && route != "deleted" { desk_export_next(ids, 0) } }
+    else if command == "all" { desk_grid_key("KeyA", true, false) }
+    else if command == "find" { desk_find() }
+    else if command == "info" { if route != "deleted" { desk_toggle_info() } }
+    else if command == "zoom_in" { if !desk_scaled() { desk_zoom_to(columns - 1) } }
+    else if command == "zoom_out" { if !desk_scaled() { desk_zoom_to(columns + 1) } }
+    else if command == "scale_years" { desk_set_scale("years") }
+    else if command == "scale_months" { desk_set_scale("months") }
+    else if command == "scale_all" { desk_set_scale("all") }
+    else if command == "rotate_left" { if route != "deleted" { desk_rotate(ids, -1) } }
+    else if command == "rotate_right" { if route != "deleted" { desk_rotate(ids, 1) } }
+    else if command == "favorite" { if ids.len() > 0 && route != "deleted" { desk_set_favorite(ids, !desk_all_favorite(ids)) } }
+    else if command == "recover" { desk_recover(ids) }
+    else if command == "slides" { if desk_viewing { toggle_slides() } }
+    else if command == "delete" { if ids.len() > 0 { desk_ask_delete_photos(ids) } }
+}
+// ---- what's done with them
+fn desk_targets(){
+    if desk_viewing && viewer_ids.len() > 0 { return [viewer_ids[viewer_index]] }
+    desk_selection
+}
+fn desk_all_favorite(ids){
+    for id in ids { if !is_favorite(id) { return false } }
+    ids.len() > 0
+}
+fn desk_set_favorite(ids, on){
+    for id in ids {
+        if on {
+            if !is_favorite(id) { store.favorites.push(id) }
+        } else {
+            store.favorites.retain(|f| f != id)
+        }
+    }
+    save_store()
+    if route == "favorites" { desk_selection.retain(|s| is_favorite(s)) }
+    ui.list.render()
+    desk_selection_sync()
+    if desk_viewing { sync_viewer() }
+}
+// A long album name gets a short row: a menu is as wide as its longest row.
+fn desk_short(text){
+    let chars = text.to_chars()
+    if chars.len() <= 28 { return text }
+    while chars.len() > 27 { chars.pop() }
+    chars.to_string() + "…"
+}
+// A name in the menu bar's Add to submenu: a Mac's menu is as wide as its longest row, so the
+// name goes on to the bar's 60 letters.
+fn desk_menu_name(text){
+    let chars = text.to_chars()
+    if chars.len() <= 58 { return text }
+    while chars.len() > 57 { chars.pop() }
+    chars.to_string() + "…"
+}
+fn desk_add_rows(){
+    let out = []
+    for a in first_n(store.albums, 8) { out.push("Add to “" + desk_short(a.title) + "”") }
+    out
+}
+// A Mac's Photos gathers the albums under one Add to submenu, as its menu bar does: a row an
+// album, by the name the bar shows, the album on show greyed.
+fn desk_add_sub(){
+    let names = []
+    let off = []
+    for a in first_n(store.albums, 8) {
+        let name = desk_menu_name(a.title)
+        names.push(name)
+        if route == "album" && route_arg == a.id { off.push(name) }
+    }
+    if names.len() == 0 { return [] }
+    [{title: "Add to" menu: names off: off}]
+}
+// Add to ▸ an album: the album its row names.
+fn desk_add_named(name, ids){
+    if desk_sheet_up || ids.len() == 0 { return }
+    for a in first_n(store.albums, 8) {
+        if desk_menu_name(a.title) == name {
+            desk_add_to(a.id, ids)
+            break
+        }
+    }
+}
+// A menu's chosen row; a row of its Add to submenu names an album.
+fn desk_menu_act(title, parent, ids){
+    if parent == "Add to" { desk_add_named(title, ids) } else { desk_act(title, ids) }
+}
+fn desk_cell_rows(favorite, export, remove, adds){
+    let out = ["Open" "-"]
+    out.push(favorite)
+    for row in adds { out.push(row) }
+    out.push("New Album with Selection")
+    if route == "album" { out.push("Remove from Album") }
+    out.push("-")
+    out.push("Get Info")
+    // A Mac's Photos turns a photo from its menu too.
+    if ui_unified { out.push("Rotate Clockwise") }
+    out.push(export)
+    out.push(remove)
+    out
+}
+// Three menus a render, however many cells share them.
+fn desk_cell_menus(){
+    let adds = if ui_unified { desk_add_sub() } else { desk_add_rows() }
+    let n = desk_selection.len()
+    if route == "deleted" {
+        let one = ["Recover" "-" "Delete Photo…"]
+        return {plain: one favorite: one many: ["Recover " + n + " Photos" "-" "Delete " + n + " Photos…"]}
+    }
+    let many = "Favorite " + n + " Photos"
+    if desk_all_favorite(desk_selection) { many = "Unfavorite " + n + " Photos" }
+    {plain: desk_cell_rows("Favorite", "Export…", "Delete Photo…", adds)
+     favorite: desk_cell_rows("Unfavorite", "Export…", "Delete Photo…", adds)
+     many: desk_cell_rows(many, "Export " + n + " Photos…", "Delete " + n + " Photos…", adds)}
+}
+fn desk_menu_for(menus, id){
+    if desk_selection.len() > 1 && has_item(desk_selection, id) { return menus.many }
+    if is_favorite(id) { return menus.favorite }
+    menus.plain
+}
+fn desk_share_rows(){
+    let n = desk_targets().len()
+    let out = []
+    if n == 1 { out.push("Export…") } else { out.push("Export " + n + " Photos…") }
+    out.push("-")
+    let adds = if ui_unified { desk_add_sub() } else { desk_add_rows() }
+    for row in adds { out.push(row) }
+    out.push("New Album with Selection")
+    out
+}
+// A row acts on the selection when the click was on it, else on that photo.
+fn desk_cell_menu(title, id, parent){
+    if desk_sheet_up { return }
+    if !has_item(desk_selection, id) { desk_pick([id], id) }
+    if parent == "Add to" {
+        desk_add_named(title, desk_selection)
+        return
+    }
+    if title == "Open" {
+        let ids = route_ids()
+        open_photo(ids, index_of(ids, id))
+        return
+    }
+    desk_act(title, desk_selection)
+}
+fn desk_act(title, ids){
+    if desk_sheet_up || ids.len() == 0 { return }
+    if title == "Get Info" {
+        if !desk_info_open { desk_toggle_info() }
+    }
+    else if title.search("Favorite") == 0 { desk_set_favorite(ids, true) }
+    else if title.search("Unfavorite") == 0 { desk_set_favorite(ids, false) }
+    else if title.search("Export") == 0 { desk_export_next(ids, 0) }
+    else if title.search("Delete") == 0 { desk_ask_delete_photos(ids) }
+    else if title.search("Recover") == 0 { desk_recover(ids) }
+    else if title == "Rotate Clockwise" { desk_rotate(ids, 1) }
+    else if title == "Rotate Counterclockwise" { desk_rotate(ids, -1) }
+    else if title == "Remove from Album" { desk_remove_from_album(ids) }
+    else if title.search("New Album") == 0 { desk_new_album_with(ids) }
+    else {
+        for a in store.albums {
+            if title == "Add to “" + desk_short(a.title) + "”" {
+                for id in ids { if !has_item(a.photos, id) { a.photos.push(id) } }
+                save_store()
+                desk_info_render()
+                break
+            }
+        }
+    }
+}
+fn desk_grid_menu(title){
+    if desk_sheet_up { return }
+    if title == "Import…" { desk_import() } else { desk_new_album_with([]) }
+}
+fn desk_remove_from_album(ids){
+    let a = album_of(route_arg)
+    if route != "album" || a == nil { return }
+    a.photos.retain(|x| !has_item(ids, x))
+    save_store()
+    desk_selection = []
+    desk_anchor = ""
+    desk_cursor = ""
+    desk_tools()
+    ui.list.render()
+    desk_selection_sync()
+}
+// Add To: the photos join the album; nothing else moves.
+fn desk_add_to(id, ids){
+    let a = album_of(id)
+    if a == nil || ids.len() == 0 { return }
+    for x in ids { if !has_item(a.photos, x) { a.photos.push(x) } }
+    save_store()
+    desk_info_render()
+}
+fn desk_new_album_with(ids){
+    // A Mac makes the album at once, in the sidebar, and its name is typed there.
+    if ui_unified {
+        desk_make_album(ids)
+        return
+    }
+    let picked = []
+    for id in ids { picked.push(id) }
+    if desk_viewing { desk_close_viewer() }
+    editor_id = 0
+    editor_selected = picked
+    ui.album_name.set_text("")
+    desk_album_name = ""
+    message = ""
+    go_to("editor", "")
+    ui.album_name.focus()
+}
+// ---- an album's name, typed in place in the sidebar (a Mac's New Album and Rename Album)
+// The row turns into a field with the actual name selected. What's typed is
+// the album's name as it's typed; Return or a click elsewhere ends it, Escape
+// puts the old name back.
+fn desk_untitled(){
+    let name = "Untitled Album"
+    let n = 1
+    while desk_album_named(name) {
+        n = n + 1
+        name = "Untitled Album " + n
+    }
+    name
+}
+fn desk_album_named(name){
+    for a in store.albums { if a.title == name { return true } }
+    false
+}
+fn desk_make_album(ids){
+    desk_name_end()
+    let picked = []
+    for id in ids { picked.push(id) }
+    let id = store.next_id
+    store.albums.push({id: id title: desk_untitled() photos: picked})
+    store.next_id = store.next_id + 1
+    save_store()
+    desk_go("album", id)
+    desk_name_start(id)
+}
+fn desk_name_start(id){
+    desk_name_end()
+    let a = album_of(id)
+    if a == nil { return }
+    desk_naming = id
+    desk_naming_was = a.title
+    desk_naming_run = desk_naming_run + 1
+    let run = desk_naming_run
+    // Hold the keys while the sidebar rebuilds. If the person puts them
+    // somewhere else before it finishes, the delayed request must not steal them.
+    ui.zoom.focus()
+    ui.sidebar.render()
+    desk_remember()
+    start_timeout(0.05, || desk_name_focus(id, run))
+}
+fn desk_name_focus(id, run){
+    if desk_naming != id || desk_naming_run != run { return }
+    let a = album_of(id)
+    if a == nil { return }
+    try {
+        // A click in this field already chose a caret position. A click in
+        // another field or window ends naming and keeps the new focus there.
+        if ui.side_name.has_focus() { return }
+        if !ui.zoom.has_focus() { desk_name_end(); return }
+        ui.side_name.focus()
+        ui.side_name.select_all()
+    } catch { nil }
+}
+fn desk_name_typed(text){
+    let a = album_of(desk_naming)
+    if a == nil { return }
+    let name = ("" + text).trim()
+    if name == "" { name = desk_naming_was }
+    if name == a.title { return }
+    a.title = name
+    save_store()
+    ui.title.set_text(desk_title())
+    // An empty album's instruction also includes its name. Keep it in step
+    // while the person edits, without rebuilding a populated photo grid.
+    if route == "album" && route_arg == desk_naming && route_ids().len() == 0 { ui.list.render() }
+}
+fn desk_name_end(){
+    if desk_naming == 0 { return }
+    desk_naming = 0
+    desk_naming_run = desk_naming_run + 1
+    ui.sidebar.render()
+    desk_info_render()
+    desk_remember()
+    // An empty album's note names it.
+    if route == "album" && route_ids().len() == 0 { ui.list.render() }
+}
+fn desk_name_done(){
+    desk_name_end()
+    desk_keys_home()
+}
+fn desk_name_cancel(){
+    let a = album_of(desk_naming)
+    if a != nil && a.title != desk_naming_was {
+        a.title = desk_naming_was
+        save_store()
+        ui.title.set_text(desk_title())
+    }
+    desk_name_end()
+    desk_keys_home()
+}
+// ---- the inspector
+fn desk_toggle_info(){
+    desk_info_open = !desk_info_open
+    desk_tools()
+    desk_resize(desk_window, desk_height)
+    desk_info_render()
+    desk_remember()
+}
+fn desk_info_render(){
+    if !desk_info_open { return }
+    ui.info_list.render()
+    ui.viewer_info_list.render()
+}
+fn desk_list_text(items){
+    let out = ""
+    for i v in items {
+        if i > 0 { out = out + ", " }
+        out = out + v
+    }
+    out
+}
+fn desk_info_rows(p){
+    let rows = []
+    rows.push({key: "Date" value: display_date(p.date)})
+    let size = desk_size_text(p)
+    if size != "" { rows.push({key: "Size" value: size}) }
+    if p.location != "" { rows.push({key: "Location" value: p.location}) }
+    if p.people.len() > 0 { rows.push({key: "People" value: desk_list_text(p.people)}) }
+    if p.tags.len() > 0 { rows.push({key: "Keywords" value: desk_list_text(p.tags)}) }
+    let albums = []
+    for a in store.albums { if has_item(a.photos, p.id) { albums.push(a.title) } }
+    if albums.len() > 0 { rows.push({key: "Albums" value: desk_list_text(albums)}) }
+    if p.moment != "" { rows.push({key: "Moment" value: p.moment}) }
+    if is_own(p.id) { rows.push({key: "File" value: p.name}) }
+    rows
+}
+fn desk_info_span(ids){
+    let first = ""
+    let last = ""
+    for id in ids {
+        let p = photo_of(id)
+        if p != nil {
+            if first == "" || date_number(p.date) < date_number(first) { first = p.date }
+            if last == "" || date_number(p.date) > date_number(last) { last = p.date }
+        }
+    }
+    if first == "" { return "" }
+    if first == last { return display_date(first) }
+    display_date(first) + " – " + display_date(last)
+}
+// ---- deleting
+// A destructive action asks once and says what it destroys.
+fn desk_ask_delete(id){
+    let a = album_of(id)
+    if a == nil { return }
+    desk_asked_album = id
+    ui.confirm_title.set_text(desk_alert_words("Delete “" + a.title + "”?", true))
+    desk_sheet_up = true
+    desk_sheet_shown = true
+    ui.confirm_box.set_visible(true)
+}
+fn desk_delete_album(){
+    let id = desk_asked_album
+    store.albums.retain(|a| a.id != id)
+    save_store()
+    if (route == "album" && route_arg == id) || (route == "editor" && editor_id == id) {
+        editor_id = 0
+        go_to("collections", "")
+        return
+    }
+    ui.confirm_box.set_visible(false)
+    desk_sheet_down()
+    ui.sidebar.render()
+    desk_info_render()
+}
+// A Mac renames an album in place; another desktop asks on a sheet.
+fn desk_album_rows(){
+    if ui_unified { return ["Rename Album" "Delete Album…"] }
+    ["Rename…" "Delete Album…"]
+}
+fn desk_album_menu(title, id){
+    if desk_sheet_up { return }
+    if title == "Rename Album" {
+        desk_name_start(id)
+        return
+    }
+    if title == "Rename…" { desk_ask_rename(id) } else { desk_ask_delete(id) }
+}
+fn desk_rename_state(text){
+    let named = ("" + text).trim() != ""
+    ui.rename_ok.set_visible(named)
+    ui.rename_off.set_visible(!named)
+}
+fn desk_ask_rename(id){
+    let a = album_of(id)
+    if a == nil { return }
+    desk_rename_id = id
+    ui.rename_field.set_text(a.title)
+    desk_rename_state(a.title)
+    desk_sheet_up = true
+    desk_sheet_shown = true
+    ui.rename_sheet.set_visible(true)
+    ui.rename_field.focus()
+}
+fn desk_rename_close(){
+    ui.rename_sheet.set_visible(false)
+    desk_sheet_down()
+}
+fn desk_rename_done(){
+    let name = ("" + ui.rename_field.text()).trim()
+    if name == "" { return }
+    let a = album_of(desk_rename_id)
+    if a != nil {
+        a.title = name
+        save_store()
+    }
+    desk_rename_close()
+    ui.title.set_text(desk_title())
+    ui.sidebar.render()
+    desk_info_render()
+}
+fn desk_ask_delete_photos(ids){
+    if ids.len() == 0 { return }
+    let asks = []
+    for id in ids { asks.push(id) }
+    desk_asks = asks
+    // In Recently Deleted photos go for good; from anywhere else they go there first.
+    let gone = route == "deleted"
+    if asks.len() == 1 {
+        let p = desk_any_photo(asks[0])
+        if p == nil { return }
+        if gone {
+            ui.photo_title.set_text(desk_alert_words("Delete “" + p.title + "” Permanently?", true))
+            ui.photo_note.set_text("You can’t undo this.")
+        } else {
+            ui.photo_title.set_text(desk_alert_words("Delete “" + p.title + "”?", true))
+            ui.photo_note.set_text("It leaves every album and stays in Recently Deleted for 30 days.")
+        }
+        ui.photo_delete.set_text("Delete Photo")
+    } else {
+        if gone {
+            ui.photo_title.set_text(desk_alert_words("Delete " + asks.len() + " Photos Permanently?", true))
+            ui.photo_note.set_text("You can’t undo this.")
+        } else {
+            ui.photo_title.set_text(desk_alert_words("Delete " + asks.len() + " Photos?", true))
+            ui.photo_note.set_text("They leave every album and stay in Recently Deleted for 30 days.")
+        }
+        if ui_unified { ui.photo_delete_many.set_text("Delete " + asks.len() + " Photos") }
+        else { ui.photo_delete.set_text("Delete " + asks.len() + " Photos") }
+    }
+    if ui_unified {
+        ui.photo_row.set_visible(asks.len() == 1)
+        ui.photo_stack.set_visible(asks.len() > 1)
+    }
+    desk_sheet_up = true
+    desk_sheet_shown = true
+    ui.photo_sheet.set_visible(true)
+}
+fn desk_delete_photos(){
+    let ids = desk_asks
+    ui.photo_sheet.set_visible(false)
+    desk_sheet_down()
+    if route == "deleted" {
+        desk_purge(ids)
+        save_store()
+        desk_selection = []
+        desk_anchor = ""
+        desk_cursor = ""
+        desk_sync()
+        ui.list.render()
+        return
+    }
+    // Recently Deleted keeps each for 30 days, with its albums and heart, to put it back.
+    let now = time_now()
+    let waiting = desk_deleted_ids()
+    for id in ids {
+        if !has_item(waiting, id) {
+            let albums = []
+            for a in store.albums { if has_item(a.photos, id) { albums.push(a.id) } }
+            store.deleted.push({id: id at: now albums: albums favorite: is_favorite(id)})
+        }
+        store.favorites.retain(|f| f != id)
+        for a in store.albums { a.photos.retain(|x| x != id) }
+    }
+    // A saved story keeps to what's left; one under two photos goes.
+    let kept = []
+    for m in saved_memories {
+        m.photos.retain(|x| !has_item(ids, x))
+        if m.photos.len() >= 2 { kept.push(m) }
+    }
+    if saved_memories.len() > 0 { persist_memories(kept) }
+    saved_memories = kept
+    save_store()
+    desk_rebuild_catalog()
+    rebuild_memories()
+    desk_selection = []
+    desk_anchor = ""
+    desk_cursor = ""
+    if route == "memory" { route_arg.photos.retain(|x| !has_item(ids, x)) }
+    if desk_viewing {
+        viewer_ids.retain(|x| !has_item(ids, x))
+        if viewer_ids.len() > 0 {
+            if viewer_index >= viewer_ids.len() { viewer_index = viewer_ids.len() - 1 }
+            sync_viewer()
+            return
+        }
+        viewer_index = 0
+        close_viewer()
+        ui.zoom.focus()
+    }
+    if route == "memory" && route_arg.photos.len() < 2 { go_to("memories", ""); return }
+    if route == "person" && route_ids().len() == 0 { go_to("library", ""); return }
+    desk_sync()
+    ui.list.render()
+}
+// ---- what the library holds
+fn desk_rebuild_catalog(){
+    catalog = []
+    let gone = desk_deleted_ids()
+    for p in store.imported { if !has_item(gone, p.id) { catalog.push(p) } }
+    for p in desk_samples { if !has_item(store.hidden, p.id) && !has_item(gone, p.id) { catalog.push(p) } }
+    people = build_people()
+}
+fn desk_store_loaded(){
+    if optional(store, "imported", nil) == nil { store.imported = [] }
+    if optional(store, "hidden", nil) == nil { store.hidden = [] }
+    if optional(store, "next_photo", nil) == nil { store.next_photo = 1 }
+    if optional(store, "deleted", nil) == nil { store.deleted = [] }
+    if optional(store, "turns", nil) == nil { store.turns = {} }
+    // What waited its 30 days in Recently Deleted goes for good.
+    let now = time_now()
+    let old = []
+    for d in store.deleted { if now - d.at >= 30 * 86400 { old.push(d.id) } }
+    if old.len() > 0 {
+        desk_purge(old)
+        save_store()
+    }
+    desk_rebuild_catalog()
+}
+// ---- Recently Deleted: a deleted photo waits there 30 days, then goes for good
+fn desk_deleted_ids(){
+    let out = []
+    for d in optional(store, "deleted", []) { out.push(d.id) }
+    out
+}
+// A photo by its id, in the library or in Recently Deleted.
+fn desk_any_photo(id){
+    let p = photo_of(id)
+    if p != nil { return p }
+    for q in store.imported { if q.id == id { return q } }
+    for q in desk_samples { if q.id == id { return q } }
+    nil
+}
+fn desk_days_left(id){
+    for d in store.deleted {
+        if d.id == id {
+            let left = 30 - floor((time_now() - d.at) / 86400)
+            if left < 1 { left = 1 }
+            if left == 1 { return "1 day" }
+            return "" + left + " days"
+        }
+    }
+    ""
+}
+// For good: an import's file goes; a sample stays away until the samples come back.
+fn desk_purge(ids){
+    for id in ids {
+        // Gone for good, it keeps no turn: a sample brought back comes back as it was.
+        if desk_turns(id) != 0 { store.turns[id] = 0 }
+        if is_own(id) {
+            let p = desk_any_photo(id)
+            if p != nil { try { fs.remove(data_path(p.stored)) } catch { nil } }
+            store.imported.retain(|x| x.id != id)
+            desk_thumbs[id] = nil
+        } else if !has_item(store.hidden, id) {
+            store.hidden.push(id)
+        }
+    }
+    store.deleted.retain(|d| !has_item(ids, d.id))
+}
+// Back where it was: the library, its albums, its heart.
+fn desk_recover(ids){
+    if desk_sheet_up || ids.len() == 0 { return }
+    // An if/else whose branch ends in a loop unbalances the script's stack: pick first, then put back.
+    let back = []
+    for d in store.deleted { if has_item(ids, d.id) { back.push(d) } }
+    store.deleted.retain(|d| !has_item(ids, d.id))
+    for d in back {
+        if d.favorite && !has_item(store.favorites, d.id) { store.favorites.push(d.id) }
+        for a in store.albums { if has_item(d.albums, a.id) && !has_item(a.photos, d.id) { a.photos.push(d.id) } }
+    }
+    save_store()
+    desk_rebuild_catalog()
+    rebuild_memories()
+    desk_selection = []
+    desk_anchor = ""
+    desk_cursor = ""
+    desk_sync()
+    ui.list.render()
+    ui.sidebar.render()
+}
+fn desk_purge_ask(){
+    if desk_selection.len() > 0 { desk_ask_delete_photos(desk_selection) } else { desk_ask_delete_photos(route_ids()) }
+}
+fn desk_restore_samples(){
+    store.hidden = []
+    save_store()
+    desk_rebuild_catalog()
+    load_memories()
+    desk_sync()
+    ui.list.render()
+}
+// A Mac's alert never leaves one word alone on the last line of what it says: AppKit pushes
+// the word before down to it. The Label can't, so the words are measured here as it will
+// wrap them, 228 points wide (UiAlertPanel's), from PingFang SC's own advances for 32 to 126
+// then “” and ‘’: the title's 13 px semibold and the words' 11 px regular.
+let desk_alert_title_w = [4.33 4.33 6.34 7.80 7.80 12.95 9.76 3.65 4.33 4.33 6.71 7.87 3.58 7.87 3.58 6.50 7.80 5.33 7.80 7.80 7.80 7.80 7.80 7.19 7.80 7.80 3.58 3.58 7.87 7.87 7.87 7.25 11.26 8.83 8.97 9.52 9.36 8.35 7.57 9.83 9.57 3.34 6.99 9.28 7.70 11.74 9.52 10.08 8.52 10.08 9.06 8.46 8.00 9.54 8.57 12.39 8.63 8.98 8.31 4.33 6.50 4.33 7.09 6.50 4.33 7.44 7.83 7.29 7.83 7.37 4.91 7.83 7.50 3.58 3.59 7.19 3.30 11.49 7.55 7.80 7.83 7.83 4.86 6.83 4.71 7.57 6.58 10.10 6.98 6.84 6.58 4.33 2.78 4.33 6.50 7.98 4.84]
+let desk_alert_note_w = [3.66 3.66 4.70 6.60 6.60 10.67 7.99 2.68 3.66 3.66 5.57 6.66 2.90 6.66 2.90 5.50 6.60 4.41 6.60 6.60 6.60 6.60 6.60 6.02 6.60 6.60 2.90 2.90 6.66 6.66 6.66 5.91 9.44 7.23 7.45 8.01 7.77 7.01 6.35 8.23 7.92 2.61 5.69 7.59 6.47 9.70 7.91 8.44 7.06 8.44 7.44 6.95 6.81 7.85 7.03 10.23 7.01 7.28 6.86 3.66 5.50 3.66 5.70 5.50 3.66 6.15 6.45 6.02 6.45 6.11 4.10 6.50 6.12 2.82 2.94 5.82 2.59 9.41 6.15 6.45 6.45 6.45 4.02 5.56 3.91 6.16 5.30 8.31 5.60 5.46 5.36 3.66 2.15 3.66 5.50 5.91 3.74]
+fn desk_alert_word_w(word, widths, em){
+    let w = 0
+    for c in word.to_chars() {
+        if c >= 32 && c <= 126 { w = w + widths[c - 32] }
+        else if c == 8220 || c == 8221 { w = w + widths[95] }
+        else if c == 8216 || c == 8217 { w = w + widths[96] }
+        else { w = w + em }
+    }
+    w
+}
+fn desk_alert_para(para, widths, em){
+    let words = para.split(" ")
+    if words.len() < 3 { return para }
+    let line_w = 0
+    let line_n = 0
+    let start = 0
+    let before = -1
+    for i word in words {
+        let w = desk_alert_word_w(word, widths, em)
+        if line_n > 0 && line_w + widths[0] + w > 228 {
+            before = start
+            start = i
+            line_w = w
+            line_n = 1
+        } else {
+            if line_n > 0 { line_w = line_w + widths[0] + w } else { line_w = w }
+            line_n = line_n + 1
+        }
+    }
+    // One word on the last line, and the line before it has one to spare.
+    if before < 0 || line_n != 1 || start - before < 2 { return para }
+    let out = ""
+    for i word in words {
+        if i == 0 { out = word }
+        else if i == start - 1 { out = out + "\n" + word }
+        else { out = out + " " + word }
+    }
+    out
+}
+// `title`: the alert's title (UiAlertTitle), else what it says (UiAlertNote). Elsewhere the
+// words wrap as they fall: other desktops' sheets are wider.
+fn desk_alert_words(text, title){
+    if !ui_unified { return text }
+    let widths = if title { desk_alert_title_w } else { desk_alert_note_w }
+    let em = if title { 13 } else { 11 }
+    let out = ""
+    for p para in ("" + text).split("\n") {
+        if p > 0 { out = out + "\n" }
+        out = out + desk_alert_para(para, widths, em)
+    }
+    out
+}
+// What went wrong, in a Mac's alert: it waits for an answer. What memories can't do
+// offers the way forward as well.
+fn desk_alert_show(){
+    if desk_alert_says == nil { return }
+    ui.say_title.set_text(desk_alert_words(desk_alert_says.title, true))
+    ui.say_note.set_text(desk_alert_words(desk_alert_says.note, false))
+    ui.say_note.set_visible(desk_alert_says.note != "")
+    ui.say_again.set_visible(desk_alert_says.next == "again")
+    ui.say_providers.set_visible(desk_alert_says.next == "providers")
+    if ui_unified {
+        // A Mac's alert: "Open AI Providers…" stands over OK, the others sit in a row.
+        let stacked = desk_alert_says.next == "providers"
+        ui.say_row.set_visible(!stacked)
+        ui.say_stack.set_visible(stacked)
+        ui.say_ok.set_visible(desk_alert_says.next == "again")
+    } else {
+        ui.say_ok.set_visible(desk_alert_says.next != "")
+    }
+    ui.say_only.set_visible(desk_alert_says.next == "")
+    desk_sheet_up = true
+    desk_sheet_shown = true
+    ui.say_sheet.set_visible(true)
+}
+fn desk_alert(title, note){
+    desk_alert_says = {title: title note: note next: "" memory: false}
+    desk_remember()
+    desk_alert_show()
+}
+fn desk_alert_close(){
+    ui.say_sheet.set_visible(false)
+    if desk_alert_says == nil { return }
+    let memory = desk_alert_says.next != "" || desk_alert_says.memory
+    desk_alert_says = nil
+    desk_remember()
+    if memory { desk_memory_ok() }
+}
+fn desk_alert_done(next){
+    desk_close_sheets()
+    if next == "again" { generate_memories() }
+    if next == "providers" { desk_open_providers() }
+}
+fn desk_say(text){
+    message = text
+    ui.message.set_text(text)
+    ui.message_bar.set_visible(text != "")
+}
+fn desk_refusal(error, fallback){
+    let text = "" + error
+    if text.search("foreground_required") == 0 { return "Click in the Photos window, then try again." }
+    if text.search("invalid_image") == 0 { return "Photos can import PNG, JPEG and WebP files." }
+    if text.search("read_failed") == 0 { return "This file couldn't be read, or it's too large to import." }
+    if text.search("too_large") == 0 { return "This file is too large." }
+    fallback
+}
+fn desk_pad(n){ if n < 10 { return "0" + n } "" + n }
+fn desk_today(){
+    let t = local_time()
+    "" + t.year + "-" + desk_pad(t.month) + "-" + desk_pad(t.day)
+}
+fn desk_stem(name){
+    let parts = name.split(".")
+    if parts.len() < 2 { return name }
+    parts.pop()
+    let out = ""
+    for i part in parts {
+        if i > 0 { out = out + "." }
+        out = out + part
+    }
+    out
+}
+// A photo the person brings in: a copy in the app's own folder. The answer may come
+// inside the request, where only the first widget call of a callback lands.
+fn desk_import(){
+    desk_say("")
+    if !fs.exists(data_path("imported")) { try { fs.mkdir(data_path("imported")) } catch { nil } }
+    let n = store.next_photo
+    let stored = "imported/photo-" + n
+    host.request("files.pick_photo", {path: data_path(stored) full_size: true}, fn(r){
+        let answer = {is_ok: r.is_ok data: r.data error: r.error}
+        start_timeout(0.01, || desk_imported(stored, n, answer))
+    })
+}
+fn desk_imported(stored, n, answer){
+    if !answer.is_ok {
+        desk_alert("Photos couldn't import this file.", desk_refusal(answer.error, ""))
+        return
+    }
+    if optional(answer.data, "cancelled", false) { return }
+    let name = optional(answer.data, "name", "Photo " + n)
+    let id = "own-" + n
+    // Info's Size, from the copy's own header, once.
+    let px = try { desk_image_size(fs.read_bytes(data_path(stored))) } catch { nil }
+    let own = [{id: id stored: stored name: name title: desk_stem(name) date: desk_today() location: "" people: [] tags: [] moment: ""
+        w: if px == nil { 0 } else { px.w } h: if px == nil { 0 } else { px.h } bytes: optional(answer.data, "bytes", 0)}]
+    for p in store.imported { own.push(p) }
+    store.imported = own
+    store.next_photo = n + 1
+    save_store()
+    desk_rebuild_catalog()
+    rebuild_memories()
+    desk_selection = [id]
+    desk_anchor = id
+    desk_cursor = id
+    // The new photo shows picked, in All Photos.
+    desk_scale = "all"
+    if route != "library" || query != "" {
+        desk_go("library", "")
+    } else {
+        desk_sync()
+        ui.list.render()
+        ui.list.set_scroll_y(0)
+    }
+    ui.zoom.focus()
+}
+// One panel at a time; Cancel ends the run.
+fn desk_export_next(ids, i){
+    if i >= ids.len() { return }
+    let p = photo_of(ids[i])
+    if p == nil {
+        desk_export_next(ids, i + 1)
+        return
+    }
+    let ask = nil
+    if is_own(p.id) { ask = {path: data_path(p.stored) name: p.name} } else { ask = {path: "photos/" + p.file name: p.file bundled: true} }
+    host.request("files.export", ask, fn(r){
+        let answer = {is_ok: r.is_ok data: r.data error: r.error}
+        start_timeout(0.01, || desk_exported(ids, i, p, answer))
+    })
+}
+fn desk_exported(ids, i, p, answer){
+    if !answer.is_ok {
+        desk_alert("Photos couldn't export “" + p.title + "”.", desk_refusal(answer.error, ""))
+        return
+    }
+    if optional(answer.data, "cancelled", false) { return }
+    desk_export_next(ids, i + 1)
+}
+fn desk_providers_opened(answer){
+    if !answer.is_ok { desk_alert("Photos couldn't open AI Providers.", "") }
+}
+fn desk_open_providers(){
+    host.request("settings.open", {pane: "ai-providers"}, fn(r){
+        let answer = {is_ok: r.is_ok}
+        start_timeout(0.01, || desk_providers_opened(answer))
+    })
+}
+// Create Memories: the sheet asks for the theme; what comes of it shows in the bar.
+fn desk_ask_memory(){
+    ui.memory_field.set_text(memory_prompt)
+    desk_sheet_up = true
+    desk_sheet_shown = true
+    ui.memory_sheet.set_visible(true)
+}
+fn desk_create_memory(){
+    ui.memory_sheet.set_visible(false)
+    desk_sheet_down()
+    generate_memories()
+}
+fn desk_memory_text(){
+    if memory_status.search("Set up a model") == 0 { return "Add a model in AI Providers, then try again." }
+    memory_status
+}
+fn desk_memory_sync(){
+    let here = route == "memories" || route == "memory"
+    let done = memory_status != "" && !memory_busy
+    let good = regex("new memor(y|ies) saved\\.$").test(memory_status) || memory_status.search("Stopped") == 0
+    // Waiting, and what went well, say so in the bar; what didn't asks.
+    ui.memory_foot.set_visible((memory_busy || (done && good)) && here)
+    if done && good { desk_memory_fade(memory_status) }
+    if done && !good && here && desk_alert_says == nil {
+        let no_model = memory_status.search("Set up a model") == 0
+        desk_alert_says = {title: "Photos couldn't create memories." note: desk_memory_text() next: pick_one(no_model, "providers", "again") memory: true}
+        desk_alert_show()
+    }
+    ui.memory_foot_text.set_text(desk_memory_text())
+    ui.memory_spin.set_visible(memory_busy)
+    ui.memory_stop.set_visible(memory_busy)
+    ui.subtitle.set_text(desk_subtitle())
+}
+// A result that went well stays long enough to read.
+fn desk_memory_fade(said){
+    start_timeout(5.0, || {
+        if memory_status == said && !memory_busy { desk_memory_ok() }
+    })
+}
+fn desk_memory_changed(){
+    desk_memory_sync()
+    if route == "memories" { ui.list.render() }
+}
+fn desk_memory_ok(){
+    memory_status = ""
+    desk_memory_sync()
+    desk_remember()
+}
+fn desk_memory_sections(){
+    let made = []
+    let local = []
+    for i m in memories {
+        if i < saved_memories.len() { made.push({at: i memory: m}) } else { local.push({at: i memory: m}) }
+    }
+    let out = []
+    if made.len() > 0 { out.push({title: "Made for You" rows: grid_rows_of(made, desk_cards)}) }
+    if local.len() > 0 { out.push({title: "From Your Library" rows: grid_rows_of(local, desk_cards)}) }
+    out
+}
+// An empty album says how photos get into it: on a Mac, Add To; elsewhere, its chooser.
+fn desk_album_hint(){
+    if !ui_unified { return "Choose the photos this album should hold." }
+    let a = album_of(route_arg)
+    if a == nil { return "" }
+    "Select photos in your library, then choose Image > Add to > " + a.title + "."
+}
+fn desk_empty_title(){
+    if route == "favorites" { return "No Favorites" }
+    if route == "deleted" { return "No Recently Deleted Photos" }
+    if route == "library" && query != "" { return "No Results" }
+    if route == "album" { return "No Photos in This Album" }
+    "No Photos"
+}
+fn desk_empty_text(){
+    if route == "favorites" { return "Select a photo and click the heart to keep it here." }
+    if route == "deleted" { return "Photos you delete stay here for 30 days." }
+    if route == "library" && query != "" { return "No photos match “" + query + "”." }
+    if route == "album" { return desk_album_hint() }
+    if route == "library" { return "Import a photo to start your library." }
+    ""
+}
+fn desk_empty_glyph(){
+    if route == "favorites" { return ui_icon("heart") }
+    if route == "deleted" { return ui_icon("trash") }
+    if route == "library" && query != "" { return ui_icon("search") }
+    if route == "album" { return ui_icon("album") }
+    ui_icon("photo")
+}
+if ui_desk {
+    desk_chrome = desk_sync
+    desk_open = desk_show_list
+    desk_viewer = desk_viewer_sync
+    desk_resized = desk_resize
+    desk_memory = desk_memory_changed
+    desk_stored = desk_store_loaded
+    desk_store_loaded()
+    desk_recall()
+    desk_fit()
+}
+
+let DeskZoom = UiToolIcon{icon_walk: Walk{width: 20 height: 20} draw_icon +: {preserve_viewbox: true}}
+let DeskIconOff = DeskZoom{draw_icon +: {color: ui_border} draw_bg +: {color_hover: #x00000000 color_down: #x00000000}}
+let DeskHeading = View{width: Fill height: Fit flow: Right align: Align{y: 1.0} padding: Inset{left: 12 right: 12 top: 12 bottom: 4}
+    name := Label{clip_y: false width: Fill padding: 0 text: "" draw_text +: {color: ui_ink text_style: theme.font_bold{font_size: 9.75}}}
+}
+// A viewer's tools and the toolbar's: a glyph's own margins keep their strokes alike.
+let DeskIcon = UiToolIcon{icon_walk: Walk{width: 20 height: 20} draw_icon +: {preserve_viewbox: true}}
+// The time scale's chosen segment: a push button's face in light, a lifted gray in dark.
+let desk_seg_face = if ui_light { ui_button } else { mix(ui_page, ui_ink, 0.28) }
+let DeskSegOn = UiSegOn{draw_bg +: {color: desk_seg_face color_hover: desk_seg_face color_focus: desk_seg_face}}
+// The default button before its form is valid: a push button's face, its text dimmed.
+let DeskPrimaryOff = UiButton{enabled: false draw_bg +: {color_hover: ui_button color_down: ui_button color_focus: ui_button}
+    draw_text +: {color: ui_muted color_hover: ui_muted color_down: ui_muted color_focus: ui_muted}}
+// A sheet: the window dims a little, and the panel hangs under the toolbar.
+let desk_shadow = if ui_light { #x00000038 } else { #x00000090 }
+// On a dark button's face the shared red falls short of 4.5:1.
+let desk_danger = if ui_light { ui_danger } else { #xffa29b }
+let DeskDim = GestureView{width: Fill height: Fill on_tap: |x, y| {}
+    SolidView{width: Fill height: Fill draw_bg.color: ui_sheet_dim}
+}
+let DeskSheetPlace = View{width: Fill height: Fill flow: Down align: Align{x: 0.5} padding: Inset{top: if ui_unified { 53 } else { 41 } left: 16 right: 16}}
+let DeskSheetPanel = RoundedShadowView{height: Fit flow: Down spacing: 10 padding: Inset{left: 20 right: 20 top: 18 bottom: 16} cursor: MouseCursor.Default
+    draw_bg +: {color: ui_surface border_size: 1.0 border_color: ui_border border_radius: 5.0 shadow_color: desk_shadow shadow_radius: 18.0 shadow_offset: vec2(0.0, 4.0)}}
+let DeskSheetTitle = Label{clip_y: false width: Fill padding: 0 flow: Flow.Right{wrap: true} text: "" draw_text +: {color: ui_ink text_style: theme.font_bold{font_size: 9.75}}}
+let DeskSheetNote = Label{clip_y: false width: Fill padding: 0 flow: Flow.Right{wrap: true} text: "" draw_text +: {color: ui_muted text_style: theme.font_regular{font_size: 8.25 line_spacing: 1.3}}}
+let DeskSheetButtons = View{width: Fill height: Fit flow: Right spacing: 8 align: Align{x: 1.0 y: 0.5} margin: Inset{top: 6}}
+let DeskCell = GestureView{width: 100 height: 100
+    pic := Image{width: Fill height: Fill fit: ImageFit.CropToFill}
+}
+// A favorite says so in its corner, as on a Mac. Templates that name a glyph are
+// built on a desktop only, so a phone fetches nothing it doesn't draw.
+let DeskHeart = if ui_desk { View{width: Fill height: Fill align: Align{x: 0.0 y: 1.0} padding: 4 new_batch: true
+    RoundedView{width: 20 height: 20 align: Align{x: 0.5 y: 0.5} show_bg: true draw_bg +: {color: #x00000066 border_radius: 5.0}
+        Svg{width: 12 height: 12 animating: false draw_svg +: {svg: ui_icon("heart-fill") color: #xffffff}}
+    }
+} } else { nil }
+// Recently Deleted: the days a photo has left, on its foot.
+let DeskDaysLeft = if ui_desk { View{width: Fill height: Fill align: Align{x: 0.0 y: 1.0} padding: 4 new_batch: true
+    pill := RoundedView{width: Fit height: Fit padding: Inset{left: 5 right: 5 top: 2 bottom: 2} show_bg: true draw_bg +: {color: #x00000099 border_radius: 4.0}
+        days := Label{padding: 0 text: "" draw_text +: {color: #xffffff text_style: theme.font_regular{font_size: 8.25}}}
+    }
+} } else { nil }
+// A picked photo wears the accent's ring.
+let DeskRing = View{width: Fill height: Fill new_batch: true
+    RoundedView{width: Fill height: Fill show_bg: true draw_bg +: {color: #x00000000 border_size: 3.0 border_radius: 1.0 border_color: ui_primary}}
+}
+// A photo the album will hold wears the accent's ring and check.
+let DeskPicked = if ui_desk { DeskCell{flow: Overlay
+    View{width: Fill height: Fill flow: Overlay align: Align{x: 1.0 y: 1.0} new_batch: true
+        RoundedView{width: Fill height: Fill show_bg: true draw_bg +: {color: #x00000000 border_size: 3.0 border_radius: 1.0 border_color: ui_primary}}
+        View{width: Fit height: Fit padding: 6
+            RoundedView{width: 22 height: 22 align: Align{x: 0.5 y: 0.5} show_bg: true draw_bg +: {color: ui_primary border_radius: 5.5 border_size: 1.5 border_color: #xffffff}
+                Svg{width: 14 height: 14 animating: false draw_svg +: {svg: ui_icon("check") color: #xffffff}}
+            }
+        }
+    }
+} } else { nil }
+let DeskMemory = GestureView{width: 285 height: 176 flow: Overlay
+    cover := Image{width: Fill height: Fill fit: ImageFit.CropToFill
+        draw_bg +: {pixel: fn(){
+            let sdf = Sdf2d.viewport(self.pos * self.rect_size)
+            sdf.box(0.0, 0.0, self.rect_size.x, self.rect_size.y, 4.0)
+            sdf.fill(Pal.premul(self.get_color()))
+            return sdf.result
+        }}
+    }
+    caption := SolidView{width: Fill height: Fill flow: Down align: Align{y: 1.0} spacing: 1 new_batch: true padding: Inset{left: 12 right: 12 bottom: 10}
+        draw_bg +: {pixel: fn(){
+            let sdf = Sdf2d.viewport(self.pos * self.rect_size)
+            sdf.box(0.0, 0.0, self.rect_size.x, self.rect_size.y, 4.0)
+            sdf.fill(vec4(0.0, 0.0, 0.0, 0.72 * clamp((self.pos.y - 0.35) / 0.4, 0.0, 1.0)))
+            return sdf.result
+        }}
+        name := Label{width: Fill padding: 0 text: "" max_lines: 1 text_overflow: Ellipsis draw_text +: {color: #xffffff text_style: theme.font_bold{font_size: 9.75}}}
+        detail := Label{width: Fill padding: 0 text: "" max_lines: 1 text_overflow: Ellipsis draw_text +: {color: #xffffffd9 text_style: theme.font_regular{font_size: 8.25}}}
+    }
+}
+// Years and Months: a year's or a month's tile, its key photo under its name at the top, as a
+// Mac's Photos shows them. The thumbnail shows at once, the photo itself over it once it's in.
+let DeskYearTile = GestureView{width: 429 height: 265 flow: Overlay cursor: MouseCursor.Default
+    cover := Image{width: Fill height: Fill fit: ImageFit.CropToFill
+        draw_bg +: {pixel: fn(){
+            let sdf = Sdf2d.viewport(self.pos * self.rect_size)
+            sdf.box(0.0, 0.0, self.rect_size.x, self.rect_size.y, 5.0)
+            sdf.fill(Pal.premul(self.get_color()))
+            return sdf.result
+        }}
+    }
+    sharp := Image{width: Fill height: Fill fit: ImageFit.CropToFill
+        draw_bg +: {pixel: fn(){
+            let sdf = Sdf2d.viewport(self.pos * self.rect_size)
+            sdf.box(0.0, 0.0, self.rect_size.x, self.rect_size.y, 5.0)
+            sdf.fill(Pal.premul(self.get_color()))
+            return sdf.result
+        }}
+    }
+    // A dark band behind the year and its count, as Photos puts one behind its titles: 62% black
+    // down past the words (white on white under it is 6.2:1, the count's 90% white 5.4:1), then
+    // gone 50 points further on.
+    shade := SolidView{width: Fill height: Fill flow: Down spacing: 2 new_batch: true padding: Inset{left: 16 right: 16 top: 12}
+        draw_bg +: {pixel: fn(){
+            let sdf = Sdf2d.viewport(self.pos * self.rect_size)
+            sdf.box(0.0, 0.0, self.rect_size.x, self.rect_size.y, 5.0)
+            let y = self.pos.y * self.rect_size.y
+            sdf.fill(vec4(0.0, 0.0, 0.0, 0.62 * clamp((120.0 - y) / 50.0, 0.0, 1.0)))
+            return sdf.result
+        }}
+        name := Label{clip_y: false width: Fill padding: 0 text: "" max_lines: 1 text_overflow: Ellipsis draw_text +: {color: #xffffff text_style: theme.font_bold{font_size: 24}}}
+        detail := Label{clip_y: false width: Fill padding: 0 text: "" max_lines: 1 text_overflow: Ellipsis draw_text +: {color: #xffffffe6 text_style: theme.font_regular{font_size: 9}}}
+    }
+}
+let DeskMonthTile = GestureView{width: 285 height: 176 flow: Overlay cursor: MouseCursor.Default
+    cover := Image{width: Fill height: Fill fit: ImageFit.CropToFill
+        draw_bg +: {pixel: fn(){
+            let sdf = Sdf2d.viewport(self.pos * self.rect_size)
+            sdf.box(0.0, 0.0, self.rect_size.x, self.rect_size.y, 4.0)
+            sdf.fill(Pal.premul(self.get_color()))
+            return sdf.result
+        }}
+    }
+    sharp := Image{width: Fill height: Fill fit: ImageFit.CropToFill
+        draw_bg +: {pixel: fn(){
+            let sdf = Sdf2d.viewport(self.pos * self.rect_size)
+            sdf.box(0.0, 0.0, self.rect_size.x, self.rect_size.y, 4.0)
+            sdf.fill(Pal.premul(self.get_color()))
+            return sdf.result
+        }}
+    }
+    // The month and its places on a dark band (as the year's): 62% black down past the words,
+    // then gone 44 points further on. The places line is cut to fit (desk_places_fit).
+    shade := SolidView{width: Fill height: Fill flow: Down spacing: 1 new_batch: true padding: Inset{left: 12 right: 12 top: 10}
+        draw_bg +: {pixel: fn(){
+            let sdf = Sdf2d.viewport(self.pos * self.rect_size)
+            sdf.box(0.0, 0.0, self.rect_size.x, self.rect_size.y, 4.0)
+            let y = self.pos.y * self.rect_size.y
+            sdf.fill(vec4(0.0, 0.0, 0.0, 0.62 * clamp((100.0 - y) / 44.0, 0.0, 1.0)))
+            return sdf.result
+        }}
+        name := Label{clip_y: false width: Fill padding: 0 text: "" max_lines: 1 text_overflow: Ellipsis draw_text +: {color: #xffffff text_style: theme.font_bold{font_size: 12.75}}}
+        detail := Label{clip_y: false width: Fill padding: 0 text: "" max_lines: 1 text_overflow: Ellipsis draw_text +: {color: #xffffffe6 text_style: theme.font_regular{font_size: 8.25}}}
+    }
+}
+// A face in the sidebar, where the other rows have a glyph.
+let DeskFace = Image{width: 18 height: 18 fit: ImageFit.CropToFill
+    draw_bg +: {pixel: fn(){
+        let sdf = Sdf2d.viewport(self.pos * self.rect_size)
+        sdf.circle(self.rect_size.x * 0.5, self.rect_size.y * 0.5, self.rect_size.x * 0.5)
+        sdf.fill(Pal.premul(self.get_color()))
+        return sdf.result
+    }}
+}
+let DeskInfoName = Label{clip_y: false width: Fill padding: 0 flow: Flow.Right{wrap: true} text: "" draw_text +: {color: ui_ink text_style: theme.font_bold{font_size: 9.75}}}
+let DeskInfoKey = Label{clip_y: false width: Fill padding: 0 margin: Inset{top: 8} text: "" draw_text +: {color: ui_muted text_style: theme.font_regular{font_size: 8.25}}}
+let DeskInfoValue = Label{clip_y: false width: Fill padding: 0 flow: Flow.Right{wrap: true} text: "" draw_text +: {color: ui_ink text_style: theme.font_regular{font_size: 9.75 line_spacing: 1.2}}}
+let DeskInfoNote = Label{clip_y: false width: Fill padding: 0 flow: Flow.Right{wrap: true} text: "" draw_text +: {color: ui_muted text_style: theme.font_regular{font_size: 9.75 line_spacing: 1.2}}}
+fn desk_info(){
+    let ids = desk_targets()
+    View{width: Fill height: Fit flow: Down spacing: 2 padding: 14
+        if ids.len() == 0 {
+            DeskInfoName{text: "No Selection"}
+            DeskInfoNote{margin: Inset{top: 4} text: "Click a photo to see its details."}
+        }
+        if ids.len() > 1 {
+            DeskInfoName{text: "" + ids.len() + " Photos Selected"}
+            DeskInfoNote{margin: Inset{top: 4} text: desk_info_span(ids)}
+        }
+        if ids.len() == 1 && photo_of(ids[0]) != nil {
+            DeskInfoName{text: photo_of(ids[0]).title}
+            for row in desk_info_rows(photo_of(ids[0])) {
+                DeskInfoKey{text: row.key}
+                DeskInfoValue{text: row.value}
+            }
+        }
+    }
+}
+fn desk_content(){
+    View{width: Fill height: Fit flow: Down spacing: 2 padding: Inset{top: 2 bottom: 2}
+        if route == "memories" && memories.len() == 0 {
+            UiEmpty{height: max(200, desk_height - if ui_unified { 57 } else { 45 })
+                glyph +: {draw_svg +: {svg: ui_icon("sparkles")}}
+                title +: {text: "No Memories"}
+                note +: {width: Fill align: Align{x: 0.5} flow: Flow.Right{wrap: true} text: "Add at least two photos to make a memory."}
+                UiPrimary{margin: Inset{top: 8} text: "Import…" on_click: || desk_import()}
+            }
+        }
+        if route == "memories" {
+            View{width: Fill height: Fit flow: Down spacing: 8 padding: Inset{left: 20 right: 20 top: 6 bottom: 24}
+                for section in desk_memory_sections() {
+                    DeskHeading{padding: Inset{left: 0 right: 0 top: 14 bottom: 2} name.text: section.title}
+                    for row in section.rows {
+                        View{width: Fill height: Fit flow: Right spacing: 12 margin: Inset{bottom: 4}
+                            for card in row {
+                                DeskMemory{width: desk_card height: floor(desk_card * 0.62) on_tap: |x, y| desk_open_memory(card.at)
+                                    cover.src: desk_thumb(card.memory.photos[card.memory.photos.len() - 1])
+                                    cover.quarter_turns: desk_turns(card.memory.photos[card.memory.photos.len() - 1])
+                                    caption.name.text: card.memory.title
+                                    caption.detail.text: memory_date(card.memory) + "  ·  " + card.memory.photos.len() + " photos"}
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if desk_scaled() {
+            View{width: Fill height: Fit flow: Down spacing: 12 padding: Inset{left: 20 right: 20 top: 16 bottom: 24}
+                for row in grid_rows_of(desk_scale_groups(), desk_tile_n()) {
+                    View{width: Fill height: Fit flow: Right spacing: 12
+                        for g in row {
+                            if desk_scale == "years" {
+                                DeskYearTile{width: desk_tile_w() height: desk_tile_h() on_tap: |x, y| desk_open_year(g.key)
+                                    cover.src: desk_thumb(g.cover) cover.quarter_turns: desk_turns(g.cover)
+                                    sharp.src: desk_full(g.cover) sharp.quarter_turns: desk_turns(g.cover)
+                                    shade.name.text: g.title shade.detail.text: desk_count_text(g.ids.len())}
+                            } else {
+                                DeskMonthTile{width: desk_tile_w() height: desk_tile_h() on_tap: |x, y| desk_open_month(g.key)
+                                    cover.src: desk_thumb(g.cover) cover.quarter_turns: desk_turns(g.cover)
+                                    sharp.src: desk_full(g.cover) sharp.quarter_turns: desk_turns(g.cover)
+                                    shade.name.text: g.title shade.detail.text: desk_places_fit(g.ids, desk_tile_w() - 24)}
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if route != "memories" && !desk_scaled() {
+            if route == "editor" {
+                View{width: Fill height: Fit padding: Inset{left: 12 right: 12 top: 10 bottom: 6}
+                    Label{clip_y: false width: Fill padding: 0 text: "Click the photos this album should hold." draw_text +: {color: ui_muted text_style: theme.font_regular{font_size: 9.75}}}
+                }
+            }
+            if route == "memory" {
+                View{width: Fill height: Fit padding: Inset{left: 12 right: 12 top: 10 bottom: 8}
+                    Label{clip_y: false width: Fill flow: Flow.Right{wrap: true} padding: 0 text: route_arg.summary
+                        draw_text +: {color: ui_ink text_style: theme.font_regular{font_size: 9.75 line_spacing: 1.35}}}
+                }
+            }
+            if route == "deleted" && route_ids().len() > 0 {
+                View{width: Fill height: Fit padding: Inset{left: 12 right: 12 top: 10 bottom: 8}
+                    Label{clip_y: false width: Fill flow: Flow.Right{wrap: true} padding: 0 text: "Photos show the days remaining before they’re permanently deleted."
+                        draw_text +: {color: ui_muted text_style: theme.font_regular{font_size: 9.75 line_spacing: 1.35}}}
+                }
+            }
+            let ids = route_ids()
+            if ids.len() == 0 {
+                UiEmpty{height: max(200, desk_height - if ui_unified { 57 } else { 45 })
+                    glyph +: {draw_svg +: {svg: desk_empty_glyph()}}
+                    title +: {text: desk_empty_title()}
+                    note +: {width: Fill align: Align{x: 0.5} flow: Flow.Right{wrap: true} text: desk_empty_text()}
+                    if route == "favorites" { UiButton{margin: Inset{top: 8} text: "Show Library" on_click: || desk_go("library", "")} }
+                    if route == "album" && !ui_unified { UiPrimary{margin: Inset{top: 8} text: "Add Photos" on_click: || edit_album()} }
+                    if route == "album" && ui_unified { UiButton{margin: Inset{top: 8} text: "Show Library" on_click: || desk_go("library", "")} }
+                    if route == "library" && query != "" { UiButton{margin: Inset{top: 8} text: "Clear Search" on_click: || desk_clear_search()} }
+                    if route == "library" && query == "" {
+                        View{width: Fit height: Fit flow: Right spacing: 8 margin: Inset{top: 8}
+                            if store.hidden.len() > 0 { UiButton{text: "Bring Back Sample Photos" on_click: || desk_restore_samples()} }
+                            UiPrimary{text: "Import…" on_click: || desk_import()}
+                        }
+                    }
+                }
+            }
+            let menus = desk_cell_menus()
+            for section in library_sections(ids) {
+                if section.title != "" { DeskHeading{name.text: section.title} }
+                for row in grid_rows_of(section.ids, columns) {
+                    View{width: Fill height: desk_cell flow: Right spacing: 2 align: Align{x: 0.5}
+                        for id in row {
+                            if route == "editor" {
+                                if has_item(editor_selected, id) {
+                                    DeskPicked{width: desk_cell height: desk_cell on_tap: |x, y| desk_toggle(id) pic.src: desk_thumb(id) pic.quarter_turns: desk_turns(id)}
+                                } else {
+                                    DeskCell{width: desk_cell height: desk_cell on_tap: |x, y| desk_toggle(id) pic.src: desk_thumb(id) pic.quarter_turns: desk_turns(id)}
+                                }
+                            } else {
+                                DeskCell{width: desk_cell height: desk_cell flow: Overlay pic.src: desk_thumb(id) pic.quarter_turns: desk_turns(id)
+                                    on_tap: |x, y, cmd, shift| desk_click(ids, id, cmd, shift)
+                                    menu: desk_menu_for(menus, id) on_menu: |title, x, y, parent| desk_cell_menu(title, id, parent)
+                                    if route != "favorites" && is_favorite(id) { DeskHeart{} }
+                                    if route == "deleted" { DeskDaysLeft{pill.days.text: desk_days_left(id)} }
+                                    if has_item(desk_selection, id) { DeskRing{} }
+                                }
+                            }
+                        }
+                        for k in columns - row.len() { View{width: desk_cell height: 1} }
+                    }
+                }
+            }
+        }
+    }
+}
+let DeskList = ScrollYView{width: Fill height: Fill flow: Down on_render: || { desk_content() }}
+let desk_places = [
+    {id: "library" label: "Library" icon: "ui-photo"}
+    {id: "favorites" label: "Favorites" icon: "ui-heart"}
+    {id: "memories" label: "Memories" icon: "ui-sparkles"}
+    {id: "deleted" label: "Recently Deleted" icon: "ui-trash"}
+]
+let DeskFull = if ui_desk { SolidView{width: Fill height: Fill flow: Overlay draw_bg.color: ui_page
+    desk_body := View{width: Fill height: Fill flow: Right
+        // The sidebar, and its hairline: a Mac hides them with the sidebar button.
+        side_col := View{width: Fit height: Fill flow: Right
+            UiSidebar{
+                sidebar := ScrollYView{width: Fill height: Fill flow: Down spacing: 1 on_render: || {
+                    for t in desk_places {
+                        if t.id == route || (t.id == "memories" && route == "memory") {
+                            UiSideRowOn{text: t.label draw_icon +: {svg: desk_icon(t.icon)} on_click: || desk_go(t.id, "")}
+                        } else {
+                            UiSideRow{text: t.label draw_icon +: {svg: desk_icon(t.icon)} on_click: || desk_go(t.id, "")}
+                        }
+                    }
+                    View{width: Fill height: Fit flow: Right align: Align{y: 1.0}
+                        UiSideHead{padding: Inset{left: 4 top: 12 bottom: 4} text: "Albums"}
+                        View{width: Fill height: 1}
+                        UiToolIcon{width: 24 height: 24 margin: Inset{bottom: 2} icon_walk: Walk{width: 18 height: 18} draw_icon +: {svg: ui_icon("plus") color: ui_muted preserve_viewbox: true} on_click: || desk_new_album_with([])}
+                    }
+                    for a in store.albums {
+                        if desk_naming == a.id {
+                            // Its actual name is selected, ready to replace or edit in place.
+                            RoundedView{width: Fill height: 28 flow: Right align: Align{y: 0.5} spacing: 7 padding: Inset{left: 8 right: 3}
+                                show_bg: true draw_bg +: {color: ui_selected border_radius: 3.0}
+                                UiGlyph{draw_svg +: {svg: ui_icon("album") color: ui_link}}
+                                View{width: Fill height: 22 flow: Overlay
+                                    side_name := UiField{height: 22 padding: Inset{left: 4 right: 4 top: 3 bottom: 3} empty_text: "" text: a.title
+                                        on_change: |text| desk_name_typed(text) on_return: |text| desk_name_done() on_escape: |text| desk_name_cancel()}
+                                }
+                            }
+                        } else {
+                            GestureView{width: Fill height: Fit menu: desk_album_rows() on_menu: |title| desk_album_menu(title, a.id)
+                                if (route == "album" && route_arg == a.id) || (route == "editor" && editor_id == a.id) {
+                                    UiSideRowOn{text: a.title draw_text +: {max_lines: 1 text_overflow: Ellipsis} draw_icon +: {svg: ui_icon("album")} on_click: || desk_go("album", a.id)}
+                                } else {
+                                    UiSideRow{text: a.title draw_text +: {max_lines: 1 text_overflow: Ellipsis} draw_icon +: {svg: ui_icon("album")} on_click: || desk_go("album", a.id)}
+                                }
+                            }
+                        }
+                    }
+                    if route == "editor" && editor_id == 0 {
+                        UiSideRowOn{text: "New Album" draw_icon +: {svg: ui_icon("album")}}
+                    }
+                    if store.albums.len() == 0 && !(route == "editor" && editor_id == 0) {
+                        Label{clip_y: false width: Fill padding: Inset{left: 8 right: 8 top: 4 bottom: 4} flow: Flow.Right{wrap: true} text: "Click + to create your first album."
+                            draw_text +: {color: ui_muted text_style: theme.font_regular{font_size: 9}}}
+                    }
+                    if people.len() > 0 { UiSideHead{padding: Inset{left: 4 top: 12 bottom: 4} text: "People"} }
+                    for name in people {
+                        View{width: Fill height: 28 flow: Overlay
+                            if route == "person" && route_arg == name {
+                                UiSideRowOn{text: name draw_icon +: {svg: ui_icon("person") color: #x00000000} on_click: || desk_go("person", name)}
+                            } else {
+                                UiSideRow{text: name draw_icon +: {svg: ui_icon("person") color: #x00000000} on_click: || desk_go("person", name)}
+                            }
+                            View{width: Fit height: Fill align: Align{y: 0.5} padding: Inset{left: 7} new_batch: true
+                                DeskFace{src: desk_thumb(face_of(name)) quarter_turns: desk_turns(face_of(name))}
+                            }
+                        }
+                    }
+                }}
+            }
+            UiVSep{}
+        }
+        // The grid, and an open photo in its place: the sidebar stays beside both.
+        View{width: Fill height: Fill flow: Overlay
+            main := View{width: Fill height: Fill flow: Down
+                UiToolbar{spacing: 6
+                    // With the sidebar hidden, the lights and the sidebar button sit here.
+                    lights_gap := View{visible: false width: 104 height: 1}
+                    View{width: Fill{weight: 100 basis: 150 shrink: 0.05} height: Fit flow: Down spacing: 1
+                        title := UiBarTitle{width: Fill text_overflow: Ellipsis}
+                        subtitle := UiBarSub{width: Fill text_overflow: Ellipsis}
+                    }
+                    // Photos' time scale in the Library (see desk_tools).
+                    scale_bar := View{visible: false width: Fit height: 28 flow: Right align: Align{y: 0.5}
+                        scale_tools := UiSegments{new_batch: true on_render: || {
+                            for s in desk_scales {
+                                if s.id == desk_scale { DeskSegOn{text: s.name on_click: || desk_set_scale(s.id)} }
+                                else { UiSeg{text: s.name on_click: || desk_set_scale(s.id)} }
+                            }
+                        }}
+                    }
+                    editor_bar := View{visible: false width: Fill{weight: 100 basis: 150 shrink: 0.05} height: 28 align: Align{y: 0.5}
+                        album_name := UiField{empty_text: "Album name" on_escape: |text| desk_close_sheets() on_change: |text| desk_named(text) on_return: |text| save_album()}
+                    }
+                    zoom_tools := View{width: Fit height: 28 flow: Right align: Align{y: 0.5} on_render: || {
+                        if desk_can_zoom(columns + 1) { DeskZoom{draw_icon +: {svg: ui_icon("minus")} on_click: || desk_zoom_to(columns + 1)} }
+                        else { DeskIconOff{draw_icon +: {svg: ui_icon("minus")}} }
+                        if desk_can_zoom(columns - 1) { DeskZoom{draw_icon +: {svg: ui_icon("plus")} on_click: || desk_zoom_to(columns - 1)} }
+                        else { DeskIconOff{draw_icon +: {svg: ui_icon("plus")}} }
+                    }}
+                    fav_tools := View{width: Fit height: 28 flow: Right align: Align{y: 0.5} on_render: || {
+                        if desk_selection.len() == 0 { fav_none := DeskIconOff{draw_icon +: {svg: ui_icon("heart")}} }
+                        else if desk_all_favorite(desk_selection) { fav_remove := DeskIcon{draw_icon +: {svg: ui_icon("heart-fill")} on_click: || desk_set_favorite(desk_selection, false)} }
+                        else { fav_add := DeskIcon{draw_icon +: {svg: ui_icon("heart")} on_click: || desk_set_favorite(desk_selection, true)} }
+                    }}
+                    info_tool := DeskIcon{draw_icon +: {svg: ui_icon("info")} on_click: || desk_toggle_info()}
+                    info_off := DeskIconOff{visible: false draw_icon +: {svg: ui_icon("info")}}
+                    info_tool_on := DeskIcon{visible: false draw_icon +: {svg: ui_icon("info") color: if ui_unified { ui_link } else { ui_primary }} on_click: || desk_toggle_info()}
+                    share_tool := GestureView{visible: false width: Fit height: Fit menu: ["Export…"] on_menu: |title, x, y, parent| desk_menu_act(title, parent, desk_targets())
+                        DeskIcon{draw_icon +: {svg: ui_icon("export")} on_click: || ui.share_tool.open_menu(desk_share_rows())}
+                    }
+                    share_off := DeskIconOff{draw_icon +: {svg: ui_icon("export")}}
+                    import_tool := UiTool{visible: false reset_hover_on_click: true text: "Import…" on_click: || desk_import()}
+                    create := UiTool{visible: false reset_hover_on_click: true text: "New Album" icon_walk: Walk{width: 12 height: 12} draw_icon +: {svg: ui_icon("plus")} on_click: || desk_new_album_with([])}
+                    // What a narrow window's toolbar has no room for, as a Mac's toolbar overflows.
+                    more_tool := GestureView{visible: false width: Fit height: Fit on_menu: |title| desk_more_chosen(title)
+                        UiTool{reset_hover_on_click: true text: "»" on_click: || ui.more_tool.open_menu(desk_more_rows())}
+                    }
+                    edit := UiTool{visible: false reset_hover_on_click: true text: "Add Photos…" on_click: || edit_album()}
+                    memory_tool := UiTool{visible: false reset_hover_on_click: true text: "Create Memories…" draw_icon +: {svg: ui_icon("sparkles")} on_click: || desk_ask_memory()}
+                    recover_tool := UiTool{visible: false reset_hover_on_click: true text: "Recover" on_click: || desk_recover(desk_selection)}
+                    purge_tool := UiTool{visible: false reset_hover_on_click: true text: "Delete All…" on_click: || desk_purge_ask()}
+                    play_memory := UiTool{visible: false reset_hover_on_click: true text: "Play Memory" icon_walk: Walk{width: 18 height: 18} draw_icon +: {svg: ui_icon("play") preserve_viewbox: true} on_click: || play_story(route_arg)}
+                    editor_tools := View{visible: false width: Fit height: 28 flow: Right spacing: 8 align: Align{y: 0.5}
+                        UiButton{text: "Cancel" on_click: || { message = ""; go_back_fn() }}
+                        editor_save := UiPrimary{text: "Save" on_click: || save_album()}
+                        editor_save_off := DeskPrimaryOff{visible: false text: "Save"}
+                    }
+                    // 180 wide, and as little as 110 before the title is cut; then its magnifier.
+                    searchbar := View{visible: false width: Fill{weight: 0.000001 basis: 180 shrink: 1.0 min: 110 max: 180} height: 28 flow: Overlay align: Align{y: 0.5}
+                        search := UiSearch{padding: Inset{left: 26 right: 24 top: 6 bottom: 6} empty_text: "Search" on_change: |text| desk_search(text) on_escape: |text| desk_search_escape()}
+                        UiGlyph{width: 14 height: 14 margin: Inset{left: 8} draw_svg +: {svg: ui_icon("search")}}
+                        View{width: Fill height: Fill flow: Right align: Align{x: 1.0 y: 0.5}
+                            search_clear := UiSearchClear{on_click: || desk_clear_search()}
+                        }
+                    }
+                    search_tool := DeskIcon{visible: false draw_icon +: {svg: ui_icon("search")} on_click: || desk_find()}
+                }
+                UiSep{}
+                message_bar := View{visible: false width: Fill height: Fit flow: Down
+                    SolidView{width: Fill height: 28 flow: Right align: Align{y: 0.5} padding: Inset{left: 12 right: 12} draw_bg.color: ui_content
+                        message := Label{clip_y: false width: Fill padding: 0 text: "" draw_text +: {color: ui_danger text_style: theme.font_regular{font_size: 9}}}
+                    }
+                    UiSep{}
+                }
+                View{width: Fill height: Fill flow: Right
+                    SolidView{width: Fill height: Fill draw_bg.color: ui_content
+                        zoom := GestureView{width: Fill height: Fill
+                            on_pinch: |scale, x, y, phase| desk_pinch(scale, phase)
+                            on_tap: |x, y| desk_grid_tap()
+                            on_key: |key, cmd, shift| desk_grid_key(key, cmd, shift)
+                            menu: ["Import…" "-" "New Album"] on_menu: |title| desk_grid_menu(title)
+                            list_host := View{width: Fill height: Fill on_render: || { list := DeskList{desk_content()} }
+                                list := DeskList{}
+                            }
+                        }
+                    }
+                    info_pane := View{visible: false width: 261 height: Fill flow: Right
+                        UiVSep{}
+                        SolidView{width: Fill height: Fill draw_bg.color: ui_sidebar
+                            info_list := ScrollYView{width: Fill height: Fill flow: Down on_render: || { desk_info() }}
+                        }
+                    }
+                }
+                // What became of Create Memories, under the list.
+                memory_foot := View{visible: false width: Fill height: Fit flow: Down
+                    UiSep{}
+                    UiFootBar{height: 36
+                        memory_spin := LoadingSpinner{visible: false width: 13 height: 13 draw_bg +: {color: ui_muted stroke_width: 2.0}}
+                        memory_foot_text := Label{clip_y: false width: Fill padding: 0 max_lines: 1 text_overflow: Ellipsis text: "" draw_text +: {color: ui_ink text_style: theme.font_regular{font_size: 9}}}
+                        memory_stop := UiButton{visible: false reset_hover_on_click: true text: "Stop Waiting" on_click: || cancel_memories()}
+                    }
+                }
+            }
+            viewer := SolidView{visible: false width: Fill height: Fill flow: Down new_batch: true draw_bg.color: ui_content
+                UiToolbar{spacing: 4
+                    viewer_lights_gap := View{visible: false width: 104 height: 1}
+                    viewer_back := UiPaneTool{icon_walk: Walk{width: 20 height: 20} draw_icon +: {svg: ui_icon("chevron-left") preserve_viewbox: true} on_click: || desk_close_viewer()}
+                    View{width: Fill height: Fit flow: Down spacing: 1 margin: Inset{left: 4 right: 8}
+                        viewer_title := UiBarTitle{width: Fill text_overflow: Ellipsis}
+                        viewer_meta := UiBarSub{width: Fill text_overflow: Ellipsis}
+                    }
+                    favorite := View{width: Fit height: 28 flow: Right
+                        favorite_off := DeskIcon{draw_icon +: {svg: ui_icon("heart")} on_click: || toggle_favorite()}
+                        favorite_on := DeskIcon{visible: false draw_icon +: {svg: ui_icon("heart-fill")} on_click: || toggle_favorite()}
+                    }
+                    // Rotate: a quarter turn counterclockwise, as Photos' button turns it (Image > Rotate Clockwise, ⌥⌘R, the other way).
+                    viewer_rotate := DeskIcon{visible: ui_unified draw_icon +: {svg: desk_icon("rotate-left")} on_click: || desk_rotate(desk_targets(), -1)}
+                    playback := View{width: Fit height: 28 flow: Right
+                        play_button := DeskIcon{draw_icon +: {svg: ui_icon("play")} on_click: || toggle_slides()}
+                        pause_button := DeskIcon{visible: false draw_icon +: {svg: ui_icon("pause")} on_click: || toggle_slides()}
+                    }
+                    viewer_info_tool := DeskIcon{draw_icon +: {svg: ui_icon("info")} on_click: || desk_toggle_info()}
+                    viewer_info_tool_on := DeskIcon{visible: false draw_icon +: {svg: ui_icon("info") color: if ui_unified { ui_link } else { ui_primary }} on_click: || desk_toggle_info()}
+                    viewer_share := GestureView{width: Fit height: Fit menu: ["Export…"] on_menu: |title, x, y, parent| desk_menu_act(title, parent, desk_targets())
+                        DeskIcon{draw_icon +: {svg: ui_icon("export")} on_click: || ui.viewer_share.open_menu(desk_share_rows())}
+                    }
+                    // Another desktop's pager (see desk_viewer_sync).
+                    viewer_pager := View{width: Fit height: 28 flow: Right align: Align{y: 0.5}
+                        UiVSep{height: 18 margin: Inset{left: 6 right: 6}}
+                        viewer_prev := DeskIcon{draw_icon +: {svg: ui_icon("chevron-left")} on_click: || { stop_slides(); step_photo(-1) }}
+                        viewer_count := Label{clip_y: false width: Fit padding: 0 margin: Inset{left: 2 right: 2} text: "" draw_text +: {color: ui_ink text_style: theme.font_regular{font_size: 9}}}
+                        viewer_next := DeskIcon{draw_icon +: {svg: ui_icon("chevron-right")} on_click: || { stop_slides(); step_photo(1) }}
+                    }
+                }
+                UiSep{}
+                View{width: Fill height: Fill flow: Right
+                    viewer_keys := GestureView{width: Fill height: Fill
+                        on_swipe: |dx, dy| { if dx < 0 { stop_slides(); step_photo(1) } else if dx > 0 { stop_slides(); step_photo(-1) } else if dy > 0 { close_viewer() } }
+                        on_tap: |x, y| { if playing { stop_slides() } }
+                        on_key: |key, cmd, shift| desk_viewer_key(key, cmd)
+                        menu: if ui_unified { ["Get Info" "Rotate Clockwise" "Export…" "-" "Delete Photo…"] } else { ["Get Info" "Export…" "-" "Delete Photo…"] }
+                        on_menu: |title| desk_act(title, desk_targets())
+                        stage := View{width: Fill height: Fill flow: Overlay align: Align{x: 0.5 y: 0.5} padding: 16 on_render: || {
+                            if viewer_ids.len() > 0 {
+                                Image{width: Fill height: Fill fit: ImageFit.Smallest quarter_turns: desk_turns(viewer_ids[viewer_index]) src: desk_thumb(viewer_ids[viewer_index])}
+                                if !is_own(viewer_ids[viewer_index]) {
+                                    Image{width: Fill height: Fill fit: ImageFit.Smallest quarter_turns: desk_turns(viewer_ids[viewer_index]) src: http_resource(full_url(photo_of(viewer_ids[viewer_index])))}
+                                }
+                            }
+                        }}
+                    }
+                    viewer_info_pane := View{visible: false width: 261 height: Fill flow: Right
+                        UiVSep{}
+                        SolidView{width: Fill height: Fill draw_bg.color: ui_sidebar
+                            viewer_info_list := ScrollYView{width: Fill height: Fill flow: Down on_render: || { desk_info() }}
+                        }
+                    }
+                }
+            }
+        }
+    }
+    // A Mac's sidebar button, by the lights at the sidebar's top, in the same place with
+    // the sidebar shown or hidden. A sheet over the window covers it.
+    // A region, drawn by the first sync of each run: an appearance change draws it in the new
+    // colours (a batch of its own otherwise keeps the old ones).
+    side_tool := View{visible: ui_unified width: Fit height: Fit margin: Inset{left: 84 top: 12} new_batch: true on_render: || {
+        UiPaneTool{draw_icon +: {svg: ui_icon("sidebar")} on_click: || desk_toggle_side()}
+    }}
+    // Delete Album: a sheet that says what goes and what stays.
+    confirm_box := View{visible: false width: Fill height: Fill flow: Overlay new_batch: true
+        DeskDim{}
+        DeskSheetPlace{
+            // A Mac's alerts share one layout (UiAlertPanel): the app's icon on top, the words
+            // centred, two buttons side by side with the default on the right.
+            if ui_unified {
+                UiAlertPanel{
+                    if ui_alert_icon { UiAlertIcon{app: "os.photos" width: 64 height: 64} }
+                    confirm_title := UiAlertTitle{}
+                    UiAlertNote{text: "Its photos stay in your Library."}
+                    UiAlertRow{
+                        UiButton{width: Fill reset_hover_on_click: true text: "Delete Album" draw_text +: {color: desk_danger color_hover: desk_danger color_down: desk_danger color_focus: desk_danger} on_click: || desk_delete_album()}
+                        UiPrimary{width: Fill key_default: true key_cancel: true reset_hover_on_click: true text: "Cancel" on_click: || { ui.confirm_box.set_visible(false); desk_sheet_down() }}
+                    }
+                }
+            } else {
+                DeskSheetPanel{width: if ui_alert_icon { 420 } else { 340 }
+                    // A Mac alert: the app's icon beside its words.
+                    View{width: Fill height: Fit flow: Right spacing: 14
+                        if ui_alert_icon { UiAlertIcon{app: "os.photos" width: 52 height: 52} }
+                        View{width: Fill height: Fit flow: Down spacing: 6
+                            confirm_title := DeskSheetTitle{}
+                            DeskSheetNote{text: "Its photos stay in your Library."}
+                        }
+                    }
+                    DeskSheetButtons{
+                        UiButton{reset_hover_on_click: true text: "Delete Album" draw_text +: {color: desk_danger color_hover: desk_danger color_down: desk_danger color_focus: desk_danger} on_click: || desk_delete_album()}
+                        UiPrimary{key_default: true key_cancel: true reset_hover_on_click: true text: "Cancel" on_click: || { ui.confirm_box.set_visible(false); desk_sheet_down() }}
+                    }
+                }
+            }
+        }
+    }
+    // Delete Photo: what leaves, and from where.
+    photo_sheet := View{visible: false width: Fill height: Fill flow: Overlay new_batch: true
+        DeskDim{}
+        DeskSheetPlace{
+            // One photo's Delete sits beside Cancel; "Delete 2 Photos" is wider than half an
+            // alert, so those two stand one over the other, the default (Cancel) on top.
+            if ui_unified {
+                UiAlertPanel{
+                    if ui_alert_icon { UiAlertIcon{app: "os.photos" width: 64 height: 64} }
+                    photo_title := UiAlertTitle{}
+                    photo_note := UiAlertNote{}
+                    photo_row := UiAlertRow{
+                        photo_delete := UiButton{width: Fill reset_hover_on_click: true text: "Delete Photo" draw_text +: {color: desk_danger color_hover: desk_danger color_down: desk_danger color_focus: desk_danger} on_click: || desk_delete_photos()}
+                        photo_cancel := UiPrimary{width: Fill key_default: true key_cancel: true reset_hover_on_click: true text: "Cancel" on_click: || { ui.photo_sheet.set_visible(false); desk_sheet_down() }}
+                    }
+                    photo_stack := UiAlertStack{visible: false
+                        photo_cancel_many := UiPrimary{width: Fill key_default: true key_cancel: true reset_hover_on_click: true text: "Cancel" on_click: || { ui.photo_sheet.set_visible(false); desk_sheet_down() }}
+                        photo_delete_many := UiButton{width: Fill reset_hover_on_click: true text: "" draw_text +: {color: desk_danger color_hover: desk_danger color_down: desk_danger color_focus: desk_danger} on_click: || desk_delete_photos()}
+                    }
+                }
+            } else {
+                DeskSheetPanel{width: if ui_alert_icon { 420 } else { 340 }
+                    View{width: Fill height: Fit flow: Right spacing: 14
+                        if ui_alert_icon { UiAlertIcon{app: "os.photos" width: 52 height: 52} }
+                        View{width: Fill height: Fit flow: Down spacing: 6
+                            photo_title := DeskSheetTitle{}
+                            photo_note := DeskSheetNote{}
+                        }
+                    }
+                    DeskSheetButtons{
+                        photo_delete := UiButton{reset_hover_on_click: true text: "Delete Photo" draw_text +: {color: desk_danger color_hover: desk_danger color_down: desk_danger color_focus: desk_danger} on_click: || desk_delete_photos()}
+                        UiPrimary{key_default: true key_cancel: true reset_hover_on_click: true text: "Cancel" on_click: || { ui.photo_sheet.set_visible(false); desk_sheet_down() }}
+                    }
+                }
+            }
+        }
+    }
+    // What went wrong: see desk_alert.
+    say_sheet := View{visible: false width: Fill height: Fill flow: Overlay new_batch: true
+        DeskDim{}
+        DeskSheetPlace{
+            // OK alone across the alert, OK beside Try Again, or "Open AI Providers…" over OK:
+            // it is too wide to sit beside it.
+            if ui_unified {
+                UiAlertPanel{
+                    if ui_alert_icon { UiAlertIcon{app: "os.photos" width: 64 height: 64} }
+                    say_title := UiAlertTitle{}
+                    say_note := UiAlertNote{}
+                    say_row := UiAlertRow{
+                        say_ok := UiButton{visible: false width: Fill key_cancel: true reset_hover_on_click: true text: "OK" on_click: || desk_alert_done("")}
+                        say_only := UiPrimary{width: Fill key_default: true key_cancel: true reset_hover_on_click: true text: "OK" on_click: || desk_alert_done("")}
+                        say_again := UiPrimary{visible: false width: Fill key_default: true reset_hover_on_click: true text: "Try Again" on_click: || desk_alert_done("again")}
+                    }
+                    say_stack := UiAlertStack{visible: false
+                        say_providers := UiPrimary{width: Fill key_default: true reset_hover_on_click: true text: "Open AI Providers…" on_click: || desk_alert_done("providers")}
+                        say_stack_ok := UiButton{width: Fill key_cancel: true reset_hover_on_click: true text: "OK" on_click: || desk_alert_done("")}
+                    }
+                }
+            } else {
+                DeskSheetPanel{width: if ui_alert_icon { 420 } else { 340 }
+                    View{width: Fill height: Fit flow: Right spacing: 14
+                        if ui_alert_icon { UiAlertIcon{app: "os.photos" width: 52 height: 52} }
+                        View{width: Fill height: Fit flow: Down spacing: 6
+                            say_title := DeskSheetTitle{}
+                            say_note := DeskSheetNote{}
+                        }
+                    }
+                    DeskSheetButtons{
+                        say_ok := UiButton{visible: false key_cancel: true reset_hover_on_click: true text: "OK" padding: Inset{left: 14 right: 14} on_click: || desk_alert_done("")}
+                        say_only := UiPrimary{key_default: true key_cancel: true reset_hover_on_click: true text: "OK" padding: Inset{left: 14 right: 14} on_click: || desk_alert_done("")}
+                        say_again := UiPrimary{visible: false key_default: true reset_hover_on_click: true text: "Try Again" on_click: || desk_alert_done("again")}
+                        say_providers := UiPrimary{visible: false key_default: true reset_hover_on_click: true text: "Open AI Providers…" on_click: || desk_alert_done("providers")}
+                    }
+                }
+            }
+        }
+    }
+    // Rename: an album's name, and only that.
+    rename_sheet := View{visible: false width: Fill height: Fill flow: Overlay new_batch: true nav_group: true
+        DeskDim{}
+        DeskSheetPlace{
+            DeskSheetPanel{width: 340
+                DeskSheetTitle{text: "Rename Album"}
+                rename_field := UiField{margin: Inset{top: 4} empty_text: "Album name" on_escape: |text| desk_close_sheets() on_change: |text| desk_rename_state(text) on_return: |text| desk_rename_done()}
+                DeskSheetButtons{
+                    UiButton{reset_hover_on_click: true text: "Cancel" on_click: || desk_rename_close()}
+                    rename_ok := UiPrimary{reset_hover_on_click: true text: "Rename" on_click: || desk_rename_done()}
+                    rename_off := DeskPrimaryOff{visible: false text: "Rename"}
+                }
+            }
+        }
+    }
+    // Create Memories: the theme is the one thing to ask.
+    memory_sheet := View{visible: false width: Fill height: Fill flow: Overlay new_batch: true nav_group: true
+        DeskDim{}
+        DeskSheetPlace{
+            DeskSheetPanel{width: 440
+                DeskSheetTitle{text: "Create Memories"}
+                DeskSheetNote{text: "Photos looks for stories in your library. Name a theme, or leave it empty and let AI choose."}
+                UiFormLine{margin: Inset{top: 6}
+                    UiFormKey{width: 52 text: "Theme:"}
+                    memory_field := UiField{empty_text: "Summer with family" on_escape: |text| desk_close_sheets() on_change: |text| { memory_prompt = "" + text; desk_remember() } on_return: |text| desk_create_memory()}
+                }
+                View{width: Fill height: Fit padding: Inset{left: 60}
+                    DeskSheetNote{text: "Uses photo details with your AI provider. Pictures are not sent."}
+                }
+                DeskSheetButtons{
+                    UiButton{reset_hover_on_click: true text: "Cancel" on_click: || { ui.memory_sheet.set_visible(false); desk_sheet_down() }}
+                    UiPrimary{reset_hover_on_click: true text: "Create" padding: Inset{left: 18 right: 18} on_click: || desk_create_memory()}
+                }
+            }
+        }
+    }
+    // A Mac's slideshow (desk_show_open): over everything, the photo alone on black.
+    show_layer := SolidView{visible: false width: Fill height: Fill flow: Overlay new_batch: true draw_bg.color: #x000000
+        show_keys := GestureView{width: Fill height: Fill
+            on_tap: |x, y| desk_show_bar_on()
+            on_swipe: |dx, dy| { if dx < 0 { desk_show_step(1) } else if dx > 0 { desk_show_step(-1) } }
+            on_key: |key, cmd, shift| desk_show_key(key, cmd)
+            show_stage := View{width: Fill height: Fill flow: Overlay align: Align{x: 0.5 y: 0.5} on_render: || {
+                if desk_show && viewer_ids.len() > 0 {
+                    Image{width: Fill height: Fill fit: ImageFit.Smallest quarter_turns: desk_turns(viewer_ids[viewer_index]) src: desk_thumb(viewer_ids[viewer_index])}
+                    if !is_own(viewer_ids[viewer_index]) {
+                        Image{width: Fill height: Fill fit: ImageFit.Smallest quarter_turns: desk_turns(viewer_ids[viewer_index]) src: http_resource(full_url(photo_of(viewer_ids[viewer_index])))}
+                    }
+                }
+            }}
+        }
+        // Near the foot of the screen, under the shell's word on how to leave full screen.
+        View{width: Fill height: Fill flow: Down align: Align{x: 0.5 y: 1.0} padding: Inset{bottom: 22}
+            show_bar := RoundedView{width: Fit height: 44 flow: Right align: Align{y: 0.5} spacing: 2 padding: Inset{left: 8 right: 8} show_bg: true new_batch: true
+                draw_bg +: {color: #x262626eb border_size: 1.0 border_color: #xffffff24 border_radius: 10.0}
+                show_prev := DeskIcon{draw_icon +: {svg: ui_icon("chevron-left") color: #xffffff} draw_bg +: {color_hover: #xffffff26 color_down: #xffffff40} on_click: || desk_show_step(-1)}
+                show_play := DeskIcon{draw_icon +: {svg: ui_icon("play") color: #xffffff} draw_bg +: {color_hover: #xffffff26 color_down: #xffffff40} on_click: || toggle_slides()}
+                show_pause := DeskIcon{visible: false draw_icon +: {svg: ui_icon("pause") color: #xffffff} draw_bg +: {color_hover: #xffffff26 color_down: #xffffff40} on_click: || toggle_slides()}
+                show_next := DeskIcon{draw_icon +: {svg: ui_icon("chevron-right") color: #xffffff} draw_bg +: {color_hover: #xffffff26 color_down: #xffffff40} on_click: || desk_show_step(1)}
+                show_count := Label{clip_y: false width: Fit padding: 0 margin: Inset{left: 8 right: 8} text: "" draw_text +: {color: #xffffffd9 text_style: theme.font_regular{font_size: 9.75}}}
+                SolidView{width: 1 height: 18 margin: Inset{left: 2 right: 4} draw_bg.color: #xffffff33}
+                show_exit := DeskIcon{draw_icon +: {svg: ui_icon("xmark") color: #xffffff} draw_bg +: {color_hover: #xffffff26 color_down: #xffffff40} on_click: || desk_show_close()}
+            }
+        }
+    }
+} } else { nil }
+
+HostedView{width: Fill height: Fill
+    full: if ui_desk { DeskFull{} } else { TouchFull{} }
     tile: View{width: Fill height: Fill flow: Overlay new_batch: true show_bg: true draw_bg.color: ui_surface
         tile_grid := View{width: Fill height: Fill flow: Down spacing: 3 on_render: || {
             for row in grid_rows_of(tile_ids(tile_rows), 3) {

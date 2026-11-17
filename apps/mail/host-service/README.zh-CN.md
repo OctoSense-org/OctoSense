@@ -6,6 +6,19 @@
 并请求原生发送审阅。`mail` 声明只说明用途；仍需实际应用/账户访问权和原生审阅。密码和 SMTP 连接始终由本服务持有；
 模型或应用不能批准发送。
 
+## Mail 自身的操作
+
+这些方法只属于系统 Mail 应用，并且必须是用户亲手按下后的前台调用。其他应用和任何智能体工具调用都会收到错误。
+
+| 方法 | 输入 | 结果 |
+| --- | --- | --- |
+| `mail.move` | `account`、`folder`、`message`，以及 `to`（`archive` 或 `trash`）或 `target`（`mail.folders` 给出的邮箱 `id`） | `moved`。邮件已在废纸篓，或服务器没有废纸篓时，`trash` 会永久删除，所以要先询问。POP3 只能删除。`target` 需要 IMAP，且该邮箱仍在服务器的列表中。 |
+| `mail.mark` | `account`、`folder`、`message`，以及 `unread`、`flagged` 或两者（`true` 或 `false`） | `marked`。本设备上的副本立即改变；使用 IMAP 时，服务器上的 `\Seen` 和 `\Flagged` 标记随之更新。 |
+| `mail.attachment` | `account`、`folder`、`message`、`index` | `name`、`size`。取回附件，暂存在应用存储旁边。 |
+| `mail.attachment_keep` | 无 | `path`、`name`。暂存的文件已进入应用存储，可交给 `files.export`，之后请删除。 |
+
+Mail 的撰写界面还接受 `to` 中的列表和可选的 `cc`（`a@x, b@y`，最多 32 人，只写纯地址）。其他撰写接口和所有智能体都只能写给一个人。`mail.message` 按原文返回 `to` 和 `cc`，并以纯地址返回 `reply_to` 和 `reply_all_cc`，其中不含账户自己的地址。
+
 ## 公共撰写接口
 
 | 方法 | 输入 | 结果 |
@@ -24,7 +37,7 @@
 禁用批准控件；准备工作在 UI 线程之外运行。有界通道传递精确快照和结果，
 UI 只进行非阻塞轮询，不等待草稿磁盘操作。
 
-面板展示应用身份、账户、发件人、收件人、主题和完整正文。只有在原生
+面板展示应用身份、账户、发件人、收件人、抄送、主题和完整正文。只有在原生
 **Approve & Send** 控件上的真实按下与释放才会批准该不可变版本。测试工具、
 合成点击、脚本复制的审阅控件以及 Agent 工具都不能批准。
 目前 macOS、Android 支持发送审阅；Linux/Windows 可以保存和查询草稿，

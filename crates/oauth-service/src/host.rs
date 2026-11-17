@@ -853,49 +853,134 @@ fn presentation(provider: Provider, value: Option<&Value>) -> Result<bool, Strin
     }
 }
 
+/// What a desktop's sign-in sheets draw with: the colours of Mail's and AI
+/// Providers' host sheets and a Mac dialog's parts. A phone evaluates these and
+/// builds its own tree, whose literal values it keeps.
+const DESK_PARTS: &str = r##"// A phone's sheet keeps its fixed look; a desktop's follows the appearance at a Mac's metrics.
+// `border_radius` is half the corner it draws. `mod.theme`: a sheet that is up while the
+// appearance changes runs again, and its `theme` is still the one it opened with.
+let desk = try { theme.ui_pointer == true } catch { false }
+// The Mac style: a sheet attaches under the window's top band over a light dim, and the
+// app's name stands for its id. Every other desktop style keeps what it had.
+let desk_mac = desk && try { mod.theme.ui_unified == true } catch { false }
+let desk_dark = desk && dot(mod.theme.color_text, #x36b61200) >= 0.5
+fn tone(light, dark){ if desk_dark { dark } else { light } }
+let sh_ink = tone(#x1d1d1f, #xf5f5f7)
+let sh_muted = tone(#x636368, #xa1a1a6)
+let sh_link = tone(#x0066cc, #x2997ff)
+let sh_line = tone(#xe3e3e8, #x48484a)
+let sh_control = tone(#xffffff, #x48484a)
+let sh_control_hover = tone(#xf2f2f4, #x545458)
+let sh_control_down = tone(#xe5e5ea, #x5e5e62)
+let sh_control_line = tone(#xc9c9ce, #x545458)
+let DeskDim = SolidView{width: Fill height: Fill flow: Down draw_bg.color: if desk_mac { tone(#x00000024, #x00000052) } else { tone(#x00000040, #x00000066) } new_batch: true}
+let DeskScroll = ScrollYView{width: Fill height: Fill flow: Down align: Align{x: 0.5} padding: Inset{left: 12 right: 12 top: if desk_mac { 52 } else { 40 } bottom: 24}}
+let DeskCardPlain = RoundedView{width: Fill max_width: 480 height: Fit flow: Down spacing: 8 padding: 18 new_batch: true show_bg: true draw_bg +: {color: tone(#xf6f6f8, #x2c2c2e) border_radius: 5.0 border_size: 1.0 border_color: sh_line}}
+let DeskCardMac = RoundedShadowView{width: Fill max_width: 520 height: Fit flow: Down spacing: 8 padding: 20 new_batch: true show_bg: true draw_bg +: {color: tone(#xf6f6f8, #x2c2c2e) border_radius: 5.0 border_size: 1.0 border_color: sh_line shadow_color: tone(#x00000040, #x00000080) shadow_radius: 18.0 shadow_offset: vec2(0.0, 6.0)}}
+let DeskCard = if desk_mac { DeskCardMac } else { DeskCardPlain }
+// A Mac's sheet has the asking app's icon beside its words, as the shell's other sheets do
+// (the shell draws it). Any other style has no icon and no gap, and its words stand as they did.
+let DeskAppIcon = try { mod.widgets.ReviewAppIcon } catch { nil }
+let DeskHeading = View{width: Fill height: Fit flow: Right spacing: if desk_mac { 14 } else { 0 }}
+let DeskIconBox = View{width: Fit height: Fit visible: desk_mac}
+let DeskWords = View{width: Fill height: Fit flow: Down spacing: 8}
+let DeskInset = RoundedView{width: Fill height: Fit flow: Down spacing: 6 padding: Inset{left: 10 right: 10 top: 8 bottom: 8} show_bg: true draw_bg +: {color: tone(#xffffff, #x3a3a3c) border_radius: 3.0 border_size: 1.0 border_color: sh_line}}
+let DeskTitle = Label{width: Fill padding: 0 text: "" draw_text.wrap: Words draw_text.color: sh_ink draw_text.text_style: theme.font_bold{font_size: if desk_mac { 11.25 } else { 12.75 }}}
+let DeskHead = Label{width: Fill padding: 0 text: "" draw_text.wrap: Words draw_text.color: sh_ink draw_text.text_style: theme.font_bold{font_size: 9.75}}
+let DeskText = Label{width: Fill padding: 0 text: "" draw_text.wrap: Words draw_text.color: sh_ink draw_text.text_style.font_size: 9.75}
+let DeskNote = Label{width: Fill padding: 0 text: "" draw_text.wrap: Words draw_text.color: sh_muted draw_text.text_style.font_size: 9}
+let DeskSmall = Label{width: Fill padding: 0 text: "" draw_text.wrap: Words draw_text.color: sh_muted draw_text.text_style.font_size: 8.25}
+let DeskActions = View{width: Fill height: Fit flow: Right spacing: 8 align: Align{x: 1.0 y: 0.5} margin: Inset{top: 6}}
+// `bottom` lifts the text 1 point in the Mac's face: the font's metrics seat it low.
+let desk_lift = if desk_mac { 2 } else { 0 }
+let DeskPush = ButtonFlat{height: 28 margin: 0 padding: Inset{left: 12 right: 12 bottom: desk_lift}
+    draw_bg +: {border_radius: 3.0 border_size: 1.0 color: sh_control color_hover: sh_control_hover color_down: sh_control_down color_focus: sh_control
+        border_color: sh_control_line border_color_hover: sh_control_line border_color_down: sh_control_line border_color_focus: sh_control_line}
+    draw_text +: {color: sh_ink color_hover: sh_ink color_down: sh_ink color_focus: sh_ink text_style: theme.font_regular{font_size: 9.75}}}
+let DeskDefault = ButtonFlat{height: 28 margin: 0 padding: Inset{left: 16 right: 16 bottom: desk_lift}
+    draw_bg +: {border_radius: 3.0 border_size: 0.0 color: #x0071e3 color_hover: #x006edb color_down: #x0060c0 color_focus: #x0071e3}
+    draw_text +: {color: #xffffff color_hover: #xffffff color_down: #xffffff color_focus: #xffffff text_style: theme.font_regular{font_size: 9.75}}}
+// A link that is the sheet's default action: only a link can open the browser from a sheet.
+let DeskOpen = LinkLabel{height: 28 margin: 0 padding: Inset{left: 16 right: 16 bottom: 5}
+    draw_bg +: {
+        pixel: fn() {
+            let sdf = Sdf2d.viewport(self.pos * self.rect_size)
+            sdf.box(0.0, 0.0, self.rect_size.x, self.rect_size.y, 3.0)
+            sdf.fill(mix(mix(#x0071e3, #x006edb, self.hover), #x0060c0, self.down))
+            return sdf.result
+        }
+    }
+    draw_text +: {color: #xffffff color_hover: #xffffff color_down: #xffffff color_focus: #xffffff text_style: theme.font_regular{font_size: 9.75}}}
+"##;
+
 fn consent_sheet(ticket: &str, p: &Pending) -> String {
     if p.embedded {
-        return embedded_sheet(ticket, p);
+        let backend = p
+            .backend
+            .as_ref()
+            .expect("Backend presentation is validated");
+        return embedded_sheet(ticket, &p.app, backend);
     }
     if p.provider != Provider::Backend {
         return provider_sheet(ticket, p.provider, &p.app, &p.scopes);
     }
-    // An app backend's browser sign-in.
+    browser_sheet(ticket, p.provider, &p.app, &p.scopes, p.backend.as_deref())
+}
+
+/// An app backend's browser sign-in.
+fn browser_sheet(
+    ticket: &str,
+    provider: Provider,
+    app: &str,
+    scopes: &BTreeSet<String>,
+    backend: Option<&crate::backend::BackendClient>,
+) -> String {
     // All variable text enters as a JSON string literal, never executable Splash.
     let ticket = json!(ticket).to_string();
     let title = json!(format!(
         "Connect {}",
-        match p.provider {
+        match provider {
             Provider::Github => "GitHub",
             Provider::Google => "Google",
             Provider::Backend => "app backend",
         }
     ))
     .to_string();
-    let backend_origin = p
-        .backend
-        .as_ref()
+    let origin_of = |client: &crate::backend::BackendClient| {
+        url::Url::parse(&client.registration().authorization_url)
+            .map(|url| url.origin().ascii_serialization())
+            .unwrap_or_default()
+    };
+    let backend_origin = backend
         .map(|client| {
-            let origin = url::Url::parse(&client.registration().authorization_url)
-                .map(|url| url.origin().ascii_serialization())
-                .unwrap_or_default();
-            format!("\n\nBackend: {}\n{}", client.registration().id, origin)
+            format!("\n\nBackend: {}\n{}", client.registration().id, origin_of(client))
         })
         .unwrap_or_default();
+    let wanted = scopes
+        .iter()
+        .map(|scope| crate::providers::scope_words(scope))
+        .collect::<Vec<_>>()
+        .join("\n");
     let description = json!(format!(
         "{} requests:\n{}{}\n\nCredentials stay with OctoSense.",
-        p.app,
-        p.scopes
-            .iter()
-            .map(|scope| crate::providers::scope_words(scope))
-            .collect::<Vec<_>>()
-            .join("\n"),
-        backend_origin
+        app, wanted, backend_origin
+    ))
+    .to_string();
+    // A Mac says the same in a person's words, as its in-app sign-in does: the
+    // app by its name (its id beside it when it is not the system's), the
+    // website, and neither a backend's internal name nor its scope's.
+    let shown = app_name(app).unwrap_or_else(|| app.to_string());
+    let show_id = id_beside_name(app);
+    let app_id = json!(app).to_string();
+    let mac_title = json!(format!("Sign In to {shown}")).to_string();
+    let mac_origin = json!(backend.map_or(String::new(), origin_of)).to_string();
+    let mac_intro = json!(format!(
+        "Continue to {shown}'s website in your browser to sign in or create an account. {shown} can then read the account data it says it needs, and changing anything needs your review. OctoSense keeps your sign-in details in its secure store."
     ))
     .to_string();
     format!(
         r#"
-let ticket = {ticket}
+{DESK_PARTS}let ticket = {ticket}
 let watching = false
 let browser_url = ""
 fn host_dismiss() {{
@@ -910,9 +995,15 @@ fn poll() {{
                 if browser_url != r.data.url {{
                     browser_url = r.data.url
                     ui.oauth_browser.render()
+                    if desk_mac {{ ui.oauth_open.render() }}
                 }}
                 ui.oauth_code.set_text(r.data.code)
-                ui.oauth_status.set_text("Complete authorization in the browser, then return here.")
+                ui.oauth_status.set_text(if desk_mac {{ "Finish in your browser, then return here." }} else {{ "Complete authorization in the browser, then return here." }})
+                if desk {{
+                    // Only what can still be used: the link has taken Continue's place.
+                    ui.oauth_code.set_visible(r.data.code != "")
+                    ui.oauth_continue.set_visible(false)
+                }}
             }}
             if r.data.phase == "error" {{ ui.oauth_status.set_text(r.data.message) watching = false }}
         }} else {{ watching = false }}
@@ -922,6 +1013,7 @@ fn poll() {{
 fn bind_lifetime() {{ return ui.oauth_lifetime.bind_auth_lifetime(ticket) }}
 fn begin() {{
     if !bind_lifetime() {{ host_dismiss() return }}
+    ui.oauth_status.set_visible(true)
     ui.oauth_status.set_text("Preparing secure sign-in…")
     host.request("auth.sheet.start", {{ticket: ticket}}, fn(r) {{
         if r.is_ok {{ watching = true poll() }} else {{ ui.oauth_status.set_text(r.error) }}
@@ -943,8 +1035,44 @@ let content = SolidView {{width: Fill height: Fill flow: Down padding: 20 spacin
     Button {{width: Fill height: 48 text: "Continue" on_click: || begin()}}
     ButtonFlat {{width: Fill height: 44 text: "Cancel" on_click: || host_dismiss()}}
 }}
+let SheetDesk = DeskDim {{
+    DeskScroll {{
+    DeskCard {{
+        DeskHeading {{
+        DeskIconBox {{ if desk_mac && DeskAppIcon != nil {{ DeskAppIcon {{app: {app_id}}} }} }}
+        DeskWords {{
+        DeskTitle {{text: if desk_mac {{ {mac_title} }} else {{ {title} }}}}
+        DeskSmall {{visible: desk_mac && {show_id} text: {app_id}}}
+        DeskText {{text: if desk_mac {{ {mac_origin} }} else {{ {description} }}}}
+        DeskNote {{visible: desk_mac text: {mac_intro}}}
+        oauth_lifetime := WebReader {{width: 0 height: 0 visible: false}}
+        oauth_code := DeskTitle {{visible: false}}
+        oauth_browser := View {{width: Fill height: Fit on_render: || {{
+            if browser_url != "" && !desk_mac {{
+                LinkLabel {{text: "Open secure sign-in in your browser" url: browser_url
+                    draw_text +: {{color: sh_link color_hover: sh_link color_down: sh_link color_focus: sh_link text_style: theme.font_regular{{font_size: 9.75}}}}}}
+            }}
+        }}}}
+        oauth_status := DeskNote {{visible: !desk_mac text: "Continue to authorize this connection."}}
+        }}
+        }}
+        DeskActions {{
+            DeskPush {{text: "Cancel" on_click: || host_dismiss()}}
+            // On a Mac the link takes Continue's place, so one edge holds whichever is up.
+            View {{width: Fit height: Fit flow: Right spacing: if desk_mac {{ 0 }} else {{ 8 }} align: Align{{y: 0.5}}
+                oauth_continue := DeskDefault {{text: "Continue" on_click: || begin()}}
+                oauth_open := View {{width: Fit height: Fit on_render: || {{
+                    if browser_url != "" && desk_mac {{
+                        DeskOpen {{text: "Open in Browser" url: browser_url}}
+                    }}
+                }}}}
+            }}
+        }}
+    }}
+    }}
+}}
 start_timeout(0.0, || bind_lifetime())
-content
+if desk {{ SheetDesk{{}} }} else {{ content }}
 "#
     )
 }
@@ -957,6 +1085,21 @@ static APP_NAMES: Mutex<Option<AppNames>> = Mutex::new(None);
 /// Register the lookup [`AppNames`] describes.
 pub fn set_app_names(names: AppNames) {
     *APP_NAMES.lock().unwrap_or_else(|e| e.into_inner()) = Some(names);
+}
+
+/// The name a person knows an app by, for the shell's own review sheets: the
+/// admitted manifest's, when it has a usable one.
+pub fn display_name(app: &str) -> Option<String> {
+    app_name(app)
+}
+
+/// Whether a sheet shows an app's id beside its name on a Mac. A system app's
+/// does not need it: the `os.` namespace is refused to everything else at
+/// admission. Another app's name is its own text, so its id stays in sight: the
+/// id is what tells a look-alike from the real one. An app with no usable name
+/// is already called by its id.
+fn id_beside_name(app: &str) -> bool {
+    !app.starts_with("os.") && app_name(app).is_some_and(|name| name != app)
 }
 
 fn app_name(app: &str) -> Option<String> {
@@ -1005,6 +1148,7 @@ fn provider_sheet(
     let app = app_name(app_id).unwrap_or_else(|| app_id.to_string());
     let lit = |text: String| json!(text).to_string();
     let ticket = lit(ticket.to_string());
+    let show_id = id_beside_name(app_id);
     let title = lit(format!("Connect {name}"));
     let subtitle = lit(format!("{app} wants to use your {name} account."));
     let app_id = lit(app_id.to_string());
@@ -1015,6 +1159,19 @@ fn provider_sheet(
                 r#"View {{width: Fill height: Fit flow: Right spacing: 10 align: Align{{y: 0.0}}
                     RoundedView {{width: 7 height: 7 margin: Inset{{top: 10}} draw_bg +: {{color: #x1a7f37 border_radius: 3.5}}}}
                     Label {{width: Fill text: {} draw_text.wrap: Words draw_text.color: #x172336 draw_text.text_style.font_size: 13}}
+                }}
+                "#,
+                lit(crate::providers::scope_words(scope).to_string())
+            )
+        })
+        .collect();
+    let desk_rows: String = scopes
+        .iter()
+        .map(|scope| {
+            format!(
+                r#"View {{width: Fill height: Fit flow: Right spacing: 8 align: Align{{y: 0.0}}
+                    RoundedView {{width: 6 height: 6 margin: Inset{{top: 6}} draw_bg +: {{color: if desk_mac {{ sh_muted }} else {{ tone(#x1f7f36, #x30d158) }} border_radius: 1.5}}}}
+                    DeskText {{text: {}}}
                 }}
                 "#,
                 lit(crate::providers::scope_words(scope).to_string())
@@ -1060,7 +1217,7 @@ fn provider_sheet(
     let continue_label = lit(format!("Continue to {name}"));
     format!(
         r#"
-let ticket = {ticket}
+{DESK_PARTS}let ticket = {ticket}
 let watching = false
 let phase = "intro"
 let dots = 0
@@ -1076,8 +1233,12 @@ fn show(next) {{
     ui.failed.set_visible(next == "error")
     ui.oauth_continue.set_visible(next == "intro")
     if next == "error" {{ ui.oauth_cancel.set_text("Close") }}
+    // On a desktop the code's panel has the row of actions.
+    if desk {{ ui.desk_actions.set_visible(next != "code") }}
 }}
 fn tick() {{
+    // A desktop's line has a spinner beside it.
+    if desk {{ return }}
     if dots >= 3 {{ dots = 0 }} else {{ dots = dots + 1 }}
     let trail = ""
     for i in dots {{ trail = trail + "." }}
@@ -1156,8 +1317,63 @@ let content = SolidView {{width: Fill height: Fill flow: Down align: Align{{x: 0
         }}
     }}
 }}
+let SheetDesk = DeskDim {{
+    DeskScroll {{
+    DeskCard {{
+        DeskHeading {{
+        DeskIconBox {{ if desk_mac && DeskAppIcon != nil {{ DeskAppIcon {{app: {app_id}}} }} }}
+        DeskWords {{
+        oauth_title := DeskTitle {{text: {title}}}
+        oauth_subtitle := DeskText {{text: {subtitle}}}
+        DeskSmall {{visible: !desk_mac || {show_id} text: {app_id}}}
+        }}
+        }}
+        intro := View {{width: Fill height: Fit flow: Down spacing: 8 margin: Inset{{top: 6}}
+            DeskHead {{text: "It will be able to:"}}
+            DeskInset {{
+                {desk_rows}
+            }}
+            DeskNote {{text: {trust}}}
+        }}
+        preparing := View {{visible: false width: Fill height: Fit margin: Inset{{top: 6}}
+            DeskText {{text: {preparing}}}
+        }}
+        step := View {{visible: false width: Fill height: Fit flow: Down spacing: 8 margin: Inset{{top: 6}}
+            DeskHead {{text: {step_title}}}
+            // The panel's parts where a Mac's dialog has them: one row of actions, at the bottom.
+            device_code := mod.widgets.SignInCodeBase {{width: Fill height: Fit flow: Down spacing: 8 copy_label: if desk_mac {{ "Copy Code" }} else {{ "" }}
+                code_box := RoundedView {{width: Fill height: 40 align: Align{{x: 0.5 y: 0.5}} show_bg: true
+                    draw_bg +: {{color: tone(#xffffff, #x3a3a3c) border_radius: 3.0 border_size: 1.0 border_color: sh_line}}
+                    code := Label {{width: Fit padding: 0 text: "" draw_text.color: sh_ink draw_text.text_style: theme.font_code{{font_size: 16.5}}}}
+                }}
+                DeskNote {{text: {step_help}}}
+                View {{width: Fill height: Fit flow: Right spacing: 7 align: Align{{y: 0.5}}
+                    mod.widgets.LoadingSpinner {{width: 16 height: 16}}
+                    waiting := DeskText {{text: {waiting}}}
+                }}
+                expiry := DeskSmall {{text: {expiry}}}
+                DeskActions {{
+                    DeskPush {{text: "Cancel" on_click: || host_dismiss()}}
+                    // Wide enough that its feedback ("Copied", "Code copied") moves nothing.
+                    copy := DeskPush {{width: 100 text: if desk_mac {{ "Copy Code" }} else {{ "Copy code" }}}}
+                    open := DeskDefault {{text: {open_label}}}
+                }}
+            }}
+        }}
+        failed := View {{visible: false width: Fill height: Fit flow: Down spacing: 8 margin: Inset{{top: 6}}
+            DeskHead {{text: "Not connected" draw_text.color: tone(#xd70015, #xff7b72)}}
+            failure := DeskText {{text: ""}}
+        }}
+        oauth_lifetime := WebReader {{width: 0 height: 0 visible: false}}
+        desk_actions := DeskActions {{
+            oauth_cancel := DeskPush {{text: "Cancel" on_click: || host_dismiss()}}
+            oauth_continue := DeskDefault {{text: {continue_label} on_click: || begin()}}
+        }}
+    }}
+    }}
+}}
 start_timeout(0.0, || bind_lifetime())
-content
+if desk {{ SheetDesk{{}} }} else {{ content }}
 "#
     )
 }
@@ -1189,22 +1405,31 @@ mod lifecycle_tests {
 }
 
 /// The contained app never receives this sheet's authorization URL or callback.
-fn embedded_sheet(ticket: &str, p: &Pending) -> String {
+fn embedded_sheet(ticket: &str, app: &str, backend: &crate::backend::BackendClient) -> String {
     let ticket = json!(ticket).to_string();
-    let backend = p
-        .backend
-        .as_ref()
-        .expect("Backend presentation is validated");
     let origin = url::Url::parse(&backend.registration().authorization_url)
         .map(|u| u.origin().ascii_serialization())
         .unwrap_or_default();
-    let app = json!(&p.app).to_string();
+    let show_id = id_beside_name(app);
+    let shown = app_name(app).unwrap_or_else(|| app.to_string());
+    let mac_title = json!(format!("Sign In to {shown}")).to_string();
+    let mac_intro = json!(format!(
+        "Continue to {shown}'s website to sign in or create an account. {shown} can then read the account data it says it needs, and changing anything needs your review. OctoSense keeps your sign-in details in its secure store."
+    ))
+    .to_string();
+    let mac_loaded = json!(format!("Sign in or create an account on {shown}'s website.")).to_string();
+    let mac_blocked = json!(format!(
+        "This page tried to leave {shown}'s website and was stopped. To sign in with another provider, use {shown}'s browser sign-in."
+    ))
+    .to_string();
+    let app = json!(app).to_string();
     let origin = json!(origin).to_string();
     format!(
         r#"
-let ticket = {ticket}
+{DESK_PARTS}let ticket = {ticket}
 let watching = false
 let opened_url = ""
+let page_shown = false
 fn host_dismiss() {{
     watching = false
     ui.oauth_webview.close()
@@ -1212,10 +1437,19 @@ fn host_dismiss() {{
 }}
 fn changed() {{
     let state = ui.oauth_webview.auth_status()
+    // A page that failed has nothing to show: a Mac's sheet closes up around the
+    // words and Retry is the thing to do. Back needs a page to go back to.
+    if desk_mac {{
+        if state == "loaded" {{ page_shown = true }}
+        ui.oauth_webview.set_visible(state != "error")
+        ui.oauth_back.set_visible(page_shown)
+        ui.oauth_retry.set_visible(state != "error")
+        ui.oauth_try.set_visible(state == "error")
+    }}
     if state == "loading" {{ ui.oauth_status.set_text("Loading sign-in…") }}
-    if state == "loaded" {{ ui.oauth_status.set_text("Sign in or create an account on this app’s website.") }}
+    if state == "loaded" {{ ui.oauth_status.set_text(if desk_mac {{ {mac_loaded} }} else {{ "Sign in or create an account on this app’s website." }}) }}
     if state == "error" {{ ui.oauth_status.set_text("Could not load sign-in. Check your connection and retry.") }}
-    if state == "blocked" {{ ui.oauth_status.set_text("This page tried to leave the app’s login website. Use the browser login option for another provider.") }}
+    if state == "blocked" {{ ui.oauth_status.set_text(if desk_mac {{ {mac_blocked} }} else {{ "This page tried to leave the app’s login website. Use the browser login option for another provider." }}) }}
     if state == "cancelled" {{ host_dismiss() }}
     if state == "callback" {{
         let callback = ui.oauth_webview.auth_callback()
@@ -1254,8 +1488,18 @@ fn poll() {{
     }})
 }}
 fn bind_lifetime() {{ return ui.oauth_webview.bind_auth_lifetime(ticket) }}
+fn desk_retry() {{
+    if desk_mac {{
+        ui.oauth_webview.set_visible(true)
+        ui.oauth_status.set_text("Loading sign-in…")
+        ui.oauth_retry.set_visible(true)
+        ui.oauth_try.set_visible(false)
+    }}
+    ui.oauth_webview.auth_retry()
+}}
 fn begin() {{
     if !bind_lifetime() {{ host_dismiss() return }}
+    ui.oauth_status.set_visible(true)
     ui.oauth_status.set_text("Preparing sign-in…")
     host.request("auth.sheet.start", {{ticket: ticket}}, fn(r) {{
         if r.is_ok {{ watching = true poll() }} else {{ ui.oauth_status.set_text(r.error) }}
@@ -1277,8 +1521,37 @@ let content = SolidView {{width: Fill height: Fill flow: Down padding: 16 spacin
     oauth_continue := Button {{width: Fill height: 48 text: "Continue" on_click: || begin()}}
     ButtonFlat {{width: Fill height: 44 text: "Cancel" on_click: || host_dismiss()}}
 }}
+let SheetDesk = DeskDim {{
+    DeskScroll {{
+    DeskCard {{
+        DeskHeading {{
+        DeskIconBox {{ if desk_mac && DeskAppIcon != nil {{ DeskAppIcon {{app: {app}}} }} }}
+        DeskWords {{
+        DeskTitle {{text: if desk_mac {{ {mac_title} }} else {{ "Sign in to this app" }}}}
+        DeskSmall {{visible: !desk_mac || {show_id} text: {app}}}
+        DeskText {{text: {origin}}}
+        oauth_intro := View {{width: Fill height: Fit flow: Down
+            DeskNote {{text: if desk_mac {{ {mac_intro} }} else {{ "Continue to this app’s website to sign in or create an account. This app can then read its declared backend data. Changes require your review. OctoSense keeps credentials in its secure store." }}}}
+        }}
+        }}
+        }}
+        oauth_webview := WebReader {{width: Fill height: 440 visible: false on_auth: || changed()}}
+        oauth_status := DeskNote {{visible: !desk_mac text: "Continue to authorize this connection."}}
+        DeskActions {{align: Align{{y: 0.5}}
+            oauth_toolbar := View {{width: Fit height: Fit flow: Right spacing: 8 visible: false
+                oauth_back := DeskPush {{visible: !desk_mac text: "Back" on_click: || ui.oauth_webview.auth_back()}}
+                oauth_retry := DeskPush {{text: "Retry" on_click: || desk_retry()}}
+            }}
+            View {{width: Fill height: 1}}
+            DeskPush {{text: "Cancel" on_click: || host_dismiss()}}
+            oauth_continue := DeskDefault {{text: "Continue" on_click: || begin()}}
+            oauth_try := DeskDefault {{visible: false text: "Retry" on_click: || desk_retry()}}
+        }}
+    }}
+    }}
+}}
 start_timeout(0.0, || bind_lifetime())
-content
+if desk {{ SheetDesk{{}} }} else {{ content }}
 "#
     )
 }

@@ -200,6 +200,7 @@ commands it runs (engine d0e57d7e; classes from `skill/safety.json`).
 | `deck.slides_op` | `{doc, op: "new", at?, layout?, title?, body?}` | `{slide}` | `slide.new {at, layout, title, body}` |
 | `deck.slides_op` | `{doc, op: "duplicate", slides}` | `{slides}` (each copy follows its original) | `slide.duplicate {index}` per slide |
 | `deck.slides_op` | `{doc, op: "delete", slides}` | `{}`; deleting every slide is refused | `slide.delete {ids}` |
+| `deck.slides_op` | `{doc, op: "copy", slides}` / `"cut", slides` | `{clipboard}`; cutting every slide is refused | `slide.selectSlides {ids}`, `edit.copy {scope: "slides"}` / `edit.cut {scope: "slides"}` |
 | `deck.slides_op` | `{doc, op: "move", slides, to}` | `{}` | `slide.move {from, to}`, in order |
 | `deck.slides_op` | `{doc, op: "hide", slides, hidden}` | `{}` | `slide.hide {index, hidden}` |
 | `deck.slides_op` | `{doc, op: "layout", slides, layout}` | `{}` | `slide.layout {layout, index}` |
@@ -222,6 +223,7 @@ notes at most 20,000 characters.
 | `deck.insert` | `{doc, slide, kind: "picture", path, rect?}` | `{id, size: [w, h]}` | `insert.picture {path, rect}`, a reviewed read inside storage |
 | `deck.insert` | `{doc, slide, kind: "table", rows, cols, rect?, cells?, style?}` | `{id}` | `insert.table {rows, cols, rect, data}` (the cells' text in one command), `table.style {style, id}` |
 | `deck.insert` | `{doc, slide, kind: "chart", type, categories, series: [{name, values}], rect?, title?}` | `{id}` | `insert.chart {type, rect, categories, series}`, `chart.options {title, id}` |
+| `deck.insert` | `{doc, slide, kind: "paste", clipboard?}` | `{ids, slides}`: the shapes pasted on the slide, or the slides pasted after it | `slide.go {index}`, `edit.paste {}` |
 | `deck.set_text` | `{doc, slide, id, text, cell?: [r, c]}` | `{id}` | `edit.select`, `text.edit {id, at, cell}`, `text.select {anchor, caret}`, `text.insert {text}`, `text.exit {}`; `text.set {id, text, cell}` when the box is empty |
 | `deck.format` | `{doc, slide, ids, paragraphs?: [first, last], font?, size?, bold?, italic?, underline?, strike?, color?, highlight?, align?, bullets?, numbering?, level?, line_spacing?, space_before?, space_after?, anchor?, autofit?, columns?, margins?}` | `{}` | `edit.select {ids}` (or `text.edit` and `text.select` over the paragraphs), then `format.font`, `format.size`, `format.bold`, `format.italic`, `format.underline`, `format.strikethrough`, `format.color`, `format.highlight`, `format.align`, `format.bullets`, `format.numbering`, `format.indent` / `format.outdent`, `format.lineSpacing`, `format.paragraph`, `format.anchor`, `format.autofit`, `format.columns`, `format.margins` |
 | `deck.shape` | `{doc, slide, ids, op, …}` (below) | `{ids}` | below |
@@ -242,12 +244,30 @@ notes at most 20,000 characters.
 | `distribute` | `dir` | `arrange.distribute {dir, ids}` |
 | `group`, `ungroup` | | `arrange.group {ids}`, `arrange.ungroup {ids}` |
 | `duplicate`, `delete` | | `edit.duplicate {ids}`, `edit.delete {ids}` |
+| `copy`, `cut` | | `edit.select {ids}`, then `edit.copy {}` / `edit.cut {}`; the answer includes `clipboard` |
 | `fill` | `color`, `gradient` or `none`; `transparency?` | `shape.fill {…, ids}`, never with `picture` |
 | `line` | `color?, width?, dash?, none?` | `shape.line {…, ids}` |
 | `effects` | `shadow?, glow?, soft_edges?, reflection?` | `shape.effects {…, ids}` |
 | `style` | `index` (0–41) | `shape.quickStyle {index, ids}` |
 | `lock`, `hide` | `locked` / `hidden` | `shape.lock`, `shape.visible` |
 
+- **The clipboard** keeps the last successful cut or copy for the calling app,
+  storage scope and isolate, even if the source deck closes. Cut and copy
+  return a `clipboard` token; pass it to `deck.insert {kind: "paste"}`. A
+  later copy invalidates the older token. The retained context includes the
+  selected items, their design and referenced media, not the other slides.
+  A call without a token keeps the original per-deck behavior. Ordinary
+  objects can be pasted into a different theme with their source colours and
+  fonts. Groups, tables and charts across themes, slides without matching
+  designs, differing embedded fonts, imported opaque items, unmodelled
+  extensions and links to source slides are refused. Media IDs,
+  copied connectors, animation targets and comment attachments are remapped;
+  an unselected connector endpoint in another deck is detached rather than attached to an
+  unrelated object. Repeated object pastes on one slide step aside. A copy
+  creates no undo step or revision; a paste is one undo step. The system
+  clipboard is not involved. A retained copy follows its isolate and storage
+  scope; unbound callers' copies expire after 15 minutes of inactivity, and
+  the service retains at most 32 copies across callers.
 - `deck.set_text` keeps formatting:
   - The service compares the box's text with `text` and replaces only the
     span that changed. The rest of the box keeps its runs, and the new text

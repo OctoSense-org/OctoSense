@@ -3,37 +3,178 @@
 // Bundles carry this prelude so they work in the contained standalone host too.
 // Resolve the current theme after a host restyle, not a retained prelude alias.
 let theme = mod.theme
+// A desktop shell's style sheet says `ui_pointer = true`: the app gets pointer
+// metrics and the Mac layouts (13-point text, 28-point controls, a sidebar and
+// a toolbar). Anything else, a phone or a bare host, keeps the touch metrics.
+let ui_desk = try { theme.ui_pointer == true } catch { false }
+// A Mac's window has no title bar over an app that says so to the shell
+// (crates/shell/src/clients.rs, unified_chrome): the app draws to the window's top
+// edge, its toolbar is 52 points tall, and the lights sit over the leading 84 points
+// of the toolbar, or over the top of a sidebar. Other desktops keep a title bar.
+let ui_unified = ui_desk && try { theme.ui_unified == true } catch { false }
+fn ui_by(touch, desk){ if ui_desk { desk } else { touch } }
 let ui_ink = theme.color_text
 let ui_page = theme.color_bg_app
 let ui_light = dot(ui_ink, #x36b61200) < 0.5
-let ui_surface = if ui_light { #xffffff } else { mix(ui_page, ui_ink, 0.06) }
-let ui_field = mix(ui_page, ui_ink, 0.075)
-let ui_hover = mix(ui_page, ui_ink, 0.12)
-let ui_border = mix(ui_page, ui_ink, 0.22)
-let ui_muted = mix(ui_ink, ui_page, 0.24)
-let ui_link = mix(ui_ink, #x356bce, 0.25)
-let ui_primary = #x285cd6
-let ui_success = mix(ui_ink, #x28a55b, 0.20)
-let ui_danger = mix(ui_ink, #xe13b53, 0.20)
-let UiButton = ButtonFlat{height: 44 margin: 0 padding: Inset{left: 14 right: 14}
-    draw_bg +: {border_radius: 12.0 border_size: 0.0 color: #x00000000 color_hover: ui_hover color_down: ui_field color_focus: ui_hover}
-    draw_text +: {color: ui_link color_hover: ui_link color_down: ui_link color_focus: ui_link text_style: theme.font_bold{font_size: 14}}
+let ui_surface = if ui_light { #xffffff } else { mix(ui_page, ui_ink, ui_by(0.06, 0.07)) }
+let ui_field = if ui_desk && ui_light { #xffffff } else { mix(ui_page, ui_ink, ui_by(0.075, 0.07)) }
+let ui_hover = mix(ui_page, ui_ink, ui_by(0.12, 0.07))
+let ui_border = mix(ui_page, ui_ink, ui_by(0.22, 0.14))
+let ui_muted = mix(ui_ink, ui_page, ui_by(0.24, 0.26))
+// The Mac's system colours where the page is a Mac's, near white or near black;
+// a retro style's mid-gray page keeps text that is mostly ink.
+let ui_lum = dot(ui_page, #x36b61200)
+let ui_mac = ui_desk && (ui_lum > 0.86 || ui_lum < 0.25)
+let ui_link = if ui_mac { if ui_light { #x0060c0 } else { #x6cb8ff } } else { mix(ui_ink, #x356bce, 0.25) }
+let ui_primary = ui_by(#x285cd6, #x0071e3)
+let ui_success = if ui_mac { if ui_light { #x1a7030 } else { #x30d158 } } else { mix(ui_ink, #x28a55b, 0.20) }
+let ui_danger = if ui_mac { if ui_light { #xc70012 } else { #xffa097 } } else { mix(ui_ink, #xe13b53, 0.20) }
+// The Mac's surfaces: a sidebar and a toolbar a shade off the page, a selection
+// in the sidebar's own gray, a push button's face.
+let ui_sidebar = mix(ui_page, ui_ink, 0.03)
+let ui_bar = if ui_light { #xededf0 } else { #x303033 }
+let ui_selected = mix(ui_page, ui_ink, 0.11)
+let ui_button = if ui_light { #xffffff } else { mix(ui_page, ui_ink, 0.16) }
+// What a list or a document sits on: white in the light; in the dark, darker than
+// the window around it, as a Mac's content is.
+let ui_content = if ui_mac { if ui_light { #xffffff } else { #x1e1e1e } } else { ui_surface }
+// A selected row: the accent when it is the row the person is on, white text on it.
+let ui_accent_row = if ui_light { #x0064d2 } else { #x0a60c8 }
+// A Mac dims the window behind a sheet, more in the dark; the shell's own sheets
+// and the native apps' dim as much.
+let ui_sheet_dim = if ui_light { #x00000024 } else { #x00000052 }
+// A touch size in the type scale; on the desktop, the Mac's size for that role
+// (Makepad's font_size is three quarters of a point).
+fn ui_fs(n){
+    if !ui_desk { return n }
+    if n <= 12 { return 8.25 }
+    if n <= 13 { return 9 }
+    if n <= 16 { return 9.75 }
+    if n <= 18 { return 11.25 }
+    if n <= 21 { return 12.75 }
+    if n <= 24 { return 13.5 }
+    if n <= 28 { return 16.5 }
+    19.5
+}
+let ui_icons = {}
+fn ui_icon(name){
+    let handle = ui_icons[name]
+    if handle == nil {
+        handle = http_resource("{{assets}}/icons/ui-" + name + ".svg")
+        ui_icons[name] = handle
+    }
+    handle
+}
+let UiButton = ButtonFlat{height: ui_by(44, 28) margin: 0 padding: Inset{left: ui_by(14, 12) right: ui_by(14, 12)} spacing: 6
+    icon_walk: Walk{width: 15 height: 15}
+    draw_bg +: {border_radius: ui_by(12.0, 3.0) border_size: ui_by(0.0, 1.0) border_color: ui_border
+        color: ui_by(#x00000000, ui_button) color_hover: ui_by(ui_hover, mix(ui_button, ui_ink, 0.04)) color_down: ui_by(ui_field, mix(ui_button, ui_ink, 0.1)) color_focus: ui_by(ui_hover, ui_button)}
+    draw_text +: {color: ui_by(ui_link, ui_ink) color_hover: ui_by(ui_link, ui_ink) color_down: ui_by(ui_link, ui_ink) color_focus: ui_by(ui_link, ui_ink)
+        text_style: ui_by(theme.font_bold{font_size: 14}, theme.font_regular{font_size: 9.75})}
+    draw_icon +: {color: ui_ink}
 }
 let UiPrimary = UiButton{
-    draw_bg +: {color: ui_primary color_hover: #x3468df color_down: #x204cb8 color_focus: #x204cb8}
+    draw_bg +: {border_size: 0.0 color: ui_primary color_hover: ui_by(#x3468df, #x006edb) color_down: ui_by(#x204cb8, #x0060c0) color_focus: ui_by(#x204cb8, ui_primary)}
     draw_text +: {color: #xffffff color_hover: #xffffff color_down: #xffffff color_focus: #xffffff}
+    draw_icon +: {color: #xffffff}
 }
-let UiPill = UiButton{draw_bg +: {color: ui_surface border_radius: 22.0} draw_text +: {color: ui_ink color_hover: ui_ink color_down: ui_ink color_focus: ui_ink}}
-let UiField = TextInput{width: Fill height: 48 margin: 0 padding: Inset{left: 14 right: 14 top: 12 bottom: 12}
+let UiPill = UiButton{height: ui_by(44, 24) padding: Inset{left: ui_by(14, 10) right: ui_by(14, 10)}
+    draw_bg +: {color: ui_by(ui_surface, #x00000000) border_size: 0.0 border_radius: ui_by(22.0, 3.0)}
+    draw_text +: {color: ui_ink color_hover: ui_ink color_down: ui_ink color_focus: ui_ink}}
+let UiField = TextInput{width: Fill height: ui_by(48, 28) margin: 0 padding: Inset{left: ui_by(14, 8) right: ui_by(14, 8) top: ui_by(12, 6) bottom: ui_by(12, 6)}
     draw_bg +: {color: ui_field color_hover: ui_field color_focus: ui_field color_empty: ui_field
-        border_color: ui_border border_color_hover: ui_link border_color_focus: ui_link border_color_empty: ui_border border_radius: 12.0}
-    draw_text +: {color: ui_ink color_hover: ui_ink color_focus: ui_ink color_empty: ui_muted color_empty_hover: ui_muted color_empty_focus: ui_muted text_style: theme.font_regular{font_size: 15}}
+        border_color: ui_border border_color_hover: ui_by(ui_link, ui_border) border_color_focus: ui_link border_color_empty: ui_border border_radius: ui_by(12.0, 3.0)}
+    draw_text +: {color: ui_ink color_hover: ui_ink color_focus: ui_ink color_empty: ui_muted color_empty_hover: ui_muted color_empty_focus: ui_muted text_style: theme.font_regular{font_size: ui_by(15, 9.75)}}
     draw_selection.color: #x557dcc55
 }
-let UiCard = RoundedView{width: Fill height: Fit flow: Down spacing: 12 padding: 20
-    show_bg: true draw_bg +: {color: ui_surface border_radius: 16.0}}
-let UiCaption = Label{padding: 0 flow: Flow.Right{wrap: true} width: Fill draw_text +: {color: ui_muted text_style: theme.font_regular{font_size: 13 line_spacing: 1.4}}}
-let UiTitle = Label{padding: 0 flow: Flow.Right{wrap: true} width: Fill draw_text +: {color: ui_ink text_style: theme.font_bold{font_size: 28 line_spacing: 1.2}}}
+let UiCard = RoundedView{width: Fill height: Fit flow: Down spacing: ui_by(12, 8) padding: ui_by(20, 14)
+    show_bg: true draw_bg +: {color: ui_surface border_radius: ui_by(16.0, 5.0) border_size: ui_by(0.0, 1.0) border_color: ui_by(#x00000000, ui_border)}}
+let UiCaption = Label{padding: 0 flow: Flow.Right{wrap: true} width: Fill draw_text +: {color: ui_muted text_style: theme.font_regular{font_size: ui_by(13, 8.25) line_spacing: 1.4}}}
+let UiTitle = Label{padding: 0 flow: Flow.Right{wrap: true} width: Fill draw_text +: {color: ui_ink text_style: theme.font_bold{font_size: ui_by(28, 16.5) line_spacing: 1.2}}}
+// The Mac's parts. They are drawn on a desktop only; a phone keeps its pages.
+// A shader's border_radius is half the corner it draws: 3 is a 6-point corner.
+let UiSep = SolidView{width: Fill height: 1 draw_bg.color: ui_border}
+let UiVSep = SolidView{width: 1 height: Fill draw_bg.color: ui_border}
+let UiGlyph = Svg{width: 16 height: 16 animating: false draw_svg +: {color: ui_muted}}
+let UiTool = ButtonFlat{height: 28 margin: 0 padding: Inset{left: 8 right: 8} spacing: 5 icon_walk: Walk{width: 16 height: 16}
+    draw_bg +: {border_radius: 3.0 border_size: 0.0 color: #x00000000 color_hover: ui_hover color_down: ui_selected color_focus: #x00000000}
+    draw_text +: {color: ui_ink color_hover: ui_ink color_down: ui_ink color_focus: ui_ink text_style: theme.font_regular{font_size: 9.75}}
+    draw_icon +: {color: ui_ink}
+}
+let UiToolIcon = UiTool{width: 30 padding: 0 spacing: 0 text: ""}
+// A tool whose click hides it or the pane it sits on: it comes back unwashed.
+let UiPaneTool = UiToolIcon{reset_hover_on_click: true}
+// The clear button inside a search field, shown while it holds text.
+let UiSearchClear = UiPaneTool{visible: false width: 24 height: 24 icon_walk: Walk{width: 14 height: 14}
+    draw_bg +: {color_hover: #x00000000 color_down: #x00000000}
+    draw_icon +: {svg: ui_icon("search-clear") color: ui_muted}}
+let UiToolbar = SolidView{width: Fill height: if ui_unified { 52 } else { 40 } flow: Right align: Align{y: 0.5} spacing: 4 padding: Inset{left: 12 right: 10} draw_bg.color: ui_bar}
+// A toolbar that starts at the window's leading edge, with no sidebar beside it.
+let UiWindowToolbar = UiToolbar{padding: Inset{left: if ui_unified { 84 } else { 12 } right: 10}}
+let UiBarTitle = Label{clip_y: false padding: 0 text: "" max_lines: 1 draw_text +: {color: ui_ink text_style: theme.font_bold{font_size: 11.25}}}
+let UiBarSub = Label{clip_y: false padding: 0 text: "" max_lines: 1 draw_text +: {color: ui_muted text_style: theme.font_regular{font_size: 8.25}}}
+let UiSidebar = SolidView{width: 208 height: Fill flow: Down padding: Inset{left: 8 right: 8 top: if ui_unified { 52 } else { 8 } bottom: 8} spacing: 1 draw_bg.color: ui_sidebar}
+let UiSideHead = Label{padding: Inset{left: 8 top: 12 bottom: 4} text: "" draw_text +: {color: ui_muted text_style: theme.font_bold{font_size: 8.25}}}
+let UiSideRow = ButtonFlat{width: Fill height: 28 margin: 0 padding: Inset{left: 8 right: 8} spacing: 7 align: Align{x: 0.0 y: 0.5}
+    icon_walk: Walk{width: 16 height: 16} label_walk: Walk{width: Fill height: Fit}
+    draw_bg +: {border_radius: 3.0 border_size: 0.0 color: #x00000000 color_hover: #x00000000 color_down: ui_selected color_focus: #x00000000}
+    draw_text +: {color: ui_ink color_hover: ui_ink color_down: ui_ink color_focus: ui_ink text_style: theme.font_regular{font_size: 9.75}}
+    draw_icon +: {color: ui_link}
+}
+let UiSideRowOn = UiSideRow{draw_bg +: {color: ui_selected color_hover: ui_selected color_focus: ui_selected}}
+let UiSeg = ButtonFlat{height: 24 margin: 0 padding: Inset{left: 12 right: 12}
+    draw_bg +: {border_radius: 2.5 border_size: 0.0 color: #x00000000 color_hover: ui_hover color_down: ui_selected color_focus: #x00000000}
+    draw_text +: {color: ui_ink color_hover: ui_ink color_down: ui_ink color_focus: ui_ink text_style: theme.font_regular{font_size: 9.75}}
+}
+let UiSegOn = UiSeg{draw_bg +: {color: ui_button color_hover: ui_button color_focus: ui_button border_size: 1.0 border_color: ui_border}}
+let UiSegments = RoundedView{width: Fit height: 28 flow: Right align: Align{y: 0.5} spacing: 2 padding: 2 show_bg: true draw_bg +: {color: ui_selected border_radius: 3.5}}
+let UiSearch = UiField{padding: Inset{left: 26 right: 8 top: 6 bottom: 6}}
+let UiGroup = RoundedView{width: Fill height: Fit flow: Down show_bg: true draw_bg +: {color: ui_surface border_radius: 5.0 border_size: 1.0 border_color: ui_border}}
+let UiFormRow = View{width: Fill height: Fit flow: Right align: Align{y: 0.5} spacing: 12 padding: Inset{left: 14 right: 14 top: 8 bottom: 8}}
+let UiFormLabel = Label{clip_y: false padding: 0 width: Fill text: "" draw_text +: {color: ui_ink text_style: theme.font_regular{font_size: 9.75}}}
+let UiListRow = View{width: Fill height: Fit flow: Right align: Align{y: 0.5} spacing: 10 padding: Inset{left: 14 right: 14 top: 8 bottom: 8}}
+// A two-line row of a list: a line in the body size, a line under it in the small.
+let UiRowTitle = Label{clip_y: false padding: 0 width: Fill text: "" max_lines: 1 text_overflow: Ellipsis draw_text +: {color: ui_ink text_style: theme.font_regular{font_size: 9.75}}}
+let UiRowNote = Label{clip_y: false padding: 0 width: Fill text: "" max_lines: 1 text_overflow: Ellipsis draw_text +: {color: ui_muted text_style: theme.font_regular{font_size: 8.25}}}
+// A form: the label right-aligned in a 110-point column to the left of its control.
+let UiFormKey = Label{clip_y: false padding: 0 width: 110 text: "" align: Align{x: 1.0} draw_text +: {color: ui_ink text_style: theme.font_regular{font_size: 9.75}}}
+let UiFormLine = View{width: Fill height: Fit flow: Right align: Align{y: 0.5} spacing: 8}
+// A pop-up button: the choice, and the up-down mark at its trailing edge (an
+// Overlay of this over UiPopupMark).
+let UiPopup = UiButton{padding: Inset{left: 10 right: 28} align: Align{x: 0.0 y: 0.5}}
+let UiPopupMark = View{width: Fit height: Fit padding: Inset{right: 8} new_batch: true
+    Svg{width: 13 height: 13 animating: false draw_svg +: {svg: ui_icon("updown") color: ui_muted}}}
+// A small count or state beside a name.
+let UiBadge = RoundedView{width: Fit height: Fit padding: Inset{left: 6 right: 6 top: 2 bottom: 2} new_batch: true show_bg: true draw_bg +: {color: mix(ui_surface, ui_ink, 0.1) border_radius: 2.5}}
+let UiBadgeText = Label{clip_y: false padding: 0 text: "" draw_text +: {color: ui_ink text_style: theme.font_bold{font_size: 8.25}}}
+// A status bar along a window's bottom: small text on the bar's colour.
+let UiFootBar = SolidView{width: Fill height: 24 flow: Right align: Align{y: 0.5} spacing: 8 padding: Inset{left: 12 right: 12} draw_bg.color: ui_bar}
+// An empty list or an empty window: a glyph, a title, a line, and, under them, what
+// to do about it. Centred in what the empty state fills.
+let UiEmpty = View{width: Fill height: Fill flow: Down align: Align{x: 0.5 y: 0.5} spacing: 6 padding: 24
+    glyph := Svg{width: 36 height: 36 margin: Inset{bottom: 4} animating: false draw_svg +: {color: ui_muted}}
+    title := Label{clip_y: false padding: 0 text: "" draw_text +: {color: ui_ink text_style: theme.font_bold{font_size: 11.25}}}
+    note := Label{clip_y: false padding: 0 text: "" draw_text +: {color: ui_muted text_style: theme.font_regular{font_size: 9.75}}}
+}
+// A Mac's alert carries its app's icon, as the native apps' alerts do: 64 points
+// on top in the alert below. The shell draws it in its style's frame (`ReviewAppIcon`,
+// crates/shell/src/connected_review.rs; `app` is the bundle's id, "os.writer"); a host
+// without the shell has none, and the alert keeps its words alone.
+let UiAlertIcon = try { mod.widgets.ReviewAppIcon } catch { nil }
+let ui_alert_icon = ui_mac && UiAlertIcon != nil
+// A Mac's alert as macOS has drawn it since 11 (Files' Empty Trash): 260 points
+// wide, the app's 64-point icon on top, the title and its words centred under it,
+// then the buttons. Two sit side by side, each as wide as the other, the default
+// on the right (UiAlertRow, each button `width: Fill`); three or more stand one
+// over another, the default on top (UiAlertStack). A host with no app icon shows
+// the words alone. Off a Mac an app keeps its own sheet.
+let UiAlertPanel = RoundedShadowView{width: 260 height: Fit flow: Down align: Align{x: 0.5} padding: Inset{left: 16 right: 16 top: 20 bottom: 16} new_batch: true cursor: MouseCursor.Default
+    draw_bg +: {color: ui_surface border_size: 1.0 border_color: ui_border border_radius: 10.0 shadow_color: #x00000040 shadow_radius: 18.0 shadow_offset: vec2(0.0, 4.0)}}
+// A Label's margin counts twice: 10 and 6 points between icon, title and words.
+let UiAlertTitle = Label{clip_y: false width: Fill padding: 0 margin: Inset{top: 5} align: Align{x: 0.5} flow: Flow.Right{wrap: true} text: "" draw_text +: {color: ui_ink text_style: theme.font_bold{font_size: 9.75 line_spacing: 1.3}}}
+let UiAlertNote = Label{clip_y: false width: Fill padding: 0 margin: Inset{top: 3} align: Align{x: 0.5} flow: Flow.Right{wrap: true} text: "" draw_text +: {color: ui_ink text_style: theme.font_regular{font_size: 8.25 line_spacing: 1.3}}}
+let UiAlertRow = View{width: Fill height: Fit flow: Right spacing: 8 margin: Inset{top: 16}}
+let UiAlertStack = View{width: Fill height: Fit flow: Down spacing: 8 margin: Inset{top: 16}}
 // END shared app interface
 // AI providers: the models the assistant answers with, primary first, then
 // its fallbacks. Every change goes through the `llm` host service; keys, PINs
@@ -42,6 +183,10 @@ let UiTitle = Label{padding: 0 flow: Flow.Right{wrap: true} width: Fill draw_tex
 // provider (octos's model catalog), add on the host's sheet.
 let providers = []      // primary first: {id, family, label, model, model_label, route_label, context, price, key, index, …}
 let shown = []          // providers after the filter
+let touch_run = try { mod.ai_providers_touch_run } catch { 0 }
+if touch_run == nil { touch_run = 0 }
+touch_run = touch_run + 1
+let load_request = 0
 let query = ""
 let scanner = false     // the host can scan a QR
 let image_picker = false // the host can read a QR from a chosen image
@@ -50,11 +195,28 @@ let results = []        // [{id, text, detail, state}] from Test connection: sta
 let confirm_remove = ""
 let menu_for = ""       // the provider whose model pull-down is open
 let menu_models = []    // its family's catalog models
+// The Mac's pane: whether the list has come back once or could not be read; the model
+// whose Details sheet is open, by its place in the list, since an id changes with its model.
+// A phone's few models need no filter: Find… is grey until the field is there. A Mac's
+// toolbar keeps its search field whatever the count, dimmed while nothing is saved.
+let filter_there = ui_desk
+// Web Clients acts once a saved model is known; on a Mac the File menu names it too,
+// since the toolbar's tool is a glyph.
+let talk_there = false
+let desk_loaded = false
+let desk_failed = false
+let desk_at = -1
+let desk_removing = nil
+// A Mac's list: the row a click picked (by its model's id), which − removes.
+let desk_pick = ""
 
 // What just happened, in a banner pinned under the list (the person may be
 // anywhere in it).
 let banner_n = 0
 fn status(text){
+    // A desktop's list shows what changed: only what it can't show is said, as an alert.
+    // A person who pressed Cancel knows: nothing happened, and nothing needs saying.
+    if ui_desk { if text != "Cancelled." { desk_say(text) } return }
     banner_n = banner_n + 1
     ui.status.set_text(text)
     ui.banner.set_visible(text != "")
@@ -62,18 +224,47 @@ fn status(text){
     if text != "" { start_timeout(8, || hide_banner(n)) }
 }
 fn hide_banner(n){ if n == banner_n { ui.banner.set_visible(false) } }
+fn said(text){ if !ui_desk { status(text) } }
+// An import's new rows speak for themselves; a key that changed or nothing new doesn't show.
+fn import_said(text){
+    if !ui_desk || text.search("Updated") >= 0 || text.search("Already") >= 0 { status(text) }
+}
+// A host sheet can finish after an appearance change has rebuilt this app.
+// Route its refresh to the current run so its rows and count use the same list.
+fn touch_current(){
+    if ui_desk { return true }
+    let current = try { mod.ai_providers_touch_run } catch { nil }
+    current == touch_run
+}
+fn refresh_current(){
+    if !ui_desk {
+        let refresh = try { mod.ai_providers_touch_reload } catch { nil }
+        if refresh != nil { refresh() return }
+    }
+    load()
+}
 fn load(){
+    load_request = load_request + 1
+    let request = load_request
     host.request("llm.providers", {}, fn(r){
-        if !r.is_ok { status(r.error) return }
+        if !touch_current() || request != load_request { return }
+        if !r.is_ok { if ui_desk { desk_list_failed() } else { status(r.error) } return }
         let list = []
         if r.data.primary != nil { list.push(r.data.primary) }
         for f in r.data.fallbacks { list.push(f) }
         let i = 0
         for p in list { p.index = i; i = i + 1 }
         providers = list
+        if ui_desk {
+            desk_loaded = true
+            desk_failed = false
+        }
         ui.add.set_visible(list.len() > 0)
         ui.talk.set_visible(list.len() > 0)
-        ui.saved_heading.set_visible(list.len() > 0)
+        talk_there = list.len() > 0
+        if ui_desk { ui.talk_off.set_visible(list.len() == 0) }
+        // A Mac's pane keeps its list's heading over an empty table, as System Settings does.
+        ui.saved_heading.set_visible(list.len() > 0 || ui_unified)
         ui.export_qr.set_visible(list.len() > 0)
         scanner = r.data.scanner
         store = r.data.store
@@ -81,9 +272,14 @@ fn load(){
         ui.paste.set_visible(!scanner)
         image_picker = r.data.image_picker == true
         if image_picker { ui.paste.set_text("Import code from image") } else { ui.paste.set_text("Paste code") }
+        if ui_desk { if image_picker { ui.paste.set_text("Import Code from Image…") } else { ui.paste.set_text("Paste Code…") } }
         if store == "profile" { ui.where.set_text("Keys stay in the assistant's private settings on this device.") } else { ui.where.set_text("Keys stay in the " + store + ".") }
-        ui.filter_box.set_visible(list.len() > 5)
-        if list.len() == 0 { ui.count.set_text("") } else { if list.len() == 1 { ui.count.set_text("1 model") } else { ui.count.set_text(list.len() + " models") } }
+        if ui_desk { ui.where.set_text(desk_where()) }
+        // With nothing saved there is nothing to filter: a Mac's field stays, dimmed.
+        filter_there = (ui_desk || list.len() > 5) && list.len() > 0
+        if ui_desk && !filter_there && query != "" { query = "" ui.filter.set_text("") }
+        ui.filter_box.set_visible(filter_there)
+        if ui_desk { ui.filter_off.set_visible(list.len() == 0) }
         apply_filter()
     })
 }
@@ -96,73 +292,143 @@ fn apply_filter(){
     let kept = []
     for p in providers { if matches(p) { kept.push(p) } }
     shown = kept
+    let total = providers.len()
+    if total == 0 { ui.count.set_text("") }
+    else { if query != "" { ui.count.set_text(kept.len() + " of " + total + " models") }
+    else { if total == 1 { ui.count.set_text("1 model") } else { ui.count.set_text(total + " models") } } }
     ui.rows.render()
+    if ui_unified { desk_tools_render() }
+    if ui_desk { desk_refresh() }
+}
+fn desk_clear_filter(){
+    query = ""
+    ui.filter.set_text("")
+    ui.filter_clear.set_visible(false)
+    apply_filter()
 }
 fn set_query(text){
     query = text.trim()
+    if ui_desk { ui.filter_clear.set_visible(query != "") }
     apply_filter()
 }
+fn current_results(){
+    if ui_desk { return results }
+    let current = try { mod.ai_providers_touch_results } catch { nil }
+    if current == nil { return [] }
+    current
+}
 fn result_of(id){
-    for t in results { if t.id == id { return t.text } }
+    for t in current_results() { if t.id == id { return t.text } }
     return ""
 }
 fn state_of(id){
-    for t in results { if t.id == id { return t.state } }
+    for t in current_results() { if t.id == id { return t.state } }
     return ""
 }
 fn detail_of(id){
-    for t in results { if t.id == id { return t.detail } }
+    for t in current_results() { if t.id == id { return t.detail } }
     return ""
 }
-fn set_result(id, text, state){ set_result_detail(id, text, "", state) }
-fn set_result_detail(id, text, detail, state){
-    let kept = []
-    for t in results { if t.id != id { kept.push(t) } }
-    kept.push({id: id text: text detail: detail state: state})
-    results = kept
-    ui.rows.render()
+fn result_request(id){
+    for t in current_results() { if t.id == id { return t.request } }
+    return 0
 }
+fn render_results(){
+    if !ui_desk {
+        let render = try { mod.ai_providers_touch_render } catch { nil }
+        if render != nil { render() return }
+    }
+    ui.rows.render()
+    if ui_desk { desk_refresh() }
+}
+fn set_result_detail(id, text, detail, state, request){
+    let kept = []
+    for t in current_results() { if t.id != id { kept.push(t) } }
+    kept.push({id: id text: text detail: detail state: state request: request})
+    if ui_desk { results = kept } else { mod.ai_providers_touch_results = kept }
+    render_results()
+}
+fn discard_result(id){
+    let kept = []
+    for t in current_results() { if t.id != id { kept.push(t) } }
+    if ui_desk { results = kept } else { mod.ai_providers_touch_results = kept }
+    render_results()
+}
+// A Mac's menu bar asks for these while AI Providers is in front.
+fn app_menus(){
+    if ui_unified {
+        return [
+            {menu: "File" title: "Add Model…" key: "cmd+N" command: "add"}
+            {menu: "File" title: "Web Clients…" command: "web_clients" enabled: talk_there}
+            {menu: "Edit" title: "Find…" key: "cmd+F" command: "find" enabled: filter_there}
+        ]
+    }
+    [
+        {menu: "File" title: "Add Model…" key: "cmd+N" command: "add"}
+        {menu: "Edit" title: "Find…" key: "cmd+F" command: "find" enabled: filter_there}
+    ]
+}
+fn on_menu_command(command){
+    if command == "add" { add_model() }
+    else if command == "find" { ui.filter.focus() }
+    else if command == "web_clients" && talk_there {
+        host_sheet("llm.connect_client", {}, fn(r){ if !r.is_ok { status(r.error) } })
+    }
+}
+// The Mac's status bar names what was added; the row itself says which model.
+fn named(label){ if ui_desk { label.split(" · ")[0] } else { label } }
 fn add_model(){
-    status("Choose the model on the sheet OctoSense shows.")
-    host.request("llm.add_provider", {}, fn(r){
-        if r.is_ok { status("Added " + r.data.label) } else { status(r.error) }
-        load()
+    if ui_desk { status("") } else { status("Choose the model on the sheet OctoSense shows.") }
+    host_sheet("llm.add_provider", {}, fn(r){
+        if r.is_ok { said("Added " + named(r.data.label)) } else { status(r.error) }
+        refresh_current()
     })
 }
 fn edit(p){
     status("")
     menu_for = ""
-    host.request("llm.edit_provider", {id: p.id}, fn(r){
-        if r.is_ok { status("Saved " + r.data.label) } else { status(r.error) }
-        load()
+    host_sheet("llm.edit_provider", {id: p.id}, fn(r){
+        if r.is_ok { discard_result(p.id) said("Saved " + named(r.data.label)) } else { status(r.error) }
+        refresh_current()
     })
 }
 fn run_test(p){
     if state_of(p.id) == "testing" { return }
-    set_result(p.id, "Testing the connection…", "testing")
+    let request = 0
+    if !ui_desk {
+        request = try { mod.ai_providers_touch_test_serial } catch { 0 }
+        if request == nil { request = 0 }
+        request = request + 1
+        mod.ai_providers_touch_test_serial = request
+    }
+    set_result_detail(p.id, "Testing the connection…", "", "testing", request)
     host.request("llm.test", {id: p.id}, fn(r){
+        if !ui_desk && result_request(p.id) != request { return }
         if r.is_ok {
-            if r.data.error == nil { set_result(p.id, "Connected · " + r.data.ms + " ms", "ok") } else { set_result_detail(p.id, "Couldn't connect: " + r.data.reason, r.data.error, "fail") }
-        } else { set_result_detail(p.id, "Couldn't connect", r.error, "fail") }
+            if r.data.error == nil { set_result_detail(p.id, if ui_desk { "Connected" } else { "Connected · " + r.data.ms + " ms" }, "", "ok", request) } else { set_result_detail(p.id, "Couldn't connect: " + r.data.reason, r.data.error, "fail", request) }
+        } else { set_result_detail(p.id, "Couldn't connect", r.error, "fail", request) }
     })
 }
 fn change(method, args, done){
     confirm_remove = ""
     menu_for = ""
     host.request(method, args, fn(r){
-        if r.is_ok { done() } else { status(r.error) }
-        load()
+        if r.is_ok {
+            if method == "llm.remove" || method == "llm.set_model" { discard_result(args.id) }
+            done()
+        } else { status(r.error) }
+        refresh_current()
     })
 }
 fn move_to(p, to){ change("llm.move", {id: p.id to: to}, || status("")) }
-fn make_primary(p){ change("llm.set_primary", {id: p.id}, || status(p.model_label + " answers first now.")) }
+fn make_primary(p){ change("llm.set_primary", {id: p.id}, || said(p.model_label + " answers first now.")) }
 fn remove_provider(p){
     if confirm_remove != p.id {
         confirm_remove = p.id
         ui.rows.render()
         return
     }
-    change("llm.remove", {id: p.id}, || status("Removed " + p.model_label))
+    change("llm.remove", {id: p.id}, || said("Removed " + p.model_label))
 }
 // The model pull-down: the family's catalog models, the saved one ticked.
 fn toggle_menu(p){
@@ -179,20 +445,20 @@ fn toggle_menu(p){
 fn pick_model(p, m){
     menu_for = ""
     if m.id == p.model { ui.rows.render() return }
-    change("llm.set_model", {id: p.id model: m.id}, || status(p.label + " now uses " + m.label + "."))
+    change("llm.set_model", {id: p.id model: m.id}, || said(p.label + " now uses " + m.label + "."))
 }
 fn show_qr(){
     if providers.len() == 0 { status("Add a model first.") return }
-    status("The code is on the sheet OctoSense shows.")
-    host.request("llm.export_qr", {}, fn(r){
+    if ui_desk { status("") } else { status("The code is on the sheet OctoSense shows.") }
+    host_sheet("llm.export_qr", {}, fn(r){
         if r.is_ok { status("") } else { status(r.error) }
     })
 }
 fn import_code(){
     status("")
-    host.request("llm.import_qr", {}, fn(r){
-        if r.is_ok { status(r.data.message) } else { status(r.error) }
-        load()
+    host_sheet("llm.import_qr", {}, fn(r){
+        if r.is_ok { import_said(r.data.message) } else { status(r.error) }
+        refresh_current()
     })
 }
 fn subtitle(p){ return p.label + " · " + p.route_label }
@@ -209,7 +475,16 @@ fn key_text(p){
     return "Key " + p.key.strip_prefix("set ")
 }
 
-start_timeout(0.05, || load())
+fn start(){
+    if !ui_desk {
+        mod.ai_providers_touch_run = touch_run
+        mod.ai_providers_touch_reload = || load()
+        mod.ai_providers_touch_render = || ui.rows.render()
+    }
+    if ui_unified { desk_tools_render() }
+    load()
+}
+start_timeout(0.05, || start())
 
 let ink = ui_ink
 let secondary = ui_muted
@@ -220,6 +495,7 @@ let page = ui_page
 let Act = UiPill{}
 let ActDanger = Act{draw_text +: {color: danger color_focus: danger color_hover: danger color_down: danger}}
 let TestAct = Act{draw_bg +: {color: ui_field color_focus: ui_field color_hover: ui_field color_down: ui_field} draw_text +: {text_style: theme.font_bold{font_size: 13}}}
+let TestActOff = TestAct{enabled: false draw_text +: {color: ui_muted color_focus: ui_muted color_hover: ui_muted color_down: ui_muted}}
 let Mark = Label{text: "" draw_text.text_style: theme.font_icons{font_size: 13}}
 let Big = UiPrimary{width: Fill}
 let Quiet = UiButton{width: Fill}
@@ -248,7 +524,7 @@ let OptTitle = Label{padding: 0 width: Fit text: "" draw_text.color: ink draw_te
 let OptTitleOn = Label{padding: 0 width: Fit text: "" draw_text.color: ink draw_text.text_style: theme.font_bold{font_size: 14}}
 let OptNote = Label{padding: 0 width: Fill text: "" draw_text.color: faint draw_text.text_style.font_size: 13}
 
-SolidView{width: Fill height: Fill flow: Down align: Align{x: 0.5} draw_bg.color: page
+let TouchRoot = SolidView{width: Fill height: Fill flow: Down align: Align{x: 0.5} draw_bg.color: page
     ScrollYView{width: Fill max_width: 840 height: Fill flow: Down spacing: 16 padding: Inset{left: 20 right: 20 top: 24 bottom: 24}
         View{width: Fill height: Fit flow: Right spacing: 12 align: Align{y: 0.5}
             RoundedView{width: 48 height: 48 align: Align{x: 0.5 y: 0.5}
@@ -256,13 +532,13 @@ SolidView{width: Fill height: Fill flow: Down align: Align{x: 0.5} draw_bg.color
                 Label{padding: 0 text: "AI" draw_text +: {color: #xffffff text_style: theme.font_bold{font_size: 18}}}
             }
             View{width: Fill height: Fit flow: Down spacing: 4
-                UiTitle{text: "AI providers" draw_text.text_style.font_size: 24}
+                UiTitle{text: "AI Providers" draw_text.text_style.font_size: 24}
                 UiCaption{text: "Models for your assistant"}
             }
         }
         add := Big{visible: false text: "Add model" on_click: || add_model()}
         talk := Quiet{visible: false text: "Talk to Octos" on_click: || {
-            host.request("llm.connect_client", {}, fn(r){ if !r.is_ok { status(r.error) } })
+            host_sheet("llm.connect_client", {}, fn(r){ if !r.is_ok { status(r.error) } })
         }}
         saved_heading := View{visible: false width: Fill height: Fit flow: Right align: Align{y: 1.0} padding: Inset{top: 4}
             Section{text: "SAVED MODELS"}
@@ -351,7 +627,8 @@ SolidView{width: Fill height: Fill flow: Down align: Align{x: 0.5} draw_bg.color
                         }
                     }
                     View{width: Fill height: Fit flow: Flow.Right{wrap: true} spacing: 6 padding: Inset{top: 2}
-                        TestAct{text: "Test connection" on_click: || run_test(p)}
+                        if state_of(p.id) == "testing" { TestActOff{text: "Testing…"} }
+                        else { TestAct{text: "Test connection" on_click: || run_test(p)} }
                         Act{text: "Edit" on_click: || edit(p)}
                         if p.index > 0 { Act{text: "Make primary" on_click: || make_primary(p)} }
                         if p.index > 0 { Act{text: "Up" on_click: || move_to(p, p.index - 1)} }
@@ -382,3 +659,747 @@ SolidView{width: Fill height: Fill flow: Down align: Align{x: 0.5} draw_bg.color
         }
     }
 }
+
+// The Mac's AI Providers: a System Settings pane. The saved models are rows in an inset
+// group, each saying what it is and how it stands; what can be done to one is on its
+// Details sheet, as with a network. What just happened goes in a status bar under the page.
+// A phone keeps its cards above.
+let desk_narrow = false
+let desk_width = 0
+let desk_resize_n = 0
+fn on_app_resize(width, height){
+    if !ui_desk || width <= 0 { return }
+    // Too narrow for a row's standing: the Details sheet still has it.
+    let narrow = width < 560
+    if narrow != desk_narrow {
+        desk_narrow = narrow
+        ui.rows.render()
+    }
+    // A badge or a pop-up's mark draws on its own, and stays where it was when the
+    // centred page moves under it, until it is drawn again.
+    if width != desk_width {
+        desk_width = width
+        desk_resize_n = desk_resize_n + 1
+        let n = desk_resize_n
+        start_timeout(0.12, || {
+            if n != desk_resize_n { return }
+            ui.rows.render()
+            if desk_at >= 0 { ui.details_body.render() }
+        })
+    }
+}
+// What a failed test means, rather than its status code. The provider's own words
+// go under it; a network library's don't.
+fn desk_fail_text(text){
+    if text.search("invalid key") >= 0 { return "The provider refused this API key." }
+    if text.search("not found") >= 0 { return "The provider doesn't know this model or route." }
+    if text.search("request refused") >= 0 { return "The provider refused the request." }
+    if text.search("billing") >= 0 { return "The provider refused it because of billing or quota." }
+    if text.search("rate limited") >= 0 { return "The provider is limiting requests. Try again soon." }
+    if text.search("provider error") >= 0 { return "The provider had a problem. Try again soon." }
+    if text.search("timeout") >= 0 { return "The provider didn't answer in time." }
+    if text.search("unreachable") >= 0 { return "OctoSense couldn't reach the provider." }
+    text
+}
+// The reason, unless the sentence above it already says so.
+fn desk_fail_note(p){
+    if result_of(p.id).search("invalid key") >= 0 { return "" }
+    desk_fail_detail(detail_of(p.id))
+}
+fn desk_fail_detail(text){
+    if text.search("failed: ") == 0 || text.search("invalid key") >= 0 { return "" }
+    if text.search("HTTP ") != 0 { return text }
+    let parts = text.split(": ")
+    if parts.len() < 2 { return "" }
+    let out = parts[1]
+    let i = 2
+    while i < parts.len() {
+        out = out + ": " + parts[i]
+        i = i + 1
+    }
+    out
+}
+fn desk_list_failed(){
+    desk_loaded = true
+    desk_failed = true
+    desk_talk_off()
+    ui.rows.render()
+    if ui_unified { desk_tools_render() }
+}
+fn desk_try_again(){
+    desk_loaded = false
+    desk_failed = false
+    desk_talk_off()
+    ui.rows.render()
+    if ui_unified { desk_tools_render() }
+    load()
+}
+// Web Clients… stays in the toolbar, off, while no saved model is known.
+fn desk_talk_off(){
+    talk_there = false
+    ui.talk.set_visible(false)
+    ui.talk_off.set_visible(true)
+}
+fn desk_where(){
+    if store == "keychain" { return "Your API keys stay in the Keychain." }
+    if store == "profile" { return "Your API keys stay in the assistant's private settings on this computer." }
+    "Your API keys stay in the " + store + "."
+}
+fn desk_figures(p){
+    if p.context != "" && p.price != "" { return p.context + " · " + p.price }
+    p.context + p.price
+}
+fn desk_note(p){
+    let figures = desk_figures(p)
+    let where = subtitle(p)
+    if p.route_label == p.label { where = p.label }
+    if figures == "" { return where }
+    where + " · " + figures
+}
+fn desk_key_broken(p){ p.key == "missing" || p.key == "keychain locked" }
+fn desk_key_value(p){
+    if p.key == "not needed" { return "Not needed" }
+    if p.key == "missing" { return "Missing" }
+    if p.key == "keychain locked" { return "Keychain locked" }
+    p.key.strip_prefix("set ")
+}
+// An appearance change runs this whole body again; `mod` outlives the run.
+let desk_says = ""
+fn desk_remember(){ mod.ai_providers_desk = {at: desk_at query: query says: desk_says} }
+fn desk_say(text){
+    desk_says = text
+    desk_remember()
+    ui.say_title.set_text(text)
+    ui.say_sheet.set_visible(text != "")
+    desk_inert()
+}
+// The Details sheet of the model at a place in the list. `for p in desk_current()` is how
+// its render gets the model: none once the list has shrunk past it.
+fn desk_current(){
+    if desk_at >= 0 && desk_at < providers.len() { return [providers[desk_at]] }
+    []
+}
+fn desk_details(p){
+    status("")
+    desk_at = p.index
+    desk_remember()
+    ui.details_body.render()
+    ui.details.set_visible(true)
+    desk_inert()
+}
+fn desk_details_done(){
+    desk_at = -1
+    desk_remember()
+    ui.details.set_visible(false)
+    desk_inert()
+}
+fn desk_refresh(){
+    if desk_at < 0 { return }
+    if desk_at >= providers.len() { desk_details_done() return }
+    ui.details_body.render()
+    if desk_removing == nil { ui.details.set_visible(true) }
+}
+fn desk_edit(p){
+    desk_details_done()
+    edit(p)
+}
+// A row's right-click menu: the same actions as its Details sheet.
+fn desk_row_titles(p){
+    let titles = ["Details…", "Test Connection", "-"]
+    if p.index > 0 {
+        titles.push("Make Primary")
+        titles.push("Move Up")
+    }
+    if p.index < providers.len() - 1 { titles.push("Move Down") }
+    if providers.len() > 1 { titles.push("-") }
+    titles.push("Remove…")
+    titles
+}
+fn desk_row_chosen(p, title){
+    if title == "Details…" { desk_details(p) }
+    else if title == "Test Connection" { run_test(p) }
+    else if title == "Make Primary" { make_primary(p) }
+    else if title == "Move Up" { move_to(p, p.index - 1) }
+    else if title == "Move Down" { move_to(p, p.index + 1) }
+    else if title == "Remove…" { desk_ask_remove(p) }
+}
+fn desk_make_primary(p){
+    desk_at = 0
+    make_primary(p)
+}
+fn desk_move(p, to){
+    desk_at = to
+    move_to(p, to)
+}
+// The Model pop-up: its menu floats over the sheet and any press outside closes it.
+fn desk_menu_open(p){
+    host.request("llm.models", {family: p.family}, fn(r){
+        if !r.is_ok {
+            status(r.error)
+            return
+        }
+        menu_models = r.data.models
+        let titles = []
+        let current = ""
+        for m in menu_models {
+            titles.push(desk_menu_text(m))
+            if desk_menu_ticked(m) { current = desk_menu_text(m) }
+        }
+        ui.model_pick.open_menu(titles, current)
+    })
+}
+fn desk_menu_chosen(title){
+    for m in menu_models {
+        if desk_menu_text(m) == title { desk_pick_model(m) }
+    }
+}
+fn desk_menu_text(m){
+    if m.default == true { return m.label + " (Recommended)" }
+    m.label
+}
+fn desk_menu_ticked(m){
+    let list = desk_current()
+    list.len() > 0 && list[0].model == m.id
+}
+fn desk_pick_model(m){
+    let list = desk_current()
+    if list.len() == 0 { return }
+    let p = list[0]
+    if p.model == m.id { return }
+    change("llm.set_model", {id: p.id model: m.id}, || said(p.label + " now uses " + m.label + "."))
+}
+fn desk_ask_remove(p){
+    desk_removing = p
+    ui.remove_title.set_text("Remove " + p.model_label + "?")
+    if providers.len() == 1 { ui.remove_note.set_text("Your assistant has no model until you add another. The API key is forgotten once no model uses it.") }
+    else { if p.index == 0 { ui.remove_note.set_text("The next model in the list answers first. The API key is forgotten once no model uses it.") }
+    else { ui.remove_note.set_text("Your assistant stops using this model. The API key is forgotten once no model uses it.") } }
+    ui.details.set_visible(false)
+    ui.remove_sheet.set_visible(true)
+    desk_inert()
+}
+fn desk_keep(){
+    desk_removing = nil
+    ui.remove_sheet.set_visible(false)
+    if desk_at >= 0 { ui.details.set_visible(true) }
+    desk_inert()
+}
+fn desk_remove(){
+    let p = desk_removing
+    desk_removing = nil
+    ui.remove_sheet.set_visible(false)
+    desk_details_done()
+    change("llm.remove", {id: p.id}, || said("Removed " + p.model_label))
+}
+// A Mac's ordered list, as Network's service order: a click picks a row, a double click
+// opens its Details, a drag moves it up or down the order (Make Primary, Move Up and Move
+// Down stay on its menu and its sheet); + and − under the table add a model and remove
+// the picked one, which asks first.
+let DESK_ROW_H = 50
+fn desk_picked(){
+    for p in providers { if p.id == desk_pick { return p } }
+    nil
+}
+fn desk_pick_row(p){
+    desk_pick = p.id
+    ui.rows.render()
+    desk_tools_render()
+}
+// A second click on the same row within half a second: a double click, which opens its
+// Details. The click that picks a row draws the list again, and the new rows forget the
+// first click, so the list counts the clicks itself.
+let desk_click_id = ""
+let desk_click_at = 0
+fn desk_tap_row(p){
+    let now = time_now()
+    let again = desk_click_id == p.id && now - desk_click_at < 0.5
+    desk_click_at = now
+    if again {
+        desk_click_id = ""
+        desk_details(p)
+        return
+    }
+    desk_click_id = p.id
+    desk_pick_row(p)
+}
+fn desk_tools_render(){ try { ui.list_tools.render() } catch { nil } }
+// A sheet or an alert is up. A row hears every press over it, the sheet's buttons'
+// too, so under one a Mac's rows are drawn deaf until it goes: a click on its Done or
+// Cancel picked the row under the button. A window under a Mac sheet takes no click,
+// drag or right-click.
+fn desk_modal(){ desk_at >= 0 || desk_removing != nil || desk_says != "" || desk_host_sheets > 0 }
+// The host's sheets (Add, Details, the two QR sheets, Web Clients) are up until their
+// request answers: under one, a Mac's list is out of focus too, its picked row grey and
+// its rows deaf, as under the app's own sheets.
+let desk_host_sheets = 0
+fn host_sheet(method, args, done){
+    desk_host_sheets = desk_host_sheets + 1
+    desk_inert()
+    host.request(method, args, fn(r){
+        desk_host_sheets = max(0, desk_host_sheets - 1)
+        desk_inert()
+        done(r)
+    })
+}
+fn desk_inert(){ if ui_unified { try { ui.rows.render() } catch { nil } } }
+fn desk_drag_to(p, dy){ clamp(p.index + round(dy / DESK_ROW_H), 0, max(0, providers.len() - 1)) }
+fn desk_drag_words(p, to){
+    if to == p.index { return "Drag up or down to change the order." }
+    if to == 0 { return "Release to make " + p.model_label + " the primary model." }
+    "Release to make " + p.model_label + " fallback " + to + "."
+}
+fn desk_drag(p, dy, phase){
+    // A filtered list hides rows between: the order changes in the whole list.
+    if query != "" {
+        if phase == 2 { desk_say("Clear the filter to change the order.") }
+        return
+    }
+    let to = desk_drag_to(p, dy)
+    if phase < 2 {
+        ui.order_note.set_text(desk_drag_words(p, to))
+        return
+    }
+    ui.order_note.set_text(ORDER_NOTE)
+    desk_pick = p.id
+    if to != p.index { move_to(p, to) } else { ui.rows.render() }
+}
+let ORDER_NOTE = "Your assistant answers with the primary model. Its fallbacks take over, in order, when it can't."
+// The table's own + and −, as System Settings has them under a list. Each glyph is laid
+// out by its icon's whole box: fitted to its own line, the − sat on the square's floor.
+let DeskSquare = ButtonFlat{width: 28 height: 22 margin: 0 padding: 0 spacing: 0 text: "" align: Align{x: 0.5 y: 0.5} icon_walk: Walk{width: 16 height: 16}
+    draw_bg +: {border_radius: 0.0 border_size: 0.0 color: #x00000000 color_hover: ui_selected color_down: ui_selected color_focus: #x00000000 color_disabled: #x00000000}
+    draw_icon +: {color: ui_ink preserve_viewbox: true}}
+fn desk_list_tools(){
+    let p = desk_picked()
+    let gone = p == nil || !desk_loaded
+    View{width: Fill height: Fit flow: Right align: Align{y: 0.5} padding: Inset{left: 2}
+        RoundedView{width: Fit height: 24 flow: Right align: Align{y: 0.5} padding: 1 show_bg: true draw_bg +: {color: ui_surface border_size: 1.0 border_color: ui_border border_radius: 3.0}
+            add_plus := DeskSquare{enabled: desk_loaded && !desk_failed draw_icon +: {svg: ui_icon("plus") color: if desk_loaded && !desk_failed { ui_ink } else { desk_tool_off }} on_click: || add_model()}
+            SolidView{width: 1 height: Fill draw_bg.color: ui_border}
+            take_minus := DeskSquare{enabled: !gone draw_icon +: {svg: ui_icon("minus") color: if gone { desk_tool_off } else { ui_ink }}
+                on_click: || { let x = desk_picked() if x != nil { desk_ask_remove(x) } }}
+        }
+    }
+}
+// A Mac's table with nothing in it: the words in its middle and an Add Model… push
+// button under them, as System Settings' Internet Accounts offers Add Account… in its
+// empty list; the heading stays over the table, + and − under it.
+fn desk_empty_table(){
+    View{width: Fill height: 170 flow: Down align: Align{x: 0.5 y: 0.5} spacing: 4 padding: 16
+        Label{clip_y: false padding: 0 text: "No Models Yet" draw_text +: {color: ui_muted text_style: theme.font_regular{font_size: 9.75}}}
+        Label{clip_y: false padding: 0 text: "Add the model your assistant answers with." draw_text +: {color: ui_muted text_style: theme.font_regular{font_size: 8.25}}}
+        UiButton{margin: Inset{top: 10} reset_hover_on_click: true text: "Add Model…" on_click: || add_model()}
+    }
+}
+// A Mac's caution triangle (icons/warning.svg, Quick Deck's and PDF Tools' artwork) heads a
+// failure; the other desktops keep the sparkle.
+let desk_icons = {}
+fn desk_failed_glyph(){
+    if !ui_unified { return ui_icon("sparkles") }
+    let handle = desk_icons["warning"]
+    if handle == nil {
+        handle = http_resource("{{assets}}/icons/warning.svg")
+        desk_icons["warning"] = handle
+    }
+    handle
+}
+// A Mac's row: picked, it stands on the list's selection, the accent with white words
+// while the list is the person's, grey under a sheet (a Mac's table out of focus). The
+// rest as every desktop's.
+fn desk_mac_row(p){
+    let on = p.id == desk_pick
+    View{width: Fill height: Fit
+        if desk_modal() { desk_mac_face(p, on, false) }
+        else {
+            GestureView{width: Fill height: Fit cursor: MouseCursor.Default menu: desk_row_titles(p) on_menu: |title| desk_row_chosen(p, title)
+                on_tap: |x, y| desk_tap_row(p)
+                on_pan: |dx, dy, phase| desk_drag(p, dy, phase)
+                desk_mac_face(p, on, true)
+            }
+        }
+    }
+}
+fn desk_mac_face(p, on, lit){
+    let hot = on && lit
+    let face = #x00000000
+    if on { face = ui_selected }
+    if hot { face = ui_accent_row }
+    RoundedView{width: Fill height: Fit margin: Inset{left: 4 right: 4 top: 1 bottom: 1} show_bg: true draw_bg +: {color: face border_radius: 4.0}
+        desk_row_body(p, Inset{left: 10 right: 10 top: 7 bottom: 7}, hot)
+    }
+}
+fn desk_row_body(p, pad, hot){
+    let ink = if hot { #xffffff } else { ui_ink }
+    let sub = if hot { #xffffffd8 } else { ui_muted }
+    let good = if hot { #xffffff } else { ui_success }
+    let bad = if hot { #xffffff } else { ui_danger }
+    UiListRow{padding: pad
+        View{width: Fill height: Fit flow: Down spacing: 3
+            View{width: Fill height: Fit flow: Right spacing: 6 align: Align{y: 0.5}
+                UiRowTitle{width: Fit text: p.model_label draw_text +: {color: ink}}
+                DeskRank{text: rank_text(p) draw_text +: {color: sub}}
+            }
+            UiRowNote{text: desk_note(p) draw_text +: {color: sub}}
+        }
+        if !desk_narrow {
+            View{width: Fit height: Fit flow: Right spacing: 5 align: Align{y: 0.5}
+                if state_of(p.id) == "testing" {
+                    DeskSpin{draw_bg +: {color: sub}}
+                    DeskCount{text: "Testing…" draw_text +: {color: sub}}
+                }
+                if state_of(p.id) == "ok" {
+                    DeskMark{draw_svg +: {svg: ui_icon("check") color: good}}
+                    DeskCount{text: result_of(p.id) draw_text +: {color: good}}
+                }
+                if state_of(p.id) == "fail" {
+                    DeskMark{draw_svg +: {svg: ui_icon("xmark") color: bad}}
+                    DeskCount{text: "Couldn't connect" draw_text +: {color: bad}}
+                }
+                if state_of(p.id) == "" {
+                    if desk_key_broken(p) { DeskCount{text: key_text(p) draw_text +: {color: bad}} }
+                    else { DeskCount{text: key_text(p) draw_text +: {color: sub}} }
+                }
+            }
+        }
+        if desk_narrow && desk_key_broken(p) { DeskCount{text: key_text(p) draw_text +: {color: bad}} }
+        UiButton{text: "Details…" on_click: || desk_details(p)}
+    }
+}
+// The toolbar's Web Clients on a Mac: a glyph, as the toolbar's other tools are, so the
+// toolbar keeps one display mode; the menu bar's row has its name.
+let DeskBarItem = UiToolIcon{icon_walk: Walk{width: 17 height: 17}
+    draw_bg +: {color_disabled: #x00000000}}
+let DeskHead = Label{clip_y: false padding: 0 text: "" draw_text +: {color: ui_ink text_style: theme.font_bold{font_size: 9.75}}}
+let DeskCount = Label{clip_y: false padding: 0 text: "" draw_text +: {color: ui_muted text_style: theme.font_regular{font_size: 8.25}}}
+let DeskValue = Label{clip_y: false padding: 0 width: Fill text: "" max_lines: 1 text_overflow: Ellipsis draw_text +: {color: ui_ink text_style: theme.font_regular{font_size: 9.75}}}
+let DeskSmall = Label{clip_y: false padding: 0 text: "" max_lines: 1 text_overflow: Ellipsis draw_text +: {color: ui_muted text_style: theme.font_regular{font_size: 8.25}}}
+let DeskMark = Svg{width: 11 height: 11 animating: false draw_svg +: {color: ui_muted}}
+// A model's place in the order, in a Mac list's secondary words rather than a badge.
+let DeskRank = Label{clip_y: false padding: 0 text: "" draw_text +: {color: ui_muted text_style: theme.font_regular{font_size: 9.75}}}
+fn rank_text(p){
+    if p.index == 0 { return "Primary" }
+    "Fallback " + p.index
+}
+let DeskSpin = LoadingSpinner{width: 13 height: 13 draw_bg +: {color: ui_muted stroke_width: 2.0}}
+// A button with nothing to do here: no hover, its text dimmed.
+let DeskOff = UiButton{enabled: false draw_bg +: {color_hover: ui_button color_down: ui_button color_focus: ui_button}
+    draw_text +: {color: ui_muted color_hover: ui_muted color_down: ui_muted color_focus: ui_muted}}
+let desk_shadow = if ui_light { #x00000038 } else { #x00000090 }
+// On a dark button's face the shared red falls short of 4.5:1.
+let desk_danger = if ui_light { ui_danger } else { #xffa29b }
+let DeskDanger = UiButton{reset_hover_on_click: true draw_text +: {color: desk_danger color_hover: desk_danger color_down: desk_danger color_focus: desk_danger}}
+// A toolbar tool with nothing to do yet, as YouTube's Clear History… with no history.
+let desk_tool_off = mix(ui_bar, ui_ink, 0.32)
+let DeskDim = GestureView{width: Fill height: Fill on_tap: |x, y| {}
+    SolidView{width: Fill height: Fill draw_bg.color: ui_sheet_dim}
+}
+let DeskSheetPlace = View{width: Fill height: Fill flow: Down align: Align{x: 0.5} padding: Inset{top: if ui_unified { 53 } else { 41 } left: 16 right: 16}}
+// On a Mac the app's own sheets (Remove) wear the host's sheets' face (Add, Details,
+// Web Clients), so one app's sheets share one background.
+let desk_sheet_face = if ui_unified { if ui_light { #xf6f6f8 } else { #x2c2c2e } } else { ui_surface }
+let DeskSheetPanel = RoundedShadowView{height: Fit flow: Down spacing: 10 padding: Inset{left: 20 right: 20 top: 18 bottom: 16} cursor: MouseCursor.Default
+    draw_bg +: {color: desk_sheet_face border_size: 1.0 border_color: ui_border border_radius: 5.0 shadow_color: desk_shadow shadow_radius: 18.0 shadow_offset: vec2(0.0, 4.0)}}
+let DeskSheetTitle = Label{clip_y: false width: Fill padding: 0 flow: Flow.Right{wrap: true} text: "" draw_text +: {color: ui_ink text_style: theme.font_bold{font_size: 9.75}}}
+let DeskSheetNote = Label{clip_y: false width: Fill padding: 0 flow: Flow.Right{wrap: true} text: "" draw_text +: {color: ui_muted text_style: theme.font_regular{font_size: 8.25 line_spacing: 1.3}}}
+let DeskSheetButtons = View{width: Fill height: Fit flow: Right spacing: 8 align: Align{x: 1.0 y: 0.5} margin: Inset{top: 6}}
+let DeskRoot = SolidView{width: Fill height: Fill flow: Overlay draw_bg.color: ui_page
+    View{width: Fill height: Fill flow: Down
+        UiWindowToolbar{
+            // The title gives way first: it truncates, the tools keep their room.
+            bar_title := UiBarTitle{width: Fill text_overflow: Ellipsis text: "AI Providers"}
+            // With no model saved, or none read yet, the same tool, off: a Mac toolbar keeps
+            // its items in place (a script can't switch a button off, so two stand in turn).
+            if ui_unified {
+                View{width: Fit height: Fill flow: Right align: Align{y: 0.5}
+                    talk := DeskBarItem{visible: false reset_hover_on_click: true draw_icon +: {svg: ui_icon("globe") color: ui_ink} on_click: || {
+                        host_sheet("llm.connect_client", {}, fn(r){ if !r.is_ok { status(r.error) } })
+                    }}
+                    talk_off := DeskBarItem{enabled: false draw_icon +: {svg: ui_icon("globe") color: desk_tool_off}}
+                }
+            } else {
+                View{width: Fit height: Fit flow: Right align: Align{y: 0.5}
+                    talk := UiTool{visible: false reset_hover_on_click: true text: "Web Clients…" draw_icon +: {svg: ui_icon("globe")} on_click: || {
+                        host_sheet("llm.connect_client", {}, fn(r){ if !r.is_ok { status(r.error) } })
+                    }}
+                    talk_off := UiTool{enabled: false text: "Web Clients…" draw_icon +: {svg: ui_icon("globe") color: desk_tool_off}
+                        draw_bg +: {color_hover: #x00000000 color_down: #x00000000 color_disabled: #x00000000}
+                        draw_text +: {color: desk_tool_off color_hover: desk_tool_off color_down: desk_tool_off color_focus: desk_tool_off}}
+                }
+            }
+            filter_box := View{width: 180 height: 28 flow: Overlay align: Align{y: 0.5}
+                filter := UiSearch{padding: Inset{left: 26 right: 24 top: 6 bottom: 6} empty_text: "Filter Saved Models" on_change: |text| set_query(text) on_escape: |text| desk_clear_filter()}
+                UiGlyph{width: 14 height: 14 margin: Inset{left: 8} draw_svg +: {svg: ui_icon("search")}}
+                View{width: Fill height: Fill flow: Right align: Align{x: 1.0 y: 0.5}
+                    filter_clear := UiSearchClear{on_click: || desk_clear_filter()}
+                }
+            }
+            // The field over no saved models: where the live one stands, closed to typing.
+            filter_off := View{visible: false width: 180 height: 28 flow: Overlay align: Align{y: 0.5}
+                UiSearch{is_read_only: true padding: Inset{left: 26 right: 24 top: 6 bottom: 6} empty_text: "Filter Saved Models"
+                    animator +: {disabled: {default: @on}}
+                    draw_bg +: {color_disabled: ui_field color_2_disabled: ui_field border_color_disabled: ui_border border_color_2_disabled: ui_border}
+                    draw_text +: {color_disabled: mix(ui_field, ui_muted, 0.55)}}
+                UiGlyph{width: 14 height: 14 margin: Inset{left: 8} draw_svg +: {svg: ui_icon("search") color: mix(ui_field, ui_muted, 0.55)}}
+            }
+        }
+        UiSep{}
+        ScrollYView{width: Fill height: Fill flow: Down align: Align{x: 0.5}
+            View{width: Fill max_width: 720 height: Fit flow: Down spacing: 8 padding: Inset{left: 20 right: 20 top: 14 bottom: 20}
+                saved_heading := View{visible: ui_unified width: Fill height: 28 flow: Right spacing: 10 align: Align{y: 0.5} padding: Inset{left: 14}
+                    DeskHead{text: "Saved Models"}
+                    count := DeskCount{}
+                }
+                UiGroup{
+                    rows := View{width: Fill height: Fit flow: Down on_render: || {
+                        // Always one child: a render that yields none keeps the last rows.
+                        View{width: Fill height: 1}
+                        if !desk_loaded {
+                            View{width: Fill height: 180 flow: Down align: Align{x: 0.5 y: 0.5} spacing: 8
+                                LoadingSpinner{width: 20 height: 20 draw_bg +: {color: ui_muted stroke_width: 2.0}}
+                                Label{clip_y: false padding: 0 text: "Loading your models…" draw_text +: {color: ui_muted text_style: theme.font_regular{font_size: 9.75}}}
+                            }
+                        }
+                        if desk_loaded && desk_failed {
+                            UiEmpty{height: 220 glyph +: {draw_svg +: {svg: desk_failed_glyph()}} title +: {text: "Your Models Can't Be Read"} note +: {text: "OctoSense couldn't open the assistant's settings."}
+                                UiButton{margin: Inset{top: 8} reset_hover_on_click: true text: "Try Again" on_click: || desk_try_again()}
+                            }
+                        }
+                        if desk_loaded && !desk_failed && providers.len() == 0 {
+                            if ui_unified { desk_empty_table() } else {
+                                UiEmpty{height: 220 glyph +: {draw_svg +: {svg: ui_icon("sparkles")}} title +: {text: "No Models Yet"} note +: {text: "Add a model to start using your assistant."}
+                                    UiPrimary{margin: Inset{top: 8} text: "Add Model…" on_click: || add_model()}
+                                }
+                            }
+                        }
+                        if providers.len() > 0 && shown.len() == 0 {
+                            UiEmpty{height: 160 glyph +: {draw_svg +: {svg: ui_icon("search")}} title +: {text: "No Results"} note +: {text: "No saved model matches “" + query + "”."}
+                                UiButton{margin: Inset{top: 8} text: "Clear Filter" on_click: || desk_clear_filter()}
+                            }
+                        }
+                        for i p in shown {
+                            if i > 0 { UiSep{margin: Inset{left: 14 right: 14}} }
+                            if ui_unified { desk_mac_row(p) } else {
+                            GestureView{width: Fill height: Fit menu: desk_row_titles(p) on_menu: |title| desk_row_chosen(p, title)
+                            UiListRow{
+                                View{width: Fill height: Fit flow: Down spacing: 3
+                                    View{width: Fill height: Fit flow: Right spacing: 6 align: Align{y: 0.5}
+                                        UiRowTitle{width: Fit text: p.model_label}
+                                        DeskRank{text: rank_text(p)}
+                                    }
+                                    UiRowNote{text: desk_note(p)}
+                                }
+                                if !desk_narrow {
+                                    View{width: Fit height: Fit flow: Right spacing: 5 align: Align{y: 0.5}
+                                        if state_of(p.id) == "testing" {
+                                            DeskSpin{}
+                                            DeskCount{text: "Testing…"}
+                                        }
+                                        if state_of(p.id) == "ok" {
+                                            DeskMark{draw_svg +: {svg: ui_icon("check") color: ui_success}}
+                                            DeskCount{text: result_of(p.id) draw_text +: {color: ui_success}}
+                                        }
+                                        if state_of(p.id) == "fail" {
+                                            DeskMark{draw_svg +: {svg: ui_icon("xmark") color: ui_danger}}
+                                            DeskCount{text: "Couldn't connect" draw_text +: {color: ui_danger}}
+                                        }
+                                        if state_of(p.id) == "" {
+                                            if desk_key_broken(p) { DeskCount{text: key_text(p) draw_text +: {color: ui_danger}} }
+                                            else { DeskCount{text: key_text(p)} }
+                                        }
+                                    }
+                                }
+                                if desk_narrow && desk_key_broken(p) { DeskCount{text: key_text(p) draw_text +: {color: ui_danger}} }
+                                UiButton{text: "Details…" on_click: || desk_details(p)}
+                            }
+                            }
+                            }
+                        }
+                    }}
+                }
+                if ui_unified {
+                    View{width: Fill height: Fit
+                        list_tools := View{width: Fill height: Fit on_render: || { desk_list_tools() }}
+                    }
+                }
+                add := View{visible: false width: Fill height: Fit flow: Right spacing: 12 align: Align{y: 0.5} padding: Inset{left: 14 top: 2}
+                    order_note := UiCaption{text: ORDER_NOTE}
+                    if !ui_unified { UiButton{text: "Add Model…" on_click: || add_model()} }
+                }
+                View{width: Fill height: Fit padding: Inset{left: 14 top: 12}
+                    DeskHead{text: "Import and Export"}
+                }
+                UiGroup{
+                    UiFormRow{
+                        View{width: Fill height: Fit flow: Down spacing: 3
+                            UiFormLabel{text: "Import from another device"}
+                            UiRowNote{text: "Read its code to bring its saved models here."}
+                        }
+                        scan := UiButton{visible: false text: "Scan QR Code…" on_click: || import_code()}
+                        paste := UiButton{text: "Import Code from Image…" on_click: || import_code()}
+                    }
+                    export_qr := View{visible: false width: Fill height: Fit flow: Down
+                        UiSep{margin: Inset{left: 14 right: 14}}
+                        UiFormRow{
+                            View{width: Fill height: Fit flow: Down spacing: 3
+                                UiFormLabel{text: "Set up a phone"}
+                                UiRowNote{text: "Show a code that brings these models to your phone."}
+                            }
+                            UiButton{text: "Show QR Code…" on_click: || show_qr()}
+                        }
+                    }
+                }
+                View{width: Fill height: Fit padding: Inset{left: 14 right: 14 top: 2}
+                    where := UiCaption{text: ""}
+                }
+            }
+        }
+    }
+    details := View{visible: false width: Fill height: Fill flow: Overlay new_batch: true
+        DeskDim{}
+        DeskSheetPlace{
+            DeskSheetPanel{width: Fill max_width: 540
+                details_body := View{width: Fill height: Fit flow: Down spacing: 10 on_render: || {
+                    for p in desk_current() {
+                        View{width: Fill height: Fit flow: Right spacing: 8 align: Align{y: 0.5} margin: Inset{bottom: 2}
+                            DeskSheetTitle{width: Fit text: p.model_label}
+                            DeskRank{text: rank_text(p)}
+                        }
+                        UiFormLine{
+                            UiFormKey{text: "Model:"}
+                            View{width: Fit height: 28 flow: Overlay align: Align{x: 1.0 y: 0.5}
+                                model_pick := GestureView{width: Fit height: 28 menu_words_at: 10 on_menu: |title| desk_menu_chosen(title)
+                                    UiPopup{reset_hover_on_click: true text: p.model_label on_click: || desk_menu_open(p)}
+                                }
+                                UiPopupMark{}
+                            }
+                            DeskSmall{width: Fill text: desk_figures(p)}
+                        }
+                        UiFormLine{
+                            UiFormKey{text: "Provider:"}
+                            DeskValue{text: p.label}
+                        }
+                        UiFormLine{
+                            UiFormKey{text: "Route:"}
+                            DeskValue{text: p.route_label}
+                        }
+                        UiFormLine{
+                            UiFormKey{text: "API Key:"}
+                            if desk_key_broken(p) { DeskValue{text: desk_key_value(p) draw_text +: {color: ui_danger}} }
+                            else { DeskValue{text: desk_key_value(p)} }
+                        }
+                        UiFormLine{
+                            UiFormKey{text: "Order:"}
+                            if p.index > 0 { UiButton{reset_hover_on_click: true text: "Make Primary" on_click: || desk_make_primary(p)} }
+                            else { DeskOff{text: "Make Primary"} }
+                            if p.index > 0 { UiButton{reset_hover_on_click: true text: "Move Up" on_click: || desk_move(p, p.index - 1)} }
+                            else { DeskOff{text: "Move Up"} }
+                            if p.index < providers.len() - 1 { UiButton{reset_hover_on_click: true text: "Move Down" on_click: || desk_move(p, p.index + 1)} }
+                            else { DeskOff{text: "Move Down"} }
+                        }
+                        UiFormLine{
+                            UiFormKey{text: "Connection:"}
+                            if state_of(p.id) == "testing" {
+                                DeskOff{text: "Test Connection"}
+                                DeskSpin{}
+                                DeskCount{text: result_of(p.id)}
+                            }
+                            else {
+                                UiButton{text: "Test Connection" on_click: || run_test(p)}
+                            }
+                            if state_of(p.id) == "ok" {
+                                DeskMark{draw_svg +: {svg: ui_icon("check") color: ui_success}}
+                                DeskCount{text: result_of(p.id) draw_text +: {color: ui_success}}
+                            }
+                            if state_of(p.id) == "fail" {
+                                DeskMark{draw_svg +: {svg: ui_icon("xmark") color: ui_danger}}
+                                DeskSmall{width: Fill text: desk_fail_text(result_of(p.id)) draw_text +: {color: ui_danger}}
+                            }
+                        }
+                        if state_of(p.id) == "fail" && desk_fail_note(p) != "" {
+                            View{width: Fill height: Fit padding: Inset{left: 118}
+                                DeskSheetNote{text: desk_fail_note(p)}
+                            }
+                        }
+                        DeskSheetButtons{
+                            if ui_unified { UiButton{reset_hover_on_click: true text: "Remove…" on_click: || desk_ask_remove(p)} } else { DeskDanger{text: "Remove…" on_click: || desk_ask_remove(p)} }
+                            View{width: Fill height: 1}
+                            UiButton{reset_hover_on_click: true text: "Edit…" on_click: || desk_edit(p)}
+                            UiPrimary{key_default: true key_cancel: true reset_hover_on_click: true text: "Done" padding: Inset{left: 18 right: 18} on_click: || desk_details_done()}
+                        }
+                    }
+                }}
+            }
+        }
+    }
+    // Removing a model, and what a step that failed says: on a Mac each is the alert
+    // macOS has drawn since 11 (the shared UiAlert parts), the app's icon on top, the
+    // words centred under it, the buttons as wide as each other: Remove and Cancel side
+    // by side with Cancel, the default, on the right; OK alone across the alert.
+    // Another desktop keeps its sheet.
+    remove_sheet := View{visible: false width: Fill height: Fill flow: Overlay new_batch: true
+        DeskDim{}
+        DeskSheetPlace{
+            if ui_unified {
+                UiAlertPanel{
+                    if ui_alert_icon { UiAlertIcon{app: "os.ai-providers" width: 64 height: 64} }
+                    remove_title := UiAlertTitle{}
+                    remove_note := UiAlertNote{}
+                    UiAlertRow{
+                        DeskDanger{width: Fill text: "Remove" on_click: || desk_remove()}
+                        UiPrimary{width: Fill key_default: true key_cancel: true reset_hover_on_click: true text: "Cancel" on_click: || desk_keep()}
+                    }
+                }
+            } else {
+                DeskSheetPanel{width: Fill max_width: if ui_alert_icon { 430 } else { 360 }
+                    View{width: Fill height: Fit flow: Right spacing: 14
+                        if ui_alert_icon { UiAlertIcon{app: "os.ai-providers" width: 52 height: 52} }
+                        View{width: Fill height: Fit flow: Down spacing: 6
+                            remove_title := DeskSheetTitle{}
+                            remove_note := DeskSheetNote{}
+                        }
+                    }
+                    DeskSheetButtons{
+                        DeskDanger{text: "Remove" on_click: || desk_remove()}
+                        UiPrimary{key_default: true key_cancel: true reset_hover_on_click: true text: "Cancel" on_click: || desk_keep()}
+                    }
+                }
+            }
+        }
+    }
+    say_sheet := View{visible: false width: Fill height: Fill flow: Overlay new_batch: true
+        DeskDim{}
+        DeskSheetPlace{
+            if ui_unified {
+                UiAlertPanel{
+                    if ui_alert_icon { UiAlertIcon{app: "os.ai-providers" width: 64 height: 64} }
+                    say_title := UiAlertTitle{}
+                    UiAlertRow{
+                        UiPrimary{width: Fill key_default: true key_cancel: true reset_hover_on_click: true text: "OK" on_click: || desk_say("")}
+                    }
+                }
+            } else {
+                DeskSheetPanel{width: Fill max_width: if ui_alert_icon { 430 } else { 360 }
+                    View{width: Fill height: Fit flow: Right spacing: 14 align: Align{y: 0.5}
+                        if ui_alert_icon { UiAlertIcon{app: "os.ai-providers" width: 52 height: 52} }
+                        say_title := DeskSheetTitle{}
+                    }
+                    DeskSheetButtons{
+                        UiPrimary{key_default: true key_cancel: true reset_hover_on_click: true text: "OK" padding: Inset{left: 18 right: 18} on_click: || desk_say("")}
+                    }
+                }
+            }
+        }
+    }
+}
+if ui_desk {
+    let v = try { mod.ai_providers_desk } catch { nil }
+    if v != nil {
+        desk_at = v.at
+        query = v.query
+        if query != "" { start_timeout(0.1, || ui.filter.set_text(query)) }
+        desk_says = v.says
+        if desk_says != "" { start_timeout(0.1, || desk_say(desk_says)) }
+    }
+}
+
+if ui_desk { DeskRoot{} } else { TouchRoot{} }

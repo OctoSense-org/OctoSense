@@ -2,7 +2,17 @@
   "schema": 1,
   "id": "os.ai-providers",
   "version": "1.0.0",
-  "name": "AI providers",
-  "integrity": { "bundle_blake3": "" },
-  "capabilities": ["storage", "llm"]
+  "name": "AI Providers",
+  "integrity": {
+    "bundle_blake3": ""
+  },
+  "capabilities": [
+    "storage",
+    "llm"
+  ],
+  "window": {
+    "width": 900,
+    "height": 640
+  },
+  "schema_minor": 1
 }

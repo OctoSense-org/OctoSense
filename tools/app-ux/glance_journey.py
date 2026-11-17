@@ -21,7 +21,8 @@ def main():
         p.error('Run calendar_journey.py first and use its isolated state directory')
     os.environ.update(OCTOSENSE_HOME=str(state/'home'), OCTOSENSE_APP_DATA=str(state/'apps'),
                       OCTOS_APP_CORE_DIR=str(state/'core'), OCTOSENSE_LLM_VAULT='file')
-    a = AppNative(args.binary.resolve(), ['--test-action', 'launch-calendar', '--test-action', 'glance'], out, 'glance')
+    # A style of the shell's own: a Mac's chat is read-only until its assistant is allowed.
+    a = AppNative(args.binary.resolve(), ['--test-action', 'style:octosense', '--test-action', 'launch-calendar', '--test-action', 'glance'], out, 'glance')
     draft = 'Keep this unsent draft · 未发送'
     try:
         a.wait(lambda: a.find(text='+ Event'), timeout=30)

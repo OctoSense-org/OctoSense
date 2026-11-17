@@ -28,7 +28,7 @@ use std::{
 mod signature;
 
 const RELEASES_API: &str = "https://api.github.com/repos/OctoSense-org/OctoSense/releases";
-const RELEASES_WEB: &str = "https://github.com/OctoSense-org/OctoSense/releases";
+pub const RELEASES_WEB: &str = "https://github.com/OctoSense-org/OctoSense/releases";
 /// GitHub's largest page of releases.
 const RELEASES_PER_PAGE: usize = 100;
 /// One release's JSON carries its notes, its author and every asset with its
@@ -905,6 +905,12 @@ fn prepare_root(path: &Path) -> Result<PathBuf> {
     validate_directory(path)?;
     path.canonicalize()
         .map_err(|_| Error::Storage("cannot locate update directory"))
+}
+/// Make the update directory if this is the first thing to need it, as private
+/// as a download would make it, and say where it is. Its parent is host-owned
+/// app storage, which the caller must have created.
+pub fn prepare_cache(cache_dir: &Path) -> Result<PathBuf> {
+    prepare_root(cache_dir)
 }
 /// Delete the downloads nothing needs any more: a verified installer a day
 /// after it was last written (the person opened it, or never did) and what

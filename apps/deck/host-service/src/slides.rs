@@ -47,7 +47,7 @@ const PER_SLIDE: usize = MAX_SLIDES;
 const RESET: usize = 2 * MAX_SLIDES;
 /// `slide.selectSlides {ids}` (the selection only), then one command that
 /// acts on every slide selected: `slide.hide`, `slide.layout`,
-/// `transition.set`.
+/// `transition.set`, `edit.copy`, `edit.cut`.
 const SELECTED: usize = 2;
 /// One command: `slide.new`, `slide.delete` (all the slides named, by id),
 /// or a section's.
@@ -99,7 +99,7 @@ pub(crate) fn slides_op(a: &Json, cx: &Ctx) -> Result<Json, String> {
     };
     match op.as_str() {
         "new" => only(&["at", "layout", "title", "body"])?,
-        "duplicate" | "delete" | "reset" => only(&["slides"])?,
+        "duplicate" | "delete" | "reset" | "copy" | "cut" => only(&["slides"])?,
         "move" => only(&["slides", "to"])?,
         "hide" => only(&["slides", "hidden"])?,
         "layout" => only(&["slides", "layout"])?,
@@ -109,7 +109,7 @@ pub(crate) fn slides_op(a: &Json, cx: &Ctx) -> Result<Json, String> {
         "section_move" => only(&["section", "to"])?,
         other => {
             return Err(invalid(format!(
-                "{M}: `op` is new, duplicate, delete, move, hide, layout, reset, section_add, section_rename, section_remove or section_move, not {other:?}"
+                "{M}: `op` is new, duplicate, delete, copy, cut, move, hide, layout, reset, section_add, section_rename, section_remove or section_move, not {other:?}"
             )))
         }
     }
@@ -120,6 +120,11 @@ pub(crate) fn slides_op(a: &Json, cx: &Ctx) -> Result<Json, String> {
     };
     docs::with_doc(a, cx, M, |doc| {
         let deck = doc.deck()?;
+        let copy_source = if matches!(op.as_str(), "copy" | "cut") {
+            Some((deck.clone(), args::ids(a, "slides", M, MAX_SLIDES)?[0]))
+        } else {
+            None
+        };
         let n = deck.slides.len();
         let (cmds, most, label): (Vec<(&'static str, Json)>, usize, &str) = match op.as_str() {
             "new" => {
@@ -152,6 +157,19 @@ pub(crate) fn slides_op(a: &Json, cx: &Ctx) -> Result<Json, String> {
                     return Err(invalid(format!("{M}: a deck keeps at least one slide: deleting every slide is refused")));
                 }
                 (vec![("slide.delete", json!({ "ids": ids }))], ONE, "Delete slides")
+            }
+            // The deck's own clipboard: `deck.insert {kind: "paste"}` puts the
+            // slides after one.
+            "copy" => {
+                let (ids, _) = slides(doc)?;
+                (vec![("slide.selectSlides", json!({ "ids": ids })), ("edit.copy", json!({ "scope": "slides" }))], SELECTED, "Copy slides")
+            }
+            "cut" => {
+                let (ids, _) = slides(doc)?;
+                if ids.len() >= n {
+                    return Err(invalid(format!("{M}: a deck keeps at least one slide: cutting every slide is refused")));
+                }
+                (vec![("slide.selectSlides", json!({ "ids": ids })), ("edit.cut", json!({ "scope": "slides" }))], SELECTED, "Cut slides")
             }
             "move" => {
                 let (ids, _) = slides(doc)?;
@@ -212,12 +230,15 @@ pub(crate) fn slides_op(a: &Json, cx: &Ctx) -> Result<Json, String> {
         };
         let done = gate::change(doc, cx.area, Plan { method: M, most, cmds }, label)?;
         let deck = doc.deck()?;
-        let extra = match op.as_str() {
+        let mut extra = match op.as_str() {
             "new" => json!({ "slide": done.results.first().and_then(|r| r["id"].as_u64()) }),
             "duplicate" => json!({ "slides": done.results.iter().filter_map(|r| r["ids"][0].as_u64()).collect::<Vec<_>>() }),
             o if o.starts_with("section_") => json!({ "sections": docs::sections(&deck) }),
             _ => json!({}),
         };
+        if let Some((source, slide)) = copy_source {
+            extra["clipboard"] = json!(docs::remember_copy(cx, doc, source, slide));
+        }
         doc.answer(&done.changed, extra)
     })
 }

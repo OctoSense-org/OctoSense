@@ -716,3 +716,19 @@ fn sweeping_never_follows_a_symlink() {
     symlink(&root, &alias).unwrap();
     assert_eq!(sweep_at(&alias, much_later), 0);
 }
+#[test]
+fn a_prepared_cache_is_the_private_folder_a_download_accepts() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().join("updates");
+    let folder = prepare_cache(&root).unwrap();
+    std::fs::write(folder.join("last-checked"), "1").unwrap();
+    // A download starts in it, and a second call finds it as it is.
+    assert!(validate_directory(&root).is_ok());
+    assert_eq!(prepare_cache(&root).unwrap(), folder);
+    // It makes nothing above host-owned app storage.
+    assert!(prepare_cache(&tmp.path().join("missing").join("updates")).is_err());
+    // A note beside the downloads survives a sweep.
+    let much_later = SystemTime::now() + Duration::from_secs(3 * 24 * 60 * 60);
+    assert_eq!(sweep_at(&root, much_later), 0);
+    assert!(folder.join("last-checked").exists());
+}

@@ -7,6 +7,10 @@ const MAPS: &str = include_str!("../../../apps/maps/bundle/main.splash");
 
 /// Evaluate `expression` after Maps' functions; it must end in `.to_json()`.
 fn maps_model(expression: &str) -> serde_json::Value {
+    maps_model_with_limit(expression, 500_000)
+}
+
+fn maps_model_with_limit(expression: &str, limit: usize) -> serde_json::Value {
     let source = MAPS.split_once("// END shared app interface\n").unwrap().1
         .split_once("\nstart_timeout(").unwrap().0;
     let mut host = ScriptVmHost::new((), ());
@@ -15,10 +19,10 @@ fn maps_model(expression: &str) -> serde_json::Value {
         bx: Box::new(ScriptVmBase::new()),
     };
     vm.bx.captured_errors = Some(Vec::new());
-    let result = vm.with_instruction_limit(500_000, |vm| {
+    let result = vm.with_instruction_limit(limit, |vm| {
         vm.eval(ScriptMod {
             file: "maps_model_test.splash".into(),
-            code: format!("use mod.math.*\n{source}\n{expression}\n;"),
+            code: format!("use mod.math.*\nuse mod.std.regex\n{source}\n{expression}\n;"),
             ..Default::default()
         })
     });
@@ -30,6 +34,131 @@ fn maps_model(expression: &str) -> serde_json::Value {
         .string_with(result, |_, value| value.to_string())
         .unwrap();
     serde_json::from_str(&json).unwrap()
+}
+
+#[test]
+fn maps_checks_complete_stored_json_before_replacing_it() {
+    let out = maps_model(r#"[
+        stored_json_complete('{}')
+        stored_json_complete(' [ { "name": "Café", "lat": -1.25e+2 }, null, true, false ] ')
+        stored_json_complete({text: "A quote: \" and a line\nnext" items: [1 -2.5 nil]}.to_json())
+        stored_json_complete('{"style":"Dark",')
+        stored_json_complete('[{"name":"Cafe"}')
+        stored_json_complete('{"style":"Dark",}')
+        stored_json_complete('[1,]')
+        stored_json_complete('{"x" 1}')
+        stored_json_complete('{"x":01}')
+        stored_json_complete('{"x":1.}')
+        stored_json_complete('{"x":1e}')
+        stored_json_complete('{"x":tru}')
+        stored_json_complete('{} trailing')
+        stored_json_complete('')
+    ].to_json()"#);
+    assert_eq!(out, serde_json::json!([
+        true, true, true, false, false, false, false, false, false, false, false, false,
+        false, false
+    ]));
+}
+
+#[test]
+fn maps_checks_a_realistic_saved_places_file_within_the_script_budget() {
+    let out = maps_model_with_limit(r#"let places = []
+for i in 100 {
+    places.push({name: "A long place name" cat: "Cafe" label: "A sample city" lat: 37.335 lon: -121.885})
+}
+stored_places_complete(places.to_json()).to_json()"#, 200_000);
+    assert_eq!(out, serde_json::json!(true));
+}
+
+#[test]
+fn maps_checks_settings_within_the_ui_script_budget() {
+    let out = maps_model_with_limit(r#"let text = ""
+for i in 30 { text = text + "a sample phrase " }
+let settings = {style: "Dark" extra: text}.to_json()
+[settings.len() < 512 stored_json_complete(settings)].to_json()"#, 200_000);
+    assert_eq!(out, serde_json::json!([true, true]));
+}
+
+#[test]
+fn maps_checks_dense_settings_within_the_ui_script_budget() {
+    let text = format!(r#"{{"extra":[{}]}}"#, vec!["0"; 250].join(","));
+    assert!(text.len() < 512);
+    let expression = format!("stored_json_complete('{text}').to_json()");
+    assert_eq!(maps_model_with_limit(&expression, 200_000), serde_json::json!(true));
+}
+
+#[test]
+fn maps_builds_pins_for_many_saved_places_within_the_ui_script_budget() {
+    let places: Vec<_> = (0..100)
+        .map(|i| serde_json::json!({"name": format!("Place {i}"), "lat": 37.335 + i as f64 * 0.0001, "lon": -121.885}))
+        .collect();
+    let input = serde_json::to_string(&places).unwrap();
+    let expression = format!(r#"let places = '{input}'.parse_json()
+let pins = pin_places(places, places[99])
+let marks = pins_text(pins, places[99]).split(";")
+[pins.len() marks.len() marks[99].strip_suffix(",2") != marks[99]].to_json()"#);
+    assert_eq!(maps_model_with_limit(&expression, 200_000), serde_json::json!([100, 100, true]));
+}
+
+#[test]
+fn maps_saved_lookup_keeps_place_key_matching_rules() {
+    let out = maps_model(r#"let rows = [
+    {id: "W:42" name: "With ID" lat: 37.1 lon: -121.1}
+    {name: " A " lat: 1.00001 lon: 2.00001}
+    {id: "B@3,4" name: "ID that looks like coordinates" lat: 5 lon: 6}
+    {name: "" lat: nil lon: nil}
+]
+let probes = [
+    {id: "W:42" name: "Different name"}
+    {name: "A" lat: 1 lon: 2}
+    {id: "A@1,2"}
+    {name: "B" lat: 3 lon: 4}
+    {name: "Unknown" lat: 1 lon: 2}
+    {name: "" lat: nil lon: nil}
+]
+let result = []
+for p in probes {
+    let reference = false
+    for s in rows { if place_key(s) == place_key(p) { reference = true } }
+    result.push(is_saved(rows, p) == reference)
+}
+result.to_json()"#);
+    assert_eq!(out, serde_json::json!([true, true, true, true, true, true]));
+}
+
+#[test]
+fn maps_only_the_current_run_can_finish_background_work() {
+    let out = maps_model(r#"maps_run = 1
+mod.maps_run = 1
+let first = maps_current()
+// A restyle restores the previous module snapshot after the new run evaluates.
+maps_run = 2
+mod.maps_run = 1
+maps_claim_boot()
+let second = maps_current() && mod.maps_run == 2
+// A late callback from run 1 cannot reclaim run 2.
+maps_run = 1
+maps_claim_boot()
+let old = !maps_current() && mod.maps_run == 2
+// Nor can run 3 replace an already newer run 4.
+maps_run = 3
+mod.maps_run = 4
+maps_claim_boot()
+[first second old !maps_current() && mod.maps_run == 4].to_json()"#);
+    assert_eq!(out, serde_json::json!([true, true, true, true]));
+}
+
+#[test]
+fn maps_toggling_saved_places_removes_duplicates_without_mutating_the_original() {
+    let out = maps_model(r#"let a = {id: "W:1" name: "A" lat: 37.1 lon: -121.1}
+let twin = {id: "W:1" name: "Twin" lat: 37.2 lon: -121.2}
+let b = {name: "B" lat: 37.3 lon: -121.3}
+let old = [a twin b]
+let removed = toggle_saved_list(old, a)
+let added = toggle_saved_list(removed.next, a)
+[old.len() removed.was_saved removed.next.len() removed.next[0].name
+    added.was_saved added.next.len() added.next[1].name].to_json()"#);
+    assert_eq!(out, serde_json::json!([3, true, 1, "B", false, 2, "A"]));
 }
 
 /// Two hits for one way, an address, and a feature without coordinates. The
@@ -648,6 +777,8 @@ mod.flights = []
 fn text_field(id){ return {set_text: fn(t) { mod.texts[id] = t } set_visible: fn(v) {} render: fn() {}} }
 let widget = {set_visible: fn(v) {} set_text: fn(t) {} render: fn() {}}
 let ui = {results: widget search_panel: widget place_panel: widget route_panel: widget browse_box: widget
+    storage_text: widget storage_note: widget storage_retry: widget storage_dismiss: widget
+    storage_search_text: widget storage_search_note: widget storage_search_retry: widget
     locate_box: widget drive_box: widget drive_bar: widget details: widget
     browse_map: {fly_to: fn(lat, lon, zoom) { mod.flights.push([lat lon zoom]) } set_route_markers: fn(text) {} clear_route: fn() {}}
     pname: text_field("pname") pcat: text_field("pcat") paddr: text_field("paddr") pdist: text_field("pdist")
@@ -658,6 +789,7 @@ let fs = {exists: fn(path) { true } read: fn(path) { '[{"name":"Old Recent","lat
     write: fn(path, data) { mod.writes.push([path data]) }}
 let net = {HttpMethod: {GET: "GET"} HttpRequest: {} HttpEvents: {}
     http_request: fn(req, events) { mod.urls.push(req.url); events.on_error("offline") }}
+saved_loaded = true
 load_recents()
 for r in listed(recents) { pick(r) }
 [screen place mod.texts mod.writes.len() mod.writes[0][0] mod.writes[0][1].parse_json() mod.urls mod.flights].to_json()"#,
@@ -723,7 +855,7 @@ fn maps_draws_every_map_from_the_world_archive_and_raises_buildings_in_3d() {
     // the 3D one drew a flat, patchy map: every map now reads makepad's
     // pre-baked world map, and the 3D drive map raises its buildings.
     let maps: Vec<&str> = MAPS
-        .split("MapView{")
+        .split("MacMapView{")
         .skip(1)
         .map(|rest| &rest[..rest.find('}').unwrap()])
         .collect();
@@ -825,6 +957,46 @@ let again = remembered(twice, {name: "B" lat: 6 lon: 6})
             ["B", "C", "A", "D"],
             ["C", "A", "D", "B"],
             6
+        ])
+    );
+}
+
+#[test]
+fn maps_names_a_ramp_by_its_signs_in_a_macs_step_list() {
+    // A ramp says its exit's number and the place it is signed for; a ramp with
+    // no signs and a nameless turn still name the next road, one or two steps on.
+    let out = maps_model(
+        r#"fn texts_of(steps){
+    desk_name_steps(steps)
+    let out = []
+    for s in steps { out.push(s.text) }
+    out
+}
+fn leg(words, kind, num, toward){
+    {text: words kind: kind modifier: "" exit: num toward: toward}
+}
+texts_of([
+    leg("Start on First St", "depart", "", "")
+    leg("Take the exit", "off ramp", "12A", "San Jose")
+    leg("Take the exit onto I 280", "off ramp", "", "Santa Cruz")
+    leg("Take the ramp", "on ramp", "", "")
+    leg("Keep left at the fork", "fork", "", "Oakland")
+    leg("Turn left", "turn", "", "")
+    leg("Continue on Main St", "new name", "", "")
+    leg("Arrive at Diridon", "arrive", "", "")
+]).to_json()"#,
+    );
+    assert_eq!(
+        out,
+        serde_json::json!([
+            "Start on First St",
+            "Take exit 12A toward San Jose",
+            "Take the exit onto I 280 toward Santa Cruz",
+            "Take the ramp",
+            "Keep left at the fork toward Oakland",
+            "Turn left toward Main St",
+            "Continue on Main St",
+            "Arrive at Diridon"
         ])
     );
 }
@@ -975,6 +1147,8 @@ mod.markers = []
 mod.flights = []
 mod.files = {}
 mod.io = []
+mod.reject_path = ""
+mod.reject_read_path = ""
 mod.urls = []
 mod.answers = []
 mod.during = nil
@@ -988,6 +1162,8 @@ mod.drive = []
 fn w(id){ return {set_text: fn(t) { mod.texts[id] = t } set_visible: fn(v) { mod.shown[id] = v }
     render: fn() { if id == "details" { mod.renders = mod.renders + 1 } }} }
 let ui = {results: w("results") search: w("search") search_hint: w("search_hint") search_panel: w("search_panel")
+    storage_text: w("storage_text") storage_note: w("storage_note") storage_retry: w("storage_retry") storage_dismiss: w("storage_dismiss")
+    storage_search_text: w("storage_search_text") storage_search_note: w("storage_search_note") storage_search_retry: w("storage_search_retry")
     place_panel: w("place_panel") route_panel: w("route_panel") browse_box: w("browse_box") locate_box: w("locate_box")
     drive_box: w("drive_box") drive_bar: w("drive_bar") finding_links: w("finding_links") your_location: w("your_location")
     pname: w("pname") pcat: w("pcat") paddr: w("paddr") pdist: w("pdist") details: w("details") save: w("save")
@@ -1015,11 +1191,16 @@ let fs = {
     exists: fn(path) { mod.io.push("exists " + path); return optional(mod.files, path, nil) != nil }
     read: fn(path) {
         mod.io.push("read " + path)
+        if path == mod.reject_read_path { storage_read_refused() }
         let text = optional(mod.files, path, nil)
         if text == nil { no_such_file() }
         text
     }
-    write: fn(path, data) { mod.io.push("write " + path); mod.files[path] = data }
+    write: fn(path, data) {
+        mod.io.push("write " + path)
+        if path == mod.reject_path { storage_write_refused() }
+        mod.files[path] = data
+    }
 }
 let net = {HttpMethod: {GET: "GET"} HttpRequest: {} HttpEvents: {}
     http_request: fn(req, events) {
@@ -1053,6 +1234,8 @@ fn kept(name){
     if text == nil { return nil }
     text.parse_json()
 }
+saved_loaded = true
+recents_loaded = true
 "#;
 
 const PIZZA_DETAILS: &str = r#"{"elements":[{"type":"node","id":1,"tags":{"opening_hours":"Mo-Su 11:00-22:00","phone":"+1 408 555 0100","website":"pizza.example.com","cuisine":"pizza"}}]}"#;
@@ -1265,6 +1448,86 @@ out.to_json()"#;
             null
         ])
     );
+}
+
+#[test]
+fn maps_keeps_saved_and_recent_lists_when_writes_fail_and_retries() {
+    let code = r#"let a = {id: "" name: "Saved" cat: "Cafe" label: "" lat: 37.1 lon: -121.1}
+let b = {id: "" name: "Earlier" cat: "Cafe" label: "" lat: 37.2 lon: -121.2}
+let c = {id: "" name: "Chosen" cat: "Cafe" label: "" lat: 37.3 lon: -121.3}
+saved = [a]
+recents = [b]
+place = a
+screen = "place"
+mod.files["accounts/device/saved.json"] = saved.to_json()
+mod.files["accounts/device/recents.json"] = recents.to_json()
+mod.reject_path = "accounts/device/saved.json"
+toggle_save()
+let log = [[is_saved(saved, a) list_in(mod.files["accounts/device/saved.json"]).len()
+    storage_state.saved_error mod.shown["storage_note"]]]
+mod.reject_path = ""
+toggle_save()
+log.push([is_saved(saved, a) list_in(mod.files["accounts/device/saved.json"]).len()
+    storage_state.saved_error mod.shown["storage_note"]])
+mod.reject_path = "accounts/device/recents.json"
+pick(c)
+log.push([screen text_of(place, "name") recents.len() text_of(recents[0], "name")
+    storage_state.recent_error mod.shown["storage_note"]])
+mod.reject_path = ""
+pick(c)
+log.push([screen text_of(place, "name") recents.len() text_of(recents[1], "name")
+    storage_state.recent_error mod.shown["storage_note"]])
+log.to_json()"#;
+    let out = maps_model(&format!("{CARD_STUBS}{code}"));
+    assert_eq!(out, serde_json::json!([
+        [true, 1, true, true],
+        [false, 0, false, false],
+        ["place", "Chosen", 1, "Earlier", true, true],
+        ["place", "Chosen", 2, "Chosen", false, false],
+    ]));
+}
+
+#[test]
+fn maps_does_not_replace_unread_saved_or_recent_places() {
+    let code = r#"let a = {id: "" name: "Saved" cat: "Cafe" label: "" lat: 37.1 lon: -121.1}
+let b = {id: "" name: "Earlier" cat: "Cafe" label: "" lat: 37.2 lon: -121.2}
+let c = {id: "" name: "Chosen" cat: "Cafe" label: "" lat: 37.3 lon: -121.3}
+let saved_path = "accounts/device/saved.json"
+let recent_path = "accounts/device/recents.json"
+mod.files[saved_path] = [a].to_json()
+mod.files[recent_path] = [b].to_json()
+saved_loaded = false
+recents_loaded = false
+mod.reject_read_path = saved_path
+load_recents()
+load_saved()
+refresh_storage_notice()
+let log = [[saved_loaded recents_loaded recents.len() mod.shown["storage_retry"]]]
+mod.reject_read_path = ""
+place = c
+screen = "place"
+toggle_save()
+log.push([list_in(mod.files[saved_path]).len() text_of(list_in(mod.files[saved_path])[0], "name") saved_loaded])
+retry_storage_load()
+toggle_save()
+log.push([saved_loaded saved.len() text_of(saved[0], "name") text_of(saved[1], "name")])
+mod.files[recent_path] = "{"
+load_recents()
+remember(c)
+log.push([recents_loaded mod.files[recent_path] mod.shown["storage_retry"]])
+mod.files[recent_path] = [b].to_json()
+retry_storage_load()
+remember(c)
+log.push([recents_loaded recents.len() text_of(recents[0], "name") text_of(recents[1], "name")])
+log.to_json()"#;
+    let out = maps_model(&format!("{CARD_STUBS}{code}"));
+    assert_eq!(out, serde_json::json!([
+        [false, true, 1, true],
+        [1, "Saved", false],
+        [true, 2, "Saved", "Chosen"],
+        [false, "{", true],
+        [true, 2, "Earlier", "Chosen"],
+    ]));
 }
 
 #[test]
@@ -1891,4 +2154,84 @@ log.to_json()"#;
             [["clear", route, "line line-a", route, "fit"], []]
         ])
     );
+}
+
+#[test]
+fn maps_saved_index_handles_duplicates_failed_writes_and_replacement() {
+    let code = r#"
+let a = {id: "W:1" name: "A" lat: 37.1 lon: -121.1}
+let twin = {id: "W:1" name: "Twin" lat: 37.2 lon: -121.2}
+let b = {name: "B" lat: 37.3 lon: -121.3}
+let bad = {name: "No coordinates"}
+maps_run = 10
+mod.maps_run = 10
+saved_load_epoch = 4
+places_checked = true
+screen = "route"
+recents_loaded = true
+saved_loading = true
+let job = {epoch: 4 places: [a twin b bad] at: 0 out: [] order: [] keys: {}}
+saved_load_batch(job)
+let initial = [saved_loaded !saved_loading saved_index_ready saved.len() saved_order.len()
+    saved_contains(a) saved_contains(twin) saved_contains(b)]
+mod.reject_path = "accounts/device/saved.json"
+let change = saved_change(a)
+let refused = !keep_saved_change(change)
+let after_refusal = [refused saved.len() saved_order.len() saved_contains(a) saved_contains(b)]
+mod.reject_path = ""
+let removed = keep_saved_change(saved_change(a))
+let after_remove = [removed saved.len() saved_order.len() saved_contains(a) saved_contains(b)
+    list_in(mod.files["accounts/device/saved.json"]).len()]
+let added = keep_saved_change(saved_change(a))
+let after_add = [added saved.len() saved_order.len() saved_contains(a) saved_contains(b)]
+let replacement = {id: "W:1" name: "Replacement" lat: 37.4 lon: -121.4}
+let replaced = saved_replace(b, replacement)
+let after_replace = [replaced saved.len() saved_order.len() saved_contains(a) saved_contains(b)
+    saved[0].name list_in(mod.files["accounts/device/saved.json"])[0].name]
+let stale = {epoch: 3 places: [b] at: 0 out: [] order: [] keys: {}}
+saved_load_batch(stale)
+let after_stale = [saved.len() saved[0].name saved_contains(a) !saved_contains(b)]
+saved_index_ready = false
+let fallback = [saved_contains(a) !saved_contains(b) saved_change(a).was_saved]
+[initial after_refusal after_remove after_add after_replace after_stale fallback].to_json()"#;
+    let out = maps_model(&format!("{CARD_STUBS}{code}"));
+    assert_eq!(out, serde_json::json!([
+        [true, true, true, 3, 3, true, true, true],
+        [true, 3, 3, true, true],
+        [true, 1, 1, false, true, 1],
+        [true, 2, 2, true, true],
+        [true, 1, 1, true, false, "Replacement", "Replacement"],
+        [1, "Replacement", true, true],
+        [true, true, true]
+    ]));
+}
+
+#[test]
+fn maps_saved_index_matches_place_keys_with_unusual_identifiers() {
+    let out = maps_model(r#"
+saved = [
+    {id: "__proto__" name: "Prototype" lat: 1 lon: 2}
+    {id: "constructor" name: "Constructor" lat: 2 lon: 3}
+    {id: "0" name: "Zero ID" lat: 3 lon: 4}
+    {id: "A@1,2" name: "Looks like coordinates" lat: 4 lon: 5}
+    {name: " A " lat: 1.00001 lon: 2.00001}
+    {id: " café 🧭 " name: "Unicode" lat: 5 lon: 6}
+]
+saved_order = []
+saved_index = {}
+for item in saved {
+    let key = place_key(item)
+    saved_order.push(key)
+    saved_index[key] = true
+}
+saved_index_ready = true
+let probes = [
+    {id: "__proto__"} {id: "constructor"} {id: "0"}
+    {name: "A" lat: 1 lon: 2} {id: "A@1,2"}
+    {id: "café 🧭"} {id: "not there"} {name: "A" lat: 1 lon: 3}
+]
+let result = []
+for p in probes { result.push(saved_contains(p) == is_saved(saved, p)) }
+result.to_json()"#);
+    assert_eq!(out, serde_json::json!([true, true, true, true, true, true, true, true]));
 }

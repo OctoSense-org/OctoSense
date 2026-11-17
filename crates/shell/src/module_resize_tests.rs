@@ -227,6 +227,50 @@ fn maps_location_request_checks_the_contained_app_capability() {
 }
 
 #[test]
+fn youtube_retry_resets_only_the_exhausted_query() {
+    use makepad_widgets::makepad_platform::script::res::DataFetch;
+
+    let (mut cx, _tile, root, outer) = hosted_card();
+    set_card_body(&mut cx, &root, outer, "View{}");
+    let source = root.splash(&cx, ids!(card)).borrow().unwrap().view.source.clone();
+    let owner = cx.script_ref_vm_id(&source).unwrap();
+    let url = |q: &str| format!("https://www.youtube.com/results?search_query={q}");
+    let terminal = url("terminal+query");
+    let pending = url("pending+query");
+    let transient = url("transient+query");
+    let loaded = url("loaded+query");
+    let terminal_request = LiveId::unique();
+    let pending_request = LiveId::unique();
+    let transient_request = LiveId::unique();
+    let loaded_request = LiveId::unique();
+    let resources = &cx.script_data.resources;
+    resources.begin_data_fetch(&terminal, terminal_request);
+    assert!(resources.fail_data_fetch_terminally(terminal_request));
+    resources.begin_data_fetch(&pending, pending_request);
+    resources.begin_data_fetch(&transient, transient_request);
+    assert!(resources.handle_data_fetch_error(transient_request));
+    resources.begin_data_fetch(&loaded, loaded_request);
+    assert!(resources.handle_data_fetch_response(loaded_request, b"cached result".to_vec()));
+
+    cx.with_script_vm_id_trusted(owner, |vm| {
+        splash::register_agent_module(vm);
+        vm.bx.captured_errors = Some(Vec::new());
+        script_eval!(vm, {sys.video_retry("terminal query")});
+        script_eval!(vm, {sys.video_retry("pending query")});
+        script_eval!(vm, {sys.video_retry("transient query")});
+        script_eval!(vm, {sys.video_retry("loaded query")});
+        let errors = vm.take_errors();
+        assert!(errors.is_empty(), "{errors:?}");
+    });
+    let resources = &cx.script_data.resources;
+    assert!(resources.get_data_fetch(&terminal).is_none());
+    assert!(!resources.data_fetch_retries.borrow().contains_key(&terminal));
+    assert!(matches!(resources.get_data_fetch(&pending), Some(DataFetch::Loading(id)) if id == pending_request));
+    assert!(matches!(resources.get_data_fetch(&transient), Some(DataFetch::Error)));
+    assert!(matches!(resources.get_data_fetch(&loaded), Some(DataFetch::Loaded(data)) if data.as_slice() == b"cached result"));
+}
+
+#[test]
 fn maps_reads_are_passive_and_only_the_location_action_requests_permission() {
     let source = include_str!("../../../apps/maps/bundle/main.splash");
     let function = |name: &str| {

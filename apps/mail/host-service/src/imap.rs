@@ -22,8 +22,9 @@ pub struct Untagged {
     pub literals: Vec<Vec<u8>>,
 }
 
-fn rejected() -> String {
-    "Mail server rejected the sign-in. Check the address and app password.".into()
+/// What a Mac's Mail says when a server turns a sign-in away.
+pub(crate) fn rejected() -> String {
+    "Unable to verify account name or password.".into()
 }
 
 impl Imap {
@@ -141,7 +142,7 @@ impl Imap {
                 ["sent", "drafts", "junk", "trash", "archive", "all", "flagged"]
                     .into_iter()
                     .find(|role| flags.contains(&format!("\\{role}")))
-                    .unwrap_or("")
+                    .unwrap_or_else(|| role_by_name(name.rsplit(['/', '.']).next().unwrap_or("")))
             };
             let shown = match role {
                 "inbox" => "Inbox".to_string(),
@@ -185,12 +186,12 @@ impl Imap {
             for row in self.command(&format!("UID FETCH {set} (UID FLAGS RFC822.SIZE)"))? {
                 if let Some(uid) = item_number(&row.text, "UID") {
                     let size = item_number(&row.text, "RFC822.SIZE").unwrap_or(0) as usize;
-                    let unread = !row.text.to_ascii_lowercase().contains("\\seen");
-                    meta.insert(uid, (size, unread));
+                    let flags = row.text.to_ascii_lowercase();
+                    meta.insert(uid, (size, !flags.contains("\\seen"), flags.contains("\\flagged")));
                 }
             }
             for uid in &wanted {
-                let Some((size, unread)) = meta.get(uid).copied() else { continue };
+                let Some((size, unread, flagged)) = meta.get(uid).copied() else { continue };
                 let key = format!("{folder}\n{validity}/{uid}");
                 let mut message = if size > MAX_MESSAGE {
                     let raw = self.body(*uid, "BODY.PEEK[HEADER]")?;
@@ -204,6 +205,7 @@ impl Imap {
                 };
                 message["imap_uid"] = json!(uid);
                 message["unread"] = json!(unread);
+                message["flagged"] = json!(flagged);
                 messages.push(message);
             }
         }
@@ -223,9 +225,96 @@ impl Imap {
         Ok(())
     }
 
+    /// Set or clear a message's `\Seen` (`seen`) or `\Flagged` (`flagged`) flag.
+    pub fn set_flag(&mut self, folder: &str, uid: u64, flag: &str, on: bool) -> Result<(), String> {
+        let name = match flag {
+            "seen" => "\\Seen",
+            "flagged" => "\\Flagged",
+            _ => return Err("Mail can't set that flag.".into()),
+        };
+        self.run(&[Part::Atom("SELECT"), Part::Str(folder)])?;
+        self.command(&format!("UID STORE {uid} {}FLAGS.SILENT ({name})", if on { "+" } else { "-" }))?;
+        Ok(())
+    }
+
+    /// Move a message to the mailbox `target`, one the server lists.
+    pub fn move_to(&mut self, folder: &str, uid: u64, target: &str) -> Result<(), String> {
+        if target == folder {
+            return Ok(());
+        }
+        if !self.folders()?.iter().any(|f| text(f, "id") == target) {
+            return Err("That mailbox is no longer on the mail server.".into());
+        }
+        let abilities = self.command("CAPABILITY")?.into_iter().map(|row| row.text.to_ascii_uppercase()).collect::<Vec<_>>().join(" ");
+        let can = |name: &str| abilities.split_whitespace().any(|word| word == name);
+        self.run(&[Part::Atom("SELECT"), Part::Str(folder)])?;
+        if can("MOVE") {
+            return self.run(&[Part::Atom(&format!("UID MOVE {uid}")), Part::Str(target)]).map(|_| ());
+        }
+        self.run(&[Part::Atom(&format!("UID COPY {uid}")), Part::Str(target)])?;
+        self.command(&format!("UID STORE {uid} +FLAGS.SILENT (\\Deleted)"))?;
+        if can("UIDPLUS") {
+            self.command(&format!("UID EXPUNGE {uid}"))?;
+        }
+        Ok(())
+    }
+
+    /// Move a message to the folder the server keeps for `role` (`archive`
+    /// or `trash`). A message in the trash already is deleted for good.
+    pub fn move_message(&mut self, folder: &str, uid: u64, role: &str) -> Result<(), String> {
+        let folders = self.folders()?;
+        let target = role_folder(&folders, role);
+        if target.is_none() && role != "trash" {
+            return Err("This account has no Archive mailbox.".into());
+        }
+        // No Trash to move to: Mail asked first, this is deleted for good.
+        let target = target.unwrap_or_else(|| folder.to_string());
+        let abilities = self.command("CAPABILITY")?.into_iter().map(|row| row.text.to_ascii_uppercase()).collect::<Vec<_>>().join(" ");
+        let can = |name: &str| abilities.split_whitespace().any(|word| word == name);
+        self.run(&[Part::Atom("SELECT"), Part::Str(folder)])?;
+        if target != folder {
+            if can("MOVE") {
+                return self.run(&[Part::Atom(&format!("UID MOVE {uid}")), Part::Str(&target)]).map(|_| ());
+            }
+            self.run(&[Part::Atom(&format!("UID COPY {uid}")), Part::Str(&target)])?;
+        } else if role != "trash" {
+            return Ok(());
+        }
+        self.command(&format!("UID STORE {uid} +FLAGS.SILENT (\\Deleted)"))?;
+        // A plain EXPUNGE would also take what another client only marked.
+        if can("UIDPLUS") {
+            self.command(&format!("UID EXPUNGE {uid}"))?;
+        }
+        Ok(())
+    }
+
+    /// A message whole, as the server keeps it.
+    pub fn raw_message(&mut self, folder: &str, uid: u64) -> Result<Vec<u8>, String> {
+        self.run(&[Part::Atom("EXAMINE"), Part::Str(folder)])?;
+        self.body(uid, "BODY.PEEK[]")
+    }
+
     pub fn logout(mut self) {
         let _ = self.command("LOGOUT");
     }
+}
+
+/// What a server without special-use marks means by a folder's name.
+fn role_by_name(leaf: &str) -> &'static str {
+    match leaf.to_ascii_lowercase().as_str() {
+        "sent" | "sent messages" | "sent items" => "sent",
+        "drafts" => "drafts",
+        "junk" | "spam" | "junk e-mail" => "junk",
+        "trash" | "deleted messages" | "deleted items" | "bin" => "trash",
+        "archive" | "archives" => "archive",
+        _ => "",
+    }
+}
+
+/// The folder that plays `role`: Gmail archives into All Mail.
+fn role_folder(folders: &[Value], role: &str) -> Option<String> {
+    let played = |wanted: &str| folders.iter().find(|f| text(f, "role") == wanted);
+    played(role).or_else(|| if role == "archive" { played("all") } else { None }).map(|f| text(f, "id").to_string())
 }
 
 /// Start with recent mail, then drain unseen bursts oldest-first so a high
@@ -418,7 +507,7 @@ mod tests {
                     "UID SEARCH UID 1:*" => "* SEARCH 5 7 9\r\n".to_string(),
                     "UID SEARCH UID 10:*" => "* SEARCH 9\r\n".to_string(),
                     "UID FETCH 9,7,5 (UID FLAGS RFC822.SIZE)" => concat!(
-                        "* 1 FETCH (UID 5 FLAGS (\\Seen) RFC822.SIZE 100)\r\n",
+                        "* 1 FETCH (UID 5 FLAGS (\\Seen \\Flagged) RFC822.SIZE 100)\r\n",
                         "* 2 FETCH (UID 7 FLAGS () RFC822.SIZE 3000000)\r\n",
                         "* 3 FETCH (UID 9 FLAGS (\\Recent) RFC822.SIZE 90)\r\n"
                     )
@@ -428,7 +517,10 @@ mod tests {
                         let head = "From: big@example.com\r\nSubject: Huge\r\n\r\n";
                         format!("* 2 FETCH (UID 7 BODY[HEADER] {{{}}}\r\n{head})\r\n", head.len())
                     }
-                    "SELECT \"INBOX\"" | "UID STORE 9 +FLAGS.SILENT (\\Seen)" => String::new(),
+                    "SELECT \"INBOX\""
+                    | "UID STORE 9 +FLAGS.SILENT (\\Seen)"
+                    | "UID STORE 9 -FLAGS.SILENT (\\Seen)"
+                    | "UID STORE 9 +FLAGS.SILENT (\\Flagged)" => String::new(),
                     "LOGOUT" => "* BYE\r\n".to_string(),
                     other => {
                         out.write_all(format!("{tag} BAD unexpected {other}\r\n").as_bytes()).unwrap();
@@ -459,6 +551,8 @@ mod tests {
         assert_eq!(messages[1]["subject"], "Huge");
         assert!(messages[1]["body"].as_str().unwrap().contains("too large"));
         assert_eq!(messages[2]["unread"], false, "\\Seen on the server is read here");
+        assert_eq!(messages[2]["flagged"], true, "\\Flagged on the server is flagged here");
+        assert_eq!(messages[0]["flagged"], false);
         assert_eq!(fetched["state"], json!({"uidvalidity": 42, "last_uid": 9}));
         assert_eq!(fetched["reset"], true, "a first fetch starts the folder afresh");
 
@@ -467,9 +561,88 @@ mod tests {
         assert_eq!(again["reset"], false);
 
         imap.mark_seen("INBOX", 9).unwrap();
+        // Mark as Unread and Flag, from a row's menu.
+        imap.set_flag("INBOX", 9, "seen", false).unwrap();
+        imap.set_flag("INBOX", 9, "flagged", true).unwrap();
+        assert!(imap.set_flag("INBOX", 9, "answered", true).is_err());
         imap.logout();
         let heard = server.join().unwrap();
         assert_eq!(heard[0], "LOGIN \"me@example.com\" {9}<pässword>", "a non-ASCII password goes as a literal");
+        assert!(heard.iter().any(|c| c == "UID STORE 9 -FLAGS.SILENT (\\Seen)"), "{heard:?}");
+        assert!(heard.iter().any(|c| c == "UID STORE 9 +FLAGS.SILENT (\\Flagged)"), "{heard:?}");
+    }
+
+    #[test]
+    fn a_role_goes_to_the_folder_that_plays_it() {
+        let folders = [json!({"id": "INBOX", "role": "inbox"}), json!({"id": "[Gmail]/All Mail", "role": "all"}), json!({"id": "Bin", "role": "trash"})];
+        assert_eq!(role_folder(&folders, "trash").as_deref(), Some("Bin"));
+        assert_eq!(role_folder(&folders, "archive").as_deref(), Some("[Gmail]/All Mail"), "Gmail archives into All Mail");
+        assert_eq!(role_folder(&folders[..1], "trash"), None);
+        assert_eq!(role_by_name("Deleted Messages"), "trash");
+        assert_eq!(role_by_name("Projects"), "");
+    }
+
+    /// What a move says to the server, with and without its extensions.
+    #[test]
+    fn a_message_moves_by_what_the_server_can_do() {
+        use std::io::{BufRead, BufReader, Write};
+        fn session(abilities: &'static str, go: impl FnOnce(&mut Imap)) -> Vec<String> {
+            let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            let port = listener.local_addr().unwrap().port();
+            let server = std::thread::spawn(move || {
+                let (stream, _) = listener.accept().unwrap();
+                let mut out = stream.try_clone().unwrap();
+                let mut input = BufReader::new(stream);
+                let mut heard = Vec::new();
+                out.write_all(b"* OK ready\r\n").unwrap();
+                loop {
+                    let mut line = String::new();
+                    if input.read_line(&mut line).unwrap() == 0 {
+                        break;
+                    }
+                    let (tag, command) = line.trim_end().split_once(' ').unwrap();
+                    heard.push(command.to_string());
+                    let reply = match command {
+                        "LIST \"\" \"*\"" => concat!(
+                            "* LIST () \"/\" \"INBOX\"\r\n",
+                            "* LIST () \"/\" \"Deleted Messages\"\r\n",
+                            "* LIST (\\Archive) \"/\" \"Keep\"\r\n"
+                        )
+                        .to_string(),
+                        "CAPABILITY" => format!("* CAPABILITY IMAP4rev1{abilities}\r\n"),
+                        _ => String::new(),
+                    };
+                    out.write_all(format!("{reply}{tag} OK done\r\n").as_bytes()).unwrap();
+                    if command == "LOGOUT" {
+                        break;
+                    }
+                }
+                heard
+            });
+            let mut imap = Imap::greeted(Wire::connect("127.0.0.1", port).unwrap()).unwrap();
+            go(&mut imap);
+            imap.logout();
+            server.join().unwrap().into_iter().filter(|c| !matches!(c.as_str(), "LIST \"\" \"*\"" | "CAPABILITY" | "LOGOUT")).collect()
+        }
+        let moved = session(" MOVE UIDPLUS", |imap| imap.move_message("INBOX", 9, "archive").unwrap());
+        assert_eq!(moved, ["SELECT \"INBOX\"", "UID MOVE 9 \"Keep\""]);
+        // Named, not marked: a server's Deleted Messages is its trash.
+        let copied = session(" UIDPLUS", |imap| imap.move_message("INBOX", 9, "trash").unwrap());
+        assert_eq!(copied, ["SELECT \"INBOX\"", "UID COPY 9 \"Deleted Messages\"", "UID STORE 9 +FLAGS.SILENT (\\Deleted)", "UID EXPUNGE 9"]);
+        let plain = session("", |imap| imap.move_message("INBOX", 9, "trash").unwrap());
+        assert_eq!(plain, ["SELECT \"INBOX\"", "UID COPY 9 \"Deleted Messages\"", "UID STORE 9 +FLAGS.SILENT (\\Deleted)"], "no EXPUNGE that could take more than this message");
+        // From the trash itself it is gone for good; in the archive nothing happens.
+        let gone = session(" MOVE UIDPLUS", |imap| imap.move_message("Deleted Messages", 9, "trash").unwrap());
+        assert_eq!(gone, ["SELECT \"Deleted Messages\"", "UID STORE 9 +FLAGS.SILENT (\\Deleted)", "UID EXPUNGE 9"]);
+        let still = session(" MOVE", |imap| imap.move_message("Keep", 9, "archive").unwrap());
+        assert_eq!(still, ["SELECT \"Keep\""]);
+        // Move to a mailbox by name, from a row's menu: only one the server lists.
+        let to = session(" MOVE UIDPLUS", |imap| imap.move_to("Keep", 9, "INBOX").unwrap());
+        assert_eq!(to, ["SELECT \"Keep\"", "UID MOVE 9 \"INBOX\""]);
+        let copied_to = session(" UIDPLUS", |imap| imap.move_to("INBOX", 9, "Keep").unwrap());
+        assert_eq!(copied_to, ["SELECT \"INBOX\"", "UID COPY 9 \"Keep\"", "UID STORE 9 +FLAGS.SILENT (\\Deleted)", "UID EXPUNGE 9"]);
+        let nowhere = session(" MOVE", |imap| assert!(imap.move_to("INBOX", 9, "Nowhere").is_err()));
+        assert!(nowhere.is_empty(), "nothing moves to a mailbox the server doesn't list: {nowhere:?}");
     }
 
     #[test]

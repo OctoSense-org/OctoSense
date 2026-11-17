@@ -92,7 +92,12 @@ impl WmDesk {
     }
 
     pub(super) fn draw_window_surface(&mut self, cx: &mut Cx2d, frame: &WindowFrame, rect: Rect, radius: f32) {
-        self.draw_window_surface_band(cx, frame, rect, rect, radius);
+        self.draw_window_surface_band(cx, frame, rect, rect, radius, 1.0);
+    }
+    /// [`Self::draw_window_surface`] at `opacity`: App Exposé's minimized
+    /// windows fade in where they stay.
+    pub(super) fn draw_window_surface_faded(&mut self, cx: &mut Cx2d, frame: &WindowFrame, rect: Rect, radius: f32, opacity: f32) {
+        self.draw_window_surface_band(cx, frame, rect, rect, radius, opacity);
     }
     /// The strips outside the safe area (under Android's transparent system
     /// bars): a presented scene recording stops at the safe area's edges, so
@@ -108,10 +113,10 @@ impl WmDesk {
     }
     /// `band` of the frame recorded over `rect`, drawn in place: the rows a
     /// cached scene still shows beside an opaque sheet.
-    fn draw_window_surface_band(&mut self, cx: &mut Cx2d, frame: &WindowFrame, rect: Rect, band: Rect, radius: f32) {
+    fn draw_window_surface_band(&mut self, cx: &mut Cx2d, frame: &WindowFrame, rect: Rect, band: Rect, radius: f32, opacity: f32) {
         if band.size.x < 0.5 || band.size.y < 0.5 { return; }
         self.draw_phone.draw_vars.set_texture(0, frame.texture());
-        self.draw_phone.opacity = 1.0;
+        self.draw_phone.opacity = opacity;
         // Sdf2d.box uses half the visible corner radius.
         self.draw_phone.radius = radius * 0.5;
         // WindowFrame render targets already have top-left rows, including
@@ -426,8 +431,8 @@ impl WmDesk {
                     let top=Rect{pos:full.pos,size:dvec2(full.size.x,(sheet.pos.y+48.0-full.pos.y).max(0.0))};
                     let from=sheet.pos.y+sheet.size.y-48.0;
                     let bottom=Rect{pos:dvec2(full.pos.x,from),size:dvec2(full.size.x,(full.pos.y+full.size.y-from).max(0.0))};
-                    self.draw_window_surface_band(cx,&cached.frame,full,top,0.0);
-                    self.draw_window_surface_band(cx,&cached.frame,full,bottom,0.0);
+                    self.draw_window_surface_band(cx,&cached.frame,full,top,0.0,1.0);
+                    self.draw_window_surface_band(cx,&cached.frame,full,bottom,0.0,1.0);
                 }
                 _ => self.draw_window_surface(cx,&cached.frame,full,0.0),
             }

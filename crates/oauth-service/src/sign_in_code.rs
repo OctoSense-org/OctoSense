@@ -92,6 +92,9 @@ pub struct SignInCode {
     source: ScriptObjectRef,
     #[deref]
     view: View,
+    /// What Copy says at rest, where the sheet that holds it says differently.
+    #[live]
+    copy_label: String,
     #[rust]
     shown: Option<Published>,
     #[rust]
@@ -110,12 +113,20 @@ impl SignInCode {
             .widget(cx, ids!(code_box))
             .set_visible(cx, has_code);
         self.view.widget(cx, ids!(copy)).set_visible(cx, has_code);
-        self.view.button(cx, ids!(copy)).set_text(cx, "Copy code");
+        self.view.button(cx, ids!(copy)).set_text(cx, self.copy_words());
         self.view
             .button(cx, ids!(open))
             .set_text(cx, &self.open_label);
         self.shown = published;
         self.view.redraw(cx);
+    }
+
+    fn copy_words(&self) -> &str {
+        if self.copy_label.is_empty() {
+            "Copy code"
+        } else {
+            &self.copy_label
+        }
     }
 
     fn copied(&mut self, cx: &mut Cx, text: &str) {
@@ -159,7 +170,8 @@ impl Widget for SignInCode {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         let actions = cx.capture_actions(|cx| self.view.handle_event(cx, event, scope));
         if self.reset.is_event(event).is_some() {
-            self.view.button(cx, ids!(copy)).set_text(cx, "Copy code");
+            let words = self.copy_words().to_string();
+            self.view.button(cx, ids!(copy)).set_text(cx, &words);
         }
         let Some(shown) = self.shown.clone() else {
             return;

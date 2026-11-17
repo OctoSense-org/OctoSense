@@ -80,7 +80,8 @@ pub static SPECS: [StyleSpec; 8] = [
     StyleSpec {
         style: DesktopStyle::Macos,
         tiling: false,
-        reserved_height: 0.0, title_height: 32.0,
+        // A Mac's titled window since Big Sur: a 28-point title bar.
+        reserved_height: 0.0, title_height: 28.0,
         frame_inset: 0.0, rounding: 14.0, chrome_radius: 10.0,
         frame_width: 2.0, caption_width: 30.0, shelf_radius: 18.0, resize_bar: 0.0, shadow: 0.28,
         glass_shelf: true, composes: true, caption_mac: true, bevel_classic: false, bevel_next: false,
@@ -176,7 +177,7 @@ pub static SPECS: [StyleSpec; 8] = [
     StyleSpec {
         style: DesktopStyle::OctoSense,
         tiling: false,
-        reserved_height: 0.0, title_height: 32.0,
+        reserved_height: 0.0, title_height: 28.0,
         frame_inset: 2.0, rounding: 12.0, chrome_radius: 10.0,
         frame_width: 1.0, caption_width: 30.0, shelf_radius: 24.0, resize_bar: 0.0, shadow: 0.44,
         glass_shelf: true, composes: true, caption_mac: true, bevel_classic: false, bevel_next: false,
@@ -299,7 +300,7 @@ mod tests {
         // with the zeros the phone rows must hold for a tween into them to land,
         // then the OctoSense row appended after the table existed.
         let reserved = [0.0, 0.0, 54.0, 34.0, 0.0, 0.0, 0.0, 0.0];
-        let title = [0.0, 32.0, 34.0, 20.0, 22.0, 0.0, 0.0, 32.0];
+        let title = [0.0, 28.0, 34.0, 20.0, 22.0, 0.0, 0.0, 28.0];
         let inset = [2.0, 0.0, 0.0, 3.0, 1.0, 0.0, 0.0, 2.0]; // BORDER_SIZE = 2.0
         let rounding = [0.0, 14.0, 8.0, 0.0, 0.0, 0.0, 0.0, 12.0];
         let chrome_radius = [0.0, 10.0, 8.0, 0.0, 0.0, 0.0, 0.0, 10.0];
@@ -438,15 +439,17 @@ mod tests {
         // and part way into one.
         let screen = rect(0.0, 0.0, 1440.0, 900.0);
         let n = 6;
+        // The Mac Dock has its own layout, read from the same place.
+        let (mac_left, mac_right) = (12, 2);
+        let mac = MacDockLayout::new(screen, mac_left, mac_right).frame;
         let old = |t: &StyleTween| {
-            let dock_width = (((n + 1) as f64) * 62.0 + 20.0).min((screen.size.x - 24.0).max(1.0));
             let next_height = ((n + 1) as f64 * 56.0).min((screen.size.y - 48.0).max(1.0));
             let value = |v: [f64; 5]| -> f64 { t.weights.iter().zip(v).map(|(w, v)| w * v).sum() };
             rect(
-                screen.pos.x + value([8.0, (screen.size.x - dock_width) * 0.5, 0.0, 0.0, screen.size.x - 64.0]),
-                screen.pos.y + value([0.0, screen.size.y - 88.0, screen.size.y - 54.0, screen.size.y - 34.0, 40.0]),
-                value([32.0, dock_width, screen.size.x, screen.size.x, 56.0]),
-                value([0.0, 78.0, 54.0, 34.0, next_height]),
+                screen.pos.x + value([8.0, mac.pos.x, 0.0, 0.0, screen.size.x - 64.0]),
+                screen.pos.y + value([0.0, mac.pos.y, screen.size.y - 54.0, screen.size.y - 34.0, 40.0]),
+                value([32.0, mac.size.x, screen.size.x, screen.size.x, 56.0]),
+                value([0.0, mac.size.y, 54.0, 34.0, next_height]),
             )
         };
         let mut t = StyleTween::default();
@@ -459,23 +462,23 @@ mod tests {
         ] {
             t.select(style);
             t.step(1.0);
-            assert_eq!(shelf_geometry(screen, &t, n), old(&t), "{style:?}");
+            assert_eq!(shelf_geometry(screen, &t, n, (mac_left, mac_right)), old(&t), "{style:?}");
         }
         t.select(DesktopStyle::Macos);
         t.step(0.3);
-        assert_eq!(shelf_geometry(screen, &t, n), old(&t), "mid-tween");
+        assert_eq!(shelf_geometry(screen, &t, n, (mac_left, mac_right)), old(&t), "mid-tween");
         // Into a phone row the old five-wide zip stopped short of the weight
         // that is growing; the eight-term mix multiplies it by the row's zeros.
         t.select(DesktopStyle::Ios);
         t.step(0.3);
-        assert_eq!(shelf_geometry(screen, &t, n), old(&t), "into a phone row");
-        // OctoSense's dock is macOS's dock, settled: same rect from the same arms.
-        t.select(DesktopStyle::Macos);
-        t.step(1.0);
-        let mac = shelf_geometry(screen, &t, n);
+        assert_eq!(shelf_geometry(screen, &t, n, (mac_left, mac_right)), old(&t), "into a phone row");
+        // OctoSense's dock keeps the wide shelf it always had: every app,
+        // 78 tall, whatever the Mac Dock holds.
         t.select(DesktopStyle::OctoSense);
         t.step(1.0);
-        assert_eq!(shelf_geometry(screen, &t, n), mac, "settled OctoSense");
+        let width = ((n + 1) as f64 * 62.0 + 20.0).min(screen.size.x - 24.0);
+        let expect = rect((screen.size.x - width) * 0.5, screen.size.y - 88.0, width, 78.0);
+        assert_eq!(shelf_geometry(screen, &t, n, (mac_left, mac_right)), expect, "settled OctoSense");
     }
     #[test]
     fn the_dock_overlays_the_desk_only_where_it_floats_over_it() {
@@ -483,13 +486,15 @@ mod tests {
         // bottom, a work area 10 points (the outer gap) inside it.
         let (desk_bottom, gap) = (899.0, crate::desk::GAPS_OUT);
         let mut t = StyleTween::default();
-        for style in [DesktopStyle::OctoSense, DesktopStyle::Macos] {
+        // OctoSense's 78 tall shelf, 10 above the desk's bottom; the Mac Dock
+        // is shorter and floats lower.
+        for (style, covers) in [(DesktopStyle::OctoSense, 78.0), (DesktopStyle::Macos, 57.0)] {
             t.select(style);
             t.step(1.0);
             let area_bottom = desk_bottom - gap - t.reserved_height();
-            assert_eq!(dock_overlay(&t, desk_bottom, area_bottom), 78.0, "{style:?}");
+            assert_eq!(dock_overlay(&t, desk_bottom, area_bottom), covers, "{style:?}");
             // The dock it covers with is the one the shelf draws.
-            let drawn = shelf_geometry(rect(0.0, 0.0, 1400.0, desk_bottom), &t, 20);
+            let drawn = shelf_geometry(rect(0.0, 0.0, 1400.0, desk_bottom), &t, 20, (12, 2));
             assert_eq!(dock_overlay(&t, desk_bottom, area_bottom), area_bottom - drawn.pos.y, "{style:?}");
         }
         // Windows reserves its taskbar's strip; the other rows float nothing
@@ -590,6 +595,187 @@ mod tests {
         assert_ne!(format!("apps.{}", "shell.assistant"), ASSISTANT_ENTRY);
     }
 
+    fn window(client: ClientId, app: &str, minimized: bool) -> MacDockWindow {
+        MacDockWindow {
+            client,
+            app: app.into(),
+            name: app.to_uppercase(),
+            title: format!("{app} window"),
+            minimized,
+        }
+    }
+
+    /// Everything the launcher lists in a full desktop build, in its order.
+    fn listed() -> Vec<(String, String)> {
+        ["terminal", "reference", "browser", "files", "calculator", "notes", "reminders", "news", "photos", "maps", "mail", "calendar", "apphub", "settings", "writer"]
+            .iter()
+            .map(|id| (id.to_string(), id.to_uppercase()))
+            .collect()
+    }
+
+    fn ids(group: &[MacDockEntry]) -> Vec<&str> {
+        group.iter().map(|e| e.icon.as_str()).collect()
+    }
+
+    /// A new Mac's Dock, before the person keeps or removes an app.
+    fn new_mac() -> Vec<String> {
+        MAC_DOCK_PINNED.iter().map(|id| id.to_string()).collect()
+    }
+
+    #[test]
+    fn the_mac_dock_keeps_what_the_person_keeps_in_it_with_files_first() {
+        // Removed: the app stands in the Dock only while it runs, after the kept ones.
+        let mut pins = new_mac();
+        pins.retain(|id| id != "maps");
+        let (left, _) = mac_dock_groups(&listed(), &pins, &[], false);
+        assert!(!ids(&left).contains(&"maps"));
+        let (left, _) = mac_dock_groups(&listed(), &pins, &[window(1, "maps", false)], false);
+        assert_eq!(ids(&left).last(), Some(&"maps"));
+        // Kept: it stays where it went, running or not.
+        pins.push("calculator".into());
+        let (left, _) = mac_dock_groups(&listed(), &pins, &[], false);
+        assert_eq!(ids(&left).last(), Some(&"calculator"));
+        assert!(!left.last().unwrap().running);
+        let (left, _) = mac_dock_groups(&listed(), &pins, &[window(1, "maps", false), window(2, "calculator", false)], false);
+        assert_eq!(ids(&left)[left.len() - 2..], ["calculator", "maps"], "the kept app first, then the one only running");
+        // Files stays first whatever the list says; an app listed twice takes
+        // one place, and one this build lacks none.
+        let odd: Vec<String> = ["notes", "files", "notes", "gone"].iter().map(|id| id.to_string()).collect();
+        let (left, _) = mac_dock_groups(&listed(), &odd, &[], false);
+        assert_eq!(ids(&left), ["files", "applications", "notes"]);
+        let (left, _) = mac_dock_groups(&listed(), &[], &[], false);
+        assert_eq!(ids(&left), ["files", "applications"]);
+    }
+
+    #[test]
+    fn the_mac_dock_holds_a_new_macs_apps_and_the_rest_only_while_they_run() {
+        let (left, right) = mac_dock_groups(&listed(), &new_mac(), &[], false);
+        assert_eq!(left[0].hit, ShelfHit::App("files".into()), "Files first, as a Mac's Finder");
+        assert_eq!(left[1].hit, ShelfHit::Launcher, "Launchpad beside it");
+        assert_eq!(left[1].label, "Launchpad");
+        assert_eq!(
+            ids(&left)[2..],
+            ["browser", "mail", "calendar", "notes", "reminders", "photos", "maps", "news", "terminal", "apphub", "settings"],
+            "the pinned order, whatever order the launcher lists them in",
+        );
+        assert_eq!(right.iter().map(|e| e.hit.clone()).collect::<Vec<_>>(), [ShelfHit::Trash], "nothing running: only the Trash to the right of the hairline");
+        assert!(left.iter().all(|e| !e.running));
+
+        // An app this build does not have takes no place.
+        let few: Vec<_> = listed().into_iter().filter(|(id, _)| id != "photos" && id != "apphub").collect();
+        let (left, _) = mac_dock_groups(&few, &new_mac(), &[], false);
+        assert!(!ids(&left).contains(&"photos") && !ids(&left).contains(&"apphub"));
+
+        // Running: a pinned app gets its dot where it is; another app comes after
+        // the pinned ones with one, once, however many windows it has.
+        let windows = [window(1, "notes", false), window(2, "calculator", false), window(3, "calculator", false), window(4, "reference", false)];
+        let (left, right) = mac_dock_groups(&listed(), &new_mac(), &windows, false);
+        assert!(left.iter().find(|e| e.icon == "notes").unwrap().running);
+        assert!(!left.iter().find(|e| e.icon == "news").unwrap().running);
+        let after = &left[left.len() - 2..];
+        assert_eq!(ids(after), ["calculator", "reference"], "after the pinned apps");
+        assert!(after.iter().all(|e| e.running));
+        assert_eq!(after[0].hit, ShelfHit::App("calculator".into()));
+        assert_eq!(after[0].label, "CALCULATOR", "the launcher's name");
+        assert_eq!(ids(&right), ["trash"], "the Trash closes the Dock, alone to the right of the hairline");
+        // An app the launcher does not list goes by its own name.
+        let (left, _) = mac_dock_groups(&listed(), &new_mac(), &[window(9, "hidden", false)], false);
+        let last = left.last().unwrap();
+        assert_eq!((last.icon.as_str(), last.label.as_str()), ("hidden", "HIDDEN"));
+    }
+
+    #[test]
+    fn a_minimized_window_stands_as_itself_to_the_right_of_the_hairline() {
+        let windows = [window(1, "notes", true), window(2, "calculator", true), window(3, "news", false)];
+        let (left, right) = mac_dock_groups(&listed(), &new_mac(), &windows, false);
+        // Its app still runs: the dot stays on the pinned icon.
+        assert!(left.iter().find(|e| e.icon == "notes").unwrap().running);
+        // The other app after the pinned ones; the windows to the right, with no dot.
+        assert_eq!(left.last().map(|e| e.hit.clone()), Some(ShelfHit::App("calculator".into())));
+        assert!(left.last().unwrap().running);
+        assert_eq!(right.iter().map(|e| e.hit.clone()).collect::<Vec<_>>(), [ShelfHit::Window(1), ShelfHit::Window(2), ShelfHit::Trash]);
+        assert_eq!(right[0].label, "notes window");
+        assert!(right.iter().all(|e| !e.running));
+    }
+
+    #[test]
+    fn the_assistant_is_in_the_mac_dock_only_while_its_chat_is_open() {
+        let (left, right) = mac_dock_groups(&listed(), &new_mac(), &[], false);
+        assert!(left.iter().chain(right.iter()).all(|e| e.hit != ShelfHit::Assistant));
+        let (left, right) = mac_dock_groups(&listed(), &new_mac(), &[], true);
+        assert!(right.iter().all(|e| e.hit != ShelfHit::Assistant));
+        assert_eq!(left.iter().any(|e| e.hit == ShelfHit::Assistant && e.running), dock_assistant().is_some());
+    }
+
+    #[test]
+    fn the_mac_dock_hugs_its_icons_centred_above_the_screens_edge() {
+        let screen = rect(0.0, 0.0, 1400.0, 900.0);
+        let dock = MacDockLayout::new(screen, 12, 0);
+        assert_eq!(dock.scale, 1.0);
+        assert_eq!(dock.icon(), 48.0);
+        assert_eq!(dock.frame.size, dvec2(7.0 + 12.0 * 48.0 + 11.0 * 6.0 + 7.0, 63.0));
+        assert_eq!(dock.frame.pos.x, (1400.0 - dock.frame.size.x) * 0.5, "centred");
+        assert_eq!(dock.frame.pos.y + dock.frame.size.y, 896.0, "floats 4 above the edge");
+        // Evenly spaced, inside the shelf, the same room at both ends.
+        for i in 0..11 {
+            assert_eq!(dock.icon_rect(i + 1).pos.x - dock.icon_rect(i).pos.x, 54.0);
+        }
+        assert_eq!(dock.icon_rect(0).pos.x - dock.frame.pos.x, 7.0);
+        assert_eq!(dock.frame.pos.x + dock.frame.size.x - (dock.icon_rect(11).pos.x + 48.0), 7.0);
+        // The cells share the shelf with nothing between them for a pointer to fall in.
+        for i in 0..11 {
+            assert_eq!(dock.cell(i).pos.x + dock.cell(i).size.x, dock.cell(i + 1).pos.x);
+        }
+        assert_eq!(dock.cell(0).pos.x, dock.frame.pos.x);
+        assert_eq!(dock.cell(11).pos.x + dock.cell(11).size.x, dock.frame.pos.x + dock.frame.size.x);
+        assert!(dock.separator().is_none(), "no right-hand group, no hairline");
+    }
+
+    #[test]
+    fn a_hairline_stands_between_the_mac_docks_groups() {
+        let screen = rect(0.0, 0.0, 1400.0, 900.0);
+        let dock = MacDockLayout::new(screen, 12, 2);
+        let line = dock.separator().unwrap();
+        let (before, after) = (dock.icon_rect(11), dock.icon_rect(12));
+        assert_eq!(line.size.x, 1.0);
+        let (left_room, right_room) = (line.pos.x - (before.pos.x + 48.0), after.pos.x - (line.pos.x + 1.0));
+        assert!((left_room - right_room).abs() <= 0.5, "{left_room} {right_room}");
+        assert!(left_room > 6.0 && left_room < 10.0, "{left_room}");
+        assert!(line.size.y > 40.0 && line.size.y < dock.frame.size.y);
+        // The right group keeps the left group's rhythm.
+        assert_eq!(dock.icon_rect(13).pos.x - dock.icon_rect(12).pos.x, 54.0);
+        assert_eq!(dock.frame.pos.x + dock.frame.size.x - (dock.icon_rect(13).pos.x + 48.0), 7.0);
+    }
+
+    #[test]
+    fn a_narrow_screen_shrinks_the_mac_docks_icons_and_keeps_it_on_screen() {
+        for (width, left, right) in [(1024.0, 12, 8), (800.0, 12, 4), (700.0, 12, 6), (480.0, 12, 0)] {
+            let screen = rect(0.0, 0.0, width, 900.0);
+            let dock = MacDockLayout::new(screen, left, right);
+            assert!(dock.scale < 1.0, "{width}");
+            assert!(dock.icon() >= 16.0, "{width}");
+            assert!(dock.frame.pos.x >= 8.0 - 1e-9, "{width}: left side {}", dock.frame.pos.x);
+            assert!(dock.frame.pos.x + dock.frame.size.x <= width - 8.0 + 1e-9, "{width}");
+            let last = dock.icon_rect(left + right - 1);
+            assert!(last.pos.x + last.size.x <= dock.frame.pos.x + dock.frame.size.x, "{width}");
+            // Still on the bottom edge, shorter for it.
+            assert_eq!(dock.frame.pos.y + dock.frame.size.y, 896.0);
+            assert!(dock.frame.size.y < 63.0);
+        }
+        // Where it fits, it does not shrink at all.
+        assert_eq!(MacDockLayout::new(rect(0.0, 0.0, 800.0, 900.0), 12, 0).scale, 1.0);
+    }
+
+    #[test]
+    fn a_minimized_windows_thumbnail_keeps_its_shape_in_the_icons_box() {
+        let slot = rect(100.0, 800.0, 48.0, 48.0);
+        let wide = mac_thumb_rect(slot, Some(dvec2(1000.0, 500.0)));
+        assert_eq!(wide, rect(100.0, 812.0, 48.0, 24.0));
+        let tall = mac_thumb_rect(slot, Some(dvec2(500.0, 1000.0)));
+        assert_eq!(tall, rect(112.0, 800.0, 24.0, 48.0));
+        assert_eq!(mac_thumb_rect(slot, None), slot);
+    }
+
     fn settled(style: DesktopStyle) -> StyleTween {
         let mut t = StyleTween::default();
         t.select(style);
@@ -619,7 +805,7 @@ mod tests {
     #[test]
     fn a_hidden_dock_slides_just_past_the_bottom_edge() {
         let screen = rect(0.0, 0.0, 1440.0, 900.0);
-        let dock = shelf_geometry(screen, &settled(DesktopStyle::OctoSense), 8);
+        let dock = shelf_geometry(screen, &settled(DesktopStyle::OctoSense), 8, (0, 0));
         let bottom = 900.0;
         assert_eq!(dock_slide(dock, bottom, 1.0), 0.0, "up: in place");
         // Down: its top is past the edge, so nothing of it is on screen.
@@ -664,7 +850,7 @@ mod tests {
     #[test]
     fn the_bottom_edge_calls_a_hidden_dock_and_leaving_it_sends_it_down() {
         let screen = rect(0.0, 0.0, 1440.0, 900.0);
-        let dock = shelf_geometry(screen, &settled(DesktopStyle::OctoSense), 8);
+        let dock = shelf_geometry(screen, &settled(DesktopStyle::OctoSense), 8, (0, 0));
         let mid = dock.pos.x + dock.size.x * 0.5;
         // Down: only the bottom edge calls it, anywhere along it.
         assert!(dock_pointer_wants(dvec2(mid, 899.0), screen, dock, false));
@@ -699,6 +885,11 @@ pub enum MacCaption {
     Close = 1,
     Minimize = 2,
     Maximize = 3,
+    /// A downward caret filling the quad, in `caption_ink`: the Dock's name
+    /// bubble points at its icon with it.
+    Tail = 4,
+    /// The green light's + on a window that zooms but can't fill the screen.
+    Zoom = 5,
 }
 
 script_mod! {
@@ -750,33 +941,69 @@ script_mod! {
             sdf.fill(vec4(color,self.color.w))
             let c = self.rect_size * 0.5
             match self.caption {
+                // Thin marks well inside the light, as a Mac's.
                 MacCaption.Close => {
-                    sdf.move_to(c.x-2.8,c.y-2.8)
-                    sdf.line_to(c.x+2.8,c.y+2.8)
-                    sdf.move_to(c.x-2.8,c.y+2.8)
-                    sdf.line_to(c.x+2.8,c.y-2.8)
-                    sdf.stroke(self.caption_ink,1.35)
+                    sdf.move_to(c.x-2.3,c.y-2.3)
+                    sdf.line_to(c.x+2.3,c.y+2.3)
+                    sdf.move_to(c.x-2.3,c.y+2.3)
+                    sdf.line_to(c.x+2.3,c.y-2.3)
+                    sdf.stroke(self.caption_ink,1.1)
                 }
                 MacCaption.Minimize => {
-                    sdf.move_to(c.x-3.25,c.y)
-                    sdf.line_to(c.x+3.25,c.y)
-                    sdf.stroke(self.caption_ink,1.5)
+                    sdf.move_to(c.x-2.9,c.y)
+                    sdf.line_to(c.x+2.9,c.y)
+                    sdf.stroke(self.caption_ink,1.15)
                 }
                 MacCaption.Maximize => {
-                    sdf.move_to(c.x-3.1,c.y-0.9)
-                    sdf.line_to(c.x+0.9,c.y+3.1)
-                    sdf.line_to(c.x-3.1,c.y+3.1)
+                    sdf.move_to(c.x-2.6,c.y-0.6)
+                    sdf.line_to(c.x+0.6,c.y+2.6)
+                    sdf.line_to(c.x-2.6,c.y+2.6)
                     sdf.close_path()
                     sdf.fill(self.caption_ink)
-                    sdf.move_to(c.x+3.1,c.y+0.9)
-                    sdf.line_to(c.x-0.9,c.y-3.1)
-                    sdf.line_to(c.x+3.1,c.y-3.1)
+                    sdf.move_to(c.x+2.6,c.y+0.6)
+                    sdf.line_to(c.x-0.6,c.y-2.6)
+                    sdf.line_to(c.x+2.6,c.y-2.6)
+                    sdf.close_path()
+                    sdf.fill(self.caption_ink)
+                }
+                MacCaption.Zoom => {
+                    sdf.move_to(c.x-2.9,c.y)
+                    sdf.line_to(c.x+2.9,c.y)
+                    sdf.move_to(c.x,c.y-2.9)
+                    sdf.line_to(c.x,c.y+2.9)
+                    sdf.stroke(self.caption_ink,1.15)
+                }
+                MacCaption.Tail => {
+                    sdf.move_to(0.0,0.0)
+                    sdf.line_to(self.rect_size.x,0.0)
+                    sdf.line_to(c.x,self.rect_size.y)
                     sdf.close_path()
                     sdf.fill(self.caption_ink)
                 }
                 _ => {}
             }
             return sdf.result
+        }
+    }
+    // A minimized window in the Mac Dock: its frozen surface, small. Several
+    // taps, since the surface is many times the thumbnail's size and has no mips.
+    set_type_default() do #(DrawDockThumb::script_shader(vm)) {
+        ..mod.draw.DrawQuad
+        image: texture_2d(float)
+        radius: 2.0
+        opacity: 1.0
+        y_flip: 0.0
+        pixel: fn() {
+            let d = vec2(0.33, 0.33) / (self.rect_size * self.draw_pass.dpi_factor)
+            let uv = vec2(self.pos.x, mix(self.pos.y, 1.0 - self.pos.y, self.y_flip))
+            let c = (self.image.sample(uv + d * vec2(-1.0, -1.0))
+                + self.image.sample(uv + d * vec2(1.0, -1.0))
+                + self.image.sample(uv + d * vec2(-1.0, 1.0))
+                + self.image.sample(uv + d * vec2(1.0, 1.0))) * 0.25
+            let sdf = Sdf2d.viewport(self.pos * self.rect_size)
+            sdf.box(0.0, 0.0, self.rect_size.x, self.rect_size.y, self.radius)
+            sdf.fill(c)
+            return sdf.result * self.opacity
         }
     }
     mod.widgets.DesktopShelfBase = #(DesktopShelf::register_widget(vm))
@@ -799,6 +1026,58 @@ script_mod! {
                 border_width: 0.65
                 shadow_radius: 10.0
                 shadow_color: #0005
+            }
+        }
+        // The Mac Dock's vibrancy: an even frost with no lens, sharp rim or
+        // glint, so what lies behind never streaks across it. The dark look
+        // comes with the appearance (`mac_glass_look`).
+        mac_glass: GlassPanel {
+            width: Fill height: Fill
+            draw_bg +: {
+                blur_level: #(FROSTED_SHELF_BLUR_LEVEL)
+                edge_blur_level: #(FROSTED_SHELF_BLUR_LEVEL)
+                corner_radius: #(MAC_DOCK_RADIUS * 0.5)
+                lensing_effect: 0.0
+                lensing_strength: 0.0
+                diffraction_strength: 0.0
+                tint_color: #f8f8fa
+                tint_alpha: 0.46
+                surface_alpha: 1.0
+                specular_strength: 0.0
+                rim_alpha: 0.22
+                rim_width: 1.0
+                inner_shadow_alpha: 0.0
+                border_color: #fff
+                border_alpha: 0.42
+                border_width: 0.75
+                shadow_radius: 18.0
+                shadow_sigma: 8.0
+                shadow_offset: vec2(0.0, 3.0)
+                shadow_color: #0000003a
+            }
+        }
+        // Launchpad's ground: the whole desk behind a deep, darkened frost.
+        mac_frost: GlassPanel {
+            width: Fill height: Fill
+            draw_bg +: {
+                blur_level: #(MAC_FROST_LEVEL)
+                edge_blur_level: #(MAC_FROST_LEVEL)
+                corner_radius: 1.0
+                lensing_effect: 0.0
+                lensing_strength: 0.0
+                diffraction_strength: 0.0
+                tint_color: #10141c
+                tint_alpha: 0.66
+                surface_alpha: 1.0
+                specular_strength: 0.0
+                rim_alpha: 0.0
+                inner_shadow_alpha: 0.0
+                border_alpha: 0.0
+                border_width: 0.0
+                shadow_radius: 0.0
+                shadow_sigma: 0.0
+                shadow_offset: vec2(0.0, 0.0)
+                shadow_color: #0000
             }
         }
     }
@@ -831,6 +1110,18 @@ pub struct DrawDesktopChrome {
     #[live]
     pub caption_ink: Vec4f,
 }
+#[derive(Script, ScriptHook)]
+#[repr(C)]
+pub struct DrawDockThumb {
+    #[deref]
+    draw_super: DrawQuad,
+    #[live]
+    pub radius: f32,
+    #[live]
+    pub opacity: f32,
+    #[live]
+    pub y_flip: f32,
+}
 #[derive(Clone, Debug, PartialEq)]
 pub enum ShelfHit {
     Launcher,
@@ -839,6 +1130,8 @@ pub enum ShelfHit {
     App(String),
     Window(ClientId),
     ShowDesktop,
+    /// The Mac Dock's Trash: Files' Trash folder, in a window of its own.
+    Trash,
 }
 #[derive(Script, ScriptHook, Widget)]
 pub struct DesktopShelf {
@@ -857,12 +1150,23 @@ pub struct DesktopShelf {
     app_icons: AppIconDraw,
     #[rust]
     window_apps: HashMap<ClientId, String>,
+    /// How big each window on the desk is: the Mac Dock fits a thumbnail to it.
+    #[rust]
+    window_sizes: HashMap<ClientId, Vec2d>,
     #[rust]
     active_window: Option<ClientId>,
     #[live]
     d: ShellDraw,
     #[live]
     glass: WidgetRef,
+    /// The Mac Dock's material (`DesktopStyle::Macos` only).
+    #[live]
+    mac_glass: WidgetRef,
+    /// Launchpad's frost: drawn here, so the Dock stays over it.
+    #[live]
+    mac_frost: WidgetRef,
+    #[live]
+    thumb: DrawDockThumb,
     #[redraw]
     #[rust]
     area: Area,
@@ -902,9 +1206,46 @@ pub struct DesktopShelf {
     screen: Rect,
     #[rust]
     dock_rect: Rect,
+    /// The Mac Dock's icon under a held press: it darkens until the release.
+    #[rust]
+    pressed: Option<ShelfHit>,
+    /// What the Mac Dock last said it holds (`dock:` in the log).
+    #[rust]
+    mac_logged: String,
+    /// The Trash has something in it: its tile shows papers (`WmState::trash_full`).
+    #[rust]
+    trash_full: bool,
 }
 thread_local! {
     static SHELF_BOUNDS: std::cell::Cell<Rect> = std::cell::Cell::new(Rect::default());
+    /// The surfaces of the minimized windows, for the Mac Dock's thumbnails:
+    /// `None` while a window is still on its way down (`set_dock_thumbs`).
+    static DOCK_THUMBS: std::cell::RefCell<HashMap<ClientId, Option<Texture>>> = std::cell::RefCell::new(HashMap::new());
+    /// Launchpad is up (`set_mac_launchpad`).
+    static MAC_LAUNCHPAD: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    /// Where the dock is drawn this frame, also while it hides beside
+    /// something full screen.
+    static DOCK_DRAWN: std::cell::Cell<Rect> = std::cell::Cell::new(Rect::default());
+}
+
+/// The menu says Launchpad went up or down. The desk, the Dock and the menu
+/// bar draw before the menu does, and each has a part in it: the desk's whole
+/// backdrop for the frost, the Dock staying over the frost, the bar going away.
+pub fn set_mac_launchpad(up: bool) {
+    MAC_LAUNCHPAD.with(|l| l.set(up));
+}
+pub fn mac_launchpad() -> bool {
+    MAC_LAUNCHPAD.with(|l| l.get())
+}
+/// Where the dock was last drawn, hiding or not; empty when it was not.
+pub fn dock_drawn_bounds() -> Rect {
+    DOCK_DRAWN.with(|b| b.get())
+}
+
+/// The desk's part of the Mac Dock: each frame, what each minimized window
+/// looks like. The desk draws before the shelf, so the shelf reads this frame's.
+pub fn set_dock_thumbs(thumbs: HashMap<ClientId, Option<Texture>>) {
+    DOCK_THUMBS.with(|t| *t.borrow_mut() = thumbs);
 }
 
 /// Where the shelf (the dock or taskbar) was last drawn; empty when it is
@@ -922,6 +1263,15 @@ impl DesktopShelf {
     }
     pub fn contains(&self, p: Vec2d) -> bool {
         self.bounds.contains(p) && self.bounds.size.y > 0.0
+    }
+    /// What a menu comes up from: the icon's column, from the top of the Dock.
+    pub fn hit_column(&self, p: Vec2d) -> Option<Rect> {
+        let cell = self.hits.iter().find(|(r, _)| r.contains(p))?.0;
+        Some(rect(cell.pos.x, self.bounds.pos.y, cell.size.x, self.bounds.size.y))
+    }
+    /// Where each icon was last drawn, for a test to press one.
+    pub fn drawn_cells(&self) -> &[(Rect, ShelfHit)] {
+        &self.hits
     }
     pub fn hover_at(&mut self, cx: &mut Cx, p: Vec2d) {
         let h = self.hit(p);
@@ -944,6 +1294,166 @@ impl DesktopShelf {
         let wants = held
             || p.is_some_and(|p| dock_pointer_wants(p, self.screen, self.dock_rect, self.edge.out));
         self.edge.want(cx, wants);
+    }
+    /// A press on the Mac Dock's icon under the pointer (`hit`).
+    pub fn press(&mut self, cx: &mut Cx, hit: ShelfHit) {
+        self.pressed = Some(hit);
+        self.redraw(cx);
+    }
+    /// The release: the icon a press was holding, if any.
+    pub fn take_press(&mut self, cx: &mut Cx) -> Option<ShelfHit> {
+        let pressed = self.pressed.take();
+        if pressed.is_some() {
+            self.redraw(cx);
+        }
+        pressed
+    }
+    /// The Mac Dock's look for an appearance: the frost, its rim and hairline.
+    fn mac_glass_look(&mut self, cx: &mut Cx, dark: bool) {
+        let (tint, tint_alpha, rim, border, shadow) = if dark {
+            (rgb(30, 30, 32), 0.50, 0.08, 0.17, alpha(rgb(0, 0, 0), 0.42))
+        } else {
+            (rgb(248, 248, 250), 0.46, 0.22, 0.42, alpha(rgb(0, 0, 0), 0.23))
+        };
+        script_apply_eval!(cx, self.mac_glass, {draw_bg +: {
+            tint_color: #(tint)
+            tint_alpha: #(tint_alpha)
+            rim_alpha: #(rim)
+            border_alpha: #(border)
+            shadow_color: #(shadow)
+        }});
+        // Dark enough for white names on the palest wallpaper (4.5:1), the
+        // wallpaper's colour still showing through.
+        let (frost, frost_alpha) = if dark { (rgb(8, 10, 16), 0.28) } else { (rgb(16, 20, 28), 0.66) };
+        script_apply_eval!(cx, self.mac_frost, {draw_bg +: {
+            tint_color: #(frost)
+            tint_alpha: #(frost_alpha)
+        }});
+    }
+    /// The row of the Mac Dock: icons with their running dots, the hairline
+    /// before the right-hand group, and the name bubble over all of it.
+    /// `slide` is how far below its place an auto-hiding Dock is.
+    fn mac_row(
+        &mut self,
+        cx: &mut Cx2d,
+        left: &[MacDockEntry],
+        right: &[MacDockEntry],
+        layout: &MacDockLayout,
+        slide: f64,
+        opacity: f32,
+    ) {
+        let style = DesktopStyle::Macos;
+        let dark = dark_chrome(style, self.dark);
+        let down = |r: Rect| rect(r.pos.x, r.pos.y + slide, r.size.x, r.size.y);
+        let ink = alpha(if dark { rgb(245, 245, 247) } else { rgb(28, 28, 30) }, opacity);
+        self.chrome.pressed = 0.0;
+        self.chrome.selected = 0.0;
+        self.chrome.bevel = 0.0;
+        self.chrome.caption = MacCaption::None;
+        if let Some(line) = layout.separator() {
+            // Solid, on whole device pixels: on a half pixel the rounded fill leaves nothing at 1x.
+            let dpi = cx.current_dpi_factor();
+            self.chrome.new_draw_call(cx);
+            self.chrome.radius = 0.0;
+            self.chrome.top_only = 1.0;
+            self.chrome.color = alpha(if dark { rgb(255, 255, 255) } else { rgb(0, 0, 0) }, opacity * if dark { 0.28 } else { 0.24 });
+            self.chrome.draw_abs(cx, down(rect((line.pos.x * dpi).round() / dpi, line.pos.y, line.size.x, line.size.y)));
+            self.chrome.top_only = 0.0;
+        }
+        let thumbs = DOCK_THUMBS.with(|t| t.borrow().clone());
+        let y_flip = if matches!(cx.os_type(), OsType::Android(_)) { 1.0 } else { 0.0 };
+        let mut bubble = None;
+        for (i, entry) in left.iter().chain(right.iter()).enumerate() {
+            let slot = down(layout.icon_rect(i));
+            let held = self.pressed.as_ref() == Some(&entry.hit);
+            if self.hover.as_ref() == Some(&entry.hit) {
+                bubble = Some((slot, entry.label.clone()));
+            }
+            // The press pushes the icon a little away and down, and shades it.
+            let icon = if held { rect(slot.pos.x + 1.0, slot.pos.y + 2.0, slot.size.x - 2.0, slot.size.y - 2.0) } else { slot };
+            match &entry.hit {
+                ShelfHit::Window(client) => {
+                    let surface = thumbs.get(client);
+                    let size = self.window_sizes.get(client).copied();
+                    let fit = mac_thumb_rect(icon, size);
+                    match surface {
+                        // Still on its way down: the slot waits for it.
+                        Some(None) => {}
+                        Some(Some(texture)) => {
+                            self.chrome.new_draw_call(cx);
+                            self.chrome.radius = 3.0;
+                            self.chrome.color = alpha(rgb(0, 0, 0), opacity * 0.22);
+                            self.chrome.draw_abs(cx, rect(fit.pos.x - 0.5, fit.pos.y, fit.size.x + 1.0, fit.size.y + 1.5));
+                            self.thumb.draw_vars.set_texture(0, texture);
+                            self.thumb.radius = 1.5;
+                            self.thumb.opacity = opacity;
+                            self.thumb.y_flip = y_flip;
+                            self.thumb.new_draw_call(cx);
+                            self.thumb.draw_abs(cx, fit);
+                            // The app it belongs to, at its lower right corner.
+                            let badge = (icon.size.x * 0.42).round();
+                            self.app_icons.draw(cx, &entry.icon, style, rect(icon.pos.x + icon.size.x - badge + 1.0, icon.pos.y + icon.size.y - badge + 1.0, badge, badge), opacity, ink);
+                        }
+                        None => self.app_icons.draw(cx, &entry.icon, style, icon, opacity, ink),
+                    }
+                }
+                // The Trash with something in it, as a Mac's: the same bin with papers.
+                ShelfHit::Trash if self.trash_full => self.app_icons.draw(cx, "trash-full", style, icon, opacity, ink),
+                _ => self.app_icons.draw(cx, &entry.icon, style, icon, opacity, ink),
+            }
+            if held {
+                self.chrome.new_draw_call(cx);
+                self.chrome.radius = (icon.size.x * MAC_ICON_CORNER) as f32;
+                self.chrome.color = alpha(rgb(0, 0, 0), opacity * 0.30);
+                self.chrome.draw_abs(cx, rect(icon.pos.x + icon.size.x * MAC_ICON_INSET, icon.pos.y + icon.size.y * MAC_ICON_INSET, icon.size.x * (1.0 - 2.0 * MAC_ICON_INSET), icon.size.y * (1.0 - 2.0 * MAC_ICON_INSET)));
+            }
+            if entry.running {
+                let dot = (layout.scale * 5.0).max(3.0);
+                self.chrome.new_draw_call(cx);
+                self.chrome.radius = (dot * 0.5) as f32;
+                self.chrome.color = if dark { alpha(rgb(255, 255, 255), opacity * 0.9) } else { alpha(rgb(0, 0, 0), opacity * 0.78) };
+                self.chrome.draw_abs(cx, rect(slot.pos.x + (slot.size.x - dot) * 0.5, slot.pos.y + slot.size.y + (layout.bottom() - dot) * 0.5 - 0.5, dot, dot));
+            }
+            self.hits.push((down(layout.cell(i)), entry.hit.clone()));
+        }
+        if let Some((slot, label)) = bubble {
+            self.mac_bubble(cx, slot, &label, dark, opacity);
+        }
+    }
+    /// The name above an icon under the pointer, pointing at it.
+    fn mac_bubble(&mut self, cx: &mut Cx2d, slot: Rect, label: &str, dark: bool, opacity: f32) {
+        const TEXT: f64 = 13.0;
+        const HEIGHT: f64 = 25.0;
+        const TAIL_W: f64 = 14.0;
+        const TAIL_H: f64 = 7.0;
+        const ABOVE: f64 = 7.0;
+        let fill = if dark { rgb(58, 58, 60) } else { rgb(246, 246, 248) };
+        let ink = alpha(if dark { rgb(245, 245, 247) } else { rgb(28, 28, 30) }, opacity);
+        let width = (self.d.measure(cx, false, TEXT, label) + 22.0).min((self.screen.size.x - 16.0).max(40.0));
+        let centre = slot.pos.x + slot.size.x * 0.5;
+        let min_x = self.screen.pos.x + 8.0;
+        let max_x = (self.screen.pos.x + self.screen.size.x - 8.0 - width).max(min_x);
+        let x = (centre - width * 0.5).clamp(min_x, max_x);
+        let tail_top = slot.pos.y - ABOVE - TAIL_H;
+        let y = tail_top - HEIGHT + 0.5;
+        makepad_widgets::web_reader::cover_web_views(rect(x - 0.75, y - 0.75, width + 1.5, HEIGHT + 1.5), 8.0);
+        makepad_widgets::web_reader::cover_web_views(rect(centre - TAIL_W * 0.5, tail_top, TAIL_W, TAIL_H), 0.0);
+        // A hairline around it, so the bubble holds its edge on any wallpaper.
+        self.chrome.new_draw_call(cx);
+        self.chrome.caption = MacCaption::None;
+        self.chrome.radius = 8.0;
+        self.chrome.color = alpha(if dark { rgb(0, 0, 0) } else { rgb(0, 0, 0) }, opacity * if dark { 0.45 } else { 0.16 });
+        self.chrome.draw_abs(cx, rect(x - 0.75, y - 0.75, width + 1.5, HEIGHT + 1.5));
+        self.chrome.radius = 7.0;
+        self.chrome.color = alpha(fill, opacity);
+        self.chrome.draw_abs(cx, rect(x, y, width, HEIGHT));
+        self.chrome.color = alpha(fill, 0.0);
+        self.chrome.caption_ink = alpha(fill, opacity);
+        self.chrome.caption = MacCaption::Tail;
+        self.chrome.radius = 0.0;
+        self.chrome.draw_abs(cx, rect(centre - TAIL_W * 0.5, tail_top, TAIL_W, TAIL_H));
+        self.chrome.caption = MacCaption::None;
+        self.d.label(cx, rect(x + 8.0, y, width - 16.0, HEIGHT), false, TEXT, ink, HAlign::Center, label);
     }
     fn button(
         &mut self,
@@ -1009,10 +1519,11 @@ impl DesktopShelf {
                 .unwrap_or("app"),
             ShelfHit::Launcher => "applications",
             ShelfHit::Assistant => ASSISTANT_ICON,
+            ShelfHit::Trash => "trash",
             _ => "app",
         };
         let size = if style == DesktopStyle::NextStep { r.size.x.min(r.size.y) } else if mac {
-            54.0 + 8.0 * amount
+            mac_icon_box(r, amount).size.x
         } else if classic {
             16.0
         } else {
@@ -1058,7 +1569,7 @@ impl DesktopShelf {
                 cx,
                 rect(
                     r.pos.x + r.size.x * 0.5 - 1.8,
-                    if mac { mac_icon_box(r, 0.0).pos.y + 59.0 } else { r.pos.y + r.size.y - 4.0 },
+                    if mac { let b = mac_icon_box(r, 0.0); b.pos.y + b.size.y + 5.0 } else { r.pos.y + r.size.y - 4.0 },
                     3.6,
                     3.6,
                 ),
@@ -1109,7 +1620,10 @@ pub fn app_icon(id: &str) -> Ico {
         _ => Ico::Monitor,
     }
 }
-fn shelf_geometry(screen: Rect, style: &StyleTween, app_count: usize) -> Rect {
+/// `mac`: how many icons the Mac Dock holds on each side of its hairline
+/// (`mac_dock_entries`); the other shelves count `app_count`.
+fn shelf_geometry(screen: Rect, style: &StyleTween, app_count: usize, mac: (usize, usize)) -> Rect {
+    let mac = MacDockLayout::new(screen, mac.0, mac.1).frame;
     let dock_width = (((app_count + 1) as f64) * 62.0 + 20.0).min((screen.size.x - 24.0).max(1.0));
     let next_height = ((app_count + 1) as f64 * 56.0).min((screen.size.y - 48.0).max(1.0));
     // Each shelf's placement depends on the screen, so it is a match per
@@ -1117,14 +1631,16 @@ fn shelf_geometry(screen: Rect, style: &StyleTween, app_count: usize) -> Rect {
     rect(
         screen.pos.x + style.mix(|s| match s.style {
             DesktopStyle::Omarchy => 8.0,
-            DesktopStyle::Macos | DesktopStyle::OctoSense => (screen.size.x - dock_width) * 0.5,
+            DesktopStyle::Macos => mac.pos.x - screen.pos.x,
+            DesktopStyle::OctoSense => (screen.size.x - dock_width) * 0.5,
             DesktopStyle::Windows | DesktopStyle::Windows2000 => 0.0,
             DesktopStyle::NextStep => screen.size.x - 64.0,
             DesktopStyle::Ios | DesktopStyle::Android => 0.0,
         }),
         screen.pos.y + style.mix(|s| match s.style {
             DesktopStyle::Omarchy => 0.0,
-            DesktopStyle::Macos | DesktopStyle::OctoSense => screen.size.y - 88.0,
+            DesktopStyle::Macos => mac.pos.y - screen.pos.y,
+            DesktopStyle::OctoSense => screen.size.y - 88.0,
             DesktopStyle::Windows => screen.size.y - 54.0,
             DesktopStyle::Windows2000 => screen.size.y - 34.0,
             DesktopStyle::NextStep => 40.0,
@@ -1132,20 +1648,270 @@ fn shelf_geometry(screen: Rect, style: &StyleTween, app_count: usize) -> Rect {
         }),
         style.mix(|s| match s.style {
             DesktopStyle::Omarchy => 32.0,
-            DesktopStyle::Macos | DesktopStyle::OctoSense => dock_width,
+            DesktopStyle::Macos => mac.size.x,
+            DesktopStyle::OctoSense => dock_width,
             DesktopStyle::Windows | DesktopStyle::Windows2000 => screen.size.x,
             DesktopStyle::NextStep => 56.0,
             DesktopStyle::Ios | DesktopStyle::Android => 0.0,
         }),
         style.mix(|s| match s.style {
             DesktopStyle::Omarchy => 0.0,
-            DesktopStyle::Macos | DesktopStyle::OctoSense => 78.0,
+            DesktopStyle::Macos => mac.size.y,
+            DesktopStyle::OctoSense => 78.0,
             DesktopStyle::Windows => 54.0,
             DesktopStyle::Windows2000 => 34.0,
             DesktopStyle::NextStep => next_height,
             DesktopStyle::Ios | DesktopStyle::Android => 0.0,
         }),
     )
+}
+
+/// What a new Mac's Dock holds after Launchpad, each only where this build
+/// has the app, until the person keeps or removes one (`WmState::dock_pins`).
+/// Every other app stays one press away in Launchpad and Spotlight, and takes
+/// a place after these while it runs.
+pub const MAC_DOCK_PINNED: [&str; 12] = [
+    "files", "browser", "mail", "calendar", "notes", "reminders", "photos", "maps", "news", "terminal", "apphub", "settings",
+];
+/// The art and the name of the Mac Dock's first icon.
+const MAC_DOCK_LAUNCHPAD: (&str, &str) = ("applications", "Launchpad");
+
+const MAC_DOCK_ICON: f64 = 48.0;
+const MAC_DOCK_GAP: f64 = 6.0;
+/// Between the shelf's sides and its first and last icons.
+const MAC_DOCK_PAD: f64 = 7.0;
+const MAC_DOCK_TOP: f64 = 5.0;
+/// Below the icons: the running dots live here.
+const MAC_DOCK_BOTTOM: f64 = 10.0;
+/// The hairline with its margins, in place of the gap between the two groups.
+const MAC_DOCK_SEPARATOR: f64 = 15.0;
+/// How far above the screen's bottom edge the shelf floats.
+const MAC_DOCK_FLOAT: f64 = 4.0;
+/// The least room it leaves at the screen's sides before icons shrink.
+const MAC_DOCK_SIDE: f64 = 8.0;
+/// However many apps run, an icon is never smaller than this share of 48.
+const MAC_DOCK_MIN_SCALE: f64 = 0.33;
+/// The shelf's corner as seen. Its frost takes half of it, as `Sdf2d.box` does.
+const MAC_DOCK_RADIUS: f64 = 20.0;
+/// The tile inside an icon's box, as shares of the box (`icon_frame`'s Mac row):
+/// what a press shades.
+const MAC_ICON_INSET: f64 = 3.0 / 64.0;
+const MAC_ICON_CORNER: f64 = 13.0 / 64.0;
+
+/// The Mac Dock's shelf and where its icons sit in it: hugging them, centred,
+/// floating over the screen's bottom edge, and shrinking as a whole on a
+/// screen too narrow for it. Its full height is what the desk's maximized and
+/// snapped windows keep clear of (`dock_overlay`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct MacDockLayout {
+    pub frame: Rect,
+    /// 1 at full size.
+    pub scale: f64,
+    pub left: usize,
+    pub right: usize,
+}
+impl MacDockLayout {
+    pub const FULL_HEIGHT: f64 = MAC_DOCK_TOP + MAC_DOCK_ICON + MAC_DOCK_BOTTOM;
+    /// What it takes from the screen's bottom, at full size.
+    pub const ROOM: f64 = Self::FULL_HEIGHT + MAC_DOCK_FLOAT;
+    pub fn new(screen: Rect, left: usize, right: usize) -> Self {
+        let icons = left + right;
+        let gaps = left.saturating_sub(1) + right.saturating_sub(1);
+        let separator = if right > 0 && left > 0 { MAC_DOCK_SEPARATOR } else { 0.0 };
+        let full = 2.0 * MAC_DOCK_PAD + icons as f64 * MAC_DOCK_ICON + gaps as f64 * MAC_DOCK_GAP + separator;
+        let room = (screen.size.x - 2.0 * MAC_DOCK_SIDE).max(1.0);
+        let scale = (room / full).clamp(MAC_DOCK_MIN_SCALE, 1.0);
+        let (width, height) = (full * scale, Self::FULL_HEIGHT * scale);
+        let frame = rect(
+            screen.pos.x + (screen.size.x - width) * 0.5,
+            screen.pos.y + screen.size.y - MAC_DOCK_FLOAT - height,
+            width,
+            height,
+        );
+        Self { frame, scale, left, right }
+    }
+    pub fn icon(&self) -> f64 {
+        MAC_DOCK_ICON * self.scale
+    }
+    /// The room under an icon.
+    pub fn bottom(&self) -> f64 {
+        MAC_DOCK_BOTTOM * self.scale
+    }
+    fn x_of(&self, i: usize) -> f64 {
+        let beyond = if i >= self.left && self.left > 0 { MAC_DOCK_SEPARATOR - MAC_DOCK_GAP } else { 0.0 };
+        self.frame.pos.x + self.scale * (MAC_DOCK_PAD + i as f64 * (MAC_DOCK_ICON + MAC_DOCK_GAP) + beyond)
+    }
+    /// The box entry `i` (counting the left group, then the right) draws in,
+    /// on a half-point grid so icons stay crisp at any scale.
+    pub fn icon_rect(&self, i: usize) -> Rect {
+        let snap = |v: f64| (v * 2.0).round() * 0.5;
+        let size = snap(self.icon());
+        rect(snap(self.x_of(i)), snap(self.frame.pos.y + MAC_DOCK_TOP * self.scale), size, size)
+    }
+    /// What the pointer means entry `i` over: its share of the shelf, top to
+    /// bottom, with half the gap on each side, and the ends' padding.
+    pub fn cell(&self, i: usize) -> Rect {
+        let half = 0.5 * MAC_DOCK_GAP * self.scale;
+        let last = self.left + self.right;
+        let x = if i == 0 { self.frame.pos.x } else { self.x_of(i) - half };
+        let end = if i + 1 == last { self.frame.pos.x + self.frame.size.x } else { self.x_of(i) + self.icon() + half };
+        rect(x, self.frame.pos.y, end - x, self.frame.size.y)
+    }
+    /// The hairline before the right-hand group; none without one.
+    pub fn separator(&self) -> Option<Rect> {
+        if self.right == 0 || self.left == 0 {
+            return None;
+        }
+        let height = self.frame.size.y * 0.68;
+        let x = self.x_of(self.left) - 0.5 * MAC_DOCK_SEPARATOR * self.scale - 0.5;
+        Some(rect(
+            (x * 2.0).round() * 0.5,
+            ((self.frame.pos.y + (self.frame.size.y - height) * 0.5) * 2.0).round() * 0.5,
+            1.0,
+            (height * 2.0).round() * 0.5,
+        ))
+    }
+}
+
+/// A window at `size` fitted inside an icon's box, keeping its shape.
+pub fn mac_thumb_rect(slot: Rect, size: Option<Vec2d>) -> Rect {
+    let Some(size) = size.filter(|s| s.x > 1.0 && s.y > 1.0) else { return slot };
+    let fit = (slot.size.x / size.x).min(slot.size.y / size.y);
+    let (w, h) = (size.x * fit, size.y * fit);
+    rect(slot.pos.x + (slot.size.x - w) * 0.5, slot.pos.y + (slot.size.y - h) * 0.5, w, h)
+}
+
+/// One icon of the Mac Dock.
+#[derive(Clone, Debug, PartialEq)]
+pub struct MacDockEntry {
+    pub hit: ShelfHit,
+    /// The name its art goes by.
+    pub icon: String,
+    /// What its bubble says.
+    pub label: String,
+    /// It carries the running dot.
+    pub running: bool,
+}
+
+/// One window of an app, for the Mac Dock: `name` is the app's, `title` the
+/// window's own.
+#[derive(Clone, Debug, PartialEq)]
+pub struct MacDockWindow {
+    pub client: ClientId,
+    pub app: String,
+    pub name: String,
+    pub title: String,
+    pub minimized: bool,
+}
+
+/// The Mac Dock's two groups. On the left Files, Launchpad and the apps the
+/// person keeps in the Dock (`pinned`; `listed`: the launcher's `(id, name)`
+/// for each app this build has), then each other app with a window and the
+/// assistant while its chat is open, as on a Mac whose Dock keeps no recent
+/// apps. To the right of the hairline each minimized window as itself, and
+/// the Trash.
+pub fn mac_dock_groups(
+    listed: &[(String, String)],
+    pinned: &[String],
+    windows: &[MacDockWindow],
+    assistant_open: bool,
+) -> (Vec<MacDockEntry>, Vec<MacDockEntry>) {
+    let name_of = |id: &str| listed.iter().find(|(app, _)| app == id).map(|(_, name)| name.clone());
+    let mut left: Vec<MacDockEntry> = Vec::new();
+    // Files never leaves the Dock, as a Mac's Finder doesn't.
+    for id in std::iter::once("files").chain(pinned.iter().map(String::as_str)) {
+        if left.iter().any(|e| e.hit == ShelfHit::App(id.into())) {
+            continue;
+        }
+        if let Some(name) = name_of(id) {
+            left.push(MacDockEntry {
+                hit: ShelfHit::App(id.into()),
+                icon: id.into(),
+                label: name,
+                running: windows.iter().any(|w| w.app == id),
+            });
+        }
+    }
+    // Files stands first, as a Mac's Finder does, with Launchpad beside it.
+    let launchpad_at = usize::from(name_of("files").is_some());
+    left.insert(launchpad_at, MacDockEntry {
+        hit: ShelfHit::Launcher,
+        icon: MAC_DOCK_LAUNCHPAD.0.into(),
+        label: MAC_DOCK_LAUNCHPAD.1.into(),
+        running: false,
+    });
+    for window in windows {
+        if left.iter().any(|e: &MacDockEntry| e.hit == ShelfHit::App(window.app.clone())) {
+            continue;
+        }
+        left.push(MacDockEntry {
+            hit: ShelfHit::App(window.app.clone()),
+            icon: window.app.clone(),
+            label: name_of(&window.app).unwrap_or_else(|| window.name.clone()),
+            running: true,
+        });
+    }
+    if assistant_open {
+        if let Some(assistant) = dock_assistant() {
+            left.push(MacDockEntry {
+                hit: ShelfHit::Assistant,
+                icon: ASSISTANT_ICON.into(),
+                label: assistant.label,
+                running: true,
+            });
+        }
+    }
+    let mut right = Vec::new();
+    for window in windows.iter().filter(|w| w.minimized) {
+        right.push(MacDockEntry {
+            hit: ShelfHit::Window(window.client),
+            icon: window.app.clone(),
+            label: window.title.clone(),
+            running: false,
+        });
+    }
+    // The Trash closes the Dock, where there is a Files to show it.
+    if name_of("files").is_some() {
+        right.push(MacDockEntry { hit: ShelfHit::Trash, icon: "trash".into(), label: "Trash".into(), running: false });
+    }
+    (left, right)
+}
+
+/// [`mac_dock_groups`] for what is on the desk now, in the order apps opened.
+pub fn mac_dock_entries(state: &WmState) -> (Vec<MacDockEntry>, Vec<MacDockEntry>) {
+    let listed: Vec<(String, String)> = crate::shell::launcher::apps()
+        .into_iter()
+        .filter(|a| !a.disabled)
+        .map(|a| (a.id.trim_start_matches("apps.").to_string(), crate::shell::menu::mac::app_label(&a.id, &a.label)))
+        .collect();
+    let mut windows: Vec<MacDockWindow> = state
+        .layout
+        .desktop
+        .windows
+        .iter()
+        .filter_map(|w| {
+            let slot = state.clients.get(&w.client).filter(|s| !s.warm && !s.pane && s.closing.is_none())?;
+            Some(MacDockWindow {
+                client: w.client,
+                app: slot.app.clone(),
+                name: slot.app_name().to_string(),
+                title: slot.display_title().to_string(),
+                minimized: w.minimized && !w.hidden,
+            })
+        })
+        .collect();
+    windows.sort_by_key(|w| w.client);
+    mac_dock_groups(&listed, &state.dock_pins, &windows, crate::system_chat::is_open())
+}
+
+/// The Mac Dock's two counts, while the tween has any of it in the mix.
+fn mac_dock_counts(state: &WmState) -> (usize, usize) {
+    if state.style.weights[DesktopStyle::Macos as usize] > 0.0 || state.style.target == DesktopStyle::Macos {
+        let (left, right) = mac_dock_entries(state);
+        (left.len(), right.len())
+    } else {
+        (0, 0)
+    }
 }
 
 /// The dock's entry for the system chat (#143), right after the launcher.
@@ -1185,8 +1951,10 @@ fn dock_hit(entry: &str, clients: &[(ClientId, String, String)]) -> (ShelfHit, b
 
 /// Center the icon and its running indicator as one group inside each dock cell.
 fn mac_icon_box(cell: Rect, hover: f64) -> Rect {
-    let size = 54.0 + 8.0 * hover;
-    let top = cell.pos.y + (cell.size.y - 63.0) * 0.5;
+    // A full dock shrinks its icons rather than letting them touch.
+    let base = (cell.size.x - 6.0).clamp(28.0, 54.0);
+    let size = base + 8.0 * hover;
+    let top = cell.pos.y + (cell.size.y - base - 9.0) * 0.5;
     rect(cell.pos.x + (cell.size.x-size)*0.5, top - 8.0*hover, size, size)
 }
 
@@ -1203,8 +1971,15 @@ fn dock_app_ids(state: &WmState) -> Vec<String> {
     }
     apps
 }
+/// Whether Files' Trash has something in it before Files has said: the
+/// demo's does (`--demo` seeds one each time Files starts); a real one is
+/// taken for empty until Files is running and says (`WmRequest::TrashFull`).
+pub fn trash_starts_full() -> bool {
+    crate::clients::find_app("files").is_some_and(|app| app.args.iter().any(|a| a == "--demo"))
+}
+
 pub fn dock_bounds(state: &WmState, size: Vec2d) -> Rect {
-    let mut dock = shelf_geometry(rect(0.0,0.0,size.x,size.y), &state.style, dock_app_ids(state).len());
+    let mut dock = shelf_geometry(rect(0.0,0.0,size.x,size.y), &state.style, dock_app_ids(state).len(), mac_dock_counts(state));
     dock.pos.y += dock_slide(dock, size.y, state.dock_reveal);
     dock
 }
@@ -1292,12 +2067,32 @@ pub fn dock_overlay(style: &StyleTween, desk_bottom: f64, area_bottom: f64) -> f
     let mut settled = StyleTween::default();
     settled.select(style.target);
     settled.step(1.0);
-    let dock = shelf_geometry(rect(0.0, 0.0, 1.0, desk_bottom), &settled, 0);
-    (area_bottom - dock.pos.y).max(0.0)
+    // A Mac Dock on a narrow screen is lower still; a window keeps clear of
+    // its full height all the same, as it does when the Dock is resized.
+    let dock_top = if style.target == DesktopStyle::Macos {
+        desk_bottom - MAC_DOCK_FLOAT - MacDockLayout::FULL_HEIGHT
+    } else {
+        shelf_geometry(rect(0.0, 0.0, 1.0, desk_bottom), &settled, 0, (0, 0)).pos.y
+    };
+    (area_bottom - dock_top).max(0.0)
 }
-pub fn dock_icon_bounds(state: &WmState, size: Vec2d, app: &str) -> Rect {
+/// Where window `client` of `app` goes into the dock: on a Mac its own
+/// place to the right of the hairline, fitted to its shape; elsewhere its
+/// app's icon.
+pub fn dock_icon_bounds(state: &WmState, size: Vec2d, client: ClientId, app: &str) -> Rect {
+    if state.style.target == DesktopStyle::Macos {
+        let (left, right) = mac_dock_entries(state);
+        let layout = MacDockLayout::new(rect(0.0, 0.0, size.x, size.y), left.len(), right.len());
+        let entries = || left.iter().chain(right.iter());
+        if let Some(i) = entries().position(|e| e.hit == ShelfHit::Window(client)) {
+            let window = state.layout.desktop.get(client).map(|w| dvec2(w.rect.w, w.rect.h));
+            return mac_thumb_rect(layout.icon_rect(i), window);
+        }
+        let i = entries().position(|e| e.hit == ShelfHit::App(app.to_string())).unwrap_or(0);
+        return layout.icon_rect(i);
+    }
     let apps=dock_app_ids(state);
-    let dock=shelf_geometry(rect(0.0,0.0,size.x,size.y), &state.style, apps.len());
+    let dock=shelf_geometry(rect(0.0,0.0,size.x,size.y), &state.style, apps.len(), (0, 0));
     let slot=apps.iter().position(|id| id==&format!("apps.{app}")).map(|i|i+1).unwrap_or(0);
     let cell=(dock.size.x-20.0)/(apps.len()+1) as f64;
     mac_icon_box(rect(dock.pos.x+10.0+slot as f64*cell,dock.pos.y+6.0,cell,dock.size.y-12.0), 0.0)
@@ -1317,6 +2112,9 @@ pub fn shelf_glass_split(t: &StyleTween, glass_material: bool) -> (f64, f64) {
     (glass_shelf - octosense, octosense)
 }
 
+/// Where Launchpad's frost samples the pyramid.
+pub const MAC_FROST_LEVEL: f64 = 5.0;
+
 /// Where the frosted pill samples the pyramid; the shelf's GlassPanel
 /// `blur_level` in the DSL reads it too.
 pub const FROSTED_SHELF_BLUR_LEVEL: f64 = 4.5;
@@ -1332,19 +2130,44 @@ pub fn dock_backdrop_level(t: &StyleTween, m: &MaterialTokens) -> f64 {
 }
 
 impl Widget for DesktopShelf {
+    /// What the Mac Dock holds, for a test's snapshot: it has no widgets of its own.
+    /// The Mac Dock's groups, where it stands now (0: not drawn) and what is
+    /// under the pointer, for a test driver's /snap.
+    fn text(&self) -> String {
+        if self.mac_logged.is_empty() {
+            return String::new();
+        }
+        let mut said = format!("{} y={:.0}", self.mac_logged, self.bounds.pos.y);
+        if let Some(hit) = &self.hover {
+            said.push_str(&format!(" hover={hit:?}"));
+        }
+        if let Some(hit) = &self.pressed {
+            said.push_str(&format!(" pressed={hit:?}"));
+        }
+        said
+    }
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         cx.begin_turtle(walk, self.layout);
         let screen = cx.turtle().rect();
         self.hits.clear();
         self.bounds = Rect::default();
         SHELF_BOUNDS.with(|b| b.set(Rect::default()));
+        DOCK_DRAWN.with(|b| b.set(Rect::default()));
         if let Some(state) = scope.data.get_mut::<WmState>() {
             self.active_window = state.layout.focused_client()
                 .filter(|c| !state.layout.desktop.minimized(*c));
+            self.trash_full = state.trash_full;
             self.window_apps = state
                 .clients
                 .iter()
                 .map(|(c, s)| (*c, s.app.clone()))
+                .collect();
+            self.window_sizes = state
+                .layout
+                .desktop
+                .windows
+                .iter()
+                .map(|w| (w.client, dvec2(w.rect.w, w.rect.h)))
                 .collect();
             let t = &state.style;
             let style = t.target;
@@ -1362,14 +2185,24 @@ impl Widget for DesktopShelf {
                 };
                 let tint_alpha = if chrome_dark { 0.32 } else { 0.20 };
                 script_apply_eval!(cx,self.glass,{draw_bg +: {tint_color: #(tint) tint_alpha: #(tint_alpha)}});
+                self.mac_glass_look(cx, chrome_dark);
             }
             // The pill paints from the sheet the state carries, like every kit.
             self.d.set_material(state.material);
             let opacity = (1.0 - t.share(|s| s.tiling)) as f32;
+            // Launchpad's frost, past the screen's edges so that no corner of
+            // it shows. The menu draws its grid over it, and the Dock stays on top.
+            if style == DesktopStyle::Macos && mac_launchpad() {
+                if let Some(mut frost) = self.mac_frost.borrow_mut::<gauss_view::GaussRoundedView>() {
+                    let past = rect(screen.pos.x - 40.0, screen.pos.y - 40.0, screen.size.x + 80.0, screen.size.y + 80.0);
+                    makepad_widgets::web_reader::cover_web_views(past, 0.0);
+                    frost.draw_surface_with_backdrop(cx, past, state.dock_backdrop.clone(), 1.0);
+                }
+            }
             if !style.mobile() {
                 // What the pointer is measured against while the dock is down.
                 self.screen = screen;
-                self.dock_rect = shelf_geometry(screen, t, dock_app_ids(state).len());
+                self.dock_rect = shelf_geometry(screen, t, dock_app_ids(state).len(), mac_dock_counts(state));
                 let auto_hide = dock_auto_hides(state);
                 if auto_hide != self.auto_hide {
                     // Full screen sends the dock down; a window brings it back.
@@ -1408,10 +2241,25 @@ impl Widget for DesktopShelf {
                     }
                 }
                 let n = (apps.len() + 1).max(1) as f64;
-                let mut r = shelf_geometry(screen, t, apps.len());
-                r.pos.y += dock_slide(r, screen.pos.y + screen.size.y, state.dock_reveal);
+                // The Mac Dock counts its own: its pinned set, what else runs.
+                let mac_share = t.weights[DesktopStyle::Macos as usize];
+                let (mac_left, mac_right) = if mac_share > 0.0 { mac_dock_entries(state) } else { (Vec::new(), Vec::new()) };
+                let mac_layout = MacDockLayout::new(screen, mac_left.len(), mac_right.len());
+                let mut r = shelf_geometry(screen, t, apps.len(), (mac_left.len(), mac_right.len()));
+                let slide = dock_slide(r, screen.pos.y + screen.size.y, state.dock_reveal);
+                r.pos.y += slide;
                 let (x, y, w, h) = (r.pos.x, r.pos.y, r.size.x, r.size.y);
+                if style == DesktopStyle::Macos {
+                    let names = |group: &[MacDockEntry]| group.iter().map(|e| e.icon.as_str()).collect::<Vec<_>>().join(",");
+                    let said = format!("left=[{}] right=[{}] icon={:.1} frame={:.0}x{:.0}{}", names(&mac_left), names(&mac_right), mac_layout.icon(), mac_layout.frame.size.x, mac_layout.frame.size.y, if self.trash_full { " trash=full" } else { "" });
+                    if said != self.mac_logged {
+                        log!("dock: {said}");
+                        self.mac_logged = said;
+                    }
+                }
                 self.bounds = r;
+                DOCK_DRAWN.with(|b| b.set(r));
+                makepad_widgets::web_reader::cover_web_views(r, t.mix(|s| s.shelf_radius));
                 // A dock that hides passes over the glance panel and the
                 // toasts like a window; they keep to the desk's bottom.
                 if !self.auto_hide {
@@ -1421,14 +2269,27 @@ impl Widget for DesktopShelf {
                 // One pill's worth of glass between the two pills.
                 let (frosted, octosense) = shelf_glass_split(t, self.d.material().is_glass());
                 // Window-backed Gaussian blur, sampled from the live desktop.
-                if frosted > 0.01 {
+                // The Mac Dock takes its own share of the frost.
+                let mac_frost = mac_share.min(frosted);
+                if frosted - mac_frost > 0.01 {
                     if let Some(mut glass) = self.glass.borrow_mut::<gauss_view::GaussRoundedView>()
                     {
                         glass.draw_surface_with_backdrop(
                             cx,
                             r,
                             state.dock_backdrop.clone(),
-                            frosted as f32,
+                            (frosted - mac_frost) as f32,
+                        );
+                    }
+                }
+                if mac_frost > 0.01 {
+                    if let Some(mut glass) = self.mac_glass.borrow_mut::<gauss_view::GaussRoundedView>()
+                    {
+                        glass.draw_surface_with_backdrop(
+                            cx,
+                            r,
+                            state.dock_backdrop.clone(),
+                            mac_frost as f32,
                         );
                     }
                 }
@@ -1482,7 +2343,9 @@ impl Widget for DesktopShelf {
                         continue;
                     }
                     let hit_start = self.hits.len();
-                    if style == DesktopStyle::NextStep {
+                    if style == DesktopStyle::Macos {
+                        self.mac_row(cx, &mac_left, &mac_right, &mac_layout, slide, opacity);
+                    } else if style == DesktopStyle::NextStep {
                         let cell = h / n;
                         self.button(cx, rect(x,y,w,cell), ShelfHit::Launcher, Ico::Menu, "Workspace", false, style, opacity);
                         for (i, app) in apps.iter().enumerate() {

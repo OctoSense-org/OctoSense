@@ -1,0 +1,146 @@
+{
+  "target": 95,
+  "scale": 100,
+  "scope": "OctoSense on a Mac desktop: the shell's chrome and every app, light and dark, in a window at its default size. The existing acceptance rubric (acceptance-rubric.json) still governs Android and live-service sign-off; a physical phone is out of this rubric's scope and stays unverified here.",
+  "reference": "A current Mac app of the same kind: Finder, Mail, Calendar, Photos, Maps, Preview, Keynote, Pages, System Settings, Notes, Reminders, Terminal, Numbers, Activity Monitor, Calculator, Clock, Weather, Safari.",
+  "anchors": {
+    "0": "Blocked task, or essential content unreadable; or it plainly reads as another platform",
+    "0.6": "Completes with substantial friction; a phone or web layout on a desktop",
+    "0.8": "Usable and Mac-like at a glance; visible deviations or a state not checked",
+    "0.9": "Reads as a Mac app in every observed state; minor deviations remain",
+    "1": "Indistinguishable in kind from the reference app in every specified state"
+  },
+  "hard_gates": [
+    "No failed core journey",
+    "No clipped or obscured essential text, editor or action at the default window size",
+    "No blank dead end: every empty state says what to do and offers the action",
+    "No developer text (command lines, ids, raw errors) in normal use",
+    "A required state that was not looked at caps its dimensions at 0.8 and prevents a final pass",
+    "Script errors or panics in the run's log fail the app"
+  ],
+  "dimensions": [
+    {
+      "id": "structure",
+      "weight": 20,
+      "criteria": [
+        "Navigation is a sidebar, toolbar or inspector, not a phone tab bar or stacked pages",
+        "The window's first screen shows the app's content, with no hero header",
+        "Actions live where a Mac app puts them: the toolbar, a row's trailing edge, a sheet"
+      ]
+    },
+    {
+      "id": "controls",
+      "weight": 15,
+      "criteria": [
+        "Push buttons, tools, fields and segmented controls at Mac metrics: about 28 points tall, radius about 6, no pills or 44-point targets",
+        "One default action in the accent colour at most per surface",
+        "Hover, pressed, selected and disabled states read as a Mac's"
+      ]
+    },
+    {
+      "id": "typography",
+      "weight": 15,
+      "criteria": [
+        "Body text about 13 points, secondary 11 to 12, titles from 15 to 22; hierarchy by weight rather than size",
+        "Dense rows with even rhythm; no oversized display type in working screens",
+        "Window titles are the app's real name"
+      ]
+    },
+    {
+      "id": "color",
+      "weight": 10,
+      "criteria": [
+        "Neutral surfaces with the system blue accent; a page, a sidebar and a toolbar a shade apart, hairline separators",
+        "Everything follows light and dark, including content and sheets",
+        "Text contrast at least 4.5:1"
+      ]
+    },
+    {
+      "id": "clarity",
+      "weight": 15,
+      "criteria": [
+        "One obvious next action in empty and populated states",
+        "Related actions next to their content",
+        "No dead-end controls"
+      ]
+    },
+    {
+      "id": "fit",
+      "weight": 10,
+      "criteria": [
+        "Nothing clipped or overlapping at the default size, in light and dark",
+        "A narrower window keeps its essential actions",
+        "Scroll areas and columns end where they should"
+      ]
+    },
+    {
+      "id": "continuity",
+      "weight": 10,
+      "criteria": [
+        "The app's journeys pass: editing, saving, restart, retained input across an appearance switch",
+        "The phone tree is unchanged: its journeys pass in a phone-sized preview"
+      ]
+    },
+    {
+      "id": "consistency",
+      "weight": 5,
+      "criteria": [
+        "The shared interface and glyph family, not a look of its own",
+        "Same selection, spacing and toolbar conventions as the other apps"
+      ]
+    }
+  ],
+  "surfaces": {
+    "shell": [
+      "menu bar",
+      "window title bar",
+      "dock",
+      "launcher",
+      "system menu",
+      "glance panel",
+      "assistant pane",
+      "approval and consent sheets"
+    ],
+    "system apps": [
+      "news",
+      "photos",
+      "maps",
+      "mail",
+      "calendar",
+      "ai-providers",
+      "youtube",
+      "quickdeck",
+      "pdftools",
+      "writer",
+      "settings"
+    ],
+    "native apps": [
+      "apphub",
+      "terminal",
+      "sheets",
+      "calculator",
+      "clock",
+      "notes",
+      "reminders",
+      "weather",
+      "octoscode",
+      "reference",
+      "task",
+      "updater"
+    ],
+    "catalog apps": [
+      "browser",
+      "files",
+      "finance",
+      "route",
+      "image",
+      "pdf",
+      "aichat"
+    ],
+    "out of scope": {
+      "rinx": "Owned by another session; reviewed only, not changed.",
+      "wasmlab": "In the Wasm Lab build only (desktop/system-apps-wasm-lab.json), not in the shipped app list. It takes the Mac metrics from the shared interface but is not graded.",
+      "appcard": "Opt-in developer runtime (apps/appcard), not in the shipped app list."
+    }
+  }
+}

@@ -26,6 +26,16 @@
 //!   panel's Undo).
 //! - Secondary ink is the text colour faded ([`SECONDARY`], the body at
 //!   0.88), not `darker`, which deepens dark ink in a light theme.
+//!
+//! **In `style:macos`** a toast is a Mac's banner
+//! ([`ShellNotifications::draw_mac`]): [`MAC_WIDTH`] of rounded material at the
+//! top right under the menu bar, the sender's icon, a bold title and one or
+//! two lines, no countdown, a close at its top left corner on hover, and an
+//! action button only when it has one. There is no "+N more" chip: at most
+//! [`MAX_SHOWN`] show, and the others wait their turn with their time held,
+//! each sliding in as one before it goes, as a burst of a Mac's banners comes
+//! one after another (all of them are in the Notification Center meanwhile
+//! when they came from a card).
 
 use makepad_widgets::*;
 
@@ -36,6 +46,8 @@ use crate::octosense::style::{AppIconDraw, DesktopStyle};
 thread_local! {
     /// A surface the toasts stay clear of while it is up ([`keep_clear_of`]).
     static KEEP_CLEAR: std::cell::Cell<Option<Rect>> = const { std::cell::Cell::new(None) };
+    /// Where this frame's stack of a Mac's banners ended ([`mac_banner_place`]).
+    static MAC_STACK_END: std::cell::Cell<f64> = const { std::cell::Cell::new(0.0) };
 }
 
 /// A surface at the toasts' corner says where it is each frame it draws
@@ -45,14 +57,104 @@ pub fn keep_clear_of(r: Option<Rect>) {
     KEEP_CLEAR.with(|c| c.set(r));
 }
 
-/// The stack's left edge: at the screen's right, or left of a surface it
-/// keeps clear of when they would overlap.
-fn stack_x(screen: Rect, gaps_out: f64, clear: Option<Rect>) -> f64 {
-    let x = screen.pos.x + screen.size.x - gaps_out - CARD_WIDTH;
+/// What the toasts keep clear of now.
+pub fn kept_clear() -> Option<Rect> {
+    KEEP_CLEAR.with(|c| c.get())
+}
+
+/// The stack's left edge, for toasts `width` wide: at the screen's right, or
+/// left of a surface it keeps clear of when they would overlap.
+fn stack_x(screen: Rect, gaps_out: f64, clear: Option<Rect>, width: f64) -> f64 {
+    let x = screen.pos.x + screen.size.x - gaps_out - width;
     match clear {
-        Some(r) if r.size.x > 0.0 && r.pos.x < x + CARD_WIDTH && r.pos.x + r.size.x > x => (r.pos.x - STACK_SPACING - CARD_WIDTH).max(screen.pos.x + gaps_out),
+        Some(r) if r.size.x > 0.0 && r.pos.x < x + width && r.pos.x + r.size.x > x => (r.pos.x - STACK_SPACING - width).max(screen.pos.x + gaps_out),
         _ => x,
     }
+}
+
+/// Where a Mac's banners start: at the screen's corner; with a surface there,
+/// under it, in its column, when there is room for a banner; else left of it.
+fn mac_stack_start(screen: Rect, top: f64, clear: Option<Rect>) -> (f64, f64) {
+    let x = stack_x(screen, MAC_MARGIN, None, MAC_WIDTH);
+    let Some(r) = clear.filter(|r| r.size.x > 0.0 && r.pos.x < x + MAC_WIDTH && r.pos.x + r.size.x > x) else {
+        return (x, top);
+    };
+    let mut bottom = screen.pos.y + screen.size.y - MAC_MARGIN;
+    let shelf = crate::desktop::shelf_bounds();
+    if shelf.size.y > 0.0 && shelf.pos.x < x + MAC_WIDTH && shelf.pos.x + shelf.size.x > x {
+        bottom = bottom.min(shelf.pos.y - MAC_MARGIN);
+    }
+    let under = r.pos.y + r.size.y + MAC_MARGIN;
+    if under + mac_height(MAC_BODY_LINES + 1) <= bottom {
+        (x, under)
+    } else {
+        (stack_x(screen, MAC_MARGIN, clear, MAC_WIDTH), top)
+    }
+}
+
+/// A Mac's banner: its width, its distance from the screen's right and from
+/// the menu bar, its corner, its padding, its icon, its lines of text.
+pub const MAC_WIDTH: f64 = 344.0;
+const MAC_MARGIN: f64 = 8.0;
+pub const MAC_RADIUS: f64 = 16.0;
+pub const MAC_PAD: f64 = 12.0;
+pub const MAC_ICON: f64 = 36.0;
+pub const MAC_ICON_GAP: f64 = 10.0;
+pub const MAC_LINE: f64 = 17.0;
+const MAC_BODY_LINES: usize = 2;
+const MAC_AGE: &str = "now";
+/// Its close: half over its top left corner, on hover.
+const MAC_CLOSE: f64 = 22.0;
+const MAC_CLOSE_OUT: f64 = 7.0;
+/// Its action button.
+pub const MAC_ACTION_H: f64 = 26.0;
+
+/// Where the next banner goes on a Mac for a surface that keeps its own there
+/// (what expired, on the approvals surface): the same corner, under this frame's
+/// stack, which is drawn first. `y` is where the stack leaves off.
+pub fn mac_banner_place(screen: Rect) -> (f64, f64) {
+    let x = stack_x(screen, MAC_MARGIN, kept_clear(), MAC_WIDTH);
+    (x, MAC_STACK_END.with(|end| end.get()).max(screen.pos.y + MAC_MARGIN))
+}
+
+/// A Mac's banner's height for its lines of text, for such a surface.
+pub fn mac_banner_height(lines: usize) -> f64 {
+    mac_height(lines)
+}
+
+/// A Mac's banner's action button.
+pub fn draw_mac_action(d: &mut ShellDraw, cx: &mut Cx2d, button: Rect, ink: Vec4f, dark: bool, opacity: f32, label: &str) {
+    let (fill, rim) = if dark {
+        (vec4(1.0, 1.0, 1.0, 0.16), vec4(1.0, 1.0, 1.0, 0.12))
+    } else {
+        (vec4(1.0, 1.0, 1.0, 0.55), vec4(0.0, 0.0, 0.0, 0.14))
+    };
+    d.rounded(cx, button, 3.5, fade(fill, opacity));
+    d.focus_ring(cx, button, 3.5, 1.0, fade(rim, opacity));
+    d.label(cx, button, false, 12.0, ink, super::ui::HAlign::Center, label);
+}
+
+/// Whether toasts are a Mac's banners now.
+fn mac_style() -> bool {
+    crate::shell::menu::MAC_KEYS.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// A Mac's banner's close, for a banner at `card`.
+fn mac_close_at(card: Rect) -> Rect {
+    rect(card.pos.x - MAC_CLOSE_OUT, card.pos.y - MAC_CLOSE_OUT, MAC_CLOSE, MAC_CLOSE)
+}
+
+/// The width of a Mac's banner's text, beside its icon and its action button
+/// (`action`: that button's width, 0 without one).
+fn mac_text_width(action: f64) -> f64 {
+    let button = if action > 0.0 { action + MAC_ICON_GAP } else { 0.0 };
+    MAC_WIDTH - MAC_PAD * 2.0 - MAC_ICON - MAC_ICON_GAP - button
+}
+
+/// A Mac's banner's height for its lines of text: never less than its icon
+/// needs.
+fn mac_height(lines: usize) -> f64 {
+    (lines as f64 * MAC_LINE).max(MAC_ICON) + MAC_PAD * 2.0
 }
 
 pub const CARD_WIDTH: f64 = 380.0;
@@ -155,8 +257,11 @@ struct Live {
     left: f64,
     hovered: bool,
     /// When it was posted (`seconds_since_app_start`): its slide in runs on
-    /// the clock, not on how many frames came.
+    /// the clock, not on how many frames came. A Mac's banner that waited its
+    /// turn takes the time it first showed.
     posted: f64,
+    /// A Mac's banner has shown (it waits, its time held, until it does).
+    shown: bool,
 }
 
 script_mod! {
@@ -261,6 +366,7 @@ impl ShellNotifications {
                 left: lifetime,
                 hovered: false,
                 posted: cx.seconds_since_app_start(),
+                shown: false,
             },
         );
         self.last_time = 0.0;
@@ -425,6 +531,135 @@ impl ShellNotifications {
         (text_h.max(ICON_SLOT) + v * 2.0 + tok.notifications.surface.border_width * 2.0).ceil()
     }
 
+    /// A Mac's banner's action button's width (0 without one).
+    fn mac_action_width(&mut self, cx: &mut Cx2d, note: &Notification) -> f64 {
+        match &note.action {
+            Some(label) => self.d.measure(cx, false, 12.0 * self.d.text_scale(), label) + 22.0,
+            None => 0.0,
+        }
+    }
+
+    /// A Mac's banner's lines: its title, in one line when it has a body and
+    /// up to two when it says everything; its body in up to two.
+    fn mac_lines(&mut self, cx: &mut Cx2d, note: &Notification, width: f64) -> (Vec<String>, Vec<String>) {
+        let title_lines = if note.body.is_empty() { 2 } else { 1 };
+        // "now" stands at the end of its first line, unless a button is there.
+        let age = if note.action.is_none() { self.d.measure(cx, false, 11.0 * self.d.text_scale(), MAC_AGE) + 8.0 } else { 0.0 };
+        let title = self.d.wrap(cx, true, 13.0, &note.summary, width - age, title_lines);
+        let body = if note.body.is_empty() { Vec::new() } else { self.d.wrap(cx, false, 13.0, &note.body, width, MAC_BODY_LINES) };
+        (title, body)
+    }
+
+    /// The icon of a banner no app of its own sent: the system's mark on a
+    /// tile, where an app's banner has its icon.
+    fn mac_system_icon(&mut self, cx: &mut Cx2d, at: Rect, opacity: f32) {
+        let tile = inset(at, at.size.x * 3.0 / 64.0);
+        self.d.rounded(cx, tile, tile.size.x * 0.115, fade(vec4(0.36, 0.38, 0.43, 1.0), opacity));
+        self.d.icon_centered(cx, Ico::Octopus, tile, tile.size.x * 0.68, fade(vec4(1.0, 1.0, 1.0, 1.0), opacity));
+    }
+
+    /// The stack as a Mac's banners: see this file's header. It stacks, slides,
+    /// pauses and expires as every other style's does.
+    fn draw_mac(&mut self, cx: &mut Cx2d, screen: Rect) -> f64 {
+        let tok = self.d.tokens(self.tokens);
+        let surface = &tok.notifications.surface;
+        let glass = self.d.material().is_glass();
+        let (x, mut y) = mac_stack_start(screen, screen.pos.y + self.bar_clearance.max(MAC_MARGIN), KEEP_CLEAR.with(|c| c.get()));
+        let mut bottom = screen.pos.y + screen.size.y - MAC_MARGIN;
+        let shelf = crate::desktop::shelf_bounds();
+        if shelf.size.y > 0.0 && shelf.pos.x < x + MAC_WIDTH && shelf.pos.x + shelf.size.x > x {
+            bottom = bottom.min(shelf.pos.y - MAC_MARGIN);
+        }
+        let now = cx.seconds_since_app_start();
+        // The newest few; the rest wait their turn (no chip on a Mac).
+        let wanted = self.live.len().min(MAX_SHOWN);
+        let mut shown = 0;
+        let mut first_shown = Vec::new();
+        for entry in self.live.clone().into_iter().take(wanted) {
+            let note = entry.note;
+            let action_w = self.mac_action_width(cx, &note);
+            let width = mac_text_width(action_w);
+            let (title, body) = self.mac_lines(cx, &note, width);
+            let h = mac_height(title.len().max(1) + body.len());
+            if shown > 0 && y + h > bottom {
+                break;
+            }
+            shown += 1;
+            // One that waited slides in now that it shows.
+            let posted = if entry.shown { entry.posted } else { now };
+            if !entry.shown {
+                first_shown.push(note.id);
+            }
+            // Sliding in or out, it fades with its travel.
+            let offset = slide_offset(now - posted, entry.left, entry.lifetime);
+            let o = (1.0 - offset / SLIDE_PX).clamp(0.0, 1.0) as f32;
+            let ink = fade(surface.text, o);
+            let dark = surface.text.x + surface.text.y + surface.text.z > 1.5;
+            let card = rect(x + offset, y, MAC_WIDTH, h);
+            if glass {
+                self.d.glass_pill(cx, card, MAC_RADIUS, o);
+            } else {
+                self.d.card_faded(cx, card, surface, o);
+            }
+            let icon = rect(card.pos.x + MAC_PAD, card.pos.y + (h - MAC_ICON) * 0.5, MAC_ICON, MAC_ICON);
+            match note.app_icon.as_deref() {
+                Some(app) => self.app_icons.draw(cx, app, self.icon_style, icon, o, ink),
+                None => self.mac_system_icon(cx, icon, o),
+            }
+            // The text stands level with the icon when it is shorter.
+            let tx = icon.pos.x + MAC_ICON + MAC_ICON_GAP;
+            let lines = title.len() + body.len();
+            let mut ty = card.pos.y + (h - lines as f64 * MAC_LINE) * 0.5;
+            // A banner is new: it says so as the Notification Center's cards say
+            // how long ago theirs came.
+            if note.action.is_none() {
+                let age = rect(tx, ty, width, MAC_LINE);
+                self.d.label(cx, age, false, 11.0, fade(ink, 0.7), super::ui::HAlign::Right, MAC_AGE);
+            }
+            for line in &title {
+                self.d.label_elided(cx, rect(tx, ty, width, MAC_LINE), true, 13.0, ink, super::ui::HAlign::Left, line);
+                ty += MAC_LINE;
+            }
+            let body_color = fade(ink, 0.85);
+            for line in &body {
+                self.d.label_elided(cx, rect(tx, ty, width, MAC_LINE), false, 13.0, body_color, super::ui::HAlign::Left, line);
+                ty += MAC_LINE;
+            }
+            // The action, when it has one.
+            if let Some(label) = &note.action {
+                let button = rect(card.pos.x + MAC_WIDTH - MAC_PAD - action_w, card.pos.y + (h - MAC_ACTION_H) * 0.5, action_w, MAC_ACTION_H);
+                draw_mac_action(&mut self.d, cx, button, ink, dark, o, label);
+                self.action_rects.push((note.id, button));
+            }
+            // The close, on hover, half over its corner.
+            let mut close = Rect::default();
+            if entry.hovered {
+                close = mac_close_at(card);
+                let face = inset(close, 1.0);
+                let (fill, rim) = if dark {
+                    (vec4(0.27, 0.27, 0.28, 1.0), vec4(1.0, 1.0, 1.0, 0.22))
+                } else {
+                    (vec4(0.97, 0.97, 0.98, 1.0), vec4(0.0, 0.0, 0.0, 0.22))
+                };
+                self.d.ring.new_draw_call(cx);
+                self.d.rounded(cx, face, face.size.x * 0.25, fade(fill, o));
+                self.d.focus_ring(cx, face, face.size.x * 0.25, 1.0, fade(rim, o));
+                self.d.icon_centered(cx, Ico::Close, face, 8.0, fade(ink, 0.75));
+            }
+            self.card_rects.push((note.id, card, close));
+            y += h + STACK_SPACING;
+        }
+        for entry in self.live.iter_mut().filter(|l| first_shown.contains(&l.note.id)) {
+            entry.posted = now;
+            entry.shown = true;
+        }
+        MAC_STACK_END.with(|end| end.set(y));
+        // The widget's place in a test's snapshot (`text`); nothing to see.
+        self.draw_bg.color = Vec4f::default();
+        self.draw_bg.draw_abs(cx, rect(x, screen.pos.y + MAC_MARGIN, MAC_WIDTH, (y - screen.pos.y - MAC_MARGIN).max(1.0)));
+        x
+    }
+
     /// The material the kit paints the stack with; the next draw reads it.
     pub fn set_material(&mut self, m: MaterialTokens, palette: Option<super::ShellPalette>) {
         self.d.set_material(m);
@@ -439,6 +674,7 @@ impl ShellNotifications {
     }
 
     fn draw_surface_inner(&mut self, cx: &mut Cx2d, screen: Rect) {
+        MAC_STACK_END.with(|end| end.set(0.0));
         self.card_rects.clear();
         self.action_rects.clear();
         self.more = Rect::default();
@@ -449,11 +685,16 @@ impl ShellNotifications {
         if self.live.is_empty() {
             return;
         }
+        if mac_style() {
+            let x = self.draw_mac(cx, screen);
+            self.log_layout(x);
+            return;
+        }
         let tok = self.d.tokens(self.tokens);
         let gaps_out = tok.spacing.gaps_out;
         let border = tok.notifications.surface.border_width;
         let mut y = screen.pos.y + self.bar_clearance.max(gaps_out);
-        let x = stack_x(screen, gaps_out, KEEP_CLEAR.with(|c| c.get()));
+        let x = stack_x(screen, gaps_out, KEEP_CLEAR.with(|c| c.get()), CARD_WIDTH);
 
         // The stack ends above the dock when the dock is under it; a toast
         // that would pass it waits under the "+N more" chip.
@@ -604,10 +845,21 @@ impl ShellNotifications {
             self.d.card(cx, self.more, &tok.notifications.surface);
             self.d.label(cx, self.more, false, tok.font.body_small, tok.notifications.surface.text, super::ui::HAlign::Center, &label);
         }
-        // Where the toasts landed, once per change: evidence for a remote run.
-        // Where they rest: a slide does not log each of its frames.
+        self.log_layout(x);
+    }
+
+    /// Where the toasts landed, once per change: evidence for a remote run.
+    /// Where they rest: a slide does not log each of its frames.
+    fn log_layout(&mut self, x: f64) {
         let layout: Vec<String> = self.card_rects.iter().map(|(id, r, _)| format!("{id}@{},{},{},{}", x as i32, r.pos.y as i32, r.size.x as i32, r.size.y as i32)).collect();
-        let layout = if self.more.size.x > 0.0 { format!("{layout} +{} more", self.live.len() - self.card_rects.len(), layout = layout.join(" ")) } else { layout.join(" ") };
+        let waiting = self.live.len().saturating_sub(self.card_rects.len());
+        let layout = if self.more.size.x > 0.0 {
+            format!("{layout} +{} more", self.live.len() - self.card_rects.len(), layout = layout.join(" "))
+        } else if mac_style() && waiting > 0 {
+            format!("{layout} {waiting} waiting", layout = layout.join(" "))
+        } else {
+            layout.join(" ")
+        };
         if layout != self.logged {
             log!("notifications: {} toast(s) {layout}", self.card_rects.len());
             self.logged = layout;
@@ -616,6 +868,19 @@ impl ShellNotifications {
 }
 
 impl Widget for ShellNotifications {
+    /// What the Mac's banners say, for a test driver's /snap.
+    fn text(&self) -> String {
+        if !mac_style() {
+            return String::new();
+        }
+        let says: Vec<String> = self.live.iter().map(|l| {
+            let action = l.note.action.as_deref().map(|a| format!(" [{a}]")).unwrap_or_default();
+            let waiting = if self.card_rects.iter().any(|(id, ..)| *id == l.note.id) { "" } else { " (waiting)" };
+            format!("{} | {}{action}{waiting}", l.note.summary, l.note.body)
+        }).collect();
+        says.join("; ")
+    }
+
     fn draw_walk(&mut self, cx: &mut Cx2d, _scope: &mut Scope, walk: Walk) -> DrawStep {
         cx.begin_turtle(walk, self.layout);
         let screen = cx.turtle().rect();
@@ -638,7 +903,13 @@ impl Widget for ShellNotifications {
             };
             self.last_time = ne.time;
             let mut busy = false;
+            // A Mac's banner waiting its turn keeps its time until it shows.
+            let mac = mac_style();
+            let drawn: Vec<u64> = self.card_rects.iter().map(|(id, ..)| *id).collect();
             for entry in self.live.iter_mut() {
+                if mac && !drawn.contains(&entry.note.id) {
+                    continue;
+                }
                 // Hovering pauses the countdown (`ticking: !card.hovered`).
                 if entry.lifetime > 0.0 && !entry.hovered {
                     entry.left -= dt;
@@ -664,10 +935,12 @@ impl Widget for ShellNotifications {
                 let rects = self.card_rects.clone();
                 let mut changed = false;
                 for entry in self.live.iter_mut() {
+                    // A Mac's close stands half over the corner: it keeps
+                    // its banner hovered.
                     let over = rects
                         .iter()
                         .find(|(id, _, _)| *id == entry.note.id)
-                        .map(|(_, card, _)| contains(*card, e.abs))
+                        .map(|(_, card, close)| contains(*card, e.abs) || (entry.hovered && contains(*close, e.abs)))
                         .unwrap_or(false);
                     if over != entry.hovered {
                         entry.hovered = over;
@@ -767,7 +1040,7 @@ mod tests {
         let id = 1;
         let mut note = fixtures()[0].clone();
         note.id = id;
-        notes.live.push(Live { note, lifetime: 30., left: 30., hovered: false, posted: 0. });
+        notes.live.push(Live { note, lifetime: 30., left: 30., hovered: false, posted: 0., shown: false });
         notes.next_id = id;
         notes.card_rects = vec![(id, rect(10., 10., 300., 100.), rect(280., 10., 30., 30.))];
         (notes, id)
@@ -868,10 +1141,30 @@ mod tests {
     fn toasts_stack_clear_of_the_glance_panel() {
         let screen = rect(0.0, 0.0, 1400.0, 900.0);
         let right = 1400.0 - 10.0 - CARD_WIDTH;
-        assert_eq!(stack_x(screen, 10.0, None), right);
+        assert_eq!(stack_x(screen, 10.0, None, CARD_WIDTH), right);
         let panel = rect(1400.0 - 10.0 - 360.0, 40.0, 360.0, 800.0);
-        assert_eq!(stack_x(screen, 10.0, Some(panel)), panel.pos.x - STACK_SPACING - CARD_WIDTH);
-        assert_eq!(stack_x(screen, 10.0, Some(rect(10.0, 40.0, 440.0, 500.0))), right, "the Assistant pane at the left is not in the way");
+        assert_eq!(stack_x(screen, 10.0, Some(panel), CARD_WIDTH), panel.pos.x - STACK_SPACING - CARD_WIDTH);
+        assert_eq!(stack_x(screen, 10.0, Some(rect(10.0, 40.0, 440.0, 500.0)), CARD_WIDTH), right, "the Assistant pane at the left is not in the way");
+    }
+
+    /// A Mac's banner stands at the top right, keeps clear of the open column
+    /// by its own width, and is as tall as its text or its icon, whichever is
+    /// more, with its close half over its corner and the text giving way to
+    /// an action button.
+    #[test]
+    fn a_macs_banner_fits_its_lines_and_makes_room_for_its_button() {
+        let screen = rect(0.0, 32.0, 1400.0, 868.0);
+        let x = stack_x(screen, MAC_MARGIN, None, MAC_WIDTH);
+        assert_eq!(x + MAC_WIDTH, 1400.0 - MAC_MARGIN);
+        let panel = rect(1032.0, 40.0, 360.0, 400.0);
+        assert_eq!(stack_x(screen, MAC_MARGIN, Some(panel), MAC_WIDTH) + MAC_WIDTH + STACK_SPACING, panel.pos.x);
+        assert_eq!(mac_height(1), MAC_ICON + MAC_PAD * 2.0, "one line stands as tall as the icon");
+        assert_eq!(mac_height(2), MAC_ICON + MAC_PAD * 2.0);
+        assert_eq!(mac_height(3), MAC_LINE * 3.0 + MAC_PAD * 2.0);
+        assert!(mac_text_width(60.0) < mac_text_width(0.0) - 60.0, "the button and its gap come out of the text");
+        let card = rect(1048.0, 40.0, MAC_WIDTH, 60.0);
+        let close = mac_close_at(card);
+        assert!(close.pos.x < card.pos.x && close.pos.y < card.pos.y && close.pos.x + close.size.x > card.pos.x && close.pos.y + close.size.y > card.pos.y);
     }
 
     #[test]

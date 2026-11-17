@@ -34,3 +34,33 @@ impl AppMain for App {
         self.ui.handle_event(cx, event, &mut Scope::empty());
     }
 }
+
+#[cfg(test)]
+mod desktop_style_tests {
+    use super::*;
+
+    #[test]
+    fn the_stock_and_a_desktop_sheet_evaluate_without_script_errors() {
+        use makepad_widgets::desktop_style::{install, DesktopStyle, StyleSheet};
+        let mut cx = Cx::new(Box::new(|_, _| {}));
+        cx.init_cx_os();
+        cx.with_vm(|vm| {
+            makepad_widgets::makepad_platform::script::script_mod(vm);
+            // A phone's sheets and the stock one have no pointer token.
+            vm.bx.captured_errors = Some(Vec::new());
+            App::script_mod(vm);
+            let errors = vm.take_errors();
+            assert!(errors.is_empty(), "{errors:?}");
+            for dark in [false, true] {
+                // What the shell sends: the Mac's sheet with the pointer token.
+                let mut sheet = StyleSheet::load_with_appearance(DesktopStyle::Macos, dark);
+                sheet.theme.push_str("\nmod.theme.ui_pointer = true\ntrue\n");
+                install(vm, sheet);
+                vm.bx.captured_errors = Some(Vec::new());
+                vm.with_reload(App::script_mod);
+                let errors = vm.take_errors();
+                assert!(errors.is_empty(), "{errors:?}");
+            }
+        });
+    }
+}

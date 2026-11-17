@@ -64,3 +64,41 @@ editor := MarkdownEditor {
 ```sh
 python3 crates/markdown-editor/tests/native-writer.py --output target/markdown-writer-native-final
 ```
+
+## 文档页面
+
+本 crate 还提供 Writer 在 Mac 上使用的页面 `DocumentEditor`，以及用于只读预览的
+`DocumentScroller` 和 `DocMark`。`DocumentEditor` 复用 Rinx 的富文本输入和跨段落选择，
+每行一个输入框，标题、列表编号、引用和强调都按打印效果显示。它的文本仍是应用的行格式
+（`# Title`、`- item`、`1. item`、`> quote`、`**bold**`、`*italic*`）；只有用户改动的行会被重写，
+因此文档的保存形式不会自行变化。这里不使用 `MarkdownEditor`：它的模型没有一级标题，
+一次编辑会重写整个文档，而且自带界面外壳。
+
+```splash
+editor_text := DocumentEditor {
+    width: Fill height: Fill
+    on_change: |text| draft_changed(text)
+    on_format: |style, bold, italic, line, selected| format_changed(style, bold, italic, line, selected)
+    on_save: || save_doc()
+}
+```
+
+`ui.editor_text.text()` 和 `set_text(s)` 读取和载入文本；`headings()` 返回 JSON
+`[{level, text, line}]`；`bold()`、`italic()`、`set_style(id)`、`go_to_line(n)`、`focus()`、
+`set_active(on)`、`cut()`、`copy()` 和 `paste()` 作用于光标或选区。
+`find(words, step)` 选中这些词出现的一处（不区分大小写）并滚动到可见位置，键盘焦点保持不变：
+`step` 为 0 时取选区处或其后的第一处，1 取下一处，-1 取上一处，到文档末尾后从头循环。它返回 JSON
+`{index, count}`，`index` 从 1 开始计数，找不到时为 `{0, 0}`。`find_done()` 把键盘交还给页面，
+停在匹配处。`replace_found(words, with, all)` 用 `with` 替换选中的匹配并前往下一处；`all` 为 true 时替换
+所有匹配（作为一次可撤销的修改）。替换的文字沿用被替换文字的粗体和斜体，返回 JSON
+`{index, count, replaced}`。Mac 编辑菜单的其余命令：`on_format` 的 `selected` 表示是否有选区（菜单行从脚本的状态读取它，而不是询问编辑器），`delete_selected()`
+删除选区而不改动剪贴板，`paste_matching()` 即“粘贴并匹配样式”（把剪贴板的文字当作在该处键入：其中的
+Markdown 保持为字符，之后的每一行按回车键的方式成为新的一行；在页面上按 Option-Shift-Command-V 亦可），`change_case(kind)` 即“转换”，取值
+`"upper"`、`"lower"` 或 `"capitalize"`（每个词首字母大写，词以空格为界），保留选区及其粗体和斜体。
+在选区之外右键点按时，会先选中指针下的词（或把光标放到那里），再打开页面外层的菜单。
+`paper := Sheet{...}` 是文字下面的纸张，`page_gap` 是纸张上方的留白：纸张的上边缘随第一行一起
+向上滚动，和真实页面一样。
+`DocumentScroller{on_mark: |k| ...}` 用 `scroll_to_mark(k)` 和 `scroll_to_top()` 滚动含有
+`DocMark{mark: k}` 标题的页面，用 `reveal_mark(k)` 让某个标记刚好进入视野（向上时，若标记在第一屏内，
+页面回到顶部，让它上方的内容也可见），并报告哪个标记已到达顶部。页面以 `DocMark{end: true}`
+结尾：滚动接近它时，`on_near_end: || ...` 会请求长页面的下一步；在最后一屏，末尾的标记虽然滚不到顶部，也会依次被报告。

@@ -52,7 +52,96 @@ impl DesktopStyle {
     pub fn next(self) -> Self { Self::ALL[(self as usize + 1) % Self::ALL.len()] }
 }
 
+/// The sheet a style draws with. Every desktop style also says so to the apps
+/// (`theme.ui_pointer`): the shared app interface (`apps/interface.splash`) then
+/// lays a system app out for a pointer, with the Mac's metrics and sidebars. A
+/// phone's sheets leave it out, so a phone keeps the touch metrics.
 pub fn load_sheet(style: DesktopStyle, dark: bool) -> StyleSheet {
+    let mut sheet = style_sheet(style, dark);
+    // Both are stated on every sheet: a live switch keeps whatever the sheet
+    // before it set and this one leaves out.
+    sheet.theme.push_str(&format!(
+        "\nmod.theme.ui_pointer = {}\nmod.theme.ui_unified = {}\ntrue\n",
+        !style.mobile(),
+        style == DesktopStyle::Macos,
+    ));
+    if style == DesktopStyle::Macos {
+        sheet.theme.push_str(if dark { MAC_VIBRANCY_DARK } else { MAC_VIBRANCY });
+    } else {
+        // Every other style's scroll bar and menu rows: the Mac sheet's overlay
+        // scroller and blue highlight would otherwise outlive a live switch.
+        sheet.widgets.push_str(concat!(
+            "\nmod.widgets.ScrollBar.flash_on_scroll = false",
+            "\nmod.widgets.ScrollBar.draw_bg.color = mod.theme.color_outset",
+            "\nmod.widgets.ScrollBar.draw_bg.color_hover = mod.theme.color_outset_hover",
+            "\nmod.widgets.ScrollBar.draw_bg.color_drag = mod.theme.color_outset_drag",
+            "\nmod.widgets.PopupMenuItem.draw_bg.color_hover = mod.theme.color_outset_hover",
+            "\nmod.widgets.PopupMenuItem.draw_text.color_hover = mod.theme.color_label_inner_hover",
+            "\nmod.widgets.PopupMenuItem.draw_text.color_active = mod.theme.color_label_inner_active",
+            "\nmod.widgets.PopupMenuItem.draw_bg.mark_color_highlight = mod.theme.color_mark_active",
+            "\nmod.widgets.LoadingSpinner.draw_bg.spokes = 0.0",
+            "\nmod.widgets.LoadingSpinner.draw_bg.color = mod.theme.color_makepad",
+            "\ntrue\n",
+        ));
+    }
+    sheet
+}
+
+/// A Mac's vibrancy for what the shell itself draws: the menu bar, menus, sheets,
+/// panels and toasts frost what lies beneath them, with little of the lens the
+/// OctoSense glass has. Windows and the Dock keep their own materials
+/// (`StyleSpec::glass_chrome`).
+const MAC_VIBRANCY: &str = r#"
+mod.theme.material = {
+    glass: 1.0
+    corner_radius: 12.0
+    blur_level: 5.2
+    lensing_effect: 0.15
+    lensing_strength: 4.0
+    lensing_width: 10.0
+    diffraction_strength: 0.0
+    tint_color: #f6f6f8
+    tint_alpha: 0.72
+    border_color: #ffffff
+    border_alpha: 0.5
+    border_width: 1.0
+    specular_strength: 0.03
+    noise_strength: 0.002
+    shadow_color: #000000
+    shadow_alpha: 0.24
+    shadow_radius: 14.0
+    shadow_offset_y: 6.0
+    fallback_color: #ececec
+}
+true
+"#;
+const MAC_VIBRANCY_DARK: &str = r#"
+mod.theme.material = {
+    glass: 1.0
+    corner_radius: 12.0
+    blur_level: 5.2
+    lensing_effect: 0.15
+    lensing_strength: 4.0
+    lensing_width: 10.0
+    diffraction_strength: 0.0
+    tint_color: #2a2a2c
+    // Over a white page a thinner glass goes mid-grey, and its dim words go with it.
+    tint_alpha: 0.82
+    border_color: #ffffff
+    border_alpha: 0.16
+    border_width: 1.0
+    specular_strength: 0.04
+    noise_strength: 0.002
+    shadow_color: #000000
+    shadow_alpha: 0.5
+    shadow_radius: 14.0
+    shadow_offset_y: 6.0
+    fallback_color: #323234
+}
+true
+"#;
+
+fn style_sheet(style: DesktopStyle, dark: bool) -> StyleSheet {
     if style != DesktopStyle::OctoSense {
         let mut sheet = StyleSheet::load_with_appearance(style.framework(), dark);
         sheet.icons = icon_assets(style.framework());
@@ -115,6 +204,10 @@ pub fn icon_assets(style: UpstreamStyle) -> Vec<app_icon::IconAsset> {
     // The system chat's dock entry and home chip (#143): its own art, so it
     // never reads as the AI pane's app.
     wear(&mut assets, "assistant", icon_frame::styled_svg(include_str!("../../resources/icons/apps/assistant.svg"), style));
+    // The Mac Dock's Trash.
+    wear(&mut assets, "trash", icon_frame::styled_svg(include_str!("../../resources/icons/apps/trash.svg"), style));
+    // The same Trash with papers in it, while there is something to empty.
+    wear(&mut assets, "trash-full", icon_frame::styled_svg(include_str!("../../resources/icons/apps/trash-full.svg"), style));
     assets.sort_by(|a, b| a.name.cmp(&b.name));
     assets
 }
@@ -163,6 +256,8 @@ pub struct AppIconDraw {
     library: InstalledIcons,
     /// The styles whose catalog this drawer has seen to, by discriminant.
     installed: [bool; UpstreamStyle::ALL.len()],
+    /// The day a Mac's Calendar icon was last seen to.
+    calendar_day: u32,
 }
 impl AppIconDraw {
     pub fn draw(&mut self, cx: &mut Cx2d, name: &str, style: DesktopStyle, rect: Rect, opacity: f32, ink: Vec4f) {
@@ -195,7 +290,11 @@ impl AppIconDraw {
         // `desktop_style::current` falls back to `MAKEPAD_WIDGET_STYLE`,
         // which this shell sets in its own environment for its children. So
         // the shell's art goes back whenever its App Hub icon has gone.
-        if !std::mem::replace(&mut self.installed[style as usize], true) || !wears_shell_art(cx, style) {
+        let new_day = style == UpstreamStyle::Macos && name == "calendar" && {
+            let day = icon_family::today();
+            std::mem::replace(&mut self.calendar_day, day) != day
+        };
+        if !std::mem::replace(&mut self.installed[style as usize], true) || new_day || !wears_shell_art(cx, style) {
             app_icon::install(cx, style, &icon_assets(style));
         }
         self.draw.draw(cx, name, style, rect, opacity, ink);
@@ -294,6 +393,26 @@ mod tests {
     }
 
     #[test]
+    fn the_dock_trash_wears_the_styles_frame() {
+        for (name, source) in [("trash", include_str!("../../resources/icons/apps/trash.svg")), ("trash-full", include_str!("../../resources/icons/apps/trash-full.svg"))] {
+            for style in UpstreamStyle::ALL {
+                let framed = icon_frame::styled_svg(source, style);
+                assert!(framed.contains(icon_frame::SHELL_ART_MARKER), "{} {name}", style.id());
+                // The art's own square ground gave way to the style's frame (NeXTSTEP's is square too).
+                assert!(!framed.contains(r#"rx="0" fill="url(#tile)" />"#), "{} {name}: the square ground gave way to the frame", style.id());
+                let doc = makepad_widgets::makepad_draw::svg::parse_svg(&framed);
+                assert_eq!(doc.logical_size(), (64., 64.), "{} {name}", style.id());
+                assert!(!doc.root.is_empty(), "{} {name}", style.id());
+                for unsupported in ["<clipPath", "<mask", "<filter", "<text", "<image", "<use"] {
+                    assert!(!framed.contains(unsupported), "{} {name}: {unsupported}", style.id());
+                }
+                // What the style wears is this art in its frame.
+                assert_eq!(svg_of(&icon_assets(style), name), framed, "{} {name}", style.id());
+            }
+        }
+    }
+
+    #[test]
     fn approved_family_is_complete_and_parses_in_the_production_renderer() {
         assert_eq!(icon_family::ICONS.len(), 28);
         for style in UpstreamStyle::ALL {
@@ -353,7 +472,7 @@ mod tests {
             // Assert the union, rather than a fixed delta from today's catalog.
             let mut expected: std::collections::BTreeSet<&str> = framework.iter().map(|asset| asset.name.as_str()).collect();
             expected.extend(icon_family::ICONS.iter().map(|&(name, _, _)| name));
-            expected.extend(["maps", "apphub", "assistant"]);
+            expected.extend(["maps", "apphub", "assistant", "trash", "trash-full"]);
             assert_eq!(assets.iter().map(|asset| asset.name.as_str()).collect::<std::collections::BTreeSet<_>>(), expected, "{}", style.id());
             assert_eq!(assets.len(), expected.len(), "identities must not be duplicated");
             assert!(svg_of(&assets, "assistant").contains("OctoSense #143"), "{}", style.id());

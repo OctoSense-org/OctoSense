@@ -150,7 +150,7 @@ fn a_background_surface_cannot_raise_or_replace_a_sheet() {
                            ("llm.import_qr", Value::Null), ("llm.export_qr", Value::Null)] {
         let heap = rig.send_background(method, args);
         let refused = wait(heap).unwrap_err();
-        assert!(refused.contains("Open AI providers"), "{method}: {refused}");
+        assert!(refused.contains("Open AI Providers"), "{method}: {refused}");
     }
     assert_eq!(rig.host.body(), body, "the person's sheet is untouched");
     assert!(still_waiting(waiting), "and its request still waits for them");

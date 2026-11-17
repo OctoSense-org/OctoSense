@@ -19,7 +19,26 @@ View{
     status_line := Label{
         text: "" width: Fill
         align: Align{x: 0.5 y: 0.5}
-        draw_text +: {color: theme.color_text_disabled text_style: theme.font_regular{font_size: 10}}
+        draw_text +: {color: theme.color_text text_style: theme.font_regular{font_size: 10}}
+    }
+    // A stopped window's one action, as the in-process face draws it (module_view.rs).
+    startup_reopen := RectView{
+        visible: false
+        width: 96 height: 28 margin: Inset{top: 4}
+        align: Align{x: 0.5 y: 0.5}
+        draw_bg +: {
+            color: #x0071e3
+            pixel: fn() {
+                let sdf = Sdf2d.viewport(self.pos * self.rect_size)
+                sdf.box(0. 0. self.rect_size.x self.rect_size.y 3.)
+                sdf.fill(self.color)
+                return sdf.result
+            }
+        }
+        startup_reopen_word := Label{
+            text: "Reopen"
+            draw_text +: {color: #fff text_style: theme.font_regular{font_size: 9.75}}
+        }
     }
 }
 }

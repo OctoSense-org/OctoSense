@@ -726,6 +726,10 @@ impl NoteTargets {
     pub fn dismissed(&mut self, id: u64) {
         self.0.retain(|(i, _)| *i != id);
     }
+    /// The notifications still up.
+    pub fn ids(&self) -> Vec<u64> {
+        self.0.iter().map(|(i, _)| *i).collect()
+    }
 }
 /// Bumped whenever the published set changes, so a surface re-reads it only then.
 static GENERATION: AtomicU64 = AtomicU64::new(1);
@@ -888,6 +892,16 @@ pub fn card(key: &str) -> Option<GlanceCard> {
 /// The person dismissed the card with this key (`app/card_id`).
 pub fn dismiss(key: &str) -> bool {
     dismiss_all(&[key.to_string()]) == 1
+}
+
+/// The person opened the app that sent this card from its notification: on a
+/// Mac the notification goes once clicked. It goes as a dismissed card does,
+/// and Undo still brings back what the person last dismissed.
+pub fn opened(key: &str) -> bool {
+    let undo = std::mem::take(&mut *UNDO.lock().unwrap());
+    let gone = dismiss(key);
+    *UNDO.lock().unwrap() = undo;
+    gone
 }
 
 /// Retire a completed host-bound reply without deleting its draft or receipts,
@@ -1240,7 +1254,6 @@ pub fn demo_mail() -> Vec<(&'static str, &'static str, String, Value)> {
             "title": "UPS · Your desk lamp has shipped",
             "subtitle": "Tracking 1Z 999 AA1 01 2345 6784",
             "as_of": "09:15",
-            "summary": "The desk lamp from Lumen & Co. is out for delivery today; no signature needed.",
             "metric1_label": "Status", "metric1_value": "Out for delivery",
             "metric2_label": "ETA", "metric2_value": "Today by 8 pm",
             "url1": "ups.com/track · 1Z999AA10123456784"

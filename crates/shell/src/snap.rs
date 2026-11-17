@@ -218,6 +218,7 @@ impl Widget for SnapOverlay {
         self.chrome.frame_width = 0.;
         if let (Some(zone), Some(area)) = (snap.preview, snap.area) {
             let r = zone.bounds(area);
+            makepad_widgets::web_reader::cover_web_views(rect(r.x + 6., r.y + 6., (r.w - 12.).max(1.), (r.h - 12.).max(1.)), 8.);
             self.chrome.color = alpha(rgb(90, 166, 242), 0.25);
             self.chrome.draw_abs(
                 cx,

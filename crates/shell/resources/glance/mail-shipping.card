@@ -6,9 +6,11 @@
 # carrier, status and ETA, Track; no reply. A test fixture published as
 # `os.mail` with fake data under OCTOSENSE_GLANCE_DEMO=mail. `pkg` is a
 # `sys.dataset` record standing in for `sys.mail_message` (see
-# mail-request.card); Track only shows the tracking state (demo).
+# mail-request.card); Track only shows the tracking state (demo). The
+# summary is the agent's words, the card's own `model-copy` as the request
+# card's is, so the kit gives it the one AI-written mark (profile §4.2).
 
-source pkg sys.dataset(fields: [title, subtitle, as_of, summary, metric1_label, metric1_value, metric2_label, metric2_value, url1])
+source pkg sys.dataset(fields: [title, subtitle, as_of, metric1_label, metric1_value, metric2_label, metric2_value, url1])
 
 state mode { shape: enum[brief, tracking, done], initial: .brief }
 
@@ -16,8 +18,10 @@ event track { mode: set(.tracking) }
 event done  { mode: set(.done) }
 event back  { mode: set(.brief) }
 
+copy gist     { class: model-copy, en: "The desk lamp from Lumen & Co. is out for delivery today; no signature needed." }
+
 copy app      { class: vocabulary, en: "Mail · Shipping" }
-copy ai_sum   { class: vocabulary, en: "AI SUMMARY" }
+copy h_sum    { class: vocabulary, en: "SUMMARY" }
 copy b_track  { class: vocabulary, en: "Track" }
 copy b_done   { class: vocabulary, en: "Mark done" }
 copy b_back   { class: vocabulary, en: "Back" }
@@ -38,8 +42,8 @@ view root Surface(pad: .tight) {
     }
     TextCaption(value: pkg.subtitle)
     when mode == .brief {
-      Row(gap: 6, align: .center) { Icon(name: .zap, size: .row) TextEyebrow(text: copy.ai_sum) }
-      TextBody(text: pkg.summary, width: .fill)
+      TextEyebrow(text: copy.h_sum)
+      TextBody(text: copy.gist, width: .fill)
       Row(gap: 8) {
         Chip(text: copy.b_track, on_tap: track, tone: .primary)
         Chip(text: copy.b_done, on_tap: done)

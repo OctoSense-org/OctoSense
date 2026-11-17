@@ -319,7 +319,11 @@ impl App {
             {
             self.dismiss_phone_keyboard(cx);
             self.restore_tile_faces(cx);
-            let size=self.state_mut().phone.desktop_size.take().unwrap_or(dvec2(1400.0,900.0));
+            // The phone can be selected before the first window geometry
+            // arrives. Never restore an empty or non-finite desktop window.
+            let size=self.state_mut().phone.desktop_size.take()
+                .filter(|s|s.x.is_finite() && s.y.is_finite() && s.x>1.0 && s.y>1.0)
+                .unwrap_or(dvec2(1400.0,900.0));
             if !cfg!(any(target_os="ios",target_os="android")) {window.resize(cx,size);}
             // Apps first opened on a phone have no desktop restore geometry.
             // Give them normal desktop windows; retain pre-phone user geometry.

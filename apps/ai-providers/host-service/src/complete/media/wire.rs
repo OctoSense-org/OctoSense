@@ -113,7 +113,7 @@ pub(super) fn route(candidates: &[Candidate], kind: &str, class: Class) -> Resul
             binding: binding(candidate),
         });
     }
-    Err(Refusal::new(Code::NoProvider, format!("No configured provider supports {kind}. Configure a compatible media provider in AI providers.")))
+    Err(Refusal::new(Code::NoProvider, format!("No configured provider supports {kind}. Configure a compatible media provider in AI Providers.")))
 }
 
 pub(super) enum Request {

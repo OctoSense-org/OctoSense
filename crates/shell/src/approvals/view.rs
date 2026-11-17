@@ -25,7 +25,7 @@
 //!   what that app's agent asks and stops the turn running on its shared
 //!   conversation, whoever started it ([`super::stop_agent`]).
 //! - **Expired** requests (ADR 0004 §8): an approval or question nobody
-//!   answered in time ("Expired: no answer in 10 min"), withdrawn from the
+//!   answered in time ("Expired: no answer in 10 minutes"), withdrawn from the
 //!   modal cards and kept as a small non-modal card until dismissed.
 //!
 //! A press on a button is the person's gesture: only here (and on the
@@ -35,11 +35,17 @@ use makepad_widgets::*;
 use std::collections::HashMap;
 
 use super::consent::AgentSummary;
+use super::mac_kit::{mac_place, MacPlace, Scroller};
 use super::rules::{ApprovalGesture, Rule};
-use super::sheet::{app_label, wrap, Answer, ArgWindow, Line, Sheet};
+use super::sheet::{app_label, visible, wrap, Answer, ArgWindow, Line, Place, Sheet};
 use super::types::{RequestId, RuleId};
+use crate::desk::WmState;
+use crate::octosense::style::AppIconDraw;
 use crate::shell::ui::{contains, rect, DrawShellFill, HAlign, ShellDraw};
 use crate::shell::{alpha, rgb, CtrlState, ShellTokens};
+
+#[path = "mac_view.rs"]
+mod mac;
 
 script_mod! {
     use mod.prelude.widgets_internal.*
@@ -174,6 +180,20 @@ pub enum Hit {
     DismissQuestion(u64),
     /// The card itself (swallowed).
     Card,
+    /// A Mac's batch: every line, each with what its own pop-up says. Each is
+    /// answered on its own, as a press on its own button would.
+    AnswerAll { sheet: u64, answers: Vec<(RequestId, Answer)> },
+    /// A Mac's sheet: a pop-up opens, one of its rows is chosen (what Allow
+    /// will do; it answers nothing), or a press outside closes it.
+    Popup { request: RequestId, button: Rect },
+    PopupChoose { request: RequestId, answer: Answer },
+    PopupDismiss,
+    /// A Mac's question: one option picked (Answer sends it).
+    QuestionPick { id: u64, index: usize },
+    /// A Mac's alert for an app that quit: Reopen, or Ignore.
+    Quit { reopen: bool },
+    /// Its Report…: the alert shows what the shell recorded of why.
+    QuitReport,
 }
 
 /// A small button kit shared with the Settings page.
@@ -238,6 +258,8 @@ struct Frame {
     /// What expired unanswered: approvals, then questions.
     expired: Vec<super::router::Expired>,
     expired_questions: Vec<crate::questions::Request>,
+    /// A Mac's alert for an app that quit unexpectedly.
+    quit: Option<crate::quit_alert::Alert>,
     now: u64,
 }
 
@@ -252,12 +274,14 @@ fn frame() -> Frame {
             question: None,
             expired: a.router.expired().to_vec(),
             expired_questions: Vec::new(),
+            quit: None,
             now,
         }
     })
     .map(|mut f| {
         f.question = card_question(crate::questions::open_in_apps(), crate::app_chat::shown_app().as_deref());
         f.expired_questions = crate::questions::expired_in_apps();
+        f.quit = crate::quit_alert::front();
         f
     })
     .unwrap_or_default()
@@ -291,6 +315,50 @@ pub struct ShellApprovals {
     d: ShellDraw,
     #[live]
     tokens: ShellTokens,
+    /// A Mac's desk, read once a frame; `None` on every other style, whose
+    /// sheets this module draws as it always has.
+    #[rust]
+    mac: Option<MacPlace>,
+    #[rust]
+    app_icons: AppIconDraw,
+    /// What a Mac's rows scroll in, and whether their end has been on screen.
+    #[rust]
+    scroller: Scroller,
+    /// What each open line's pop-up says.
+    #[rust]
+    choices: HashMap<RequestId, Answer>,
+    #[rust]
+    mac_blocks: HashMap<RequestId, mac::LaidOut>,
+    /// The labels' column on this sheet: as wide as its widest label, within reason.
+    #[rust]
+    mac_label_w: f64,
+    /// Controls outside this have nothing to press, so they are not listed.
+    #[rust]
+    note_clip: Option<Rect>,
+    #[rust]
+    popup: Option<mac::OpenPopup>,
+    /// The row of the open pop-up that the arrow keys are on.
+    #[rust]
+    popup_cursor: Option<usize>,
+    /// Where the press that opened the pop-up came down, until its release.
+    #[rust]
+    popup_press: Option<Vec2d>,
+    #[rust]
+    question_pick: Option<(u64, usize)>,
+    /// What Escape presses: the Cancel-position button.
+    #[rust]
+    escape: Option<Hit>,
+    /// What Return presses, where a press of the key cannot agree to anything.
+    #[rust]
+    return_key: Option<Hit>,
+    #[rust]
+    pointer_at: Option<Vec2d>,
+    #[rust]
+    down_rect: Option<Rect>,
+    /// The buttons drawn, for the control surface: label, rect, whether a press does anything.
+    #[rust]
+    controls: Vec<String>,
+    #[area]
     #[rust]
     area: Area,
     #[rust]
@@ -341,6 +409,9 @@ impl ShellApprovals {
 
     /// The shell's pointer hook (`approvals::pointer`). True when taken.
     pub fn pointer(&mut self, cx: &mut Cx, event: &Event) -> bool {
+        if self.mac.is_some() {
+            return self.mac_pointer(cx, event);
+        }
         if let Event::TouchUpdate(update) = event {
             let mut consumed = false;
             for point in &update.touches {
@@ -416,6 +487,10 @@ impl ShellApprovals {
         let f = frame();
         if f.consent.is_none() {
             self.consent_scroll = ConsentScroll::default();
+        }
+        if let Some(place) = self.mac.clone() {
+            self.mac_draw_all(cx, screen, &f, &place);
+            return;
         }
         let tok = self.d.tokens(self.tokens);
         self.draw_indicator(cx, screen, &f, tok);
@@ -498,7 +573,7 @@ impl ShellApprovals {
     }
 
     /// Expired requests, non-modal, at the bottom: "Expired: no answer in
-    /// 10 min" with what it was, and Dismiss.
+    /// 10 minutes" with what it was, and Dismiss.
     fn draw_expired(&mut self, cx: &mut Cx2d, screen: Rect, f: &Frame, tok: ShellTokens) {
         let mut rows: Vec<(String, Hit)> = f
             .expired
@@ -733,9 +808,13 @@ impl ShellApprovals {
             self.d.solid(cx, rect(track.pos.x, thumb_y, track.size.x, thumb_h), alpha(ink, 0.40));
         }
         let mut buttons = Buttons { d: &mut self.d, tok, hover: self.hover };
-        let allow = buttons.draw(cx, footer.pos.x, footer.pos.y, (footer.size.x - 8.0) * 0.5, "Allow", true);
-        let deny_x = allow.pos.x + allow.size.x + 8.0;
-        let deny = buttons.draw(cx, deny_x, footer.pos.y, footer.pos.x + footer.size.x - deny_x, "Don't allow", false);
+        // The default action at the trailing edge, as a Mac's and a phone's dialogs have it.
+        let half = (footer.size.x - 8.0) * 0.5;
+        let allow_w = buttons.width(cx, "Allow").min(half.max(40.0));
+        let allow_x = footer.pos.x + footer.size.x - allow_w;
+        let deny_w = buttons.width(cx, "Don't allow").min(half.max(40.0));
+        let deny = buttons.draw(cx, allow_x - 8.0 - deny_w, footer.pos.y, half, "Don't allow", false);
+        let allow = buttons.draw(cx, allow_x, footer.pos.y, half, "Allow", true);
         self.hits.push((allow, Hit::Consent { app: s.app.clone(), allow: true }));
         self.hits.push((deny, Hit::Consent { app: s.app.clone(), allow: false }));
         self.shown.push(format!("Let {}'s agent start?", s.name));
@@ -772,7 +851,7 @@ mod consent_layout_tests {
             app: "test.consent".into(), name: "A long connected application name".into(),
             reads: vec!["Account-specific documents and saved drafts for this account only".into()],
             uses: vec!["Tools from another application, subject to its grant and approval policy".into()],
-            model: "The provider configured by the person in AI providers; private tool results may be sent to that provider".into(),
+            model: "The provider configured by the person in AI Providers; private tool results may be sent to that provider".into(),
         };
         for (width, height, scale) in [(320.0, 480.0, 1.0), (360.0, 640.0, 1.25), (640.0, 320.0, 1.25), (1000.0, 1000.0, 1.0)] {
             let screen = rect(0.0, 0.0, width, height);
@@ -829,6 +908,18 @@ pub(crate) fn press(hit: Hit) {
     act(hit)
 }
 
+/// The order a sheet's lines are answered in by its one default: a rule made on
+/// one line may answer the others, so what the person denied or allowed once goes
+/// first, and their word on each line stands.
+pub(super) fn answers_in_order(mut answers: Vec<(RequestId, Answer)>) -> Vec<(RequestId, Answer)> {
+    answers.sort_by_key(|(_, answer)| match answer {
+        Answer::Deny => 0,
+        Answer::Once => 1,
+        Answer::Always(_) => 2,
+    });
+    answers
+}
+
 /// What a press does. Each answer here is the person's.
 fn act(hit: Hit) {
     let now = super::now();
@@ -837,6 +928,14 @@ fn act(hit: Hit) {
             let r = super::with(|a| a.router.answer(sheet, &request, answer, &ApprovalGesture::sheet_tap(), now));
             if let Some(Err(e)) = r {
                 log!("approvals: {e}");
+            }
+        }
+        Hit::AnswerAll { sheet, answers } => {
+            for (request, answer) in answers_in_order(answers) {
+                let r = super::with(|a| a.router.answer(sheet, &request, answer, &ApprovalGesture::sheet_tap(), now));
+                if let Some(Err(e)) = r {
+                    log!("approvals: {e}");
+                }
             }
         }
         Hit::Consent { app, allow } => {
@@ -861,15 +960,19 @@ fn act(hit: Hit) {
         }
         Hit::DismissExpired(id) => super::dismiss_expired(&id),
         Hit::DismissQuestion(id) => crate::questions::dismiss(id),
-        // The view scrolls its own argument areas (`pointer`).
-        Hit::ScrollArgs { .. } | Hit::Card => {}
+        Hit::Quit { reopen } => crate::quit_alert::answer(reopen),
+        Hit::QuitReport => crate::quit_alert::show_report(),
+        // The view scrolls its own argument areas (`pointer`), and a Mac's
+        // pop-ups and picks only change what its own buttons will do.
+        Hit::ScrollArgs { .. } | Hit::Card | Hit::Popup { .. } | Hit::PopupChoose { .. } | Hit::PopupDismiss | Hit::QuestionPick { .. } => {}
     }
 }
 
 impl Widget for ShellApprovals {
-    fn draw_walk(&mut self, cx: &mut Cx2d, _scope: &mut Scope, walk: Walk) -> DrawStep {
+    fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         cx.begin_turtle(walk, self.layout);
         let screen = cx.turtle().rect();
+        self.mac = scope.data.get_mut::<WmState>().and_then(|state| mac_place(state, screen));
         self.d.begin_surface(cx);
         self.draw_all(cx, screen);
         self.d.end_surface(cx);
@@ -877,6 +980,16 @@ impl Widget for ShellApprovals {
         DrawStep::done()
     }
 
-    // The shell routes presses (`approvals::pointer`); nothing here.
-    fn handle_event(&mut self, _cx: &mut Cx, _event: &Event, _scope: &mut Scope) {}
+    // The shell routes presses (`approvals::pointer`). All that is left here is
+    // a Mac's overlay thumb going away.
+    fn handle_event(&mut self, cx: &mut Cx, event: &Event, _scope: &mut Scope) {
+        if self.scroller.faded(event) {
+            self.redraw(cx);
+        }
+    }
+
+    /// What the control surface reads: the words on screen, and each button.
+    fn text(&self) -> String {
+        self.shown.iter().chain(self.controls.iter()).cloned().collect::<Vec<_>>().join("\n")
+    }
 }

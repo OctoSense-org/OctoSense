@@ -15,6 +15,8 @@ fn startup_style_for_os(target_os: &str, mobile_only: bool) -> crate::desktop::D
     match target_os {
         "android" => DesktopStyle::Android,
         "ios" => DesktopStyle::Ios,
+        // On a Mac the shell looks like one; elsewhere it keeps its own identity.
+        "macos" => DesktopStyle::Macos,
         _ => DesktopStyle::OctoSense,
     }
 }
@@ -38,8 +40,13 @@ mod tests {
     }
 
     #[test]
-    fn desktop_and_web_start_with_octosense() {
-        for target_os in ["macos", "windows", "linux", "freebsd", "unknown"] {
+    fn a_mac_starts_with_the_mac_style() {
+        assert_eq!(startup_style_for_os("macos", false), DesktopStyle::Macos);
+    }
+
+    #[test]
+    fn other_desktops_and_the_web_start_with_octosense() {
+        for target_os in ["windows", "linux", "freebsd", "unknown"] {
             assert_eq!(startup_style_for_os(target_os, false), DesktopStyle::OctoSense);
         }
     }

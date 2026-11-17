@@ -135,18 +135,15 @@ fn deadline_from(value: Option<&str>) -> Duration {
 }
 
 /// Why a request expired, as the person and the agent read it: "no answer
-/// in 10 min" (seconds below a minute).
+/// in 10 minutes" (seconds below a minute), spelled out as a Mac alert is.
 pub fn expiry_reason(deadline: Duration) -> String {
     let secs = deadline.as_secs().max(1);
-    if secs >= 60 && secs.is_multiple_of(60) {
-        format!("no answer in {} min", secs / 60)
-    } else {
-        format!("no answer in {secs} s")
-    }
+    let (n, unit) = if secs >= 60 && secs.is_multiple_of(60) { (secs / 60, "minute") } else { (secs, "second") };
+    format!("no answer in {n} {unit}{}", if n == 1 { "" } else { "s" })
 }
 
 /// The note an expiry carries, the kernel's record of it: `expired: <reason>`
-/// ("expired: no answer in 10 min"). The broker's own expiry and the host's
+/// ("expired: no answer in 10 minutes"). The broker's own expiry and the host's
 /// (its approval router's deny at the same deadline) both send it.
 pub fn expired_note(reason: &str) -> String {
     format!("{EXPIRED_NOTE_PREFIX}{reason}")
@@ -959,7 +956,7 @@ impl ConfirmRequest {
 pub trait ConfirmSheet: Send + Sync {
     fn confirm(&self, request: ConfirmRequest);
     /// The request `id` is no longer the app's to answer: nobody answered
-    /// in time (`reason`: "expired: no answer in 10 min") and the host
+    /// in time (`reason`: "expired: no answer in 10 minutes") and the host
     /// denied it. The sheet shows it expired; a later answer is refused.
     fn withdrawn(&self, _id: &str, _reason: &str) {}
 }
@@ -1191,24 +1188,24 @@ mod tests {
         assert_eq!(deadline_from(Some(" 5 ")), Duration::from_secs(5));
         assert_eq!(deadline_from(Some("0")), DEFAULT_PROMPT_DEADLINE);
         assert_eq!(deadline_from(Some("soon")), DEFAULT_PROMPT_DEADLINE);
-        assert_eq!(expiry_reason(DEFAULT_PROMPT_DEADLINE), "no answer in 10 min");
-        assert_eq!(expiry_reason(Duration::from_secs(90)), "no answer in 90 s");
+        assert_eq!(expiry_reason(DEFAULT_PROMPT_DEADLINE), "no answer in 10 minutes");
+        assert_eq!(expiry_reason(Duration::from_secs(90)), "no answer in 90 seconds");
         let sent = Arc::new(Mutex::new(Vec::<(bool, String)>::new()));
         let s = sent.clone();
         let approval = ApprovalAnswer::with_note(move |ok, note| s.lock().unwrap().push((ok, note.to_owned())));
-        assert!(approval.expire("no answer in 10 min"));
+        assert!(approval.expire("no answer in 10 minutes"));
         assert!(!approval.respond(true), "an expired approval cannot be approved later");
-        assert_eq!(*sent.lock().unwrap(), vec![(false, "expired: no answer in 10 min".to_string())]);
+        assert_eq!(*sent.lock().unwrap(), vec![(false, "expired: no answer in 10 minutes".to_string())]);
         let got = Arc::new(Mutex::new(Vec::<(Value, String)>::new()));
         let g = got.clone();
         let question = QuestionAnswer::with_note(move |v, note| g.lock().unwrap().push((v, note.to_owned())));
-        assert!(question.expire(2, "no answer in 10 min"));
+        assert!(question.expire(2, "no answer in 10 minutes"));
         assert!(!question.respond(&[QuestionReply::option("#a")]));
         let (answers, note) = got.lock().unwrap()[0].clone();
         assert_eq!(answers.as_array().unwrap().len(), 2);
         assert!(answers[0].get("selected_labels").is_none(), "no option is chosen for the person");
         assert!(answers[0]["free_text"].as_str().unwrap().contains("expired"));
-        assert_eq!(note, "expired: no answer in 10 min");
+        assert_eq!(note, "expired: no answer in 10 minutes");
     }
 
     #[test]

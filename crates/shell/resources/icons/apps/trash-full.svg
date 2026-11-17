@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- The Mac Dock's Trash with something in it: trash.svg's bin and lid, the
+       lid lifted on the left by two of Files' papers (the ivory sheet with a
+       line and the pale sheet behind it). Same tile, same scale, no new identity. -->
+  <defs><linearGradient id="tile" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#c6ced3"/><stop offset="1" stop-color="#8d99a0"/></linearGradient></defs>
+  <rect x="0" y="0" width="64" height="64" rx="0" fill="url(#tile)" />
+  <g id="artwork" transform="translate(32 32) scale(0.9) translate(-32 -32)">
+    <rect x="25" y="18" width="13" height="14" rx="2.5" fill="#b3d8d2" transform="rotate(6 31.5 25)"/>
+    <g transform="rotate(-20 20.3 33)">
+      <rect x="20.3" y="16.5" width="11" height="16.5" rx="2.5" fill="#fffdf7"/>
+      <path d="M23 24.5 H27.5" fill="none" stroke="#b3c9bf" stroke-width="2" stroke-linecap="round"/>
+    </g>
+    <path d="M18 26 H46 L43.6 49 Q43.2 52 40 52 H24 Q20.8 52 20.4 49 Z" fill="#fffdf7"/>
+    <path d="M18 26 H46 L45.74 28.5 H18.26 Z" fill="#082d41" opacity="0.16"/>
+    <path d="M26 31 L27 46 M32 31 V46 M38 31 L37 46" fill="none" stroke="#9fb0b3" stroke-width="2.4" stroke-linecap="round"/>
+    <g transform="rotate(14 38 20)">
+      <path d="M26 17 V15 Q26 12 29 12 H35 Q38 12 38 15 V17" fill="none" stroke="#233d40" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+      <rect x="14" y="17" width="36" height="6" rx="3" fill="#fffdf7"/>
+    </g>
+  </g>
+</svg>

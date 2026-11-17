@@ -1,0 +1,15 @@
+{
+  "schema": 1,
+  "id": "os.settings",
+  "version": "1.0.0",
+  "name": "System Settings",
+  "integrity": {
+    "bundle_blake3": ""
+  },
+  "capabilities": [],
+  "window": {
+    "width": 720,
+    "height": 560
+  },
+  "schema_minor": 1
+}

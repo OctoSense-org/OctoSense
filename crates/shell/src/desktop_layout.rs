@@ -7,6 +7,10 @@ pub struct DesktopWindow {
     pub client: ClientId,
     pub rect: LRect,
     pub minimized: bool,
+    /// Put away with its app, as a Mac's Hide does: off the desk like a minimized
+    /// window, with no place of its own in the Dock, and it comes back with its app.
+    /// Only means something while `minimized`.
+    pub hidden: bool,
     pub maximized: bool,
     /// Full screen, as macOS's green button makes a window: it covers the
     /// whole desk, the top bar and a floating dock hide until the pointer
@@ -15,6 +19,9 @@ pub struct DesktopWindow {
     /// `maximized`, which leaving full screen returns to.
     pub fullscreen: bool,
     pub snap: Option<crate::snap::Zone>,
+    /// A Mac's Zoom on a window that only widens (`apps::mac_window_widens`): the
+    /// frame it had before, which the same press brings back.
+    pub zoomed_from: Option<LRect>,
 }
 #[derive(Clone, Debug, Default)]
 pub struct DesktopWindows {
@@ -25,6 +32,8 @@ pub struct DesktopWindows {
     /// draw: maximized and snapped windows fill the [`room`] above it. 0 for
     /// a dock that reserves its strip (Windows) or no dock.
     pub dock: f64,
+    /// The window whose app is being reopened: the next window takes its place.
+    reopening: Option<DesktopWindow>,
 }
 
 /// The margins a new window keeps from the desk's edges: it opens this far
@@ -33,7 +42,8 @@ pub struct DesktopWindows {
 /// keeps them on the right and the bottom too.
 pub const MARGIN_X: f64 = 42.0;
 pub const MARGIN_Y: f64 = 32.0;
-/// The smallest a window gets: what a resize drag leaves it.
+/// The smallest a window gets. A person's drag in the Mac style stops well before
+/// this ([`crate::apps::mac_window_minimum`]).
 pub const MIN_W: f64 = 80.0;
 pub const MIN_H: f64 = 60.0;
 
@@ -64,6 +74,19 @@ pub fn requested_size(size: Option<(f64, f64)>) -> Option<(f64, f64)> {
     size.filter(|(w, h)| w.is_finite() && h.is_finite() && *w > 0.0 && *h > 0.0)
 }
 
+/// A window its app asks to grow or shrink by `dw` x `dh` points (a view that
+/// opens a sidebar): the top left stays, the size keeps to the [`room`] above
+/// the dock and never below [`MIN_W`] x [`MIN_H`], and a window that would
+/// leave the room moves back in.
+pub fn resized(r: LRect, dw: f64, dh: f64, area: LRect, dock: f64) -> LRect {
+    let room = room(area, dock);
+    let w = (r.w + dw).min(room.w).max(MIN_W);
+    let h = (r.h + dh).min(room.h).max(MIN_H);
+    let x = r.x.min(room.x + room.w - w).max(room.x);
+    let y = r.y.min(room.y + room.h - h).max(room.y);
+    LRect::new(x, y, w, h)
+}
+
 impl DesktopWindows {
     /// The client's window, made at the default size if it has none: 72% of
     /// the desk's width and 76% of its height, at most 1000 x 720 points.
@@ -81,6 +104,10 @@ impl DesktopWindows {
         if self.get(client).is_some() {
             return;
         }
+        if let Some(like) = self.reopening.take() {
+            self.windows.push(DesktopWindow { client, ..like });
+            return;
+        }
         let offset = (self.windows.len() % 7) as f64 * 30.0;
         let (bounds, (w, h)) = match preferred {
             Some((w, h)) => (room(area, dock), preferred_size(w, h, area, dock)),
@@ -93,10 +120,34 @@ impl DesktopWindows {
             client,
             rect,
             minimized: false,
+            hidden: false,
             maximized: false,
             fullscreen: false,
             snap: None,
+            zoomed_from: None,
         });
+    }
+    /// The desk is now `area`, smaller than it was `before`, as on a smaller screen: a window
+    /// wholly on it stays so, moved in and only if it must made smaller, as on a Mac, and
+    /// `clear` points clear of the dock's top (a Mac's keeps the desk's outer gap there, as
+    /// at the screen's other edges, so its foot never meets the Dock). One a person left
+    /// partly off it stays where they left it ([`fit`]).
+    pub fn desk_shrank(&mut self, before: LRect, area: LRect, clear: f64) {
+        let dock = if self.dock > 0.0 { self.dock + clear.max(0.0) } else { 0.0 };
+        for window in &mut self.windows {
+            let r = window.rect;
+            if r.x >= before.x && r.y >= before.y && r.x + r.w <= before.x + before.w && r.y + r.h <= before.y + before.h {
+                window.rect = resized(r, 0.0, 0.0, area, dock);
+            }
+        }
+    }
+    /// The next window opens where `client`'s is, as a window whose app stopped comes back.
+    pub fn reopen_as(&mut self, client: ClientId) {
+        self.reopening = self.get(client).cloned();
+    }
+    /// The next window takes the place of `like`, a window already gone.
+    pub fn reopen_like(&mut self, like: DesktopWindow) {
+        self.reopening = Some(like);
     }
     pub fn get(&self, client: ClientId) -> Option<&DesktopWindow> {
         self.windows.iter().find(|w| w.client == client)
@@ -106,6 +157,10 @@ impl DesktopWindows {
     }
     pub fn minimized(&self, client: ClientId) -> bool {
         self.enabled && self.get(client).is_some_and(|w| w.minimized)
+    }
+    /// Whether this window is put away with its app ([`DesktopWindow::hidden`]).
+    pub fn hidden(&self, client: ClientId) -> bool {
+        self.minimized(client) && self.get(client).is_some_and(|w| w.hidden)
     }
     pub fn raise(&mut self, client: ClientId) {
         if let Some(i) = self.windows.iter().position(|w| w.client == client) {
@@ -146,6 +201,35 @@ pub fn fit(mut r: LRect, area: LRect) -> LRect {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn a_window_its_app_resizes_keeps_its_corner_and_stays_in_the_room() {
+        let area = LRect::new(0.0, 30.0, 1400.0, 870.0);
+        // Grows from the top left.
+        let r = resized(LRect::new(100.0, 70.0, 252.0, 425.0), 300.0, 0.0, area, 0.0);
+        assert_eq!(r, LRect::new(100.0, 70.0, 552.0, 425.0));
+        // And back to where it was.
+        assert_eq!(resized(r, -300.0, 0.0, area, 0.0), LRect::new(100.0, 70.0, 252.0, 425.0));
+        // At the right edge it moves back in rather than leaving the room.
+        let r = resized(LRect::new(1200.0, 70.0, 180.0, 425.0), 200.0, 0.0, area, 0.0);
+        assert_eq!(r, LRect::new(1020.0, 70.0, 380.0, 425.0));
+        // Never larger than the room above a floating dock, never below the minimum.
+        let r = resized(LRect::new(0.0, 30.0, 1000.0, 800.0), 0.0, 900.0, area, 70.0);
+        assert_eq!((r.h, r.y), (800.0, 30.0));
+        let r = resized(LRect::new(10.0, 40.0, 100.0, 100.0), -500.0, -500.0, area, 0.0);
+        assert_eq!((r.w, r.h), (MIN_W, MIN_H));
+    }
+    #[test]
+    fn hidden_is_a_kind_of_minimized() {
+        let area = LRect::new(0.0, 30.0, 1200.0, 800.0);
+        let mut d = DesktopWindows::default();
+        d.enabled = true;
+        d.ensure(1, area);
+        d.get_mut(1).unwrap().hidden = true;
+        assert!(!d.hidden(1), "a window on the desk isn't hidden, whatever the flag says");
+        d.get_mut(1).unwrap().minimized = true;
+        assert!(d.hidden(1) && d.minimized(1));
+        assert_eq!(d.rects(&[1], area).len(), 0, "off the desk, as a minimized window is");
+    }
     #[test]
     fn maximize_and_minimize_keep_restore_rect_and_stack() {
         let area = LRect::new(0.0, 30.0, 1200.0, 800.0);
@@ -196,6 +280,47 @@ mod tests {
             LRect::new(230.0, 212.0, 300.0, 200.0)
         );
     }
+    #[test]
+    fn a_smaller_desk_keeps_a_window_that_was_wholly_on_it() {
+        let before = LRect::new(0.0, 30.0, 1400.0, 870.0);
+        let area = LRect::new(0.0, 30.0, 700.0, 530.0);
+        let mut d = DesktopWindows { enabled: true, dock: 78.0, ..Default::default() };
+        d.ensure_sized(1, before, Some((994.0, 639.0)), 78.0);
+        // A window a person left half off the desk.
+        d.ensure_sized(2, before, Some((400.0, 300.0)), 78.0);
+        let left_off = LRect::new(1200.0, 100.0, 400.0, 300.0);
+        d.get_mut(2).unwrap().rect = left_off;
+        // One that fits as it is, and only moves in.
+        d.ensure_sized(3, before, Some((300.0, 200.0)), 78.0);
+        d.get_mut(3).unwrap().rect = LRect::new(900.0, 600.0, 300.0, 200.0);
+        let kept = d.clone();
+        d.desk_shrank(before, area, 0.0);
+        // Its bottom ends at the dock's top, no longer behind the dock.
+        assert_eq!(d.get(1).unwrap().rect, LRect::new(0.0, 30.0, 700.0, 452.0));
+        assert_eq!(d.get(2).unwrap().rect, left_off);
+        assert_eq!(d.get(3).unwrap().rect, LRect::new(400.0, 282.0, 300.0, 200.0));
+        // A Mac's keeps the desk's outer gap above its Dock: the foot never meets it.
+        let mut d = kept;
+        d.desk_shrank(before, area, 10.0);
+        assert_eq!(d.get(1).unwrap().rect, LRect::new(0.0, 30.0, 700.0, 442.0));
+        assert_eq!(d.get(2).unwrap().rect, left_off);
+        assert_eq!(d.get(3).unwrap().rect, LRect::new(400.0, 272.0, 300.0, 200.0));
+    }
+
+    #[test]
+    fn a_reopened_window_comes_back_where_it_was() {
+        let area = LRect::new(0.0, 30.0, 1200.0, 800.0);
+        let mut d = DesktopWindows::default();
+        d.ensure(1, area);
+        d.get_mut(1).unwrap().rect = LRect::new(300.0, 200.0, 500.0, 400.0);
+        d.reopen_as(1);
+        d.ensure(2, area);
+        assert_eq!(d.get(2).unwrap().rect, LRect::new(300.0, 200.0, 500.0, 400.0));
+        // Only that one.
+        d.ensure(3, area);
+        assert_ne!(d.get(3).unwrap().rect, LRect::new(300.0, 200.0, 500.0, 400.0));
+    }
+
     #[test]
     fn without_a_hint_a_window_opens_at_the_default_size() {
         // 72% x 76% of the desk, at most 1000 x 720, 42 and 32 points in.

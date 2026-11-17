@@ -179,7 +179,7 @@ mod tests {
         focus_event(&dir, added["id"].as_str().unwrap()).unwrap();
         let screen = view(&dir, &json!({"month":"2026-09","day":"2026-09-01"}), now).unwrap();
         assert_eq!(screen["day"], "2026-10-06");
-        assert_eq!(screen["events"][0]["time"], "09:00 PDT");
+        assert_eq!(screen["events"][0]["time"], "9:00 AM PDT");
         assert_eq!(screen["focused"]["id"], added["id"]);
         assert!(screen["weeks"]
             .as_array()

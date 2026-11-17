@@ -435,6 +435,44 @@ fn new_conversation_clears_and_reloads() {
     assert_eq!(fake.sent("session/hydrate").len(), 2, "history reloaded after");
 }
 
+/// The kernel answers `/new`'s `turn/start` before it has cleared anything
+/// and says "Session cleared." in that turn: the old conversation must not
+/// come back meanwhile, and the kernel's words are not the conversation.
+#[test]
+fn a_new_conversation_stays_empty_while_the_kernel_clears() {
+    let (mut d, fake) = opened();
+    fake.s().history = json!([{"role": "user", "content": "old words"}]);
+    d.command(Command::NewConversation);
+    settle(&mut d);
+    assert!(d.model.items.is_empty(), "{:?}", d.model.items);
+    let turn = fake.sent("turn/start")[0]["turn_id"].clone();
+    fake.s().history = json!([
+        {"role": "user", "content": "/new", "turn_id": turn},
+        {"role": "assistant", "content": "Session cleared.", "turn_id": turn},
+    ]);
+    fake.notify("turn/started", json!({"turn_id": turn}));
+    fake.notify("message/delta", json!({"turn_id": turn, "text": "Session cleared."}));
+    fake.notify("turn/completed", json!({"turn_id": turn}));
+    settle(&mut d);
+    assert_eq!(fake.sent("session/hydrate").len(), 3, "read again when the kernel has cleared");
+    assert!(d.model.items.is_empty(), "{:?}", d.model.items);
+    assert_eq!(d.model.phase(), &Phase::Ready);
+}
+
+#[test]
+fn a_reload_leaves_out_the_kernels_new_command() {
+    let mut m = ChatModel::new();
+    m.load_history(&json!([
+        {"seq": 1, "role": "user", "content": "before"},
+        {"seq": 2, "role": "user", "content": "/new", "thread_id": "t0"},
+        {"seq": 3, "role": "assistant", "content": "Session cleared.", "thread_id": "t0"},
+        {"seq": 4, "role": "user", "content": "hi", "thread_id": "t1"},
+        {"seq": 5, "role": "assistant", "content": "Hello.", "thread_id": "t1"},
+    ]));
+    assert_eq!(text_of(&m, Role::User), ["before", "hi"]);
+    assert_eq!(text_of(&m, Role::Assistant), ["Hello."]);
+}
+
 #[test]
 fn a_kernel_restart_resumes_the_same_session() {
     let (mut d, fake) = opened();

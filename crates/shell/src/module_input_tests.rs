@@ -16,6 +16,7 @@
 use crate::module_host::ModuleHost;
 use crate::module_view::MpModuleView;
 use crate::run_view::MpRunViewAction;
+use crate::tile::TileHost;
 use makepad_ai_services::wire::{ServiceCall, ServiceManifest, ToolResult};
 use makepad_app_module::*;
 use makepad_platform::event::{TouchPoint, TouchState, TouchUpdateEvent};
@@ -128,6 +129,8 @@ enum Root {
     Gesture,
     /// Makepad's own Button.
     Button,
+    /// A document and, over it, the buttons of two sheets that answer the keyboard.
+    Sheets,
 }
 
 struct InputProbe {
@@ -162,6 +165,20 @@ impl AppModule for InputProbe {
                 let value = script_eval!(vm, { use mod.widgets.* Button { text: "Read" } });
                 WidgetRef::script_from_value(vm, value)
             }
+            Root::Sheets => {
+                let value = script_eval!(vm, {
+                    use mod.prelude.widgets.*
+                    View{width: Fill height: Fill flow: Overlay
+                        doc := TextInput{width: Fill height: 30 text: ""}
+                        lower := Button{visible: false key_default: true key_cancel: true text: "Done"}
+                        upper := Button{visible: false key_default: true key_cancel: true text: "Cancel"}
+                        kept := View{visible: false new_batch: true width: Fill height: Fill
+                            kept_ok := Button{key_default: true key_cancel: true text: "OK"}
+                        }
+                    }
+                });
+                WidgetRef::script_from_value(vm, value)
+            }
             Root::Tappable | Root::Inert => {
                 let value = script_eval!(vm, { use mod.widgets.* TapProbe {} });
                 let root = WidgetRef::script_from_value(vm, value);
@@ -191,6 +208,7 @@ static MAIL: InputProbe = InputProbe { id: "mail-probe", root: Root::Inert };
 static GESTURE_NEWS: InputProbe = InputProbe { id: "gesture-probe", root: Root::Gesture };
 /// News with makepad's Button under the pointer, as its tab bar has them.
 static BUTTON_NEWS: InputProbe = InputProbe { id: "button-probe", root: Root::Button };
+static SHEETS: InputProbe = InputProbe { id: "sheets-probe", root: Root::Sheets };
 
 fn setup() -> (Cx, ModuleHost) {
     let mut cx = Cx::new(Box::new(|_, _| {}));
@@ -573,4 +591,224 @@ fn a_press_on_a_host_sheet_over_a_card_app_is_not_the_apps() {
     sheet(&mut cx, &mut host, false);
     assert_eq!(click(&mut cx, &[&card], inside), [Asked::Raise(1), Asked::Press(1)], "the sheet gone");
     close(cx, host, vec![card], frame, &[1]);
+}
+
+/// Commit the pending focus, as the platform does after every event.
+fn settle_focus(cx: &mut Cx) {
+    cx.send_trigger(Area::Empty, Trigger { id: live_id!(test_focus_settle), from: Area::Empty });
+    cx.handle_triggers();
+}
+
+fn sheets_part(cx: &mut Cx, host: &mut ModuleHost, id: LiveId) -> (WidgetUid, Area) {
+    host.dispatch(cx, 1, "a test read", |cx, root| {
+        widget_tree::set_ui_root(cx, root);
+        let part = root.widget(cx, &[id]);
+        assert!(part.widget_uid() != WidgetUid(0), "the probe has this part");
+        (part.widget_uid(), part.area())
+    })
+    .unwrap()
+}
+
+/// Switching windows remembers only each module's own field. A click that
+/// asks for a different field in the same event must not be overwritten.
+#[test]
+fn module_focus_returns_to_its_own_widget_without_stealing_a_new_request() {
+    let (mut cx, mut host) = setup();
+    create(&mut cx, &mut host, 1, &SHEETS);
+    create(&mut cx, &mut host, 2, &SHEETS);
+    let first = tile(&mut cx, &host, 1);
+    let second = tile(&mut cx, &host, 2);
+    let frame = draw_stack(&mut cx, &[(&first, at(20.0, 40.0)), (&second, at(460.0, 40.0))]);
+    let doc = |cx: &mut Cx, host: &mut ModuleHost, client| {
+        host.dispatch(cx, client, "a test field", |cx, root| {
+            widget_tree::set_ui_root(cx, root);
+            root.widget(cx, ids!(doc)).area()
+        }).unwrap()
+    };
+    let a = doc(&mut cx, &mut host, 1);
+    let b = doc(&mut cx, &mut host, 2);
+    assert!(a.is_valid(&cx) && b.is_valid(&cx) && a != b);
+    assert!(first.borrow_mut::<MpModuleView>().unwrap().focus_keyboard(&mut cx));
+    cx.set_key_focus(a);
+    settle_focus(&mut cx);
+
+    // A press in the second field asks for its focus before the WM tells
+    // the first tile to release. That new request belongs to the press.
+    cx.set_key_focus(b);
+    first.borrow_mut::<MpModuleView>().unwrap().release_keyboard(&mut cx);
+    assert_eq!(cx.next_key_focus(), b);
+    assert!(second.borrow_mut::<MpModuleView>().unwrap().focus_keyboard(&mut cx));
+    settle_focus(&mut cx);
+    assert_eq!(cx.key_focus(), b);
+
+    // Returning to an empty toolbar restores the first field, not the
+    // second window's. A fresh request still wins over that bookmark.
+    second.borrow_mut::<MpModuleView>().unwrap().release_keyboard(&mut cx);
+    assert!(first.borrow_mut::<MpModuleView>().unwrap().focus_keyboard(&mut cx));
+    settle_focus(&mut cx);
+    assert_eq!(cx.key_focus(), a);
+    first.borrow_mut::<MpModuleView>().unwrap().release_keyboard(&mut cx);
+    assert!(second.borrow_mut::<MpModuleView>().unwrap().focus_keyboard(&mut cx));
+    settle_focus(&mut cx);
+    assert_eq!(cx.key_focus(), b);
+    second.borrow_mut::<MpModuleView>().unwrap().release_keyboard(&mut cx);
+    cx.set_key_focus(b);
+    assert!(first.borrow_mut::<MpModuleView>().unwrap().focus_keyboard(&mut cx));
+    assert_eq!(cx.next_key_focus(), b);
+
+    close(cx, host, vec![first, second], frame, &[1, 2]);
+}
+
+/// In the real WM, Clicked arrives as a later Actions event: by release,
+/// the new window's field may already have received the keyboard.
+#[test]
+fn module_remembers_focus_before_another_window_already_took_it() {
+    let (mut cx, mut host) = setup();
+    create(&mut cx, &mut host, 1, &SHEETS);
+    create(&mut cx, &mut host, 2, &SHEETS);
+    let first = tile(&mut cx, &host, 1);
+    let second = tile(&mut cx, &host, 2);
+    let frame = draw_stack(&mut cx, &[(&first, at(20.0, 40.0)), (&second, at(460.0, 40.0))]);
+    let doc = |cx: &mut Cx, host: &mut ModuleHost, client| {
+        host.dispatch(cx, client, "a test field", |cx, root| {
+            widget_tree::set_ui_root(cx, root);
+            root.widget(cx, ids!(doc)).area()
+        }).unwrap()
+    };
+    let a = doc(&mut cx, &mut host, 1);
+    let b = doc(&mut cx, &mut host, 2);
+    assert!(first.borrow_mut::<MpModuleView>().unwrap().focus_keyboard(&mut cx));
+    cx.set_key_focus(a);
+    settle_focus(&mut cx);
+    first.borrow_mut::<MpModuleView>().unwrap().remember_keyboard(&mut cx);
+
+    cx.set_key_focus(b);
+    settle_focus(&mut cx);
+    first.borrow_mut::<MpModuleView>().unwrap().release_keyboard(&mut cx);
+    assert_eq!(cx.next_key_focus(), b, "the new window already owns this focus");
+    assert!(second.borrow_mut::<MpModuleView>().unwrap().focus_keyboard(&mut cx));
+    settle_focus(&mut cx);
+    assert_eq!(cx.key_focus(), b);
+    second.borrow_mut::<MpModuleView>().unwrap().release_keyboard(&mut cx);
+    assert!(first.borrow_mut::<MpModuleView>().unwrap().focus_keyboard(&mut cx));
+    settle_focus(&mut cx);
+    assert_eq!(cx.key_focus(), a, "the first window gets its own field back");
+
+    close(cx, host, vec![first, second], frame, &[1, 2]);
+}
+
+fn show_sheet(cx: &mut Cx, host: &mut ModuleHost, app: &WidgetRef, id: LiveId, up: bool, frame: &mut Frame) {
+    host.dispatch(cx, 1, "a test sheet", |cx, root| {
+        widget_tree::set_ui_root(cx, root);
+        root.widget(cx, &[id]).set_visible(cx, up);
+    })
+    .unwrap();
+    *frame = draw_stack(cx, &[(app, at(20.0, 40.0))]);
+    settle_focus(cx);
+}
+
+/// A key on the tile, as a person's arrives: which buttons answered it, and what the tile asked for.
+fn press_key(cx: &mut Cx, app: &WidgetRef, key_code: KeyCode) -> (Vec<WidgetUid>, Vec<Asked>) {
+    let event = Event::KeyDown(KeyEvent { key_code, ..Default::default() });
+    let actions = cx.capture_actions(|cx| app.handle_event(cx, &event, &mut Scope::empty()));
+    settle_focus(cx);
+    let widgets = actions.iter().filter_map(|action| action.as_widget_action());
+    let answered = widgets.clone().filter(|wa| matches!(wa.cast::<ButtonAction>(), ButtonAction::Clicked(_)));
+    let asked = widgets.clone().filter_map(|wa| match wa.cast::<MpRunViewAction>() {
+        MpRunViewAction::Pressed { client } => Some(Asked::Press(client)),
+        _ => None,
+    });
+    (answered.map(|wa| wa.widget_uid).collect(), asked.collect())
+}
+
+/// Before, Return on Writer's delete question pressed Cancel and typed a newline into the
+/// document under it, and Return on a stacked sheet pressed the sheet under it as well.
+#[test]
+fn a_sheet_with_key_buttons_owns_the_keyboard() {
+    let (mut cx, mut host) = setup();
+    create(&mut cx, &mut host, 1, &SHEETS);
+    let app = tile(&mut cx, &host, 1);
+    let mut frame = draw_stack(&mut cx, &[(&app, at(20.0, 40.0))]);
+    assert!(app.borrow_mut::<MpModuleView>().unwrap().focus_keyboard(&mut cx));
+    let (_, doc) = sheets_part(&mut cx, &mut host, live_id!(doc));
+    cx.set_key_focus(doc);
+    settle_focus(&mut cx);
+    assert!(cx.has_key_focus(doc));
+    assert_eq!(press_key(&mut cx, &app, KeyCode::ReturnKey), (vec![], vec![]), "no sheet: nothing answers");
+    // Return leaves a one-line field.
+    cx.set_key_focus(doc);
+    settle_focus(&mut cx);
+
+    show_sheet(&mut cx, &mut host, &app, live_id!(lower), true, &mut frame);
+    assert!(cx.key_focus().is_empty(), "the document lets go under a sheet");
+    let (lower, _) = sheets_part(&mut cx, &mut host, live_id!(lower));
+    assert_eq!(press_key(&mut cx, &app, KeyCode::ReturnKey), (vec![lower], vec![Asked::Press(1)]), "Return is a press on its button");
+    assert_eq!(press_key(&mut cx, &app, KeyCode::Escape), (vec![lower], vec![Asked::Press(1)]), "and so is Escape");
+    assert_eq!(press_key(&mut cx, &app, KeyCode::KeyX).0, vec![], "other keys press nothing");
+
+    show_sheet(&mut cx, &mut host, &app, live_id!(upper), true, &mut frame);
+    let (upper, _) = sheets_part(&mut cx, &mut host, live_id!(upper));
+    assert_eq!(press_key(&mut cx, &app, KeyCode::ReturnKey).0, vec![upper], "only the frontmost sheet answers");
+    show_sheet(&mut cx, &mut host, &app, live_id!(upper), false, &mut frame);
+    assert!(cx.key_focus().is_empty(), "the sheet under it still has the keyboard");
+    assert_eq!(press_key(&mut cx, &app, KeyCode::ReturnKey).0, vec![lower], "and answers again");
+
+    show_sheet(&mut cx, &mut host, &app, live_id!(lower), false, &mut frame);
+    let (_, doc) = sheets_part(&mut cx, &mut host, live_id!(doc));
+    assert!(cx.has_key_focus(doc), "the document has the keyboard back when the sheet leaves");
+    close(cx, host, vec![app], frame, &[1]);
+}
+
+/// A script sheet keeps its own draw list, so most frames don't draw its buttons. Before,
+/// such a frame read as the sheet leaving: the document had the keyboard back under the
+/// sheet, and the frame after that took it from whatever had it then, an open menu too.
+#[test]
+fn a_kept_sheet_still_owns_the_keyboard() {
+    let (mut cx, mut host) = setup();
+    create(&mut cx, &mut host, 1, &SHEETS);
+    let app = tile(&mut cx, &host, 1);
+    let mut frame = draw_stack(&mut cx, &[(&app, at(20.0, 40.0))]);
+    assert!(app.borrow_mut::<MpModuleView>().unwrap().focus_keyboard(&mut cx));
+    let (_, doc) = sheets_part(&mut cx, &mut host, live_id!(doc));
+    cx.set_key_focus(doc);
+    settle_focus(&mut cx);
+
+    show_sheet(&mut cx, &mut host, &app, live_id!(kept), true, &mut frame);
+    assert!(cx.key_focus().is_empty(), "the document lets go under the sheet");
+    let (ok, _) = sheets_part(&mut cx, &mut host, live_id!(kept_ok));
+    for _ in 0..3 {
+        // Nothing in the sheet changed: this frame keeps its list and draws none of it.
+        frame = draw_stack(&mut cx, &[(&app, at(20.0, 40.0))]);
+        settle_focus(&mut cx);
+        assert!(app.borrow_mut::<MpModuleView>().unwrap().sheet_owns_keyboard(), "the sheet is still up");
+        assert!(cx.key_focus().is_empty(), "and the document hasn't the keyboard back");
+    }
+    assert_eq!(press_key(&mut cx, &app, KeyCode::Escape), (vec![ok], vec![Asked::Press(1)]), "its button still answers");
+
+    show_sheet(&mut cx, &mut host, &app, live_id!(kept), false, &mut frame);
+    assert!(!app.borrow_mut::<MpModuleView>().unwrap().sheet_owns_keyboard());
+    let (_, doc) = sheets_part(&mut cx, &mut host, live_id!(doc));
+    assert!(cx.has_key_focus(doc), "the document has the keyboard back when the sheet leaves");
+    assert_eq!(press_key(&mut cx, &app, KeyCode::Escape), (vec![], vec![]), "a hidden sheet's button answers nothing");
+    close(cx, host, vec![app], frame, &[1]);
+}
+
+/// A background window's sheet coming up: the person goes on typing where they are.
+#[test]
+fn a_sheet_in_a_window_behind_leaves_the_keyboard_alone() {
+    let (mut cx, mut host) = setup();
+    create(&mut cx, &mut host, 1, &SHEETS);
+    let app = tile(&mut cx, &host, 1);
+    let mut frame = draw_stack(&mut cx, &[(&app, at(20.0, 40.0))]);
+    // No focus on this tile: this field stands in for one in the window that has it.
+    let (_, elsewhere) = sheets_part(&mut cx, &mut host, live_id!(doc));
+    cx.set_key_focus(elsewhere);
+    settle_focus(&mut cx);
+    show_sheet(&mut cx, &mut host, &app, live_id!(lower), true, &mut frame);
+    let (_, elsewhere) = sheets_part(&mut cx, &mut host, live_id!(doc));
+    assert!(cx.has_key_focus(elsewhere));
+    show_sheet(&mut cx, &mut host, &app, live_id!(lower), false, &mut frame);
+    let (_, elsewhere) = sheets_part(&mut cx, &mut host, live_id!(doc));
+    assert!(cx.has_key_focus(elsewhere));
+    close(cx, host, vec![app], frame, &[1]);
 }

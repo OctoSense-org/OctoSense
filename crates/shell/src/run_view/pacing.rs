@@ -1,5 +1,36 @@
 //! Tick credit from Makepad WM: retain one missed timer beat while a child
 //! works, then send it on acknowledgement. Older children get a 50 ms retry.
+/// A child's clock. It draws and runs its timers on the beats, so they stay at full
+/// speed while anything happens. One with nothing new to show needs far fewer, and each
+/// beat wakes every widget in the shell. Under a text cursor's blink, so that a terminal
+/// at rest counts as quiet.
+pub(super) const TICK_FULL: f64 = 0.008;
+pub(super) const TICK_QUIET: f64 = 0.05;
+const QUIET_AFTER: f64 = 0.25;
+
+#[derive(Default)]
+pub(super) struct TickRate {
+    last_activity: f64,
+    quiet: bool,
+}
+
+impl TickRate {
+    /// Something happened. True when the clock must go back to full speed.
+    pub fn stir(&mut self, now: f64) -> bool {
+        self.last_activity = now;
+        std::mem::take(&mut self.quiet)
+    }
+
+    /// On a beat. True when the clock may slow down now.
+    pub fn settle(&mut self, now: f64) -> bool {
+        if self.quiet || now - self.last_activity < QUIET_AFTER {
+            return false;
+        }
+        self.quiet = true;
+        true
+    }
+}
+
 #[derive(Default)]
 pub(super) struct TickPacer {
     outstanding: Option<f64>,
@@ -35,6 +66,19 @@ impl TickPacer {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_quiet_child_slows_once_and_anything_at_all_brings_it_back() {
+        let mut rate = TickRate::default();
+        assert!(!rate.stir(10.0), "already at full speed");
+        assert!(!rate.settle(10.2), "not quiet long enough yet");
+        assert!(rate.settle(10.25));
+        assert!(!rate.settle(10.3), "it slows once");
+        assert!(rate.stir(10.4), "back to full speed");
+        assert!(!rate.stir(10.5), "and only once");
+        assert!(!rate.settle(10.7));
+        assert!(rate.settle(10.75));
+    }
 
     #[test]
     fn slow_child_keeps_one_credit_and_resumes_without_an_extra_timer_delay() {

@@ -298,6 +298,11 @@ pub struct WmLayout {
     /// and the scratchpad console reach past the gap, so they need it; when
     /// it is unset the gap is added back to `area` instead.
     outer: Option<LRect>,
+    /// A Mac's Dock ▸ Options ▸ Assign To ▸ All Desktops: the windows on every
+    /// desktop. Each goes along to the desktop the person goes to
+    /// ([`Self::switch_workspace`]), its frame as it was. The shell keeps the
+    /// list (`App::mac_sync_every_desktop`); empty in every other style.
+    pub every_desktop: Vec<ClientId>,
 }
 
 impl Default for WmLayout {
@@ -323,6 +328,7 @@ impl WmLayout {
             client_fullscreen: Vec::new(),
             scratchpad_open: false,
             outer: None,
+            every_desktop: Vec::new(),
         }
     }
 
@@ -1919,10 +1925,44 @@ impl WmLayout {
 
     pub fn switch_workspace(&mut self, n: usize) {
         if n < WORKSPACES && n != self.active {
+            let from = self.active;
             self.former = self.active;
             self.active = n;
             // binds.hide_special_on_workspace_change = true.
             self.scratchpad_open = false;
+            // A Mac's All Desktops windows come along, the one in front
+            // still in front.
+            if !self.every_desktop.is_empty() {
+                let front = self.workspaces[from].focus.filter(|c| self.every_desktop.contains(c));
+                let focus = self.workspaces[n].focus;
+                for client in self.every_desktop.clone() {
+                    self.move_client_to(client, n);
+                }
+                if let Some(client) = front.or(focus) {
+                    self.workspaces[n].focus = Some(client);
+                }
+            }
+        }
+    }
+
+    /// `client` to workspace `n` as it is (a Mac's Assign To): a desktop
+    /// window keeps its frame and its place in front or behind, and the
+    /// workspace it left keeps its focus on what remains. One full screen,
+    /// on the scratchpad or on no workspace stays where it is.
+    pub fn move_client_to(&mut self, client: ClientId, n: usize) {
+        let Some(from) = self.workspace_of(client) else { return };
+        let full = self.workspaces[from].fullscreen == Some(client) || self.desktop.get(client).is_some_and(|w| w.fullscreen);
+        if n >= WORKSPACES || from >= WORKSPACES || n == from || full {
+            return;
+        }
+        if let Some(f) = self.floats.iter_mut().find(|f| f.client == client) {
+            f.ws = n;
+        } else {
+            self.detach(client);
+            self.insert_at(n, client, LRect::new(0.0, 0.0, 1000.0, 600.0), 0.0, false);
+        }
+        if self.workspaces[from].focus == Some(client) {
+            self.workspaces[from].focus = self.visible_clients_on(from).first().copied();
         }
     }
 
@@ -2058,6 +2098,34 @@ mod tests {
         l.insert(2, AREA, 0.0);
         l.insert(3, AREA, 0.0);
         l
+    }
+
+    /// A Mac's Assign To ▸ All Desktops: the window goes along to every
+    /// desktop the person goes to, its frame as it was and in front where it
+    /// was in front; the others stay on theirs. This Desktop moves one.
+    #[test]
+    fn a_window_on_every_desktop_comes_along_and_the_others_stay() {
+        let mut l = WmLayout::new();
+        l.desktop.enabled = true;
+        l.insert(1, AREA, 0.0);
+        l.insert(2, AREA, 0.0);
+        let frame = l.desktop.get(1).unwrap().rect;
+        l.every_desktop = vec![1];
+        l.set_focus(1);
+        l.switch_workspace(1);
+        assert_eq!((l.workspace_of(1), l.workspace_of(2)), (Some(1), Some(0)));
+        assert_eq!(l.focused_client(), Some(1), "in front where it was in front");
+        assert_eq!(l.desktop.get(1).unwrap().rect, frame, "its frame as it was");
+        assert_eq!(l.workspaces[0].focus, Some(2), "the desktop it left keeps the other");
+        l.switch_workspace(0);
+        assert_eq!(l.workspace_of(1), Some(0));
+        l.every_desktop.clear();
+        l.switch_workspace(1);
+        assert_eq!(l.workspace_of(1), Some(0), "no longer assigned, it stays");
+        l.move_client_to(2, 1);
+        assert_eq!((l.workspace_of(2), l.desktop.get(2).is_some()), (Some(1), true));
+        l.move_client_to(2, WORKSPACES);
+        assert_eq!(l.workspace_of(2), Some(1), "never to the scratchpad");
     }
 
     #[test]

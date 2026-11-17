@@ -37,7 +37,7 @@ The desktop shell of [OctoSense](https://github.com/OctoSense-org), the agent sh
 | `src/main.rs` | The entry point (package `octosense`): `octosense_main!()` over the shell's `App`. The shell (tiling, launcher, dock, bar, hosting, the app registry, `shell/`, `octosense/`) is [`../crates/shell/src`](../crates/shell/src). |
 | `config/apps.json` | The default developer-program catalog: the Makepad apps OctoSense picked (`pick` in `apps.overlay.json`), each also a native app in [`../native-apps.json`](../native-apps.json). `apps.makepad.json`, for `--apps`, has every app upstream's registry curates; `apps.overlay.json` holds the adaptations applied when regenerating both. |
 | `system-apps.json` | Which system apps this build packs, and from where (`../apps`). |
-| `scripts/` | `package.py` (the release packages, [Release builds](#release-builds)), `upstream.py` (WM provenance and catalog regeneration), `smoke.py` (native smoke test), their Python tests, `system_apps_remote.sh`, `ai_providers_remote.sh` and `glance_remote.sh` (hidden `--remote` end-to-end runs of the system apps and of AI providers), and `provision-appcard-llm.sh` (Android). |
+| `scripts/` | `package.py` (the release packages, [Release builds](#release-builds)), `upstream.py` (WM provenance and catalog regeneration), `smoke.py` (native smoke test), their Python tests, `system_apps_remote.sh`, `ai_providers_remote.py` and `glance_remote.sh` (hidden `--remote` end-to-end runs of the system apps and of AI providers), and `provision-appcard-llm.sh` (Android). |
 | `packaging/` | The release packages' cargo-packager config (`release.json`), app icon (`icons/`, `make_icons.py`) and macOS `Info.plist` additions and entitlements. |
 | `upstream/makepad.json` | Provenance of every file imported from Makepad's `apps/wm`. |
 | `resources/android/` | The Android manifest template. Themes, wallpapers, icons and the startup script are the shell's, in [`../crates/shell/resources`](../crates/shell/resources). |
@@ -233,7 +233,7 @@ The launcher lists four kinds of app together:
 
 | Kind | Comes from | Runs as | Launcher id |
 | --- | --- | --- | --- |
-| **System apps**: News, Photos, Maps, Mail, Calendar (desktop only), AI providers, YouTube, Quick Deck, PDF Tools and Writer (all three desktop only: their `deck`, `pdf` and `word` engines are behind `craft-engines`; Camera ships on the phone only) | `../apps/<name>/bundle`, selected by `system-apps.json`, packed into the build | Contained Splash programs in App Hub's Card runner, each with verified app identity, an isolated store and the host consent boundary | `<name>` (manifest id `os.<name>`) |
+| **System apps**: News, Photos, Maps, Mail, Calendar (desktop only), System Settings (desktop only), AI providers, YouTube, Quick Deck, PDF Tools and Writer (all three desktop only: their `deck`, `pdf` and `word` engines are behind `craft-engines`; Camera ships on the phone only) | `../apps/<name>/bundle`, selected by `system-apps.json`, packed into the build | Contained Splash programs in App Hub's Card runner, each with verified app identity, an isolated store and the host consent boundary | `<name>` (manifest id `os.<name>`) |
 | **Store apps** | The signed App Hub catalog, installed from the store (`apphub`) | The same Card runner. Every open is checked against the catalog; an update closes old instances. | `hub:<manifest-id>` |
 | **Native modules** | Rust crates linked into this binary | In-process `AppModule`s. Trusted code only: App Hub, AppCard, Rinx, Reference and the `app-*` features. | module id |
 | **Developer programs** | `config/apps.json` | Separate processes in tiles, over Makepad's `--stdin-loop` hosting protocol, built on first launch | catalog `id` |
@@ -308,6 +308,8 @@ Open **App Hub**, choose the app, **Get**, scroll to **Install**, then **Open**:
 ### Developer programs and the catalog
 
 `config/apps.json` lists Reference and the Makepad apps OctoSense picked (Browser, Files, Task, Terminal, Sheets, Clock, Weather, Finance, Notes, Reminders, Calculator, Route, and the Image and PDF viewers). Calculator, Clock, Notes, Reminders and Weather are native apps ([`../native-apps.json`](../native-apps.json)): linked by default and opened in-process, on the desktop and on the phone, with their read tools offered to the system agent while they are open. Task is a native app that runs only as its own process (`"module": null`), sandboxed. Terminal is also linked (`app-terminal`, on by default); its `config/apps.json` row is the process form it opens in on macOS and Windows, and the linked module is the in-process form. The `aichat` row is the assistant pane's own process (F10), which the pane starts; no list shows it. A launcher row whose id is listed in `wm/launcher.hides` under the state directory is hidden.
+
+On macOS the F10 pane opens compactly. Drag its lower edge to make more room, or double-click its title to restore the initial size.
 
 Catalog lookup: `--apps <file>` if given, else `~/.octosense/apps.json` if it exists, else `config/apps.json`. A catalog is a JSON array; each entry picks one launch target:
 
@@ -420,10 +422,11 @@ Phone builds of this package always link Reference and Sheets and the octos kern
 
 ## Desktop styles and settings
 
-- Eight desktop styles. Desktop builds start in **OctoSense**, with Liquid Glass frames and a **Light / Dark** switch in the top bar; the others are Omarchy, macOS, Windows, Windows 2000, NeXTSTEP, iOS and Android. Theme sources are in `../crates/shell/resources/themes/`, wallpaper provenance in [crates/shell/resources/wallpapers/README.md](../crates/shell/resources/wallpapers/README.md).
+- Eight desktop styles. A build on a Mac starts in **macOS**: a translucent menu bar with the focused app's name and the clock at the right edge, the system mark's menu holding the style list, traffic lights, and a light or dark appearance from the bar's sun or moon. Other desktops start in **OctoSense**, with Liquid Glass frames and a **Light / Dark** switch in the top bar; the others are Omarchy, macOS, Windows, Windows 2000, NeXTSTEP, iOS and Android. Theme sources are in `../crates/shell/resources/themes/`, wallpaper provenance in [crates/shell/resources/wallpapers/README.md](../crates/shell/resources/wallpapers/README.md).
 - **Full screen.** A window's green button or ⌘F makes it full screen, as on macOS. It covers the whole screen, and the top bar, its own title bar and the dock hide. Rest the pointer on the top edge for the bar and the window's title bar (whose green button leaves full screen), or on the bottom edge for the dock. Each goes back shortly after the pointer leaves it, and stays out while a menu it opened is showing. To maximize instead, above the dock, Option-click the green button, press ⌘⌥F or double-click the title bar.
 - **An app's presentation.** An app can make its own window full screen from a tap or click, for a slideshow or a reading mode (`window.fullscreen`). Then no edge brings the bar, the title bar or the dock out, and the OctoSense window enters full screen as well, unless it is already, and leaves it again afterwards. **Esc** ends the presentation, and a hint says so for three seconds. Entering full screen on a real display this way is **unverified**.
 - **The dock in full screen.** When the OctoSense window itself is full screen (on macOS, the green button or ⌃⌘F), the OctoSense and macOS styles hide their dock the same way, as macOS hides its Dock beside a full-screen app; meanwhile new windows may use the full height. In a window with nothing full screen, the dock always shows. Under Wayland a maximized window counts as full screen; makepad reports no full screen on Windows or X11, so there the dock hides only for a full-screen window inside OctoSense. A hidden shell gets each behaviour with `MAKEPAD_HIDE_WINDOWS=1 MAKEPAD_REMOTE=127.0.0.1:8932 target/debug/octosense --test-action launch-calculator --test-action fullscreen` (a window) or `--test-action host-fullscreen` (the OctoSense window). On a real display, both are **unverified**.
+- **A Dock icon's menu.** In the macOS style, a right click on a Dock icon opens its menu. An app that isn't running offers Open. A running app lists its windows, then Hide and Quit, with New Window for an app that can open another. A minimized window's thumbnail offers Open and Close. A right click on the bare desktop opens a small menu at the pointer: Appearance, Keyboard Shortcuts and More Settings.
 - Keys: **⌘Space** menu, **⌘W** close tile, **⌘F** tile fullscreen, **⌘1…0** workspaces, **⌘Shift1…0** move tile. On macOS, **⌘A** selects all in the focused app; **Ctrl+Alt+A** remains the window manager's alternate-layer prefix. **Learn → Keybindings** lists them; see [KEYBINDINGS.md](KEYBINDINGS.md).
 - State lives in `~/.octosense` (`OCTOSENSE_HOME`); hosted apps get it as `MAKEPAD_HOME`.
 - Local models for the AI pane (**F10**): [docs/local-ai.md](docs/local-ai.md). The desktop works without a model.
@@ -460,13 +463,15 @@ python3 -m unittest discover -s desktop/scripts -p 'test_*.py'
 python3 desktop/scripts/upstream.py catalog
 ```
 
-Native smoke tests open their own windows, isolate state in a temporary directory and drive the shell over the remote bridge. They need GUI access and a prior release build (**unverified** since the move into `desktop/`: `smoke.py` still looks for Reference at `desktop/apps/reference`):
+Native smoke tests hide their windows, isolate state in a temporary directory and drive the shell over the remote bridge. They need a logged-in session and a prior release build. A hosted app has no instrument of its own under its sandbox, so they read it through the shell's `client-widgets` route, and they switch styles by the row's test route:
 
 ```sh
 cargo build --release --locked -p octosense
 python3 desktop/scripts/smoke.py --styles
-python3 desktop/scripts/smoke.py --cargo-run --default-catalog
+python3 desktop/scripts/smoke.py --default-catalog
 ```
+
+`--cargo-run` starts the shell through `cargo run` instead (**unverified**).
 
 Results for each change are recorded in [docs/validation.md](docs/validation.md).
 

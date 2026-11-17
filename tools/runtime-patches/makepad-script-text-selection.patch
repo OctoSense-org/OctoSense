@@ -1,0 +1,14 @@
+diff --git a/widgets/src/text_input.rs b/widgets/src/text_input.rs
+--- a/widgets/src/text_input.rs
++++ b/widgets/src/text_input.rs
+@@ -2769,6 +2769,10 @@
+         }
+         if method == live_id!(focus) {
+             vm.with_cx_mut(|cx| self.take_key_focus(cx));
++            return ScriptAsyncResult::Return(NIL);
++        }
++        if method == live_id!(select_all) {
++            vm.with_cx_mut(|cx| self.select_all(cx));
+             return ScriptAsyncResult::Return(NIL);
+         }
+         if method == live_id!(set_text) {

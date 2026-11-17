@@ -647,6 +647,8 @@ pub struct CardStatus {
     pub text: String,
     pub suggestion: bool,
     pub unsaved: bool,
+    /// The draft answers a message, as opposed to being a new one.
+    pub reply: bool,
 }
 pub fn card_status(binding: &Binding) -> CardStatus {
     match read(binding) {
@@ -654,6 +656,7 @@ pub fn card_status(binding: &Binding) -> CardStatus {
             text: error,
             suggestion: false,
             unsaved: false,
+            reply: false,
         },
         Ok(value) => {
             let dirty = unsaved().lock().unwrap().get(&binding.draft_key()).cloned();
@@ -666,21 +669,27 @@ pub fn card_status(binding: &Binding) -> CardStatus {
                 .as_array()
                 .and_then(|v| v.last())
                 .is_some_and(|s| s["revision"] == value["revision"]);
+            let mac = crate::shell::menu::MAC_KEYS.load(std::sync::atomic::Ordering::Relaxed);
             CardStatus {
                 text: dirty
                     .as_ref()
                     .map(|d| d.error.clone())
                     .or(action_error)
                     .unwrap_or_else(|| match value["status"].as_str().unwrap_or("draft") {
+                        "draft" | "awaiting_approval" if mac => "Draft saved".into(),
                         "draft" | "awaiting_approval" => {
                             format!("Draft saved · revision {}", value["revision"])
                         }
+                        "accepted" if mac => "Sent".into(),
                         "accepted" => "SMTP accepted · delivery unconfirmed".into(),
+                        "outcome_unknown" if mac => "Mail can't tell whether this was sent. Check Sent.".into(),
                         "outcome_unknown" => "Outcome unknown · check Sent before retrying".into(),
+                        "failed_before_delivery" if mac => "Not sent. Review it to try again.".into(),
                         other => other.replace('_', " "),
                     }),
                 suggestion: suggestion && dirty.is_none(),
                 unsaved: dirty.is_some(),
+                reply: value["in_reply_to"].as_str().is_some_and(|id| !id.is_empty()),
             }
         }
     }

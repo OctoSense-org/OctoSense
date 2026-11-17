@@ -1,6 +1,6 @@
 //! Scoped provider operations and review of immutable remote-write snapshots.
 use crate::{
-    api::{CalendarEvent, GithubFile},
+    api::{CalendarEvent, EventTime, GithubFile},
     host::{connections, operation_lock, with_provider_api},
 };
 use octosense_appstore::services::{self, HostService, Replier, ServiceCall, ServiceHost};
@@ -633,7 +633,12 @@ fn execute_review(review: &Review, api: &mut crate::api::Api<'_>) -> Result<Valu
 }
 
 fn review_snapshot(review: &Review) -> Value {
-    let (title, details, body) = match &review.change {
+    change_snapshot(&review.app, &review.connection, &review.account, &review.change)
+}
+
+/// What a review of a change says. Nothing here can approve it.
+fn change_snapshot(app: &str, connection: &str, account: &str, change: &Change) -> Value {
+    let (title, details, body) = match change {
         Change::Backend(request) => (
             "Submit backend change",
             format!(
@@ -692,13 +697,237 @@ fn review_snapshot(review: &Review) -> Value {
             format!("{}\n{}", event.location, event.description),
         ),
     };
-    json!({"app":review.app,"connection":review.connection,"account":review.account,"title":title,"details":details,"body":body})
+    json!({"app":app,"connection":connection,"account":account,"title":title,"details":details,"body":body,"plain":plain_review(change)})
+}
+
+/// What a review of this request would say, with nothing behind it: no store is
+/// opened, no account is looked up, and these words are all it is. A hidden test
+/// shell's vault is a file, so it cannot reach the OAuth store; its sample sheets
+/// (`--test-action sample-reviews`, `connected_review.rs`) are drawn from this.
+pub fn sample_snapshot(family: &str, app: &str, args: &Value) -> Result<Value, String> {
+    const ACCOUNT: &str = "Sample account";
+    if let Some(backend) = args.get("backend") {
+        let text = |name: &str| backend[name].as_str().unwrap_or("").to_string();
+        let data = json!({"query": backend["query"], "body": backend["body"]});
+        let body = serde_json::to_string_pretty(&data).unwrap_or_default();
+        let plain = backend_plain(&text("origin"), &text("method"), &text("path"), &text("operation"), data);
+        return Ok(json!({"app":app,"connection":"","account":ACCOUNT,"title":"Submit backend change","details":"","body":body,"plain":plain}));
+    }
+    let change = match family {
+        "github" => {
+            let file: GithubFile = serde_json::from_value(args["file"].clone()).map_err(|_| "Invalid Markdown save request")?;
+            file.validate()?;
+            Change::Github(file)
+        }
+        "gcalendar" => {
+            let event: CalendarEvent = serde_json::from_value(args["event"].clone()).map_err(|_| "Invalid event draft")?;
+            event.validate()?;
+            Change::Calendar {
+                calendar: field(args, "calendar")?.to_string(),
+                event,
+                existing: args["event_id"].as_str().map(|id| (id.to_string(), String::new())),
+                create_id: String::new(),
+            }
+        }
+        _ => return Err("No sample of this review".into()),
+    };
+    Ok(change_snapshot(app, "", ACCOUNT, &change))
+}
+
+/// The same change as labelled rows, for a sheet that shows them: what it does,
+/// each exact value under its own label, and the body when it differs. Built
+/// from the fields, so no value can pass for another row.
+fn plain_review(change: &Change) -> Value {
+    match change {
+        Change::Backend(request) => backend_plain(
+            &request.origin,
+            &request.method,
+            &request.path,
+            &request.request.operation,
+            json!({"query": request.request.query, "body": request.request.body}),
+        ),
+        Change::Github(file) => json!({
+            "wants": "save this file to GitHub",
+            "facts": [
+                ["Repository", format!("{}/{}", file.owner, file.repo)],
+                ["Branch", file.branch],
+                ["File", file.path],
+                ["Commit", file.message],
+            ],
+        }),
+        Change::Calendar { calendar, event, existing, .. } => {
+            let mut facts = vec![
+                json!(["Calendar", calendar]),
+                json!(["Event", event.summary]),
+            ];
+            facts.extend(plain_when(&event.start, &event.end).into_iter().map(|(k, v)| json!([k, v])));
+            facts.push(json!(["Location", event.location]));
+            facts.push(json!(["Notes", event.description]));
+            json!({
+                "title": if existing.is_some() { "Update Google Calendar Event" } else { "Create Google Calendar Event" },
+                "wants": if existing.is_some() { "change this event in your Google Calendar" } else { "add this event to your Google Calendar" },
+                "facts": facts,
+                "body": "",
+            })
+        }
+    }
+}
+
+fn backend_plain(origin: &str, method: &str, path: &str, operation: &str, data: Value) -> Value {
+    // What the request does to the address it names, and the whole address.
+    let does = match method {
+        "POST" => "Sends to",
+        "PUT" => "Replaces",
+        "PATCH" => "Changes",
+        "DELETE" => "Deletes",
+        _ => "Requests",
+    };
+    // It undoes something: the sheet says so, and the default is to back out.
+    let careful = method == "DELETE";
+    json!({
+        "title": if careful { "Delete this?" } else { "Send This Change" },
+        "wants": if careful { "delete this from its website" } else { "send this change to its website" },
+        "approve": if careful { "Approve & Delete" } else { "Approve & Send" },
+        "note": if careful { "Review the account and the address before deleting." } else { "Review the account, destination and exact content before sending." },
+        "facts": [
+            [does, format!("{origin}{path}")],
+            ["Action", operation_words(operation)],
+        ],
+        "data": data,
+        "careful": careful,
+    })
+}
+
+/// An app's name for an operation as a person says it, every word of it there: what
+/// it does, then what to. `notes.add` reads "Add notes".
+fn operation_words(operation: &str) -> String {
+    let mut parts: Vec<String> = operation.split('.').map(|part| part.replace(['_', '-'], " ")).collect();
+    let does = parts.pop().unwrap_or_default();
+    let words = if parts.is_empty() { does } else { format!("{does} {}", parts.join(" ").to_lowercase()) };
+    let mut letters = words.chars();
+    match letters.next() {
+        Some(first) => first.to_uppercase().chain(letters).collect(),
+        None => String::new(),
+    }
+}
+
+/// A UTC offset as a person says it: "UTC-8", "UTC+5:30".
+fn offset_words(seconds: i32) -> String {
+    let (hours, minutes) = (seconds.abs() / 3600, seconds.abs() % 3600 / 60);
+    let sign = if seconds < 0 { '-' } else { '+' };
+    match minutes {
+        0 => format!("UTC{sign}{hours}"),
+        _ => format!("UTC{sign}{hours}:{minutes:02}"),
+    }
+}
+
+/// An event's times as a person reads them: "Nov 2, 2026 at 3:45 PM PST", in the
+/// event's time zone. An instant is shown there whatever offset it came with: it is
+/// the same instant. With no zone its own offset stays in sight. An all-day event's
+/// end date is exclusive (Google's), so its last day is the day before. A value that
+/// does not parse is shown as it is.
+fn plain_when(start: &EventTime, end: &EventTime) -> Vec<(&'static str, String)> {
+    use chrono::NaiveDate;
+    if let (Some(first), Some(after)) = (start.date.as_deref(), end.date.as_deref()) {
+        let day = |d: NaiveDate| d.format("%b %-d, %Y").to_string();
+        let parsed = NaiveDate::parse_from_str(first, "%Y-%m-%d").ok().zip(NaiveDate::parse_from_str(after, "%Y-%m-%d").ok());
+        return vec![(
+            "When",
+            match parsed {
+                Some((first, after)) if after > first => match after.pred_opt().filter(|last| *last > first) {
+                    Some(last) => format!("All day, {} through {}", day(first), day(last)),
+                    None => format!("All day, {}", day(first)),
+                },
+                _ => format!("All day, {first} until {after}"),
+            },
+        )];
+    }
+    let wall = |t: chrono::NaiveDateTime| {
+        use chrono::Timelike;
+        t.format(if t.second() == 0 { "%b %-d, %Y at %-I:%M %p" } else { "%b %-d, %Y at %-I:%M:%S %p" }).to_string()
+    };
+    let at = |time: &EventTime| {
+        use chrono::TimeZone;
+        let raw = time.date_time.as_deref().or(time.date.as_deref()).unwrap_or("");
+        let named = time.time_zone.as_deref().filter(|zone| !zone.is_empty());
+        let zone = named.and_then(|zone| zone.parse::<chrono_tz::Tz>().ok());
+        // A zone nothing here knows is still said, in its own words.
+        let unknown = named.filter(|_| zone.is_none()).map(|zone| format!(" ({})", zone.replace('_', " "))).unwrap_or_default();
+        if let Ok(t) = chrono::DateTime::parse_from_rfc3339(raw) {
+            return match zone {
+                Some(zone) => {
+                    let t = t.with_timezone(&zone);
+                    format!("{} {}", wall(t.naive_local()), t.format("%Z"))
+                }
+                None => format!("{} {}{unknown}", wall(t.naive_local()), offset_words(t.offset().local_minus_utc())),
+            };
+        }
+        match chrono::NaiveDateTime::parse_from_str(raw, "%Y-%m-%dT%H:%M:%S") {
+            Ok(t) => match zone.and_then(|zone| zone.from_local_datetime(&t).earliest()) {
+                Some(local) => format!("{} {}", wall(t), local.format("%Z")),
+                None => format!("{}{unknown}", wall(t)),
+            },
+            Err(_) => format!("{raw}{unknown}"),
+        }
+    };
+    vec![("Starts", at(start)), ("Ends", at(end))]
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::sync::atomic::AtomicUsize;
+
+    /// A test shell's sample reads as the real review does, and is only words.
+    #[test]
+    fn a_sample_review_reads_like_the_real_one() {
+        let file = json!({"owner":"fictional","repo":"notes","branch":"main","path":"note.md","content":"Exact","message":"Save note","sha":null});
+        let parsed: GithubFile = serde_json::from_value(file.clone()).unwrap();
+        let sample = sample_snapshot("github", "os.writer", &json!({"file": file})).unwrap();
+        let real = change_snapshot("os.writer", "", "Sample account", &Change::Github(parsed));
+        assert_eq!(sample, real);
+        assert_eq!(sample["plain"]["wants"], "save this file to GitHub");
+        let backend = json!({"origin":"https://example.test","method":"POST","path":"/notes","operation":"notes.add","query":{},"body":{"api_key":"x"}});
+        let sample = sample_snapshot("github", "os.writer", &json!({"backend": backend})).unwrap();
+        assert_eq!(sample["plain"]["facts"][0], json!(["Sends to", "https://example.test/notes"]));
+        assert_eq!(sample["plain"]["facts"][1], json!(["Action", "Add notes"]));
+        assert_eq!(sample["plain"]["careful"], false);
+        assert_eq!(sample["plain"]["approve"], "Approve & Send");
+        assert_eq!(operation_words("order_items.bulk-delete"), "Bulk delete order items");
+        assert_eq!(operation_words("refresh"), "Refresh");
+        // What undoes something is flagged, and only that.
+        let removing = json!({"origin":"https://example.test","method":"DELETE","path":"/notes/1","operation":"notes.remove","query":{},"body":{}});
+        assert_eq!(sample_snapshot("github", "os.writer", &json!({"backend": removing})).unwrap()["plain"]["careful"], true);
+        assert_eq!(sample["plain"]["data"]["body"]["api_key"], "x", "the words hide it when they are drawn");
+        assert!(sample_snapshot("mail", "os.writer", &json!({})).is_err());
+    }
+
+    #[test]
+    fn a_reviews_times_read_as_dates_and_keep_their_zone() {
+        let timed = |raw: &str, zone: Option<&str>| EventTime { date: None, date_time: Some(raw.into()), time_zone: zone.map(str::to_string) };
+        let day = |raw: &str| EventTime { date: Some(raw.into()), date_time: None, time_zone: None };
+        let one = |start: &EventTime, end: &EventTime| plain_when(start, end).into_iter().map(|(k, v)| format!("{k}: {v}")).collect::<Vec<_>>().join("; ");
+        assert_eq!(
+            one(&timed("2026-11-02T15:45:00", Some("America/Los_Angeles")), &timed("2026-11-02T16:45:30", Some("America/Los_Angeles"))),
+            "Starts: Nov 2, 2026 at 3:45 PM PST; Ends: Nov 2, 2026 at 4:45:30 PM PST"
+        );
+        // An offset is never dropped: alone it is said, and with a zone the same
+        // instant is shown in that zone.
+        assert_eq!(
+            one(&timed("2026-11-02T15:45:00-08:00", None), &timed("2026-11-02T16:45:00-08:00", Some("Asia/Tokyo"))),
+            "Starts: Nov 2, 2026 at 3:45 PM UTC-8; Ends: Nov 3, 2026 at 9:45 AM JST"
+        );
+        assert_eq!(
+            one(&timed("2026-11-02T15:45:00+05:30", Some("Nowhere/Some_Place")), &timed("2026-11-02T16:45:00", Some("Nowhere/Some_Place"))),
+            "Starts: Nov 2, 2026 at 3:45 PM UTC+5:30 (Nowhere/Some Place); Ends: Nov 2, 2026 at 4:45 PM (Nowhere/Some Place)"
+        );
+        // What does not parse is shown as it is.
+        assert_eq!(one(&timed("soon", None), &timed("later", None)), "Starts: soon; Ends: later");
+        // An all-day event's end date is exclusive.
+        assert_eq!(one(&day("2026-11-02"), &day("2026-11-03")), "When: All day, Nov 2, 2026");
+        assert_eq!(one(&day("2026-11-02"), &day("2026-11-05")), "When: All day, Nov 2, 2026 through Nov 4, 2026");
+        assert_eq!(one(&day("2026-11-02"), &day("2026-11-02")), "When: All day, 2026-11-02 until 2026-11-02");
+    }
 
     #[derive(Default)]
     struct Sheet {

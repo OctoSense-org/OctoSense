@@ -17,7 +17,7 @@ use makepad_widgets::makepad_platform::shared_framebuf::{
 use makepad_widgets::*;
 
 mod pacing;
-use pacing::TickPacer;
+use pacing::{TickPacer, TickRate};
 
 #[cfg(all(target_os = "linux", not(target_env = "ohos")))]
 use makepad_widgets::makepad_platform::shared_framebuf::aux_chan;
@@ -170,6 +170,13 @@ pub enum MpRunViewAction {
     Pressed {
         client: ClientId,
     },
+    /// A press in the band of a Mac window's unified toolbar that no control
+    /// of the app's took: it moves the window, as its title bar would.
+    TitlePress {
+        client: ClientId,
+        abs: Vec2d,
+        time: f64,
+    },
     /// The person asked a tile whose app stopped (a module after a panic,
     /// `module_view.rs`; a process that died, [`MpRunView::show_stopped`])
     /// to start it again.
@@ -218,6 +225,10 @@ pub struct MpRunView {
     /// asks for a Restart (ADR 0004 §2).
     #[rust]
     stopped: Option<(ClientId, String)>,
+    /// The host draws what stands in for the first frame itself (a Mac's
+    /// assistant pane): no startup panel, no backdrop.
+    #[rust]
+    own_placeholder: bool,
     #[rust]
     startup_initialized: bool,
     #[rust] startup_glass: bool,
@@ -244,6 +255,8 @@ pub struct MpRunView {
     #[rust]
     tick_pacer: TickPacer,
     #[rust]
+    tick_rate: TickRate,
+    #[rust]
     pending_move: Option<RemoteMouseMove>,
     #[rust]
     last_rect: Rect,
@@ -251,6 +264,11 @@ pub struct MpRunView {
     last_dpi_factor: f64,
     #[rust]
     bootstrap_pending: bool,
+    /// The child has not been told the size or swapchain it now has. A frame
+    /// still in flight for the old size clears `bootstrap_pending`; it must not
+    /// cancel the message, or the child stays laid out for the size before.
+    #[rust]
+    geometry_unsent: bool,
     #[rust]
     bootstrap_tick_count: u32,
     #[rust]
@@ -267,6 +285,13 @@ pub struct MpRunView {
     app_ready_for_swapchain: bool,
     #[rust]
     remote_cursor: MouseCursor,
+    /// See `TileHost::set_title_band`.
+    #[rust]
+    title_band: f64,
+    /// The app has a pop-up menu up (`AppToStudio::MenuUp`). A Mac's menu sits
+    /// above the window, so a press on a row over the toolbar band is the menu's.
+    #[rust]
+    menu_up: bool,
     #[rust]
     is_hovered: bool,
     #[rust]
@@ -307,12 +332,23 @@ impl ScriptHook for MpRunView {
 }
 
 impl MpRunView {
-    fn emit_to_app(&self, cx: &mut Cx, client: ClientId, msgs: Vec<StudioToApp>) {
+    fn emit_to_app(&mut self, cx: &mut Cx, client: ClientId, msgs: Vec<StudioToApp>) {
         if msgs.is_empty() {
             return;
         }
+        if msgs.iter().any(|msg| !matches!(msg, StudioToApp::Tick)) {
+            self.stir_ticks(cx);
+        }
         let msg_bin = StudioToAppVec(msgs).serialize_bin();
         cx.widget_action(self.uid, MpRunViewAction::ForwardToApp { client, msg_bin });
+    }
+
+    /// The child's clock back at full speed, for a while.
+    fn stir_ticks(&mut self, cx: &mut Cx) {
+        if self.tick_rate.stir(crate::host::now()) && !self.tick_timer.is_empty() {
+            cx.stop_timer(self.tick_timer);
+            self.tick_timer = cx.start_interval(pacing::TICK_FULL);
+        }
     }
 
     fn append_tick(&mut self, target: RunTarget, msgs: &mut Vec<StudioToApp>) {
@@ -353,6 +389,7 @@ impl MpRunView {
         self.tick_pacer = TickPacer::default();
         self.pending_move = None;
         self.remote_cursor = MouseCursor::Default;
+        self.menu_up = false;
         self.is_hovered = false;
         self.swapchain = None;
         self.last_swapchain_with_completed_draws = None;
@@ -373,10 +410,13 @@ impl MpRunView {
         self.last_dpi_factor = 0.0;
         self.bootstrap_pending = target.is_some();
         self.bootstrap_tick_count = 0;
+        self.tick_rate = TickRate::default();
+        self.tick_rate.stir(crate::host::now());
         if target.is_some() {
-            if self.tick_timer.is_empty() {
-                self.tick_timer = cx.start_interval(0.008);
+            if !self.tick_timer.is_empty() {
+                cx.stop_timer(self.tick_timer);
             }
+            self.tick_timer = cx.start_interval(pacing::TICK_FULL);
         } else {
             if had_target {
                 cx.hide_text_ime();
@@ -413,6 +453,11 @@ impl MpRunView {
         if self.is_hovered {
             cx.set_cursor(self.remote_cursor);
         }
+    }
+
+    /// The app's pop-up menu came up or went: while it is up, every press is the app's.
+    pub fn set_menu_up(&mut self, up: bool) {
+        self.menu_up = up;
     }
 
     fn apply_presentable_draw_to_quad(
@@ -629,6 +674,7 @@ impl MpRunView {
 
         if rect_changed || needs_new_swapchain {
             self.bootstrap_pending = true;
+            self.geometry_unsent = true;
             self.bootstrap_tick_count = 0;
         }
 
@@ -677,6 +723,7 @@ impl MpRunView {
     }
 
     pub fn set_presentable_draw(&mut self, cx: &mut Cx, presentable_draw: PresentableDraw) {
+        self.stir_ticks(cx);
         if self.try_present_draw(cx, presentable_draw) {
             trace_host(&format!(
                 "pd c{}",
@@ -805,12 +852,13 @@ impl MpRunView {
         }
     }
 
-    /// The child died unexpectedly: show the tile closed ("<app> stopped",
-    /// "Click to restart") and stop talking to it.
+    /// The child died unexpectedly: show the tile closed ("<app> quit
+    /// unexpectedly" and Reopen) and stop talking to it.
     pub fn show_stopped(&mut self, cx: &mut Cx, client: ClientId, label: &str) {
         self.set_target(cx, None);
-        self.stopped = Some((client, format!("{label} stopped")));
-        self.status_line = "Click to restart".into();
+        self.stopped = Some((client, format!("{label} quit unexpectedly")));
+        self.status_line.clear();
+        self.startup_glass_applied = None;
         self.present_ok_count = 0;
         self.first_present_at = None;
         self.pending_draw = None;
@@ -822,7 +870,7 @@ impl MpRunView {
     }
 
     pub fn set_status_line(&mut self, cx: &mut Cx, line: &str) {
-        // A stopped tile keeps saying how to restart it.
+        // A stopped tile says nothing more: its Reopen is what's left.
         if self.stopped.is_some() || self.status_line == line {
             return;
         }
@@ -861,6 +909,21 @@ impl MpRunView {
         self.present_ok_count > 0
     }
 
+    /// See `own_placeholder`.
+    pub fn set_own_placeholder(&mut self, own: bool) {
+        self.own_placeholder = own;
+    }
+
+    /// The newest line from the child while it starts.
+    pub fn status_line(&self) -> &str {
+        &self.status_line
+    }
+
+    /// This view holds the keyboard.
+    pub fn holds_keyboard(&self, cx: &Cx) -> bool {
+        cx.has_key_focus(self.area)
+    }
+
     fn local_from_area(&self, cx: &Cx, abs: Vec2d) -> Option<Vec2d> {
         if !self.area.is_valid(cx) {
             return None;
@@ -888,7 +951,7 @@ impl Widget for MpRunView {
         // Only the "starting…" state gets a backdrop; a presented frame is
         // composited straight over the wallpaper so translucent children
         // (Omarchy's 0.985/0.96 window opacity) show it through.
-        if self.present_ok_count == 0 {
+        if self.present_ok_count == 0 && !self.own_placeholder {
             self.draw_bg.draw_vars.set_uniform(cx, live_id!(radius), &[self.corner_radius]);
             self.draw_bg.draw_abs(cx, rect);
         }
@@ -956,7 +1019,7 @@ impl Widget for MpRunView {
         self.draw_app
             .draw_vars
             .set_dyn_instance(cx, id!(radius), &[self.corner_radius]);
-        if waiting_for_framebuffer || first_fade < 1.0 {
+        if (waiting_for_framebuffer || first_fade < 1.0) && !self.own_placeholder {
             if !self.startup_initialized {
                 self.startup_initialized = true;
                 self.no_fb_view.set_text(cx, include_str!("../resources/startup.splash"));
@@ -975,6 +1038,8 @@ impl Widget for MpRunView {
             self.no_fb_view
                 .label(cx, ids!(status_line))
                 .set_text(cx, &status);
+            self.no_fb_view.widget(cx, ids!(status_line)).set_visible(cx, self.stopped.is_none());
+            self.no_fb_view.widget(cx, ids!(startup_reopen)).set_visible(cx, self.stopped.is_some());
             if let Some(mut icon) = self.no_fb_view.widget(cx, ids!(startup_icon)).borrow_mut::<app_icon::AppIcon>() {
                 icon.set_name(cx, if self.startup_app.is_empty() {"app"} else {&self.startup_app});
             }
@@ -982,7 +1047,8 @@ impl Widget for MpRunView {
             if self.startup_glass_applied != Some(self.startup_glass) {
                 let surface = self.no_fb_view.widget(cx, ids!(startup_surface));
                 if let Some(mut surface) = surface.borrow_mut::<View>() {
-                    let opacity = if self.startup_glass {0.20f32} else {1.0};
+                    // A window that is coming has glass; one that stopped is a closed window.
+                    let opacity = if self.startup_glass && self.stopped.is_none() {0.20f32} else {1.0};
                     // This view belongs to the Splash isolate. Change its draw
                     // instance directly; never apply main-heap script values.
                     surface.draw_bg.draw_vars.set_dyn_instance(cx, id!(opacity), &[opacity]);
@@ -1016,8 +1082,13 @@ impl Widget for MpRunView {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, _scope: &mut Scope) {
         if let Some((client, _)) = &self.stopped {
             let client = *client;
-            if let Hit::FingerDown(_) = event.hits(cx, self.area) {
-                cx.widget_action(self.uid, MpRunViewAction::Restart { client });
+            if let Hit::FingerDown(down) = event.hits(cx, self.area) {
+                let reopen = self.no_fb_view.widget(cx, ids!(startup_reopen)).area();
+                if down.is_primary_hit() && reopen.is_valid(cx) && reopen.clipped_rect(cx).contains(down.abs) {
+                    cx.widget_action(self.uid, MpRunViewAction::Restart { client });
+                } else {
+                    cx.widget_action(self.uid, MpRunViewAction::Clicked { client });
+                }
             }
             return;
         }
@@ -1027,15 +1098,23 @@ impl Widget for MpRunView {
             if self.tick_timer.is_timer(timer_event).is_some() {
                 if let Some(target) = target {
                     let mut msgs = Vec::new();
-                    let should_bootstrap = self.present_ok_count == 0 || self.bootstrap_pending;
+                    let should_bootstrap = self.present_ok_count == 0 || self.bootstrap_pending || self.geometry_unsent;
                     if should_bootstrap {
                         self.bootstrap_tick_count = self.bootstrap_tick_count.wrapping_add(1);
                         if self.bootstrap_tick_count == 1 || self.bootstrap_tick_count % 15 == 0 {
-                            msgs.extend(self.build_bootstrap_msgs(cx, target));
+                            let outbound = self.build_bootstrap_msgs(cx, target);
+                            self.geometry_unsent &= outbound.is_empty();
+                            msgs.extend(outbound);
                         }
                     }
                     if self.tick_pacer.beat(crate::host::now()) {
                         self.append_tick(target, &mut msgs);
+                    }
+                    if should_bootstrap || self.pending_draw.is_some() {
+                        self.stir_ticks(cx);
+                    } else if self.tick_rate.settle(crate::host::now()) {
+                        cx.stop_timer(self.tick_timer);
+                        self.tick_timer = cx.start_interval(pacing::TICK_QUIET);
                     }
                     self.emit_to_app(cx, target.client, msgs);
                 }
@@ -1045,6 +1124,28 @@ impl Widget for MpRunView {
         let Some(target) = target else {
             return;
         };
+
+        // The band of a Mac window's unified toolbar: where the app reports the
+        // plain arrow, no control of its wants the press, and it moves the
+        // window. A button or a field has reported its own cursor by then. While
+        // the app has a menu up the press is the menu's: a row, or a press off it.
+        if let Event::MouseDown(e) = event {
+            if self.title_band > 0.0
+                && !self.menu_up
+                && self.remote_cursor == MouseCursor::Default
+                && e.button.contains(MouseButton::PRIMARY)
+                && e.handled.get().is_empty()
+                && self.area.is_valid(cx)
+            {
+                let rect = self.area.rect(cx);
+                if rect.contains(e.abs) && e.abs.y - rect.pos.y < self.title_band {
+                    e.handled.set(self.area);
+                    cx.widget_action(self.uid, MpRunViewAction::Clicked { client: target.client });
+                    cx.widget_action(self.uid, MpRunViewAction::TitlePress { client: target.client, abs: e.abs, time: e.time });
+                    return;
+                }
+            }
+        }
 
         match event.hits(cx, self.area) {
             Hit::KeyFocus(_) => {
@@ -1086,6 +1187,7 @@ impl Widget for MpRunView {
             Hit::FingerMove(e) => {
                 if let Some(local) = self.local_from_area(cx, e.abs) {
                     trace_host("mm");
+                    self.stir_ticks(cx);
                     self.pending_move = Some(RemoteMouseMove {
                         x: local.x,
                         y: local.y,
@@ -1098,6 +1200,7 @@ impl Widget for MpRunView {
                 self.is_hovered = true;
                 cx.set_cursor(self.remote_cursor);
                 if let Some(local) = self.local_from_area(cx, e.abs) {
+                    self.stir_ticks(cx);
                     self.pending_move = Some(RemoteMouseMove {
                         x: local.x,
                         y: local.y,
@@ -1106,9 +1209,16 @@ impl Widget for MpRunView {
                     });
                 }
             }
-            Hit::FingerHoverOut(_) => {
+            Hit::FingerHoverOut(e) => {
                 self.is_hovered = false;
                 cx.set_cursor(MouseCursor::Default);
+                // The app can't see its own edge: a last move off its surface lets its hovers go.
+                self.pending_move = Some(RemoteMouseMove {
+                    x: -1.0,
+                    y: -1.0,
+                    time: e.time,
+                    modifiers: RemoteKeyModifiers::from_key_modifiers(&e.modifiers),
+                });
             }
             Hit::FingerUp(e) => {
                 if let Some(local) = self.local_from_area(cx, e.abs) {
@@ -1181,6 +1291,10 @@ impl crate::tile::TileHost for MpRunView {
 
     fn set_takes_key_focus(&mut self, on: bool) {
         MpRunView::set_takes_key_focus(self, on)
+    }
+
+    fn set_title_band(&mut self, height: f64) {
+        self.title_band = height;
     }
 
     fn set_remote_cursor(&mut self, cx: &mut Cx, cursor: MouseCursor) {

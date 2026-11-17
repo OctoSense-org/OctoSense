@@ -4,6 +4,9 @@
 //! repository selection and host-reviewed publication. No account, filesystem,
 //! network or GitHub credential is reachable through this widget.
 mod table_picker;
+pub mod draft;
+mod document_editor;
+pub use document_editor::{DocMark, DocumentEditor, DocumentScroller};
 use table_picker::TableSizePickerWidgetExt;
 use makepad_widgets::makepad_draw::text::selection::{Cursor, Selection};
 use article_core::{
@@ -85,7 +88,7 @@ script_mod! {
                         rule := WriterTool { draw_icon +: {svg: crate_resource("self://resources/icons/article_rule.svg")}}
                     }
                     SolidView {width: Fill height: 1 draw_bg.color: #xe5e5e5}
-                    markdown := TextInput {width: Fill height: Fill is_multiline: true flow: Right{wrap: true}
+                    markdown := TextInput {width: Fill height: Fill is_multiline: true keeps_tab: true flow: Right{wrap: true}
                         empty_text: "Write Markdown here…" padding: Inset{left: 16 right: 16 top: 12 bottom: 12}
                         draw_text +: {color: #x191919 color_hover: #x191919 color_focus: #x191919 color_empty: #x999999 color_empty_hover: #x999999 color_empty_focus: #x999999 text_style: theme.font_regular{font_size: 13 line_spacing: 1.5}}
                         draw_bg +: {color: #xebebeb color_hover: #xebebeb color_focus: #xebebeb color_down: #xebebeb color_empty: #xebebeb color_2: #xebebeb color_2_hover: #xebebeb color_2_focus: #xebebeb color_2_down: #xebebeb color_2_empty: #xebebeb border_size: 0 border_radius: 0}
@@ -237,9 +240,13 @@ pub fn install(vm: &mut ScriptVm) {
     article_makepad::script_mod(vm);
     table_picker::script_mod(vm);
     script_mod(vm);
+    document_editor::script_mod(vm);
     // Makepad's public prelude is a snapshot assembled before host mods.
-    // Export only the safe composite, not Rinx's internal widget vocabulary.
+    // Export only the safe composites, not Rinx's internal widget vocabulary.
     script_eval!(vm, {mod.prelude.widgets.MarkdownEditor = mod.widgets.MarkdownEditor});
+    script_eval!(vm, {mod.prelude.widgets.DocumentEditor = mod.widgets.DocumentEditor});
+    script_eval!(vm, {mod.prelude.widgets.DocumentScroller = mod.widgets.DocumentScroller});
+    script_eval!(vm, {mod.prelude.widgets.DocMark = mod.widgets.DocMark});
 }
 
 #[derive(Clone, Copy, Default, PartialEq)]

@@ -57,6 +57,24 @@ app's own agent and `tools.json`, the system toolbox, `glance.publish` and
   so the app leaves its Present or Read layout when the person presses Esc. A
   phone answers `{applied: false, fullscreen: false, fills_screen: true}`.
   The contract is in `../crates/shell/src/app_fullscreen.rs`.
+- Copying text: `host.request("clipboard.write", {text: link}, fn(r){…})` from
+  the tap or click handler, under the same press rule as `window.fullscreen`.
+  No app reads the clipboard. The contract is in
+  `../crates/shell/src/app_clipboard.rs`.
+- Sending someone to set up a model: `host.request("settings.open", {pane:
+  "ai-providers"}, fn(r){…})`, under the same press rule. It opens nothing else
+  (`../crates/shell/src/app_settings_link.rs`).
+- A list the keyboard moves through: `on_key: |key, cmd, shift|` on a
+  `GestureView`, `|x, y, cmd, shift|` on `on_tap`, `ui.<id>.focus()` from a row's
+  own handler, `ui.<scroller>.scroll_y()` and `set_scroll_y(y)` to keep the row in
+  sight.
+- Right-click menus: `menu` and `on_menu: |title|` (or `|title, x, y|`) on a
+  `GestureView`, `"-"` for a separator, `menu_urls` for items that open a page,
+  `ui.<id>.open_menu()` for a toolbar button that pulls down,
+  `ui.<id>.open_menu(titles, current)` for a pop-up button laid over its choice
+  (never build a menu from script rows). A view with only a `menu` leaves left
+  presses to what is around it. A phone has no right click: keep the same
+  actions on a long press or a visible control.
 - Mail's service: change `apps/mail/host-service` and run
   `cargo test --locked -p octosense-mail-service`. Calendar's and News's:
   `apps/calendar/host-service`, `apps/news/host-service`, and
@@ -438,3 +456,83 @@ editing with stale-snapshot refusal, quiet card refresh, restart restoration and
 dismissal. `calendar.view` is UI-only; `calendar.update_event` belongs to Calendar’s UI
 and own agent, not new Mail/system grants. Keep App Hub’s explicit `calendar` capability, permission
 wording and the consumer’s single contract source aligned.
+
+## The Mac look on a desktop
+
+A desktop shell's style sheet says `theme.ui_pointer = true`
+(`crates/shell/src/octosense/style.rs`), and every system app then draws for a
+pointer, the way a Mac app does. A phone's sheet says false, so a phone keeps its
+pages. Build on `apps/interface.splash`, whose desktop parts are:
+
+| Part | Use |
+| --- | --- |
+| `ui_desk`, `ui_by(touch, desk)` | which one this is; a value for each |
+| `ui_unified` | a Mac window with no title bar (below) |
+| `ui_fs(n)` | a touch size in the type scale, or the Mac's size for that role |
+| `ui_icon(name)` | the shared glyphs in `apps/interface-icons/`, copied into each bundle's `icons/ui-*.svg` by `tools/sync-app-interface.py` |
+| `UiSidebar`, `UiSideHead`, `UiSideRow`, `UiSideRowOn` | the source list: 208 wide, rows 28 tall, the selection in the sidebar's gray |
+| `UiToolbar`, `UiWindowToolbar`, `UiBarTitle`, `UiBarSub`, `UiTool`, `UiToolIcon`, `UiPaneTool` | the toolbar: 52 tall on a Mac, 40 under another desktop's title bar, borderless tools with a hover wash |
+| `UiButton`, `UiPrimary`, `UiField`, `UiSearch` | push buttons and fields 28 tall; `UiPrimary` is the one default action |
+| `UiPopup`, `UiPopupMark`, `UiBadge`, `UiBadgeText` | a pop-up button; a count or a state's small badge |
+| `UiSegments`, `UiSeg`, `UiSegOn` | a segmented control |
+| `UiGroup`, `UiFormRow`, `UiFormLabel`, `UiSep`, `UiVSep` | inset form groups and hairlines, as in System Settings |
+| `UiFormKey`, `UiFormLine` | a form with its label right-aligned to the left of the control |
+| `UiRowTitle`, `UiRowNote`, `ui_content`, `ui_accent_row` | a list's rows, the colour of a list, an accent selection |
+| `UiFootBar`, `UiEmpty` | a thin status bar; an empty state's centred glyph, title and note |
+
+The window: on a Mac, an app named in `crates/shell/src/clients.rs`
+(`unified_chrome`) has no title bar. The app draws to the window's top edge, the
+window's lights sit over the leading 84 points of its toolbar or over the top of
+its sidebar, and a press nothing claims in the top 52 points moves the window.
+`UiSidebar` and `UiToolbar` take care of the heights. A toolbar with no sidebar to
+its left is a `UiWindowToolbar`, or the lights land on its first tool, and that
+goes for a state whose sidebar has gone too (a narrow window, a full-window
+detail). Every other desktop keeps a title bar and the 40-point toolbar.
+
+The conventions:
+
+- **Keep a phone's tree byte for byte.** Move it unchanged into `let TouchRoot =
+  …` (or `TouchFull` for a `HostedView`'s `full:`), write `let DeskRoot = …`
+  beside it, and end the file with `if ui_desk { DeskRoot{} } else { TouchRoot{} }`.
+  Only the tree evaluated is built, so both can use the same `id :=` names, and
+  the script keeps working unchanged. An id only one tree has is guarded with
+  `if ui_desk { … }` in the script.
+- **Type:** Makepad's `font_size` is three quarters of a point. Body 9.75 (13 pt),
+  secondary 9, small 8.25 (11 pt), then titles 11.25, 12.75 and 16.5 (15, 17 and
+  22 pt). `theme.font_bold` for emphasis, never a larger size in a list.
+- **Surfaces:** content and lists on `ui_content` (white, or the dark list colour),
+  toolbars on `ui_bar`, sidebars on `ui_sidebar`, hairlines `ui_border` in 1 point
+  `UiSep`/`UiVSep`, and text in `ui_ink`, `ui_muted`, `ui_link`, `ui_danger`,
+  `ui_success`, never a literal colour (a photo, a map or a deck's own colours
+  aside). `theme.color_*` follows the host's light or dark.
+- **Layout:** a sidebar for sections instead of tabs, a list column instead of a
+  page per list, an inspector column instead of a pushed page. Keep the content
+  full width: no `max_width`, no floating cards on a page, no pills, nothing 44
+  points tall. Default a window's size in the manifest (`schema_minor: 1`,
+  `window`) so its columns fit.
+- **Words:** Title Case for button, menu and toolbar words and window titles
+  ("New Event", "Add Account"), sentence case for labels and explanations. An
+  ellipsis on a command that asks for more before it acts ("Export…"). Say click,
+  not tap. No "‹ Back" where a sidebar already shows the place. No architecture,
+  protocol or developer words in front of a person, and no raw ids.
+- **Lists:** one list colour, a rounded inset selection, a hairline inset on both
+  sides between rows.
+- **Forms and sheets:** a label to the left of its control, never an uppercase
+  label stacked over a field. The default button is at the bottom right, blue, and
+  disabled until the form is valid; Cancel to its left; at most three buttons. A
+  destructive action asks once, says what it destroys, and is never the default.
+- **Empty states:** centred in the pane (`UiEmpty`), with what to do next. No hero,
+  no card. A loading state and a failure each say so, with Try Again on a failure.
+- A `Label` has 3.5 of padding of its own: give dense rows `padding: 0`, and
+  `clip_y: false` when it has no padding, or g, y and p lose their tails.
+- A shader's `border_radius` is half the corner it draws (`sdf.box` doubles it):
+  3 for a control's 6-point corner, 5 for a group's 10.
+- `on_render` restates the view's own declaration: a `visible: false` on that view
+  hides it again after every `render()`. Put visibility on a wrapper view and render
+  an inner body.
+- A plain `View` paints no background in a contained host and claims no press. Use
+  `SolidView` or `RoundedView` for a surface, and give anything pressable its own
+  hit area.
+
+Check both trees: a desktop grab in light and dark, and the phone journeys in
+`tools/app-ux/`, which run the touch tree under `phone:ios`.
