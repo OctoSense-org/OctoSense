@@ -13,7 +13,9 @@ at the repository root (git-ignored):
 
 Everything else external (App Hub, octos, Rinx) is a git dependency pinned
 once in the root Cargo.toml [workspace.dependencies]. Local changes are
-preserved; --update only moves clean checkouts; --check changes nothing.
+preserved; --update only moves clean checkouts, and replaces a runtime patch
+that another version of runtime-patches.lock.json recorded (after a pull or a
+branch switch); --check changes nothing.
 `--cargo` also checks the locked Cargo graph: one Makepad (from .sources),
 one App Hub, one octos.
 
@@ -49,6 +51,7 @@ import sys
 # The repository root: the locks and the reviewed patches live here.
 PRODUCT = Path(__file__).resolve().parents[1]
 CONSUMER = PRODUCT
+PATCH_LOCK = "runtime-patches.lock.json"
 URL = "https://github.com/OctoSense-org/Octoscript-Makepad.git"
 RUNTIME_URLS = {
     "makepad": "https://github.com/OctoSense-org/makepad.git",
@@ -164,7 +167,7 @@ def owned_state(path, overlay):
     """Why the checkout holds work setup does not own, or None if it holds none.
 
     Setup owns the checked-out revision and, for a patched source, the
-    reviewed patch staged on it."""
+    reviewed patch staged on it, this lock's or one an earlier lock recorded."""
     if git(path, "diff", "--quiet", check=False).returncode:
         return "unstaged changes"
     untracked = git(path, "ls-files", "--others", "--exclude-standard").stdout.split()
@@ -174,9 +177,29 @@ def owned_state(path, overlay):
     allowed = {git(path, "rev-parse", "HEAD^{tree}").stdout.strip()}
     if overlay:
         allowed.add(overlay["tree"])
-    if tree not in allowed:
+    if tree not in allowed and not recorded_patch_tree(path.name, tree):
         return "staged changes"
     return None
+
+
+def recorded_patch_tree(name, tree):
+    """Whether some version of the runtime patch lock recorded `tree` for `name`.
+
+    Such a tree is setup's own output for that version of the lock, which
+    rebuilds it byte for byte, so replacing it loses nothing. Without the
+    repository's history (a shallow clone) nothing qualifies. Merges count
+    (-m): a merge that stacks two branches' patches records a tree of its own."""
+    found = git(PRODUCT, "log", "--all", "-m", "--format=%H", "-S", tree, "--", PATCH_LOCK, check=False)
+    for commit in dict.fromkeys(found.stdout.split()):
+        shown = git(PRODUCT, "show", f"{commit}:{PATCH_LOCK}", check=False)
+        try:
+            lock = json.loads(shown.stdout) if not shown.returncode else {}
+        except ValueError:
+            continue
+        entry = lock.get(name) if isinstance(lock, dict) else None
+        if isinstance(entry, dict) and entry.get("tree") == tree:
+            return True
+    return False
 
 
 def convert_clone(hub, path, name, overlay, args):
@@ -275,7 +298,14 @@ def prepare_source(root, name, spec, args, overlay=None):
     if current == spec["revision"] and not overlay and tree == base_tree:
         return
     if current and tree != base_tree:
-        raise RuntimeError(f"Preserving staged changes: {path}")
+        if not recorded_patch_tree(name, tree):
+            raise RuntimeError(f"Preserving staged changes: {path}")
+        # The runtime patch another version of the lock recorded (main moved,
+        # or another branch is checked out): setup's own state, so --update
+        # drops it before it moves the checkout and stages this lock's patch.
+        if args.check or not args.update:
+            raise RuntimeError(f"{path} holds the runtime patch of another lock; --update replaces it")
+        git(path, "reset", "--quiet", "--hard", "HEAD")
     if current != spec["revision"]:
         if args.check or current and not args.update:
             raise RuntimeError(f"{path} selects another revision; --update only changes clean checkouts")
@@ -375,7 +405,7 @@ def main():
     lock = json.loads((PRODUCT / "native-runtime.lock.json").read_text())
     if lock.get("schema_version") != 1 or lock.get("url") != URL:
         parser.error("Unsupported runtime lock")
-    patches = json.loads((PRODUCT / "runtime-patches.lock.json").read_text())
+    patches = json.loads((PRODUCT / PATCH_LOCK).read_text())
     if patches.get("schema_version") != 1 or not set(patches) <= {"schema_version", "makepad"}:
         parser.error("Unsupported runtime patch lock")
     if args.remove_worktrees:

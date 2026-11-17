@@ -96,6 +96,92 @@ class RuntimeSources(unittest.TestCase):
             self.prepare()
         self.assertEqual(self.file.read_text(), "before\n")
 
+    def make_overlay(self, name, text):
+        """A reviewed patch from the clean base to `text`, as a lock entry."""
+        self.file.write_text(text)
+        patch_file = self.root / name
+        patch_file.write_text(self.git("diff", "--binary"))
+        self.git("add", "policy.txt")
+        tree = self.git("write-tree").strip()
+        self.git("restore", "--staged", "--worktree", "policy.txt")
+        return {"base_revision": self.revision, "patch": name,
+                "sha256": hashlib.sha256(patch_file.read_bytes()).hexdigest(), "tree": tree}
+
+    def record_lock(self, overlay):
+        """Commit a version of the product's runtime patch lock."""
+        if not (self.root / ".git").exists():
+            subprocess.check_call(["git", "-C", str(self.root), "init", "--quiet"])
+        lock = {"schema_version": 1, **({"makepad": overlay} if overlay else {})}
+        (self.root / "runtime-patches.lock.json").write_text(json.dumps(lock, indent=2) + "\n")
+        for args in (("add", "runtime-patches.lock.json"),
+                     ("-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid",
+                      "commit", "--quiet", "-m", "lock")):
+            subprocess.check_call(["git", "-C", str(self.root), *args])
+
+    def record_lock_by_merge(self, overlay):
+        """Commit a lock version only a merge has, as when main's stack and a
+        branch's stacked patch are combined while merging."""
+        self.record_lock(None)
+        git = ["git", "-C", str(self.root), "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid"]
+        for branch, name in (("-b side", "side.txt"), ("-", "main.txt")):
+            subprocess.check_call(git + ["checkout", "--quiet", *branch.split()])
+            (self.root / name).write_text(name)
+            subprocess.check_call(git + ["add", name])
+            subprocess.check_call(git + ["commit", "--quiet", "-m", name])
+        subprocess.check_call(git + ["merge", "--quiet", "--no-ff", "--no-commit", "side"])
+        lock = {"schema_version": 1, "makepad": overlay}
+        (self.root / "runtime-patches.lock.json").write_text(json.dumps(lock, indent=2) + "\n")
+        subprocess.check_call(git + ["add", "runtime-patches.lock.json"])
+        subprocess.check_call(git + ["commit", "--quiet", "-m", "merge side, stacking both patches"])
+
+    def test_update_replaces_a_patch_only_a_merge_recorded(self):
+        revised = self.make_overlay("revised.patch", "revised\n")
+        self.record_lock_by_merge(self.overlay)
+        self.prepare()
+        self.record_lock(revised)
+        self.overlay, self.args.update = revised, True
+        self.prepare()
+        self.assertEqual(self.file.read_text(), "revised\n")
+
+    def test_update_replaces_the_patch_an_earlier_lock_recorded(self):
+        revised = self.make_overlay("revised.patch", "revised\n")
+        self.record_lock(self.overlay)
+        self.prepare()
+        self.record_lock(revised)
+        self.overlay, self.args.update = revised, True
+        self.prepare()
+        self.assertEqual(self.file.read_text(), "revised\n")
+        self.assertEqual(self.git("write-tree").strip(), revised["tree"])
+
+    def test_without_update_an_earlier_lock_patch_stays_and_is_named(self):
+        revised = self.make_overlay("revised.patch", "revised\n")
+        self.record_lock(self.overlay)
+        self.prepare()
+        self.record_lock(revised)
+        self.overlay = revised
+        with self.assertRaisesRegex(RuntimeError, "runtime patch of another lock; --update replaces it"):
+            self.prepare()
+        self.assertEqual(self.file.read_text(), "after\n")
+
+    def test_update_drops_the_patch_when_the_lock_has_none(self):
+        self.record_lock(self.overlay)
+        self.prepare()
+        self.record_lock(None)
+        self.overlay, self.args.update = None, True
+        self.prepare()
+        self.assertEqual(self.file.read_text(), "before\n")
+        self.assertEqual(self.git("status", "--porcelain"), "")
+
+    def test_update_preserves_staged_changes_no_lock_recorded(self):
+        self.record_lock(self.overlay)
+        self.prepare()
+        self.file.write_text("local work\n")
+        self.git("add", "policy.txt")
+        self.args.update = True
+        with self.assertRaisesRegex(RuntimeError, "Preserving staged changes"):
+            self.prepare()
+        self.assertEqual(self.file.read_text(), "local work\n")
+
 
 def run(*args, cwd=None):
     return subprocess.check_output(["git", *args], cwd=cwd, text=True, stderr=subprocess.STDOUT).strip()
@@ -230,6 +316,26 @@ class HubWorktrees(unittest.TestCase):
         # The staged patch is setup's own state, so removal accepts it.
         with contextlib.redirect_stderr(io.StringIO()):
             native.remove_worktrees(self.root, {"makepad": overlay})
+        self.assertFalse(self.path.exists())
+        self.assertEqual(self.hub_worktrees(), [self.hub])
+
+    def test_remove_worktrees_accepts_the_patch_an_earlier_lock_recorded(self):
+        self.args.hub = str(self.hubs)
+        patch_file = self.product_dir / "policy.patch"
+        patch_file.write_text(run("-C", str(self.hub), "diff", "--binary", self.commits[0], self.commits[1]) + "\n")
+        overlay = {"base_revision": self.commits[0], "patch": "policy.patch",
+                   "sha256": hashlib.sha256(patch_file.read_bytes()).hexdigest(),
+                   "tree": run("-C", str(self.hub), "rev-parse", self.commits[1] + "^{tree}")}
+        (self.product_dir / "runtime-patches.lock.json").write_text(json.dumps({"makepad": overlay}) + "\n")
+        run("init", "--quiet", cwd=self.product_dir)
+        run("add", "runtime-patches.lock.json", cwd=self.product_dir)
+        run("-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid",
+            "commit", "--quiet", "-m", "lock", cwd=self.product_dir)
+        self.prepare(overlay)
+        # The checked-out lock no longer names a patch (another branch, a newer
+        # lock); the staged one is still setup's own output.
+        with contextlib.redirect_stderr(io.StringIO()):
+            native.remove_worktrees(self.root, {})
         self.assertFalse(self.path.exists())
         self.assertEqual(self.hub_worktrees(), [self.hub])
 
