@@ -145,9 +145,12 @@ MAIL_LITERAL_SEAM = re.compile(
 # between the second path and the theme names: the macOS linker aligns the
 # names with NUL padding, and the Windows linker puts server_word()'s
 # "This Mac" (3164) there. Only those may sit in the gap: NULs, at most 15
-# of them, or exactly "This Mac". Public source proof:
-# https://github.com/octos-org/octoscode-app/blob/960bfa139a49a8919bf9ded04d138500e756cc90/crates/octoscode-module/src/chrome.rs#L3164
-# https://github.com/octos-org/octoscode-app/blob/960bfa139a49a8919bf9ded04d138500e756cc90/crates/octoscode-module/src/chrome.rs#L3567
+# of them, or exactly "This Mac". The pinned a9aa91c2 has the same literals
+# in the same functions, further down chrome.rs (seed_board2() 3941/3944,
+# the theme names 3385-3390, "This Mac" 3371; browser.rs 766/787 as
+# before). Public source proof:
+# https://github.com/octos-org/octoscode-app/blob/a9aa91c2c40ee8b029360f16a245a63e00374c7a/crates/octoscode-module/src/chrome.rs#L3371
+# https://github.com/octos-org/octoscode-app/blob/a9aa91c2c40ee8b029360f16a245a63e00374c7a/crates/octoscode-module/src/chrome.rs#L3941
 OCTOSCODE_PLACEHOLDER_SEAMS = (
     re.compile(rb"(?P<first>/home/user/)src/octoscode-app"
                rb"(?P<second>/home/user/)src/octos(?:\x00{0,15}|This Mac)SystemSolarizedSlateClaudeCodexLight"),
