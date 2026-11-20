@@ -24,14 +24,12 @@
 //! **The plumbing.** A tool call reaches its engine through an executor
 //! (`engines.rs`'s, or a script app's for Photos' `photos.info`), which
 //! knows who called: the [`HostToolCall`]'s broker-authenticated app,
-//! account and caller kind. It resolves the agent's area ([`agent_area`])
-//! before dispatch, registers it as a [`Grant`] held until the call is
-//! answered, and puts its root in the `ServiceCall`'s `host_dir`, the one
-//! field of a call only host code sets. The resolver ([`resolve_in`])
-//! answers a granted root with its area, and App Hub's own `host_dir` (the
-//! shared `<apps root>/.host`, which the Card runner hands every request of
-//! an app's isolate) with the app's storage ([`app_area`]); it refuses any
-//! other. A service run without the resolver (tests, App Hub's card-host)
+//! account and caller kind. It resolves the agent's area ([`grant_agent`])
+//! before dispatch and puts a unique [`Grant`] token in the `ServiceCall`'s
+//! host-only `host_dir`. For a Card request the worker submission hook binds
+//! the app's current account. Both grants live through the queued call; the
+//! worker rechecks the captured identity and current quota in [`resolve_in`].
+//! A service run without the resolver (tests, App Hub's card-host)
 //! keeps its legacy private folder `<host dir>/<family>`.
 //!
 //! A signed-out, suspended (an uninstalled app's) or refused account is
@@ -40,6 +38,7 @@
 //! inside documents) is the service's, through `octosense_engine_area`.
 
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use octosense_appstore::services::ServiceCall;
@@ -162,45 +161,52 @@ fn admitted_policy(app: &str) -> Result<octosense_app_contract::AppPolicy, Strin
 
 // ------------------------------------------------------------ grants
 
-/// The agents' areas of the calls in flight, by root: what the resolver
-/// answers for a `host_dir` the executor set. Each holds a count of the
-/// calls it serves.
-static GRANTS: Mutex<Vec<(PathBuf, Area, usize)>> = Mutex::new(Vec::new());
+/// A relay call or queued app request carries a host-only token in
+/// `host_dir`. The token has no filesystem meaning and identifies exactly
+/// one grant, even when two calls use the same folder.
+static NEXT_GRANT: AtomicU64 = AtomicU64::new(1);
+static GRANTS: Mutex<Vec<(PathBuf, octosense_engine_area::Resolver)>> = Mutex::new(Vec::new());
 
-/// An agent's area, granted for one call until it is dropped (when the
-/// call is answered or cancelled).
 pub struct Grant {
-    root: PathBuf,
+    pub(super) token: PathBuf,
+    live: Arc<AtomicBool>,
 }
 
-/// Grant `area` to a call in flight: [`resolve_in`] answers its root with it.
-pub fn grant(area: Area) -> Grant {
-    let root = area.root.clone();
-    let mut grants = GRANTS.lock().unwrap_or_else(|e| e.into_inner());
-    match grants.iter_mut().find(|(r, _, _)| *r == root) {
-        Some(held) => {
-            held.1 = area;
-            held.2 += 1;
+fn grant(
+    owner: String,
+    check: impl Fn() -> Result<(), String> + Send + Sync + 'static,
+    area: impl Fn() -> Result<Area, String> + Send + Sync + 'static,
+) -> Grant {
+    let token = PathBuf::from(format!("engine-call-{}", NEXT_GRANT.fetch_add(1, Ordering::Relaxed)));
+    let live = Arc::new(AtomicBool::new(true));
+    let active = live.clone();
+    let scope = Arc::new(move || {
+        if !active.load(Ordering::Acquire) {
+            return Err("the engine call was cancelled".into());
         }
-        None => grants.push((root.clone(), area, 1)),
-    }
-    Grant { root }
+        check()
+    });
+    let bound = Arc::new(move |call: &ServiceCall| {
+        if call.app_id != owner {
+            return Err("this engine call belongs to another app".into());
+        }
+        scope()?;
+        Ok(area()?.with_scope_check(scope.clone()))
+    });
+    GRANTS.lock().unwrap_or_else(|e| e.into_inner()).push((token.clone(), bound));
+    Grant { token, live }
 }
 
 impl Drop for Grant {
     fn drop(&mut self) {
-        let mut grants = GRANTS.lock().unwrap_or_else(|e| e.into_inner());
-        if let Some(i) = grants.iter().position(|(r, _, _)| *r == self.root) {
-            grants[i].2 -= 1;
-            if grants[i].2 == 0 {
-                grants.swap_remove(i);
-            }
-        }
+        self.live.store(false, Ordering::Release);
+        GRANTS.lock().unwrap_or_else(|e| e.into_inner()).retain(|(token, _)| token != &self.token);
     }
 }
 
-fn granted(root: &Path) -> Option<Area> {
-    GRANTS.lock().unwrap_or_else(|e| e.into_inner()).iter().find(|(r, _, _)| r == root).map(|(_, area, _)| area.clone())
+fn granted(token: &Path) -> Option<octosense_engine_area::Resolver> {
+    GRANTS.lock().unwrap_or_else(|e| e.into_inner()).iter()
+        .find(|(key, _)| key == token).map(|(_, resolve)| resolve.clone())
 }
 
 // ------------------------------------------------------------ agents
@@ -228,32 +234,71 @@ fn peer_of_app(app: &str) -> String {
     }
 }
 
-/// The area of an agent's `call` to a tool of `owner` (the app the executor
-/// runs it as, set at registration): for a craft engine's tool, the
-/// caller's own folder, the system agent's workspace or the calling app
-/// agent's account folder; for an app's own tool, that app's agent folder,
-/// for its own agent's account or else the account the app acts for now.
-/// No write there replaces a file; an app's folder keeps to what is left of
-/// its storage. `Err((kind, why))` when there is none now.
-pub fn agent_area(env: &dyn AreaEnv, call: &HostToolCall, owner: &str) -> Result<Area, (&'static str, String)> {
-    let own = call.caller_kind == CallerKind::AppPeer && super::app_of_peer(&call.calling_app) == owner;
-    if !belongs_to_no_app(owner) && !own {
-        let account = env.current_account(owner);
-        return agent_folder(env, &peer_of_app(owner), account.as_deref());
-    }
-    match call.caller_kind {
-        CallerKind::System => {
-            let root = env.system_workspace().ok_or(("no_workspace", "the system agent's workspace is not known yet: it is the folder its conversation opens in, so open the Assistant once".to_string()))?;
-            Ok(Area::new(root, None, false))
+/// Capture the target account before handing the call to the engine worker.
+#[derive(Clone)]
+enum AgentTarget {
+    System,
+    Account { peer: String, account: Option<String>, current: bool },
+}
+
+impl AgentTarget {
+    fn for_call(env: &dyn AreaEnv, call: &HostToolCall, owner: &str) -> Self {
+        let own = call.caller_kind == CallerKind::AppPeer && super::app_of_peer(&call.calling_app) == owner;
+        if !belongs_to_no_app(owner) && !own {
+            return Self::Account { peer: peer_of_app(owner), account: env.current_account(owner), current: true };
         }
-        CallerKind::AppPeer => agent_folder(env, &call.calling_app, call.account.as_deref()),
+        match call.caller_kind {
+            CallerKind::System => Self::System,
+            CallerKind::AppPeer => Self::Account { peer: call.calling_app.clone(), account: call.account.clone(), current: false },
+        }
     }
+
+    fn root(&self, env: &dyn AreaEnv) -> Result<PathBuf, (&'static str, String)> {
+        match self {
+            Self::System => env.system_workspace().ok_or(("no_workspace", "the system agent's workspace is not known yet: it is the folder its conversation opens in, so open the Assistant once".into())),
+            Self::Account { peer, account, current } => {
+                if *current && env.current_account(super::app_of_peer(peer)) != *account {
+                    return Err(("signed_out", "the owning app's active account changed".into()));
+                }
+                agent_folder(env, peer, account.as_deref())
+            }
+        }
+    }
+
+    fn area(&self, env: &dyn AreaEnv, root: PathBuf) -> Result<Area, String> {
+        match self {
+            Self::System => Ok(Area::new(root, None, false)),
+            Self::Account { peer, .. } => {
+                let app = super::app_of_peer(peer);
+                let storage = env.storage().ok_or("this host keeps no app storage")?;
+                storage_area(storage, app, root, env.jail_quota(app)?, false)
+            }
+        }
+    }
+}
+
+pub(super) fn grant_agent(env: Arc<dyn AreaEnv>, call: &HostToolCall, owner: &str) -> Result<(PathBuf, Grant), (&'static str, String)> {
+    let target = AgentTarget::for_call(&*env, call, owner);
+    let root = target.root(&*env)?;
+    let expected = root.clone();
+    let scope = target.clone();
+    let scope_env = env.clone();
+    let check = move || {
+        let now = scope.root(&*scope_env).map_err(|(_, why)| why)?;
+        if now != expected {
+            return Err("the engine workspace changed while the call was queued".into());
+        }
+        Ok(())
+    };
+    let path = root.clone();
+    let grant = grant(owner.to_owned(), check, move || target.area(&*env, path.clone()));
+    Ok((root, grant))
 }
 
 /// The folder of `peer`'s agent for `account` (`None`: the device's, for an
 /// app without accounts), refused while that account is signed out or its
 /// folder refused, or when the agent has no files.
-fn agent_folder(env: &dyn AreaEnv, peer: &str, account: Option<&str>) -> Result<Area, (&'static str, String)> {
+fn agent_folder(env: &dyn AreaEnv, peer: &str, account: Option<&str>) -> Result<PathBuf, (&'static str, String)> {
     let storage = env.storage().ok_or(("no_workspace", "this host keeps no app storage".to_string()))?;
     let app = super::app_of_peer(peer);
     let account = match account {
@@ -267,17 +312,19 @@ fn agent_folder(env: &dyn AreaEnv, peer: &str, account: Option<&str>) -> Result<
     if let Some(why) = super::workspace_refused_in(storage, peer, account) {
         return Err(("workspace_refused", format!("{app}'s folder for the account was refused: {why}")));
     }
-    let root = super::agent_workspace_in(storage, peer, account).ok_or(("no_workspace", format!("{app}'s agent has no folder of its own")))?;
-    let quota_left = quota_left(env, storage, app).map_err(|why| ("no_workspace", why))?;
-    Ok(Area::new(root, quota_left, false))
+    super::agent_workspace_in(storage, peer, account).ok_or(("no_workspace", format!("{app}'s agent has no folder of its own")))
 }
 
-/// What is left of `app`'s storage: its ceiling less what its jail holds
-/// now (`None`: no ceiling).
-fn quota_left(env: &dyn AreaEnv, storage: &Storage, app: &str) -> Result<Option<u64>, String> {
-    let Some(ceiling) = env.jail_quota(app)?.bytes else { return Ok(None) };
+/// The engine preflights against the remaining quota, then checks the
+/// whole app's jail again when committing its writes.
+fn storage_area(storage: &Storage, app: &str, root: PathBuf, quota: JailQuota, may_replace: bool) -> Result<Area, String> {
+    if !quota.storage {
+        return Err(format!("{app} has no storage of its own, so an engine has no folder to work in for it"));
+    }
+    let Some(ceiling) = quota.bytes else { return Ok(Area::new(root, None, may_replace)) };
+    let jail = storage.layout().app(app)?.jail;
     let used = storage.usage(app).map_err(|e| format!("{app}: {e}"))?.jail_bytes;
-    Ok(Some(ceiling.saturating_sub(used)))
+    Ok(Area::new(root, Some(ceiling.saturating_sub(used)), may_replace).with_jail_quota(jail, ceiling))
 }
 
 // ------------------------------------------------------------ apps
@@ -289,58 +336,81 @@ fn quota_left(env: &dyn AreaEnv, storage: &Storage, app: &str) -> Result<Option<
 /// its jail was not refused; a foreground call may replace a file, a
 /// background one (a glance tile's) may not; within what is left of its
 /// storage.
-pub fn app_area(env: &dyn AreaEnv, app: &str, may_prompt: bool) -> Result<Area, String> {
+fn app_area(env: &dyn AreaEnv, app: &str, may_prompt: bool) -> Result<Area, String> {
     let storage = env.storage().ok_or("this host keeps no app storage")?;
     crate::apps::check_script_app_id(app)?;
-    let quota = env.jail_quota(app)?;
-    if !quota.storage {
-        return Err(format!("{app} has no storage of its own, so an engine has no folder to work in for it"));
-    }
-    let current = env.current_account(app);
-    let account = if storage.spec(app).accounts {
-        Some(current.ok_or_else(|| format!("{app} has no signed-in account"))?)
-    } else {
-        None
-    };
-    if storage.is_signed_out(app, account.as_deref()) {
-        return Err(format!("{app}'s account is signed out"));
-    }
-    if let Some(why) = storage.refused(app, account.as_deref()) {
-        return Err(format!("{app}'s folder was refused: {why}"));
-    }
     let jail = storage.layout().app(app)?.jail;
-    crate::app_storage::ensure_private_dir(storage.layout().apps_root(), &jail).map_err(|e| format!("{app}: {e}"))?;
-    let quota_left = match quota.bytes {
-        Some(ceiling) => Some(ceiling.saturating_sub(storage.usage(app).map_err(|e| format!("{app}: {e}"))?.jail_bytes)),
-        None => None,
-    };
-    Ok(Area::new(jail, quota_left, may_prompt))
+    let area = storage_area(storage, app, jail, env.jail_quota(app)?, may_prompt)?;
+    crate::app_storage::ensure_private_dir(storage.layout().apps_root(), &area.root).map_err(|e| format!("{app}: {e}"))?;
+    Ok(area)
 }
 
 // ------------------------------------------------------------ the resolver
 
-/// Where `call` works, on `env`: the area granted to the agent call whose
-/// root is its `host_dir`, or, for App Hub's shared `host_dir`, the calling
-/// app's own storage ([`app_area`]); refused for any other.
-pub fn resolve_in(env: &dyn AreaEnv, call: &ServiceCall) -> Result<Area, String> {
-    if let Some(area) = granted(&call.host_dir) {
-        return Ok(area);
+/// Get the active account before reading the spec: production discovers a
+/// previously unseen app's account settings while looking it up.
+fn app_account(env: &dyn AreaEnv, app: &str) -> Result<Option<String>, String> {
+    let storage = env.storage().ok_or("this host keeps no app storage")?;
+    let current = env.current_account(app);
+    if storage.spec(app).accounts {
+        current.map(Some).ok_or_else(|| format!("{app} has no signed-in account"))
+    } else {
+        Ok(None)
     }
+}
+
+fn prepare_app(env: Arc<dyn AreaEnv>, call: &mut ServiceCall) -> Option<Grant> {
+    // Agent tools carry their own per-call grant. Only the Card runner
+    // supplies the shared host directory for an app's own request.
     let shared = env.storage().map(|storage| storage.layout().apps_root().join(".host"));
-    if shared.is_some_and(|shared| shared == call.host_dir) {
-        return app_area(env, &call.app_id, call.may_prompt);
+    if shared.as_ref() != Some(&call.host_dir) {
+        return None;
     }
-    Err("this call names no folder the host gave it".into())
+    let app = call.app_id.clone();
+    let may_replace = call.may_prompt;
+    // Some engine methods (sheet.eval without a book, command catalogs)
+    // need no files. Carry an unavailable account to the area resolver so
+    // it refuses only methods which actually request an area.
+    let account = app_account(&*env, &app);
+    let scope_env = env.clone();
+    let owner = app.clone();
+    let check = move || {
+        let account = account.as_ref().map_err(Clone::clone)?;
+        if app_account(&*scope_env, &owner)? != *account {
+            return Err(format!("{owner}'s active account changed while its engine call was queued"));
+        }
+        let storage = scope_env.storage().ok_or("this host keeps no app storage")?;
+        if storage.is_signed_out(&owner, account.as_deref()) {
+            return Err(format!("{owner}'s account is signed out"));
+        }
+        if let Some(why) = storage.refused(&owner, account.as_deref()) {
+            return Err(format!("{owner}'s folder was refused: {why}"));
+        }
+        Ok(())
+    };
+    let grant = grant(app.clone(), check, move || app_area(&*env, &app, may_replace));
+    call.host_dir = grant.token.clone();
+    Some(grant)
+}
+
+fn prepare(call: &mut ServiceCall) -> Result<Option<Box<dyn Send>>, String> {
+    Ok(prepare_app(shell(), call).map(|grant| Box::new(grant) as Box<dyn Send>))
+}
+
+pub fn resolve_in(call: &ServiceCall) -> Result<Area, String> {
+    let resolve = granted(&call.host_dir).ok_or("this call names no folder the host gave it")?;
+    resolve(call)
 }
 
 /// The resolver the shell installs on every engine service.
 pub fn resolver() -> octosense_engine_area::Resolver {
-    Arc::new(|call: &ServiceCall| resolve_in(&ShellEnv, call))
+    Arc::new(resolve_in)
 }
 
 /// At startup, beside the engines' registration: every engine works in its
 /// caller's area from now on.
 pub fn install_resolvers() {
+    octosense_engine_area::worker::set_prepare(prepare);
     let resolver = resolver();
     // The desktop's engines (`craft-engines`): the photo engine and the ten.
     #[cfg(feature = "craft-engines")]
@@ -399,12 +469,12 @@ pub fn relative_errors(reply: ToolReply, root: &Path) -> ToolReply {
 /// A test's [`AreaEnv`]: its own storage and system workspace, and fixed
 /// quotas (an app without one: no ceiling, storage granted).
 #[cfg(test)]
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub(crate) struct FixedEnv {
     pub storage: Option<Arc<Storage>>,
     pub system: Option<PathBuf>,
     pub quotas: std::collections::HashMap<String, JailQuota>,
-    pub accounts: std::collections::HashMap<String, String>,
+    pub accounts: Arc<Mutex<std::collections::HashMap<String, String>>>,
 }
 
 #[cfg(test)]
@@ -419,7 +489,7 @@ impl AreaEnv for FixedEnv {
         Ok(self.quotas.get(app).copied().unwrap_or(JailQuota { bytes: None, storage: true }))
     }
     fn current_account(&self, app: &str) -> Option<String> {
-        match self.accounts.get(app) {
+        match self.accounts.lock().unwrap().get(app) {
             Some(account) => Some(account.clone()),
             None => self.storage.as_ref().filter(|s| !s.spec(app).accounts).map(|_| crate::app_storage::DEVICE.to_string()),
         }
