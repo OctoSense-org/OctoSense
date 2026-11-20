@@ -52,8 +52,24 @@ fn sender() -> Result<SyncSender<Task>, String> {
     Ok(tx)
 }
 
+struct ActiveCall {
+    reply: Replier,
+    isolate: Isolate,
+    scope: Option<super::ScopeCheck>,
+}
+
 thread_local! {
-    static ACTIVE: RefCell<Option<(Replier, Isolate)>> = const { RefCell::new(None) };
+    static ACTIVE: RefCell<Option<ActiveCall>> = const { RefCell::new(None) };
+}
+
+/// Only methods that resolve a private folder need its account grant. Keep
+/// the check until reply so a read in flight cannot reveal a previous account.
+pub(crate) fn note_scope(check: super::ScopeCheck) {
+    ACTIVE.with_borrow_mut(|active| {
+        if let Some(active) = active {
+            active.scope = Some(check);
+        }
+    });
 }
 
 /// Check a worker request again just before making an engine output visible.
@@ -61,16 +77,25 @@ thread_local! {
 /// host request, so their area rules apply as usual.
 pub fn ensure_live() -> Result<(), String> {
     ACTIVE.with_borrow(|active| {
-        if let Some((reply, scope)) = active {
-            if !scope.is_live() {
+        if let Some(active) = active {
+            if !active.isolate.is_live() {
                 return Err("the caller's storage scope changed".into());
             }
-            if !reply.is_pending() {
+            if !active.reply.is_pending() {
                 return Err("the engine request expired or was cancelled".into());
             }
         }
         Ok(())
     })
+}
+
+fn validate_reply() -> Result<(), String> {
+    ensure_live()?;
+    let scope = ACTIVE.with_borrow(|active| active.as_ref().and_then(|call| call.scope.clone()));
+    if let Some(check) = scope {
+        check()?;
+    }
+    Ok(())
 }
 
 /// Enqueue engine work without waiting for queue space. A queued request
@@ -100,9 +125,17 @@ pub fn call(
                 answer.send(Err("the caller's storage scope changed".into()));
                 return;
             }
-            ACTIVE.set(Some((answer.clone(), isolate.clone())));
-            let result = catch_unwind(AssertUnwindSafe(|| work(call, isolate)))
-                .unwrap_or_else(|_| Err("the engine failed while processing the request".into()));
+            ACTIVE.set(Some(ActiveCall {
+                reply: answer.clone(),
+                isolate: isolate.clone(),
+                scope: None,
+            }));
+            let result = catch_unwind(AssertUnwindSafe(|| {
+                let result = work(call, isolate);
+                validate_reply()?;
+                result
+            }))
+            .unwrap_or_else(|_| Err("the engine failed while processing the request".into()));
             ACTIVE.set(None);
             answer.send(result);
         }

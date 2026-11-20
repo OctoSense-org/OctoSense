@@ -280,6 +280,7 @@ impl Area {
     /// [`Stage`] is dropped; one a crashed process left behind is removed by
     /// the next staging in the same area.
     pub fn stage(&self) -> Result<Stage<'_>, String> {
+        self.ensure_live()?;
         std::fs::create_dir_all(&self.root).map_err(|e| format!("cannot prepare a staging folder: {e}"))?;
         let mine = format!("{STAGING_PREFIX}{}-", std::process::id());
         if let Ok(entries) = std::fs::read_dir(&self.root) {
@@ -543,6 +544,9 @@ impl Slot {
         match resolver {
             Some(resolve) => {
                 let area = resolve(call)?;
+                if let Some(check) = area.scope_check.as_ref() {
+                    worker::note_scope(check.clone());
+                }
                 if !area.root.is_dir() {
                     return Err("this call's folder is not there".into());
                 }
@@ -692,9 +696,21 @@ mod tests {
         let stage = area.stage().unwrap();
         std::fs::write(stage.path("a"), b"ab").unwrap();
         std::fs::write(stage.path("b"), b"cde").unwrap();
-        storage.import_new("one", b"ab").unwrap();
+        // Force each kind of foreground writer between an off-thread-style
+        // usage measurement and its publication. Each must invalidate the
+        // first measurement, even while the engine's private stage exists.
+        fn observed_after(root: &std::path::Path, change: impl FnOnce()) -> u64 {
+            let writes = jail_writes(root);
+            let mut change = Some(change);
+            writes.checked(|| {
+                let used = committed_bytes(root, &writes.private_dirs()).unwrap();
+                if let Some(change) = change.take() { change(); }
+                used
+            }, Ok).unwrap()
+        }
+        assert_eq!(observed_after(jail.path(), || storage.import_new("one", b"ab").unwrap()), 2);
         let prepared = storage.worker_snapshot().prepare_import("two", b"cd").unwrap();
-        storage.commit_import(prepared).unwrap();
+        assert_eq!(observed_after(jail.path(), || storage.commit_import(prepared).unwrap()), 4);
         let moves = [(stage.path("a"), account.join("a")), (stage.path("b"), account.join("b"))];
         assert!(no_room(&stage.commit(&moves).unwrap_err()));
         assert!(!account.join("a").exists() && !account.join("b").exists());
@@ -839,6 +855,15 @@ mod tests {
         assert!(!second.exists());
         stage.commit(&[(source, second.clone())]).unwrap();
         assert_eq!(std::fs::read(second).unwrap(), b"replacement");
+    }
+
+    #[test]
+    fn a_revoked_area_cannot_recreate_its_folder_to_stage_an_output() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("removed-account");
+        let area = Area::new(&root, None, true).with_scope_check(Arc::new(|| Err("signed out".into())));
+        assert!(matches!(area.stage(), Err(error) if error == "signed out"));
+        assert!(!root.exists());
     }
 
     #[test]
