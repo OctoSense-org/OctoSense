@@ -1,0 +1,94 @@
+diff --git a/widgets/src/splash_host.rs b/widgets/src/splash_host.rs
+index 75362aa35..9f7530657 100644
+--- a/widgets/src/splash_host.rs
++++ b/widgets/src/splash_host.rs
+@@ -106,6 +106,9 @@ fn drop(&mut self) {
+ pub(crate) fn set_tag_for_heap(heap_key: usize, tag: Option<String>) {
+     BRIDGE.with(|b| {
+         let mut b = b.borrow_mut();
++        if b.tags.get(&heap_key) != tag.as_ref() {
++            crate::splash_storage::invalidate_scope(heap_key);
++        }
+         match tag {
+             Some(tag) => {
+                 b.tags.insert(heap_key, tag);
+@@ -162,6 +165,7 @@ pub(crate) fn gc_bridge(dead_heaps: &[usize]) {
+     BRIDGE.with(|b| {
+         let mut b = b.borrow_mut();
+         for heap in dead_heaps {
++            crate::splash_storage::invalidate_scope(*heap);
+             b.tags.remove(heap);
+             b.caps.remove(heap);
+             b.no_prompt.remove(heap);
+diff --git a/widgets/src/splash_storage.rs b/widgets/src/splash_storage.rs
+index 3fb402d79..0fc43235d 100644
+--- a/widgets/src/splash_storage.rs
++++ b/widgets/src/splash_storage.rs
+@@ -50,6 +50,11 @@
+ const MAX_NAME: usize = 128;
+ 
+ std::thread_local! {
++    /// Only the UI thread holds the strong reference. Worker-held lifetime
++    /// handles expire together when the app tag, root or quota changes.
++    static SCOPE_LIFETIMES: std::cell::RefCell<HashMap<usize, std::sync::Arc<()>>> =
++        std::cell::RefCell::new(HashMap::new());
++
+     /// heap-key → sandbox root for every live isolate that has one. Thread
+     /// local like the isolate registry itself (isolates are UI-thread-owned).
+     static SANDBOX_ROOTS: std::cell::RefCell<HashMap<usize, PathBuf>> =
+@@ -68,6 +73,9 @@
+ pub(crate) fn set_quota_for_heap(heap_key: usize, total_bytes: Option<u64>) {
+     JAIL_QUOTAS.with(|q| {
+         let mut q = q.borrow_mut();
++        if q.get(&heap_key).copied().unwrap_or(MAX_TOTAL_BYTES) != total_bytes.unwrap_or(MAX_TOTAL_BYTES) {
++            invalidate_scope(heap_key);
++        }
+         match total_bytes {
+             Some(bytes) => {
+                 q.insert(heap_key, bytes);
+@@ -89,6 +97,9 @@ fn quota_for_vm(vm: &ScriptVm) -> u64 {
+ pub(crate) fn set_root_for_heap(heap_key: usize, root: Option<PathBuf>) {
+     SANDBOX_ROOTS.with(|r| {
+         let mut r = r.borrow_mut();
++        if r.get(&heap_key) != root.as_ref() {
++            invalidate_scope(heap_key);
++        }
+         match root {
+             Some(root) => {
+                 r.insert(heap_key, root);
+@@ -102,6 +113,7 @@ pub(crate) fn set_root_for_heap(heap_key: usize, root: Option<PathBuf>) {
+ 
+ /// Drops roots for reclaimed isolates (called from the isolate GC).
+ pub(crate) fn gc_roots(dead_heaps: &[usize]) {
++    for heap in dead_heaps { invalidate_scope(*heap); }
+     SANDBOX_ROOTS.with(|r| {
+         let mut r = r.borrow_mut();
+         for heap in dead_heaps {
+@@ -183,6 +195,27 @@ pub fn prepare_import(&self, path:&str, bytes:&[u8])->Result<PreparedStorageImpo
+     }
+ }
+ 
++/// A worker may check whether the originating isolate still owns the same
++/// storage. Only the thread that owns the isolate can mint a lifetime.
++#[derive(Clone)]
++pub struct StorageLifetime(std::sync::Weak<()>);
++
++impl StorageLifetime {
++    pub fn is_live(&self) -> bool { self.0.strong_count() != 0 }
++}
++
++pub fn storage_lifetime_for_heap(heap_key: usize, app_id: &str) -> Option<StorageLifetime> {
++    storage_for_heap(heap_key, app_id)?;
++    SCOPE_LIFETIMES.with(|scopes| {
++        let mut scopes = scopes.borrow_mut();
++        Some(StorageLifetime(std::sync::Arc::downgrade(scopes.entry(heap_key).or_default())))
++    })
++}
++
++pub(crate) fn invalidate_scope(heap_key: usize) {
++    SCOPE_LIFETIMES.with(|scopes| scopes.borrow_mut().remove(&heap_key));
++}
++
+ pub fn storage_for_heap(heap_key: usize, app_id: &str) -> Option<StorageAccess> {
+     if crate::splash_host::app_tag_for_heap(heap_key).as_deref() != Some(app_id) { return None; }
+     Some(StorageAccess {

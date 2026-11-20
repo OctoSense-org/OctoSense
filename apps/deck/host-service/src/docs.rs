@@ -16,29 +16,15 @@
 //! steps into one and keeps at most [`MAX_UNDO`] ([`crate::gate`]).
 //! Closing a document drops its session.
 //!
-//! **The thread.** Every call reaches this service on the shell's UI
-//! thread: App Hub's `services::pump` dispatches an app's `host.request`
-//! inline from the card runner's event handler, and the agent relay and
-//! components' host calls are pumped from the same place. So the table is a
-//! `thread_local`, and the UI thread takes no lock for it (makepad's rule:
-//! the UI thread never takes a lock another thread can hold). A call on any
-//! other thread finds an empty table of its own: its handles are unknown
-//! there, which fails closed and shares nothing.
-//!
-//! **Release**, as the pdf service's (`apps/pdf/host-service/src/docs.rs`):
-//! a document goes on `deck.close`; when the isolate that opened it closes
-//! (App Hub's `services::on_isolate_closed` listener, [`isolate_closed`],
-//! called from `services::cancel_heap` before the isolate's heap key, an
-//! address, can be reused); when its storage scope changes or goes (makepad's
-//! `splash_storage::storage_for_heap` for that key, checked by every call's
-//! [`sweep`]); and, for a caller with no isolate (a component's host call, a
-//! test), after [`IDLE`] without a call. Its renders go with it, and so do
-//! the clips it handed out for playback that no other document open in the
-//! same storage uses ([`media::forget`]); any a released document left
-//! behind go when the caller next opens a document ([`cache::prune`],
-//! [`media::prune`]).
+//! The engine worker owns this thread-local table and all its sessions. On
+//! submission the isolate's owner captures its storage lifetime. An isolate
+//! close, tag change, jail change or quota change revokes that lifetime.
+//! App Hub's close listener wakes the worker to reclaim expired documents
+//! and their cached files. Every call also sweeps the table before use, so
+//! even a replacement with the same heap address cannot reach an old handle.
+//! Sessions opened with no Makepad storage scope expire after [`IDLE`].
 
-use std::cell::{Cell, RefCell};
+use std::cell::RefCell;
 use std::collections::{BTreeSet, HashMap};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
@@ -49,7 +35,7 @@ use std::time::{Duration, Instant};
 use deckcraft_engine::cmd::file as engine_file;
 use deckcraft_engine::{Clipboard, DocState, Session};
 use deckcraft_model::{Presentation, Slide, SlideId};
-use octosense_appstore::makepad_widgets::splash_storage::{self, StorageAccess};
+use octosense_engine_area::isolate::Isolate;
 use octosense_engine_area::Area;
 use serde_json::{json, Value as Json};
 
@@ -76,15 +62,6 @@ pub(crate) const MAX_CREATE_SLIDES: usize = 200;
 pub(crate) const MAX_TITLE: usize = 2_000;
 pub(crate) const MAX_BODY: usize = 20_000;
 
-/// What keeps a document open besides `deck.close`.
-pub(crate) enum Binding {
-    /// Opened from an app's isolate: open while that isolate's storage
-    /// scope is.
-    Isolate { heap: usize, scope: StorageAccess },
-    /// Opened by a caller with no isolate: open until [`IDLE`] passes
-    /// without a call.
-    Unbound,
-}
 
 /// A render in the cache that shows this document: a slide, a slide at a
 /// build step, or a layout picture.
@@ -109,7 +86,7 @@ pub(crate) struct OpenDoc {
     /// without a path writes. `None` for a deck opened from a `.pptx` or an
     /// outline, whose first save names a path.
     pub file: Option<String>,
-    pub binding: Binding,
+    pub binding: Isolate,
     pub last_used: Instant,
     /// Bumped by every change, undo and redo.
     pub rev: u64,
@@ -180,14 +157,11 @@ impl OpenDoc {
     }
 
     fn alive(&self, now: Instant) -> bool {
-        match &self.binding {
-            Binding::Isolate { heap, scope } => splash_storage::storage_for_heap(*heap, &self.app).is_some_and(|now| now.same_scope(scope)),
-            Binding::Unbound => now.saturating_duration_since(self.last_used) < IDLE,
+        if self.binding.is_bound() {
+            self.binding.is_live()
+        } else {
+            now.saturating_duration_since(self.last_used) < IDLE
         }
-    }
-
-    fn bound_to(&self, closed: &[usize]) -> bool {
-        matches!(&self.binding, Binding::Isolate { heap, .. } if closed.contains(heap))
     }
 
     /// The document goes: its engine session, its renders in the service's
@@ -228,12 +202,8 @@ impl Docs {
 }
 
 thread_local! {
-    /// The open documents of this thread: the UI thread's (module doc).
+    /// The open documents of this thread: the engine worker's (module doc).
     static DOCS: RefCell<Docs> = RefCell::new(Docs::default());
-    /// Heap keys of isolates that closed while a call held [`DOCS`]: the
-    /// next [`sweep`] releases their documents. A `Cell`, which a listener
-    /// can always fill.
-    static CLOSED: Cell<Vec<usize>> = const { Cell::new(Vec::new()) };
     /// One copied item per app, storage scope and isolate. It can outlive
     /// its source deck, but follows the caller's lifetime and idle bound.
     static COPIES: RefCell<Vec<KeptCopy>> = const { RefCell::new(Vec::new()) };
@@ -254,7 +224,7 @@ struct KeptCopy {
     app: String,
     owner: PathBuf,
     heap: usize,
-    binding: Binding,
+    binding: Isolate,
     last_used: Instant,
     snapshot: ClipboardSnapshot,
     destinations: HashMap<(String, u32), u32>,
@@ -262,10 +232,7 @@ struct KeptCopy {
 
 impl KeptCopy {
     fn alive(&self, now: Instant) -> bool {
-        match &self.binding {
-            Binding::Isolate { heap, scope } => splash_storage::storage_for_heap(*heap, &self.app).is_some_and(|now| now.same_scope(scope)),
-            Binding::Unbound => now.saturating_duration_since(self.last_used) < IDLE,
-        }
+        self.binding.is_live() && (self.binding.is_bound() || now.saturating_duration_since(self.last_used) < IDLE)
     }
 }
 
@@ -277,8 +244,8 @@ pub(crate) fn remember_copy(cx: &Ctx, doc: &OpenDoc, source: Arc<Presentation>, 
     let clipboard = doc.session.clipboard.clone();
     let source = copy_context(&source, slide, &clipboard);
     let kept = KeptCopy {
-        app: cx.app.to_string(), owner: doc.owner.clone(), heap: cx.isolate,
-        binding: bind(cx), last_used: Instant::now(), destinations: HashMap::new(),
+        app: cx.app.to_string(), owner: doc.owner.clone(), heap: cx.isolate.heap,
+        binding: cx.isolate.clone(), last_used: Instant::now(), destinations: HashMap::new(),
         snapshot: ClipboardSnapshot { token, origin: doc.handle.clone(), source, slide, clipboard },
     };
     COPIES.with(|copies| {
@@ -340,7 +307,7 @@ pub(crate) fn copied(cx: &Ctx, token: u64) -> Result<ClipboardSnapshot, String> 
     let owner = owner(cx.area);
     COPIES.with(|copies| {
         let mut copies = copies.borrow_mut();
-        let item = copies.iter_mut().find(|item| item.app == cx.app && item.owner == owner && item.heap == cx.isolate && item.snapshot.token == token)
+        let item = copies.iter_mut().find(|item| item.app == cx.app && item.owner == owner && item.heap == cx.isolate.heap && item.snapshot.token == token)
             .ok_or_else(|| invalid("the copied item is no longer available; copy it again"))?;
         item.last_used = Instant::now();
         Ok(item.snapshot.clone())
@@ -353,7 +320,7 @@ pub(crate) fn copied_pastes(cx: &Ctx, token: u64, pastes: u32) {
     let owner = owner(cx.area);
     COPIES.with(|copies| {
         if let Some(item) = copies.borrow_mut().iter_mut().find(|item| {
-            item.app == cx.app && item.owner == owner && item.heap == cx.isolate && item.snapshot.token == token
+            item.app == cx.app && item.owner == owner && item.heap == cx.isolate.heap && item.snapshot.token == token
         }) {
             item.snapshot.clipboard.pastes = pastes;
             item.last_used = Instant::now();
@@ -366,7 +333,7 @@ pub(crate) fn copied_on(cx: &Ctx, token: u64, document: &str, slide: u32) -> Res
     let owner = owner(cx.area);
     COPIES.with(|copies| {
         let copies = copies.borrow();
-        let item = copies.iter().find(|item| item.app == cx.app && item.owner == owner && item.heap == cx.isolate && item.snapshot.token == token)
+        let item = copies.iter().find(|item| item.app == cx.app && item.owner == owner && item.heap == cx.isolate.heap && item.snapshot.token == token)
             .ok_or_else(|| invalid("the copied item is no longer available; copy it again"))?;
         Ok(*item.destinations.get(&(document.to_string(), slide)).unwrap_or(&0))
     })
@@ -376,7 +343,7 @@ pub(crate) fn copied_on_advance(cx: &Ctx, token: u64, document: &str, slide: u32
     let owner = owner(cx.area);
     COPIES.with(|copies| {
         if let Some(item) = copies.borrow_mut().iter_mut().find(|item| {
-            item.app == cx.app && item.owner == owner && item.heap == cx.isolate && item.snapshot.token == token
+            item.app == cx.app && item.owner == owner && item.heap == cx.isolate.heap && item.snapshot.token == token
         }) {
             let key = (document.to_string(), slide);
             if item.destinations.len() >= 256 && !item.destinations.contains_key(&key) { item.destinations.clear(); }
@@ -387,36 +354,6 @@ pub(crate) fn copied_on_advance(cx: &Ctx, token: u64, document: &str, slide: u32
     });
 }
 
-/// App Hub's `services::on_isolate_closed` listener ([`crate::register`]):
-/// the isolate whose heap key is `heap` closed, so every document bound to
-/// it goes now, with its renders, before a new isolate can get the key. If a
-/// call holds the table (a listener reached from inside one), the key waits
-/// for the next [`sweep`].
-pub(crate) fn isolate_closed(heap: usize) {
-    let copies_released = COPIES.with(|copies| {
-        let Ok(mut copies) = copies.try_borrow_mut() else { return false };
-        copies.retain(|item| item.heap != heap);
-        true
-    });
-    if !copies_released {
-        CLOSED.with(|closed| { let mut keys = closed.take(); keys.push(heap); closed.set(keys); });
-    }
-    let released = DOCS.with(|docs| {
-        let mut docs = docs.try_borrow_mut().ok()?;
-        let (gone, kept): (Vec<OpenDoc>, Vec<OpenDoc>) = std::mem::take(&mut docs.open).into_iter().partition(|doc| doc.bound_to(&[heap]));
-        docs.open = kept;
-        Some(gone)
-    });
-    match released {
-        // The engine sessions drop and the renders go outside the table.
-        Some(gone) => gone.into_iter().for_each(OpenDoc::release),
-        None => CLOSED.with(|closed| {
-            let mut keys = closed.take();
-            keys.push(heap);
-            closed.set(keys);
-        }),
-    }
-}
 
 /// The clips the documents open in the storage `owner` use, whichever app
 /// opened them; `None` while a call holds the table (the clips then stay,
@@ -465,11 +402,10 @@ pub(crate) fn sweep() {
 }
 
 pub(crate) fn sweep_at(now: Instant) {
-    let closed = CLOSED.with(Cell::take);
-    COPIES.with(|copies| copies.borrow_mut().retain(|item| !closed.contains(&item.heap) && item.alive(now)));
+    COPIES.with(|copies| copies.borrow_mut().retain(|item| item.alive(now)));
     let gone: Vec<OpenDoc> = DOCS.with(|docs| {
         let mut docs = docs.borrow_mut();
-        let (gone, kept): (Vec<OpenDoc>, Vec<OpenDoc>) = std::mem::take(&mut docs.open).into_iter().partition(|doc| doc.bound_to(&closed) || !doc.alive(now));
+        let (gone, kept): (Vec<OpenDoc>, Vec<OpenDoc>) = std::mem::take(&mut docs.open).into_iter().partition(|doc| !doc.alive(now));
         docs.open = kept;
         gone
     });
@@ -523,13 +459,6 @@ pub(crate) fn with_doc<T>(args: &Json, cx: &Ctx, m: &str, f: impl FnOnce(&mut Op
     result
 }
 
-/// What keeps a document this call opens open (module doc).
-fn bind(cx: &Ctx) -> Binding {
-    match splash_storage::storage_for_heap(cx.isolate, cx.app) {
-        Some(scope) => Binding::Isolate { heap: cx.isolate, scope },
-        None => Binding::Unbound,
-    }
-}
 
 /// Refuse a new document when the caller, or the service, holds the most.
 fn room_for_one(cx: &Ctx, owner: &Path) -> Result<(), String> {
@@ -568,7 +497,7 @@ fn new_doc(cx: &Ctx, owner: PathBuf, session: Session, file: Option<String>) -> 
         handle: mint(),
         session,
         file,
-        binding: bind(cx),
+        binding: cx.isolate.clone(),
         last_used: Instant::now(),
         rev: 0,
         slide_revs: HashMap::new(),

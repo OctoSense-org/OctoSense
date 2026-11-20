@@ -28,6 +28,8 @@
 //! the bytes one call adds stay within its quota.
 
 pub mod door;
+pub mod isolate;
+pub mod worker;
 
 use std::collections::HashSet;
 use std::io::Write as _;
