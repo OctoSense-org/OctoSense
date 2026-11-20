@@ -28,10 +28,10 @@ pub struct Limits {
 impl Default for Limits {
     /// Enough for a handful of summaries, classifications or extractions an
     /// hour; not enough for an app to run up a real bill. At DeepSeek V4
-    /// Flash prices 100k tokens are about US$0.03; at the priciest strong
+    /// Flash prices 300k tokens are about US$0.09; at the priciest strong
     /// model in the catalog, a few dollars.
     fn default() -> Self {
-        Limits { per_minute: 6, calls_per_day: 100, tokens_per_day: 100_000 }
+        Limits { per_minute: 6, calls_per_day: 100, tokens_per_day: 300_000 }
     }
 }
 
@@ -229,6 +229,11 @@ mod tests {
     use super::*;
 
     const T0: u64 = 1_790_000_000_000;
+
+    #[test]
+    fn default_token_budget_is_300k_per_day() {
+        assert_eq!(Limits::default().tokens_per_day, 300_000);
+    }
 
     #[test]
     fn rate_then_day_then_tokens() {
