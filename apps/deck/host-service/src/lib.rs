@@ -583,7 +583,7 @@ pub(crate) fn inside(area: &Area, rel: &str, key: &str, m: &str) -> Result<PathB
 /// the area, and nothing there (never replaced).
 pub(crate) fn new_file(area: &Area, rel: &str, key: &str, m: &str) -> Result<PathBuf, String> {
     let path = inside(area, rel, key, m)?;
-    Area::new(area.root.clone(), area.room(), false).check(&path, 0).map_err(codes::area)?;
+    area.with_replacement(false).check(&path, 0).map_err(codes::area)?;
     Ok(path)
 }
 

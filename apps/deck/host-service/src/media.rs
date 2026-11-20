@@ -185,7 +185,7 @@ fn write(area: &Area, bytes: &[u8], ext: &'static str, in_use: &[String], m: &st
     if area.room().is_some_and(|room| len > room) {
         return Err(full());
     }
-    let create = Area::new(area.root.clone(), area.room(), false);
+    let create = area.with_replacement(false);
     let stage = crate::stage(&create)?;
     let staged = stage.path("clip");
     std::fs::write(&staged, bytes).map_err(|e| match e.kind() {
