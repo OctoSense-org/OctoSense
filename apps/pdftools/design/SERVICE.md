@@ -21,7 +21,7 @@ goes to both. Derived from `BRIEF.md` (Actions and the engine).
   `pdf.close` and the app closing (its storage scope going away) release them.
 - **Scripts:** a document's own JavaScript never runs: every session turns the
   engine's JavaScript off before opening, as `session()` does today.
-- **Speed:** engine work still runs on the shell's UI thread (#399). Every
+- **Speed:** engine requests share a worker. Every
   method must answer a typical page in well under 100 ms; caps below keep the
   worst case bounded.
 - **Errors:** `Err` strings start with a stable code, then a colon and plain

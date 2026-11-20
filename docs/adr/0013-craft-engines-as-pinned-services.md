@@ -137,13 +137,12 @@ them:
   registration and refuses a larger set whole. With the engines, the system
   session's largest set is 63 (47 since the command doors). The shell offers the engine tools last and
   cuts them first past the cap, and a test keeps the whole grant within it.
-- **Long calls.** An engine call runs on the thread that dispatches it
-  (the shell's UI thread for a tool call) and holds App Hub's service
-  registry while it runs, as app calls to the engines always have. A long
-  export stalls the shell for its duration. The kernel waits 30 s for a
-  host tool's answer (an act call then ends with an unknown outcome), and
-  App Hub times the request out after 60 s. Moving engine work to a worker
-  with per-method timeouts is follow-up work.
+- **Long calls.** The twelve services share a bounded queue. One worker
+  processes engine calls in order so the shell can handle input and other
+  host services during an export. The kernel waits 30 s for a host tool's
+  answer (an act call then ends with an unknown outcome), and App Hub
+  times the request out after 60 s. An engine operation already in progress
+  can outlast its caller's deadline.
 
 ## Engine skills (9 Oct 2026)
 
@@ -359,9 +358,8 @@ each, instead of a curated tool per method (#418).
   effect (`effect.apply`, vector's `appearance.addEffect`) runs only an
   effect the engine builds in, so an effect plug-in (`plugin.<id>`) never
   runs through a door.
-- **Caps (decided 9 Oct 2026).** Engine work runs on the shell's UI
-  thread until #399, so no single call may multiply work or memory
-  without bound. Each service reviews the parameters that do (array and
+- **Caps (decided 9 Oct 2026).** The caps limit the work and memory a
+  caller can request. Each service reviews the parameters that multiply them (array and
   copy counts, rows and columns, canvas, page and render sizes, frame
   ranges and rates, iteration counts, and the small scales and spacings
   that multiply drawing work) and gives each a `Limit`: a ceiling on one
@@ -415,9 +413,8 @@ memory budget) and photo's `layer.smartFilter.setParams` (`safe` to
 that no id check sees: Essential Graphics values that set an effect's LUT
 file inside a precomp (effect), and a Color Lookup smart filter naming a
 file (photo); both services' fences now catch them, at open and after
-every command. Within its caps a call can still hold the UI thread for
-seconds (a 4K export, a heavy stack of effects at their caps); moving
-engine work to a worker with timeouts is #399.
+every command. Within its caps a 4K export or a heavy stack of effects
+can still occupy the engine worker for seconds and delay later engine calls.
 
 `photo.run`, reached only by an app's own `host.request`, now goes through
 the same gate. Each door engine's `SKILL.md` lists `info` and `run`,

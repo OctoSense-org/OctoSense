@@ -165,7 +165,7 @@ engine works in the same folder.
 
 Notes for whoever changes the script:
 
-- **Engine work runs on the shell's UI thread (#399).** The app keeps one
+- **PDF Tools prioritizes the current page on the engine worker.** The app keeps one
   background render out at a time (`pump()`): the current page and the two
   after it, then the visible thumbnails, then the rest of the run, then the
   other thumbnails, then Home's covers. Once a start, Home asks `pdf.cover`
@@ -387,8 +387,8 @@ they leave the step out and say so in `run.json`.
   host window, so that step on a real display is **unverified**. On a
   heavily loaded machine a tap can overrun the 64 ms budget
   and be lost (seen at load averages of 60 to 150 before `library.json` moved
-  off the tap path). The pdf service's file writes run on the UI thread and
-  count against that budget too (overruns after 262 and 555 ms renames, at
+  off the tap path). In those runs, PDF writes ran on the UI thread
+  and counted against that budget (overruns after 262 and 555 ms renames, at
   load averages of 54 to 74). The engine reports neither a
   paragraph's alignment nor its colour: the Edit panel reads the alignment
   from the lines' boxes and shows the colour as the paragraph's own until you

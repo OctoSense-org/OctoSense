@@ -102,9 +102,9 @@ app's own agent and `tools.json`, the system toolbox, `glance.publish` and
   handle, on the pdf service's terms (`src/docs.rs`): a document belongs to
   the caller app, its storage scope and the handle (anyone else's is
   `unknown_doc:`), a caller keeps at most 8 open and the process 32, the
-  table is a `thread_local` on the UI thread, the listener on App Hub's
-  `services::on_isolate_closed` releases a closing isolate's documents and
-  their renders, every call sweeps for a changed storage scope, and a
+  document table lives on the engine worker. The UI thread records the
+  isolate's storage scope. Closing the isolate invalidates its handles
+  and wakes the worker to release its documents and renders. A
   caller with no isolate gets a 15-minute idle bound. Each method builds
   every engine command and its parameters itself and refuses a key it does
   not take, then runs them through one gate (`src/gate.rs`): the door
@@ -220,17 +220,11 @@ app's own agent and `tools.json`, the system toolbox, `glance.publish` and
   undo history, under a handle; a document belongs to the caller app, its
   storage scope (the area's root) and the handle, so another app's or
   scope's handle is `unknown_doc:`, and a caller keeps at most 8 open
-  (`src/docs.rs`). The table is a `thread_local`, because every call reaches
-  the service on the UI thread (App Hub's `services::pump` inline from the
-  card runner, the relay's and components' calls from `host_tools::pump`),
-  which must take no lock another thread can hold. `pdf.close` releases a
-  document, and so does its app closing: a document is bound to the opening
-  isolate, and the service's listener on App Hub's
-  `services::on_isolate_closed` (called from `cancel_heap`, which every host
-  calls for a closing isolate) releases its documents and their renders
-  before the isolate's heap key, an address, can be reused. Every call also
-  sweeps for a changed storage scope (Makepad's
-  `splash_storage::storage_for_heap` for `Replier::isolate_key()`), and a
+  (`src/docs.rs`). The engine worker owns the document table. `pdf.close`
+  releases a document. When the opening isolate closes, App Hub calls
+  `services::on_isolate_closed` on the UI thread. The listener invalidates
+  the isolate's handles and wakes the worker to release its documents and
+  renders. A replacement isolate can safely reuse the same heap address. A
   caller with no isolate gets a 15-minute idle bound. Each method runs
   reviewed engine commands, its
   review beside it (`src/reading.rs`, `src/review.rs`, `src/change.rs`): the
@@ -398,8 +392,8 @@ rows and columns, sizes, frame ranges, with copies multiplying across a
 call), admits every command of a call before running any, and fences what
 a command could plant in the document after each one (vector's linked
 images, effect's LUT and colour files, film's media and effect paths,
-photo's linked smart objects). Engine work runs on the shell's UI thread,
-so every door caps what one call may ask for: give a new multiplying
+photo's linked smart objects). Engine calls share a worker. Every door
+caps the work one call can request. Give a new multiplying
 parameter a `Limit`, with its reason beside it. A command the engine
 cannot yet do safely on hostile data (deck's media and zip parsing, #448)
 is `Held`: the door refuses it, saying why, until the engine is fixed. Only `safe` ids and reviewed reads
