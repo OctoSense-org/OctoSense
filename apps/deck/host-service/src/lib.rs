@@ -411,7 +411,7 @@ pub use warm::warm;
 /// when it closes ([`docs`]). Then start paying the engine's first-call cost
 /// on a thread of its own ([`warm`]).
 pub fn register() {
-    octosense_appstore::services::on_isolate_closed(docs::isolate_closed);
+    octosense_engine_area::worker::on_isolate_closed(docs::sweep);
     register_host_service(Box::new(DeckService));
     warm();
 }
@@ -436,13 +436,10 @@ impl HostService for DeckService {
     }
 
     fn call(&mut self, call: ServiceCall, reply: Replier, _host: &mut dyn ServiceHost) {
-        // App Hub calls this inline, holding its registry's lock: a panic
-        // in the engine must not unwind through it (and poison every
-        // service's registry), so it becomes this call's error.
-        let isolate = reply.isolate_key();
-        let answer = catch_unwind(AssertUnwindSafe(|| serve_from(&AREAS, &call, isolate)))
-            .unwrap_or_else(|_| Err(fail(Code::Damaged, "the deck engine failed unexpectedly")));
-        reply.send(answer);
+        octosense_engine_area::worker::call(call, reply, |call, isolate| {
+            catch_unwind(AssertUnwindSafe(|| serve_scoped(&AREAS, &call, isolate)))
+                .unwrap_or_else(|_| Err(fail(Code::Damaged, "the deck engine failed unexpectedly")))
+        });
     }
 }
 
@@ -453,7 +450,7 @@ pub(crate) struct Ctx<'a> {
     /// The requesting isolate's heap key (App Hub's `Replier::isolate_key`;
     /// a key no isolate has for an agent's or a component's call): what a
     /// document it opens is bound to ([`docs`]).
-    pub isolate: usize,
+    pub isolate: octosense_engine_area::isolate::Isolate,
 }
 
 /// One call with no isolate behind it, as an agent's or a test's.
@@ -464,7 +461,12 @@ fn serve(areas: &Slot, call: &ServiceCall) -> Result<Json, String> {
 
 /// One call, from the isolate whose heap key is `isolate`, in the area
 /// `areas` gives it.
+#[cfg(test)]
 fn serve_from(areas: &Slot, call: &ServiceCall, isolate: usize) -> Result<Json, String> {
+    serve_scoped(areas, call, octosense_engine_area::isolate::Isolate::capture(isolate, &call.app_id))
+}
+
+fn serve_scoped(areas: &Slot, call: &ServiceCall, isolate: octosense_engine_area::isolate::Isolate) -> Result<Json, String> {
     if !may_call(&call.app_id) {
         return Err(invalid("the deck service serves system apps only"));
     }
@@ -529,7 +531,7 @@ fn dispatch_in(method: &str, args: &Json, cx: &Ctx) -> Result<Json, String> {
 fn dispatch(method: &str, args: &Json, host_dir: &Path) -> Result<Json, String> {
     let area = Area::legacy(host_dir, "deck");
     std::fs::create_dir_all(&area.root).map_err(|e| format!("deck: {e}"))?;
-    dispatch_in(method, args, &Ctx { area: &area, app: "os.fixture", isolate: 0 })
+    dispatch_in(method, args, &Ctx { area: &area, app: "os.fixture", isolate: octosense_engine_area::isolate::Isolate::capture(0, "os.fixture") })
 }
 
 /// `rel` as the service names a path in an answer: its normal components
@@ -581,7 +583,7 @@ pub(crate) fn inside(area: &Area, rel: &str, key: &str, m: &str) -> Result<PathB
 /// the area, and nothing there (never replaced).
 pub(crate) fn new_file(area: &Area, rel: &str, key: &str, m: &str) -> Result<PathBuf, String> {
     let path = inside(area, rel, key, m)?;
-    Area::new(area.root.clone(), area.room(), false).check(&path, 0).map_err(codes::area)?;
+    area.with_replacement(false).check(&path, 0).map_err(codes::area)?;
     Ok(path)
 }
 

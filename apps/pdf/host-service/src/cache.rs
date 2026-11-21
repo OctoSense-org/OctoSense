@@ -269,7 +269,7 @@ pub(crate) fn store(area: &Area, rel: &str, png: &[u8]) -> Result<(), String> {
     make_room(area, len.saturating_sub(regular_len(&target)));
     // The service's own cache: a stale render of the same page goes, by an
     // atomic rename that replaces a link rather than writing through it.
-    Area::new(area.root.clone(), area.room(), true).write(&target, png).map_err(codes::area)
+    area.with_replacement(true).write(&target, png).map_err(codes::area)
 }
 
 /// Remove the renders of document `handle` (it closed).

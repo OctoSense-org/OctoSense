@@ -1,0 +1,191 @@
+diff --git a/widgets/src/splash_storage.rs b/widgets/src/splash_storage.rs
+index 0fc43235d..4aa3b1c58 100644
+--- a/widgets/src/splash_storage.rs
++++ b/widgets/src/splash_storage.rs
+@@ -34,6 +34,9 @@
+ use crate::makepad_draw::makepad_platform::makepad_script;
+ use makepad_script::*;
+ 
++mod commits;
++pub use commits::{jail_writes, PrivateStage};
++
+ /// Largest single file the jail accepts (write or append result).
+ pub const MAX_FILE_BYTES: u64 = 1024 * 1024;
+ /// Largest file a native host may stage into a jail
+@@ -237,6 +240,10 @@ pub fn worker_snapshot(&self)->StorageSnapshot{StorageSnapshot{root:self.root.cl
+     /// and an atomic no-overwrite link run between script turns. Staging is on
+     /// this same filesystem, never copied across it on the UI thread.
+     pub fn commit_import(&self, staged:PreparedStorageImport)->Result<(),String>{
++        jail_writes(&self.root).change(|| self.commit_import_locked(staged))
++    }
++
++    fn commit_import_locked(&self, staged:PreparedStorageImport)->Result<(),String>{
+         if self.root!=staged.scope.root||self.quota!=staged.scope.quota{return Err("app storage scope changed".into());}
+         let real=self.target(&staged.path)?;
+         if std::fs::symlink_metadata(&real).is_ok(){return Err("destination already exists".into());}
+@@ -296,6 +303,9 @@ pub fn resolve_jailed(root: &Path, virtual_path: &str) -> Result<PathBuf, String
+                 }
+             }
+             name => {
++                // The host creates these temporary directories for root-confined
++                // engines. A script must not change a result during publication.
++                if engine_stage_name(name) { return Err("private storage path".into()); }
+                 // A drive prefix or NTFS alternate stream is never a jail
+                 // component. Refuse Windows device names on every host too.
+                 let stem = name.split('.').next().unwrap_or("").to_ascii_uppercase();
+@@ -322,6 +332,12 @@ pub fn resolve_jailed(root: &Path, virtual_path: &str) -> Result<PathBuf, String
+     Ok(real)
+ }
+ 
++fn engine_stage_name(name: &str) -> bool {
++    let lower = name.to_ascii_lowercase();
++    let Some((pid, sequence)) = lower.strip_prefix(".engine-staging-").and_then(|s| s.split_once('-')) else { return false };
++    !pid.is_empty() && !sequence.is_empty() && pid.bytes().chain(sequence.bytes()).all(|c| c.is_ascii_digit())
++}
++
+ /// Symlink defense: every EXISTING component from `root` down to `real` must
+ /// be a plain file/dir. The API can't create links, but if one ever appears
+ /// in the jail (a bug elsewhere, a hostile unpacker later), it must not
+@@ -346,13 +362,14 @@ pub(crate) fn verify_no_symlinks(root: &Path, real: &Path) -> Result<(), String>
+ /// Current jail usage: (total bytes, entry count). Small trees by
+ /// construction (entry cap), so a full walk per write is fine.
+ fn jail_usage(root: &Path) -> (u64, usize) {
+-    fn walk(dir: &Path, bytes: &mut u64, entries: &mut usize, depth: usize) {
++    fn walk(root: &Path, dir: &Path, private: &std::collections::HashSet<PathBuf>, bytes: &mut u64, entries: &mut usize, depth: usize) {
+         if depth > MAX_DEPTH { *entries = MAX_ENTRIES + 1; return; }
+         let Ok(read) = std::fs::read_dir(dir) else {
+             if dir.exists() { *entries = MAX_ENTRIES + 1; }
+             return;
+         };
+         for entry in read.flatten() {
++            if entry.path().strip_prefix(root).is_ok_and(|relative| private.contains(relative)) { continue; }
+             *entries += 1;
+             if *entries > MAX_ENTRIES { return; }
+             let Ok(meta) = std::fs::symlink_metadata(entry.path()) else {
+@@ -360,7 +377,7 @@ fn walk(dir: &Path, bytes: &mut u64, entries: &mut usize, depth: usize) {
+             };
+             if meta.file_type().is_symlink() { *entries = MAX_ENTRIES + 1; return; }
+             if meta.is_dir() {
+-                walk(&entry.path(), bytes, entries, depth + 1);
++                walk(root, &entry.path(), private, bytes, entries, depth + 1);
+             } else {
+                 *bytes = bytes.saturating_add(meta.len());
+             }
+@@ -368,7 +385,7 @@ fn walk(dir: &Path, bytes: &mut u64, entries: &mut usize, depth: usize) {
+     }
+     let mut bytes = 0;
+     let mut entries = 0;
+-    walk(root, &mut bytes, &mut entries, 0);
++    walk(root, root, &jail_writes(root).private_dirs(), &mut bytes, &mut entries, 0);
+     (bytes, entries)
+ }
+ 
+@@ -411,6 +428,10 @@ fn read_script_bytes(real: &Path) -> Result<Vec<u8>, String> {
+ }
+ 
+ fn write_storage_bytes(root: &Path, real: &Path, quota: u64, bytes: &[u8], append: bool, create_new: bool) -> Result<(), String> {
++    jail_writes(root).change(|| write_storage_bytes_locked(root, real, quota, bytes, append, create_new))
++}
++
++fn write_storage_bytes_locked(root: &Path, real: &Path, quota: u64, bytes: &[u8], append: bool, create_new: bool) -> Result<(), String> {
+     use std::io::Write;
+     if real == root { return Err("cannot write the storage root".into()); }
+     verify_no_symlinks(root, real)?;
+@@ -566,11 +587,11 @@ pub fn script_mod(vm: &mut ScriptVm) {
+                 if real == root {
+                     return script_err_io!(vm.trap(), "cannot remove the storage root");
+                 }
+-                let result = match std::fs::metadata(&real) {
++                let result = jail_writes(&root).change(|| match std::fs::metadata(&real) {
+                     Ok(m) if m.is_dir() => std::fs::remove_dir(&real),
+                     Ok(_) => std::fs::remove_file(&real),
+                     Err(e) => Err(e),
+-                };
++                });
+                 match result {
+                     Ok(()) => NIL,
+                     Err(_) => script_err_io!(vm.trap(), "remove failed"),
+@@ -613,6 +634,7 @@ pub fn script_mod(vm: &mut ScriptVm) {
+                     Ok(read) => {
+                         for entry in read.flatten() {
+                             let mut name = entry.file_name().to_string_lossy().into_owned();
++                            if engine_stage_name(&name) { continue; }
+                             if entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+                                 name.push('/');
+                             }
+diff --git a/widgets/src/splash_storage/commits.rs b/widgets/src/splash_storage/commits.rs
+new file mode 100644
+index 000000000..af7c7baf4
+--- /dev/null
++++ b/widgets/src/splash_storage/commits.rs
+@@ -0,0 +1,70 @@
++//! Serialize publication into one app jail. A worker can measure usage
++//! outside the lock and retry if a script or native writer changed it.
++use std::collections::{HashMap, HashSet};
++use std::path::{Path, PathBuf};
++use std::sync::{Arc, Mutex, OnceLock, Weak};
++
++#[derive(Default)]
++pub struct JailWrites {
++    version: Mutex<u64>,
++    private: Mutex<HashSet<PathBuf>>,
++}
++
++/// Keeps a host-created staging directory out of committed usage until
++/// its owner has removed it. Names alone never exempt app data.
++pub struct PrivateStage {
++    gate: Arc<JailWrites>,
++    relative: PathBuf,
++}
++
++impl Drop for PrivateStage {
++    fn drop(&mut self) {
++        self.gate.change(|| self.gate.private.lock().unwrap_or_else(|p| p.into_inner()).remove(&self.relative));
++    }
++}
++
++pub fn jail_writes(root: &Path) -> Arc<JailWrites> {
++    static JAILS: OnceLock<Mutex<HashMap<PathBuf, Weak<JailWrites>>>> = OnceLock::new();
++    let path = root.canonicalize().unwrap_or_else(|_| root.to_owned());
++    let mut jails = JAILS.get_or_init(Mutex::default).lock().unwrap_or_else(|p| p.into_inner());
++    if let Some(gate) = jails.get(&path).and_then(Weak::upgrade) {
++        return gate;
++    }
++    jails.retain(|_, gate| gate.strong_count() != 0);
++    let gate = Arc::new(JailWrites::default());
++    jails.insert(path, Arc::downgrade(&gate));
++    gate
++}
++
++impl JailWrites {
++    pub fn register_stage(self: &Arc<Self>, relative: PathBuf) -> PrivateStage {
++        self.change(|| self.private.lock().unwrap_or_else(|p| p.into_inner()).insert(relative.clone()));
++        PrivateStage { gate: self.clone(), relative }
++    }
++
++    pub fn private_dirs(&self) -> HashSet<PathBuf> {
++        self.private.lock().unwrap_or_else(|p| p.into_inner()).clone()
++    }
++
++    pub(super) fn change<T>(&self, change: impl FnOnce() -> T) -> T {
++        let mut version = self.version.lock().unwrap_or_else(|p| p.into_inner());
++        *version = version.wrapping_add(1);
++        change()
++    }
++
++    /// Publish only if the measurement still describes the same committed
++    /// files. Bulk work belongs before this call or in `measure`.
++    pub fn checked<T, R>(&self, mut measure: impl FnMut() -> T, publish: impl FnOnce(T) -> Result<R, String>) -> Result<R, String> {
++        // Continuous foreground activity must not occupy the worker forever.
++        for _ in 0..8 {
++            let before = *self.version.lock().unwrap_or_else(|p| p.into_inner());
++            let measured = measure();
++            let mut version = self.version.lock().unwrap_or_else(|p| p.into_inner());
++            if *version == before {
++                *version = version.wrapping_add(1);
++                return publish(measured);
++            }
++        }
++        Err("app storage kept changing during the write; try again".into())
++    }
++}

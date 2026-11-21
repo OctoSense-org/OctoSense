@@ -157,7 +157,7 @@ library on the first run of v2, titled with their outline's first slide.
 
 Notes for whoever changes the script:
 
-- **Engine work runs on the shell's UI thread (#399).** One call is out at a
+- **Quick Deck prioritizes the current slide on the engine worker.** One call is out at a
   time (`pump()`): the current slide at the canvas's width (kept by
   revision; a change draws again only the slides its answer lists in
   `changed`), the slide's shapes, the selection's format, the layout

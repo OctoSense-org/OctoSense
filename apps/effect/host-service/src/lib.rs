@@ -942,7 +942,7 @@ impl HostService for EffectService {
     }
 
     fn call(&mut self, call: ServiceCall, reply: Replier, _host: &mut dyn ServiceHost) {
-        reply.send(serve(&AREAS, &call));
+        octosense_engine_area::worker::call(call, reply, |call, _| serve(&AREAS, &call));
     }
 }
 

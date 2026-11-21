@@ -130,7 +130,7 @@ impl HostService for PhotoService {
     }
 
     fn call(&mut self, call: ServiceCall, reply: Replier, _host: &mut dyn ServiceHost) {
-        reply.send(serve(&AREAS, &call));
+        octosense_engine_area::worker::call(call, reply, |call, _| serve(&AREAS, &call));
     }
 }
 
@@ -183,11 +183,12 @@ impl HostService for PhotosAppService {
             return;
         }
         match call.method() {
-            "info" => reply.send(AREAS.area(&call, "photo").map_err(|e| format!("photos: {e}")).and_then(|area| {
+            "info" => octosense_engine_area::worker::call(call, reply, |call, _| {
+                let area = AREAS.area(&call, "photo").map_err(|e| format!("photos: {e}"))?;
                 info(&call.args, &area)
                     .map(|answer| area.relative_json(answer))
                     .map_err(|error| area.relative_text(&error))
-            })),
+            }),
             "notify" => {
                 let notify = notifier().lock().unwrap_or_else(|e| e.into_inner()).clone();
                 reply.send(match notify {

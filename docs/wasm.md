@@ -487,12 +487,10 @@ effect command (`effect.apply {effect: "plugin.<id>"}`) is refused too.
 Both engines still link wasmi, and both services answer system apps (`os.*`)
 only.
 
-**The UI thread.** The `photo` service, like the other engine services, does
-its work inside the request. App Hub dispatches a script's `host.request` on
-the UI thread, and calls the service while it holds the lock on the service
-registry (`services::dispatch`). So a long `photo.run` holds up the UI and
-every other app's requests until it returns
-([#399](https://github.com/OctoSense-org/OctoSense/issues/399)).
+**Engine calls.** App Hub dispatches a script's `host.request` on the UI
+thread. The engine services queue their work and send replies from a shared
+worker. During a long `photo.run`, the UI can process input and dispatch
+other host services. Further engine calls wait their turn.
 
 ## Splash math and compute kernels
 

@@ -82,7 +82,7 @@ pub(crate) fn commit(area: &Area, stage: &Stage<'_>, moves: &[(PathBuf, PathBuf)
 /// An area like `area` whose writes never replace a file, whatever the
 /// call's surface: where SERVICE.md says "a new file".
 fn create_only(area: &Area) -> Area {
-    Area::new(area.root.clone(), area.room(), false)
+    area.with_replacement(false)
 }
 
 /// The file name of `rel` (a path already contained).
@@ -287,7 +287,7 @@ pub(crate) fn save(a: &Json, cx: &Ctx) -> Result<Json, String> {
                     return Err(invalid("saving over the document's own file needs the app in the foreground"));
                 }
                 let dest = crate::contained(cx.area, &doc.file, "path", M)?;
-                (Area::new(cx.area.root.clone(), cx.area.room(), true), dest, doc.file.clone(), false)
+                (cx.area.with_replacement(true), dest, doc.file.clone(), false)
             }
             Some(out) => {
                 // A full save to a new file: never over an existing one.

@@ -1011,8 +1011,8 @@ a command that works inside the open document runs, and so does a read of a
 file inside the caller's folder that the service reviewed; an id that
 reaches other files, code, the network, a device or the app is refused, and
 so is an id the classification does not know, a batch or macro, an
-app-wide setter and a plug-in effect. Engine work runs on the shell's UI
-thread, so every door also caps what one call may ask for: counts, sizes,
+app-wide setter and a plug-in effect. The engines share a worker.
+Every door also caps what one call may ask for: counts, sizes,
 frame ranges and the copies that multiply across a call, the document's
 size after every command, and its own output. Sound (no command catalog), design
 (no door, by decision) and pdf (a few fixed operations) keep fixed tools:

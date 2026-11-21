@@ -12,39 +12,15 @@
 //! at the area, with the engine's JavaScript turned off before the file is
 //! opened, and checked off. Closing a document drops its session.
 //!
-//! **The thread.** Every call reaches this service on the shell's UI
-//! thread: App Hub's `services::pump` dispatches an app's `host.request`
-//! inline from the card runner's event handler, the agent relay runs its
-//! calls from `host_tools::pump` (the UI thread; Android's Mail job may
-//! drive that pump without a window, and the pdf engine is desktop only),
-//! and components' host calls are pumped from the same place. So the table
-//! is a `thread_local`, and the UI thread takes no lock for it (makepad's
-//! rule: the UI thread never takes a lock another thread can hold). A call
-//! on any other thread finds an empty table of its own: its handles are
-//! unknown there, which fails closed and shares nothing.
-//!
-//! **Release.** A document goes on `pdf.close`, and when its caller's
-//! storage scope goes away. A document opened from an app's isolate is
-//! bound to that isolate (the call's `Replier::isolate_key()`) and to its
-//! storage scope (makepad's `splash_storage::storage_for_heap` for that
-//! key, UI-thread state like this table).
-//!
-//! - The isolate closing: App Hub calls the service's listener
-//!   ([`isolate_closed`], registered with `services::on_isolate_closed` by
-//!   [`crate::register`]) from `services::cancel_heap`, which every host
-//!   calls for a closing isolate (App Hub's card shutdown; the shell's
-//!   glance, script-app and Wasm hosts), on the UI thread, before a new
-//!   isolate can reuse its heap key: a key is an address. Every document
-//!   bound to it goes then, with its renders. If a call holds the table at
-//!   that moment, the key waits for the next [`sweep`].
-//! - The scope changing (another account's storage) or going: every call
-//!   first sweeps the table ([`sweep`]), which also releases a document
-//!   opened by a caller with no isolate (a component's host call, a test)
-//!   after [`IDLE`] without a call. Its renders go with it, and any a
-//!   released document left behind go when the caller next opens a
-//!   document ([`cache::prune`]).
+//! The engine worker owns this thread-local table and all its sessions. On
+//! submission the isolate's owner captures its storage lifetime. An isolate
+//! close, tag change, jail change or quota change revokes that lifetime.
+//! App Hub's close listener wakes the worker to reclaim expired documents
+//! and their cached files. Every call also sweeps the table before use, so
+//! even a replacement with the same heap address cannot reach an old handle.
+//! Sessions opened with no Makepad storage scope expire after [`IDLE`].
 
-use std::cell::{Cell, RefCell};
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
@@ -52,7 +28,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{OnceLock, Weak};
 use std::time::{Duration, Instant};
 
-use octosense_appstore::makepad_widgets::splash_storage::{self, StorageAccess};
+use octosense_engine_area::isolate::Isolate;
 use octosense_engine_area::Area;
 use pdfcraft_automation::{Automation, ToolError};
 use serde_json::{json, Value as Json};
@@ -69,15 +45,6 @@ pub(crate) const MAX_OPEN_ALL: usize = 32;
 /// How long a document no isolate holds stays open without a call.
 pub(crate) const IDLE: Duration = Duration::from_secs(15 * 60);
 
-/// What keeps a document open besides `pdf.close`.
-pub(crate) enum Binding {
-    /// Opened from an app's isolate: open while that isolate's storage
-    /// scope is.
-    Isolate { heap: usize, scope: StorageAccess },
-    /// Opened by a caller with no isolate: open until [`IDLE`] passes
-    /// without a call.
-    Unbound,
-}
 
 /// A render in the cache that shows this document.
 pub(crate) struct Rendered {
@@ -99,7 +66,7 @@ pub(crate) struct OpenDoc {
     /// The document's own file, relative to the area: what an incremental
     /// save replaces, the file it was opened (or last saved as) from.
     pub file: String,
-    pub binding: Binding,
+    pub binding: Isolate,
     pub last_used: Instant,
     /// Bumped by every change: a render of an older generation is stale.
     pub generation: u64,
@@ -169,14 +136,11 @@ impl OpenDoc {
     }
 
     fn alive(&self, now: Instant) -> bool {
-        match &self.binding {
-            Binding::Isolate { heap, scope } => splash_storage::storage_for_heap(*heap, &self.app).is_some_and(|now| now.same_scope(scope)),
-            Binding::Unbound => now.saturating_duration_since(self.last_used) < IDLE,
+        if self.binding.is_bound() {
+            self.binding.is_live()
+        } else {
+            now.saturating_duration_since(self.last_used) < IDLE
         }
-    }
-
-    fn bound_to(&self, closed: &[usize]) -> bool {
-        matches!(&self.binding, Binding::Isolate { heap, .. } if closed.contains(heap))
     }
 
     /// The document goes: its engine session, and its renders in the
@@ -204,36 +168,10 @@ impl Docs {
 }
 
 thread_local! {
-    /// The open documents of this thread: the UI thread's (module doc).
+    /// The open documents of this thread: the engine worker's (module doc).
     static DOCS: RefCell<Docs> = RefCell::new(Docs::default());
-    /// Heap keys of isolates that closed while a call held [`DOCS`]: the
-    /// next [`sweep`] releases their documents. A `Cell`, which a listener
-    /// can always fill.
-    static CLOSED: Cell<Vec<usize>> = const { Cell::new(Vec::new()) };
 }
 
-/// App Hub's `services::on_isolate_closed` listener ([`crate::register`]):
-/// the isolate whose heap key is `heap` closed, so every document bound to
-/// it goes now, with its renders, before a new isolate can get the key.
-/// If a call holds the table (a listener reached from inside one), the key
-/// waits for the next [`sweep`].
-pub(crate) fn isolate_closed(heap: usize) {
-    let released = DOCS.with(|docs| {
-        let mut docs = docs.try_borrow_mut().ok()?;
-        let (gone, kept): (Vec<OpenDoc>, Vec<OpenDoc>) = std::mem::take(&mut docs.open).into_iter().partition(|doc| doc.bound_to(&[heap]));
-        docs.open = kept;
-        Some(gone)
-    });
-    match released {
-        // The engine sessions drop and the renders go outside the table.
-        Some(gone) => gone.into_iter().for_each(OpenDoc::release),
-        None => CLOSED.with(|closed| {
-            let mut keys = closed.take();
-            keys.push(heap);
-            closed.set(keys);
-        }),
-    }
-}
 
 /// Whose documents a call reaches: its area's root as the file system
 /// spells it (two spellings of one folder are one scope).
@@ -274,10 +212,9 @@ pub(crate) fn sweep() {
 }
 
 pub(crate) fn sweep_at(now: Instant) {
-    let closed = CLOSED.with(Cell::take);
     let gone: Vec<OpenDoc> = DOCS.with(|docs| {
         let mut docs = docs.borrow_mut();
-        let (gone, kept): (Vec<OpenDoc>, Vec<OpenDoc>) = std::mem::take(&mut docs.open).into_iter().partition(|doc| doc.bound_to(&closed) || !doc.alive(now));
+        let (gone, kept): (Vec<OpenDoc>, Vec<OpenDoc>) = std::mem::take(&mut docs.open).into_iter().partition(|doc| !doc.alive(now));
         docs.open = kept;
         gone
     });
@@ -327,13 +264,6 @@ pub(crate) fn with_doc<T>(args: &Json, cx: &Ctx, m: &str, f: impl FnOnce(&mut Op
     })
 }
 
-/// What keeps a document this call opens open (module doc).
-fn bind(cx: &Ctx) -> Binding {
-    match splash_storage::storage_for_heap(cx.isolate, cx.app) {
-        Some(scope) => Binding::Isolate { heap: cx.isolate, scope },
-        None => Binding::Unbound,
-    }
-}
 
 /// `pdf.open {path}`.
 pub(crate) fn open(a: &Json, cx: &Ctx) -> Result<Json, String> {
@@ -381,7 +311,7 @@ pub(crate) fn open(a: &Json, cx: &Ctx) -> Result<Json, String> {
         engine,
         id,
         file,
-        binding: bind(cx),
+        binding: cx.isolate.clone(),
         last_used: Instant::now(),
         generation: 0,
         sizes,

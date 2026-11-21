@@ -36,7 +36,7 @@
 //! resolves the call's area from its stamped identity and the tool's owner
 //! (a craft engine's tool in the calling agent's own folder, an app's own
 //! tool in that app's agent folder), grants it until the call is answered,
-//! and hands the service its root as the call's `host_dir`
+//! and hands the service the grant's per-call token in `host_dir`
 //! ([`super::areas`]).
 
 use std::collections::{BTreeSet, HashMap};
@@ -415,7 +415,7 @@ impl ToolExecutor for HostServiceExecutor {
 
 impl HostServiceExecutor {
     /// Run `call` as the app's own `host.request` would, and answer it once;
-    /// an engine's method in the call's area ([`super::areas::agent_area`]),
+    /// an engine's method in the call's area ([`super::areas::grant_agent`]),
     /// from `areas`.
     pub(crate) fn run(&self, call: HostToolCall, reply: ToolReply, areas: AreaSource) {
         if !reply.is_open() {
@@ -489,17 +489,16 @@ impl HostServiceExecutor {
         }
         // An engine's method works in the call's area (the calling agent's
         // own folder, or the owning app's for an app's own tool), granted
-        // to this call until it is answered, its root the call's host
+        // to this call until it is answered, its token the call's host
         // directory (ADR 0013, `areas`). Paths in errors are relative to
         // it.
         #[cfg(feature = "app-hub")]
         let (host_dir, reply, held) = if super::areas::needs_area(method) {
             let env = areas.unwrap_or_else(super::areas::shell);
-            match super::areas::agent_area(&*env, &call, &self.app) {
-                Ok(area) => {
-                    let root = area.root.clone();
+            match super::areas::grant_agent(env, &call, &self.app) {
+                Ok((root, grant)) => {
                     let reply = super::areas::relative_errors(reply, &root);
-                    (root, reply, Some(super::areas::grant(area)))
+                    (grant.token.clone(), reply, Some(grant))
                 }
                 Err((kind, message)) => {
                     reply.finish(ToolOutcome::error(kind, message));
