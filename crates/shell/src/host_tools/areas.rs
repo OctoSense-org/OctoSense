@@ -336,9 +336,15 @@ fn storage_area(storage: &Storage, app: &str, root: PathBuf, quota: JailQuota, m
 /// its jail was not refused; a foreground call may replace a file, a
 /// background one (a glance tile's) may not; within what is left of its
 /// storage.
-fn app_area(env: &dyn AreaEnv, app: &str, may_prompt: bool) -> Result<Area, String> {
+#[cfg(wasm_functions)]
+pub(crate) fn app_area(env: &dyn AreaEnv, app: &str, may_prompt: bool) -> Result<Area, String> {
+    active_app_account(env, app)?;
+    app_jail_area(env, app, may_prompt)
+}
+
+/// Resolve the jail after the caller has checked the app's current access.
+fn app_jail_area(env: &dyn AreaEnv, app: &str, may_prompt: bool) -> Result<Area, String> {
     let storage = env.storage().ok_or("this host keeps no app storage")?;
-    crate::apps::check_script_app_id(app)?;
     let jail = storage.layout().app(app)?.jail;
     let area = storage_area(storage, app, jail, env.jail_quota(app)?, may_prompt)?;
     crate::app_storage::ensure_private_dir(storage.layout().apps_root(), &area.root).map_err(|e| format!("{app}: {e}"))?;
@@ -350,6 +356,7 @@ fn app_area(env: &dyn AreaEnv, app: &str, may_prompt: bool) -> Result<Area, Stri
 /// Get the active account before reading the spec: production discovers a
 /// previously unseen app's account settings while looking it up.
 fn app_account(env: &dyn AreaEnv, app: &str) -> Result<Option<String>, String> {
+    crate::apps::check_script_app_id(app)?;
     let storage = env.storage().ok_or("this host keeps no app storage")?;
     let current = env.current_account(app);
     if storage.spec(app).accounts {
@@ -357,6 +364,19 @@ fn app_account(env: &dyn AreaEnv, app: &str) -> Result<Option<String>, String> {
     } else {
         Ok(None)
     }
+}
+
+/// Both Wasm calls and queued engine grants must honor sign-out and storage refusal.
+fn active_app_account(env: &dyn AreaEnv, app: &str) -> Result<Option<String>, String> {
+    let account = app_account(env, app)?;
+    let storage = env.storage().ok_or("this host keeps no app storage")?;
+    if storage.is_signed_out(app, account.as_deref()) {
+        return Err(format!("{app}'s account is signed out"));
+    }
+    if let Some(why) = storage.refused(app, account.as_deref()) {
+        return Err(format!("{app}'s folder was refused: {why}"));
+    }
+    Ok(account)
 }
 
 fn prepare_app(env: Arc<dyn AreaEnv>, call: &mut ServiceCall) -> Option<Grant> {
@@ -376,19 +396,12 @@ fn prepare_app(env: Arc<dyn AreaEnv>, call: &mut ServiceCall) -> Option<Grant> {
     let owner = app.clone();
     let check = move || {
         let account = account.as_ref().map_err(Clone::clone)?;
-        if app_account(&*scope_env, &owner)? != *account {
+        if active_app_account(&*scope_env, &owner)? != *account {
             return Err(format!("{owner}'s active account changed while its engine call was queued"));
-        }
-        let storage = scope_env.storage().ok_or("this host keeps no app storage")?;
-        if storage.is_signed_out(&owner, account.as_deref()) {
-            return Err(format!("{owner}'s account is signed out"));
-        }
-        if let Some(why) = storage.refused(&owner, account.as_deref()) {
-            return Err(format!("{owner}'s folder was refused: {why}"));
         }
         Ok(())
     };
-    let grant = grant(app.clone(), check, move || app_area(&*env, &app, may_replace));
+    let grant = grant(app.clone(), check, move || app_jail_area(&*env, &app, may_replace));
     call.host_dir = grant.token.clone();
     Some(grant)
 }
