@@ -1742,11 +1742,14 @@ def window_close_journey(session, home):
         app.type(text)
         edited(app)
 
-    def ask(app):
+    def request_close(app):
         if LINUX:
             app.remote("event", data="wm:close")
         else:
             app.key("KeyQ", cmd=1)
+
+    def ask(app):
+        request_close(app)
         for choice in ("Don't Save", "Cancel", "Save"):
             app.find(choice, "Button")
 
@@ -1780,8 +1783,18 @@ def window_close_journey(session, home):
         closed(app)
         assert deck.read_bytes() == saved, "discarding the edit changed the file"
 
+    def clean(app, out):
+        app.find("Recent", "Label")
+        open_card(app, "Untitled deck")
+        app.find("Slide 1 of 1", "Label", exact=False)
+        field = notes_input(app)
+        assert note in field["t"] and "discard this edit" not in field["t"]
+        request_close(app)
+        closed(app)
+
     session("window-close-save", home, save)
     session("window-close-discard", home, discard)
+    session("window-close-clean", home, clean)
 
 
 def restart(app, out):
