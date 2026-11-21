@@ -32,6 +32,13 @@ class WorkflowReader(unittest.TestCase):
         built = set()
         covered = set()
         craft_graphs = set()
+        engine_packages = (
+            "octosense-cad-service", "octosense-deck-service", "octosense-design-service",
+            "octosense-effect-service", "octosense-engine-area", "octosense-film-service",
+            "octosense-light-service", "octosense-pdf-service", "octosense-photo-service",
+            "octosense-sheets-service", "octosense-sound-service", "octosense-vector-service",
+            "octosense-word-service",
+        )
         for step in job["steps"]:
             phases = set()
             for line in step.get("run", "").splitlines():
@@ -50,8 +57,8 @@ class WorkflowReader(unittest.TestCase):
                         features.extend(next(options).split(","))
                     elif not option.startswith("-"):
                         filters.append(option)
-                graph = (step.get("working-directory", "."),
-                         tuple(sorted(packages)), tuple(sorted(features)))
+                selected = tuple(sorted(packages))
+                graph = (step.get("working-directory", "."), selected, tuple(sorted(features)))
                 if "--no-run" in args:
                     phases.add("build")
                     built.add(graph)
@@ -62,10 +69,10 @@ class WorkflowReader(unittest.TestCase):
                     self.assertLessEqual(step["timeout-minutes"], 15)
                     if "host_tools::scenario_tests" in filters:
                         self.assertIn("OCTOS_SCENARIO_TEST_KERNEL", step["env"])
-                    else:
+                    elif selected != engine_packages:
                         self.assertIn("OCTOS_SHELL_TEST_KERNEL", step["env"])
                         self.assertEqual(step["env"]["MAKEPAD_SPLASH_BUDGET_MS"], "10000")
-                    covered.add((tuple(sorted(packages)), tuple(filters)))
+                    covered.add((selected, tuple(filters)))
                     if "craft-engines" in features:
                         craft_graphs.add(graph)
             self.assertLessEqual(len(phases), 1, "build and execution need separate limits")
@@ -81,6 +88,7 @@ class WorkflowReader(unittest.TestCase):
                                  "octosense-app-hub", "octosense-appcard", "octosense-ai-host")))
         self.assertIn((baseline, ()), covered)
         self.assertIn((baseline, ("host_tools::scenario_tests",)), covered)
+        self.assertIn((engine_packages, ()), covered)
 
     def test_release_token_is_scoped_to_github_cli_steps(self):
         workflow = ci.load_workflow("release-desktop.yml")

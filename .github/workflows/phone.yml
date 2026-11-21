@@ -165,6 +165,26 @@ jobs:
           cargo test --locked --features mobile-apps,toolbox-peers,craft-engines -p octosense-shell host_tools
           cargo test --locked --features mobile-apps,toolbox-peers,craft-engines -p octosense-shell system_chat
           cargo test --locked --features mobile-apps,toolbox-peers,craft-engines -p octosense-shell glance_notice
+      # Reuse the craft-engine build for the services' own unit and integration
+      # tests, including the shared file containment and quota checks.
+      - name: Build craft-engine service tests
+        working-directory: phone
+        timeout-minutes: 60
+        run: >
+          cargo test --locked --tests --no-run -p octosense-engine-area
+          -p octosense-sheets-service -p octosense-photo-service -p octosense-word-service
+          -p octosense-deck-service -p octosense-cad-service -p octosense-light-service
+          -p octosense-sound-service -p octosense-design-service -p octosense-film-service
+          -p octosense-effect-service -p octosense-vector-service -p octosense-pdf-service
+      - name: Test craft-engine services
+        working-directory: phone
+        timeout-minutes: 15
+        run: >
+          cargo test --locked --tests -p octosense-engine-area
+          -p octosense-sheets-service -p octosense-photo-service -p octosense-word-service
+          -p octosense-deck-service -p octosense-cad-service -p octosense-light-service
+          -p octosense-sound-service -p octosense-design-service -p octosense-film-service
+          -p octosense-effect-service -p octosense-vector-service -p octosense-pdf-service
       - name: Build linked Terminal tests
         working-directory: phone
         timeout-minutes: 60
