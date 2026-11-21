@@ -217,6 +217,9 @@ gridcraft-xlsx = { git = "https://github.com/ymote/gridcraft.git", rev = "c6b6f4
 octosense-photo-service = { path = "apps/photo/host-service" }
 # The photocraft raster engine (ADR 0013): the pinned ymote fork, one revision.
 photocraft-automation = { git = "https://github.com/ymote/photocraft.git", rev = "eec4af65513b52084926f3c679fc6ac7821cafaf" }
+photocraft-codecs = { git = "https://github.com/ymote/photocraft.git", rev = "eec4af65513b52084926f3c679fc6ac7821cafaf" }
+photocraft-engine = { git = "https://github.com/ymote/photocraft.git", rev = "eec4af65513b52084926f3c679fc6ac7821cafaf" }
+photocraft-raw = { git = "https://github.com/ymote/photocraft.git", rev = "eec4af65513b52084926f3c679fc6ac7821cafaf" }
 photocraft-io = { git = "https://github.com/ymote/photocraft.git", rev = "eec4af65513b52084926f3c679fc6ac7821cafaf" }
 # The photo service's linked-file fence (ADR 0013): the document model, and
 # the native format of an embedded smart object's contents.

@@ -400,8 +400,10 @@ Each engine's surface:
 | sound | `sound.info`, `peaks`, `convert`, `trim`, `mix` | No door: soundcraft has no command catalog. | — |
 | design | `design.info`, `render`, `export` | No door, by decision (#418). | — |
 | pdf | `pdf.info`, `text`, `render`, `merge`, `split` | No door: a few fixed operations. Apps' own requests also reach PDF Tools v2's open documents (`apps/pdftools/design/SERVICE.md`): each method runs the commands reviewed for it, with arguments the service builds; `comment_add` without its attachment type or a path; `page_insert_file` reads a PDF in the app's storage; `doc_save`, `page_extract` and the exports write to a staging folder there, moved into place without replacing a file (except a save over the document's own file); `doc_open` and `form_fill` run with JavaScript off. | Apps' own requests: ≤ 8 open documents a caller; renders 24–300 dpi and ≤ 16 MP; find ≤ 500 matches; ≤ 512 pages a call; an image export ≤ 64 pages and 256 MP in all; a render cache of ≤ 16 MiB and 64 files, cleared before a write would fail for room. |
-| photo | none (Photos' own `photos.info`) | `photo.run`, for apps' own requests only: 692 of 817 ids, each also passing photocraft's own workspace check. | Not yet capped (apps' own requests only). |
+| photo | none (Photos' own `photos.info`) | `photo.run`, for apps' own requests only: 692 of 817 ids, each also passing photocraft's own workspace check. | Input and encoded output ≤ 64 MiB each. Each canvas edge ≤ 8,192 px. Open canvases total ≤ 16,777,216 pixels, 256 layers and 256 MiB of raster tiles. Resize checks include relative sizes and aspect-ratio defaults. |
 | sheet | none (the Sheets app's own `sheets.*`) | No door: formula evaluation. | — |
+
+For `photo.run`, the dimensions of the source and the resulting canvases are checked before export. The pinned encoder returns a complete byte buffer. Its temporary allocations, decoder scratch space and the undo history can exceed the publication and document limits. These limits apply to the command door.
 
 The review reclassified these ids: word's `review.readAloud` (`code` to
 `device`), vector's `effect.apply` and `appearance.addEffect` (`code` to
