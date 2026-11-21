@@ -47,6 +47,199 @@ fn near(got: &serde_json::Value, want: f64, what: &str) {
     assert!((got - want).abs() < 1e-4, "{what}: {got} for {want}");
 }
 
+/// Exercise the window hook and the actions shared by both confirmation sheets.
+/// The script VM has no window or deck service. Record its close replies and let
+/// the test deliver an asynchronous save result.
+fn close_window(actions: &str) -> serde_json::Value {
+    let functions = [
+        "ask_close", "new_close_request", "has_pending_input", "next_close_deck", "on_close_request", "finish_close", "reply_to_close", "advance_close", "save_closing_deck",
+        "close_prompt_tab", "close_choice", "change_engine", "queue_input", "send_input", "drop_key", "save_document",
+        "notes_typed", "slide_of", "grid_typed", "chart_grid", "queue_grid", "commit_edit", "text_problem",
+    ].map(|name| {
+        let start = QUICK_DECK.find(&format!("\nfn {name}(")).unwrap() + 1;
+        let end = QUICK_DECK[start..].find("\n}\n").unwrap() + 2;
+        &QUICK_DECK[start..start + end]
+    }).join("\n");
+    quickdeck_model(&format!(r#"
+        let MAX_TEXT = 8
+        let MAX_CELL = 8
+        let MAX_BREAKS = 2
+        let first = {{key: "a" kind: "deck" doc: "1" path: "a.deckcraft" edited: true editing: nil saving: false
+            state: "ready" import: false cur: 42 slides: [{{id: 42 notes: ""}}] detail: nil grid: nil grid_for: nil}}
+        let second = {{key: "b" kind: "deck" doc: "2" path: "b.deckcraft" edited: true editing: nil saving: false
+            state: "ready" import: false}}
+        let st = {{tabs: [first, second] confirm: "" close_request: nil index_dirty: false}}
+        let index = {{available: true attempts: 0}}
+        let replies = []
+        let calls = []
+        let timers = []
+        let messages = []
+        let ui = {{notes_meta: {{set_text: |value| {{}}}}}}
+        let host = {{request: fn(method, args, done){{ replies.push([method, args.request, args.allow]) }}}}
+        fn engine(method, args, done){{ calls.push({{method: method args: args done: done}}) }}
+        fn start_timeout(delay, f){{ timers.push(f) }}
+        fn close_tab(t, discard){{ calls.push({{method: "close" key: t.key discard: discard}}) }}
+        fn end_edit(t){{ t.editing = nil }}
+        fn wrote(a){{}}
+        fn took_change(t, result){{ t.edited = result.edited }}
+        fn note(text){{ messages.push(text) }}
+        fn action_failed(what, error){{ error }}
+        fn render_status(){{}}
+        fn render_bar(){{}}
+        fn render_tabs(){{}}
+        fn render_storage(){{}}
+        fn save_index(){{ index.attempts = index.attempts + 1 st.index_dirty = !index.available index.available }}
+        fn render_confirm(){{}}
+        fn tab_by_key(key){{ for t in st.tabs {{ if t.key == key {{ return t }} }} nil }}
+        fn deck_by_path(path){{ nil }}
+        fn selected_shape(t){{ {{id: 7 chart: {{categories: ["old"] series: []}}}} }}
+        {functions}
+        {actions}
+    "#))
+}
+
+#[test]
+fn window_close_cancel_after_discard_keeps_both_decks_and_prompts_again() {
+    assert_eq!(close_window(r#"
+        let immediate = on_close_request(11)
+        let prompts = [st.confirm]
+        close_choice("discard")
+        prompts.push(st.confirm)
+        close_choice("cancel")
+        on_close_request(12)
+        prompts.push(st.confirm)
+        [immediate, prompts, first.edited, second.edited, st.tabs.len(), replies].to_json()
+    "#), json!([false, ["a", "b", "a"], true, true, 2, [["window.close_response", 11, false]]]));
+}
+
+#[test]
+fn window_close_waits_for_save_and_keeps_a_failed_save_open_for_retry() {
+    assert_eq!(close_window(r#"
+        second.edited = false
+        on_close_request(21)
+        close_choice("save")
+        let before = replies.len()
+        calls[0].done({is_ok: false error: "storage full"})
+        let dirty = first.edited
+        on_close_request(22)
+        close_choice("save")
+        calls[1].done({is_ok: true data: {}})
+        [before, dirty, first.edited, messages, replies, on_close_request(23)].to_json()
+    "#), json!([0, true, false, ["storage full"], [["window.close_response", 21, false], ["window.close_response", 22, true]], true]));
+}
+
+#[test]
+fn window_close_flushes_notes_and_chart_cells_before_saving() {
+    assert_eq!(close_window(r#"
+        first.edited = false
+        second.edited = false
+        notes_typed(first, "just typed")
+        grid_typed(first, 0, -1, "new category")
+        let immediate = on_close_request(30)
+        let prompt = st.confirm
+        close_choice("save")
+        let written = {}
+        for call in calls {
+            if call.method == "notes" { written.notes = call.args.text }
+            if call.method == "chart" { written.chart = call.args.categories[0] }
+            call.done({is_ok: true data: {edited: true}})
+        }
+        // The ordinary input timers are superseded by the flush. The last
+        // timer resumes Save after both mutation replies arrived.
+        for f in timers { f() }
+        let waiting = replies.len()
+        calls[2].done({is_ok: true data: {}})
+        [immediate, prompt, calls.len(), written, calls[2].method, waiting, replies].to_json()
+    "#), json!([false, "a", 3, {"notes":"just typed", "chart":"new category"}, "save", 0, [["window.close_response", 30, true]]]));
+}
+
+#[test]
+fn window_close_retains_a_debounced_field_if_the_write_fails() {
+    assert_eq!(close_window(r#"
+        first.edited = false
+        second.edited = false
+        notes_typed(first, "retry me")
+        on_close_request(31)
+        close_choice("save")
+        calls[0].done({is_ok: false error: "notes failed"})
+        let again = on_close_request(32)
+        [again, st.confirm, first.slides[0].notes, calls.len(), messages, replies].to_json()
+    "#), json!([false, "a", "retry me", 1, ["notes failed"], [["window.close_response", 31, false]]]));
+}
+
+#[test]
+fn window_close_keeps_the_last_outline_edit_and_handles_a_full_disk() {
+    assert_eq!(close_window(r#"
+        st.tabs = []
+        st.draft = {topic: "just typed"}
+        st.index_dirty = true
+        let saved = on_close_request(40)
+        let writes = index.attempts
+        index.available = false
+        st.index_dirty = true
+        let waiting = on_close_request(41)
+        let prompt = st.confirm
+        close_choice("cancel")
+        on_close_request(42)
+        close_choice("discard")
+        [saved, writes, waiting, prompt != "", st.draft.topic, replies].to_json()
+    "#), json!([true, 1, false, true, "just typed", [["window.close_response", 41, false], ["window.close_response", 42, true]]]));
+}
+
+#[test]
+fn window_close_waits_for_an_in_flight_change_and_rechecks_the_edited_flag() {
+    assert_eq!(close_window(r#"
+        first.edited = false
+        second.edited = false
+        change_engine(first, "insert", {doc: first.doc}, |a| took_change(first, a.data))
+        let immediate = on_close_request(51)
+        let before = st.confirm
+        calls[0].done({is_ok: true data: {edited: true}})
+        timers[0]()
+        [immediate, before, st.confirm, replies].to_json()
+    "#), json!([false, "", "a", []]));
+}
+
+#[test]
+fn window_close_leaves_an_invalid_text_draft_open_for_correction() {
+    assert_eq!(close_window(r#"
+        first.edited = false
+        second.edited = false
+        first.editing = {draft: "too long for the field" text: "old" sent: "old" id: 7 slide: 42}
+        on_close_request(52)
+        close_choice("save")
+        [first.editing.draft, calls.len(), messages.len(), replies].to_json()
+    "#), json!(["too long for the field", 0, 1, [["window.close_response", 52, false]]]));
+}
+
+#[test]
+fn window_close_never_treats_a_later_revision_as_saved() {
+    assert_eq!(close_window(r#"
+        second.edited = false
+        first.rev = 2
+        on_close_request(53)
+        close_choice("save")
+        first.rev = 3
+        calls[0].done({is_ok: true data: {rev: 2}})
+        [first.edited, st.confirm, replies].to_json()
+    "#), json!([true, "a", []]));
+}
+
+#[test]
+fn a_tab_close_waits_for_its_last_note_and_leaves_other_decks_open() {
+    assert_eq!(close_window(r#"
+        first.edited = false
+        notes_typed(first, "tab edit")
+        ask_close(first)
+        let prompt = st.confirm
+        close_choice("save")
+        calls[0].done({is_ok: true data: {edited: true}})
+        for f in timers { f() }
+        calls[1].done({is_ok: true data: {}})
+        [prompt, calls[0].method, calls[1].method, calls[2], second.edited, replies].to_json()
+    "#), json!(["a", "notes", "save", {"method":"close", "key":"a", "discard":false}, true, []]));
+}
+
 fn import_title(shown: &str, taken: &str) -> serde_json::Value {
     quickdeck_model(&format!("title_for_import({shown}, \"Imported presentation\", {taken}).to_json()"))
 }
