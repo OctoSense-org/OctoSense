@@ -12,7 +12,7 @@
 //! the [`Area`] the shell's resolver gives it ([`set_area_resolver`]), or
 //! without one the legacy `<host dir>/photo`. A session may read the area
 //! and never write it directly: a rendered preview goes through
-//! [`Area::write`], as does a size-checked `run` export. A conversion is written into a staging folder
+//! [`Area::write`]. Conversions and bounded command exports use a staging folder
 //! inside the area (the session's only write authority) and moved into place
 //! under the area's rules ([`octosense_engine_area::Stage`]), so a write that
 //! may not replace (an agent's) only creates new files, within the quota.
@@ -50,6 +50,8 @@
 /// The system agent's skill for this engine (ADR 0013).
 pub mod skill;
 mod limits;
+mod export;
+mod stream;
 
 use std::path::{Component, Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
@@ -583,7 +585,99 @@ mod tests {
     }
 
     #[test]
-    fn bounded_reads_and_exports_accept_the_exact_bytes_and_keep_prior_output() {
+    fn output_budget_refuses_before_encoding_when_a_compressible_image_would_fit() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let name = fixture(root);
+        let args = json!({"path":name,"cmds":[],"out":"out.tiff"});
+        let result = dispatch("run", &args, root).unwrap();
+        assert_eq!(result["out"], "out.tiff");
+        let encoded = std::fs::read(root.join("out.tiff")).unwrap();
+        std::fs::write(root.join("out.tiff"), b"old").unwrap();
+        let area = Area::new(root, Some(encoded.len() as u64), true);
+        let err = dispatch_in("run", &args, &area).unwrap_err();
+        assert!(err.contains("before encoding") && err.contains("bytes left"), "{err}");
+        assert_eq!(std::fs::read(root.join("out.tiff")).unwrap(), b"old");
+    }
+
+    #[test]
+    fn reservations_cover_small_incompressible_exports_and_layered_payloads() {
+        use photocraft_codecs::{ChannelLayout, Format, Image};
+        let mut state = 121u32;
+        let noise: Vec<_> = (0..64 * 64 * 4)
+            .map(|_| {
+                state = state.wrapping_mul(1664525).wrapping_add(1013904223);
+                (state >> 24) as u8
+            })
+            .collect();
+        let pixels = Image::from_u8(64, 64, ChannelLayout::Rgba, noise).unwrap();
+        let input = photocraft_codecs::encode(&pixels, Format::Png, &Default::default()).unwrap();
+        let mut h = Headless::new();
+        limits::open(&mut h, "noise.png", &input).unwrap();
+        h.command_run("layer.duplicate", json!({})).unwrap();
+        let doc = Arc::make_mut(&mut h.session.active_mut().unwrap().doc);
+        doc.metadata.xmp = Some("<x:xmpmeta/>".to_owned());
+        doc.metadata.psd_resources.push((4000, "test".into(), Arc::new(input.clone())));
+        for ext in ["png", "jpg", "bmp", "tga", "gif", "tiff", "ppm", "qoi", "webp", "ico", "hdr", "exr", "pcraft", "psd", "psb"] {
+            let dest = format!("out.{ext}");
+            let reserved = export::reservation(doc, Path::new(&dest), None, limits::OUTPUT_BYTES).unwrap();
+            let (bytes, _) = photocraft_automation::files::save_bytes(doc, &dest, None, &Default::default()).unwrap();
+            assert!(bytes.len() as u64 <= reserved, "{ext}: {} bytes, reserved {reserved}", bytes.len());
+        }
+        let layered = export::reservation(doc, Path::new("sub.pcraft"), None, limits::OUTPUT_BYTES).unwrap();
+        let refused = export::reservation(doc, Path::new("sub.pcraft"), None, layered as usize - 1).unwrap_err();
+        assert!(refused.contains("before encoding"));
+    }
+
+    #[test]
+    fn camera_photo_dimensions_use_streaming_and_match_the_pinned_pixel_and_metadata_output() {
+        use photocraft_codecs::{ChannelLayout, Format, Image};
+        use photocraft_doc::{ColorMode, Document, SampleType, Size};
+        let camera = Document::new("camera", Size::new(4032, 3024), ColorMode::Rgb, SampleType::U8);
+        for (name, format) in [("camera.jpg", Format::Jpeg), ("camera.png", Format::Png)] {
+            assert_eq!(stream::codec(&camera, Path::new(name), None), Some(format));
+        }
+        let root = tempfile::tempdir().unwrap();
+        let area = Area::new(root.path(), None, true);
+        for layout in [ChannelLayout::Gray, ChannelLayout::GrayA, ChannelLayout::Rgb, ChannelLayout::Rgba] {
+            let values = (0..32 * 48 * layout.channels()).map(|i| (i * 7 + i / 5) as u8).collect();
+            let image = Image::from_u8(32, 48, layout, values).unwrap();
+            let bytes = photocraft_codecs::encode(&image, Format::Png, &Default::default()).unwrap();
+            let mut h = Headless::new();
+            limits::open(&mut h, "photo.png", &bytes).unwrap();
+            let doc = Arc::make_mut(&mut h.session.active_mut().unwrap().doc);
+            doc.metadata.xmp = Some("<x:xmpmeta>octosense</x:xmpmeta>".into());
+            doc.resolution_dpi = 192.0;
+            for ext in ["jpg", "png"] {
+                let name = format!("photo.{ext}");
+                let path = root.path().join(&name);
+                let doc = &h.session.active().unwrap().doc;
+                let (expected, _) = photocraft_automation::files::save_bytes(doc, &name, None, &Default::default()).unwrap();
+                limits::save(&h, &area, &path, None, limits::OUTPUT_BYTES).unwrap();
+                let encoded = std::fs::read(&path).unwrap();
+                let a = photocraft_codecs::decode(&encoded).unwrap();
+                let b = photocraft_codecs::decode(&expected).unwrap();
+                assert_eq!((a.layout(), a.data(), &a.meta.xmp, a.meta.dpi), (b.layout(), b.data(), &b.meta.xmp, b.meta.dpi), "{ext} {layout:?}");
+                assert!(no_staging_left(root.path()));
+            }
+        }
+    }
+
+    #[test]
+    fn png_stream_preserves_16_bit_samples_and_alpha() {
+        use photocraft_codecs::{ChannelLayout, Format, Image};
+        let image = Image::from_u16(3, 1, ChannelLayout::Rgba, &[1, 12, 1024, 65534, 65535, 0, 32768, 65535, 1000, 50000, 998, 40001]).unwrap();
+        let source = photocraft_codecs::encode(&image, Format::Png, &Default::default()).unwrap();
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(root.path().join("source.png"), source).unwrap();
+        dispatch("run", &json!({"path":"source.png","cmds":[],"out":"output.png"}), root.path()).unwrap();
+        let encoded = std::fs::read(root.path().join("output.png")).unwrap();
+        let out = photocraft_codecs::decode(&encoded).unwrap();
+        assert_eq!((out.layout(), out.sample_type(), out.data()), (image.layout(), image.sample_type(), image.data()));
+    }
+
+    #[test]
+    fn bounded_reads_and_streams_accept_exact_limits_and_keep_prior_output() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         let area = Area::new(root, None, true);
@@ -612,7 +706,9 @@ mod tests {
         let err = limits::save(&h, &area, &out, None, encoded.len() - 1).unwrap_err();
         assert!(err.contains("encoded output exceeds"), "{err}");
         assert_eq!(std::fs::read(&out).unwrap(), b"prior output");
-        limits::save(&h, &area, &out, None, encoded.len()).unwrap();
+        // The area credits the existing destination before charging the new file.
+        std::fs::write(&out, vec![0u8; encoded.len()]).unwrap();
+        limits::save(&h, &Area::new(root, Some(0), true), &out, None, encoded.len()).unwrap();
         assert_eq!(std::fs::read(&out).unwrap(), encoded);
         assert!(no_staging_left(root));
     }

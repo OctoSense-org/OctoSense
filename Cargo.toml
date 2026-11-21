@@ -219,6 +219,8 @@ octosense-photo-service = { path = "apps/photo/host-service" }
 photocraft-automation = { git = "https://github.com/ymote/photocraft.git", rev = "eec4af65513b52084926f3c679fc6ac7821cafaf" }
 photocraft-codecs = { git = "https://github.com/ymote/photocraft.git", rev = "eec4af65513b52084926f3c679fc6ac7821cafaf" }
 photocraft-engine = { git = "https://github.com/ymote/photocraft.git", rev = "eec4af65513b52084926f3c679fc6ac7821cafaf" }
+photocraft-geom = { git = "https://github.com/ymote/photocraft.git", rev = "eec4af65513b52084926f3c679fc6ac7821cafaf" }
+photocraft-psd = { git = "https://github.com/ymote/photocraft.git", rev = "eec4af65513b52084926f3c679fc6ac7821cafaf" }
 photocraft-raw = { git = "https://github.com/ymote/photocraft.git", rev = "eec4af65513b52084926f3c679fc6ac7821cafaf" }
 photocraft-io = { git = "https://github.com/ymote/photocraft.git", rev = "eec4af65513b52084926f3c679fc6ac7821cafaf" }
 # The photo service's linked-file fence (ADR 0013): the document model, and

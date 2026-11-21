@@ -20,12 +20,17 @@ octosense-appstore = { workspace = true }
 # Where a call works: the caller's area and its write rules (ADR 0013).
 octosense-engine-area = { workspace = true }
 cap-std = "4"
+# The same JPEG and PNG encoders as photocraft-codecs, writing to a bounded sink.
+jpeg-encoder = "0.6"
+png = "0.18"
 serde = { workspace = true }
 serde_json = { workspace = true }
 # The engine, pinned to one ymote/photocraft revision (ADR 0013).
 photocraft-automation = { workspace = true }
 photocraft-codecs = { workspace = true }
 photocraft-engine = { workspace = true }
+photocraft-geom = { workspace = true }
+photocraft-psd = { workspace = true }
 photocraft-raw = { workspace = true }
 # Header-only dimension checks for the common flat image formats.
 imagesize = { version = "0.15", default-features = false, features = ["png", "jpeg", "gif", "qoi"] }

@@ -50,6 +50,13 @@ fn canvas(p: &Json) -> Result<Option<f64>, String> {
     explicit(p)
 }
 
+fn has_crop_rect(p: &Json) -> bool {
+    number(p, "x").is_some()
+        && number(p, "y").is_some()
+        && number(p, "width").is_some_and(|v| v.round() > 0.0)
+        && number(p, "height").is_some_and(|v| v.round() > 0.0)
+}
+
 const fn limit(id: &'static str, f: fn(&Json) -> Result<Option<f64>, String>) -> Limit {
     Limit { id, what: "pixels", measure: Measure::Custom(f), max: PIXELS as f64, copies: false }
 }
@@ -58,17 +65,7 @@ pub(super) static COMMANDS: &[Limit] = &[
     limit("image.canvasSize", canvas),
     limit("image.imageSize", resize),
     limit("file.new", |p| check(new_size(p)).map(|px| Some(px as f64))),
-    limit("image.crop", |p| {
-        if number(p, "x").is_some()
-            && number(p, "y").is_some()
-            && number(p, "width").is_some_and(|v| v.round() > 0.0)
-            && number(p, "height").is_some_and(|v| v.round() > 0.0)
-        {
-            explicit(p)
-        } else {
-            Ok(None)
-        }
-    }),
+    limit("image.crop", |p| if has_crop_rect(p) { explicit(p) } else { Ok(None) }),
     Limit {
         id: "channel.merge",
         what: "source channels",
@@ -95,16 +92,21 @@ pub(super) fn session_pixels(h: &Headless) -> Result<u64, String> {
             check(board.rect.size())?;
         }
         for surf in surfaces(&d.doc) {
-            // All allocated tiles have the same backing size for a pixel format.
-            if let Some((_, tile)) = surf.tiles().next() {
-                tile_bytes = tile_bytes.saturating_add((surf.tile_count() as u64).saturating_mul(tile.bytes().len() as u64));
-                if tile_bytes > DECODE_BYTES {
-                    return Err(format!("the open documents exceed {DECODE_BYTES} raster tile bytes"));
-                }
-            }
+            count_tiles(&mut tile_bytes, surf, surf.tile_count())?;
         }
     }
     check_total(total)
+}
+
+fn count_tiles(total: &mut u64, surface: &photocraft_doc::Surface, count: usize) -> Result<(), String> {
+    // All tiles in this surface use the same backing size, including partial edge tiles.
+    if let Some((_, tile)) = surface.tiles().next() {
+        *total = total.saturating_add((count as u64).saturating_mul(tile.bytes().len() as u64));
+        if *total > DECODE_BYTES {
+            return Err(format!("the open documents exceed {DECODE_BYTES} raster tile bytes"));
+        }
+    }
+    Ok(())
 }
 
 fn canvas_pixels(h: &Headless) -> u64 {
@@ -168,9 +170,7 @@ pub(super) fn before(h: &Headless, id: &str, p: &Json) -> Result<(), String> {
             let deg = f64::from(number(p, "angle").unwrap_or(0.0) as f32);
             (photocraft_engine::mode_cmds::rotated_size(old, deg), false)
         }
-        "image.crop" if number(p, "x").is_some() && number(p, "y").is_some() && w.is_some() && height.is_some() => {
-            (dimensions(w.unwrap_or(ow), height.unwrap_or(oh)), false)
-        }
+        "image.crop" if has_crop_rect(p) => (dimensions(w.unwrap_or(ow), height.unwrap_or(oh)), false),
         "image.revealAll" => {
             let Some(st) = active else { return Ok(()) };
             let all = st
@@ -197,21 +197,30 @@ pub(super) fn before(h: &Headless, id: &str, p: &Json) -> Result<(), String> {
     let existing = canvas_pixels(h) - if adds { 0 } else { old.area() };
     check_total(existing + check(next)?)?;
     if next != old && matches!(id, "image.imageSize" | "file.automate.fitImage") {
-        if let Some(st) = active {
-            let sx = f64::from(next.width) / ow.max(1.0);
-            let sy = f64::from(next.height) / oh.max(1.0);
-            for surface in surfaces(&st.doc) {
+        check_resize_tiles(h, f64::from(next.width) / ow.max(1.0), f64::from(next.height) / oh.max(1.0))?;
+    }
+    Ok(())
+}
+
+fn check_resize_tiles(h: &Headless, sx: f64, sy: f64) -> Result<(), String> {
+    let mut total = 0;
+    for (i, doc) in h.session.documents().iter().enumerate() {
+        for surface in surfaces(&doc.doc) {
+            let count = if Some(i) == h.session.active_index() {
                 let b = surface.content_bounds();
                 if b.is_empty() {
                     continue;
                 }
-                // Photocraft scales the bounds of each layer, including off-canvas
-                // pixels, by rounding the start down and the end up.
-                check(dimensions(
-                    (f64::from(b.x1) * sx).ceil() - (f64::from(b.x0) * sx).floor(),
-                    (f64::from(b.y1) * sy).ceil() - (f64::from(b.y0) * sy).floor(),
-                ))?;
-            }
+                // The engine writes the scaled rectangle before pruning empty tiles.
+                // Off-canvas offsets can make a layer cover an extra edge tile.
+                let (x0, y0) = ((f64::from(b.x0) * sx).floor(), (f64::from(b.y0) * sy).floor());
+                let (x1, y1) = ((f64::from(b.x1) * sx).ceil(), (f64::from(b.y1) * sy).ceil());
+                check(dimensions(x1 - x0, y1 - y0))?;
+                photocraft_doc::Rect::new(x0 as i32, y0 as i32, x1 as i32, y1 as i32).tiles().count()
+            } else {
+                surface.tile_count()
+            };
+            count_tiles(&mut total, surface, count)?;
         }
     }
     Ok(())
@@ -225,6 +234,85 @@ fn surfaces(doc: &Document) -> impl Iterator<Item = &photocraft_doc::Surface> {
         })
         .chain(doc.channels.iter().chain(doc.quick_mask.as_ref()).map(|c| &c.surface))
         .chain(doc.selection.as_ref())
+}
+
+#[cfg(test)]
+mod resize_tests {
+    use super::*;
+    use photocraft_doc::{ColorMode, Layer, SampleType};
+    use serde_json::json;
+
+    fn small_stack(layers: usize) -> Document {
+        let mut doc = Document::new("Stack", Size::new(16, 8), ColorMode::Rgb, SampleType::U16);
+        for i in 0..layers {
+            let mut layer = Layer::raster(i.to_string(), doc.pixel_format());
+            layer.surface_mut().unwrap().fill_rect(doc.bounds(), &[1.0; 4]);
+            doc.layers.push(layer);
+        }
+        doc
+    }
+
+    #[test]
+    fn resize_counts_target_tiles_across_layers_and_other_open_documents() {
+        // Only the tiny source tiles are allocated. Ask preflight what the new
+        // bounds would cost, without running either resampling command.
+        let mut h = Headless::new();
+        h.session.add_document(small_stack(4), None);
+        let target = json!({"width": 4096, "height": 2048});
+        for command in ["image.imageSize", "file.automate.fitImage"] {
+            before(&h, command, &target).unwrap(); // exactly 256 MiB
+        }
+        h.session.add_document(small_stack(1), None);
+        h.session.set_active(0);
+        for command in ["image.imageSize", "file.automate.fitImage"] {
+            let err = before(&h, command, &target).unwrap_err();
+            assert!(err.contains("raster tile bytes"), "{err}");
+            before(&h, command, &json!({"width": 2048, "height": 1024})).unwrap();
+        }
+    }
+
+    #[test]
+    fn a_nonpositive_crop_extent_uses_the_selection() {
+        let mut h = Headless::new();
+        h.session.add_document(small_stack(1), None);
+        h.command_run("select.all", json!({})).unwrap();
+        let params = json!({"x": 0, "y": 0, "width": 0, "height": EDGE + 1});
+        before(&h, "image.crop", &params).unwrap();
+        let result = h.command_run("image.crop", params).unwrap();
+        assert_eq!((result["width"].as_u64(), result["height"].as_u64()), (Some(16), Some(8)));
+    }
+
+    #[test]
+    fn layered_photoshop_import_checks_layer_counts_before_decoding_pixels() {
+        let mut doc = Document::new("Empty layers", Size::new(2, 2), ColorMode::Rgb, SampleType::U8);
+        doc.layers = (0..=MAX_LAYERS).map(|i| Layer::raster(i.to_string(), doc.pixel_format())).collect();
+        for format in ["psd", "psb"] {
+            let bytes = photocraft_io::export(&doc, format, &ExportOptions::default()).unwrap().bytes;
+            assert!(matches!(decode(format, &bytes), Err(DecodeError::Limit(e)) if e.contains("layers")), "{format}");
+        }
+    }
+
+    #[test]
+    fn photoshop_layer_bounds_and_masks_share_one_tile_budget() {
+        use photocraft_psd::{LayerSpec, MaskSpec, PixelData, PsdBuilder, Rect, Version};
+        let tile_area = (photocraft_geom::TILE_SIZE as u64).pow(2);
+        for version in [Version::Psd, Version::Psb] {
+            let mut builder = PsdBuilder::new(2, 2).version(version);
+            builder.push_layer(LayerSpec::new("Base", 0, 0, 2, 2, PixelData::Rgba8(vec![255; 16])));
+            let mut top = LayerSpec::new("Offset", -1, 0, 2, 2, PixelData::Rgba8(vec![255; 16]));
+            top.mask = Some(MaskSpec { rect: Rect::from_xywh(0, 0, 1, 1), data: vec![128], default_color: 255, disabled: false });
+            builder.push_layer(top);
+            let file = builder.build().unwrap();
+            // Three 4-byte RGBA tiles (the offset layer straddles zero) and a 1-byte mask tile.
+            let exact = tile_area * 13;
+            check_psd(&file, exact).unwrap();
+            assert!(check_psd(&file, exact - 1).unwrap_err().contains("raster tile bytes"));
+            let bytes = file.to_bytes().unwrap();
+            let imported = decode("normal.psd", &bytes).unwrap_or_else(|e| panic!("{}", e.message()));
+            assert_eq!(imported.layers.len(), 2);
+            assert!(imported.layers[1].mask.is_some());
+        }
+    }
 }
 
 fn msg(e: impl std::fmt::Display) -> String {
@@ -322,6 +410,10 @@ pub(super) fn decode(name: &str, bytes: &[u8]) -> Result<Document, DecodeError> 
         let header = bytes.get(14..22).ok_or_else(|| DecodeError::unreadable("incomplete PSD/PSB dimensions"))?;
         let side = |i| u32::from_be_bytes([header[i], header[i + 1], header[i + 2], header[i + 3]]);
         check(Size::new(side(4), side(0))).map_err(DecodeError::Limit)?;
+        // Use Photocraft's own records (including PSB and 16/32-bit layer
+        // sections) before its importer creates channel buffers and surfaces.
+        let file = photocraft_psd::PsdFile::from_bytes(bytes).map_err(DecodeError::unreadable)?;
+        check_psd(&file, DECODE_BYTES).map_err(DecodeError::Limit)?;
     } else if photocraft_io::raw::is_raw(bytes) {
         let mut opts = photocraft_raw::DevelopOptions::default();
         opts.limits = photocraft_raw::Limits { max_width: EDGE, max_height: EDGE, max_pixels: PIXELS, max_alloc: DECODE_BYTES };
@@ -352,6 +444,71 @@ pub(super) fn decode(name: &str, bytes: &[u8]) -> Result<Document, DecodeError> 
     photocraft_automation::files::open_bytes(name, bytes).map(|r| r.document).map_err(DecodeError::unreadable)
 }
 
+fn check_psd(file: &photocraft_psd::PsdFile, limit: u64) -> Result<(), String> {
+    use photocraft_psd::layer::{CHANNEL_REAL_USER_MASK, CHANNEL_USER_MASK};
+    use photocraft_psd::{ColorMode, Rect, SectionType};
+
+    let h = &file.header;
+    let sample = u64::from(h.depth.div_ceil(8));
+    let colors: u64 = match h.color_mode {
+        ColorMode::Grayscale | ColorMode::Bitmap | ColorMode::Duotone => 1,
+        ColorMode::Cmyk => 4,
+        _ => 3,
+    };
+    let layered = h.depth != 1 && matches!(h.color_mode, ColorMode::Grayscale | ColorMode::Rgb | ColorMode::Cmyk | ColorMode::Lab | ColorMode::Unknown(_));
+    let extra = u64::from(h.channels).saturating_sub(colors + u64::from(file.merged_has_alpha()));
+    if !layered || file.layers().is_empty() || extra > 0 {
+        let merged = h.row_bytes() as u64 * u64::from(h.height) * u64::from(h.channels);
+        if merged > limit {
+            return Err(format!("the Photoshop composite exceeds {limit} decoded bytes"));
+        }
+    }
+
+    let mut bytes = 0u64;
+    let mut charge = |r: Rect, pixel_bytes: u64| -> Result<(), String> {
+        if r.is_empty() || pixel_bytes == 0 {
+            return Ok(());
+        }
+        check(Size::new(r.width() as u32, r.height() as u32))?;
+        let bounds = photocraft_doc::Rect::new(r.left, r.top, r.right, r.bottom);
+        let tile_area = (photocraft_geom::TILE_SIZE as u64).pow(2);
+        bytes += bounds.tiles().count() as u64 * tile_area * pixel_bytes;
+        if bytes > limit { Err(format!("the Photoshop document exceeds {limit} raster tile bytes")) } else { Ok(()) }
+    };
+    let canvas = Rect::from_xywh(0, 0, h.width, h.height);
+    if !layered {
+        // Ink channels import as separate surfaces. Bitmap, indexed and
+        // duotone import as a single 8-bit background.
+        return charge(canvas, if h.color_mode == ColorMode::Multichannel && h.depth != 1 { u64::from(h.channels) * sample } else { colors + 1 });
+    }
+    let mut layers = 0;
+    for layer in file.layers() {
+        let kind = layer.section_type();
+        if kind == SectionType::BoundingDivider {
+            continue;
+        }
+        layers += 1;
+        if layers > MAX_LAYERS {
+            return Err(format!("the Photoshop document exceeds {MAX_LAYERS} layers"));
+        }
+        if !kind.is_folder() {
+            charge(layer.rect, (colors + 1) * sample)?;
+        }
+        // The importer prefers the real user mask when supplied.
+        if let Some(mask) = layer.layer_mask() {
+            if let Some(real) = mask.real.filter(|_| layer.channel(CHANNEL_REAL_USER_MASK).is_some()) {
+                charge(real.rect, sample)?;
+            } else if layer.channel(CHANNEL_USER_MASK).is_some() {
+                charge(mask.rect, sample)?;
+            }
+        }
+    }
+    if layers == 0 {
+        charge(canvas, (colors + 1) * sample)?;
+    }
+    charge(canvas, extra * sample)
+}
+
 fn probe_codec(bytes: &[u8]) -> Result<(), String> {
     let limits = photocraft_codecs::Limits { max_width: EDGE, max_height: EDGE, max_pixels: PIXELS, max_alloc: DECODE_BYTES };
     photocraft_codecs::decode_with(bytes, &photocraft_codecs::DecodeOptions { limits, ..Default::default() }).map(|_| ()).map_err(msg)
@@ -374,6 +531,12 @@ pub(super) fn open(h: &mut Headless, path: &str, bytes: &[u8]) -> Result<(), Str
 
 pub(super) fn save(h: &Headless, area: &Area, dest: &Path, format: Option<&str>, max: usize) -> Result<(), String> {
     let active = h.session.active().ok_or("no document open")?;
+    if let Some(codec) = super::stream::codec(&active.doc, dest, format) {
+        return super::stream::save(&active.doc, area, dest, codec, max);
+    }
+    let budget = area.write_limit(dest, max as u64)?;
+    let reserve = super::export::reservation(&active.doc, dest, format, budget as usize)?;
+    area.check(dest, reserve).map_err(|e| format!("before encoding: {e}"))?;
     let (bytes, _) =
         photocraft_automation::files::save_bytes(&active.doc, &super::leaf(dest), format, &ExportOptions::default()).map_err(msg)?;
     if bytes.len() > max {
