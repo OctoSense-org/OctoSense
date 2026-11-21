@@ -630,7 +630,7 @@ impl App {
                 request.reply.send(Ok(json!({"accepted": true})));
                 if let Some(uid) = uid {
                     self.module_close_confirmed(cx, uid);
-                } else {
+                } else if !allow {
                     self.cancel_update_restart();
                     self.process_close.abandon_quit();
                     self.quit_waiting_since = None;
@@ -702,7 +702,7 @@ impl App {
                 // The Card runner's own surface, as `MpModuleView` finds it.
                 let isolate = self
                     .module_host
-                    .dispatch(cx, client, "its window identity", |cx, root| root.splash(cx, ids!(card)).isolate_heap_key(cx))
+                    .dispatch(cx, client, "its window identity", |cx, root| root.splash(cx, ids!(body.card)).isolate_heap_key(cx))
                     .flatten();
                 WindowIdentity { client, app, isolate }
             })

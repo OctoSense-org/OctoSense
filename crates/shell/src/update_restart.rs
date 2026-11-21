@@ -58,7 +58,7 @@ impl App {
                     return;
                 }
                 self.update_restart_waiting = true;
-                if self.ask_before_quit(cx) {
+                if self.ask_before_quit(cx, crate::CloseSource::UpdateRestart) {
                     self.quit_after_review(cx);
                 }
             }

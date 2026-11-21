@@ -473,7 +473,13 @@ struct PendingClose {
     root: WidgetUid,
     /// A hosted Card can answer asynchronously after saving its documents.
     /// Only its current request may confirm the close of this root.
-    card_request: Option<u32>,
+    card_request: Option<CardCloseRequest>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct CardCloseRequest {
+    token: u32,
+    for_quit: bool,
 }
 
 impl CloseGate {
@@ -505,7 +511,7 @@ impl CloseGate {
         self.pending.contains_key(&client)
     }
 
-    fn card_request(&self, client: ClientId) -> Option<u32> {
+    fn card_request(&self, client: ClientId) -> Option<CardCloseRequest> {
         self.pending.get(&client)?.card_request
     }
 
@@ -860,16 +866,18 @@ impl ModuleHost {
     /// a module that panicked while answering: nothing is left to protect.
     pub fn ask_close(&mut self, cx: &mut Cx, client: ClientId) -> CloseDecision {
         self.close_gate.close_asked();
-        self.ask_one(cx, client)
+        self.ask_one(cx, client, false)
     }
 
-    fn ask_one(&mut self, cx: &mut Cx, client: ClientId) -> CloseDecision {
+    fn ask_one(&mut self, cx: &mut Cx, client: ClientId, for_quit: bool) -> CloseDecision {
         let Some(instance) = self.instances.get(&client).filter(|i| i.failed.is_none()) else {
             self.close_gate.forget(client);
             return CloseDecision::Allow;
         };
         let (module, root, vm_id) = (instance.module, instance.root.clone(), instance.vm_id);
-        if self.close_gate.card_request(client).is_some() {
+        if let Some(request) = self.close_gate.pending.get_mut(&client).and_then(|pending| pending.card_request.as_mut()) {
+            // An individual close still applies if a later shell quit is cancelled.
+            request.for_quit &= for_quit;
             return CloseDecision::Veto;
         }
         let decision = contain_outside(cx, vm_id, "close_requested", |cx| module.close_requested(cx, &root))
@@ -877,11 +885,16 @@ impl ModuleHost {
         if decision == CloseDecision::Allow && module.id() == "card" {
             let request = self.close_gate.next_card_request.wrapping_add(1).max(1);
             self.close_gate.next_card_request = request;
-            let answer = contain(cx, vm_id, "its Card close request", |cx| {
-                root.splash(cx, ids!(card)).ask_script_fn(cx, id!(on_close_request), &[request.into()], 5)
-            }).flatten();
-            if answer.as_deref() == Some("false") {
-                self.close_gate.pending.insert(client, PendingClose { root: root.widget_uid(), card_request: Some(request) });
+            // Presence of the hook opts in. Its return value (including a
+            // script error or exhausted instruction budget) cannot approve a
+            // close. Only an explicit response from the owning window can.
+            let implemented = contain(cx, vm_id, "its Card close request", |cx| {
+                root.splash(cx, ids!(body.card)).call_script_fn(cx, id!(on_close_request), &[request.into()])
+            }).unwrap_or(false);
+            if implemented {
+                self.close_gate.pending.insert(client, PendingClose {
+                    root: root.widget_uid(), card_request: Some(CardCloseRequest { token: request, for_quit }),
+                });
                 return CloseDecision::Veto;
             }
         }
@@ -894,15 +907,15 @@ impl ModuleHost {
     /// path, and a cancellation abandons any quit that waited on this Card.
     pub fn card_close_response(&mut self, client: ClientId, request: u32, allow: bool) -> Result<Option<WidgetUid>, &'static str> {
         let gate = &mut self.close_gate;
-        let pending = gate.pending.get_mut(&client)
-            .filter(|pending| pending.card_request == Some(request))
-            .ok_or("no_close_request: this window is not waiting for this close decision")?;
-        if allow {
+        let stale = "no_close_request: this window is not waiting for this close decision";
+        let pending = gate.pending.get_mut(&client).ok_or(stale)?;
+        let decision = pending.card_request.filter(|decision| decision.token == request).ok_or(stale)?;
+        if allow && (!decision.for_quit || gate.quit_waiting) {
             pending.card_request = None;
             Ok(Some(pending.root))
         } else {
             gate.forget(client);
-            gate.close_asked();
+            if !allow { gate.close_asked(); }
             Ok(None)
         }
     }
@@ -936,7 +949,7 @@ impl ModuleHost {
         clients.sort_unstable();
         let mut refused = Vec::new();
         for client in clients {
-            if self.ask_one(cx, client) == CloseDecision::Veto {
+            if self.ask_one(cx, client, true) == CloseDecision::Veto {
                 let uid = self.instances[&client].root.widget_uid();
                 refused.push((client, uid));
             }
