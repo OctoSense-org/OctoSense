@@ -460,11 +460,20 @@ pub struct ModuleHost {
 /// instance, never the shell.
 #[derive(Debug, Default)]
 pub struct CloseGate {
-    pending: HashMap<ClientId, WidgetUid>,
+    pending: HashMap<ClientId, PendingClose>,
+    next_card_request: u32,
     quit_waiting: bool,
     /// The person's closes of each instance: the third inside the window
     /// ends one that keeps refusing (`process_close::Insistence`).
     insistence: crate::process_close::Insistence,
+}
+
+#[derive(Debug)]
+struct PendingClose {
+    root: WidgetUid,
+    /// A hosted Card can answer asynchronously after saving its documents.
+    /// Only its current request may confirm the close of this root.
+    card_request: Option<u32>,
 }
 
 impl CloseGate {
@@ -477,7 +486,7 @@ impl CloseGate {
                 true
             }
             CloseDecision::Veto => {
-                self.pending.insert(client, root_uid);
+                self.pending.insert(client, PendingClose { root: root_uid, card_request: None });
                 false
             }
         }
@@ -487,13 +496,17 @@ impl CloseGate {
     /// down, when the uid is one whose close is pending. Any other uid (an
     /// instance nobody asked to close, a stale root) is ignored.
     pub fn confirmed(&mut self, uid: WidgetUid) -> Option<ClientId> {
-        let client = self.pending.iter().find(|(_, pending)| **pending == uid).map(|(client, _)| *client)?;
+        let client = self.pending.iter().find(|(_, pending)| pending.root == uid).map(|(client, _)| *client)?;
         self.pending.remove(&client);
         Some(client)
     }
 
     pub fn is_pending(&self, client: ClientId) -> bool {
         self.pending.contains_key(&client)
+    }
+
+    fn card_request(&self, client: ClientId) -> Option<u32> {
+        self.pending.get(&client)?.card_request
     }
 
     /// The instance went (torn down, failed): nothing to wait for.
@@ -507,6 +520,11 @@ impl CloseGate {
     /// window) and ends the instance whatever it answers. Its pending close
     /// is dropped then.
     pub fn insist(&mut self, client: ClientId, now: f64) -> bool {
+        // Repeating a close while a document's Save/Discard/Cancel sheet is
+        // open must never silently pick Discard or interrupt an ongoing save.
+        if self.card_request(client).is_some() {
+            return false;
+        }
         let forced = crate::process_close::Insistence::forced(self.insistence.close(client, now));
         if forced {
             self.pending.remove(&client);
@@ -517,7 +535,7 @@ impl CloseGate {
 
     /// Whether the next close of `client` ends it.
     pub fn next_close_forces(&self, client: ClientId) -> bool {
-        crate::process_close::Insistence::forced(self.insistence.count(client) + 1)
+        self.card_request(client).is_none() && crate::process_close::Insistence::forced(self.insistence.count(client) + 1)
     }
 
     /// A person-initiated close of one instance: a quit that was waiting
@@ -529,7 +547,11 @@ impl CloseGate {
     /// A shell quit asked every live instance and these refused. `true`:
     /// quit now (nobody refused). Otherwise the quit waits for them.
     pub fn quit_asked(&mut self, refused: impl IntoIterator<Item = (ClientId, WidgetUid)>) -> bool {
-        self.pending.extend(refused);
+        for (client, root) in refused {
+            if self.pending.get(&client).is_none_or(|pending| pending.root != root) {
+                self.pending.insert(client, PendingClose { root, card_request: None });
+            }
+        }
         self.quit_waiting = !self.pending.is_empty();
         !self.quit_waiting
     }
@@ -847,10 +869,42 @@ impl ModuleHost {
             return CloseDecision::Allow;
         };
         let (module, root, vm_id) = (instance.module, instance.root.clone(), instance.vm_id);
+        if self.close_gate.card_request(client).is_some() {
+            return CloseDecision::Veto;
+        }
         let decision = contain_outside(cx, vm_id, "close_requested", |cx| module.close_requested(cx, &root))
             .unwrap_or(CloseDecision::Allow);
+        if decision == CloseDecision::Allow && module.id() == "card" {
+            let request = self.close_gate.next_card_request.wrapping_add(1).max(1);
+            self.close_gate.next_card_request = request;
+            let answer = contain(cx, vm_id, "its Card close request", |cx| {
+                root.splash(cx, ids!(card)).ask_script_fn(cx, id!(on_close_request), &[request.into()], 5)
+            }).flatten();
+            if answer.as_deref() == Some("false") {
+                self.close_gate.pending.insert(client, PendingClose { root: root.widget_uid(), card_request: Some(request) });
+                return CloseDecision::Veto;
+            }
+        }
         self.close_gate.answered(client, decision, root.widget_uid());
         decision
+    }
+
+    /// An answer from the Card isolate that owns `client` (verified by
+    /// `App::window_of`). A positive answer uses the ordinary root-confirmed
+    /// path, and a cancellation abandons any quit that waited on this Card.
+    pub fn card_close_response(&mut self, client: ClientId, request: u32, allow: bool) -> Result<Option<WidgetUid>, &'static str> {
+        let gate = &mut self.close_gate;
+        let pending = gate.pending.get_mut(&client)
+            .filter(|pending| pending.card_request == Some(request))
+            .ok_or("no_close_request: this window is not waiting for this close decision")?;
+        if allow {
+            pending.card_request = None;
+            Ok(Some(pending.root))
+        } else {
+            gate.forget(client);
+            gate.close_asked();
+            Ok(None)
+        }
     }
 
     /// What the live instance `client` adds to a Mac's menu bar now

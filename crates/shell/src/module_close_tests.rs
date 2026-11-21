@@ -254,3 +254,65 @@ fn a_shell_quit_asks_every_instance_and_waits_for_the_refusals() {
     assert!(!host.take_quit_ready());
     assert!(host.teardown(&mut cx, 1));
 }
+
+#[cfg(feature = "app-hub")]
+#[test]
+fn card_close_requests_wait_for_the_owning_window_and_current_decision() {
+    use makepad_widgets::splash_host::take_splash_host_requests_for;
+    let (mut cx, mut host) = setup();
+    host.apply_style(&mut cx, &desktop_style::StyleSheet::load(desktop_style::DesktopStyle::Macos));
+    let module = &octosense_app_hub_app::CARD_MODULE;
+    for client in [1, 2] {
+        let open = module.open_schema().validate(r#"{"app":"os.close-probe"}"#, &[]).unwrap();
+        host.create(&mut cx, client, module, open, dvec2(400.0, 700.0)).unwrap();
+    }
+    let put = |host: &mut ModuleHost, cx: &mut Cx, client, source| {
+        host.dispatch(cx, client, "install probe", |cx, root| {
+            let card = root.splash(cx, ids!(card));
+            card.set_text(cx, source);
+            card.isolate_heap_key(cx).unwrap()
+        }).unwrap()
+    };
+    put(&mut host, &mut cx, 1, "View{}");
+    assert_eq!(host.ask_close(&mut cx, 1), CloseDecision::Allow, "legacy Card");
+    put(&mut host, &mut cx, 1, "fn on_close_request(request) { return true }\nView{}");
+    assert_eq!(host.ask_close(&mut cx, 1), CloseDecision::Allow, "clean Card");
+    let heap = put(&mut host, &mut cx, 2, r#"
+        fn on_close_request(request) {
+            host.request("window.close_response", {request: request, allow: false}, nil)
+            return false
+        }
+        View{}
+    "#);
+    let request = || {
+        let calls = take_splash_host_requests_for(&[heap]);
+        assert_eq!(calls.len(), 1, "one dialog per close");
+        assert_eq!(calls[0].service, "window.close_response");
+        let args = serde_json::from_str(&calls[0].args_json).unwrap();
+        match crate::app_fullscreen::admit(&calls[0].service, false, &args).unwrap() {
+            crate::app_fullscreen::WindowCommand::CloseResponse { request, allow: false } => request,
+            other => panic!("unexpected close response {other:?}"),
+        }
+    };
+
+    assert_eq!(host.ask_quit(&mut cx), [2]);
+    assert_eq!(host.ask_quit(&mut cx), [2]);
+    let old = request();
+    assert!(host.card_close_response(1, old, true).is_err(), "other window");
+    for time in [0.0, 1.0, 2.0] {
+        assert!(!host.close_gate_mut().insist(2, time), "repeated close cannot discard edits");
+    }
+    assert_eq!(host.card_close_response(2, old, false), Ok(None), "cancel");
+    assert!(!host.close_pending(2));
+    assert!(!host.take_quit_ready(), "cancel keeps the shell running");
+
+    assert_eq!(host.ask_quit(&mut cx), [2]);
+    let current = request();
+    assert_ne!(current, old);
+    assert!(host.card_close_response(2, old, true).is_err(), "late save from an earlier close");
+    let root = host.card_close_response(2, current, true).unwrap().unwrap();
+    assert_eq!(host.close_confirmed(root), Some(2));
+    assert!(host.card_close_response(2, current, true).is_err(), "duplicate response");
+    assert!(host.take_quit_ready());
+    assert!(host.teardown(&mut cx, 1) && host.teardown(&mut cx, 2));
+}
