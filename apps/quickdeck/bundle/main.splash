@@ -2366,8 +2366,10 @@ fn next_close_deck(q){
 }
 fn on_close_request(request_id){
     let q = new_close_request(nil, request_id)
-    if !st.index_dirty && next_close_deck(q) == nil { return true }
-    // Return the close decision within the host's synchronous script budget.
+    if !st.index_dirty && next_close_deck(q) == nil {
+        reply_to_close(request_id, true)
+        return
+    }
     // Painting the sheet and flushing the outline can both take a full UI turn.
     st.close_request = q
     start_timeout(0.01, || {
@@ -2377,7 +2379,6 @@ fn on_close_request(request_id){
             advance_close(q)
         } catch { finish_close(q, false) }
     })
-    false
 }
 fn finish_close(q, allow){
     if st.close_request != q { return }
