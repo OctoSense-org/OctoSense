@@ -2365,19 +2365,18 @@ fn next_close_deck(q){
     nil
 }
 fn on_close_request(request_id){
-    // The outline normally autosaves on the heartbeat. Flush the last edit
-    // now. If storage refuses it, offer the same three choices as for decks.
     let q = new_close_request(nil, request_id)
-    try {
-        if st.index_dirty { save_index() }
-        if next_close_deck(q) == nil { return true }
-        st.close_request = q
-        advance_close(q)
-    } catch {
-        // Keep a UI error from turning a dirty close into a missing hook.
-        st.close_request = q
-        start_timeout(0.01, || finish_close(q, false))
-    }
+    if !st.index_dirty && next_close_deck(q) == nil { return true }
+    // Return the close decision within the host's synchronous script budget.
+    // Painting the sheet and flushing the outline can both take a full UI turn.
+    st.close_request = q
+    start_timeout(0.01, || {
+        if st.close_request != q { return }
+        try {
+            if st.index_dirty { save_index() }
+            advance_close(q)
+        } catch { finish_close(q, false) }
+    })
     false
 }
 fn finish_close(q, allow){
