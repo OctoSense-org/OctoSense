@@ -180,6 +180,8 @@ pub fn serve_system_apps() -> Vec<&'static str> {
 mod tests {
     use super::*;
     use octosense_appstore::services::{dispatch, take_replies_for, ServiceCall, ServiceHost};
+    use std::path::Path;
+    use std::time::{Duration, Instant};
 
     /// A notice is the fixed card filled with the caller's text: it opens
     /// the app and notifies, a missing `card_id` is made from the time and
@@ -249,12 +251,18 @@ mod tests {
 
     static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(usize::MAX / 4);
 
-    fn ask(app: &str, service: &str, args: Value) -> Result<Value, String> {
+    fn ask(dir: &Path, app: &str, service: &str, args: Value) -> Result<Value, String> {
         let heap = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        let call = ServiceCall { app_id: app.into(), service: service.into(), args, from_sheet: false, may_prompt: false, host_dir: std::env::temp_dir() };
+        let call = ServiceCall { app_id: app.into(), service: service.into(), args, from_sheet: false, may_prompt: false, host_dir: dir.into() };
         dispatch(call, heap, 1, &mut NoSheets);
-        let (_, _, answer) = take_replies_for(&[heap]).pop().expect("answered at once");
-        answer.map(|json| serde_json::from_str(&json).unwrap())
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            if let Some((_, _, answer)) = take_replies_for(&[heap]).pop() {
+                return answer.map(|json| serde_json::from_str(&json).unwrap());
+            }
+            assert!(Instant::now() < deadline, "timed out waiting for {service} to answer {app}");
+            std::thread::sleep(Duration::from_millis(1));
+        }
     }
 
     /// Once the shell's own services are registered, every system app no
@@ -269,8 +277,9 @@ mod tests {
         for family in ["photos", "maps", "youtube", "ai-providers"] {
             assert!(octosense_appstore::services::has_service(family), "{family}");
         }
-        assert!(ask("os.maps", "photos.notify", json!({"title": "x", "body": "y"})).unwrap_err().contains("serves os.photos only"));
-        assert!(ask("os.photos", "photos.list", json!({})).unwrap_err().contains("no method"));
+        let dir = std::env::temp_dir().join(format!("notice-mail-{}", std::process::id()));
+        assert!(ask(&dir, "os.maps", "photos.notify", json!({"title": "x", "body": "y"})).unwrap_err().contains("serves os.photos only"));
+        assert!(ask(&dir, "os.photos", "photos.list", json!({})).unwrap_err().contains("no method"));
         // Where the photo engine is linked (the desktop's `craft-engines`,
         // ADR 0013), Photos' namespace is its own service: `photos.info`
         // reaches the photos service, not a notice service's "no method".
@@ -278,7 +287,7 @@ mod tests {
         // host handed out, so it is refused before the engine opens anything.
         #[cfg(feature = "craft-engines")]
         {
-            let refused = ask("os.photos", "photos.info", json!({"path": "nothing.png"})).unwrap_err();
+            let refused = ask(&dir, "os.photos", "photos.info", json!({"path": "nothing.png"})).unwrap_err();
             assert!(!refused.contains("no method"), "{refused}");
             assert!(refused.starts_with("photos") || refused.contains("photo.info"), "{refused}");
         }
@@ -286,21 +295,17 @@ mod tests {
         // Photos' namespace, and `photos.info` says plainly it is not here.
         #[cfg(not(feature = "craft-engines"))]
         {
-            let refused = ask("os.photos", "photos.info", json!({"path": "nothing.png"})).unwrap_err();
+            let refused = ask(&dir, "os.photos", "photos.info", json!({"path": "nothing.png"})).unwrap_err();
             assert_eq!(refused, "photos.info isn't available on this device: the photo engine is only in the desktop build");
         }
         // Its own app reaches the notice (a blank title is refused there,
         // before anything is published).
         for (app, service) in [("os.photos", "photos.notify"), ("os.ai-providers", "ai-providers.notify")] {
-            let refused = ask(app, service, json!({"title": " ", "body": "Hi"})).unwrap_err();
+            let refused = ask(&dir, app, service, json!({"title": " ", "body": "Hi"})).unwrap_err();
             assert!(refused.contains("Provide a title"), "{service}: {refused}");
         }
         // Mail answers its own namespace: its service, not a notice service.
-        let dir = std::env::temp_dir().join(format!("notice-mail-{}", std::process::id()));
-        let call = ServiceCall { app_id: "os.mail".into(), service: "mail.accounts".into(), args: json!({}), from_sheet: false, may_prompt: false, host_dir: dir.clone() };
-        let heap = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        dispatch(call, heap, 1, &mut NoSheets);
-        assert_eq!(take_replies_for(&[heap]).pop().unwrap().2.unwrap(), "[]");
+        assert_eq!(ask(&dir, "os.mail", "mail.accounts", json!({})).unwrap(), json!([]));
         let _ = std::fs::remove_dir_all(dir);
     }
 }

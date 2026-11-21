@@ -28,14 +28,18 @@
 //! the bytes one call adds stay within its quota.
 
 pub mod door;
+pub mod isolate;
+pub mod worker;
 
 use std::collections::HashSet;
-use std::io::Write as _;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, RwLock};
 
 use octosense_appstore::services::ServiceCall;
+use octosense_appstore::makepad_widgets::splash_storage::{jail_writes, PrivateStage};
+
+type ScopeCheck = Arc<dyn Fn() -> Result<(), String> + Send + Sync>;
 
 /// Where one call works, and what its writes may do there.
 pub struct Area {
@@ -46,6 +50,8 @@ pub struct Area {
     pub quota_left: Option<u64>,
     /// Whether a write may replace an existing file.
     pub may_replace: bool,
+    jail_quota: Option<(PathBuf, u64)>,
+    scope_check: Option<ScopeCheck>,
     /// What this call's writes added, and what the files they replaced
     /// held: one budget for every write of the call.
     added: AtomicU64,
@@ -58,6 +64,8 @@ impl Clone for Area {
             root: self.root.clone(),
             quota_left: self.quota_left,
             may_replace: self.may_replace,
+            jail_quota: self.jail_quota.clone(),
+            scope_check: self.scope_check.clone(),
             added: AtomicU64::new(self.added.load(Ordering::Relaxed)),
             freed: AtomicU64::new(self.freed.load(Ordering::Relaxed)),
         }
@@ -66,7 +74,7 @@ impl Clone for Area {
 
 impl PartialEq for Area {
     fn eq(&self, other: &Area) -> bool {
-        self.root == other.root && self.quota_left == other.quota_left && self.may_replace == other.may_replace
+        self.root == other.root && self.quota_left == other.quota_left && self.may_replace == other.may_replace && self.jail_quota == other.jail_quota
     }
 }
 
@@ -100,7 +108,32 @@ static NEXT: AtomicU64 = AtomicU64::new(1);
 
 impl Area {
     pub fn new(root: impl Into<PathBuf>, quota_left: Option<u64>, may_replace: bool) -> Area {
-        Area { root: root.into(), quota_left, may_replace, added: AtomicU64::new(0), freed: AtomicU64::new(0) }
+        Area { root: root.into(), quota_left, may_replace, jail_quota: None, scope_check: None, added: AtomicU64::new(0), freed: AtomicU64::new(0) }
+    }
+
+    /// The app-wide ceiling shared by foreground writes and every account.
+    pub fn with_jail_quota(mut self, jail: impl Into<PathBuf>, ceiling: u64) -> Self {
+        self.jail_quota = Some((jail.into(), ceiling));
+        self
+    }
+
+    /// Revalidate the host's account binding just before publishing output.
+    pub fn with_scope_check(mut self, check: ScopeCheck) -> Self {
+        self.scope_check = Some(check);
+        self
+    }
+
+    /// Change one operation's replacement policy, retaining its storage scope.
+    pub fn with_replacement(&self, may_replace: bool) -> Self {
+        let mut area = self.clone();
+        area.may_replace = may_replace;
+        area
+    }
+
+    fn ensure_live(&self) -> Result<(), String> {
+        worker::ensure_live()?;
+        if let Some(check) = &self.scope_check { check()?; }
+        Ok(())
     }
 
     /// The legacy private folder of a family under a host directory:
@@ -232,41 +265,12 @@ impl Area {
     /// [`Area::may_replace`] (and then by an atomic rename, which replaces a
     /// link rather than writing through it), within the quota.
     pub fn write(&self, path: &Path, bytes: &[u8]) -> Result<(), String> {
-        let len = bytes.len() as u64;
-        let replaced = self.admit(path, len)?;
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent).map_err(|e| format!("`{}`: {e}", self.shown(path)))?;
-        }
-        if self.may_replace {
-            let tmp = beside(path);
-            let written = (|| -> std::io::Result<()> {
-                let mut file = std::fs::OpenOptions::new().write(true).create_new(true).open(&tmp)?;
-                file.write_all(bytes)?;
-                drop(file);
-                std::fs::rename(&tmp, path)
-            })();
-            if let Err(e) = written {
-                let _ = std::fs::remove_file(&tmp);
-                return Err(format!("`{}`: {e}", self.shown(path)));
-            }
-        } else {
-            // `create_new` refuses any entry already there, a dangling link
-            // included, so nothing raced into place is replaced either.
-            let mut file = match std::fs::OpenOptions::new().write(true).create_new(true).open(path) {
-                Ok(file) => file,
-                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
-                    return Err(format!("`{}` already exists, and this call never replaces a file: choose a new name", self.shown(path)));
-                }
-                Err(e) => return Err(format!("`{}`: {e}", self.shown(path))),
-            };
-            if let Err(e) = file.write_all(bytes) {
-                drop(file);
-                let _ = std::fs::remove_file(path);
-                return Err(format!("`{}`: {e}", self.shown(path)));
-            }
-        }
-        self.spend(len, replaced);
-        Ok(())
+        self.ensure_live()?;
+        self.admit(path, bytes.len() as u64)?;
+        let stage = self.stage()?;
+        let staged = stage.path("output");
+        std::fs::write(&staged, bytes).map_err(|e| format!("`{}`: {e}", self.shown(path)))?;
+        stage.commit(&[(staged, path.to_owned())])
     }
 
     /// A fresh staging folder inside the area, for an engine that writes its
@@ -276,12 +280,15 @@ impl Area {
     /// [`Stage`] is dropped; one a crashed process left behind is removed by
     /// the next staging in the same area.
     pub fn stage(&self) -> Result<Stage<'_>, String> {
+        self.ensure_live()?;
         std::fs::create_dir_all(&self.root).map_err(|e| format!("cannot prepare a staging folder: {e}"))?;
         let mine = format!("{STAGING_PREFIX}{}-", std::process::id());
         if let Ok(entries) = std::fs::read_dir(&self.root) {
             for entry in entries.flatten() {
                 let name = entry.file_name().to_string_lossy().into_owned();
-                let stale = name.starts_with(STAGING_PREFIX) && !name.starts_with(&mine);
+                let stale = name.strip_prefix(STAGING_PREFIX).and_then(|s| s.split_once('-')).is_some_and(|(pid, seq)| {
+                    pid.parse::<u32>().is_ok_and(|p| p != std::process::id()) && seq.parse::<u64>().is_ok()
+                });
                 if stale && entry.file_type().is_ok_and(|t| t.is_dir()) {
                     let _ = std::fs::remove_dir_all(entry.path());
                 }
@@ -290,7 +297,16 @@ impl Area {
         loop {
             let dir = self.root.join(format!("{mine}{}", NEXT.fetch_add(1, Ordering::Relaxed)));
             match std::fs::create_dir(&dir) {
-                Ok(()) => return Ok(Stage { area: self, dir }),
+                Ok(()) => {
+                    let mut stage = Stage { area: self, dir, _private: None };
+                    if let Some((jail, _)) = &self.jail_quota {
+                        let canonical = stage.dir.canonicalize().map_err(|e| e.to_string())?;
+                        let root = jail.canonicalize().map_err(|e| e.to_string())?;
+                        let relative = canonical.strip_prefix(root).map_err(|_| "staging folder is outside the jail")?;
+                        stage._private = Some(jail_writes(jail).register_stage(relative.to_owned()));
+                    }
+                    return Ok(stage);
+                }
                 Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
                 Err(e) => return Err(format!("cannot prepare a staging folder: {e}")),
             }
@@ -298,16 +314,31 @@ impl Area {
     }
 }
 
-/// A temporary name beside `path`, for an atomic replacement.
-fn beside(path: &Path) -> PathBuf {
-    let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-    path.with_file_name(format!(".{name}.{}-{}.tmp", std::process::id(), NEXT.fetch_add(1, Ordering::Relaxed)))
+/// Measure committed data only. A bounded scan that cannot finish refuses
+/// publication instead of accepting an incomplete total.
+fn committed_bytes(jail: &Path, private: &HashSet<PathBuf>) -> Result<u64, String> {
+    let mut dirs = vec![jail.to_owned()];
+    let mut bytes = 0u64;
+    let mut budget = 200_000usize;
+    while let Some(dir) = dirs.pop() {
+        for entry in std::fs::read_dir(dir).map_err(|e| format!("cannot measure storage: {e}"))? {
+            let entry = entry.map_err(|e| format!("cannot measure storage: {e}"))?;
+            budget = budget.checked_sub(1).ok_or("too many entries to measure storage")?;
+            let path = entry.path();
+            if path.strip_prefix(jail).is_ok_and(|relative| private.contains(relative)) { continue; }
+            let meta = std::fs::symlink_metadata(&path).map_err(|e| format!("cannot measure storage: {e}"))?;
+            if meta.is_dir() { dirs.push(path); }
+            if meta.is_file() { bytes = bytes.saturating_add(meta.len()); }
+        }
+    }
+    Ok(bytes)
 }
 
 /// A staging folder inside an [`Area`] ([`Area::stage`]).
 pub struct Stage<'a> {
     area: &'a Area,
     dir: PathBuf,
+    _private: Option<PrivateStage>,
 }
 
 impl Stage<'_> {
@@ -347,8 +378,20 @@ impl Stage<'_> {
     /// nothing: every destination is admitted, and the sum of the results
     /// checked against the quota, before anything moves. A destination that
     /// may not be replaced is placed by a hard link, which refuses whatever
-    /// raced into place (else a fresh copy).
+    /// raced into place (else an exclusive claim followed by a rename).
     pub fn commit(&self, moves: &[(PathBuf, PathBuf)]) -> Result<(), String> {
+        if let Some((jail, ceiling)) = &self.area.jail_quota {
+            let writes = jail_writes(jail);
+            return writes.checked(
+                || committed_bytes(jail, &writes.private_dirs()),
+                |used| self.publish(moves, Some(ceiling.saturating_sub(used?))),
+            );
+        }
+        self.publish(moves, None)
+    }
+
+    fn publish(&self, moves: &[(PathBuf, PathBuf)], live_room: Option<u64>) -> Result<(), String> {
+        self.area.ensure_live()?;
         let mut added = 0u64;
         let mut freed = 0u64;
         let mut seen = HashSet::new();
@@ -357,43 +400,85 @@ impl Stage<'_> {
                 Ok(meta) if staged.starts_with(&self.dir) && meta.is_file() => meta,
                 _ => return Err(format!("the engine wrote no file for `{}`", self.area.shown(dest))),
             };
-            if !seen.insert(dest.clone()) {
+            // On a case-insensitive filesystem, two spellings of the same
+            // existing destination free its old bytes only once.
+            let replaced = self.area.admit(dest, 0)?;
+            let identity = if moves.len() > 1 && replaced > 0 { dest.canonicalize().unwrap_or_else(|_| dest.clone()) } else { dest.clone() };
+            if !seen.insert(identity) {
                 return Err(format!("two results would land on `{}`", self.area.shown(dest)));
             }
-            freed += self.area.admit(dest, 0)?;
+            freed += replaced;
             added += meta.len();
         }
-        if let Some(room) = self.area.room() {
+        if let Some(room) = self.area.room().into_iter().chain(live_room).min() {
             if added > room.saturating_add(freed) {
                 return Err(format!("the results are {added} bytes, more than the {room} {NO_ROOM}"));
             }
         }
-        let mut placed: Vec<&Path> = Vec::new();
-        for (staged, dest) in moves {
-            let moved = (|| -> std::io::Result<()> {
-                if let Some(parent) = dest.parent() {
-                    std::fs::create_dir_all(parent)?;
-                }
-                if self.area.may_replace { std::fs::rename(staged, dest) } else { place_new(staged, dest) }
-            })();
-            if let Err(e) = moved {
-                // What this commit created goes again; nothing was replaced.
-                if !self.area.may_replace {
-                    for dest in placed {
-                        let _ = std::fs::remove_file(dest);
-                    }
-                }
-                return Err(match e.kind() {
-                    std::io::ErrorKind::AlreadyExists => {
-                        format!("`{}` already exists, and this call never replaces a file: choose a new name", self.area.shown(dest))
-                    }
-                    _ => format!("`{}`: {e}", self.area.shown(dest)),
-                });
+        // Validate every parent before any output becomes visible.
+        for (_, dest) in moves {
+            if let Some(parent) = dest.parent() {
+                std::fs::create_dir_all(parent).map_err(|e| format!("`{}`: {e}", self.area.shown(dest)))?;
             }
-            placed.push(dest);
+        }
+        let mut placed = Vec::new();
+        for (staged, dest) in moves {
+            let mut prior = None;
+            let moved = (|| -> std::io::Result<bool> {
+                if self.area.may_replace {
+                    if moves.len() > 1 {
+                        prior = self.backup(dest)?;
+                    }
+                    std::fs::rename(staged, dest)?;
+                    Ok(true)
+                } else {
+                    place_new(staged, dest)
+                }
+            })();
+            match moved {
+                Ok(consumed) => placed.push((staged, dest, consumed, prior)),
+                Err(e) => {
+                    if let Some(old) = prior { let _ = std::fs::rename(old, dest); }
+                    for (source, output, consumed, old) in placed.into_iter().rev() {
+                        if consumed { let _ = std::fs::rename(output, source); } else { let _ = std::fs::remove_file(output); }
+                        if let Some(old) = old { let _ = std::fs::rename(old, output); }
+                    }
+                    return Err(match e.kind() {
+                        std::io::ErrorKind::AlreadyExists => {
+                            format!("`{}` already exists, and this call never replaces a file: choose a new name", self.area.shown(dest))
+                        }
+                        _ => format!("`{}`: {e}", self.area.shown(dest)),
+                    });
+                }
+            }
+        }
+        for (_, _, _, old) in placed {
+            if let Some(old) = old { let _ = std::fs::remove_file(old); }
         }
         self.area.spend(added, freed);
         Ok(())
+    }
+
+    // Retain the old entry for rollback until every member of a batch lands.
+    // Both operations are metadata-only, even for a large existing document.
+    fn backup(&self, dest: &Path) -> std::io::Result<Option<PathBuf>> {
+        match std::fs::symlink_metadata(dest) {
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(e) => return Err(e),
+            Ok(_) => {}
+        }
+        loop {
+            let old = self.path(format!(".original-{}", NEXT.fetch_add(1, Ordering::Relaxed)));
+            match std::fs::hard_link(dest, &old) {
+                Ok(()) => return Ok(Some(old)),
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                Err(_) => {
+                    // Filesystems without hard links still support same-volume moves.
+                    std::fs::rename(dest, &old)?;
+                    return Ok(Some(old));
+                }
+            }
+        }
     }
 }
 
@@ -403,22 +488,20 @@ impl Drop for Stage<'_> {
     }
 }
 
-/// `staged` at `dest` only when nothing is there: a hard link (atomic; it
-/// refuses an existing entry), else, where links are not supported, a copy
-/// into a newly created file.
-fn place_new(staged: &Path, dest: &Path) -> std::io::Result<()> {
+/// Publish a new name without overwriting. Returns whether the staged entry
+/// was consumed. Where hard links are unavailable, exclusively claim the name
+/// first, then rename into it without copying the payload under the jail lock.
+fn place_new(staged: &Path, dest: &Path) -> std::io::Result<bool> {
     match std::fs::hard_link(staged, dest) {
-        Ok(()) => Ok(()),
+        Ok(()) => Ok(false),
         Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => Err(e),
         Err(_) => {
-            let mut src = std::fs::File::open(staged)?;
-            let mut out = std::fs::OpenOptions::new().write(true).create_new(true).open(dest)?;
-            if let Err(e) = std::io::copy(&mut src, &mut out) {
-                drop(out);
+            drop(std::fs::File::create_new(dest)?);
+            if let Err(e) = std::fs::rename(staged, dest) {
                 let _ = std::fs::remove_file(dest);
                 return Err(e);
             }
-            Ok(())
+            Ok(true)
         }
     }
 }
@@ -461,6 +544,9 @@ impl Slot {
         match resolver {
             Some(resolve) => {
                 let area = resolve(call)?;
+                if let Some(check) = area.scope_check.as_ref() {
+                    worker::note_scope(check.clone());
+                }
                 if !area.root.is_dir() {
                     return Err("this call's folder is not there".into());
                 }
@@ -588,6 +674,83 @@ mod tests {
         assert_eq!(Area::new(dir.path(), None, false).room(), None);
     }
 
+    #[test]
+    fn an_account_cannot_spend_bytes_a_foreground_writer_used_while_its_job_waited() {
+        use octosense_appstore::makepad_widgets::{self, *};
+        let jail = tempfile::tempdir().unwrap();
+        let account = jail.path().join("accounts/active");
+        std::fs::create_dir_all(&account).unwrap();
+        let area = super::Area::new(&account, Some(8), false).with_jail_quota(jail.path(), 8);
+        let mut cx = Cx::new(Box::new(|_, _| {}));
+        let mut card = cx.with_vm(|vm| {
+            makepad_widgets::script_mod(vm);
+            let value = vm.eval(script! {use mod.widgets.* Splash{}});
+            Splash::script_from_value(vm, value)
+        });
+        card.set_host_tag(&mut cx, Some("os.fixture".into()));
+        card.set_sandbox_dir(&mut cx, Some(jail.path().to_owned()));
+        card.set_storage_quota(&mut cx, Some(8));
+        card.set_text(&mut cx, "View {}");
+        let heap = card.isolate_heap_key(&mut cx).unwrap();
+        let storage = splash_storage::storage_for_heap(heap, "os.fixture").unwrap();
+        let stage = area.stage().unwrap();
+        std::fs::write(stage.path("a"), b"ab").unwrap();
+        std::fs::write(stage.path("b"), b"cde").unwrap();
+        // Force each kind of foreground writer between an off-thread-style
+        // usage measurement and its publication. Each must invalidate the
+        // first measurement, even while the engine's private stage exists.
+        fn observed_after(root: &std::path::Path, change: impl FnOnce()) -> u64 {
+            let writes = jail_writes(root);
+            let mut change = Some(change);
+            writes.checked(|| {
+                let used = committed_bytes(root, &writes.private_dirs()).unwrap();
+                if let Some(change) = change.take() { change(); }
+                used
+            }, Ok).unwrap()
+        }
+        assert_eq!(observed_after(jail.path(), || storage.import_new("one", b"ab").unwrap()), 2);
+        let prepared = storage.worker_snapshot().prepare_import("two", b"cd").unwrap();
+        assert_eq!(observed_after(jail.path(), || storage.commit_import(prepared).unwrap()), 4);
+        let moves = [(stage.path("a"), account.join("a")), (stage.path("b"), account.join("b"))];
+        assert!(no_room(&stage.commit(&moves).unwrap_err()));
+        assert!(!account.join("a").exists() && !account.join("b").exists());
+        drop(stage);
+        assert!(no_room(&area.write(&account.join("too-big"), b"12345").unwrap_err()));
+        area.write(&account.join("fits"), b"1234").unwrap();
+        assert!(storage.import_new("full", b"x").is_err());
+    }
+
+    #[test]
+    fn publication_remeasures_if_a_writer_commits_during_the_scan() {
+        use std::sync::mpsc;
+        let jail = tempfile::tempdir().unwrap();
+        let area = Area::new(jail.path(), Some(5), true).with_jail_quota(jail.path(), 5);
+        let gate = jail_writes(jail.path());
+        let (scanned, scan_ready) = mpsc::channel();
+        let (resume, committed) = mpsc::channel();
+        let root = jail.path();
+        std::thread::scope(|threads| {
+            let worker = threads.spawn(move || {
+                let mut first = Some(scanned);
+                gate.checked(
+                    || {
+                        let used = committed_bytes(root, &gate.private_dirs()).unwrap();
+                        if let Some(scanned) = first.take() {
+                            scanned.send(()).unwrap();
+                            committed.recv_timeout(std::time::Duration::from_secs(10)).unwrap();
+                        }
+                        used
+                    },
+                    Ok,
+                )
+            });
+            scan_ready.recv_timeout(std::time::Duration::from_secs(10)).unwrap();
+            area.write(&root.join("other"), b"12345").unwrap();
+            resume.send(()).unwrap();
+            assert_eq!(worker.join().unwrap().unwrap(), 5);
+        });
+    }
+
     /// Every quota refusal, and only a quota refusal, is [`no_room`]'s.
     #[test]
     fn quota_refusals_are_told_apart_from_the_others() {
@@ -676,14 +839,45 @@ mod tests {
     }
 
     #[test]
+    fn a_failed_batch_restores_the_files_it_replaced_and_can_be_retried() {
+        let dir = tempfile::tempdir().unwrap();
+        let area = Area::new(dir.path(), None, true);
+        let first = dir.path().join("one");
+        let second = dir.path().join("two");
+        std::fs::write(&first, b"original").unwrap();
+        let stage = area.stage().unwrap();
+        let source = stage.path("result");
+        std::fs::write(&source, b"replacement").unwrap();
+        // A rename consumes its source. The second move will fail after
+        // the first has temporarily replaced an existing file.
+        assert!(stage.commit(&[(source.clone(), first.clone()), (source.clone(), second.clone())]).is_err());
+        assert_eq!(std::fs::read(&first).unwrap(), b"original");
+        assert!(!second.exists());
+        stage.commit(&[(source, second.clone())]).unwrap();
+        assert_eq!(std::fs::read(second).unwrap(), b"replacement");
+    }
+
+    #[test]
+    fn a_revoked_area_cannot_recreate_its_folder_to_stage_an_output() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("removed-account");
+        let area = Area::new(&root, None, true).with_scope_check(Arc::new(|| Err("signed out".into())));
+        assert!(matches!(area.stage(), Err(error) if error == "signed out"));
+        assert!(!root.exists());
+    }
+
+    #[test]
     fn a_stale_staging_folder_from_another_process_is_swept() {
         let dir = tempfile::tempdir().unwrap();
         let stale = dir.path().join(format!("{STAGING_PREFIX}999999999-1"));
+        let ordinary = dir.path().join(format!("{STAGING_PREFIX}notes"));
+        std::fs::create_dir(&ordinary).unwrap();
         std::fs::create_dir(&stale).unwrap();
         std::fs::write(stale.join("half.mp4"), b"partial").unwrap();
         let area = Area::new(dir.path(), None, false);
         let stage = area.stage().unwrap();
         assert!(!stale.exists(), "swept");
+        assert!(ordinary.exists(), "ordinary app data with a similar name stays");
         assert!(stage.dir().exists(), "its own stays while it lives");
     }
 

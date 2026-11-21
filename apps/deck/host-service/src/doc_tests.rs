@@ -442,6 +442,7 @@ fn a_closed_isolates_documents_go_before_its_key_is_reused() {
     octosense_appstore::services::cancel_heap(heap.wrapping_add(64));
     assert_eq!(docs::open_count(), 3);
     octosense_appstore::services::cancel_heap(heap);
+    docs::sweep();
     assert_eq!(docs::open_count(), 0, "released by the listener");
     assert!(old.iter().all(|doc| !renders(doc).exists()), "their renders went with them");
     card.set_host_tag(&mut cx, Some(APP.into()));
@@ -1323,6 +1324,7 @@ fn a_closed_isolates_clips_go_with_its_renders() {
     let renders = w.root.join(format!(".cache/slides/{}", doc.as_str().unwrap()));
     assert!(w.root.join(&clip).is_file() && renders.is_dir());
     octosense_appstore::services::cancel_heap(heap);
+    docs::sweep();
     assert!(!w.root.join(&clip).exists(), "the clip went with its document");
     assert!(!renders.exists(), "and so did its renders");
 }
@@ -2049,7 +2051,7 @@ fn set_text_replaces_only_the_span_that_changed() {
     let s = w.slide_ids(&doc)[1];
     let id = w.ok("insert", json!({ "doc": doc, "slide": s, "kind": "text", "rect": [100, 100, 400, 60], "text": "Hello world today" }))["id"].as_u64().unwrap();
     // Make "world" bold, by its paragraph's characters 6 to 11.
-    docs::with_doc(&json!({ "doc": doc }), &Ctx { area: &Area::new(&w.root, None, true), app: APP, isolate: 0 }, "test", |d| {
+    docs::with_doc(&json!({ "doc": doc }), &Ctx { area: &Area::new(&w.root, None, true), app: APP, isolate: octosense_engine_area::isolate::Isolate::capture(0, APP) }, "test", |d| {
         let i = d.slide_index(s as u32)?;
         for (cmd, p) in [
             ("slide.go", json!({ "index": i })),
@@ -2678,7 +2680,9 @@ fn clipboard_tokens_do_not_cross_storage_or_isolate_boundaries() {
     let isolated = source_world.call_full(APP, "shape", json!({"doc": source, "slide": slide, "ids": [shape], "op": "copy"}), true, 41).unwrap();
     let error = source_world.call_full(APP, "insert", json!({"doc": source, "slide": slide, "kind": "paste", "clipboard": isolated["clipboard"]}), true, 42).unwrap_err();
     coded(&error, "invalid");
-    docs::isolate_closed(41);
+    crate::register();
+    octosense_appstore::services::cancel_heap(41);
+    docs::sweep();
     let error = source_world.call_full(APP, "insert", json!({"doc": source, "slide": slide, "kind": "paste", "clipboard": isolated["clipboard"]}), true, 41).unwrap_err();
     coded(&error, "invalid");
 }
@@ -2691,7 +2695,7 @@ fn retained_copy_does_not_keep_unselected_slides_or_pictures() {
     let shape = w.shape_where(&source, slide, "text", "First");
     let token = w.ok("shape", json!({"doc": source, "slide": slide, "ids": [shape], "op": "copy"}))["clipboard"].as_u64().unwrap();
     let area = Area::new(&w.root, None, true);
-    let snapshot = docs::copied(&Ctx { area: &area, app: APP, isolate: 0 }, token).unwrap();
+    let snapshot = docs::copied(&Ctx { area: &area, app: APP, isolate: octosense_engine_area::isolate::Isolate::capture(0, APP) }, token).unwrap();
     assert_eq!(snapshot.source.slides.len(), 1);
     assert!(snapshot.source.slides[0].shapes.is_empty(), "uncopied objects must not stay in the source context");
     assert!(snapshot.source.media.is_empty(), "the unselected picture must not stay in the source context");
@@ -2899,7 +2903,7 @@ fn a_failing_call_changes_nothing() {
     let after = w.ok("state", json!({ "doc": doc }));
     assert_eq!(after["rev"], json!(before["rev"].as_u64().unwrap() + 2), "only the two deletes that worked");
     // A plan the door refuses runs nothing (a held command, through the gate).
-    docs::with_doc(&json!({ "doc": doc }), &Ctx { area: &Area::new(&w.root, None, true), app: APP, isolate: 0 }, "test", |d| {
+    docs::with_doc(&json!({ "doc": doc }), &Ctx { area: &Area::new(&w.root, None, true), app: APP, isolate: octosense_engine_area::isolate::Isolate::capture(0, APP) }, "test", |d| {
         let plan = gate::Plan { method: "deck.test", most: 3, cmds: vec![("slide.go", json!({ "index": 0 })), ("insert.video", json!({ "data": "AAAA" }))] };
         let e = gate::change(d, &Area::new(&w.root, None, true), plan, "x").err().unwrap();
         assert!(e.starts_with("held: deck.test: `insert.video` is held back"), "{e}");

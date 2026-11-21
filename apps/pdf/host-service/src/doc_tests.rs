@@ -433,6 +433,7 @@ fn a_closed_isolates_documents_go_before_its_key_is_reused() {
     assert_eq!(docs::open_count(), 3);
     // This one closes: its documents go now, before any pdf call.
     octosense_appstore::services::cancel_heap(heap);
+    docs::sweep();
     assert_eq!(docs::open_count(), 0, "released by the listener");
     assert!(old.iter().all(|doc| !renders(doc).exists()), "their renders went with them");
     // A new isolate gets the same heap key, the same app tag and storage.
@@ -2035,4 +2036,64 @@ fn timings_on_a_typical_page() {
     time("edit_check (a title piece)", "edit_check", json!({"doc": flyer, "page": 1, "paragraph": 2, "text": "Studio2026 Beta"}));
     time("edit_check (the Chinese subset)", "edit_check", json!({"doc": flyer, "page": 1, "paragraph": 7, "text": "2026 4 30"}));
     eprintln!("pdf service timings:\n{}", report.join("\n"));
+}
+
+/// The worker owns the non-Send engine session. A UI close releases it even
+/// with no further request, and the same heap cannot reach the old handle.
+#[test]
+fn registry_close_releases_worker_owned_pdf_session() {
+    use makepad_widgets::*;
+    use octosense_appstore::services;
+
+    struct NoSheet;
+    impl ServiceHost for NoSheet {
+        fn open_sheet(&mut self, _: String) { panic!("PDF raised a sheet") }
+        fn close_sheet(&mut self) { panic!("PDF closed a sheet") }
+    }
+
+    crate::register();
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("pdf");
+    std::fs::create_dir(&root).unwrap();
+    std::fs::write(root.join("input.pdf"), tiny_pdf("first", "second")).unwrap();
+
+    let mut cx = Cx::new(Box::new(|_, _| {}));
+    let mut card = cx.with_vm(|vm| {
+        makepad_widgets::script_mod(vm);
+        let value = vm.eval(script! {use mod.widgets.* Splash{}});
+        Splash::script_from_value(vm, value)
+    });
+    card.set_host_tag(&mut cx, Some(APP.into()));
+    card.set_sandbox_dir(&mut cx, Some(root.clone()));
+    card.set_text(&mut cx, "View {}");
+    let heap = card.isolate_heap_key(&mut cx).unwrap();
+
+    let call = |method: &str, args: Json| -> Result<Json, String> {
+        let call = ServiceCall { app_id: APP.into(), service: format!("pdf.{method}"), args,
+            from_sheet: false, may_prompt: true, host_dir: dir.path().to_owned() };
+        services::dispatch(call, heap, 1, &mut NoSheet);
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            if let Some((_, _, result)) = services::take_replies_for(&[heap]).pop() {
+                return result.map(|s| serde_json::from_str(&s).unwrap());
+            }
+            assert!(Instant::now() < deadline, "no pdf.{method} answer");
+            std::thread::sleep(Duration::from_millis(1));
+        }
+    };
+    let doc = call("open", json!({"path":"input.pdf"})).unwrap()["doc"].clone();
+    call("page", json!({"doc": doc, "page": 1, "dpi": 24})).unwrap();
+    let cache = root.join(".cache/pages").join(doc.as_str().unwrap());
+    assert!(cache.is_dir());
+    services::cancel_heap(heap);
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while cache.exists() {
+        assert!(Instant::now() < deadline, "close did not reclaim the idle worker's document");
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    let fresh = call("open", json!({"path":"input.pdf"})).unwrap()["doc"].clone();
+    assert_ne!(doc, fresh);
+    coded(&call("state", json!({"doc": doc})).unwrap_err(), "unknown_doc");
+    assert!(call("state", json!({"doc": fresh})).is_ok());
+    services::cancel_heap(heap);
 }

@@ -100,7 +100,7 @@ pub struct PdfService;
 /// its listener for closing isolates: the open documents an isolate holds
 /// go when it closes ([`docs`]).
 pub fn register() {
-    octosense_appstore::services::on_isolate_closed(docs::isolate_closed);
+    octosense_engine_area::worker::on_isolate_closed(docs::sweep);
     register_host_service(Box::new(PdfService));
 }
 
@@ -124,13 +124,10 @@ impl HostService for PdfService {
     }
 
     fn call(&mut self, call: ServiceCall, reply: Replier, _host: &mut dyn ServiceHost) {
-        // App Hub calls this inline, holding its registry's lock: a panic
-        // in the engine must not unwind through it (and poison every
-        // service's registry), so it becomes this call's error.
-        let isolate = reply.isolate_key();
-        let answer = catch_unwind(AssertUnwindSafe(|| serve(&AREAS, &call, isolate)))
-            .unwrap_or_else(|_| Err(fail(Code::Damaged, "the PDF engine failed unexpectedly")));
-        reply.send(answer);
+        octosense_engine_area::worker::call(call, reply, |call, isolate| {
+            catch_unwind(AssertUnwindSafe(|| serve_scoped(&AREAS, &call, isolate)))
+                .unwrap_or_else(|_| Err(fail(Code::Damaged, "the PDF engine failed unexpectedly")))
+        });
     }
 }
 
@@ -141,11 +138,16 @@ pub(crate) struct Ctx<'a> {
     /// The requesting isolate's heap key (App Hub's `Replier::isolate_key`;
     /// a key no isolate has for an agent's or a component's call): what a
     /// document it opens is bound to ([`docs`]).
-    pub isolate: usize,
+    pub isolate: octosense_engine_area::isolate::Isolate,
 }
 
 /// One call, in the area `areas` gives it.
+#[cfg(test)]
 fn serve(areas: &Slot, call: &ServiceCall, isolate: usize) -> Result<Json, String> {
+    serve_scoped(areas, call, octosense_engine_area::isolate::Isolate::capture(isolate, &call.app_id))
+}
+
+fn serve_scoped(areas: &Slot, call: &ServiceCall, isolate: octosense_engine_area::isolate::Isolate) -> Result<Json, String> {
     if !may_call(&call.app_id) {
         return Err(invalid("the pdf service serves system apps only"));
     }
@@ -206,7 +208,7 @@ fn dispatch_in(method: &str, args: &Json, cx: &Ctx) -> Result<Json, String> {
 fn dispatch(method: &str, args: &Json, host_dir: &Path) -> Result<Json, String> {
     let area = Area::legacy(host_dir, "pdf");
     std::fs::create_dir_all(&area.root).map_err(|e| format!("pdf: {e}"))?;
-    dispatch_in(method, args, &Ctx { area: &area, app: "os.fixture", isolate: 0 })
+    dispatch_in(method, args, &Ctx { area: &area, app: "os.fixture", isolate: octosense_engine_area::isolate::Isolate::capture(0, "os.fixture") })
 }
 
 /// A staging path (`name` inside `stage`) as the engine names paths: relative
@@ -520,7 +522,7 @@ mod tests {
         let mut a = session(&area).unwrap();
         assert!(!a.session().javascript(), "every service session turns scripts off");
         assert_ne!(field(&mut a, "form.pdf", "qty"), json!("2"), "no script ran");
-        let cx = Ctx { area: &area, app: "os.fixture", isolate: 0 };
+        let cx = Ctx { area: &area, app: "os.fixture", isolate: octosense_engine_area::isolate::Isolate::capture(0, "os.fixture") };
         dispatch_in("info", &json!({"path": "form.pdf"}), &cx).unwrap();
         dispatch_in("text", &json!({"path": "form.pdf"}), &cx).unwrap();
         dispatch_in("render", &json!({"path": "form.pdf", "page": 1, "out": "form.png", "max_side": 64}), &cx).unwrap();

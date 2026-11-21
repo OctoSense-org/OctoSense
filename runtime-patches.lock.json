@@ -4,7 +4,7 @@
     "base_revision": "d653bc4493619ab979ccff165cf48c0c63b77d19",
     "patch": "tools/runtime-patches/makepad-settings.patch",
     "sha256": "3a79cddddc89dc4d064a9f0bdd17dc8111dcab9c796a334d95f61ecb9d5011aa",
-    "tree": "9ab9d3cb8f8df02b9990978c263849161893ff17",
+    "tree": "835e6ddbd867b1f03ac8b398e65564fa51491def",
     "product_fixes": [
       "Settings integration: Android IME synchronization, accessibility and reduced motion, GLES program-cache validation, obscured-gesture cancellation and scroll-position observation.",
       "Contained-app isolation and secret-input restrictions come from the pinned upstream runtime; the Settings overlay preserves those gates.",
@@ -62,7 +62,9 @@
       "Script text inputs can select their existing contents, so in-place names can be replaced or edited at the caret.",
       "Scripts can check a widget's pending keyboard focus before a delayed focus request.",
       "YouTube search can retry an exhausted request using the original query, without replacing a pending or successful fetch.",
-      "macOS look, second part: later Mac appearance and interaction changes in the native apps (Sheets, Browser, Terminal, Task, Files, PDF, Image, Notes, Reminders, Clock, Weather, Calculator, Finance, Route and AI) and shared widgets (context and pop-up menus, map overlays, image quarter turns, text input), with the app-module menu rows that carry their own commands."
+      "macOS look, second part: later Mac appearance and interaction changes in the native apps (Sheets, Browser, Terminal, Task, Files, PDF, Image, Notes, Reminders, Clock, Weather, Calculator, Finance, Route and AI) and shared widgets (context and pop-up menus, map overlays, image quarter turns, text input), with the app-module menu rows that carry their own commands.",
+      "A native worker can observe a Splash storage scope expiring when its isolate, app identity, jail root or quota changes.",
+      "Engine output and Splash file mutations coordinate publication into the same storage quota while native work runs off the UI thread."
     ],
     "stacked": [
       {
@@ -260,6 +262,14 @@
       {
         "patch": "tools/runtime-patches/makepad-macos-look-2.patch",
         "sha256": "c1396d357f4724a2a9146a6e0367d491e111a7d54ba145b7eafd43f4bebc1829"
+      },
+      {
+        "patch": "tools/runtime-patches/makepad-storage-lifetime.patch",
+        "sha256": "05e104001aaf51ec5a02e2a60f7adc385b10331f7342c1526323ee46d52f9998"
+      },
+      {
+        "patch": "tools/runtime-patches/makepad-storage-commits.patch",
+        "sha256": "4ccb667fcc7ca853517e4ad67839bad4aa2f72db41a2a10af5ae347b032b4a84"
       }
     ]
   }

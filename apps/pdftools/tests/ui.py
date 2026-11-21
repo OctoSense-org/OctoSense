@@ -132,8 +132,7 @@ class Driver:
         url = f"http://127.0.0.1:{self.port}/{route}"
         if query:
             url += "?" + urlencode(query)
-        # The engine works on the UI thread (#399): while it renders, no frame
-        # is presented and the bridge asks to try again.
+        # The bridge can request a retry until the next frame is presented.
         for attempt in range(60):
             try:
                 with urlopen(url, timeout=timeout) as response:

@@ -2417,6 +2417,17 @@ mod tests {
         assert_eq!(described["modules"][0]["storage_left"], 0);
         assert_eq!(described["modules"][0]["instances"], 2);
 
+        // A kept component loses its open directory on the first call
+        // after sign-out and gets the app's files back after sign-in.
+        storage.sign_out(APP, None);
+        assert!(call(&mut lab, "read_file", json!("a.html")).is_err());
+        assert_eq!(lab.describe()["modules"][0]["storage"], "none");
+        storage.sign_in(APP, None);
+        assert_eq!(
+            call(&mut lab, "read_file", json!("a.html")).unwrap(),
+            "<h1>Hi</h1>\n"
+        );
+
         // Without a host-provided storage area, no folder at all.
         let mut plain = Lab::from_bundle(PLAIN, runtime, admission, || Ok(())).unwrap();
         let (_, plain_reply) = pending_reply(PLAIN, &host_dir);

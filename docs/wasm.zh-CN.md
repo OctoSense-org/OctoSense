@@ -358,10 +358,9 @@ OctoSense 也没有链接这个 crate。
 
 两个引擎仍然链接 wasmi，两个服务也仍然只回答系统应用（`os.*`）。
 
-**UI 线程。** `photo` 服务和其他引擎服务一样，在请求之内完成工作。App Hub 在 UI 线程上
-分派脚本的 `host.request`，并在持有服务注册表锁的同时调用服务（`services::dispatch`）。所以
-耗时长的 `photo.run` 会卡住 UI 和所有其他应用的请求，直到它返回
-（[#399](https://github.com/OctoSense-org/OctoSense/issues/399)）。
+**引擎调用。** App Hub 在 UI 线程上分派脚本的 `host.request`。引擎服务将请求放入队列，
+由共用的工作线程执行并发送应答。执行耗时较长的 `photo.run` 时，UI 仍可处理输入并分派其他
+宿主服务的请求。后续引擎调用按顺序等待。
 
 ## Splash 数学与计算内核
 

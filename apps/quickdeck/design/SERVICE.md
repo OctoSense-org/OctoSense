@@ -55,7 +55,7 @@ commands it runs (engine d0e57d7e; classes from `skill/safety.json`).
   `show.*` start commands, `media.*` playback or the held ids.
 - **Exact text.** An app session turns off the engine's `prefs.autocorrect`
   and `prefs.smart_quotes`, so text is stored as typed.
-- **Speed.** Engine work still runs on the shell's UI thread (#399). A
+- **Speed.** Engine requests share a worker. A
   typical method (an inspect, a text edit or a format change) must answer in
   well under 100 ms. A slide render is one render, and the caps below bound
   open, save and export.
@@ -441,8 +441,7 @@ changes; where they differ from the sections above, they win.
 - **Fonts at startup.** A deck call made while the engine's font warm-up is
   still running waits for it (`src/warm.rs`): the engine's font database
   can't load one family on two threads at once, which drew a title in the
-  wrong fallback font. The wait is never longer than the warm-up, and work
-  stays on the UI thread (#399).
+  wrong fallback font. The engine worker waits for the remaining warm-up.
 - **Dependencies.** `deckcraft-anim` and `deckcraft-fonts`, at the pinned
   deckcraft revision.
 - **Reading alike.** The import guard reads a zip only in a shape that it and

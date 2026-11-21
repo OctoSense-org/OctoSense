@@ -72,7 +72,7 @@ fn place(area: &Area, files: &[(PathBuf, &[u8])], m: &str) -> Result<(), String>
 /// An area like `area` whose writes never replace a file, whatever the
 /// call's surface: where SERVICE.md says "a new file".
 fn create_only(area: &Area) -> Area {
-    Area::new(area.root.clone(), area.room(), false)
+    area.with_replacement(false)
 }
 
 /// Write `bytes` to the new file `dest` (`deck.create`'s deck).
@@ -96,7 +96,7 @@ pub(crate) fn save(a: &Json, cx: &Ctx) -> Result<Json, String> {
                     return Err(invalid(format!("{M}: saving over the deck's own file needs the app in the foreground")));
                 }
                 let dest = crate::inside(cx.area, &file, "path", M)?;
-                (Area::new(cx.area.root.clone(), cx.area.room(), true), dest, file)
+                (cx.area.with_replacement(true), dest, file)
             }
             Some(out) => {
                 if !out.to_ascii_lowercase().ends_with(".deckcraft") {

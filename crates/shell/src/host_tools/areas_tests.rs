@@ -53,6 +53,16 @@ fn the_engines_methods_work_in_an_area_and_nothing_else_does() {
     }
 }
 
+fn agent_area(env: &FixedEnv, call: &HostToolCall, owner: &str) -> Result<Area, (&'static str, String)> {
+    let (_, held) = grant_agent(Arc::new(env.clone()), call, owner)?;
+    resolve_in(&app_request(owner, &held.token, false)).map_err(|why| ("no_workspace", why))
+}
+
+fn resolve_app(env: &FixedEnv, mut call: ServiceCall) -> Result<Area, String> {
+    let _held = prepare_app(Arc::new(env.clone()), &mut call);
+    resolve_in(&call)
+}
+
 /// The system agent works in its workspace on a craft engine's tool, never
 /// replacing a file, with no quota; until its workspace is known it has
 /// none.
@@ -83,7 +93,8 @@ fn an_apps_agent_works_in_its_accounts_folder() {
     let own = "org.example.notes";
     let area = agent_area(&env, &call, own).unwrap();
     let folder = host.layout().app("org.example.notes").unwrap().account(Some("ana@example.org"));
-    assert_eq!(area, Area::new(&folder, Some(1000), false));
+    let jail = host.layout().app(own).unwrap().jail;
+    assert_eq!(area, Area::new(&folder, Some(1000), false).with_jail_quota(jail, 1000));
     assert_eq!(Some(folder.clone()), crate::host_tools::agent_workspace_in(&host, "card.org.example.notes", "ana@example.org"), "the agent's own workspace");
     #[cfg(feature = "craft-engines")]
     assert_eq!(agent_area(&env, &call, "os.word").unwrap(), area, "a craft engine works in the caller's folder");
@@ -132,8 +143,8 @@ fn an_apps_own_tool_works_in_its_folder_whoever_calls_it() {
     // An owner that keeps accounts acts for its signed-in one.
     script_app(&host, "os.mailish", true);
     assert_eq!(agent_area(&env, &tool_call("system", CallerKind::System, None), "os.mailish").unwrap_err().0, "signed_out");
-    let mut signed_in = env;
-    signed_in.accounts.insert("os.mailish".into(), "ana@example.org".into());
+    let signed_in = env;
+    signed_in.accounts.lock().unwrap().insert("os.mailish".into(), "ana@example.org".into());
     let area = agent_area(&signed_in, &tool_call("system", CallerKind::System, None), "os.mailish").unwrap();
     assert_eq!(area.root, host.layout().app("os.mailish").unwrap().account(Some("ana@example.org")));
 }
@@ -151,23 +162,23 @@ fn an_apps_own_request_works_in_its_storage() {
     env.quotas.insert("os.jotter".into(), JailQuota { bytes: Some(64 << 20), storage: true });
     let jail = host.layout().app("os.jotter").unwrap().jail;
     let shared = host.layout().apps_root().join(".host");
-    let foreground = resolve_in(&env, &app_request("os.jotter", &shared, true)).unwrap();
-    assert_eq!(foreground, Area::new(&jail, Some(64 << 20), true));
+    let foreground = resolve_app(&env, app_request("os.jotter", &shared, true)).unwrap();
+    assert_eq!(foreground, Area::new(&jail, Some(64 << 20), true).with_jail_quota(&jail, 64 << 20));
     assert!(jail.is_dir(), "made for it, as its isolate's own storage is");
-    let background = resolve_in(&env, &app_request("os.jotter", &shared, false)).unwrap();
+    let background = resolve_app(&env, app_request("os.jotter", &shared, false)).unwrap();
     assert!(!background.may_replace, "a glance tile never replaces a file");
     // No `storage` capability: no folder of its own.
     env.quotas.insert("os.nostore".into(), JailQuota { bytes: Some(1), storage: false });
-    assert!(resolve_in(&env, &app_request("os.nostore", &shared, true)).unwrap_err().contains("no storage"));
+    assert!(resolve_app(&env, app_request("os.nostore", &shared, true)).unwrap_err().contains("no storage"));
     // An app that keeps accounts: only with one signed in, and not signed out.
     script_app(&host, "os.mailish", true);
-    assert!(resolve_in(&env, &app_request("os.mailish", &shared, true)).unwrap_err().contains("no signed-in account"));
-    env.accounts.insert("os.mailish".into(), "ana@example.org".into());
-    assert!(resolve_in(&env, &app_request("os.mailish", &shared, true)).is_ok());
+    assert!(resolve_app(&env, app_request("os.mailish", &shared, true)).unwrap_err().contains("no signed-in account"));
+    env.accounts.lock().unwrap().insert("os.mailish".into(), "ana@example.org".into());
+    assert!(resolve_app(&env, app_request("os.mailish", &shared, true)).is_ok());
     host.sign_out("os.mailish", Some("ana@example.org"));
-    assert!(resolve_in(&env, &app_request("os.mailish", &shared, true)).unwrap_err().contains("signed out"));
+    assert!(resolve_app(&env, app_request("os.mailish", &shared, true)).unwrap_err().contains("signed out"));
     // A native app never sends App Hub requests: not a script app's id.
-    assert!(resolve_in(&env, &app_request("terminal", &shared, true)).is_err());
+    assert!(resolve_app(&env, app_request("terminal", &shared, true)).is_err());
 }
 
 /// One app's request works in its own jail, so another app's folder is
@@ -181,34 +192,94 @@ fn an_apps_area_is_its_own_and_no_other_folder_is_reachable() {
     script_app(&host, "os.two", false);
     let env = FixedEnv { storage: Some(host.clone()), ..FixedEnv::default() };
     let shared = host.layout().apps_root().join(".host");
-    let one = resolve_in(&env, &app_request("os.one", &shared, true)).unwrap();
-    let two = resolve_in(&env, &app_request("os.two", &shared, true)).unwrap();
+    let one = resolve_app(&env, app_request("os.one", &shared, true)).unwrap();
+    let two = resolve_app(&env, app_request("os.two", &shared, true)).unwrap();
     assert!(!one.root.starts_with(&two.root) && !two.root.starts_with(&one.root));
     // A call that names another app's folder as its host directory (no
     // host code does) is refused, not answered with that folder.
     for host_dir in [two.root.clone(), host.layout().apps_root().to_path_buf(), home.0.clone()] {
-        assert!(resolve_in(&env, &app_request("os.one", &host_dir, true)).is_err(), "{}", host_dir.display());
+        assert!(resolve_app(&env, app_request("os.one", &host_dir, true)).is_err(), "{}", host_dir.display());
     }
 }
 
-/// An agent's area is answered only while it is granted to a call in
-/// flight; the grant is counted, so a second call in the same area keeps
-/// it after the first ends.
 #[test]
-fn a_granted_area_is_answered_only_while_its_call_runs() {
-    let home = Scratch::new("areas-grant");
-    let root = home.0.join("ws");
-    std::fs::create_dir_all(&root).unwrap();
-    let env = FixedEnv::default();
-    let call = app_request("os.word", &root, false);
-    assert!(resolve_in(&env, &call).is_err(), "not granted yet");
-    let first = grant(Area::new(&root, None, false));
-    let second = grant(Area::new(&root, None, false));
-    assert_eq!(resolve_in(&env, &call).unwrap(), Area::new(&root, None, false));
+fn queued_grants_are_independent_and_recheck_the_accounts_shared_quota() {
+    let home = Scratch::new("areas-queue-quota");
+    let host = storage(&home.0);
+    let app = "org.example.jotter";
+    script_app(&host, app, true);
+    let mut env = FixedEnv { storage: Some(host.clone()), ..Default::default() };
+    env.quotas.insert(app.into(), JailQuota { bytes: Some(10), storage: true });
+    let env = Arc::new(env);
+    let agent = tool_call("card.org.example.jotter", CallerKind::AppPeer, Some("ana"));
+    let (folder, first) = grant_agent(env.clone(), &agent, app).unwrap();
+    let (_, second) = grant_agent(env.clone(), &agent, app).unwrap();
+    assert_ne!(first.token, second.token);
+    // The system agent can select this same folder as its workspace.
+    // Its larger allowance must never be inherited by either app call.
+    #[cfg(feature = "craft-engines")]
+    let _system = {
+        let system = Arc::new(FixedEnv { system: Some(folder.clone()), ..Default::default() });
+        let (_, held) = grant_agent(system, &tool_call("system", CallerKind::System, None), "os.word").unwrap();
+        let area = resolve_in(&app_request("os.word", &held.token, false)).unwrap();
+        assert_eq!(area.root, folder);
+        assert_eq!(area.quota_left, None);
+        held
+    };
+    let request = |held: &Grant| app_request(app, &held.token, false);
+    let first_call = request(&first);
+    let first_area = resolve_in(&first_call).unwrap();
+    assert_eq!(first_area.quota_left, Some(10));
+    assert!(!first_area.may_replace);
+    first_area.write(&folder.join("first"), b"123456").unwrap();
     drop(first);
-    assert!(resolve_in(&env, &call).is_ok(), "the second call still runs there");
-    drop(second);
-    assert!(resolve_in(&env, &call).is_err(), "no call runs there any more");
+    assert!(resolve_in(&first_call).is_err());
+    assert!(first_area.write(&folder.join("cancelled"), b"x").is_err());
+    let second_area = resolve_in(&request(&second)).unwrap();
+    assert_eq!(second_area.quota_left, Some(4));
+    assert!(second_area.write(&folder.join("second"), b"123456").is_err());
+    assert!(!folder.join("second").exists());
+    assert!(resolve_in(&app_request("os.other", &second.token, false)).is_err());
+
+    let (_, later) = grant_agent(env, &agent, app).unwrap();
+    let writing = resolve_in(&request(&later)).unwrap();
+    host.sign_out(app, Some("ana"));
+    assert!(writing.write(&folder.join("signed-out"), b"x").is_err());
+    assert!(!folder.join("signed-out").exists());
+    assert!(resolve_in(&request(&later)).unwrap_err().contains("signed out"));
+}
+
+#[test]
+fn queued_requests_keep_the_owning_apps_account() {
+    let home = Scratch::new("areas-queue-account");
+    let host = storage(&home.0);
+    let app = "org.example.jotter";
+    script_app(&host, app, true);
+    let env = Arc::new(FixedEnv { storage: Some(host.clone()), ..Default::default() });
+    let shared = host.layout().apps_root().join(".host");
+    let mut compute = app_request(app, &shared, true);
+    compute.service = "sheet.eval".into();
+    let _unavailable = prepare_app(env.clone(), &mut compute).expect("submission leaves area-free methods available");
+    env.accounts.lock().unwrap().insert(app.into(), "ana".into());
+    assert!(resolve_in(&compute).unwrap_err().contains("no signed-in account"),
+        "signing in later cannot grant access to an earlier request");
+    let caller = tool_call("system", CallerKind::System, None);
+    let (_, agent) = grant_agent(env.clone(), &caller, app).unwrap();
+    let agent_call = app_request(app, &agent.token, false);
+    let mut foreground = app_request(app, &host.layout().apps_root().join(".host"), true);
+    let _held = prepare_app(env.clone(), &mut foreground).unwrap();
+    let editing = resolve_in(&foreground).unwrap();
+    assert!(editing.may_replace);
+    let editing_as_agent = resolve_in(&agent_call).unwrap();
+    assert!(!editing_as_agent.may_replace);
+    env.accounts.lock().unwrap().insert(app.into(), "bo".into());
+    assert!(resolve_in(&foreground).unwrap_err().contains("account changed"));
+    assert!(resolve_in(&agent_call).unwrap_err().contains("account changed"));
+    for area in [editing, editing_as_agent] {
+        let path = area.root.join("late");
+        assert!(area.write(&path, b"x").is_err());
+        assert!(!path.exists());
+    }
 }
 
 /// An error names the caller's files relative to its area, whichever
