@@ -305,6 +305,7 @@ fn serve(areas: &Slot, call: &ServiceCall) -> Result<Json, String> {
 }
 
 fn dispatch_in(method: &str, args: &Json, area: &Area) -> Result<Json, String> {
+    let _font_access = warm::enter_request();
     match method {
         "info" => info(args, area),
         "text" => text(args, area),

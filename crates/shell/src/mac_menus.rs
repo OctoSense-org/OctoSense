@@ -1326,7 +1326,7 @@ impl App {
     }
 
     /// A Mac menu row or shortcut (`mac.*`). True when the target was one.
-    pub(super) fn mac_menu_activate(&mut self, cx: &mut Cx, target: &str) -> bool {
+    pub(super) fn mac_menu_activate(&mut self, cx: &mut Cx, target: &str, source: CloseSource) -> bool {
         let Some(what) = target.strip_prefix("mac.") else { return false };
         self.close_shell_menu(cx);
         // Spotlight's Search the Web: the words in the person's browser, as a Mac hands them to Safari.
@@ -1361,18 +1361,18 @@ impl App {
                     let about = MacAbout::new(&app, &name, lines);
                     self.mac_open_about(cx, if installed { about } else { about.foot(COPYRIGHT) });
                 }
-                None => return self.mac_menu_activate(cx, "mac.about"),
+                None => return self.mac_menu_activate(cx, "mac.about", source),
             },
             "close" => {
                 if let Some(client) = focus {
-                    self.request_close(cx, client);
+                    self.request_close_from(cx, client, source);
                 }
             }
             "quit-app" => {
                 if let Some(app) = named_app {
                     for client in self.mac_windows_of(&app) {
                         self.send_wm_event(client, WmEvent::Quitting);
-                        self.request_close(cx, client);
+                        self.request_close_from(cx, client, source);
                     }
                 }
             }
@@ -1591,7 +1591,7 @@ impl App {
             "force-quit" => self.mac_open_force_quit(cx),
             forced if forced.starts_with("force-quit-app.") => {
                 let app = forced["force-quit-app.".len()..].to_string();
-                self.mac_force_quit(cx, &app);
+                self.mac_force_quit(cx, &app, source);
             }
             "recent-clear" => {
                 self.recent_apps.clear();
@@ -1643,10 +1643,10 @@ impl App {
                     }
                 } else if let Some(app) = other.strip_prefix("dock-quit.") {
                     for client in self.mac_windows_of(app) {
-                        self.request_close(cx, client);
+                        self.request_close_from(cx, client, source);
                     }
                 } else if let Some(client) = other.strip_prefix("dock-close.").and_then(|n| n.parse::<ClientId>().ok()) {
-                    self.request_close(cx, client);
+                    self.request_close_from(cx, client, source);
                 } else if other == "dock-assistant" {
                     self.activate_shelf(cx, desktop::ShelfHit::Assistant);
                 } else if let Some((how, app)) = other.strip_prefix("dock-assign.").and_then(|rest| rest.split_once('.')) {
@@ -1717,9 +1717,10 @@ impl App {
     /// Force Quit: every window of `app` ends now, whatever it would ask first.
     /// A process app's process is ended; a module's instance, one of its extra
     /// windows or a stopped app's tile goes as a closed one does.
-    fn mac_force_quit(&mut self, cx: &mut Cx, app: &str) {
+    fn mac_force_quit(&mut self, cx: &mut Cx, app: &str, source: CloseSource) {
         log!("wm: force quitting {app}");
         for client in self.mac_windows_of(app) {
+            self.log_close_source(client, source);
             let stopped = self.state_mut().clients.get(&client).is_some_and(|s| s.stopped);
             if stopped || self.module_host.is_module(client) || self.module_windows.contains_key(&client) {
                 self.remove_client(cx, client);

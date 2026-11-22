@@ -129,6 +129,13 @@ MAKEPAD_APP_CONFIG='{"mail_demo":true}' cargo run --locked --release -p octosens
 `App::top_edge`、`App::place_bar`）。退出全屏时，窗口的矩形、缩放状态和它在窗口堆叠中的位置都
 原样恢复，因为它们从未改变。
 
+Card 应用可以在 Splash 入口定义 `on_close_request(request_id)`，保护尚未保存的修改。
+模块宿主在对应窗口的 Card isolate 中调用这个钩子，并保持窗口打开，直到同一个 isolate
+应答。没有待保存修改时，应用可以立即调用
+`host.request("window.close_response", {request: request_id, allow: true}, fn(r){…})`。
+有修改时，应用可以先询问用户，在保存或放弃修改后允许关闭，或传入 `allow: false` 取消。
+如果钩子在应答前出错，窗口会保持打开。没有定义钩子的应用沿用原有的关闭行为。
+
 脚本应用在用户点按或点击的处理函数中调用
 `host.request("window.fullscreen", {on: true}, fn(r){…})`，让自己的窗口进入演示全屏
 （[`app_fullscreen.rs`](../../crates/shell/src/app_fullscreen.rs)）。Shell 的 `window`

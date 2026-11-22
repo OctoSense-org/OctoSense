@@ -65,8 +65,10 @@ slide's number does (72 points sooner in a unified window). Nothing clips down t
 | Export | A sheet under the toolbar, with its labels to the left of its controls: a Format pop-up (Presentation (.pptx), PDF or Images, one PNG a slide), for a PDF a Pages pop-up (Slides, Notes Pages or Handouts) and Slides per page, 1 to 9; all slides, the current one or a range; hidden slides in or out. Cancel sits left of the default button, Save…, which is dimmed until the range is right. Save… makes the file and hands it to the Mac's Save panel, which asks for its name and folder (an images export asks once per picture; Cancel stops there); the sheet closes and the status bar says what was saved | `deck.export`; the shell's `files.export` |
 
 Undo and Redo use the engine's history; Save writes the native `.deckcraft`
-file (`deck.undo`, `deck.redo`, `deck.save`, `deck.state`). Closing a tab with
-unsaved changes asks in an alert: Don't Save, Cancel, or Save.
+file (`deck.undo`, `deck.redo`, `deck.save`, `deck.state`). Closing an edited tab offers Save, Don't Save, and Cancel. Closing the
+window asks about each unsaved deck. Cancel keeps the window and all its
+tabs open, including decks you chose to discard earlier in the same
+window-close request. If a save fails, the deck stays open.
 
 States every screen handles: an empty library, a slide still rendering, a
 damaged deck ("Couldn't Open This Deck" and the engine's reason), a protected
@@ -460,7 +462,3 @@ for playback.
   stay held (#448). In a Mac session where nothing has played yet, a clip
   AVFoundation can't open reads "Playback isn't available on this system",
   because the runtime answers its failure with its software decoder's error.
-  The shell closes Quick Deck at once on ⌘W or ⌘Q (both are Close window),
-  the window's close button, or a right or middle click on the bar's window
-  title, even in Present or with unsaved edits: a Splash app can't ask
-  first, and Escape doesn't leave Present (script apps get no key events).
