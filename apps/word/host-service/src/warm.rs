@@ -12,18 +12,23 @@
 //! of its own: it lays out a one-line document like the ones `new` writes,
 //! which finds and loads the same fonts.
 //!
-//! The thread never goes through App Hub's service registry, so it holds no
-//! lock a call takes on the way in; it reads font files only and uses no
-//! network. A call that arrives while it runs shares only the font
-//! database: before the catalog scan starts, the call scans and the thread
-//! then finds it done; during the scan, the call waits for that one scan
-//! (the database catalogs once per process) instead of starting another,
-//! which never takes longer than scanning itself.
+//! Wordcraft scans the font catalog once, but loads a family's faces on demand.
+//! If warm-up and a request load the same family together, one can see that the
+//! other added the faces and select a fallback. Give the warm-up exclusive
+//! access while it lays out its page. A request that arrives first can still
+//! render cold. Requests wait on the engine worker, off the UI thread.
 
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{RwLock, RwLockReadGuard};
 use std::thread::JoinHandle;
 
 static STARTED: AtomicBool = AtomicBool::new(false);
+static FONT_ACCESS: RwLock<()> = RwLock::new(());
+
+/// Keep the background warm-up out of the engine for the duration of a request.
+pub(super) fn enter_request() -> RwLockReadGuard<'static, ()> {
+    FONT_ACCESS.read().unwrap_or_else(|e| e.into_inner())
+}
 
 /// Start warming the engine on a background thread, once per process:
 /// `Some(thread)` the first time, `None` after that. If the thread cannot
@@ -37,6 +42,7 @@ pub fn warm() -> Option<JoinHandle<()>> {
 
 /// A one-line document laid out, as `info` lays one out, and thrown away.
 fn lay_out_one_line() {
+    let _exclusive = FONT_ACCESS.write().unwrap_or_else(|e| e.into_inner());
     let mut session = wordcraft_engine::Session::new(wordcraft_doc::Document::from_text("Warm up"));
     let _ = session.run("file.info", &serde_json::json!({}));
 }
