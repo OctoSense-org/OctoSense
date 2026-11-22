@@ -1341,6 +1341,7 @@ if st == nil {
         covers: {}            // deck path -> image of its first slide
         cover_tried: {}
         confirm: ""           // the tab whose unsaved changes the bar asks about
+        close_request: nil    // a tab or window close and its per-deck decisions
         removing: ""          // the deck Home asks about removing
         note_n: 0
         resize_n: 0
@@ -1433,7 +1434,7 @@ fn deck_tab_count(){
 }
 // Whether a sheet or an alert has the window: the toolbar's tools wait for it.
 fn sheet_open(){
-    if st.confirm != "" || st.removing != "" || optional(st, "fonts_sheet", false) || optional(st, "full_alert", false) { return true }
+    if optional(st, "close_request", nil) != nil || st.confirm != "" || st.removing != "" || optional(st, "fonts_sheet", false) || optional(st, "full_alert", false) { return true }
     if mac_sheet_up() { return true }
     let t = deck_tab()
     t != nil && t.view == "export"
@@ -1504,6 +1505,16 @@ fn engine(method, args, done){
     host.request("deck." + method, args, fn(r){
         let answer = {is_ok: r.is_ok data: r.data error: r.error}
         start_timeout(0.01, || done(answer))
+    })
+}
+// Track document mutations until their replies have updated the tab's edited flag.
+fn change_engine(t, method, args, done){
+    t.writes = optional(t, "writes", 0) + 1
+    engine(method, args, fn(a){
+        t.writes = t.writes - 1
+        let q = optional(st, "close_request", nil)
+        if !a.is_ok && q != nil && q.saving == t.key { finish_close(q, false) }
+        done(a)
     })
 }
 fn missing(error){
@@ -1633,10 +1644,11 @@ fn load_index(){
     if draft != nil && st.draft == nil { st.draft = draft }
 }
 fn save_index(){
-    st.index_dirty = false
     let draft = nil
     if st.draft != nil { draft = {cards: st.draft.cards topic: st.draft.topic count: st.draft.count theme: st.draft.theme size: st.draft.size} }
-    try { fs.write(INDEX, {version: 2 decks: st.index pictures: st.pictures show_notes: st.show_notes v1_done: st.v1_done draft: draft recent_cleared: optional(st, "recent_cleared", 0)}.to_json()) } catch { nil }
+    let stored = try { fs.write(INDEX, {version: 2 decks: st.index pictures: st.pictures show_notes: st.show_notes v1_done: st.v1_done draft: draft recent_cleared: optional(st, "recent_cleared", 0)}.to_json()) true } catch { false }
+    st.index_dirty = !stored
+    stored
 }
 fn remember(d){
     st.index[d.path] = index_entry(d)
@@ -2300,13 +2312,9 @@ fn ask_close(t){
         drop_tab(t)
         return
     }
-    if t.editing != nil { end_edit(t) }
-    if t.edited {
-        st.confirm = t.key
-        render_confirm()
-        return
-    }
-    close_tab(t, false)
+    let q = new_close_request(t, nil)
+    st.close_request = q
+    advance_close(q)
 }
 fn close_tab(t, discard){
     st.confirm = ""
@@ -2317,18 +2325,14 @@ fn close_tab(t, discard){
     }
     engine("close", {doc: t.doc discard: discard}, fn(a){
         if !a.is_ok && err_code(a.error) == "unsaved" {
-            st.confirm = t.key
-            render_confirm()
+            t.edited = true
+            ask_close(t)
             return
         }
+        if !a.is_ok && err_code(a.error) != "unknown_doc" { note(action_failed("close the deck", a.error)) return }
         remember_place(t)
         drop_tab(t)
     })
-}
-fn save_and_close(t){
-    st.confirm = ""
-    render_confirm()
-    save(t, || close_tab(t, false))
 }
 fn remember_place(t){
     let d = deck_by_path(t.path)
@@ -2336,6 +2340,133 @@ fn remember_place(t){
     let i = slide_index(t, t.cur)
     if i >= 0 { d.slide = i }
     remember(d)
+}
+
+// ---- confirming tab and window close -----------------------------------------------------------
+
+// Don't Save applies only if the whole window closes. Keeping every tab live
+// means Cancel on a later deck also preserves an earlier deck's changes.
+fn has_pending_input(t){
+    for key job in optional(t, "inputs", {}) { return true }
+    false
+}
+fn new_close_request(tab, request){
+    {tab: tab request: request discarded: {} saving: "" outline: {key: "outline-draft" title: "New Outline" saving: false}}
+}
+fn next_close_deck(q){
+    for t in st.tabs {
+        if t.kind == "deck" && (q.tab == nil || q.tab == t) && !optional(q.discarded, t.key, false) {
+            let field = t.editing
+            if t.edited || t.saving || optional(t, "writes", 0) > 0 ||
+                has_pending_input(t) || (field != nil && field.draft != field.text) { return t }
+        }
+    }
+    if q.tab == nil && st.index_dirty && optional(st, "draft", nil) != nil && !optional(q.discarded, "outline-draft", false) { return q.outline }
+    nil
+}
+fn on_close_request(request_id){
+    let q = new_close_request(nil, request_id)
+    if !st.index_dirty && next_close_deck(q) == nil {
+        reply_to_close(request_id, true)
+        return
+    }
+    // Painting the sheet and flushing the outline can both take a full UI turn.
+    st.close_request = q
+    start_timeout(0.01, || {
+        if st.close_request != q { return }
+        try {
+            if st.index_dirty { save_index() }
+            advance_close(q)
+        } catch { finish_close(q, false) }
+    })
+}
+fn finish_close(q, allow){
+    if st.close_request != q { return }
+    st.close_request = nil
+    st.confirm = ""
+    if q.tab == nil {
+        reply_to_close(q.request, allow)
+    } else if allow { close_tab(q.tab, optional(q.discarded, q.tab.key, false)) }
+    if !allow { render_confirm() }
+}
+fn reply_to_close(request, allow){
+    // Both the Splash bridge and the service have pending-request limits.
+    // A refusal leaves the original close waiting, so retry its same token.
+    try {
+        host.request("window.close_response", {request: request allow: allow}, fn(r){
+            if !r.is_ok && ("" + r.error).search("too many host requests") >= 0 {
+                start_timeout(0.1, || reply_to_close(request, allow))
+            }
+        })
+    } catch { start_timeout(0.1, || reply_to_close(request, allow)) }
+}
+fn advance_close(q){
+    if st.close_request != q { return }
+    let t = next_close_deck(q)
+    if t == nil { finish_close(q, true) return }
+    if t.saving || optional(t, "writes", 0) > 0 {
+        start_timeout(0.05, || advance_close(q))
+        return
+    }
+    st.confirm = t.key
+    render_confirm()
+}
+// The document service must acknowledge the last keystrokes before it saves.
+// A failed write leaves the draft and the window available for another try.
+fn save_closing_deck(q, t){
+    if st.close_request != q { return }
+    if t.saving || optional(t, "writes", 0) > 0 {
+        start_timeout(0.05, || save_closing_deck(q, t))
+        return
+    }
+    if t.editing != nil && t.editing.draft != t.editing.text {
+        if !commit_edit(t, t.editing, nil) { finish_close(q, false) return }
+        start_timeout(0.05, || save_closing_deck(q, t))
+        return
+    }
+    if has_pending_input(t) {
+        for key job in t.inputs { send_input(t, key, job) }
+        start_timeout(0.05, || save_closing_deck(q, t))
+        return
+    }
+    save_document(t, || {
+        if st.close_request != q { return }
+        q.saving = ""
+        advance_close(q)
+    }, || finish_close(q, false))
+}
+fn close_prompt_tab(){
+    let q = optional(st, "close_request", nil)
+    if q != nil && st.confirm == q.outline.key { return q.outline }
+    tab_by_key(st.confirm)
+}
+fn close_choice(choice){
+    let q = optional(st, "close_request", nil)
+    let t = close_prompt_tab()
+    if choice == "cancel" {
+        if q != nil { finish_close(q, false) } else { st.confirm = "" render_confirm() }
+        return
+    }
+    if t == nil { return }
+    if q == nil {
+        q = new_close_request(t, nil)
+        st.close_request = q
+    }
+    if q.saving != "" { return }
+    if choice == "save" {
+        if t == q.outline {
+            if save_index() { advance_close(q) } else {
+                finish_close(q, false)
+                note("Quick Deck couldn't save the outline. Check the available storage and try again.")
+            }
+            return
+        }
+        q.saving = t.key
+        save_closing_deck(q, t)
+    } else {
+        q.discarded[t.key] = true
+        advance_close(q)
+    }
 }
 
 // ---- the render pump: one engine call at a time ------------------------------
@@ -2643,7 +2774,7 @@ fn undo(t, redo){
     if redo && !t.can_redo { return }
     if !redo && !t.can_undo { return }
     if t.editing != nil { end_edit(t) }
-    engine(pick(redo, "redo", "undo"), {doc: t.doc}, fn(a){
+    change_engine(t, pick(redo, "redo", "undo"), {doc: t.doc}, fn(a){
         if !a.is_ok {
             note(action_failed(pick(redo, "redo", "undo"), a.error))
             return
@@ -2665,7 +2796,8 @@ fn undo(t, redo){
         })
     })
 }
-fn save(t, then){
+fn save(t, then){ save_document(t, then, nil) }
+fn save_document(t, then, failed){
     if t == nil || t.doc == nil || t.saving { return }
     if t.editing != nil { end_edit(t) }
     let args = {doc: t.doc}
@@ -2680,13 +2812,15 @@ fn save(t, then){
         t.saving = false
         wrote(a)
         if !a.is_ok {
+            if failed != nil { failed() }
             note(action_failed("save", a.error))
             render_status()
             render_bar()
             render_storage()
             return
         }
-        t.edited = false
+        let saved_rev = optional(a.data, "rev", nil)
+        if saved_rev == nil || optional(t, "rev", 0) <= saved_rev { t.edited = false }
         let old = t.path
         let path = optional(a.data, "path", t.path)
         let d = deck_by_path(old)
@@ -2753,7 +2887,7 @@ fn step_slide(t, delta){
 fn slides_op(t, args, what, done){
     if t.editing != nil { end_edit(t) }
     args.doc = t.doc
-    engine("slides_op", args, fn(a){
+    change_engine(t, "slides_op", args, fn(a){
         wrote(a)
         if !a.is_ok {
             note(action_failed(what, a.error))
@@ -2821,7 +2955,7 @@ fn clip_keep(t, cut){
         if t.editing != nil { end_edit(t) }
         let seq = optional(st, "copy_seq", 0) + 1
         st.copy_seq = seq
-        engine("shape", {doc: t.doc slide: t.cur ids: t.sel op: pick(cut, "cut", "copy")}, fn(a){
+        change_engine(t, "shape", {doc: t.doc slide: t.cur ids: t.sel op: pick(cut, "cut", "copy")}, fn(a){
             if cut { wrote(a) }
             if !a.is_ok {
                 note(action_failed(pick(cut, "cut it", "copy it"), a.error))
@@ -2876,7 +3010,7 @@ fn clip_paste(t){
     if t.editing != nil { end_edit(t) }
     let slides = optional(st, "copy_kind", "") == "slides"
     let args = {doc: t.doc slide: t.cur kind: "paste" clipboard: token}
-    engine("insert", args, fn(a){
+    change_engine(t, "insert", args, fn(a){
         wrote(a)
         if !a.is_ok {
             if optional(st, "copy_from", "") != t.doc && err_code(a.error) == "unsupported" {
@@ -3301,13 +3435,13 @@ fn text_problem(text, most, what){
 fn commit_edit(t, e, then){
     if e.draft == e.sent {
         if then != nil { then() }
-        return
+        return true
     }
     let cell = optional(e, "cell", nil)
     let problem = text_problem(e.draft, pick(cell == nil, MAX_TEXT, MAX_CELL), pick(cell == nil, "A text box", "A table cell"))
     if problem != "" {
         note(problem)
-        return
+        return false
     }
     let text = e.draft
     e.sent = text
@@ -3316,7 +3450,7 @@ fn commit_edit(t, e, then){
         args.cell = cell
         cell_note(t, e, text)
     }
-    engine("set_text", args, fn(a){
+    change_engine(t, "set_text", args, fn(a){
         wrote(a)
         if !a.is_ok {
             note(action_failed(pick(cell == nil, "change the text", "change the cell"), a.error))
@@ -3328,6 +3462,7 @@ fn commit_edit(t, e, then){
         took_change(t, a.data)
         if then != nil { then() }
     })
+    true
 }
 // Leave the text field: what was typed goes in, and the slide draws whole.
 fn end_edit(t){
@@ -3355,7 +3490,7 @@ fn apply_format(t, args, what){
     // What it will be, at once; the engine's own answer follows.
     if t.fmt != nil { t.fmt = fmt_with(t.fmt, args) }
     render_inspector()
-    engine("format", args, fn(a){
+    change_engine(t, "format", args, fn(a){
         wrote(a)
         if !a.is_ok {
             note(action_failed(what, a.error))
@@ -3402,7 +3537,7 @@ fn insert_kind(t, args, what){
     if t.editing != nil { end_edit(t) }
     args.doc = t.doc
     args.slide = t.cur
-    engine("insert", args, fn(a){
+    change_engine(t, "insert", args, fn(a){
         wrote(a)
         if !a.is_ok {
             // A service that wants a chart's data gets the engine's own sample
@@ -3465,7 +3600,7 @@ fn shape_op(t, args, what){
     args.doc = t.doc
     args.slide = t.cur
     args.ids = t.sel
-    engine("shape", args, fn(a){
+    change_engine(t, "shape", args, fn(a){
         wrote(a)
         if !a.is_ok {
             note(action_failed(what, a.error))
@@ -3497,7 +3632,7 @@ fn picture_op(t, args, what){
     args.doc = t.doc
     args.slide = t.cur
     args.id = sh.id
-    engine("picture", args, fn(a){
+    change_engine(t, "picture", args, fn(a){
         wrote(a)
         if !a.is_ok {
             if args.op == "replace" { note(picture_refusal(what, a.error)) } else { note(action_failed(what, a.error)) }
@@ -3515,7 +3650,7 @@ fn table_op(t, args, what){
     args.doc = t.doc
     args.slide = t.cur
     args.id = sh.id
-    engine("table", args, fn(a){
+    change_engine(t, "table", args, fn(a){
         wrote(a)
         if !a.is_ok {
             note(action_failed(what, a.error))
@@ -3538,7 +3673,7 @@ fn chart_op(t, args, what){
     args.doc = t.doc
     args.slide = t.cur
     args.id = sh.id
-    engine("chart", args, fn(a){
+    change_engine(t, "chart", args, fn(a){
         wrote(a)
         if !a.is_ok {
             note(action_failed(what, a.error))
@@ -3570,15 +3705,17 @@ fn grid_typed(t, r, c, text){
     } else {
         g.series[c].values[r] = text
     }
-    t.grid_seq = optional(t, "grid_seq", 0) + 1
-    let seq = t.grid_seq
-    start_timeout(1.0, || { if optional(t, "grid_seq", 0) == seq { send_grid(t) } })
+    queue_grid(t, 1.0)
 }
-fn send_grid(t){
+fn send_grid(t){ queue_grid(t, 0) }
+fn queue_grid(t, delay){
     let g = chart_grid(t)
     if g == nil { return }
     let args = chart_args(g)
-    chart_op(t, {categories: args.categories series: args.series}, "change the chart's data")
+    args.doc = t.doc
+    args.slide = t.cur
+    args.id = t.grid_for
+    queue_input(t, "chart/" + t.cur + "/" + t.grid_for, "chart", args, "change the chart's data", delay)
 }
 fn grid_add_row(t){
     let g = chart_grid(t)
@@ -3610,18 +3747,25 @@ fn notes_typed(t, text){
     s.notes = clipped
     if t.detail != nil && t.detail_for == id { t.detail.notes = clipped }
     try { ui.notes_meta.set_text(notes_meta(clipped)) } catch { nil }
-    t.notes_seq = optional(t, "notes_seq", 0) + 1
-    let seq = t.notes_seq
-    start_timeout(0.9, || {
-        if optional(t, "notes_seq", 0) != seq { return }
-        engine("notes", {doc: t.doc slide: id text: clipped}, fn(a){
-            wrote(a)
-            if !a.is_ok {
-                note(action_failed("keep the notes", a.error))
-                return
-            }
-            took_change(t, a.data)
-        })
+    queue_input(t, "notes/" + id, "notes", {doc: t.doc slide: id text: clipped}, "keep the notes", 0.9)
+}
+// A paused field sends its last value. Keep it until the engine acknowledges
+// it so a window Save can flush it immediately, even after changing slides.
+fn queue_input(t, key, method, args, what, delay){
+    if optional(t, "inputs", nil) == nil { t.inputs = {} }
+    let job = {method: method args: args what: what sending: false}
+    t.inputs[key] = job
+    if delay == 0 { send_input(t, key, job) } else { start_timeout(delay, || send_input(t, key, job)) }
+}
+fn send_input(t, key, job){
+    if t.state == "closed" || optional(t.inputs, key, nil) != job || job.sending { return }
+    job.sending = true
+    change_engine(t, job.method, job.args, fn(a){
+        job.sending = false
+        wrote(a)
+        if !a.is_ok { note(action_failed(job.what, a.error)) return }
+        if optional(t.inputs, key, nil) == job { t.inputs = drop_key(t.inputs, key) }
+        took_change(t, a.data)
     })
 }
 // The current slide's transition length in milliseconds: the slide's own
@@ -3646,7 +3790,7 @@ fn set_transition(t, kind, all){
     t.transition_ms = max(ms, pick(kind == "none", 0, 100))
     let args = {doc: t.doc kind: kind duration: t.transition_ms}
     if all { args.all = true } else { args.slides = [t.cur] }
-    engine("transition", args, fn(a){
+    change_engine(t, "transition", args, fn(a){
         wrote(a)
         if !a.is_ok {
             note(action_failed("set the transition", a.error))
@@ -3671,7 +3815,7 @@ fn design(t, args, what){
     if t == nil || t.doc == nil { return }
     if t.editing != nil { end_edit(t) }
     args.doc = t.doc
-    engine("design", args, fn(a){
+    change_engine(t, "design", args, fn(a){
         wrote(a)
         if !a.is_ok {
             note(action_failed(what, a.error))
@@ -4504,11 +4648,13 @@ fn outline_typed(i, key, text){
 fn add_card(){
     let o = st.draft
     if o.cards.len() >= MAX_OUTLINE { o.error = "An outline holds up to " + MAX_OUTLINE + " slides." render_outline() return }
+    st.index_dirty = true
     o.cards.push(blank_card())
     render_outline()
     render_outline_side()
 }
 fn remove_card(i){
+    st.index_dirty = true
     let o = st.draft
     if o.cards.len() < 2 {
         o.cards = [blank_card()]
@@ -4532,6 +4678,7 @@ fn move_card(i, dy){
     }
     if j >= rest.len() { out.push(moving) }
     o.cards = out
+    st.index_dirty = true
     render_outline()
 }
 // Draft with AI: the host's model.complete, on the person's own provider,
@@ -7653,7 +7800,7 @@ fn grid_cell(text, number, r, c, head){
         if !(r == -1 && c == -1) {
             CellField{text: text
                 on_change: |s| grid_typed(deck_tab(), r, c, s)
-                on_return: |s| { let x = deck_tab() x.grid_seq = optional(x, "grid_seq", 0) + 1 send_grid(x) }}
+                on_return: |s| send_grid(deck_tab())}
         }
     }
 }
@@ -8485,15 +8632,15 @@ fn outline_side_view(){
             heading("Theme")
             if theme_list().len() == 0 { hint(pick(st.engine == "ok" || st.engine == "", "Loading themes…", engine_said() + ". You can still type the outline.")) }
             View{width: Fill height: Fit flow: Flow.Right{wrap: true} spacing: 4
-                for th in theme_list() { theme_card(th, th.name == o.theme, THEME_SMALL_W, THEME_SMALL_H, || { st.draft.theme = th.name render_outline_side() }) }
+                for th in theme_list() { theme_card(th, th.name == o.theme, THEME_SMALL_W, THEME_SMALL_H, || { st.draft.theme = th.name st.index_dirty = true render_outline_side() }) }
             }
         }
         divider()
         InspSection{
             heading("Slide size")
             SegRow{width: 150
-                seg_item(o.size == "16:9", "", "16:9", || { st.draft.size = "16:9" render_outline_side() })
-                seg_item(o.size == "4:3", "", "4:3", || { st.draft.size = "4:3" render_outline_side() })
+                seg_item(o.size == "16:9", "", "16:9", || { st.draft.size = "16:9" st.index_dirty = true render_outline_side() })
+                seg_item(o.size == "4:3", "", "4:3", || { st.draft.size = "4:3" st.index_dirty = true render_outline_side() })
             }
         }
     }
@@ -8814,11 +8961,13 @@ fn full_alert_home(){
     go_home()
 }
 fn confirm_view(){
-    if optional(st, "full_alert", false) { return full_alert_view() }
-    if optional(st, "fonts_sheet", false) { return fonts_sheet_view() }
-    if optional(st, "refusal", nil) != nil { return refusal_view() }
-    if optional(st, "chooser", false) { return chooser_view() }
-    let t = tab_by_key(st.confirm)
+    if optional(st, "close_request", nil) == nil || st.confirm == "" {
+        if optional(st, "full_alert", false) { return full_alert_view() }
+        if optional(st, "fonts_sheet", false) { return fonts_sheet_view() }
+        if optional(st, "refusal", nil) != nil { return refusal_view() }
+        if optional(st, "chooser", false) { return chooser_view() }
+    }
+    let t = close_prompt_tab()
     let d = deck_by_path(st.removing)
     if t == nil && d == nil {
         if optional(st, "open_sheet", false) { return open_sheet_view() }
@@ -8831,10 +8980,10 @@ fn confirm_view(){
             if t != nil {
                 alert_head("Save changes to “" + t.title + "”?", "If you don't save, your changes since the last save are lost.")
                 View{width: Fill height: Fit flow: Right align: Align{y: 0.5} spacing: 8 margin: Inset{top: 10}
-                    Outline{text: "Don't Save" on_click: || close_tab(tab_by_key(st.confirm), true)}
+                    Outline{text: "Don't Save" on_click: || close_choice("discard")}
                     Gap{}
-                    Outline{key_cancel: true text: "Cancel" on_click: || { st.confirm = "" render_confirm() }}
-                    Primary{key_default: true text: "Save" on_click: || save_and_close(tab_by_key(st.confirm))}
+                    Outline{key_cancel: true text: "Cancel" on_click: || close_choice("cancel")}
+                    Primary{key_default: true text: "Save" on_click: || close_choice("save")}
                 }
             }
             if t == nil {
@@ -8861,9 +9010,9 @@ fn mac_confirm(t, d){
                 UiAlertTitle{text: "Save changes to “" + t.title + "”?"}
                 UiAlertNote{text: "If you don't save, your changes since the last save are lost."}
                 UiAlertStack{
-                    Primary{width: Fill key_default: true text: "Save" on_click: || save_and_close(tab_by_key(st.confirm))}
-                    Outline{width: Fill text: "Don't Save" on_click: || close_tab(tab_by_key(st.confirm), true)}
-                    Outline{width: Fill key_cancel: true text: "Cancel" on_click: || { st.confirm = "" render_confirm() }}
+                    Primary{width: Fill key_default: true text: "Save" on_click: || close_choice("save")}
+                    Outline{width: Fill text: "Don't Save" on_click: || close_choice("discard")}
+                    Outline{width: Fill key_cancel: true text: "Cancel" on_click: || close_choice("cancel")}
                 }
             }
             if t == nil {

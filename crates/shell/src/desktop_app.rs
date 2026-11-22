@@ -713,7 +713,7 @@ impl App {
         }
         if e.key_code == KeyCode::F4 && e.modifiers.alt {
             if let Some(c) = self.state_mut().layout.focused_client() {
-                self.request_close(cx, c);
+                self.request_close_from(cx, c, CloseSource::Key(e));
             }
             return true;
         }
@@ -853,7 +853,7 @@ impl App {
                 if let Some((client, control)) = pressed {
                     if chrome_hit == Some((client, control)) {
                         match control {
-                            ChromeHit::Close => self.request_close(cx, client),
+                            ChromeHit::Close => self.request_close_from(cx, client, CloseSource::WindowButton),
                             ChromeHit::Minimize => self.minimize_desktop(cx, client),
                             // macOS's green button makes the window full
                             // screen; with Option it zooms (maximizes).

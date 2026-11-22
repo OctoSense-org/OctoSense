@@ -1725,6 +1725,78 @@ def states_follow(app, out):
     go_to(app, 4)  # where the journey was: the rest of it starts from slide 4
 
 
+def window_close_journey(session, home):
+    """Save a note through window close, reopen it, then discard another edit."""
+    note = "Retain this note after closing Quick Deck."
+
+    def notes_input(app):
+        seg(app, "Notes")
+        app.find("Speaker notes", "Label")
+        left, _, width, _ = app.area()
+        return next(w for w in app.widgets() if w["ty"] == "TextInput" and
+                    w["r"][0] > left + width - 360)
+
+    def type_note(app, field, text):
+        x, y, w, h = field["r"]
+        app.click(x + w / 2, y + min(h / 2, 30))
+        app.type(text)
+        edited(app)
+
+    def request_close(app):
+        if LINUX:
+            app.remote("event", data="wm:close")
+        else:
+            app.key("KeyQ", cmd=1)
+
+    def ask(app):
+        request_close(app)
+        for choice in ("Don't Save", "Cancel", "Save"):
+            app.find(choice, "Button")
+
+    def closed(app):
+        wait_until(lambda: all(w["ty"] != "MpModuleView" for w in app.widgets()),
+                   "Quick Deck stayed open after the close decision")
+
+    def save(app, out):
+        app.tap("Harbor", "Label")
+        app.find("Slide 1 of 1", "Label", exact=False)
+        type_note(app, notes_input(app), note)
+        ask(app)
+        app.tap("Cancel", "Button")
+        app.gone("Don't Save")
+        edited(app)
+        ask(app)
+        app.tap("Save", "Button")
+        closed(app)
+
+    def discard(app, out):
+        app.find("Recent", "Label")
+        open_card(app, "Untitled deck")
+        app.find("Slide 1 of 1", "Label", exact=False)
+        field = notes_input(app)
+        assert note in field["t"], "the saved note did not survive restart"
+        deck, = (home / "apps" / APP / "decks").glob("*.deckcraft")
+        saved = deck.read_bytes()
+        type_note(app, field, "discard this edit")
+        ask(app)
+        app.tap("Don't Save", "Button")
+        closed(app)
+        assert deck.read_bytes() == saved, "discarding the edit changed the file"
+
+    def clean(app, out):
+        app.find("Recent", "Label")
+        open_card(app, "Untitled deck")
+        app.find("Slide 1 of 1", "Label", exact=False)
+        field = notes_input(app)
+        assert note in field["t"] and "discard this edit" not in field["t"]
+        request_close(app)
+        closed(app)
+
+    session("window-close-save", home, save)
+    session("window-close-discard", home, discard)
+    session("window-close-clean", home, clean)
+
+
 def restart(app, out):
     """The same home again: the deck in the library with its cover and the
     slide count the last save wrote, opened at the slide it was left at."""
@@ -1904,6 +1976,8 @@ def shell_runs(args, runs):
             session("shell", home, light_then_dark)
         if "restart" in runs:
             session("restart", home, restart)
+        if "window-close" in runs:
+            window_close_journey(session, scratch / "home-close")
         if "playback" in runs:
             media_home = scratch / "home-playback"
             place_media_decks(media_home)
@@ -1924,7 +1998,7 @@ def main():
     parser.add_argument("--port", type=int, default=0, help="the remote bridge's port (8916 for a shell, 8912 for card-host)")
     parser.add_argument("--output", type=Path, default=ROOT / "target/quickdeck-ui")
     parser.add_argument("--work", type=Path, help="where the runs' homes go (default: the system's temporary folder)")
-    parser.add_argument("--only", choices=["shell", "restart", "missing", "fixture", "states", "playback"], action="append")
+    parser.add_argument("--only", choices=["shell", "restart", "window-close", "missing", "fixture", "states", "playback"], action="append")
     parser.add_argument("--budget-ms", type=int, help="MAKEPAD_SPLASH_BUDGET_MS for the hosts (default: the runtime's 64 ms); for a loaded machine")
     parser.add_argument("--grab-scale", type=float, default=0.5, help="the grabs' scale (the bridge's /g scale): 0.5 is one pixel per point on a 2x screen")
     parser.add_argument("--bundle", type=Path, help="another bundle for the card-host runs (default: apps/quickdeck/bundle), for a before/after comparison")
@@ -1934,9 +2008,9 @@ def main():
     Driver.budget_ms = args.budget_ms
     Driver.check_states = not args.grabs_only
     card_host_only = ("missing", "fixture", "states")
-    shell_only = ("shell", "restart")
+    shell_only = ("shell", "restart", "window-close")
     # playback runs in both: card-host on the stand-in, the shell on the real engine.
-    runs = args.only or (["shell", "restart", "playback"] if args.shell else []) + (list(card_host_only) + ["playback"] if args.card_host else [])
+    runs = args.only or (list(shell_only) + ["playback"] if args.shell else []) + (list(card_host_only) + ["playback"] if args.card_host else [])
     assert runs, "give --shell, --card-host or both"
     if any(run in shell_only for run in runs) or ("playback" in runs and args.shell):
         assert args.shell, "these runs need --shell"

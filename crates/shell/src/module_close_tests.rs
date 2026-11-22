@@ -82,6 +82,19 @@ fn uid(host: &ModuleHost, client: u64) -> WidgetUid {
     host.get(client).unwrap().root.widget_uid()
 }
 
+#[test]
+fn close_origin_records_the_actual_key_and_its_modifiers() {
+    let mut key = KeyEvent { key_code: KeyCode::KeyW, ..Default::default() };
+    key.modifiers.logo = true;
+    key.modifiers.shift = true;
+    let logo = if cfg!(target_os = "macos") { "Cmd" } else { "Super" };
+    assert_eq!(crate::CloseSource::Key(&key).to_string(), format!("keyboard {logo}+Shift+W"));
+    key.key_code = KeyCode::KeyQ;
+    key.modifiers = KeyModifiers { control: true, alt: true, ..Default::default() };
+    assert_eq!(crate::CloseSource::Key(&key).to_string(), "keyboard Ctrl+Alt+Q");
+    assert_eq!(crate::CloseSource::Remote.to_string(), "remote command");
+}
+
 // ---- the gate's decisions, without a module ----
 
 #[test]
@@ -253,4 +266,83 @@ fn a_shell_quit_asks_every_instance_and_waits_for_the_refusals() {
     assert!(host.ask_quit(&mut cx).is_empty());
     assert!(!host.take_quit_ready());
     assert!(host.teardown(&mut cx, 1));
+}
+
+#[cfg(feature = "app-hub")]
+#[test]
+fn card_close_requests_wait_for_the_owning_window_and_current_decision() {
+    use makepad_widgets::splash_host::take_splash_host_requests_for;
+    let (mut cx, mut host) = setup();
+    host.apply_style(&mut cx, &desktop_style::StyleSheet::load(desktop_style::DesktopStyle::Macos));
+    let module = &octosense_app_hub_app::CARD_MODULE;
+    for client in [1, 2] {
+        let open = module.open_schema().validate(r#"{"app":"os.close-probe"}"#, &[]).unwrap();
+        host.create(&mut cx, client, module, open, dvec2(400.0, 700.0)).unwrap();
+    }
+    let put = |host: &mut ModuleHost, cx: &mut Cx, client, source| {
+        host.dispatch(cx, client, "install probe", |cx, root| {
+            let card = root.splash(cx, ids!(card));
+            card.set_text(cx, source);
+            card.isolate_heap_key(cx).unwrap()
+        }).unwrap()
+    };
+    put(&mut host, &mut cx, 1, "View{}");
+    assert_eq!(host.ask_close(&mut cx, 1), CloseDecision::Allow, "legacy Card");
+    let dirty = r#"
+        fn on_close_request(request) {
+            host.request("window.close_response", {request: request, allow: false}, nil)
+        }
+        View{}
+    "#;
+    let heap = put(&mut host, &mut cx, 2, dirty);
+    let request = |heap| {
+        let calls = take_splash_host_requests_for(&[heap]);
+        assert_eq!(calls.len(), 1, "one dialog per close");
+        assert_eq!(calls[0].service, "window.close_response");
+        let args = serde_json::from_str(&calls[0].args_json).unwrap();
+        match crate::app_fullscreen::admit(&calls[0].service, false, &args).unwrap() {
+            crate::app_fullscreen::WindowCommand::CloseResponse { request, allow: false } => request,
+            other => panic!("unexpected close response {other:?}"),
+        }
+    };
+
+    assert_eq!(host.ask_quit(&mut cx), [2]);
+    assert_eq!(host.ask_quit(&mut cx), [2]);
+    let old = request(heap);
+    assert!(host.card_close_response(1, old, true).is_err(), "other window");
+    for time in [0.0, 1.0, 2.0] {
+        assert!(!host.close_gate_mut().insist(2, time), "repeated close cannot discard edits");
+    }
+    assert_eq!(host.card_close_response(2, old, false), Ok(None), "cancel");
+    assert!(!host.close_pending(2));
+    assert!(!host.take_quit_ready(), "cancel keeps the shell running");
+
+    assert_eq!(host.ask_quit(&mut cx), [2]);
+    let current = request(heap);
+    assert_ne!(current, old);
+    assert!(host.card_close_response(2, old, true).is_err(), "late save from an earlier close");
+    let root = host.card_close_response(2, current, true).unwrap().unwrap();
+    assert_eq!(host.close_confirmed(root), Some(2));
+    assert!(host.card_close_response(2, current, true).is_err(), "duplicate response");
+    assert!(host.take_quit_ready());
+
+    let sibling = put(&mut host, &mut cx, 1, dirty);
+    assert_eq!(host.ask_quit(&mut cx), [1, 2]);
+    assert_eq!(host.card_close_response(1, request(sibling), false), Ok(None));
+    assert!(host.close_pending(2), "the sibling still owns its open question");
+    assert_eq!(host.card_close_response(2, request(heap), true), Ok(None), "the quit was cancelled");
+    assert!(!host.take_quit_ready());
+    assert!(host.is_module(2));
+
+    assert_eq!(host.ask_quit(&mut cx), [1, 2]);
+    assert_eq!(host.ask_close(&mut cx, 2), CloseDecision::Veto, "a person closes this window separately");
+    assert_eq!(host.card_close_response(1, request(sibling), false), Ok(None));
+    let confirmed = host.card_close_response(2, request(heap), true).unwrap().unwrap();
+    assert_eq!(host.close_confirmed(confirmed), Some(2), "the individual close is still valid");
+
+    put(&mut host, &mut cx, 2, "fn on_close_request(request){ return true }\nView{}");
+    assert_eq!(host.ask_close(&mut cx, 2), CloseDecision::Veto, "a return value is never approval");
+    put(&mut host, &mut cx, 1, "fn on_close_request(request){ missing_export() }\nView{}");
+    assert_eq!(host.ask_close(&mut cx, 1), CloseDecision::Veto, "an errored dirty hook cannot silently close the window");
+    assert!(host.teardown(&mut cx, 1) && host.teardown(&mut cx, 2));
 }

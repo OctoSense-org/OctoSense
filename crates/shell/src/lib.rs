@@ -883,6 +883,54 @@ pub struct DividerDrag {
     start: Vec2d,
 }
 
+/// The input that reached the shell's close command. A close may be
+/// deferred or cancelled, so record its origin when the request arrives.
+#[derive(Clone, Copy)]
+enum CloseSource<'a> {
+    Key(&'a KeyEvent),
+    Menu(&'a str),
+    WindowButton,
+    BarTitleRight,
+    BarTitleMiddle,
+    Recents,
+    Remote,
+    TestAction,
+    Assistant,
+    ClientRequest,
+    NativeQuit(QuitReason),
+    ShellWindow,
+    UpdateRestart,
+}
+
+impl std::fmt::Display for CloseSource<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let name = match self {
+            Self::Key(event) => {
+                f.write_str("keyboard ")?;
+                let m = event.modifiers;
+                if m.control { f.write_str("Ctrl+")?; }
+                if m.alt { f.write_str("Alt+")?; }
+                if m.logo { f.write_str(if cfg!(target_os = "macos") { "Cmd+" } else { "Super+" })?; }
+                if m.shift { f.write_str("Shift+")?; }
+                return f.write_str(&binds::key_text(event.key_code));
+            }
+            Self::Menu(target) => return write!(f, "menu {target}"),
+            Self::WindowButton => "window close button",
+            Self::BarTitleRight => "bar title right click",
+            Self::BarTitleMiddle => "bar title middle click",
+            Self::Recents => "phone Recents",
+            Self::Remote => "remote command",
+            Self::TestAction => "startup test action",
+            Self::Assistant => "assistant os.close",
+            Self::ClientRequest => "app WM request",
+            Self::NativeQuit(reason) => return write!(f, "native quit ({reason:?})"),
+            Self::ShellWindow => "shell window close",
+            Self::UpdateRestart => "update restart",
+        };
+        f.write_str(name)
+    }
+}
+
 impl App {
     #[cfg(all(unix, any(feature = "app-hub", native_mobile)))]
     fn drain_studio(&mut self, cx: &mut Cx) {
@@ -1650,7 +1698,14 @@ impl App {
             }
             // The app itself is done (or its person just confirmed): no
             // question goes back to it.
-            WmRequest::Close => self.close_client(cx, client, false),
+            WmRequest::Close => {
+                // A client can also send Close as its answer to the
+                // earlier request whose input the shell already recorded.
+                if !self.close_pending(client) && self.state_mut().clients.get(&client).is_some_and(|slot| slot.closing.is_none()) {
+                    self.log_close_source(client, CloseSource::ClientRequest);
+                }
+                self.close_client(cx, client, false);
+            }
             WmRequest::SetFloating { floating } => {
                 let area = self.desk_area(cx);
                 let gap = self.state_mut().gap;
@@ -2325,11 +2380,11 @@ impl App {
     /// honors itself. The tile leaves the layout at once (so the rest
     /// reflow and the close animation plays with its last frame), the
     /// process gets `CLOSE_GRACE` to exit, and only then is it killed.
-    fn close_focused(&mut self, cx: &mut Cx) {
+    fn close_focused(&mut self, cx: &mut Cx, source: CloseSource) {
         let Some(focus) = self.state_mut().layout.focused_client() else {
             return;
         };
-        self.request_close(cx, focus);
+        self.request_close_from(cx, focus, source);
     }
 
     /// App Hub finished installing (or updating) `id`. An update replaces
@@ -2369,6 +2424,17 @@ impl App {
             return;
         }
         self.close_client(cx, client, true);
+    }
+
+    fn log_close_source(&self, client: ClientId, source: CloseSource) {
+        if let Some(slot) = self.state.as_ref().and_then(|state| state.clients.get(&client)) {
+            log!("wm: close requested for client {client} ({}) via {source}", slot.app);
+        }
+    }
+
+    fn request_close_from(&mut self, cx: &mut Cx, client: ClientId, source: CloseSource) {
+        self.log_close_source(client, source);
+        self.request_close(cx, client);
     }
 
     /// Close `client`. `ask`: a close the person (or the shell) asked for,
@@ -2588,7 +2654,12 @@ impl App {
     /// refusing instance comes to the front with its question, and the
     /// quit happens when the last of them confirms (`take_quit_ready`). A
     /// forced end (a termination signal, a kill) never asks.
-    fn ask_before_quit(&mut self, cx: &mut Cx) -> bool {
+    fn ask_before_quit(&mut self, cx: &mut Cx, source: CloseSource) -> bool {
+        if let Some(state) = self.state.as_ref() {
+            let mut clients: Vec<_> = state.clients.iter().filter(|(_, slot)| !slot.warm && !slot.pane).map(|(id, _)| *id).collect();
+            clients.sort_unstable();
+            log!("wm: shell quit requested via {source}, clients {clients:?}");
+        }
         let refused = self.module_host.ask_quit(cx);
         // An instance that refused this quit as often as insisting takes
         // (process_close::Insistence) is ended; the rest are waited on.
@@ -3784,7 +3855,7 @@ impl App {
                         ToolResult::ok(id, format!("{app} is in front"), "focused")
                     }
                     Some(client) => {
-                        self.request_close(cx, client);
+                        self.request_close_from(cx, client, CloseSource::Assistant);
                         if self.close_pending(client) {
                             ToolResult::ok(id, format!("{app} was asked to close and may ask the person first"), "asking")
                         } else {
@@ -4611,7 +4682,11 @@ impl App {
     /// What a menu row does. The ids are the jsonc's dotted paths, with
     /// `apps.<id>` and `style.theme[.import].<name>` from the providers.
     fn shell_menu_activate(&mut self, cx: &mut Cx, target: &str) {
-        if self.mac_menu_activate(cx, target) {
+        self.shell_menu_activate_from(cx, target, CloseSource::Menu(target));
+    }
+
+    fn shell_menu_activate_from(&mut self, cx: &mut Cx, target: &str, source: CloseSource) {
+        if self.mac_menu_activate(cx, target, source) {
             return;
         }
         if target == shell::menu::ASK_APP_ROW {
@@ -4693,7 +4768,7 @@ impl App {
         match target {
             "system.quit" => {
                 self.cancel_update_restart();
-                if self.ask_before_quit(cx) {
+                if self.ask_before_quit(cx, source) {
                     self.quit_after_review(cx);
                 }
             }
@@ -5754,11 +5829,11 @@ impl App {
     /// `clients` holds the hidden warm viewers too, so a close-all takes
     /// the whole Quick-Look cache with it — hide keeps a viewer, this does
     /// not.
-    fn close_all_windows(&mut self, cx: &mut Cx) {
+    fn close_all_windows(&mut self, cx: &mut Cx, source: CloseSource) {
         self.preview_cache.active = None;
         let all: Vec<ClientId> = self.state_mut().clients.keys().copied().collect();
         for client in all {
-            self.request_close(cx, client);
+            self.request_close_from(cx, client, source);
         }
         self.preview_cache.clear();
         self.state_mut().layout.switch_workspace(0);
@@ -5913,6 +5988,10 @@ impl App {
     }
 
     fn do_action(&mut self, cx: &mut Cx, action: WmAction) {
+        self.do_action_from(cx, action, CloseSource::Menu("window manager"));
+    }
+
+    fn do_action_from(&mut self, cx: &mut Cx, action: WmAction, source: CloseSource) {
         self.sync_geometry(cx);
         let area = self.desk_area(cx);
         let gap = self.state_mut().gap;
@@ -5920,8 +5999,8 @@ impl App {
         match action {
             WmAction::LaunchTerminal => self.launch_app(cx, "terminal"),
             WmAction::LaunchBrowser => self.launch_app(cx, "browser"),
-            WmAction::CloseWindow => self.close_focused(cx),
-            WmAction::CloseAllWindows => self.close_all_windows(cx),
+            WmAction::CloseWindow => self.close_focused(cx, source),
+            WmAction::CloseAllWindows => self.close_all_windows(cx, source),
             WmAction::ToggleSplit => {
                 self.state_mut().layout.toggle_split();
             }
@@ -6555,7 +6634,7 @@ impl App {
         }
         if self.test_mac_row.as_ref().is_some_and(|(timer, _)| timer.is_timer(te).is_some()) {
             if let Some((_, target)) = self.test_mac_row.take() {
-                self.shell_menu_activate(cx, &target);
+                self.shell_menu_activate_from(cx, &target, CloseSource::TestAction);
             }
         }
         if let Some((timer, _path)) = self.test_capture.clone() {
@@ -6932,7 +7011,7 @@ impl App {
                     match test_action(name) {
                         Some(action) => {
                             log!("wm: --test-action {} -> {:?}", name, action);
-                            self.do_action(cx, action);
+                            self.do_action_from(cx, action, CloseSource::TestAction);
                         }
                         None => log!("wm: unknown --test-action '{}'", name),
                     }
@@ -7706,7 +7785,7 @@ impl MatchEvent for App {
                     BarModule::Menu => self.do_action(cx, WmAction::LaunchTerminal),
                     BarModule::ActiveWindow => {
                         if let Some(focus) = self.state_mut().layout.focused_client() {
-                            self.request_close(cx, focus);
+                            self.request_close_from(cx, focus, CloseSource::BarTitleRight);
                         }
                     }
                     BarModule::Clock => {
@@ -7739,7 +7818,7 @@ impl MatchEvent for App {
                     // module ignores the middle button.
                     if module == BarModule::ActiveWindow {
                         if let Some(focus) = self.state_mut().layout.focused_client() {
-                            self.request_close(cx, focus);
+                            self.request_close_from(cx, focus, CloseSource::BarTitleMiddle);
                         }
                     }
                 }
@@ -8075,11 +8154,11 @@ impl App {
         // first (makepad#65). A termination signal is never refused.
         match event {
             Event::QuitRequested(request)
-                if request.reason != QuitReason::Signal && !request.handled.get() && !self.ask_before_quit(cx) =>
+                if request.reason != QuitReason::Signal && !request.handled.get() && !self.ask_before_quit(cx, CloseSource::NativeQuit(request.reason)) =>
             {
                 request.handle();
             }
-            Event::WindowCloseRequested(request) if request.accept_close.get() && !self.ask_before_quit(cx) => {
+            Event::WindowCloseRequested(request) if request.accept_close.get() && !self.ask_before_quit(cx, CloseSource::ShellWindow) => {
                 request.accept_close.set(false);
             }
             _ => {}
@@ -8476,7 +8555,7 @@ impl App {
                             return;
                         }
                         if !(target == "mac.close" && !e.modifiers.shift && (self.focused_app_closes_tabs() || self.app_row_takes_close_key(cx))) {
-                            self.shell_menu_activate(cx, target);
+                            self.shell_menu_activate_from(cx, target, CloseSource::Key(e));
                             self.update_bar(cx);
                             return;
                         }
@@ -8493,7 +8572,7 @@ impl App {
                     if action != WmAction::ArmAltLayer {
                         self.alt_armed = false;
                     }
-                    self.do_action(cx, action);
+                    self.do_action_from(cx, action, CloseSource::Key(e));
                     return;
                 }
                 if armed {
@@ -8621,13 +8700,13 @@ impl App {
             // The remote's `/event?data=wm:<action>`: an action a key or a menu may not reach
             // on this style (`move-to-2` sends the focused window to the second desktop).
             if let Some(action) = data.strip_prefix("wm:").and_then(test_action) {
-                self.do_action(cx, action);
+                self.do_action_from(cx, action, CloseSource::Remote);
                 return;
             }
             // The remote's `/event?data=mac-row:<target>`: a menu row's act, whatever
             // is open (a test flips the appearance this way: a Mac's bar has no item for it).
             if let Some(target) = data.strip_prefix("mac-row:") {
-                self.shell_menu_activate(cx, target);
+                self.shell_menu_activate_from(cx, target, CloseSource::Remote);
                 self.update_bar(cx);
                 return;
             }

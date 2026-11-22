@@ -164,6 +164,16 @@ bottom edge (`edge_reveal.rs`, `App::top_edge`, `App::place_bar`). Leaving
 full screen gives back the window's rect, zoom and place in the stack, which
 never changed.
 
+A Card app can protect unsaved work by defining `on_close_request(request_id)`
+in its Splash entry point. The module host calls the hook on the window’s
+Card isolate and keeps the window open until that isolate answers. A clean
+app can immediately call
+`host.request("window.close_response", {request: request_id, allow: true}, fn(r){…})`.
+An edited app can ask the user first, then allow the close after saving or
+discarding changes, or send `allow: false` to cancel. If the hook fails
+before answering, the window stays open. Apps without the hook keep their
+usual close behavior.
+
 A script app puts its own window in presentation full screen with
 `host.request("window.fullscreen", {on: true}, fn(r){…})`, from the handler
 of the person's tap or click ([`app_fullscreen.rs`](../../crates/shell/src/app_fullscreen.rs)).

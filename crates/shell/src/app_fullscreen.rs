@@ -83,7 +83,7 @@ pub const FAMILY: &str = "window";
 /// How long after the person's press in a window that window may still go
 /// full screen: a browser's transient activation lasts about as long.
 pub const ACTIVATION_SECONDS: f64 = 5.0;
-/// Requests waiting for the shell's next turn, from every app together.
+/// Full-screen requests waiting for the shell's next turn, from every app together.
 pub const MAX_QUEUED: usize = 16;
 /// The log gets at most one line per app this often for requests that
 /// changed nothing (refusals among them), and counts the rest.
@@ -104,18 +104,32 @@ pub const GESTURE_REQUIRED: &str = "gesture_required: ask for full screen from t
 pub const UNAVAILABLE: &str = "unavailable: this window cannot cover the desk in this layout";
 pub const BUSY: &str = "busy: too many full-screen requests are waiting";
 
-/// A `window.*` request, checked before it reaches the shell's turn: the
-/// method, the surface and the arguments. The answer is `on`. Whether the
-/// request may go full screen is the shell's turn to decide ([`decide`]),
-/// with the window in view.
-pub fn admit(service: &str, from_sheet: bool, args: &Value) -> Result<bool, String> {
-    if service != "window.fullscreen" {
-        return Err(format!("method_unavailable: the window service has fullscreen {{on}} only, not {service:?}"));
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum WindowCommand {
+    Fullscreen(bool),
+    CloseResponse { request: u32, allow: bool },
+}
+
+/// Check the method, args and surface here. The shell then verifies the
+/// requesting isolate's window and the actual operation on its UI thread.
+pub fn admit(service: &str, from_sheet: bool, args: &Value) -> Result<WindowCommand, String> {
+    match service {
+        "window.fullscreen" if from_sheet => Err(NOT_A_WINDOW.into()),
+        "window.fullscreen" => parse_on(args).map(WindowCommand::Fullscreen),
+        "window.close_response" if from_sheet => Err("not_a_window: a host sheet cannot answer an app's close".into()),
+        "window.close_response" => {
+            let wrong = "invalid_arguments: expected {request: positive integer, allow: boolean}";
+            let args = args.as_object().filter(|args| args.len() == 2).ok_or(wrong)?;
+            let request = args.get("request")
+                .and_then(Value::as_u64)
+                .and_then(|n| u32::try_from(n).ok())
+                .filter(|n| *n > 0)
+                .ok_or(wrong)?;
+            let allow = args.get("allow").and_then(Value::as_bool).ok_or(wrong)?;
+            Ok(WindowCommand::CloseResponse { request, allow })
+        }
+        _ => Err(format!("method_unavailable: unknown window service {service:?}")),
     }
-    if from_sheet {
-        return Err(NOT_A_WINDOW.into());
-    }
-    parse_on(args)
 }
 
 /// `{on: true}` or `{on: false}`, nothing else.
@@ -504,7 +518,7 @@ mod service {
     pub struct Request {
         pub app: String,
         pub isolate: usize,
-        pub on: bool,
+        pub command: WindowCommand,
         /// `!ServiceCall::may_prompt`: an agent's tool call, or a callback
         /// of one (the module notes).
         pub agent_call: bool,
@@ -513,7 +527,7 @@ mod service {
 
     static QUEUE: Mutex<Vec<Request>> = Mutex::new(Vec::new());
 
-    /// Offer `window.fullscreen` to every app. It describes no method to
+    /// Offer the window methods to every app. It describes no method to
     /// App Hub's discovery yet: App Hub's contract knows no capability a
     /// window method could name (`KNOWN_CAPABILITIES`), and a description
     /// naming another would be refused.
@@ -535,14 +549,17 @@ mod service {
 
         fn call(&mut self, call: ServiceCall, reply: Replier, _host: &mut dyn ServiceHost) {
             match admit(&call.service, call.from_sheet, &call.args) {
-                Ok(on) => {
+                Ok(command) => {
                     let mut queue = QUEUE.lock().unwrap_or_else(|e| e.into_inner());
-                    if queue.len() >= MAX_QUEUED {
+                    // A fullscreen burst cannot crowd out a pending save's
+                    // confirmation. App Hub caps all tracked service requests
+                    // globally and per isolate before delivering them here.
+                    if matches!(command, WindowCommand::Fullscreen(_)) && queue.len() >= MAX_QUEUED {
                         drop(queue);
                         reply.send(Err(BUSY.into()));
                         return;
                     }
-                    queue.push(Request { app: call.app_id, isolate: reply.isolate_key(), on, agent_call: !call.may_prompt, reply });
+                    queue.push(Request { app: call.app_id, isolate: reply.isolate_key(), command, agent_call: !call.may_prompt, reply });
                     drop(queue);
                     // The shell answers at the end of this event, or the next.
                     SignalToUI::set_ui_signal();
@@ -571,15 +588,22 @@ impl App {
         self.presenter.press(client, host::now());
     }
 
-    /// The `window.fullscreen` requests waiting, answered: after the event
-    /// that pumped them, on the UI thread.
+    /// Answer the window requests on the UI thread after the event that
+    /// pumped them. Only a Card's own window may answer its pending close.
     #[cfg(any(feature = "app-hub", native_mobile))]
     pub(crate) fn serve_window_requests(&mut self, cx: &mut Cx) {
         for request in take_requests() {
             if !request.reply.is_pending() {
                 continue;
             }
-            let result = self.window_request(cx, &request);
+            let on = match request.command {
+                WindowCommand::Fullscreen(on) => on,
+                WindowCommand::CloseResponse { request: token, allow } => {
+                    self.serve_card_close_response(cx, request, token, allow);
+                    continue;
+                }
+            };
+            let result = self.window_request(cx, &request, on);
             let applied = matches!(&result, Ok(value) if value["applied"] == true);
             // A request that changed something needed a press or ended a
             // presentation, so it cannot come in a flood; one that changed
@@ -588,8 +612,8 @@ impl App {
             if let Some(unwritten) = unwritten {
                 let more = if unwritten > 0 { format!(" ({unwritten} more since the last such line)") } else { String::new() };
                 match &result {
-                    Ok(value) => log!("wm: window.fullscreen {{on: {}}} from {}: {}{}", request.on, request.app, value, more),
-                    Err(error) => log!("wm: window.fullscreen {{on: {}}} from {} refused: {}{}", request.on, request.app, error, more),
+                    Ok(value) => log!("wm: window.fullscreen {{on: {}}} from {}: {}{}", on, request.app, value, more),
+                    Err(error) => log!("wm: window.fullscreen {{on: {}}} from {} refused: {}{}", on, request.app, error, more),
                 }
             }
             request.reply.send(result);
@@ -597,7 +621,27 @@ impl App {
     }
 
     #[cfg(any(feature = "app-hub", native_mobile))]
-    fn window_request(&mut self, cx: &mut Cx, request: &Request) -> Result<Value, String> {
+    fn serve_card_close_response(&mut self, cx: &mut Cx, request: Request, token: u32, allow: bool) {
+        let result = self.window_of(cx, &request.app, request.isolate)
+            .ok_or("not_a_window: only the owning Card can answer its close")
+            .and_then(|client| self.module_host.card_close_response(client, token, allow));
+        match result {
+            Ok(uid) => {
+                request.reply.send(Ok(json!({"accepted": true})));
+                if let Some(uid) = uid {
+                    self.module_close_confirmed(cx, uid);
+                } else if !allow {
+                    self.cancel_update_restart();
+                    self.process_close.abandon_quit();
+                    self.quit_waiting_since = None;
+                }
+            }
+            Err(error) => request.reply.send(Err(error.into())),
+        }
+    }
+
+    #[cfg(any(feature = "app-hub", native_mobile))]
+    fn window_request(&mut self, cx: &mut Cx, request: &Request, on: bool) -> Result<Value, String> {
         let mobile = self.state.as_ref().is_none_or(|s| s.style.target.mobile());
         let window = if mobile { None } else { self.window_of(cx, &request.app, request.isolate) };
         let now = host::now();
@@ -618,7 +662,7 @@ impl App {
             }
             _ => Facts { mobile, ..Facts::default() },
         };
-        match decide(request.on, &facts) {
+        match decide(on, &facts) {
             Decision::Answer(value) => Ok(value),
             Decision::Refuse(refusal) => Err(refusal.into()),
             Decision::End(client) => {
@@ -658,7 +702,7 @@ impl App {
                 // The Card runner's own surface, as `MpModuleView` finds it.
                 let isolate = self
                     .module_host
-                    .dispatch(cx, client, "its window identity", |cx, root| root.splash(cx, ids!(card)).isolate_heap_key(cx))
+                    .dispatch(cx, client, "its window identity", |cx, root| root.splash(cx, ids!(body.card)).isolate_heap_key(cx))
                     .flatten();
                 WindowIdentity { client, app, isolate }
             })
@@ -836,11 +880,17 @@ mod tests {
     #[test]
     fn only_an_apps_own_surface_reaches_the_shell() {
         let on = json!({"on": true});
-        assert_eq!(admit("window.fullscreen", false, &on), Ok(true));
-        assert_eq!(admit("window.fullscreen", false, &json!({"on": false})), Ok(false));
+        assert_eq!(admit("window.fullscreen", false, &on), Ok(WindowCommand::Fullscreen(true)));
+        assert_eq!(admit("window.fullscreen", false, &json!({"on": false})), Ok(WindowCommand::Fullscreen(false)));
         assert_eq!(admit("window.fullscreen", true, &on), Err(NOT_A_WINDOW.into()));
         assert!(admit("window.move", false, &on).unwrap_err().starts_with("method_unavailable:"));
         assert!(admit("window.fullscreen", false, &json!({})).unwrap_err().starts_with("invalid_arguments:"));
+        let answer = json!({"request": 7, "allow": true});
+        assert_eq!(admit("window.close_response", false, &answer), Ok(WindowCommand::CloseResponse { request: 7, allow: true }));
+        assert!(admit("window.close_response", true, &answer).unwrap_err().starts_with("not_a_window:"));
+        for invalid in [json!({"request": 0, "allow": true}), json!({"request": 7, "allow": 1}), json!({"request": 7, "allow": true, "client": 9})] {
+            assert!(admit("window.close_response", false, &invalid).unwrap_err().starts_with("invalid_arguments:"));
+        }
     }
 
     /// An app finds only its own window: the one whose Card runner runs the
