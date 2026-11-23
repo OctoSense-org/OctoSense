@@ -322,8 +322,10 @@ App Hub 的 card-host）。
 | sound | `sound.info`、`peaks`、`convert`、`trim`、`mix` | 没有入口：soundcraft 没有命令目录。 | — |
 | design | `design.info`、`render`、`export` | 按决定不设入口（#418）。 | — |
 | pdf | `pdf.info`、`text`、`render`、`merge`、`split` | 没有入口：只有几个固定操作。应用自己的请求还能使用 PDF Tools v2 的打开文档（`apps/pdftools/design/SERVICE.md`）：每个方法只运行为它审查过的命令，参数由服务自己构造；`comment_add` 不带附件类型或路径；`page_insert_file` 读取应用存储中的 PDF；`doc_save`、`page_extract` 和各种导出写入存储内的暂存文件夹，再移到目标位置，不替换已有文件（保存回文档自己的文件除外）；`doc_open` 和 `form_fill` 在 JavaScript 关闭时运行。 | 应用自己的请求：每个调用方 ≤ 8 个打开的文档；渲染 24–300 dpi 且 ≤ 16 MP；查找 ≤ 500 个匹配；每次调用 ≤ 512 页；一次图像导出 ≤ 64 页、合计 ≤ 256 MP；渲染缓存 ≤ 16 MiB 和 64 个文件，写入会因空间不足失败之前先清空。 |
-| photo | 无（照片应用自己的 `photos.info`） | `photo.run` 只供应用自己的请求使用：817 个 id 中的 692 个，并且每个还要通过 photocraft 自己的工作区检查。 | 尚未设上限（只供应用自己的请求使用）。 |
+| photo | 无（照片应用自己的 `photos.info`） | `photo.run` 只供应用自己的请求使用：817 个 id 中的 692 个，并且每个还要通过 photocraft 自己的工作区检查。 | 输入和编码后的输出各不超过 64 MiB。每条画布边长不超过 8,192 像素。所有已打开画布合计不超过 16,777,216 像素、256 个图层和 256 MiB 的栅格瓦片。缩放检查包括相对尺寸和按原比例推算的尺寸。 |
 | sheet | 无（Sheets 应用自己的 `sheets.*`） | 没有入口：公式求值。 | — |
+
+`photo.run` 将常见的灰度和 RGB 图像流式写入私有暂存文件，支持 8 位或 16 位 PNG，以及 XMP 能装入单个 JPEG 段的 8 位 JPEG。每次写入都必须符合 64 MiB 的输出上限以及文件夹的剩余配额，替换文件时计入原文件可释放的空间。4,032 × 3,024 的照片符合画布限制，也可以通过此路径导出。其他模式或格式在调用 photocraft 的内存编码器之前预留空间，包括未压缩的像素平面或瓦片、元数据和编解码器开销。分层文档还会计入蒙版、预览或嵌入对象。压缩率很高的文件即使最终大小能放入剩余空间，也可能因预留空间不足而被拒绝。文件发布之前还会复核实际大小。解码器、合成器、编码器的工作缓冲区和撤销历史还会使用额外内存。这些限制适用于命令入口。
 
 这次审查重新归类了这些 id：word 的 `review.readAloud`（`code` 改为 `device`），vector 的
 `effect.apply` 和 `appearance.addEffect`（`code` 改为 `safe`，并检查其效果），effect 的两个

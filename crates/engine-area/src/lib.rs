@@ -260,6 +260,13 @@ impl Area {
         self.admit(path, len).map(|_| ())
     }
 
+    /// Bytes that may be streamed to a staged result, including the destination's
+    /// replacement credit. Publication revalidates the area and its quota.
+    pub fn write_limit(&self, path: &Path, ceiling: u64) -> Result<u64, String> {
+        let replaced = self.admit(path, 0)?;
+        Ok(self.room().map_or(ceiling, |room| ceiling.min(room.saturating_add(replaced))))
+    }
+
     /// Write `bytes` to `path` (already contained in the area), creating its
     /// parent folders, under the area's rules: no replacement unless
     /// [`Area::may_replace`] (and then by an atomic rename, which replaces a

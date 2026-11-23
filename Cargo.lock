@@ -11853,13 +11853,23 @@ dependencies = [
 name = "octosense-photo-service"
 version = "0.1.0"
 dependencies = [
+ "cap-std",
+ "imagesize 0.15.0",
+ "jpeg-encoder 0.6.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "octosense-appstore",
  "octosense-engine-area",
  "octosense-skill-gen",
  "photocraft-automation",
+ "photocraft-codecs",
  "photocraft-doc",
+ "photocraft-engine",
  "photocraft-format",
+ "photocraft-geom",
  "photocraft-io",
+ "photocraft-psd",
+ "photocraft-raw",
+ "png 0.18.1",
+ "serde",
  "serde_json",
  "tempfile",
 ]
