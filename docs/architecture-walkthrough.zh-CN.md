@@ -33,6 +33,8 @@
 
 `system_card_apps` 生成日历的启动器条目，并在第一次时注册 Shell 的宿主服务（`register_host_services`）。日历的 `calendar` 声明披露服务用途；隔离 UI 以已准入应用身份调用，受服务实际身份和数据规则约束。月历、按日列表、编辑器及日历 Agent 工具共用 `.host/calendar/events.json`。Glance 日程卡片是同一记录的投影，卡片内的 **Open Calendar** 按钮通过绑定在发布记录中的 `event/<id>` 路由，在真实日历应用中打开该日程。跨应用 Agent 调用仍须下文的独立授权。
 
+原生模块的持久存储使用该应用编号最小的空闲槽位（`notes.1`、`notes.2` 等）。关闭并重新打开主窗口会复用原有文档；同时打开的窗口仍使用各自独立的存储。运行时作用域的代际继续递增，因此旧实例的延迟回复不能送达复用存储槽位的新实例。这不会合并旧版本曾保存在不同槽位中的文档。原生应用的最后一个客户端关闭时，Shell 撤下其尚未回答的首次 Agent 授权提示，不记录授权决定，也不撤销已保存的授权；再次打开尚未决定授权的应用时会重新询问。关闭脚本应用不会撤下其后台 peer 的授权提示。 原生应用声明的 Agent 优先从宿主内编译的元数据查找，避免仅为窗口显示 Agent 名称就等待脚本应用的准入检查。
+
 运行方法见桌面端 README 的[构建与运行](../desktop/README.zh-CN.md#构建与运行)，其中用 `python3 tools/kernel-artifact.py --host --stage target/release` 准备锁定版本的内核。
 
 连接账户的普通应用也使用同一个 Card runner。GitHub Notes、Inbox Assistant、Google Calendar 声明 `auth`、所用的数据服务族（`github`、`gmail` 或 `gcalendar`）及 `storage.accounts: true`；宿主把每个应用的 peer 绑定到它当前的连接，应用只看到不透明的连接句柄。登录、显式 `host_method` 工具映射、持久化 Gmail 事件与已准入的 Glance 模板见 [OAuth 指南](../crates/oauth-service/README.zh-CN.md)。Google Calendar 读取用户的 Google 日历，而不是内置日历的 `events.json`。真实 GitHub 和 Google 账户的登录已在 macOS 上通过；GitHub 写入、Gmail 发信和设备验收仍待完成。
