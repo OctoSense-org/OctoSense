@@ -31,13 +31,14 @@ limit?, offset?}` (type, layer and handle of each model-space entity),
 (area and perimeter) and `drawing.inspect {entities: false}`. The file at
 `path` is never changed: write the result to a new `out`.
 
-Each call is capped so it cannot stall the device: an array or copy makes
-at most 10,000 copies, and the copies of one call multiply to at most
-10,000 (an array of an array counts as both); a drawing holds at most
-200,000 objects; a hatch or linetype scale is at least 0.0001; and a
-render whose dashes, hatch lines and block copies would take more than
-about a second is refused before it draws. A command over a cap refuses
-the whole call and says which cap.
+A drawing can hold up to 200,000 objects. Each array or copy can make up
+to 10,000 copies, and the product of copy counts in one call must also fit
+that limit. A spline can interpolate up to 2,000 fit points when opened
+from a file, created, or refitted. Hatch and linetype scales must be at
+least 0.0001. The service estimates the cost of dashes, hatch lines and
+block copies before rendering and refuses work expected to take more
+than about a second. If a command exceeds a limit, the service refuses
+the whole call and reports which limit it exceeded.
 
 ## Files
 

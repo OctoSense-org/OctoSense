@@ -80,6 +80,7 @@ mod slides;
 mod writing;
 
 use std::collections::HashSet;
+use std::io::{self, Read};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::{Component, Path, PathBuf};
 use std::sync::{Arc, OnceLock};
@@ -605,6 +606,17 @@ pub(crate) fn input(area: &Area, rel: &str, key: &str, m: &str) -> Result<(PathB
     Ok((path, meta.len()))
 }
 
+/// A file can grow after its length was checked. Read at most the limit
+/// into memory, with a separate one-byte check for any remaining input.
+fn read_bounded(mut reader: impl Read, limit: u64) -> io::Result<Option<Vec<u8>>> {
+    let mut bytes = Vec::new();
+    (&mut reader).take(limit).read_to_end(&mut bytes)?;
+    if bytes.len() as u64 == limit && io::copy(&mut reader.take(1), &mut io::sink())? != 0 {
+        return Ok(None);
+    }
+    Ok(Some(bytes))
+}
+
 #[cfg(test)]
 thread_local! {
     /// How many files this thread's calls handed the engine to read (tests:
@@ -673,7 +685,10 @@ fn engine_read(name: &str, bytes: &[u8], format: guard::Format) -> Result<Presen
 /// by the engine. Its normal path, the deck, and how the engine read it.
 pub(crate) fn read_guarded(area: &Area, rel: &str, key: &str, m: &str) -> Result<(String, Presentation, guard::Format), String> {
     let (path, _) = input(area, rel, key, m)?;
-    let bytes = std::fs::read(&path).map_err(|e| invalid(format!("{rel}: {e}")))?;
+    let bytes = std::fs::File::open(&path)
+        .and_then(|f| read_bounded(f, MAX_DECK_BYTES))
+        .map_err(|e| invalid(format!("{rel}: {e}")))?
+        .ok_or_else(|| fail(Code::TooLarge, format!("{rel} is larger than the {} MB the deck service opens", MAX_DECK_BYTES >> 20)))?;
     let name = normal(rel);
     let format = guard::check(&name, &bytes)?;
     let deck = engine_read(&name, &bytes, format).map_err(|e| {
@@ -743,7 +758,10 @@ fn read_deck(args: &Json, area: &Area, method: &str) -> Result<(Session, String)
     if meta.len() > MAX_DECK_BYTES {
         return Err(format!("deck.{method}: the file is larger than the service reads"));
     }
-    let bytes = std::fs::read(&path).map_err(|e| format!("deck.{method}: {rel}: {e}"))?;
+    let bytes = std::fs::File::open(&path)
+        .and_then(|f| read_bounded(f, MAX_DECK_BYTES))
+        .map_err(|e| format!("deck.{method}: {rel}: {e}"))?
+        .ok_or_else(|| format!("deck.{method}: the file is larger than the service reads"))?;
     let format = guard::check(&rel, &bytes)?;
     let doc = engine_read(&rel, &bytes, format).map_err(|e| format!("deck.{method}: {e}"))?;
     media_ceiling(&doc)?;
@@ -1278,6 +1296,16 @@ mod doc_tests;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn deck_input_reads_through_the_limit_and_checks_one_more_byte() {
+        let outline = b"# Title\n";
+        let limit = outline.len() as u64;
+        assert_eq!(read_bounded(&outline[..], limit).unwrap().as_deref(), Some(&outline[..]));
+        let mut longer = io::Cursor::new(b"# Title\nsecond slide");
+        assert!(read_bounded(&mut longer, limit).unwrap().is_none());
+        assert_eq!(longer.position(), limit + 1);
+    }
 
     /// A real two-slide deck written through the engine's own pptx
     /// export: the fixture every test reads back.

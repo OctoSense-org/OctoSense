@@ -24,6 +24,8 @@ serde_json = { workspace = true }
 filmcraft-engine = { workspace = true }
 filmcraft-codecs = { workspace = true }
 filmcraft-media = { workspace = true }
+# Filmcraft sizes a picture batch from the active Rayon pool.
+rayon = "1"
 # PNG encoding for `film.frame` (pure Rust, the crate the engine itself uses).
 image = { version = "0.25", default-features = false, features = ["png"] }
 
