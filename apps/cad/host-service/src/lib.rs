@@ -46,6 +46,8 @@
 //! the engine starts on it, by every method ([`caps`]). The service serves
 //! system apps only until ADR 0013's store capability is designed.
 
+mod import;
+
 /// The system agent's skill for this engine (ADR 0013).
 pub mod skill;
 
@@ -708,7 +710,7 @@ fn read_drawing(ctx: &str, area: &Area, rel: &str) -> Result<Drawing, String> {
         return Err(format!("{ctx}: the file is larger than the service reads"));
     }
     let bytes = std::fs::read(&path).map_err(|e| format!("{ctx}: {rel}: {e}"))?;
-    let d = cadcraft_io::read(&bytes, rel).map_err(|e| format!("{ctx}: {e}"))?;
+    let d = import::read(bytes, rel, MAX_FIT_POINTS as usize).map_err(|e| format!("{ctx}: {e}"))?;
     caps::openable(ctx, &d)?;
     Ok(d)
 }

@@ -97,6 +97,10 @@ const DEFAULT_RENDER_SIDE: u32 = 1024;
 /// 2304. The renderer composites in f32 RGBA (151 MB a working image at
 /// this size); a square 4096 frame would be 268 MB.
 const MAX_RENDER_PIXELS: f64 = 4096.0 * 2304.0;
+/// Filmcraft renders 2..=16 picture frames per batch. Allow two frames at
+/// the largest supported size, or more at lower resolutions. At 16 bytes
+/// per linear RGBA pixel that is 288 MiB for one image per in-flight frame.
+const MAX_BATCH_PIXELS: u64 = 2 * MAX_RENDER_PIXELS as u64;
 /// The export formats offered: what the engine encodes with its own code
 /// (H.264+AAC in MP4, ProRes 422 HQ in MOV, PCM WAV, animated GIF).
 const FORMATS: [&str; 4] = ["h264", "prores", "wav", "gif"];
@@ -940,7 +944,8 @@ fn extension_of(format: &str) -> &'static str {
 fn export_staged(s: &mut Session, rules: &Area, out: &Path, format: &str, (start_ms, end_ms): (f64, f64), audio: bool) -> Result<(u64, Json), String> {
     let st = s.active_sequence().map(|q| q.settings.clone()).ok_or("no sequence is active")?;
     let size = export_size(st.width, st.height);
-    export_work(format, (start_ms, end_ms), audio, st.frame_rate, st.sample_rate, size.unwrap_or((st.width, st.height)))?;
+    let output_size = size.unwrap_or((st.width, st.height));
+    export_work(format, (start_ms, end_ms), audio, st.frame_rate, st.sample_rate, output_size)?;
     let stage = rules.stage()?;
     let staged = stage.path(format!("export.{}", extension_of(format)));
     let mut params = json!({
@@ -956,10 +961,41 @@ fn export_staged(s: &mut Session, rules: &Area, out: &Path, format: &str, (start
         params["width"] = json!(w);
         params["height"] = json!(h);
     }
-    let r = s.execute("file.exportMedia", params).map_err(|e| e.to_string())?;
+    // Only the synchronous engine call enters the pool. Creating the stage
+    // and publishing the result both use the original service worker.
+    let workers = export_worker_limit(&s.project, format, output_size);
+    let encode = || s.execute("file.exportMedia", params).map_err(|e| e.to_string());
+    let r = if let Some(workers) = workers {
+        let pool = rayon::ThreadPoolBuilder::new().num_threads(workers).build().map_err(|e| format!("cannot start film export workers: {e}"))?;
+        pool.install(encode)?
+    } else {
+        encode()?
+    };
     let bytes = std::fs::metadata(&staged).map(|m| m.len()).map_err(|e| format!("{}: {e}", rules.shown(out)))?;
     stage.commit(&[(staged, out.to_path_buf())])?;
     Ok((bytes, r["result"].clone()))
+}
+
+/// The pinned engine chooses its batch size from the active Rayon pool for
+/// both video and GIF. With `wait: true` it renders synchronously in that
+/// pool. Keep its current pool when it already fits the picture budget.
+fn export_worker_limit(p: &Project, format: &str, output_size: (u32, u32)) -> Option<usize> {
+    if format == "wav" {
+        return None;
+    }
+    // The provider decodes sources at full resolution. Scan video tracks in
+    // every sequence to include nested edits and subclips. A separate edit
+    // in the project can conservatively reduce this export's concurrency.
+    let sizes = sequences(p)
+        .flat_map(|(_, q)| &q.video_tracks)
+        .flat_map(|t| &t.items)
+        .filter_map(|it| p.source_size(it.item));
+    let area = |(w, h): (u32, u32)| u64::from(w.max(1)) * u64::from(h.max(1));
+    let pixels = sizes.map(area).fold(area(output_size), u64::max);
+    // On a single worker the engine still collects two output frames per
+    // batch, but it can render only one large source at a time.
+    let workers = (MAX_BATCH_PIXELS / pixels).clamp(1, 16) as usize;
+    (workers < rayon::current_num_threads().min(16)).then_some(workers)
 }
 
 /// What an export of `start_ms..end_ms` asks the engine for, refused over
@@ -2230,6 +2266,32 @@ mod tests {
 
     fn clip() -> &'static str {
         &HOST.1
+    }
+
+    #[test]
+    fn picture_batches_shrink_with_frame_size() {
+        let pool = rayon::ThreadPoolBuilder::new().num_threads(8).build().unwrap();
+        pool.install(|| {
+            let mut p = Project::default();
+            for format in ["h264", "prores", "gif"] {
+                assert_eq!(export_worker_limit(&p, format, (4096, 2304)), Some(2));
+                assert_eq!(export_worker_limit(&p, format, (2560, 1440)), Some(5));
+                assert_eq!(export_worker_limit(&p, format, (1920, 1080)), None);
+            }
+            let source = p.new_sequence("UHD", SequenceSettings { width: 3840, height: 2160, ..Default::default() }, 1, 0, None);
+            let edit = p.new_sequence("HD edit", SequenceSettings::default(), 1, 0, None);
+            let clip = p.make_track_item(source, TrackKind::Video, Tick::ZERO, TimeRange::new(Tick::ZERO, Tick(TICKS_PER_SECOND)), FrameRate::FPS_24).unwrap();
+            p.sequence_mut(edit).unwrap().video_tracks[0].items.push(clip);
+            assert_eq!(export_worker_limit(&p, "prores", (1920, 1080)), Some(2));
+            let uhd = &mut p.sequence_mut(source).unwrap().settings;
+            (uhd.width, uhd.height) = (7680, 4320);
+            assert_eq!(export_worker_limit(&p, "prores", (1920, 1080)), Some(1));
+            assert_eq!(export_worker_limit(&p, "wav", (4096, 2304)), None);
+        });
+        let serial = rayon::ThreadPoolBuilder::new().num_threads(1).build().unwrap();
+        serial.install(|| {
+            assert_eq!(export_worker_limit(&Project::default(), "h264", (4096, 2304)), None);
+        });
     }
 
     #[test]
