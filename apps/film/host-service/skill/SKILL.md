@@ -28,12 +28,13 @@ not in `commands.md` refuse the whole call, and nothing is written. After
 every command the project is checked again: an effect or setting that
 names a file outside your workspace fails the call.
 
-Each call is capped so it cannot stall the device: a sequence is at most
-4096 pixels on a side (9.4 million in all) at up to 120 fps and 96 kHz; a
-clip's speed is 1% to 10,000%; an export is at most 18,000 frames (5
-minutes at 60 fps); and a call adds at most 5,000 clips, tracks, markers
-and other elements to a project. A command over a cap refuses the whole
-call and says which cap.
+A sequence can use up to 4096 pixels per side and 9.4 million pixels in
+all, at up to 120 fps and 96 kHz. Clip speed ranges from 1% to 10,000%.
+An export can contain up to 18,000 frames (5 minutes at 60 fps). A 4K
+output or source limits the exporter to two frames per batch, including
+when exporting a 4K clip at 1080p. A call can add up to
+5,000 clips, tracks, markers and other elements to a project. If a command
+exceeds a limit, the service refuses the whole call and reports which one.
 
 Useful queries: `project.inspect` (the bins and items with their ids, and
 the active sequence) and `sequence.inspect {item?}` (its tracks with clip

@@ -217,6 +217,11 @@ gridcraft-xlsx = { git = "https://github.com/ymote/gridcraft.git", rev = "c6b6f4
 octosense-photo-service = { path = "apps/photo/host-service" }
 # The photocraft raster engine (ADR 0013): the pinned ymote fork, one revision.
 photocraft-automation = { git = "https://github.com/ymote/photocraft.git", rev = "eec4af65513b52084926f3c679fc6ac7821cafaf" }
+photocraft-codecs = { git = "https://github.com/ymote/photocraft.git", rev = "eec4af65513b52084926f3c679fc6ac7821cafaf" }
+photocraft-engine = { git = "https://github.com/ymote/photocraft.git", rev = "eec4af65513b52084926f3c679fc6ac7821cafaf" }
+photocraft-geom = { git = "https://github.com/ymote/photocraft.git", rev = "eec4af65513b52084926f3c679fc6ac7821cafaf" }
+photocraft-psd = { git = "https://github.com/ymote/photocraft.git", rev = "eec4af65513b52084926f3c679fc6ac7821cafaf" }
+photocraft-raw = { git = "https://github.com/ymote/photocraft.git", rev = "eec4af65513b52084926f3c679fc6ac7821cafaf" }
 photocraft-io = { git = "https://github.com/ymote/photocraft.git", rev = "eec4af65513b52084926f3c679fc6ac7821cafaf" }
 # The photo service's linked-file fence (ADR 0013): the document model, and
 # the native format of an embedded smart object's contents.
@@ -244,6 +249,8 @@ deckcraft-anim = { git = "https://github.com/ymote/deckcraft.git", rev = "d0e57d
 deckcraft-fonts = { git = "https://github.com/ymote/deckcraft.git", rev = "d0e57d7e25f9852179cc66be12dd6188f1c05535" }
 deckcraft-pptx = { git = "https://github.com/ymote/deckcraft.git", rev = "d0e57d7e25f9852179cc66be12dd6188f1c05535" }
 # The cadcraft drafting engine (ADR 0013): the pinned ymote fork, one revision.
+cadcraft-dwg = { git = "https://github.com/ymote/cadcraft.git", rev = "59631c8d4f9ffe6c08c5c2065ea17504e53bf821" }
+cadcraft-dxf = { git = "https://github.com/ymote/cadcraft.git", rev = "59631c8d4f9ffe6c08c5c2065ea17504e53bf821" }
 cadcraft-engine = { git = "https://github.com/ymote/cadcraft.git", rev = "59631c8d4f9ffe6c08c5c2065ea17504e53bf821" }
 cadcraft-io = { git = "https://github.com/ymote/cadcraft.git", rev = "59631c8d4f9ffe6c08c5c2065ea17504e53bf821" }
 # The lightcraft RAW develop/catalog engine (ADR 0013): the pinned ymote
