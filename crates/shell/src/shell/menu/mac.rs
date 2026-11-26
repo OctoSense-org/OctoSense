@@ -1933,6 +1933,15 @@ impl ShellMenu {
 
     // ---- Launchpad
 
+    fn launchpad_search_rect(screen: Rect) -> Rect {
+        rect(
+            (screen.pos.x + (screen.size.x - PAD_FIELD_W) * 0.5).floor(),
+            screen.pos.y + PAD_FIELD_TOP,
+            PAD_FIELD_W,
+            PAD_FIELD_H,
+        )
+    }
+
     /// Columns, rows, the cell's size and the grid's top-left corner.
     pub(super) fn launchpad_grid(&self, screen: Rect) -> (usize, usize, f64, f64, f64, f64) {
         let side = (screen.size.x * 0.1).floor().max(24.0);
@@ -1968,7 +1977,7 @@ impl ShellMenu {
         self.draw_bg.color = Vec4f::default();
         self.draw_bg.draw_abs(cx, screen);
         // The search field, centred at the top.
-        let field = rect((screen.pos.x + (screen.size.x - PAD_FIELD_W) * 0.5).floor(), screen.pos.y + PAD_FIELD_TOP, PAD_FIELD_W, PAD_FIELD_H);
+        let field = Self::launchpad_search_rect(screen);
         self.d.rounded(cx, field, 3.5, fade(white, 0.12));
         self.d.focus_ring(cx, field, 3.5, 1.0, fade(white, 0.14));
         let searching = !self.model.filter.is_empty();
@@ -2026,6 +2035,10 @@ impl ShellMenu {
         }
         match event {
             Event::MouseDown(e) => {
+                // Launchpad already routes keystrokes to search while it is open.
+                if contains(Self::launchpad_search_rect(self.screen), e.abs) {
+                    return true;
+                }
                 let (columns, rows, ..) = self.launchpad_grid(self.screen);
                 let page = (columns * rows).max(1);
                 let first = (self.model.scroll / page) * page;
